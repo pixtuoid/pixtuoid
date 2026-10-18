@@ -22,7 +22,7 @@ use pixtuoid_core::source::{AgentEvent, registry};
 // copies whose `read_dir` SWALLOWED errors where the other panics — an
 // unreadable capture dir made `wire_files()` empty, so the redaction rule
 // passed vacuously for it.
-use super::captures::{fixture_lines, fixtures_root, sorted_dirs, transcripts_in};
+use super::captures::{fixture_lines, fixtures_root, sorted_dirs, transcript_in, transcripts_in};
 
 /// Hook-only-ness comes from the registry row, never a harness-side list — a
 /// second list could mark a JSONL source hook-only and pass the harness without
@@ -55,12 +55,6 @@ impl Decoded {
             .flat_map(|d| d.events.iter().cloned())
             .collect()
     }
-}
-
-fn transcript_in(dir: &Path) -> PathBuf {
-    let mut t = transcripts_in(dir);
-    assert_eq!(t.len(), 1, "{} must ship one transcript", dir.display());
-    t.remove(0)
 }
 
 fn decode_fixture(source: &str, dir: &Path) -> Decoded {

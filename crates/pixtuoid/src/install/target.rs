@@ -672,8 +672,12 @@ mod tests {
     fn every_hook_a_profiled_cli_registers_is_fired_or_owed() {
         use std::collections::BTreeSet;
         for p in pixtuoid_core::harness::hermetic::PROFILES {
-            let t = by_source(p.source).expect("a profiled CLI has an install target");
-            let registered: BTreeSet<&str> = (t.registers)().into_iter().collect();
+            // A CLI with no install target registers no hook (copilot).
+            let registered: BTreeSet<&str> = by_source(p.source)
+                .map(|t| (t.registers)())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
             let accounted: BTreeSet<&str> = p
                 .scenarios
                 .iter()

@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "CHILD-TASK", "toolResultContains": "{note}"},
+      "response": {"content": "{note}"},
+      "latency": 300
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": true},
+      "response": {"toolCalls": [{"name": "view", "arguments": {"path": "{workspace}/NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "response": {"toolCalls": [{"name": "glob", "arguments": {"pattern": "NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "pong"},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "task", "arguments": {"name": "reader", "description": "Read the note", "agent_type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
+      "latency": 300
+    }
+  ]
+}

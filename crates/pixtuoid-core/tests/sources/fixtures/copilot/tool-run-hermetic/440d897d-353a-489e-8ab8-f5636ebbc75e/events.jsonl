@@ -1,0 +1,14 @@
+{"type":"session.start","data":{"sessionId":"440d897d-353a-489e-8ab8-f5636ebbc75e","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_YcfGKp37_Kh2UtJ3","toolName":"view","arguments":{"path":"/private/tmp/pixtuoid-capture/proj/NOTE.txt"},"turnId":"","model":"","toolTitle":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_YcfGKp37_Kh2UtJ3","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"result":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{}
+{}
+{}
+{"type":"session.shutdown","data":{},"id":"","timestamp":"","parentId":""}
