@@ -220,15 +220,17 @@ const USER: &str = "user";
 /// by `the_decoded_set_is_exactly_what_the_arms_match`.
 const DECODED_TYPES: &[&str] = &[ASSISTANT, USER];
 
-/// Does this line carry a turn's payload? `message.role` + `message.content` is
-/// what a renamed [`DECODED_TYPES`] member would still arrive with, so it
-/// separates a rename from a merely-new sidecar type WITHOUT mirroring CC's
-/// vocabulary — the mirror is what put a drift alarm in front of every user the
-/// day CC added `history-suppression` (#935).
+/// Does this line carry a turn's payload? A timestamped `message.role` +
+/// `message.content` is what a renamed [`DECODED_TYPES`] member would still
+/// arrive with, so it separates a rename from a merely-new sidecar type WITHOUT
+/// mirroring CC's vocabulary (#935); `api-request-blob` stores a request's
+/// message untimestamped (#1694).
 fn carries_turn_payload(obj: &serde_json::Map<String, Value>) -> bool {
-    obj.get("message")
-        .and_then(Value::as_object)
-        .is_some_and(|m| m.contains_key("role") && m.contains_key("content"))
+    obj.contains_key("timestamp")
+        && obj
+            .get("message")
+            .and_then(Value::as_object)
+            .is_some_and(|m| m.contains_key("role") && m.contains_key("content"))
 }
 
 /// The `attributionAgent` label, namespace-stripped and capped. `None` for an
@@ -536,6 +538,7 @@ mod tests {
         let out = crate::test_capture::capture_logs(|| {
             let line = json!({
                 "type": "assistant-v2",
+                "timestamp": "2026-10-17T00:00:00Z",
                 "message": {"role": "assistant", "content": [], "model": "m"},
             });
             let _ = decode_cc_line("/p/s.jsonl", SOURCE_NAME, line);
@@ -1119,6 +1122,10 @@ mod tests {
                 // corpus-sampled and abridged).
                 json!({"type": "atis-latch", "atis": "", "sessionId": "s"}),
                 json!({"type": "cost-state", "totalCostUSD": 0.5, "sessionId": "s"}),
+                // #1694's: a request message stored by hash since CC 2.1.300,
+                // payload-shaped but no record.
+                json!({"type": "api-request-blob", "hash": "h", "sessionId": "s",
+                       "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}),
                 // TYPELESS but payload-carrying: the `!ty.is_empty()` guard, or
                 // the breadcrumb names nothing at all.
                 json!({"message": {"role": "assistant", "content": []}}),
