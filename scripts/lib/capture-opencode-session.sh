@@ -104,4 +104,8 @@ if [[ -n $sid ]]; then
     oc session delete --server "$BASE" "$sid"
 fi
 sleep 3
+# Only a run that got this far drops its private dir: a failure's stays for its log.
+kill -TERM "$srv" 2>/dev/null
+wait "$srv" 2>/dev/null
+rm -rf "$LOGS"
 exit 0

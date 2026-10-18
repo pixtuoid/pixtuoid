@@ -16,7 +16,8 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19098}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SBX="$(mktemp -d)/openclaw-home"
+TMP="$(mktemp -d)"
+SBX="$TMP/openclaw-home"
 mkdir -p "$SBX/.openclaw" "$SBX/xdg"
 export HOME="$SBX" OPENCLAW_HOME="$SBX" OPENCLAW_STATE_DIR="$SBX/.openclaw" \
     OPENCLAW_CONFIG_PATH="$SBX/.openclaw/openclaw.json" XDG_CONFIG_HOME="$SBX/xdg" \
@@ -55,3 +56,4 @@ echo "agent rc=$? (non-zero: the provider refused, as intended)"
 kill -TERM "$gw" 2>/dev/null
 wait "$gw" 2>/dev/null
 sleep 2
+rm -rf "$TMP"

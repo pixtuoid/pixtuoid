@@ -19,9 +19,8 @@ PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19099}"
 SESSION="${OC_SESSION:-pixcap-$(date +%s)}"
 LOGS="$(mktemp -d)"
-# `agent` dials this port, never the running gateway's lock as `tui` did, and the
-# variable outranks the operator's configured `gateway.port`
-# (`resolveGatewayPort`, openclaw's dist `paths-*.mjs`, 2026.10.4).
+# `agent` dials this port, and the variable outranks the operator's configured
+# `gateway.port` (`resolveGatewayPort`, openclaw's dist `paths-*.mjs`, 2026.10.4).
 export OPENCLAW_GATEWAY_PORT="$PORT"
 
 openclaw gateway --port "$PORT" --force --allow-unconfigured >"$LOGS/openclaw-gw.log" 2>&1 &
@@ -41,4 +40,6 @@ echo "agent rc=$rc (log: $LOGS/openclaw-agent.log)"
 kill -TERM "$gw" 2>/dev/null
 wait "$gw" 2>/dev/null
 sleep 2
+# A failed turn's logs stay for the diagnosis the rc line points to.
+[[ $rc -ne 0 ]] || rm -rf "$LOGS"
 exit "$rc"
