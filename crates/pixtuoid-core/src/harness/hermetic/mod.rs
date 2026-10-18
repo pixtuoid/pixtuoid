@@ -83,10 +83,6 @@ pub enum Shape {
     /// A turn whose tool call needs an approval the run cannot give: the slot
     /// waits on it, then the refused tool ends.
     Permission,
-    /// A turn whose tool call needs an approval that the CLI, with no one to
-    /// ask, refuses on the spot: the slot waits on the call it names, and that
-    /// call ends. The wait lasts no frame, so the scene shows the tool, not it.
-    Denial,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
@@ -98,7 +94,6 @@ impl Shape {
         match self {
             Self::ToolRun => "tool-run",
             Self::Permission => "permission",
-            Self::Denial => "denial",
             Self::Subagent => "subagent",
         }
     }
@@ -165,8 +160,8 @@ pub struct Profile {
     /// yet, as `(kind, path)` the field census names them. Shrink-only: a run
     /// that carries one is Stale.
     pub(crate) not_yet_fields: &'static [(&'static str, &'static str)],
-    /// Whether a child session names no cwd of its own, running where its
-    /// parent does: the judge then holds the parent's to the workspace.
+    /// Whether a child may name no cwd of its own, running where its parent
+    /// does.
     pub(crate) children_inherit_cwd: bool,
 }
 
@@ -807,8 +802,8 @@ model = "deepseek-v4-flash"
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
         children_inherit_cwd: false,
     },
-    // copilot is closed source: its cites are docs.github.com and the
-    // `@github/copilot-<platform>@1.0.98` binaries.
+    // copilot is closed source: its cites are docs.github.com,
+    // `github/copilot-cli` and the `@github/copilot-<platform>@1.0.98` binaries.
     Profile {
         source: "copilot",
         package: Package::Npm("@github/copilot"),
@@ -823,8 +818,7 @@ model = "deepseek-v4-flash"
         ],
         homes: &[],
         // Managed settings and the policy directory, and on Windows the
-        // registry policy beside them: each a string of the platform's
-        // `runtime.node`.
+        // registry policy beside them: each a string of its 1.0.98 binary.
         system_config: PerOs {
             unix: &[
                 HostConfig::Path(
@@ -851,9 +845,9 @@ model = "deepseek-v4-flash"
                 fixture: "fixtures/copilot/tool-run-hermetic",
             },
             Scenario {
-                shape: Shape::Denial,
+                shape: Shape::Permission,
                 expects: &[],
-                fixture: "fixtures/copilot/denial-hermetic",
+                fixture: "fixtures/copilot/permission-hermetic",
             },
             Scenario {
                 shape: Shape::Subagent,
@@ -861,9 +855,17 @@ model = "deepseek-v4-flash"
                 fixture: "delegation/fixtures/copilot",
             },
         ],
-        script_vars: &[],
+        // Windows runs PowerShell (`changelog.md:1651`), whose native tool is
+        // `powershell` beside `bash` (1.0.98's `runtime.node`).
+        script_vars: &[(
+            SHELL_TOOL_PLACEHOLDER,
+            PerOs {
+                unix: "bash",
+                windows: "powershell",
+            },
+        )],
         not_yet: &[],
-        event_name: hook_event_name,
+        event_name: |_| None,
         // GitHub's billing response carries them (1.0.98's bundled
         // `cli-main.js` reads `copilotUsage.tokenDetails`); a BYOK run has none.
         not_yet_fields: &[
@@ -958,11 +960,10 @@ mod tests {
                     p.source,
                     script.display()
                 );
-                // A CLI pixtuoid hears only through its transcript fires no hook.
                 assert_eq!(
                     s.expects.is_empty(),
                     p.descriptor().hook().is_none(),
-                    "{}: a scenario expects hooks if and only if the CLI has them",
+                    "{}: a scenario expects hooks if and only if pixtuoid hears the CLI's",
                     p.source
                 );
             }

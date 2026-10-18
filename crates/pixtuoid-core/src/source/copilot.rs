@@ -105,7 +105,6 @@ const SESSION_RESUME: &str = "session.resume";
 const TOOL_EXECUTION_START: &str = "tool.execution_start";
 const TOOL_EXECUTION_COMPLETE: &str = "tool.execution_complete";
 const PERMISSION_REQUESTED: &str = "permission.requested";
-const PERMISSION_COMPLETED: &str = "permission.completed";
 const SUBAGENT_STARTED: &str = "subagent.started";
 const SUBAGENT_COMPLETED: &str = "subagent.completed";
 const SUBAGENT_FAILED: &str = "subagent.failed";
@@ -125,7 +124,6 @@ pub(crate) const DECODED_KINDS: &[&str] = &[
     TOOL_EXECUTION_START,
     TOOL_EXECUTION_COMPLETE,
     PERMISSION_REQUESTED,
-    PERMISSION_COMPLETED,
     SUBAGENT_STARTED,
     SUBAGENT_COMPLETED,
     SUBAGENT_FAILED,
@@ -154,7 +152,6 @@ pub(crate) const DECODED_FIELDS: &[&str] = &[
     "kind",
     "model",
     "permissionRequest",
-    "result",
     "sessionId",
     "tokenCount",
     "tokenDetails",
@@ -317,31 +314,13 @@ pub fn decode_copilot_line(
             vec![AgentEvent::Waiting {
                 agent_id: acting,
                 reason,
-                // The gated call (#951), so its own end resolves the wait.
+                // The gated call (#951), so its own end resolves the wait: a
+                // refused call ends too, the refusal its result.
                 tool_use_id: request
                     .and_then(|p| str_at(p, "toolCallId"))
                     .filter(|id| !id.is_empty())
                     .map(str::to_owned),
             }]
-        }
-        // On APPROVED the gated tool's own `tool.execution_start` follows and
-        // clears the Waiting gate, so emit nothing (a detail-less ActivityStart
-        // here would only inflate tool_call_count). On a DENIAL/cancel no tool
-        // runs, so emit the clearing ActivityStart ourselves.
-        PERMISSION_COMPLETED => {
-            let approved = data
-                .and_then(|d| d.get("result"))
-                .and_then(|r| str_at(r, "kind"))
-                .is_some_and(|k| k.starts_with("approved"));
-            if approved {
-                vec![]
-            } else {
-                vec![AgentEvent::ActivityStart {
-                    agent_id: acting,
-                    tool_use_id: None,
-                    detail: None,
-                }]
-            }
         }
         SUBAGENT_STARTED => {
             let Some(child_key) = copilot_child_key(&v, data) else {
@@ -876,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    fn permission_requested_waits_and_completed_clears() {
+    fn permission_requested_waits_on_the_call_it_gates() {
         let req = r#"{"type":"permission.requested","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","permissionRequest":{"kind":"shell","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","fullCommandText":"cat /etc/hostname","intention":"Print /etc/hostname contents","commands":[{"identifier":"cat","readOnly":true}],"possiblePaths":["/etc/hostname"],"possibleUrls":[],"hasWriteFileRedirection":false,"canOfferSessionApproval":true},"promptRequest":{"kind":"path","accessKind":"shell","paths":["/etc/hostname"],"toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2"}},"id":"1f975691-a108-4d6f-924b-d48263d46274","timestamp":"2026-06-14T21:35:55.637Z","parentId":"e0a534c6-d548-4def-b0bd-316c83efe5fd"}"#;
         match &decode(req)[..] {
             [
@@ -895,23 +874,6 @@ mod tests {
                 );
             }
             other => panic!("expected Waiting, got {other:?}"),
-        }
-        let approved = r#"{"type":"permission.completed","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","result":{"kind":"approved"}},"id":"8123a44a-3471-4262-9191-b3cddaf5224d","timestamp":"2026-06-14T21:35:58.218Z","parentId":"1f975691-a108-4d6f-924b-d48263d46274"}"#;
-        assert!(
-            decode(approved).is_empty(),
-            "approved → no event (tool start clears the gate)"
-        );
-
-        // Two REAL deny variants: the interactive user reject and the
-        // non-interactive no-rule auto-deny.
-        for denied in [
-            r#"{"type":"permission.completed","data":{"requestId":"954afe31-559a-4afc-9eb6-13e30cf48aea","toolCallId":"call_nf1RvU9GxssNg2g7WtPgHqQ4","result":{"kind":"denied-interactively-by-user"}},"id":"60dae716-c76c-45e2-84e1-c3248ce3790c","timestamp":"2026-06-14T21:38:43.086Z","parentId":"5240af45-3ad2-4bf7-bc37-83c329c9c2ea"}"#,
-            r#"{"type":"permission.completed","data":{"requestId":"eab9bd2c-ca42-4ab6-8567-1c11906500a6","toolCallId":"toolu_bdrk_015JoceQkzNKnLkeCj5NaLzT","result":{"kind":"denied-no-approval-rule-and-could-not-request-from-user"}},"id":"2cc6bffe-6443-4d8b-9765-dbfeda13c4de","timestamp":"2026-06-14T21:27:17.209Z","parentId":"c113f81d-6f12-4080-bd13-8613526543dc"}"#,
-        ] {
-            assert!(
-                matches!(&decode(denied)[..], [AgentEvent::ActivityStart { .. }]),
-                "a non-approved result must clear Waiting: {denied}"
-            );
         }
     }
 

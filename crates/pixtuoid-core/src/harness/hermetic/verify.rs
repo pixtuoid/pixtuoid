@@ -394,7 +394,7 @@ fn judge(
     }
 
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission | Shape::Denial => 1,
+        Shape::ToolRun | Shape::Permission => 1,
         Shape::Subagent => 2,
     };
     started_in(
@@ -406,11 +406,11 @@ fn judge(
     );
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
-        Shape::Permission | Shape::Denial => permission(&events, &reached, findings),
+        Shape::Permission => permission(&events, &reached, findings),
         Shape::Subagent => subagent(&events, &reached, findings),
     }
     let shown = match scenario.shape {
-        Shape::ToolRun | Shape::Denial | Shape::Subagent => "active",
+        Shape::ToolRun | Shape::Subagent => "active",
         Shape::Permission => "waiting",
     };
     judge_scene(p, scene, shown, findings);
@@ -473,11 +473,8 @@ fn started_in(
         }
         // A child's registration may carry no cwd when another event keyed on
         // it names one (grok's spawn line, whose `subagent_start` does).
-        let own = match parent_id {
-            Some(parent) if children_inherit_cwd && named(agent_id).is_empty() => named(parent),
-            _ => named(agent_id),
-        };
-        if own.is_empty() {
+        let own = named(agent_id);
+        if own.is_empty() && !children_inherit_cwd {
             findings.push((Label::Fail, "a child's cwd was never named".into()));
         }
         cwds.extend(own);
@@ -749,8 +746,8 @@ mod tests {
     const DS_DELEGATE_SCENE: &str = "agents=[ds\u{b7}proj@0:active(Delegating), \
                                      ds\u{b7}proj@1:active(read)]\nagents=[] daemons=[]\n";
     const CP_SCENE: &str = "agents=[cp\u{b7}proj@0:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
-    const CP_DENIAL_SCENE: &str =
-        "agents=[cp\u{b7}proj@0:active(bash: rm NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_WAIT_SCENE: &str =
+        "agents=[cp\u{b7}proj@0:waiting(permission: shell)]\nagents=[] daemons=[]\n";
     const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
                                      reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
     const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
@@ -981,7 +978,7 @@ mod tests {
     fn a_recorded_copilot_run_passes_each_scenario() {
         for (shape, scene) in [
             (Shape::ToolRun, CP_SCENE),
-            (Shape::Denial, CP_DENIAL_SCENE),
+            (Shape::Permission, CP_WAIT_SCENE),
             (Shape::Subagent, CP_DELEGATE_SCENE),
         ] {
             let d = recorded("copilot", shape, scene);
@@ -994,21 +991,6 @@ mod tests {
                 v.findings()
             );
         }
-    }
-
-    #[test]
-    fn a_denial_whose_waited_call_never_ends_fails() {
-        let d = recorded("copilot", Shape::Denial, CP_DENIAL_SCENE);
-        for t in jsonl_files_under(d.path()) {
-            let text = std::fs::read_to_string(&t).expect("read");
-            let kept: Vec<&str> = text
-                .lines()
-                .filter(|l| !l.contains(r#""type":"tool.execution_complete""#))
-                .collect();
-            std::fs::write(&t, kept.join("\n") + "\n").expect("write");
-        }
-        let v = verify(d.path()).expect("verify");
-        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
     }
 
     #[test]
@@ -1050,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn only_a_childs_registration_may_name_no_cwd_and_its_own_event_must() {
+    fn a_childs_own_event_names_its_cwd_unless_children_inherit_it() {
         let id = |id: &str| crate::AgentId::from_parts("grok", id);
         let start = |agent: &str, cwd: &str, parent: Option<&str>| AgentEvent::SessionStart {
             agent_id: id(agent),
@@ -1067,11 +1049,12 @@ mod tests {
             pid: None,
         };
         let ws = Path::new("/w");
-        let judged = |events: &[AgentEvent]| {
+        let judged_inheriting = |events: &[AgentEvent], inherit: bool| {
             let mut f = Vec::new();
-            started_in(events, ws, 2, false, &mut f);
+            started_in(events, ws, 2, inherit, &mut f);
             Verdict::new(f)
         };
+        let judged = |events: &[AgentEvent]| judged_inheriting(events, false);
         let root = start("p", "/w", None);
         // grok's spawn line registers the child with no cwd.
         let child = start("c", "", Some("p"));
@@ -1081,25 +1064,20 @@ mod tests {
         // the CLI's children run where their parent does.
         let v = judged(&[root.clone(), child.clone()]);
         assert!(has(&v, Label::Fail, "never named"), "{:?}", v.findings());
-        let mut f = Vec::new();
-        started_in(&[root.clone(), child.clone()], ws, 2, true, &mut f);
-        assert_eq!(Verdict::new(f).label(), Label::Pass);
-        let mut f = Vec::new();
-        started_in(
-            &[start("p", "/elsewhere", None), child.clone()],
-            ws,
-            2,
-            true,
-            &mut f,
-        );
-        assert!(has(&Verdict::new(f), Label::Fail, "is not the workspace"));
-        // A back-filled cwd is held to the workspace too.
-        let v = judged(&[root, child, backfill("c", "/elsewhere")]);
-        assert!(
-            has(&v, Label::Fail, "is not the workspace"),
-            "{:?}",
-            v.findings()
-        );
+        let v = judged_inheriting(&[root.clone(), child.clone()], true);
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        // A back-filled cwd is held to the workspace too, inherited or not.
+        for inherit in [false, true] {
+            let v = judged_inheriting(
+                &[root.clone(), child.clone(), backfill("c", "/elsewhere")],
+                inherit,
+            );
+            assert!(
+                has(&v, Label::Fail, "is not the workspace"),
+                "{:?}",
+                v.findings()
+            );
+        }
         // A root that loses its cwd is no child awaiting one.
         let v = judged(&[start("p", "", None), start("c", "/w", Some("p"))]);
         assert!(
