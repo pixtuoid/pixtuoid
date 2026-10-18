@@ -573,9 +573,8 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has
-            // finished responding; a background Agent call returns
-            // `async_launched` at launch (hooks.md), and the main conversation's
-            // subagents always run in the background (CHANGELOG 2.1.302).
+            // finished responding; an Agent call that backgrounds its subagent,
+            // the default, returns `async_launched` at launch (hooks.md).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },
