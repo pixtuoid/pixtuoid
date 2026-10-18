@@ -71,6 +71,17 @@ pub enum HostConfig {
 pub enum Package {
     /// An npm package; the tier installs `<name>@<version>` into its own prefix.
     Npm(&'static str),
+    /// A prebuilt binary attached to a `v<version>` GitHub release.
+    GithubRelease {
+        /// The source's drift-watched repository.
+        repo: &'static crate::source::upstream::Repo,
+        /// Each platform's binary, as `(OS, ARCH, asset)` in
+        /// [`std::env::consts`]' spelling.
+        assets: &'static [(&'static str, &'static str, &'static str)],
+        /// The release's file that must vouch for the download
+        /// ([`crate::source::upstream::vouches`]).
+        sums: &'static str,
+    },
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
@@ -907,6 +918,109 @@ model = "deepseek-v4-flash"
         // and no event of it names a cwd.
         children_inherit_cwd: true,
     },
+    // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, `src/` its
+    // `packages/coding-agent/src/`.
+    Profile {
+        source: "omp",
+        // The release's own binaries: the npm package runs only under Bun (its
+        // `engines`), and `scripts/install.sh` fetches from build.stencil.so
+        // and runs `omp --version` under the operator's home (`:21`, `:331`).
+        package: Package::GithubRelease {
+            repo: &crate::source::omp::REPO,
+            // `scripts/ci-build-upload.ts:39-48`, glibc's on Linux.
+            assets: &[
+                ("macos", "aarch64", "omp-darwin-arm64"),
+                ("macos", "x86_64", "omp-darwin-x64"),
+                ("linux", "aarch64", "omp-linux-arm64"),
+                ("linux", "x86_64", "omp-linux-x64"),
+                ("windows", "aarch64", "omp-windows-arm64.exe"),
+                ("windows", "x86_64", "omp-windows-x64.exe"),
+            ],
+            sums: "SHA256SUMS.txt",
+        },
+        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", "{prompt}"],
+        // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
+        env: &[("PI_AUTO_QA", "0")],
+        homes: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
+        // Context files stop at the git root when the workspace is outside the
+        // home (`src/discovery/helpers.ts:721-735`), and the recorder's
+        // `git init` makes the workspace that root; Cline's rules don't stop
+        // (`src/discovery/cline.ts:19-35`).
+        ancestor_config: &[".clinerules"],
+        config: &[
+            ConfigFile {
+                home: "PI_CODING_AGENT_DIR",
+                path: "models.yml",
+                template: r#"providers:
+  aimock:
+    baseUrl: http://127.0.0.1:{port}/v1
+    apiKey: "{key}"
+    api: openai-completions
+    models:
+      - id: gpt-4.1
+        reasoning: true
+"#,
+            },
+            // A headless prompt is refused, and `always-ask` prompts for every
+            // tool but a read (`docs/approval-mode.md:18-24`), so only the spawn
+            // is allowed. `-p` exits once the turn ends, killing a background
+            // child, so the spawn blocks (`src/task/settings.ts:251`).
+            ConfigFile {
+                home: "PI_CODING_AGENT_DIR",
+                path: "config.yml",
+                template: r#"tools:
+  approvalMode: always-ask
+  approval:
+    task: allow
+async:
+  enabled: false
+"#,
+            },
+        ],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                expects: &["session_start", "session_shutdown"],
+                fixture: "omp/fixtures/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Permission,
+                expects: &[
+                    "session_start",
+                    "tool_approval_requested",
+                    "tool_approval_resolved",
+                    "session_shutdown",
+                ],
+                fixture: "omp/fixtures/permission-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                expects: &["session_start", "session_shutdown"],
+                fixture: "delegation/fixtures/omp",
+            },
+        ],
+        script_vars: &[],
+        not_yet: &["session_switch", "session_branch"],
+        event_name: type_field,
+        not_yet_fields: &[
+            // Only a UI approves a prompt (`src/extensibility/extensions/wrapper.ts:386-398`).
+            ("hook:tool_approval_resolved", "/approved"),
+            // Only an interactive run titles a session (`src/main.ts:2258`).
+            ("tx:title", "/title"),
+            ("tx:title_change", "/title"),
+            ("tx:title_change", "/type"),
+            // An `ask` round, which no shape scripts.
+            (
+                "tx:message",
+                "/message/content/*/arguments/questions/*/question",
+            ),
+        ],
+        children_inherit_cwd: false,
+    },
 ];
 
 /// Every registered source without a profile, and why.
@@ -917,7 +1031,6 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     ("codewhale", Absence::AwaitingProfile),
     ("openclaw", Absence::AwaitingProfile),
     ("hermes", Absence::AwaitingProfile),
-    ("omp", Absence::AwaitingProfile),
 ];
 
 /// The profile for `source`, if it has one.

@@ -54,10 +54,12 @@ harness = [
     "windows-sys/Win32_System_Pipes",
     "windows-sys/Win32_System_Registry",
     "windows-sys/Win32_UI_Shell",
+    # A release-binary profile names its watched `Repo`.
+    "upstream",
 ]
 # What each source depends on upstream, for pixtuoid's drift watch and its
 # tests: no shipped build reads it.
-upstream = []
+upstream = ["dep:sha2"]
 
 [dependencies]
 tokio       = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util"], optional = true }
@@ -75,6 +77,8 @@ enum-map    = { workspace = true }
 vec1        = { workspace = true }
 # A CLI's version and its ordering, prerelease included: `registry::parse_version`.
 semver      = { workspace = true }
+# A release's sums file vouching for its asset: `upstream::vouches`.
+sha2        = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

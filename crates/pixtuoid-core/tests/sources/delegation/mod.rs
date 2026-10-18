@@ -33,13 +33,22 @@ fn copilot_events() -> Vec<AgentEvent> {
     d.events
 }
 
+/// The parent's: omp writes each child inside a same-named DIR beside it.
+fn omp_transcript() -> PathBuf {
+    let dir = super::captures::sources_root().join("delegation/fixtures/omp");
+    let mut parents: Vec<_> = super::captures::transcripts_in(&dir)
+        .into_iter()
+        .filter(|t| t.parent() == Some(dir.as_path()))
+        .collect();
+    assert_eq!(parents.len(), 1, "one parent transcript");
+    parents.remove(0)
+}
+
 fn omp_events() -> Vec<AgentEvent> {
-    // omp writes the PARENT as `<ts>_<id>.jsonl` and each child inside a
-    // same-named DIR, so the id comes from this file's own stem.
-    let logical = "2026-08-15T18-35-53-366Z_01a006b5-8096-7000-9fed-3dc3604e8efb.jsonl";
-    let d = Drive::transcript("omp", logical)
+    let transcript = omp_transcript();
+    let d = Drive::transcript_at("omp", &transcript)
         .expect("omp has a line decoder")
-        .lines(lines("omp", "parent.jsonl"));
+        .lines(super::captures::fixture_lines(&transcript));
     d.assert_clean("omp delegation transcript");
     d.events
 }
@@ -143,7 +152,12 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
             super::captures::fixture_lines(&copilot_transcript()),
             "task",
         ),
-        ("omp", omp_events(), lines("omp", "parent.jsonl"), "task"),
+        (
+            "omp",
+            omp_events(),
+            super::captures::fixture_lines(&omp_transcript()),
+            "task",
+        ),
         (
             "dsh",
             dsh_events(),

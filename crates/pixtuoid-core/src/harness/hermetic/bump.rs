@@ -349,13 +349,27 @@ mod tests {
     }
 
     #[test]
-    fn every_profile_admits_a_conformance_snapshot_insta_wrote() {
+    fn every_profile_with_a_conformance_scenario_admits_the_snapshot_insta_wrote() {
         let root = repo_root();
         let snapshots: Vec<PathBuf> = std::fs::read_dir(sources_root().join("snapshots"))
             .expect("the snapshots")
             .map(|e| relative(&e.expect("an entry").path()))
             .collect();
-        for p in PROFILES {
+        let conformance = sources_root().join("fixtures");
+        let scanned = |p: &&Profile| {
+            p.scenarios
+                .iter()
+                .any(|s| sources_root().join(s.fixture).starts_with(&conformance))
+        };
+        let skipped: Vec<_> = PROFILES
+            .iter()
+            .filter(|p| !scanned(p))
+            .map(|p| p.source)
+            .collect();
+        // omp's rounds fold their hook keys per platform, so no conformance
+        // golden holds them (`tests/sources/omp/mod.rs`).
+        assert_eq!(skipped, ["omp"], "a profile left conformance");
+        for p in PROFILES.iter().filter(scanned) {
             assert!(
                 snapshots
                     .iter()

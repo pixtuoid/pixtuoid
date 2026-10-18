@@ -57,7 +57,6 @@ tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 which              = "8"
 regex              = { workspace = true, optional = true }
-sha2               = { workspace = true, optional = true }
 # `printing` for the span a reader slices an arm's source by.
 syn                = { workspace = true, optional = true, features = ["printing"] }
 # A reader slices the source a syntax node spans.
@@ -119,7 +118,6 @@ audio = ["dep:rodio"]
 upstream = [
     "pixtuoid-core/upstream",
     "dep:regex",
-    "dep:sha2",
     "dep:syn",
     "dep:proc-macro2",
     "dep:oxc_allocator",

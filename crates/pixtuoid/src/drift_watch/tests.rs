@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::*;
+use pixtuoid_core::source::upstream::sha256_hex;
 
 /// The network as a table: a URL it lacks is a transient failure, so a test
 /// states every document it serves.
@@ -790,15 +791,6 @@ fn a_release_member_is_read_only_once_its_sums_vouch_for_it() {
     assert!(
         r.blind.is_empty() && r.errors.len() == 1,
         "a tagless reply is retried: {r:?}"
-    );
-}
-
-/// FIPS 180-2's "abc" vector, whose bytes below 0x10 catch a dropped pad.
-#[test]
-fn a_digest_reads_as_a_sums_file_lists_it() {
-    assert_eq!(
-        sha256_hex(b"abc"),
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
 

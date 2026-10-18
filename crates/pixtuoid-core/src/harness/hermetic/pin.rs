@@ -14,8 +14,8 @@ pub fn registry_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/source/registry.rs")
 }
 
-/// The release `d`'s pin names, strict as npm publishes them: it becomes an
-/// install spec, and every comparison with an installed release reads it.
+/// The release `d`'s pin names, strict as npm publishes them: an install reads
+/// it, and so does every comparison with an installed release.
 ///
 /// # Errors
 ///
@@ -41,14 +41,14 @@ pub fn every_run_reported(
 ) -> Result<(), String> {
     if banners.is_empty() {
         return Err(format!(
-            "no run reported a version; npm installed {installed}"
+            "no run reported a version; the tier installed {installed}"
         ));
     }
     match banners.iter().find(|b| {
         registry::parse_version(b, hyphen).is_none_or(|v| !v.cmp_precedence(installed).is_eq())
     }) {
         Some(b) => Err(format!(
-            "a run's CLI reported {b:?}; npm installed {installed}"
+            "a run's CLI reported {b:?}; the tier installed {installed}"
         )),
         None => Ok(()),
     }

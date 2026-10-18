@@ -9,15 +9,13 @@ mod net;
 mod read;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fmt::Write as _;
 use std::time::Duration;
 
 use pixtuoid_core::source::registry::REGISTRY;
 use pixtuoid_core::source::upstream::{
-    At, Doc, Family, Finding, Read, Release, Repo, Siblings, Watch, When, Yield,
+    At, Doc, Family, Finding, Read, Release, Repo, Siblings, Watch, When, Yield, vouches,
 };
 use regex::Regex;
-use sha2::{Digest, Sha256};
 
 use crate::install::target::TARGETS;
 
@@ -445,12 +443,7 @@ impl<'f> Fetched<'f> {
         let listed =
             String::from_utf8_lossy(&self.fetch.get(&format!("{base}{sums}"), FETCH_TIMEOUT)?)
                 .into_owned();
-        let digest = sha256_hex(&tarball);
-        let vouched = listed.lines().any(|l| {
-            let mut cols = l.split_whitespace();
-            cols.next() == Some(digest.as_str()) && cols.next() == Some(name.as_str())
-        });
-        if !vouched {
+        if !vouches(&listed, &name, &tarball) {
             return Err(FetchError::Transient(format!(
                 "{name} does not match {tag}'s {sums}"
             )));
@@ -798,16 +791,6 @@ fn check_all(fetch: &dyn Fetch, report: &mut Report) {
     for (source, w) in declared() {
         check_watch(source, w, &mut fetched, report);
     }
-}
-
-/// `bytes`' SHA-256 as a sums file lists it: sha2's digest has no `LowerHex`.
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut hex, b| {
-            let _ = write!(hex, "{b:02x}");
-            hex
-        })
 }
 
 #[cfg(test)]

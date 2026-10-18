@@ -4,7 +4,7 @@
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
 //! `verified_version`, the merge queue's end-to-end gate; `--cli latest` installs
-//! what npm's `latest` tag points at, the nightly drift run; `--cli <release>`
+//! its package's latest release, the nightly drift run; `--cli <release>`
 //! installs that release, a bump's planned one. `--record` writes a source's
 //! fixtures, and off the pin moves its pin up to the release recorded.
 //!
@@ -42,6 +42,7 @@ mod run {
         CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
         required_version_probe, version_answer,
     };
+    use pixtuoid_core::source::upstream;
     use semver::Version;
 
     /// How long a server gets to come up before the run gives up.
@@ -84,8 +85,8 @@ mod run {
             "TEMP",
         ],
     };
-    /// What npm and aimock inherit beyond [`inherited`]: network settings, with
-    /// npm's home in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts and the
+    /// What the tier's tools (npm, curl, aimock) inherit beyond [`inherited`]:
+    /// network settings, with npm's home in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts and the
     /// npm-installed aimock are untrusted code, so no provider key reaches them.
     const TOOL_INHERITED: &[&str] = &[
         "HTTP_PROXY",
@@ -582,7 +583,7 @@ mod run {
         }
     }
 
-    /// Marks a finished install; written only after npm succeeds.
+    /// Marks a finished install; written only after it succeeds.
     const INSTALL_DONE: &str = ".hermetic-installed";
 
     /// `install` into a fresh `dir` unless an earlier one finished there: an
@@ -641,11 +642,10 @@ mod run {
 
     /// The release `versions` names for `p`.
     fn resolve(p: &Profile, versions: &Versions) -> Result<Version, String> {
-        let Package::Npm(package) = p.package;
-        match versions {
-            Versions::Pinned => pin::pinned(p.descriptor()),
-            Versions::Exact(release) => Ok(release.clone()),
-            Versions::Latest => {
+        match (versions, p.package) {
+            (Versions::Pinned, _) => pin::pinned(p.descriptor()),
+            (Versions::Exact(release), _) => Ok(release.clone()),
+            (Versions::Latest, Package::Npm(package)) => {
                 // A bare name reads npm's `tag` config, which an operator's
                 // `.npmrc` can point at another dist-tag
                 // (https://github.com/npm/cli/blob/83ea1a1c19648a6b4f5e52a498d8a6aaaf60e52b/lib/commands/view.js#L141-L145).
@@ -656,7 +656,85 @@ mod run {
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
+            (Versions::Latest, Package::GithubRelease { repo, .. }) => {
+                // It redirects to the latest release
+                // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
+                let url = format!("https://github.com/{}/releases/latest", repo.name);
+                let out = tool(CURL)
+                    .args(["-fsSI", "--retry", "3", &url])
+                    .output()
+                    .map_err(|e| format!("curl {url}: {e}"))?;
+                if !out.status.success() {
+                    return Err(format!(
+                        "curl {url} exited {}: {}",
+                        out.status,
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
+                }
+                latest_tag(&String::from_utf8_lossy(&out.stdout))
+                    .ok_or_else(|| format!("{url} redirected to no release tag"))
+            }
         }
+    }
+
+    const CURL: &str = "curl";
+
+    /// The release a `releases/latest` response's `location` names.
+    fn latest_tag(headers: &str) -> Option<Version> {
+        let location = headers.lines().find_map(|l| {
+            let (name, value) = l.split_once(':')?;
+            name.eq_ignore_ascii_case("location").then(|| value.trim())
+        })?;
+        let tag = location.rsplit_once("/tag/")?.1;
+        Version::parse(tag.strip_prefix('v')?).ok()
+    }
+
+    /// This platform's binary among a release's `assets`.
+    fn asset_here(assets: &[(&str, &str, &'static str)]) -> std::io::Result<&'static str> {
+        let here = (std::env::consts::OS, std::env::consts::ARCH);
+        assets
+            .iter()
+            .find(|(os, arch, _)| (*os, *arch) == here)
+            .map(|(_, _, asset)| *asset)
+            .ok_or_else(|| std::io::Error::other(format!("no release asset for {here:?}")))
+    }
+
+    /// Downloads `asset` of `repo`'s `v<version>` release to `to`, holds it to
+    /// the release's `sums` file, and makes it executable. A failure leaves no
+    /// install marker, so [`install_once`] discards the download.
+    fn fetch_release(
+        repo: &str,
+        version: &Version,
+        asset: &str,
+        sums: &str,
+        to: &Path,
+    ) -> std::io::Result<()> {
+        let base = format!("https://github.com/{repo}/releases/download/v{version}");
+        let fetch = |name: &str, dest: &Path| {
+            let mut c = tool(CURL);
+            c.args(["-fsSL", "--retry", "3", "-o"])
+                .arg(dest)
+                .arg(format!("{base}/{name}"));
+            succeed(c)
+        };
+        let listed = to.with_file_name(sums);
+        fetch(sums, &listed)?;
+        fetch(asset, to)?;
+        if !upstream::vouches(
+            &std::fs::read_to_string(&listed)?,
+            asset,
+            &std::fs::read(to)?,
+        ) {
+            return Err(std::io::Error::other(format!(
+                "{asset} does not match v{version}'s {sums}"
+            )));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(to, std::fs::Permissions::from_mode(0o755))?;
+        }
+        Ok(())
     }
 
     /// How many of npm's `npm error` lines a report carries: its code and
@@ -691,39 +769,57 @@ mod run {
         Version::parse(&v).map_err(|_| format!("npm view {spec} gave {v:?}, not a release"))
     }
 
-    /// The CLI at the version this run tests, installed into its own project the
-    /// way users install it. Its own install scripts run, since they link the
-    /// binary: npm 12 blocks a dependency's unless the project's `allowScripts`
-    /// names it (`npm help install-scripts`), and older npm ignores the field.
+    /// The CLI at the version this run tests, installed into its own prefix the
+    /// way users install it.
     fn install_cli(tier: &Path, p: &Profile, version: &Version) -> std::io::Result<Installed> {
-        let Package::Npm(package) = p.package;
         let prefix = tier.join("cli").join(format!("{}-{version}", p.source));
-        let spec = format!("{package}@{version}");
-        install_once(&prefix, |dir| {
-            let project = serde_json::json!({
-                "private": true,
-                "allowScripts": { &spec: true },
-            });
-            std::fs::write(dir.join("package.json"), project.to_string())?;
-            succeed(npm_install(p, dir, &spec))
-        })?;
-        let modules = prefix.join("node_modules");
-        let bin = modules.join(".bin");
         let name = p.invocation[0];
-        Ok(Installed {
-            launch: Launch::of(&modules.join(package), &bin, name)?,
-            bin,
-        })
+        match p.package {
+            // Its own install scripts run, since they link the binary: npm 12
+            // blocks a dependency's unless the project's `allowScripts` names it
+            // (`npm help install-scripts`), and older npm ignores the field.
+            Package::Npm(package) => {
+                let spec = format!("{package}@{version}");
+                install_once(&prefix, |dir| {
+                    let project = serde_json::json!({
+                        "private": true,
+                        "allowScripts": { &spec: true },
+                    });
+                    std::fs::write(dir.join("package.json"), project.to_string())?;
+                    succeed(npm_install(p, dir, &spec))
+                })?;
+                let modules = prefix.join("node_modules");
+                let bin = modules.join(".bin");
+                Ok(Installed {
+                    launch: Launch::of(&modules.join(package), &bin, name)?,
+                    bin,
+                })
+            }
+            Package::GithubRelease { repo, assets, sums } => {
+                let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+                install_once(&prefix, |_| {
+                    fetch_release(repo.name, version, asset_here(assets)?, sums, &program)
+                })?;
+                Ok(Installed {
+                    launch: Launch {
+                        program,
+                        args: Vec::new(),
+                        env: Vec::new(),
+                    },
+                    bin: prefix,
+                })
+            }
+        }
     }
 
-    /// An installed CLI: the directory npm links its commands into, and how to
-    /// start it.
+    /// An installed CLI: the directory holding its command, which the sandbox's
+    /// PATH names, and how to start it.
     struct Installed {
         bin: PathBuf,
         launch: Launch,
     }
 
-    /// How to start an npm-installed command; on Windows not the `.cmd` npm
+    /// How to start an installed command; on Windows not the `.cmd` npm
     /// writes. std runs a batch file's arguments through `cmd.exe` escaping,
     /// refuses at spawn any it "might not be possible to safely escape", and
     /// says not to rely on it (std::process, "Batch file special handling"):
@@ -1910,6 +2006,31 @@ mod run {
                     .is_err_and(|why| why.contains(&format!("exited {failed}"))),
                 "no npm error line still says why"
             );
+        }
+
+        #[test]
+        fn the_latest_release_is_the_tag_its_redirect_names() {
+            let headers = "HTTP/2 302\r\ndate: x\r\n\
+                           Location: https://github.com/o/r/releases/tag/v18.12.1\r\n\r\n";
+            assert_eq!(latest_tag(headers), Some(Version::new(18, 12, 1)));
+            for bad in [
+                "HTTP/2 200\r\n\r\n",
+                "location: https://github.com/o/r/releases\r\n",
+                "location: https://github.com/o/r/releases/tag/nightly\r\n",
+            ] {
+                assert_eq!(latest_tag(bad), None, "{bad:?}");
+            }
+        }
+
+        /// Each OS leg of the tier runs every profile on its own host.
+        #[test]
+        fn every_release_profile_names_this_hosts_binary() {
+            for p in PROFILES {
+                if let Package::GithubRelease { assets, .. } = p.package {
+                    let asset = asset_here(assets).expect(p.source);
+                    assert_eq!(asset.ends_with(".exe"), cfg!(windows), "{asset}");
+                }
+            }
         }
     }
 }
