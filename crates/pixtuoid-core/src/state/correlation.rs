@@ -288,8 +288,8 @@ impl Correlation {
         }
     }
 
-    /// `id`'s slot was removed: a child whose end wasn't `as_child` ends here,
-    /// arming #244-w2 (`get_or_insert` keeps an earlier stamp).
+    /// `id`'s slot was removed: a child with no end of its own ends here,
+    /// inferred, arming #244-w2 (`get_or_insert` keeps an earlier stamp).
     pub(super) fn note_removed(&mut self, id: AgentId, now: SystemTime) {
         if let Some(l) = self.lifecycles.get_mut(&id)
             && l.is_child()

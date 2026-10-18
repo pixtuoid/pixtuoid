@@ -275,11 +275,11 @@ pub(crate) fn decode_rx_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
             // (`internal/ext/hook/runner.go:166-192`), and a skill call's return
             // is its child's end: re-stating the Task makes this End close one,
             // whatever the parent started since.
-            if obj
-                .get("toolName")
-                .and_then(|s| s.as_str())
-                .is_some_and(|t| SUBAGENT_TOOLS.contains(&t))
-            {
+            let tool = obj.get("toolName").and_then(|s| s.as_str());
+            if tool.is_none() {
+                crate::source::drift::missing_field(SOURCE_NAME, "PostToolUse", "toolName");
+            }
+            if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
                 events.push(AgentEvent::ActivityStart {
                     agent_id,
                     tool_use_id: None,
@@ -610,6 +610,17 @@ mod tests {
                 "{event} must decode to ActivityEnd with no tool id"
             );
         }
+    }
+
+    #[test]
+    fn a_post_tool_use_without_its_tool_name_breadcrumbs() {
+        let post = |v: Value| crate::test_capture::capture_logs(|| drop(decode_all(v)));
+        let bare = post(json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r"}));
+        assert!(bare.contains(crate::source::drift::TARGET), "{bare:?}");
+        let named = post(
+            json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r", "toolName": "bash"}),
+        );
+        assert!(!named.contains(crate::source::drift::TARGET), "{named:?}");
     }
 
     #[test]

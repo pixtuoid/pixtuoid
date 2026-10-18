@@ -551,6 +551,118 @@ fn an_identity_or_bare_activity_re_admits_an_inferred_child_under_its_parent() {
     }
 }
 
+/// A rejoin takes its remembered parent through the #240 cycle refusal: under
+/// a parent since re-parented onto it, the child comes back parentless.
+#[test]
+fn a_rejoin_under_a_parent_that_would_close_a_cycle_comes_back_parentless() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: parent,
+            source: "reasonix".into(),
+            session_id: "s".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: Some(child),
+        },
+        gone,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&parent].parent_id, Some(child), "precondition");
+    let back = gone + Duration::from_secs(1);
+    act_start(
+        &mut r,
+        &mut scene,
+        child,
+        None,
+        Some("read_file"),
+        back,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents.get(&child).map(|s| s.parent_id), Some(None));
+}
+
+/// A rejoin records its link, so its next end restarts the gate's clock: a
+/// late transcript echo of that end is refused like any child's.
+#[test]
+fn a_rejoined_childs_next_end_gates_from_that_end() {
+    use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW};
+    for led_by_identity in [true, false] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
+        let back = gone + Duration::from_secs(1);
+        if led_by_identity {
+            r.apply(
+                &mut scene,
+                AgentEvent::Identity {
+                    agent_id: child,
+                    source: "reasonix".into(),
+                    session_id: "s".into(),
+                    cwd: Some(PathBuf::from("/repo")),
+                    pid: None,
+                },
+                back,
+                Transport::Hook,
+            );
+        } else {
+            act_start(
+                &mut r,
+                &mut scene,
+                child,
+                None,
+                Some("read_file"),
+                back,
+                Transport::Hook,
+            );
+        }
+        assert!(scene.agents.contains_key(&child), "rejoined");
+
+        let dispatch = back + CHILD_END_GATE_TTL;
+        act_start(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("call_2"),
+            Some("Agent"),
+            dispatch,
+            Transport::Hook,
+        );
+        let drain = dispatch + Duration::from_secs(1);
+        act_end(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("call_2"),
+            drain,
+            Transport::Hook,
+        );
+        r.tick(&mut scene, drain + B1_CASCADE_GRACE);
+        let swept = drain + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+        r.tick(&mut scene, swept);
+        assert!(!scene.agents.contains_key(&child), "walked out again");
+
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: child,
+                source: "reasonix".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: Some(parent),
+            },
+            swept + Duration::from_secs(30),
+            Transport::Jsonl,
+        );
+        assert!(
+            !scene.agents.contains_key(&child),
+            "the second end's echo registered (identity: {led_by_identity})"
+        );
+    }
+}
+
 /// A child's own SessionEnd is its CLI's word whether or not the decoder can
 /// say `as_child` (opencode's `session.deleted`): its late echo stays refused.
 #[test]
