@@ -181,8 +181,7 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// Each source file under [`RENDERERS`] outside its crate's tests and
-/// `harness`, with the
-/// characters its literals write.
+/// `harness`, with the characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
@@ -198,7 +197,7 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
             (file, found)
         })
         .collect();
-    let off_screen: Vec<PathBuf> = parsed
+    let skipped_dirs: Vec<PathBuf> = parsed
         .iter()
         .flat_map(|(file, found)| {
             let dir = module_dir(file);
@@ -208,7 +207,7 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
     parsed
         .into_iter()
         .filter(|(file, _)| {
-            !off_screen
+            !skipped_dirs
                 .iter()
                 .any(|t| file.with_extension("") == *t || file.starts_with(t))
         })
