@@ -884,7 +884,7 @@ mod tests {
         let clean = recorded("claude-code", Shape::Subagent, CC_DELEGATE_SCENE);
         let v = verify(clean.path()).expect("verify");
         assert!(v.findings().is_empty(), "{:?}", v.findings());
-        // As main keyed them: on the root's session, `agent_id` unread.
+        // As a decoder that ignores `agent_id` keys them: on the root's session.
         let mut root = Value::Null;
         let unkeyed = |mut v: Value| {
             if v["hook_event_name"] == "SessionStart" {

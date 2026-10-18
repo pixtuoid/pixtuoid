@@ -103,7 +103,13 @@ pub(crate) const UPSTREAM: &[Watch] = &[
     },
     Watch {
         id: "claude_code.subagent_turns",
-        ours: || vec!["that identify the subagent", "resumes a subagent"],
+        ours: || {
+            vec![
+                "that identify the subagent",
+                "resumes a subagent",
+                "async_launched",
+            ]
+        },
         docs: &[HOOKS_PAGE],
         read: Read::Each {
             pattern: r"\b{name}\b",
@@ -571,9 +577,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// A subagent's tool hook names it in `agent_id` while `session_id` and
-    /// `transcript_path` stay the root's (hooks.md; `claude/fixtures/subagent-hermetic`):
-    /// every event it decodes to lands on the subagent, Identity's session too.
+    /// A subagent's tool hook names it in `agent_id` (hooks.md;
+    /// `claude/fixtures/subagent-hermetic`): every event it decodes to lands on
+    /// the subagent, Identity's session too, whatever `session_id` says.
     #[test]
     fn a_subagents_tool_hook_lands_on_the_subagent() {
         let sid = "5717f13f-3c42-4a73-bfa5-3cd14932f155";
