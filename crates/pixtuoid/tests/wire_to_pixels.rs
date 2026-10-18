@@ -186,8 +186,8 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "claude_code",
             source: "claude-code",
-            fixture: "fixtures/claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl",
-            wire: Wire::Transcript { seeded: true },
+            fixture: "fixtures/claude-code/permission-recorded/hook-payloads.jsonl",
+            wire: Wire::Hooks,
             must_reach: &[Reach::Active],
         },
         WireCase {
@@ -383,7 +383,7 @@ fn every_agent_source_renders_a_painted_sprite_from_real_wire() {
 // regression localizes to its own `#[test]`.
 
 #[test]
-fn claude_code_transcript_line_renders_a_painted_sprite() {
+fn claude_code_hook_envelope_renders_a_painted_sprite() {
     assert_renders_a_sprite(&agent_case("claude_code"));
 }
 

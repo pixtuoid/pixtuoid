@@ -6,7 +6,10 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, Reducer};
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
-use crate::{act_end, act_start, delegating_pair, sess_end, start, waiting};
+use crate::{
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, sess_end, start,
+    waiting,
+};
 
 #[test]
 fn session_start_creates_idle_slot_at_first_free_desk() {
@@ -237,34 +240,8 @@ fn session_start_on_exiting_subagent_does_not_resurrect() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
-    let parent = AgentId::from_transcript_path("/p/resurr-parent.jsonl");
-    let child = AgentId::from_parts("claude-code", "/p/resurr-parent/subagents/agent-1.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "claude-code".into(),
-            session_id: "p".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id: "c".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: Some(parent),
-        },
-        t0 + Duration::from_millis(100),
-        Transport::Jsonl,
-    );
+    let (parent, child) = delegating_pair(&mut r, &mut scene, "resurr-parent", t0);
 
     sess_end(
         &mut r,
@@ -283,7 +260,7 @@ fn session_start_on_exiting_subagent_does_not_resurrect() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: child,
-            source: "claude-code".into(),
+            source: DRAIN_INFERRED.into(),
             session_id: "c".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: Some(parent),
@@ -445,14 +422,14 @@ fn resurrect_in_place_clears_stale_active_tasks_so_the_fresh_session_is_not_dele
 fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
-    let parent = AgentId::from_transcript_path("/p/resurr-b1.jsonl");
+    let parent = AgentId::from_parts(DRAIN_INFERRED, "/p/resurr-b1.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: parent,
-            source: "claude-code".into(),
+            source: DRAIN_INFERRED.into(),
             session_id: "p".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -489,7 +466,7 @@ fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: parent,
-            source: "claude-code".into(),
+            source: DRAIN_INFERRED.into(),
             session_id: "p".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -497,12 +474,12 @@ fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
         t0 + Duration::from_millis(2_400),
         Transport::Hook,
     );
-    let child = AgentId::from_parts("claude-code", "/p/resurr-b1/subagents/agent-1.jsonl");
+    let child = AgentId::from_parts(DRAIN_INFERRED, "/p/resurr-b1/subagents/agent-1.jsonl");
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: child,
-            source: "claude-code".into(),
+            source: DRAIN_INFERRED.into(),
             session_id: "c".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: Some(parent),
@@ -689,7 +666,7 @@ fn hook_waiting_for_unknown_id_synthesizes_slot_in_waiting_state() {
 fn jsonl_event_for_unknown_id_stays_a_no_op() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_parts("claude-code", "replayed-sess");
+    let id = AgentId::from_parts("codex", "replayed-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -722,7 +699,7 @@ fn hook_session_end_for_unknown_id_does_not_create_slot() {
 }
 
 #[test]
-fn jsonl_session_start_after_hook_synthesis_coalesces_into_same_slot() {
+fn session_start_after_hook_synthesis_coalesces_into_same_slot() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "revived-sess");
@@ -749,7 +726,7 @@ fn jsonl_session_start_after_hook_synthesis_coalesces_into_same_slot() {
             parent_id: None,
         },
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     assert_eq!(scene.agents.len(), 1, "no duplicate sprite");
@@ -800,7 +777,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: occupant,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "o".into(),
             cwd: PathBuf::from("/Users/me/proj"),
             parent_id: None,
@@ -810,7 +787,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
     );
     sess_end(&mut r, &mut scene, occupant, false, t0, Transport::Hook);
 
-    let id = AgentId::from_parts("claude-code", "gated-sess");
+    let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "gated-sess");
     let th = t0 + EXIT_GRACE_WINDOW - Duration::from_millis(100);
     act_start(
         &mut r,
@@ -831,7 +808,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "gated-sess".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -887,7 +864,7 @@ fn duplicate_session_start_backfills_hook_synthesized_slot() {
             parent_id: None,
         },
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     let slot = scene.agents.get(&id).unwrap();
@@ -1008,7 +985,7 @@ fn backfill_does_not_clobber_a_renamed_label() {
             parent_id: None,
         },
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     let slot = scene.agents.get(&id).unwrap();
@@ -1038,7 +1015,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
             parent_id: None,
         },
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
     assert_eq!(&*slot.source, "claude-code", "source back-filled first");
@@ -1054,7 +1031,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
             parent_id: None,
         },
         t0 + Duration::from_secs(2),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
     assert_eq!(&*slot.cwd, std::path::Path::new("/Users/me/repo"));
@@ -1138,7 +1115,7 @@ fn model_info_caches_model_and_effort_on_an_existing_slot() {
             parent_id: None,
         },
         t0,
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let info = |model: Option<&str>, effort: Option<&str>| AgentEvent::ModelInfo {
         agent_id: id,
@@ -1210,7 +1187,7 @@ fn usage_accumulates_saturating_and_stamps_the_last_reading() {
             parent_id: None,
         },
         t0,
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let usage = |fresh_tokens: u64| AgentEvent::Usage {
         agent_id: id,

@@ -6,7 +6,9 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
-use crate::{UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, waiting};
+use crate::{
+    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, waiting,
+};
 
 #[test]
 fn activity_start_sets_state_active() {
@@ -217,7 +219,7 @@ fn active_ms_does_not_double_count_on_duplicate_activity_end() {
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/dedup.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     act_start(
         &mut r,
@@ -279,7 +281,7 @@ fn active_ms_preserved_when_task_arrives_during_active_tool() {
             detail: Some(ToolDetail::Task),
         },
         t1,
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     let slot = scene.agents.get(&id).unwrap();
@@ -459,7 +461,7 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
         id,
         Some("t2"),
         t0 + Duration::from_millis(1000),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
@@ -496,7 +498,7 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, "reasonix");
     waiting(
         &mut r,
         &mut scene,
@@ -534,7 +536,7 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     let id = AgentId::from_parts("codex", "sess-1");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, "codex");
     waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     act_end(
         &mut r,
@@ -683,7 +685,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -735,7 +737,7 @@ fn approval_hook_waiting_first_survives_a_late_transcript_start() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/b.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     waiting_for(
@@ -790,7 +792,7 @@ fn approval_resume_before_the_transcript_start_counts_once() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/c.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     waiting_for(
@@ -838,7 +840,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/d.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -892,7 +894,7 @@ fn parallel_gated_approvals_resolve_member_by_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/e.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -1088,7 +1090,7 @@ fn a_denial_resolving_one_gate_keeps_the_queued_siblings() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/g.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -1168,7 +1170,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_gate() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/h.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     // x1's whole round runs hook-first; its transcript Start straggles in
@@ -1237,7 +1239,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_gate() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/i.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     waiting_for(
@@ -1294,7 +1296,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/j.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     waiting_for(
@@ -1342,7 +1344,7 @@ fn a_transcript_twin_past_the_dedup_window_counts_once() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/k.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(

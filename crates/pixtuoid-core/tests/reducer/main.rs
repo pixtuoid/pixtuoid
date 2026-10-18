@@ -37,6 +37,8 @@ fn start_as(reducer: &mut Reducer, scene: &mut SceneState, id: AgentId, source: 
     );
 }
 
+const HOOK_AND_TRANSCRIPT: &str = "omp";
+
 /// The b1 tests' source: claude-code's caps, but a Task's drain arms b1.
 const DRAIN_INFERRED: &str = "omp";
 

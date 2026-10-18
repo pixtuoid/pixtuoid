@@ -6,7 +6,10 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
-use crate::{act_end, act_start, delegating_pair, proof_of_life, sess_end, waiting};
+use crate::{
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, proof_of_life,
+    sess_end, waiting,
+};
 
 #[test]
 fn stale_idle_agent_is_marked_exiting_after_timeout() {
@@ -258,7 +261,7 @@ fn proof_of_life_exempts_active_slot_from_stale_sweep() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "s".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -292,7 +295,7 @@ fn proof_of_life_lapse_restores_normal_sweep() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "s".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -325,7 +328,7 @@ fn proof_of_life_lapse_restores_normal_sweep() {
 fn proof_of_life_for_unknown_id_is_a_no_op() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/pol-unknown.jsonl");
+    let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "/p/pol-unknown.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     proof_of_life(&mut r, &mut scene, id, t0, Transport::Jsonl);
     assert!(
@@ -344,7 +347,7 @@ fn proof_of_life_does_not_touch_activity_state() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "s".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -398,7 +401,7 @@ fn proof_of_life_does_not_block_session_end() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "s".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -477,14 +480,14 @@ fn proof_of_life_on_delegating_parent_shields_its_active_subtree() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "pol-shield", t0);
     let grandchild = AgentId::from_parts(
-        "claude-code",
+        DRAIN_INFERRED,
         "/p/pol-shield/subagents/agent-1/subagents/agent-2.jsonl",
     );
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: grandchild,
-            source: "claude-code".into(),
+            source: DRAIN_INFERRED.into(),
             session_id: "g".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: Some(child),
@@ -654,13 +657,13 @@ fn unknown_cwd_agent_reaps_faster() {
     use pixtuoid_core::state::reducer::STALE_UNKNOWN_CWD_TIMEOUT;
     let mut scene = SceneState::uniform(4);
     let mut reducer = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/ghost.jsonl");
+    let id = AgentId::from_parts("codex", "/p/ghost.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     reducer.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: "codex".into(),
             session_id: "s".into(),
             cwd: PathBuf::new(),
             parent_id: None,
@@ -765,7 +768,7 @@ fn session_end_cascades_to_children() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     assert!(scene.agents.get(&child).unwrap().exiting_at.is_none());
 
@@ -818,7 +821,7 @@ fn session_end_cascades_to_grandchildren() {
             parent_id: Some(grandparent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -830,7 +833,7 @@ fn session_end_cascades_to_grandchildren() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(200),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     sess_end(
@@ -878,7 +881,7 @@ fn session_end_cascade_marks_all_descendants_exiting() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -890,7 +893,7 @@ fn session_end_cascade_marks_all_descendants_exiting() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(200),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     assert!(scene.agents.get(&child_a).unwrap().exiting_at.is_none());
@@ -982,7 +985,7 @@ fn stale_sweep_cascades_to_children() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     // Heartbeat the child so it is NOT independently stale: its exit can then
     // only have come from the cascade.
@@ -1039,7 +1042,7 @@ fn stale_sweep_already_cascaded_child_is_skipped_in_pass_two() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     // No heartbeat for either — unlike the cascade tests above, that puts BOTH
@@ -1090,7 +1093,7 @@ fn stale_sweep_cascades_to_grandchildren() {
             parent_id: Some(grandparent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -1102,7 +1105,7 @@ fn stale_sweep_cascades_to_grandchildren() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(200),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     // Heartbeat the middle + leaf so only the grandparent is independently stale.
     for (id, label) in [(parent, "cc·p"), (child, "cc·c")] {
@@ -1157,7 +1160,7 @@ fn stale_sweep_cascade_skips_unrelated_fresh_agents() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -1228,7 +1231,7 @@ fn long_delegation_keeps_parent_and_live_subagent_alive() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
 
     // The Task-start arm does NOT bump last_event_at: the parent's liveness
@@ -1302,7 +1305,7 @@ fn stale_sweep_spares_subagent_blocked_under_a_waiting_parent() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     act_start(
         &mut r,
@@ -1311,7 +1314,7 @@ fn stale_sweep_spares_subagent_blocked_under_a_waiting_parent() {
         Some("c-tool"),
         Some("WebFetch: /x"),
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     // The child's tool needs permission, but CC's Notification hook lands on
     // the PARENT.
@@ -1371,7 +1374,7 @@ fn stale_sweep_spares_grandchild_under_a_waiting_ancestor() {
             parent_id: Some(gp),
         },
         t0 + Duration::from_millis(100),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -1383,7 +1386,7 @@ fn stale_sweep_spares_grandchild_under_a_waiting_ancestor() {
             parent_id: Some(parent),
         },
         t0 + Duration::from_millis(200),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     for id in [parent, child] {
         act_start(
@@ -1393,7 +1396,7 @@ fn stale_sweep_spares_grandchild_under_a_waiting_ancestor() {
             Some("t"),
             Some("WebFetch: /x"),
             t0 + Duration::from_secs(1),
-            Transport::Jsonl,
+            Transport::Hook,
         );
     }
     waiting(
@@ -1424,34 +1427,8 @@ fn stale_sweep_spares_grandchild_under_a_waiting_ancestor() {
 fn active_subagent_keeps_parent_alive_via_jsonl_events() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
-    let parent = AgentId::from_transcript_path("/p/deleg2.jsonl");
-    let child = AgentId::from_parts("claude-code", "/p/deleg2/subagents/agent-1.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "claude-code".into(),
-            session_id: "p".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id: "c".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: Some(parent),
-        },
-        t0 + Duration::from_millis(100),
-        Transport::Jsonl,
-    );
+    let (parent, child) = delegating_pair(&mut r, &mut scene, "deleg2", t0);
     // The parent's OWN last event is frozen at t0+1s from here on.
     act_start(
         &mut r,

@@ -6,7 +6,7 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, Reducer, STRAGGLER_TTL};
 
-use crate::{act_end, act_start, sess_end, start};
+use crate::{HOOK_AND_TRANSCRIPT, act_end, act_start, sess_end, start, start_as};
 
 #[test]
 fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
@@ -113,17 +113,17 @@ fn past_the_straggler_window_any_hook_arm_re_registers_including_a_turn_boundary
 fn jsonl_child_session_start_within_the_straggler_window_is_gated_too() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let parent = AgentId::from_parts("claude-code", "parent-sess");
-    let child = AgentId::from_parts("claude-code", "agent-late-file");
+    let parent = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "parent-sess");
+    let child = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "agent-late-file");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    start(&mut r, &mut scene, parent);
+    start_as(&mut r, &mut scene, parent, HOOK_AND_TRANSCRIPT);
     sess_end(&mut r, &mut scene, child, true, t0, Transport::Hook);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: child,
-            source: "claude-code".into(),
+            source: HOOK_AND_TRANSCRIPT.into(),
             session_id: "agent-late-file".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: Some(parent),
@@ -232,36 +232,25 @@ fn apply_hook_payload(
     }
 }
 
-/// omp's bridge forwards each event live, with no buffer or replay
-/// (install/omp_extension.ts), so a hook `session_start` 30 s after the child's
-/// `session_shutdown` is omp starting it again; its transcript's first sight of
-/// the same child inside the gate is the echo.
-#[test]
-fn an_omp_child_started_again_after_shutdown_is_readmitted_but_its_transcript_echo_is_not() {
+const OMP_ROOT_FILE: &str = "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-0000000000aa.jsonl";
+const OMP_CHILD_FILE: &str = "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-0000000000aa/Alpha.jsonl";
+
+fn ended_omp_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentId, SystemTime) {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     use serde_json::json;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let root_file = "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-0000000000aa.jsonl";
-    let child_file = "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-0000000000aa/Alpha.jsonl";
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    apply_hook_payload(
-        &mut r,
-        &mut scene,
+    let start = |sess: &str, file: &str| {
         json!({
-            "type": "session_start", "sessionFile": root_file,
-            "sessionId": "x", "cwd": "/repo", "_pixtuoid_source": "omp",
-        }),
-        t0,
-    );
+            "type": "session_start", "sessionFile": file,
+            "sessionId": sess, "cwd": "/repo", "_pixtuoid_source": "omp",
+        })
+    };
+    apply_hook_payload(r, scene, start("x", OMP_ROOT_FILE), t0);
+    let root = *scene.agents.keys().next().expect("the root registered");
     apply_hook_payload(
-        &mut r,
-        &mut scene,
-        json!({
-            "type": "session_start", "sessionFile": child_file,
-            "sessionId": "y", "cwd": "/repo", "_pixtuoid_source": "omp",
-        }),
+        r,
+        scene,
+        start("y", OMP_CHILD_FILE),
         t0 + Duration::from_secs(1),
     );
     let child = *scene
@@ -274,37 +263,51 @@ fn an_omp_child_started_again_after_shutdown_is_readmitted_but_its_transcript_ec
         .expect("child registered");
     let stop = t0 + Duration::from_secs(2);
     apply_hook_payload(
-        &mut r,
-        &mut scene,
+        r,
+        scene,
         json!({
-            "type": "session_shutdown", "sessionFile": child_file,
+            "type": "session_shutdown", "sessionFile": OMP_CHILD_FILE,
             "sessionId": "y", "cwd": "/repo", "_pixtuoid_source": "omp",
         }),
         stop,
     );
-    r.tick(
-        &mut scene,
-        stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
-    );
+    r.tick(scene, stop + EXIT_GRACE_WINDOW + Duration::from_secs(1));
     assert!(!scene.agents.contains_key(&child), "child GC'd");
+    (root, child, stop)
+}
 
+fn omp_transcript_start(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+    (root, child): (AgentId, AgentId),
+    at: SystemTime,
+) {
+    r.apply(
+        scene,
+        AgentEvent::SessionStart {
+            agent_id: child,
+            source: "omp".into(),
+            session_id: "y".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: Some(root),
+        },
+        at,
+        Transport::Jsonl,
+    );
+}
+
+/// omp's bridge forwards each event live, with no buffer or replay
+/// (install/omp_extension.ts), so a hook `session_start` 30 s after the child's
+/// `session_shutdown` is omp starting it again; its transcript's first sight of
+/// the same child inside the gate is the echo.
+#[test]
+fn an_omp_child_started_again_after_shutdown_is_readmitted_but_its_transcript_echo_is_not() {
+    use serde_json::json;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (root, child, stop) = ended_omp_child(&mut r, &mut scene);
     let late = stop + Duration::from_secs(30);
-    let root = *scene.agents.keys().next().expect("the root lives on");
-    let jsonl_start = |r: &mut Reducer, scene: &mut SceneState| {
-        r.apply(
-            scene,
-            AgentEvent::SessionStart {
-                agent_id: child,
-                source: "omp".into(),
-                session_id: "y".into(),
-                cwd: PathBuf::from("/repo"),
-                parent_id: Some(root),
-            },
-            late,
-            Transport::Jsonl,
-        );
-    };
-    jsonl_start(&mut r, &mut scene);
+    omp_transcript_start(&mut r, &mut scene, (root, child), late);
     assert!(
         !scene.agents.contains_key(&child),
         "the transcript's late first sight of the ended child registered"
@@ -313,7 +316,7 @@ fn an_omp_child_started_again_after_shutdown_is_readmitted_but_its_transcript_ec
         &mut r,
         &mut scene,
         json!({
-            "type": "session_start", "sessionFile": child_file,
+            "type": "session_start", "sessionFile": OMP_CHILD_FILE,
             "sessionId": "y", "cwd": "/repo", "_pixtuoid_source": "omp",
         }),
         late,
@@ -380,29 +383,17 @@ fn ended_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentId, Sy
 fn a_late_transcript_restart_of_an_ended_child_is_gated_by_the_child_end_gate() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let (parent, child, stop) = ended_child(&mut r, &mut scene);
-    let late_start = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
-        r.apply(
-            scene,
-            AgentEvent::SessionStart {
-                agent_id: child,
-                source: "claude-code".into(),
-                session_id: "agent-a0000000000000001".into(),
-                cwd: PathBuf::from("/repo"),
-                parent_id: Some(parent),
-            },
-            at,
-            Transport::Jsonl,
-        );
-    };
-    late_start(&mut r, &mut scene, stop + Duration::from_secs(30));
+    let (root, child, stop) = ended_omp_child(&mut r, &mut scene);
+    let ids = (root, child);
+    omp_transcript_start(&mut r, &mut scene, ids, stop + Duration::from_secs(30));
     assert!(
         !scene.agents.contains_key(&child),
         "a late transcript restart of an ENDED child inside the end gate must not re-register a phantom"
     );
-    late_start(
+    omp_transcript_start(
         &mut r,
         &mut scene,
+        ids,
         stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
     );
     assert!(

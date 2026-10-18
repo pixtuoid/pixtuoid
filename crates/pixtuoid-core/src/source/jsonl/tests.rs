@@ -310,7 +310,7 @@ fn detect_parent_id_handles_backslash_paths() {
 fn the_head_scan_dispatches_the_scanned_sources_shape() {
     let top = br#"{"cwd":"/repo/a"}"#;
     assert_eq!(
-        super::walk::extract_head_fields(top, cwd_extractor_for("claude-code"), None, None).cwd,
+        super::walk::extract_head_fields(top, cwd_extractor_for("omp"), None, None).cwd,
         Some(PathBuf::from("/repo/a"))
     );
     assert_eq!(
@@ -325,7 +325,7 @@ fn the_head_scan_dispatches_the_scanned_sources_shape() {
     );
     let mixed = b"not-json\n{\"type\":\"noise\"}\n{\"cwd\":\"/repo/c\"}\n";
     assert_eq!(
-        super::walk::extract_head_fields(mixed, cwd_extractor_for("claude-code"), None, None).cwd,
+        super::walk::extract_head_fields(mixed, cwd_extractor_for("omp"), None, None).cwd,
         Some(PathBuf::from("/repo/c"))
     );
 }
@@ -2493,19 +2493,15 @@ async fn probe_parent_uuid_does_not_admit_subagent_transcript() {
 }
 
 const FILLER_LINE: &str = "{\"type\":\"assistant\"}\n";
-const CC_HEAD_LINE: &str = "{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
+const HEAD_LINE: &str = "{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
 
-fn cc_task_dispatch_line(tuid: &str) -> String {
+fn task_dispatch_line(tuid: &str) -> String {
     serde_json::json!({
-        "type": "assistant",
-        "cwd": "/repo/head",
+        "type": "message",
         "message": {
             "role": "assistant",
             "content": [
-                { "type": "tool_use", "id": tuid, "name": "Agent",
-                  "input": { "description": "explore",
-                             "subagent_type": "code-explorer",
-                             "prompt": "go" } }
+                { "type": "toolCall", "id": tuid, "name": "task", "arguments": {} }
             ]
         }
     })
@@ -2513,22 +2509,17 @@ fn cc_task_dispatch_line(tuid: &str) -> String {
         + "\n"
 }
 
-fn cc_task_result_line(tuid: &str) -> String {
+fn task_result_line(tuid: &str) -> String {
     serde_json::json!({
-        "type": "user",
-        "message": {
-            "role": "user",
-            "content": [
-                { "type": "tool_result", "tool_use_id": tuid, "content": "done" }
-            ]
-        }
+        "type": "message",
+        "message": { "role": "toolResult", "toolCallId": tuid }
     })
     .to_string()
         + "\n"
 }
 
 fn oversized_body(tail_lines: &[String]) -> String {
-    let mut full = String::from(CC_HEAD_LINE);
+    let mut full = String::from(HEAD_LINE);
     while full.len() <= (1usize << 20) + 4096 {
         full.push_str(FILLER_LINE);
     }
@@ -2555,7 +2546,7 @@ fn task_start_tuids(events: &[(Transport, AgentEvent)]) -> Vec<String> {
         .collect()
 }
 
-async fn walk_oversized_cc(
+async fn walk_oversized(
     path: &Path,
     window: Duration,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
@@ -2564,7 +2555,7 @@ async fn walk_oversized_cc(
     walk_once_with(
         path,
         window,
-        crate::source::claude_code::decode_cc_line,
+        crate::source::omp::decode_omp_line,
         t_ended,
         cursors,
         seen,
@@ -2576,12 +2567,12 @@ async fn walk_oversized_cc(
 async fn oversized_attach_seeds_unmatched_task_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-big.jsonl");
-    let full = oversized_body(&[cc_task_dispatch_line("tu_task")]);
+    let full = oversized_body(&[task_dispatch_line("tu_task")]);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     let start_pos = events
         .iter()
         .position(|(_, e)| matches!(e, AgentEvent::SessionStart { .. }))
@@ -2610,15 +2601,12 @@ async fn oversized_attach_seeds_unmatched_task_dispatch() {
 async fn oversized_attach_matched_task_is_not_seeded() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-done.jsonl");
-    let full = oversized_body(&[
-        cc_task_dispatch_line("tu_task"),
-        cc_task_result_line("tu_task"),
-    ]);
+    let full = oversized_body(&[task_dispatch_line("tu_task"), task_result_line("tu_task")]);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2636,12 +2624,12 @@ async fn oversized_attach_matched_task_is_not_seeded() {
 #[tokio::test]
 async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     let bash_line = serde_json::json!({
-        "type": "assistant",
+        "type": "message",
         "message": {
             "role": "assistant",
             "content": [
-                { "type": "tool_use", "id": "tu_bash", "name": "Bash",
-                  "input": { "command": "ls" } }
+                { "type": "toolCall", "id": "tu_bash", "name": "bash",
+                  "arguments": { "command": "ls" } }
             ]
         }
     })
@@ -2651,9 +2639,9 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     let target = 1usize << 20;
     let pad_open = "{\"type\":\"assistant\",\"pad\":\"";
     let pad_close = "\"}\n";
-    let pad_len = target - CC_HEAD_LINE.len() - bash_line.len() - pad_open.len() - pad_close.len();
+    let pad_len = target - HEAD_LINE.len() - bash_line.len() - pad_open.len() - pad_close.len();
     let full = format!(
-        "{CC_HEAD_LINE}{pad_open}{}{pad_close}{bash_line}",
+        "{HEAD_LINE}{pad_open}{}{pad_close}{bash_line}",
         "x".repeat(pad_len)
     );
     assert_eq!(full.len(), target, "fixture: exactly 1 MiB pending");
@@ -2663,7 +2651,7 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2677,15 +2665,15 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
 async fn oversized_attach_seeds_dispatches_across_the_full_scan_window() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-deep.jsonl");
-    let mut tail = vec![cc_task_dispatch_line("tu_deep")];
+    let mut tail = vec![task_dispatch_line("tu_deep")];
     tail.extend(std::iter::repeat_n(FILLER_LINE.to_string(), 200));
-    tail.push(cc_task_dispatch_line("tu_near"));
+    tail.push(task_dispatch_line("tu_near"));
     let full = oversized_body(&tail);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_deep".to_string(), "tu_near".to_string()],
@@ -2700,17 +2688,17 @@ async fn oversized_attach_ended_session_skips_task_scan() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-ended.jsonl");
     let full = oversized_body(&[
-        cc_task_dispatch_line("tu_task"),
+        task_dispatch_line("tu_task"),
         "{\"type\":\"system\",\"subtype\":\"session_end\"}\n".to_string(),
     ]);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::from([(
         path.clone(),
-        CC_HEAD_LINE.len() as u64,
+        HEAD_LINE.len() as u64,
     )])));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2735,13 +2723,13 @@ async fn oversized_attach_ended_session_skips_task_scan() {
 async fn oversized_attach_unregistered_skips_task_scan() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-stale.jsonl");
-    let full = oversized_body(&[cc_task_dispatch_line("tu_task")]);
+    let full = oversized_body(&[task_dispatch_line("tu_task")]);
     tokio::fs::write(&path, &full).await.unwrap();
     backdate_one_hour(&path);
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(60), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(60), &cursors, &seen).await;
     assert!(
         events.is_empty(),
         "a gated unregistered oversized file must emit NOTHING — no Task seeding without a slot, got {events:?}"
@@ -2757,8 +2745,8 @@ async fn oversized_attach_unregistered_skips_task_scan() {
 async fn oversized_attach_dispatch_outside_window_is_missed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-buried.jsonl");
-    let mut full = String::from(CC_HEAD_LINE);
-    let dispatch = cc_task_dispatch_line("tu_buried");
+    let mut full = String::from(HEAD_LINE);
+    let dispatch = task_dispatch_line("tu_buried");
     full.push_str(&dispatch);
     let dispatch_end = full.len();
     while full.len() <= (1usize << 20) + 4096 {
@@ -2772,7 +2760,7 @@ async fn oversized_attach_dispatch_outside_window_is_missed() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert!(
         events
             .iter()
@@ -2789,10 +2777,10 @@ async fn oversized_attach_dispatch_outside_window_is_missed() {
 async fn task_scan_handles_partial_first_line() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-straddle.jsonl");
-    let task_a = cc_task_dispatch_line("tu_straddle");
-    let task_b = cc_task_dispatch_line("tu_inside");
+    let task_a = task_dispatch_line("tu_straddle");
+    let task_b = task_dispatch_line("tu_inside");
 
-    let mut full = String::from(CC_HEAD_LINE);
+    let mut full = String::from(HEAD_LINE);
     // Deep enough that suffix + window keeps the total > MAX_PENDING_BYTES.
     while full.len() < (1usize << 20) {
         full.push_str(FILLER_LINE);
@@ -2817,7 +2805,7 @@ async fn task_scan_handles_partial_first_line() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_inside".to_string()],
@@ -3355,7 +3343,7 @@ async fn walk_jsonl_skips_a_line_whose_decoder_errors_and_advances_cursor() {
 }
 
 fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
-    let mut full = Vec::from(CC_HEAD_LINE_BYTES);
+    let mut full = Vec::from(HEAD_LINE_BYTES);
     while full.len() <= (1usize << 20) + 4096 {
         full.extend_from_slice(FILLER_LINE_BYTES);
     }
@@ -3365,7 +3353,7 @@ fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
     full
 }
 
-const CC_HEAD_LINE_BYTES: &[u8] = b"{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
+const HEAD_LINE_BYTES: &[u8] = b"{\"type\":\"assistant\",\"cwd\":\"/repo/head\"}\n";
 const FILLER_LINE_BYTES: &[u8] = b"{\"type\":\"assistant\"}\n";
 
 #[tokio::test]
@@ -3375,13 +3363,13 @@ async fn task_scan_skips_empty_and_non_utf8_lines_and_still_seeds_a_dispatch() {
     let full = oversized_body_bytes(&[
         b"\n".to_vec(),
         b"\xff\xfe garbage \xff\n".to_vec(),
-        cc_task_dispatch_line("tu_x").into_bytes(),
+        task_dispatch_line("tu_x").into_bytes(),
     ]);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
-    let events = walk_oversized_cc(&path, Duration::from_secs(3600), &cursors, &seen).await;
+    let events = walk_oversized(&path, Duration::from_secs(3600), &cursors, &seen).await;
     assert_eq!(
         task_start_tuids(&events),
         vec!["tu_x".to_string()],
@@ -3401,12 +3389,12 @@ async fn task_scan_skips_a_decoder_error_line_and_still_seeds_a_later_dispatch()
                 "fixture", "x",
             ));
         }
-        crate::source::claude_code::decode_cc_line(t, s, v)
+        crate::source::omp::decode_omp_line(t, s, v)
     }
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deleg-decode-err.jsonl");
-    let full = oversized_body(&["{\"boom\":1}\n".to_string(), cc_task_dispatch_line("tu_y")]);
+    let full = oversized_body(&["{\"boom\":1}\n".to_string(), task_dispatch_line("tu_y")]);
     tokio::fs::write(&path, &full).await.unwrap();
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));

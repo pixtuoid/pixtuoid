@@ -23,6 +23,8 @@ use pixtuoid_core::harness::Drive;
 const SESSION: &str = "01000000-0000-7000-8000-0000000000cc";
 const CWD: &str = "/home/user/demo-project";
 const TRANSCRIPT: &str = "/p/01000000-0000-7000-8000-0000000000cc.jsonl";
+const OMP_TRANSCRIPT: &str =
+    "/h/.omp/agent/sessions/-p/2026-01-01T00-00-00-000Z_01000000-0000-7000-8000-0000000000cc.jsonl";
 /// One turn is a tool call and its result — two lines on either transport.
 const TURNS: usize = 200;
 
@@ -30,10 +32,10 @@ fn jsonl_turns(n: usize) -> Vec<String> {
     let mut out = Vec::with_capacity(n * 2);
     for i in 0..n {
         out.push(format!(
-            r#"{{"type":"assistant","cwd":"{CWD}","sessionId":"{SESSION}","timestamp":"2026-01-01T00:00:00.000Z","uuid":"00000000-0000-4000-8000-{i:012x}","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"toolu_{i:016x}","name":"Glob","input":{{"pattern":"crates/**/*.rs"}}}}]}}}}"#
+            r#"{{"type":"message","id":"{i:08x}","parentId":"","timestamp":"2026-01-01T00:00:00.000Z","message":{{"role":"assistant","content":[{{"type":"toolCall","id":"call_{i:016x}","name":"glob","arguments":{{"pattern":"crates/**/*.rs"}}}}]}}}}"#
         ));
         out.push(format!(
-            r#"{{"type":"user","cwd":"{CWD}","sessionId":"{SESSION}","timestamp":"2026-01-01T00:00:00.500Z","uuid":"10000000-0000-4000-8000-{i:012x}","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"toolu_{i:016x}","content":"(matches)"}}]}}}}"#
+            r#"{{"type":"message","id":"{i:08x}","parentId":"","timestamp":"2026-01-01T00:00:00.500Z","message":{{"role":"toolResult","toolCallId":"call_{i:016x}","content":[{{"type":"text","text":"(matches)"}}]}}}}"#
         ));
     }
     out
@@ -58,8 +60,8 @@ fn hook_turns(n: usize) -> Vec<String> {
 fn decode_reduce(c: &mut Criterion) {
     let jsonl = jsonl_turns(TURNS);
     let hooks = hook_turns(TURNS);
-    let transcript = Drive::transcript("claude-code", TRANSCRIPT)
-        .expect("claude-code is transcript-bearing")
+    let transcript = Drive::transcript("omp", OMP_TRANSCRIPT)
+        .expect("omp is transcript-bearing")
         .seeded();
     let hook = Drive::hooks();
 

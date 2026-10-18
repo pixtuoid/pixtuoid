@@ -12,94 +12,50 @@ use pixtuoid_core::source::Transport;
 
 use crate::{
     backdate, cc_session_start_line, cc_subagent_line, cc_tool_use_line, cc_watcher,
-    vouch_snapshot, write_lines,
+    codex_meta_line, codex_watcher, codex_work_line, copilot_start_line, copilot_tool_line,
+    spawn_copilot, vouch_snapshot, write_lines,
 };
 
 #[tokio::test]
 async fn attach_matrix_registers_exactly_the_live_set() {
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let proj = projects_root.join("-Users-me-mixed");
+    let root = dir.path().to_path_buf();
     let live_a = "aa000000-0000-7000-8000-00000000000a";
     let idle_b = "bb000000-0000-7000-8000-00000000000b";
     let dead_c = "cc000000-0000-7000-8000-00000000000c";
-    let ended_d = "dd000000-0000-7000-8000-00000000000d";
-    let sub_dir = proj.join(idle_b).join("subagents");
-    tokio::fs::create_dir_all(&sub_dir).await.unwrap();
 
     write_lines(
-        &proj.join(format!("{live_a}.jsonl")),
+        &root.join(format!("{live_a}.jsonl")),
         &[
-            cc_session_start_line(live_a, "/Users/me/proj-a"),
-            cc_tool_use_line(
-                live_a,
-                "/Users/me/proj-a",
-                "tu_a",
-                "Bash",
-                serde_json::json!({"command": "ls"}),
-            ),
+            codex_meta_line(live_a, "/Users/me/proj-a"),
+            codex_work_line(),
         ],
     )
     .await;
-    let b_path = proj.join(format!("{idle_b}.jsonl"));
-    write_lines(
-        &b_path,
-        &[cc_session_start_line(idle_b, "/Users/me/proj-b")],
-    )
-    .await;
-    backdate(&b_path, 7200);
-    let c_path = proj.join(format!("{dead_c}.jsonl"));
-    write_lines(
-        &c_path,
-        &[cc_session_start_line(dead_c, "/Users/me/proj-c")],
-    )
-    .await;
-    backdate(&c_path, 7200);
-    write_lines(
-        &proj.join(format!("{ended_d}.jsonl")),
-        &[
-            cc_session_start_line(ended_d, "/Users/me/proj-d"),
-            serde_json::json!({
-                "type": "system", "subtype": "session_end", "sessionId": ended_d
-            }),
-        ],
-    )
-    .await;
-    write_lines(
-        &sub_dir.join("agent-e1.jsonl"),
-        &[cc_subagent_line("agent-e1", "/Users/me/proj-b", "tu_e")],
-    )
-    .await;
+    for (uuid, cwd) in [(idle_b, "/Users/me/proj-b"), (dead_c, "/Users/me/proj-c")] {
+        let path = root.join(format!("{uuid}.jsonl"));
+        write_lines(&path, &[codex_meta_line(uuid, cwd)]).await;
+        backdate(&path, 7200);
+    }
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = cc_watcher(projects_root.clone())
+    let watcher = codex_watcher(root.clone())
         .with_initial_window(Duration::from_secs(60))
         .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[idle_b])));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let id_a = AgentId::from_parts("claude-code", live_a);
-    let id_b = AgentId::from_parts("claude-code", idle_b);
-    let id_e = AgentId::from_parts("claude-code", "agent-e1");
+    let id_a = AgentId::from_parts("codex", live_a);
+    let id_b = AgentId::from_parts("codex", idle_b);
 
     let mut starts: std::collections::HashMap<AgentId, usize> = Default::default();
-    let mut sub_parent: Option<Option<AgentId>> = None;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            _,
-            AgentEvent::SessionStart {
-                agent_id,
-                parent_id,
-                ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
+            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
         {
             *starts.entry(agent_id).or_default() += 1;
-            if agent_id == id_e {
-                sub_parent = Some(parent_id);
-            }
         }
-        if starts.contains_key(&id_a) && starts.contains_key(&id_b) && starts.contains_key(&id_e) {
+        if starts.contains_key(&id_a) && starts.contains_key(&id_b) {
             break;
         }
     }
@@ -107,29 +63,16 @@ async fn attach_matrix_registers_exactly_the_live_set() {
     // drain: re-scans of the SAME root must not re-emit SessionStart.
     tokio::time::sleep(Duration::from_millis(700)).await;
     while let Ok(Some((_, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
-        if let AgentEvent::SessionStart {
-            agent_id,
-            parent_id,
-            ..
-        } = ev
-        {
+        if let AgentEvent::SessionStart { agent_id, .. } = ev {
             *starts.entry(agent_id).or_default() += 1;
-            if agent_id == id_e {
-                sub_parent = Some(parent_id);
-            }
         }
     }
 
     let expected: std::collections::HashMap<AgentId, usize> =
-        [(id_a, 1), (id_b, 1), (id_e, 1)].into_iter().collect();
+        [(id_a, 1), (id_b, 1)].into_iter().collect();
     assert_eq!(
         starts, expected,
-        "attach must register EXACTLY the live set, once each — a (recent), b (probe-live), e (fresh subagent); c (stale dead) and d (ended) stay hidden"
-    );
-    assert_eq!(
-        sub_parent.expect("the subagent's SessionStart was seen"),
-        Some(id_b),
-        "the fresh subagent must attach linked to its probe-live parent"
+        "attach must register EXACTLY the live set, once each — a (recent), b (probe-live); c (stale dead) stays hidden"
     );
     handle.abort();
 }
@@ -231,71 +174,34 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
 /// backlog is skipped to EOF instead of replayed and the in-flight Agent
 /// dispatch must be recovered by the TASK_SCAN_BYTES tail scan (#222), while
 /// the parent still registers via the bounded head read (#204).
+/// The session has > MAX_PENDING_BYTES pending at attach, so the backlog is
+/// skipped to EOF instead of replayed and the in-flight Task dispatch must be
+/// recovered by the TASK_SCAN_BYTES tail scan (#222), while the session still
+/// registers via the bounded head read (#204).
 #[tokio::test]
 async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let proj = projects_root.join("-Users-me-bigdeleg");
-    let parent_uuid = "ab000000-0000-7000-8000-0000000000ab";
-    let sub_dir = proj.join(parent_uuid).join("subagents");
-    tokio::fs::create_dir_all(&sub_dir).await.unwrap();
+    let sid = "ab000000-0000-7000-8000-0000000000ab";
+    let session_dir = dir.path().join(sid);
+    tokio::fs::create_dir_all(&session_dir).await.unwrap();
 
-    let parent_path = proj.join(format!("{parent_uuid}.jsonl"));
-    let mut contents = format!(
-        "{}\n",
-        cc_session_start_line(parent_uuid, "/Users/me/bigdeleg")
-    );
-    let backlog_line = format!(
-        "{}\n",
-        cc_tool_use_line(
-            parent_uuid,
-            "/Users/me/bigdeleg",
-            "tu_backlog",
-            "Bash",
-            serde_json::json!({"command": "ls"}),
-        )
-    );
+    let mut contents = format!("{}\n", copilot_start_line(sid, "/Users/me/bigdeleg"));
+    let backlog_line = format!("{}\n", copilot_tool_line("tu_backlog", "bash"));
     while contents.len() <= (1usize << 20) + 4096 {
         contents.push_str(&backlog_line);
     }
-    contents.push_str(&format!(
-        "{}\n",
-        cc_tool_use_line(
-            parent_uuid,
-            "/Users/me/bigdeleg",
-            "tu_task",
-            "Agent",
-            serde_json::json!({
-                "description": "explore", "subagent_type": "code-explorer", "prompt": "go"
-            }),
-        )
-    ));
-    tokio::fs::write(&parent_path, contents.as_bytes())
+    contents.push_str(&format!("{}\n", copilot_tool_line("tu_task", "task")));
+    tokio::fs::write(session_dir.join("events.jsonl"), contents.as_bytes())
         .await
         .unwrap();
-    write_lines(
-        &sub_dir.join("agent-b1.jsonl"),
-        &[cc_subagent_line("agent-b1", "/Users/me/bigdeleg", "tu_s")],
-    )
-    .await;
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(256);
-    let watcher = cc_watcher(projects_root.clone());
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
+    let handle = spawn_copilot(dir.path().to_path_buf(), tx);
 
-    let expected_parent = AgentId::from_parts("claude-code", parent_uuid);
+    let expected_parent = AgentId::from_parts("copilot", sid);
     let is_parent_start = |e: &AgentEvent| {
         matches!(e, AgentEvent::SessionStart { agent_id, parent_id: None, .. }
             if *agent_id == expected_parent)
-    };
-    let is_sub_start = |e: &AgentEvent| {
-        matches!(
-            e,
-            AgentEvent::SessionStart {
-                parent_id: Some(_),
-                ..
-            }
-        )
     };
     let is_task_start = |e: &AgentEvent| {
         matches!(e, AgentEvent::ActivityStart { agent_id, tool_use_id, detail }
@@ -311,7 +217,6 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
             events.push(pair);
         }
         if events.iter().any(|(_, e)| is_parent_start(e))
-            && events.iter().any(|(_, e)| is_sub_start(e))
             && events.iter().any(|(_, e)| is_task_start(e))
         {
             break;
@@ -327,22 +232,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
 
     assert!(
         events.iter().any(|(_, e)| is_parent_start(e)),
-        "the oversized delegating parent must register at attach (#204 head read), got {events:?}"
-    );
-    let sub_parents: Vec<Option<AgentId>> = events
-        .iter()
-        .filter_map(|(_, e)| match e {
-            AgentEvent::SessionStart {
-                parent_id: Some(pid),
-                ..
-            } => Some(Some(*pid)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        sub_parents,
-        vec![Some(expected_parent)],
-        "the fresh subagent must attach linked to the parent, exactly once"
+        "the oversized delegating session must register at attach (#204 head read), got {events:?}"
     );
     let task_starts: Vec<Transport> = events
         .iter()
@@ -363,7 +253,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
         .count();
     assert_eq!(
         backlog_replays, 0,
-        "the completed Bash backlog must not be replayed — this is a Task-seeding scan, not a replay"
+        "the completed backlog must not be replayed — this is a Task-seeding scan, not a replay"
     );
     handle.abort();
 }
@@ -451,7 +341,7 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     // The poll attaches the watch, so a write landing well inside one interval
     // after that tick can only arrive through the watch.
     let poll = Duration::from_secs(3);
-    let watcher = cc_watcher(root.clone())
+    let watcher = codex_watcher(root.clone())
         .with_initial_window(Duration::from_secs(60))
         .with_poll_interval(poll);
     let handle = tokio::spawn(async move { watcher.run(tx).await });
@@ -463,8 +353,8 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     let proj = root.join("-Users-me-late");
     tokio::fs::create_dir_all(&proj).await.unwrap();
     let session = proj.join(format!("{uuid}.jsonl"));
-    write_lines(&session, &[cc_session_start_line(uuid, "/Users/me/late")]).await;
-    let id = AgentId::from_parts("claude-code", uuid);
+    write_lines(&session, &[codex_meta_line(uuid, "/Users/me/late")]).await;
+    let id = AgentId::from_parts("codex", uuid);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let mut seen = false;
     while !seen && tokio::time::Instant::now() < deadline {
@@ -484,13 +374,7 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
         .open(&session)
         .await
         .unwrap();
-    let line = cc_tool_use_line(
-        uuid,
-        "/Users/me/late",
-        "tu_late",
-        "Bash",
-        serde_json::json!({"command": "ls"}),
-    );
+    let line = codex_work_line();
     tokio::io::AsyncWriteExt::write_all(&mut file, format!("{line}\n").as_bytes())
         .await
         .unwrap();

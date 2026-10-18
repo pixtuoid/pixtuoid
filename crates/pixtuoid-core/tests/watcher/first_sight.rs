@@ -7,96 +7,16 @@ use tokio::sync::mpsc;
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::AgentEvent;
+use pixtuoid_core::source::Source;
 use pixtuoid_core::source::Transport;
-use pixtuoid_core::source::claude_code::{cc_derive_label, cc_session_ended, decode_cc_line};
+use pixtuoid_core::source::antigravity::AntigravitySource;
+use pixtuoid_core::source::antigravity::decode_ag_line;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 
-use crate::{cc_watcher, fast_watch, vouch_snapshot, write_lines};
-
-#[tokio::test]
-async fn watcher_skips_session_start_for_stale_files_on_startup() {
-    let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-stale");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-
-    let stale = project_dir.join("old.jsonl");
-    let line = serde_json::json!({
-        "type": "assistant",
-        "sessionId": "old",
-        "cwd": "/repo",
-        "message": {
-            "role": "assistant",
-            "content": [
-                { "type": "tool_use", "id": "tu_old", "name": "Bash",
-                  "input": { "command": "ls" } }
-            ]
-        }
-    });
-    tokio::fs::write(&stale, format!("{line}\n")).await.unwrap();
-    let backdated = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(3600));
-    set_file_mtime(&stale, backdated).unwrap();
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone()).with_initial_window(Duration::from_secs(60));
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    let mut events = Vec::new();
-    while let Ok(Some(ev)) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
-        events.push(ev);
-    }
-    assert!(
-        events.is_empty(),
-        "stale file must not produce events on startup, got {events:?}"
-    );
-    handle.abort();
-}
-
-#[tokio::test]
-async fn watcher_registers_stale_file_when_probe_says_live() {
-    let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-idle-live");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-
-    let uuid = "01000000-0000-7000-8000-0000000000aa";
-    let stale = project_dir.join(format!("{uuid}.jsonl"));
-    let line = serde_json::json!({
-        "type": "assistant",
-        "sessionId": uuid,
-        "cwd": "/repo",
-        "message": { "role": "assistant", "content": [] }
-    });
-    tokio::fs::write(&stale, format!("{line}\n")).await.unwrap();
-    let backdated = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(3600));
-    set_file_mtime(&stale, backdated).unwrap();
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone())
-        .with_initial_window(Duration::from_secs(60))
-        .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[uuid])));
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-
-    let expected = AgentId::from_parts("claude-code", uuid);
-    let mut start_id = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            start_id = Some(agent_id);
-            break;
-        }
-    }
-    assert_eq!(
-        start_id,
-        Some(expected),
-        "a probe-live stale transcript must register on startup"
-    );
-    handle.abort();
-}
+use crate::{
+    ag_step_line, cc_watcher, codex_meta_line, codex_watcher, codex_work_line, copilot_tool_line,
+    fast_watch, spawn_copilot, vouch_snapshot, write_lines,
+};
 
 #[tokio::test]
 async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
@@ -199,35 +119,23 @@ async fn codex_first_sight_session_start_carries_bare_uuid_session_id() {
 #[tokio::test]
 async fn watcher_emits_session_start_for_recent_files_on_startup() {
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-fresh");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
+    let root = dir.path().to_path_buf();
 
-    let fresh = project_dir.join("fresh.jsonl");
-    let line = serde_json::json!({
-        "type": "assistant",
-        "sessionId": "fresh",
-        "cwd": "/repo",
-        "message": {
-            "role": "assistant",
-            "content": [
-                { "type": "tool_use", "id": "tu_fresh", "name": "Bash",
-                  "input": { "command": "ls" } }
-            ]
-        }
-    });
-    std::fs::write(&fresh, format!("{line}\n")).unwrap();
+    let fresh = root.join("fresh.jsonl");
+    let content = format!(
+        "{}\n{}\n",
+        codex_meta_line("fresh", "/repo"),
+        codex_work_line()
+    );
+    std::fs::write(&fresh, content).unwrap();
     // fsync the parent dir: APFS metadata propagation can otherwise race with
     // the watcher's initial seed walk. Unix-only — Windows can't open a
     // directory as a plain file.
     #[cfg(unix)]
-    std::fs::File::open(&project_dir)
-        .unwrap()
-        .sync_all()
-        .unwrap();
+    std::fs::File::open(&root).unwrap().sync_all().unwrap();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone()).with_initial_window(Duration::from_secs(3600));
+    let watcher = codex_watcher(root.clone()).with_initial_window(Duration::from_secs(3600));
     let fresh_path = fresh.clone();
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
@@ -262,80 +170,25 @@ async fn watcher_emits_session_start_for_recent_files_on_startup() {
 }
 
 #[tokio::test]
-async fn first_sight_extracts_cwd_past_non_json_prefix() {
-    let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-cwd");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("ses-cwd.jsonl");
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone());
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    // SessionStart fires exactly ONCE per file, with cwd taken from whatever
-    // bytes are present at first read — an incremental write leaves a window
-    // where the poll sees a partial file and latches cwd="" permanently. Stage
-    // in a `.partial` sibling (excluded by the `.jsonl` filter), then rename.
-    let sys_line = serde_json::json!({
-        "type": "system",
-        "subtype": "session_start",
-        "sessionId": "ses-cwd",
-        "cwd": "/real-repo"
-    });
-    let content = format!("not-json-prefix\n{sys_line}\n");
-    let staging = project_dir.join("ses-cwd.jsonl.partial");
-    tokio::fs::write(&staging, content.as_bytes())
-        .await
-        .unwrap();
-    tokio::fs::rename(&staging, &transcript).await.unwrap();
-
-    let mut found_cwd = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { cwd, .. }))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            found_cwd = Some(cwd);
-            break;
-        }
-    }
-    assert_eq!(
-        found_cwd,
-        Some(std::path::PathBuf::from("/real-repo")),
-        "the head scan must pass non-JSON lines to find cwd"
-    );
-    handle.abort();
-}
-
-#[tokio::test]
 async fn first_sight_cwd_ignores_foreign_source_shapes() {
+    fast_watch();
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-foreign");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("ses-foreign.jsonl");
+    let session_dir = dir.path().join("sess");
+    tokio::fs::create_dir_all(&session_dir).await.unwrap();
+    let transcript = session_dir.join("transcript.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone());
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
+    let src = AntigravitySource {
+        brain_root: dir.path().to_path_buf(),
+    };
+    let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Staged + renamed so first sight always reads the full content.
-    let codex_shaped = serde_json::json!({
-        "type": "session_meta",
-        "payload": { "id": "ses-foreign", "cwd": "/foreign/repo" }
-    });
-    let cc_line = serde_json::json!({
-        "type": "system",
-        "subtype": "session_start",
-        "sessionId": "ses-foreign"
-    });
-    let content = format!("{codex_shaped}\n{cc_line}\n");
-    let staging = project_dir.join("ses-foreign.jsonl.partial");
+    let codex_shaped = codex_meta_line("ses-foreign", "/foreign/repo");
+    let content = format!("{codex_shaped}\n{}\n", ag_step_line());
+    let staging = session_dir.join("transcript.jsonl.partial");
     tokio::fs::write(&staging, content.as_bytes())
         .await
         .unwrap();
@@ -354,101 +207,7 @@ async fn first_sight_cwd_ignores_foreign_source_shapes() {
     assert_eq!(
         found_cwd,
         Some(std::path::PathBuf::new()),
-        "a foreign source's cwd shape must not label a CC session"
-    );
-    handle.abort();
-}
-
-#[tokio::test]
-async fn stale_file_emits_session_start_when_written_to() {
-    let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-revive");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-
-    let revived = project_dir.join("revive.jsonl");
-    tokio::fs::write(&revived, "{}\n").await.unwrap();
-    set_file_mtime(
-        &revived,
-        FileTime::from_system_time(SystemTime::now() - Duration::from_secs(3600)),
-    )
-    .unwrap();
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone()).with_initial_window(Duration::from_secs(60));
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-    tokio::time::sleep(Duration::from_millis(150)).await;
-
-    while tokio::time::timeout(Duration::from_millis(20), rx.recv())
-        .await
-        .is_ok()
-    {}
-
-    let line = serde_json::json!({
-        "type": "assistant",
-        "sessionId": "revive",
-        "cwd": "/repo",
-        "message": {
-            "role": "assistant",
-            "content": [
-                { "type": "tool_use", "id": "tu_new", "name": "Bash",
-                  "input": { "command": "ls" } }
-            ]
-        }
-    });
-    let mut f = tokio::fs::OpenOptions::new()
-        .append(true)
-        .open(&revived)
-        .await
-        .unwrap();
-    f.write_all(format!("{line}\n").as_bytes()).await.unwrap();
-    f.flush().await.unwrap();
-    drop(f);
-
-    let mut got_start = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { .. }))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            got_start = true;
-            break;
-        }
-    }
-    assert!(got_start, "appending to a stale file should bring it live");
-    handle.abort();
-}
-
-#[tokio::test]
-async fn watcher_skips_recent_file_with_session_end_marker() {
-    let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-ended");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-
-    let ended = project_dir.join("ended.jsonl");
-    let content = r#"{"type":"system","subtype":"session_start","sessionId":"ended","cwd":"/repo"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Bash","input":{"command":"ls"}}]}}
-{"type":"system","subtype":"session_end","sessionId":"ended"}
-"#;
-    tokio::fs::write(&ended, content).await.unwrap();
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = cc_watcher(projects_root.clone()).with_initial_window(Duration::from_secs(3600));
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    let mut events = Vec::new();
-    while let Ok(Some(ev)) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
-        events.push(ev);
-    }
-    let has_session_start = events
-        .iter()
-        .any(|(_, ev)| matches!(ev, AgentEvent::SessionStart { .. }));
-    assert!(
-        !has_session_start,
-        "recent file with session_end marker must not produce SessionStart, got {events:?}"
+        "a foreign source's cwd shape must not label this source's session"
     );
     handle.abort();
 }
@@ -459,21 +218,12 @@ fn custom_label(_path: &std::path::Path, _source: &str, _cwd: &std::path::Path) 
 
 #[tokio::test]
 async fn watcher_custom_label_deriver() {
-    fast_watch();
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-y");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("ses-xyz.jsonl");
+    let root = dir.path().to_path_buf();
+    let transcript = root.join("ses-xyz.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(
-        projects_root.clone(),
-        "claude-code".to_string(),
-        decode_cc_line,
-        cc_session_ended,
-    )
-    .with_label_deriver(custom_label);
+    let watcher = codex_watcher(root.clone()).with_label_deriver(custom_label);
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -484,13 +234,7 @@ async fn watcher_custom_label_deriver() {
         .open(&transcript)
         .await
         .unwrap();
-    let start_line = serde_json::json!({
-        "type": "system",
-        "subtype": "session_start",
-        "sessionId": "ses-xyz",
-        "cwd": "/repo"
-    });
-    f.write_all(format!("{start_line}\n").as_bytes())
+    f.write_all(format!("{}\n", codex_meta_line("ses-xyz", "/repo")).as_bytes())
         .await
         .unwrap();
     f.flush().await.unwrap();
@@ -588,7 +332,7 @@ async fn codex_rollout_yields_uuid_keyed_session_start() {
 #[tokio::test]
 async fn default_id_deriver_stays_path_keyed() {
     // `antigravity`'s registry row carries the `default_id_from_path` deriver,
-    // where CC/Codex/copilot/grok/omp rows carry their own session-key fn.
+    // where Codex/copilot/grok/omp rows carry their own session-key fn.
     fast_watch();
     let dir = TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
@@ -600,10 +344,9 @@ async fn default_id_deriver_stays_path_keyed() {
     let watcher = JsonlWatcher::new(
         root.clone(),
         "antigravity".to_string(),
-        decode_cc_line,
-        cc_session_ended,
-    )
-    .with_label_deriver(cc_derive_label);
+        decode_ag_line,
+        |_t| false,
+    );
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -614,13 +357,7 @@ async fn default_id_deriver_stays_path_keyed() {
         .open(&transcript)
         .await
         .unwrap();
-    let start_line = serde_json::json!({
-        "type": "system",
-        "subtype": "session_start",
-        "sessionId": "abc",
-        "cwd": "/repo"
-    });
-    f.write_all(format!("{start_line}\n").as_bytes())
+    f.write_all(format!("{}\n", ag_step_line()).as_bytes())
         .await
         .unwrap();
     f.flush().await.unwrap();
@@ -653,14 +390,12 @@ async fn default_id_deriver_stays_path_keyed() {
 #[tokio::test]
 async fn watcher_skips_oversized_pending_tail() {
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("proj-big");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("big.jsonl");
+    let session_dir = dir.path().join("big");
+    tokio::fs::create_dir_all(&session_dir).await.unwrap();
+    let transcript = session_dir.join("events.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = cc_watcher(projects_root.clone());
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
+    let handle = spawn_copilot(dir.path().to_path_buf(), tx);
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let junk = vec![b'x'; (1 << 20) + 1024];
@@ -704,25 +439,15 @@ async fn watcher_skips_oversized_pending_tail() {
     );
     assert_eq!(
         got_rename.as_deref(),
-        Some("cc·big"),
-        "empty-cwd Rename falls back to the project-dir basename"
+        Some("cp"),
+        "empty-cwd Rename falls back to the bare source prefix"
     );
     assert_eq!(
         activity_before, 0,
         "the oversized backlog must not be replayed (got {activity_before} ActivityStart)"
     );
 
-    let valid = serde_json::json!({
-        "type": "assistant",
-        "sessionId": "big",
-        "cwd": "/repo",
-        "message": {
-            "role": "assistant",
-            "content": [
-                { "type": "tool_use", "id": "tu_after_junk", "name": "Bash", "input": { "command": "ls" } }
-            ]
-        }
-    });
+    let valid = copilot_tool_line("tu_after_junk", "bash");
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
         .open(&transcript)
@@ -755,30 +480,14 @@ async fn watcher_skips_oversized_pending_tail() {
 #[tokio::test]
 async fn watcher_registers_large_transcript_on_first_sight() {
     let dir = TempDir::new().unwrap();
-    let projects_root = dir.path().to_path_buf();
-    let project_dir = projects_root.join("-Users-me-bigrepo");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("big-session.jsonl");
+    let root = dir.path().to_path_buf();
+    let transcript = root.join("big-session.jsonl");
 
-    let first = serde_json::json!({
-        "type": "system",
-        "subtype": "session_start",
-        "sessionId": "big-session",
-        "cwd": "/Users/me/work/bigrepo"
-    });
-    let mut contents = format!("{first}\n");
-    let backlog_line = serde_json::json!({
-        "type": "assistant",
-        "sessionId": "big-session",
-        "cwd": "/Users/me/work/bigrepo",
-        "message": {
-            "role": "assistant",
-            "content": [
-                { "type": "tool_use", "id": "tu_backlog", "name": "Bash", "input": { "command": "ls" } }
-            ]
-        }
-    });
-    let backlog_line = format!("{backlog_line}\n");
+    let mut contents = format!(
+        "{}\n",
+        codex_meta_line("big-session", "/Users/me/work/bigrepo")
+    );
+    let backlog_line = format!("{}\n", codex_work_line());
     while contents.len() <= (1usize << 20) + 4096 {
         contents.push_str(&backlog_line);
     }
@@ -794,7 +503,7 @@ async fn watcher_registers_large_transcript_on_first_sight() {
         .unwrap();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(256);
-    let watcher = cc_watcher(projects_root.clone());
+    let watcher = codex_watcher(root.clone());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let mut start_id = None;
@@ -839,7 +548,7 @@ async fn watcher_registers_large_transcript_on_first_sight() {
         "cwd must come from the bounded head read of the first line"
     );
     assert_eq!(
-        label, "cc·bigrepo",
+        label, "cx·bigrepo",
         "label must derive from the head-read cwd basename"
     );
     assert!(
@@ -1005,19 +714,15 @@ async fn watcher_links_subagent_across_project_dirs() {
 }
 
 #[tokio::test]
-async fn the_registry_row_filters_the_workflow_journal_and_the_builder_overrides_it() {
+async fn the_registry_row_filters_the_untruncated_copy_and_the_builder_overrides_it() {
     fn admit_every_jsonl(_p: &std::path::Path) -> bool {
         true
     }
 
     async fn first_sight_starts(root: std::path::PathBuf, admit_all: bool, want: usize) -> usize {
         let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-        let mut watcher = JsonlWatcher::new(
-            root,
-            "claude-code".to_string(),
-            decode_cc_line,
-            cc_session_ended,
-        );
+        let mut watcher =
+            JsonlWatcher::new(root, "antigravity".to_string(), decode_ag_line, |_t| false);
         if admit_all {
             watcher = watcher.with_path_filter(admit_every_jsonl);
         }
@@ -1043,34 +748,17 @@ async fn the_registry_row_filters_the_workflow_journal_and_the_builder_overrides
 
     fast_watch();
     let dir = TempDir::new().unwrap();
-    let wf = dir
-        .path()
-        .join("proj")
-        .join("01000000-0000-7000-8000-0000000000cc")
-        .join("subagents")
-        .join("workflows")
-        .join("wf_1");
-    tokio::fs::create_dir_all(&wf).await.unwrap();
-    write_lines(
-        &wf.join("journal.jsonl"),
-        &[serde_json::json!({"type": "started", "name": "wf"})],
-    )
-    .await;
-    write_lines(
-        &wf.join("agent-xyz.jsonl"),
-        &[serde_json::json!({
-            "type": "assistant",
-            "cwd": "/repo",
-            "message": {"content": [{"type": "text", "text": "hi"}]}
-        })],
-    )
-    .await;
+    let session_dir = dir.path().join("sess");
+    tokio::fs::create_dir_all(&session_dir).await.unwrap();
+    for name in ["transcript.jsonl", "transcript_full.jsonl"] {
+        write_lines(&session_dir.join(name), &[ag_step_line()]).await;
+    }
 
     assert_eq!(
         first_sight_starts(dir.path().to_path_buf(), false, 1).await,
         1,
-        "the claude-code row's path_filter must exclude journal.jsonl — only the \
-         real subagent transcript first-sights"
+        "the antigravity row's path_filter must exclude transcript_full.jsonl — only the \
+         canonical transcript first-sights"
     );
     assert_eq!(
         first_sight_starts(dir.path().to_path_buf(), true, 2).await,

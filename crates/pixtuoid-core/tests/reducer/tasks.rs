@@ -11,8 +11,8 @@ use pixtuoid_core::state::{ActivityState, SceneState};
 use serde_json::json;
 
 use crate::{
-    DRAIN_INFERRED, UNNAMED_CHILD_HOOKS, act_end, act_start, delegating_pair, delegating_pair_on,
-    start, start_as, waiting,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, delegating_pair,
+    delegating_pair_on, start, start_as, waiting,
 };
 
 #[track_caller]
@@ -30,7 +30,7 @@ fn jsonl_duplicate_of_recent_hook_is_dropped() {
     let mut scene = SceneState::uniform(2);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     let t0 = SystemTime::now();
     act_start(
@@ -170,7 +170,7 @@ fn active_tasks_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     let t0 = SystemTime::now();
 
@@ -223,7 +223,7 @@ fn jsonl_event_after_dedup_window_is_applied() {
     let mut scene = SceneState::uniform(2);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     let t0 = SystemTime::now();
     act_start(
@@ -262,7 +262,7 @@ fn hook_wins_dedup_drops_jsonl_duplicate_within_window() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/dedup-hw.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     let t0 = SystemTime::now();
 
@@ -1039,7 +1039,7 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/batched.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(
@@ -1260,7 +1260,7 @@ fn jsonl_ordinary_tool_end_drains_when_hook_end_drops() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/fastdrop.jsonl");
-    start(&mut r, &mut scene, id);
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     act_start(

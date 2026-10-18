@@ -9,7 +9,10 @@ use std::time::{Duration, SystemTime};
 
 use filetime::{FileTime, set_file_mtime};
 
+use pixtuoid_core::source::codex::decode_codex_line;
+use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::jsonl::{JsonlWatcher, ProbeSnapshot, force_polling_backend_for_tests};
+use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
 /// Run every watcher test on a fast `PollWatcher` backend instead of the native
 /// FSEvents/inotify watcher, whose stream setup/teardown dominated test time.
@@ -101,4 +104,52 @@ fn cc_subagent_line(stem: &str, cwd: &str, tool_use_id: &str) -> serde_json::Val
             ]
         }
     })
+}
+
+fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
+    fast_watch();
+    JsonlWatcher::new(root, "codex".to_string(), decode_codex_line, |_t| false)
+}
+
+fn codex_meta_line(uuid: &str, cwd: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "session_meta",
+        "payload": { "id": uuid, "cwd": cwd }
+    })
+}
+
+/// Decodes to an id-less `ActivityStart`.
+fn codex_work_line() -> serde_json::Value {
+    serde_json::json!({
+        "type": "event_msg",
+        "payload": { "type": "task_started", "turn_id": "t" }
+    })
+}
+
+/// Runs the production `CopilotSource` wiring: a bare `JsonlWatcher`, no probe
+/// or label seams to differ from.
+fn spawn_copilot(
+    sessions_root: std::path::PathBuf,
+    tx: tokio::sync::mpsc::Sender<(Transport, AgentEvent)>,
+) -> tokio::task::JoinHandle<anyhow::Result<()>> {
+    fast_watch();
+    tokio::spawn(async move { Box::new(CopilotSource { sessions_root }).run(tx).await })
+}
+
+fn copilot_start_line(sid: &str, cwd: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "session.start",
+        "data": { "sessionId": sid, "context": { "cwd": cwd } }
+    })
+}
+
+fn copilot_tool_line(call_id: &str, tool: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "tool.execution_start",
+        "data": { "toolCallId": call_id, "toolName": tool, "arguments": { "path": "/repo" } }
+    })
+}
+
+fn ag_step_line() -> serde_json::Value {
+    serde_json::json!({ "step_index": 0, "type": "PLANNER_RESPONSE", "tool_calls": [] })
 }

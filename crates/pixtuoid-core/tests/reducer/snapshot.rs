@@ -61,7 +61,7 @@ fn full_scene_serialization_is_stable() {
             parent_id: Some(parent),
         },
         at(1),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,
@@ -73,7 +73,7 @@ fn full_scene_serialization_is_stable() {
             }),
         },
         at(2),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     r.apply(
         &mut scene,

@@ -497,26 +497,26 @@ mod tests {
         assert!(crumbs.iter().any(|c| c.contains("callId")), "{crumbs:?}");
     }
 
-    /// A CC transcript line carrying only tool activity — nothing in it
+    /// An omp transcript line carrying only tool activity — nothing in it
     /// registers a session.
-    fn cc_tool_line() -> String {
+    fn tool_line() -> String {
         serde_json::json!({
-            "type": "assistant",
-            "message": {"content": [
-                {"type": "tool_use", "id": "tu-1", "name": "Bash", "input": {"command": "ls"}}
+            "type": "message",
+            "message": {"role": "assistant", "content": [
+                {"type": "toolCall", "id": "tu-1", "name": "bash", "arguments": {"command": "ls"}}
             ]}
         })
         .to_string()
     }
 
-    const CC_TRANSCRIPT: &str =
-        "/h/.claude/projects/-h-p/01000000-0000-7000-8000-0000000000cc.jsonl";
+    const TRANSCRIPT: &str = "/h/.omp/agent/sessions/-h-p/2026-09-19T18-16-13-370Z_01a0bae2-133a-769f-851a-927926fbca45.jsonl";
+    const SOURCE: &str = "omp";
 
     #[test]
     fn an_unseeded_activity_only_transcript_decodes_but_registers_nothing() {
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
-            .lines([cc_tool_line()]);
+            .lines([tool_line()]);
         assert!(!d.events.is_empty(), "the line must decode");
         assert_eq!(
             d.registered(),
@@ -528,44 +528,28 @@ mod tests {
 
     #[test]
     fn the_first_sight_seed_registers_and_the_wire_drives_the_slot_active() {
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .seeded()
-            .lines([cc_tool_line()]);
+            .lines([tool_line()]);
         assert_eq!(d.registered(), 1);
         assert_eq!(d.reached, vec![Reach::Active]);
     }
 
     #[test]
-    fn the_seed_coalesces_with_the_decoders_own_agent_id() {
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
-            .unwrap()
-            .seeded()
-            .lines([cc_tool_line()]);
-        let ids: std::collections::BTreeSet<_> =
-            d.events.iter().map(AgentEvent::agent_id).collect();
-        assert_eq!(ids.len(), 1, "seed + decoded activity must be ONE agent");
-        assert_eq!(
-            ids.into_iter().next().unwrap(),
-            AgentId::from_parts("claude-code", "01000000-0000-7000-8000-0000000000cc"),
-            "the seed must key on the row's derivation (the CC filename stem)"
-        );
-    }
-
-    #[test]
     fn transcript_at_keys_on_the_normalized_path_like_the_walker_does() {
-        let path = Path::new(CC_TRANSCRIPT);
-        let by_path = Drive::transcript_at("claude-code", path)
+        let path = Path::new(TRANSCRIPT);
+        let by_path = Drive::transcript_at(SOURCE, path)
             .unwrap()
             .seeded()
-            .lines([cc_tool_line()]);
+            .lines([tool_line()]);
         let by_key = Drive::transcript(
-            "claude-code",
+            SOURCE,
             &crate::id::normalize_path_key(&path.to_string_lossy()),
         )
         .unwrap()
         .seeded()
-        .lines([cc_tool_line()]);
+        .lines([tool_line()]);
         assert_eq!(
             by_path.events[0].agent_id(),
             by_key.events[0].agent_id(),
@@ -575,9 +559,12 @@ mod tests {
 
     #[test]
     fn blank_lines_are_skipped_and_non_json_counts_as_unparseable() {
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
-            .unwrap()
-            .lines(["", "   ", "not json at all", "{}"]);
+        let d = Drive::transcript(SOURCE, TRANSCRIPT).unwrap().lines([
+            "",
+            "   ",
+            "not json at all",
+            "{}",
+        ]);
         assert_eq!(d.lines, 2, "only the non-blank lines are driven");
         assert_eq!(d.unparseable, 1);
         assert!(d.decode_errors.is_empty());
@@ -610,8 +597,8 @@ mod tests {
             transport: Transport::Jsonl,
             decode: Decode::Transcript {
                 decode,
-                source: "claude-code".to_string(),
-                logical: CC_TRANSCRIPT.to_string(),
+                source: SOURCE.to_string(),
+                logical: TRANSCRIPT.to_string(),
             },
             seeded: false,
             now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
@@ -654,7 +641,7 @@ mod tests {
     #[test]
     fn wire_events_excludes_the_seed_so_garbage_scores_zero() {
         let garbage = ["not json at all", r#"{"totally":"unrelated"}"#];
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .seeded()
             .lines(garbage);
@@ -667,16 +654,16 @@ mod tests {
         assert_eq!(d.wire_events(), 0, "no wire event came out of garbage");
         assert_eq!(d.events.len(), 1, "the one event is the seed itself");
 
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .seeded()
-            .lines([cc_tool_line()]);
+            .lines([tool_line()]);
         assert_eq!(d.seed_events, 1);
         assert_eq!(d.wire_events(), d.events.len() - 1);
 
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
-            .lines([cc_tool_line()]);
+            .lines([tool_line()]);
         assert_eq!(d.seed_events, 0);
         assert_eq!(d.wire_events(), d.events.len());
     }
@@ -755,21 +742,13 @@ mod tests {
 
     #[test]
     fn a_transient_class_resolved_by_a_later_line_still_counts_as_reached() {
-        let start = serde_json::json!({
-            "type": "assistant",
-            "message": {"content": [
-                {"type": "tool_use", "id": "tu-9", "name": "Bash", "input": {"command": "ls"}}
-            ]}
-        })
-        .to_string();
+        let start = tool_line();
         let end = serde_json::json!({
-            "type": "user",
-            "message": {"content": [
-                {"type": "tool_result", "tool_use_id": "tu-9", "content": "ok"}
-            ]}
+            "type": "message",
+            "message": {"role": "toolResult", "toolCallId": "tu-1"}
         })
         .to_string();
-        let d = Drive::transcript("claude-code", CC_TRANSCRIPT)
+        let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .seeded()
             .lines([start, end]);
