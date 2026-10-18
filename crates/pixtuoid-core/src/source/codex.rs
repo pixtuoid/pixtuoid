@@ -743,8 +743,6 @@ mod tests {
         }
     }
 
-    /// A linked child walking out revives only on a parented hook start
-    /// (`Reducer::authorizes`).
     #[test]
     fn a_childs_prompt_starts_it_under_its_root() {
         let evs = hook("UserPromptSubmit", true, json!({"prompt": "CHILD-TASK"}));

@@ -769,75 +769,152 @@ fn grok_hook(event: &str, session: &str) -> serde_json::Value {
     })
 }
 
-/// A grok child's next `user_prompt_submit` names no parent: a parentless
-/// start re-links to its remembered parent (#246), on either transport.
-#[test]
-fn a_grok_childs_parentless_next_start_relinks_to_its_remembered_parent() {
+/// A grok child started under its parent, in the recorded run's hook order.
+/// Returns the parent, the child's session id, the child and its start.
+fn linked_grok_child(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+) -> (AgentId, &'static str, AgentId, SystemTime) {
+    let parent = AgentId::from_parts("grok", "parent-sess");
+    let child_sess = "02000000-0000-7000-8000-0000000000cd";
+    let child = AgentId::from_parts("grok", child_sess);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+    apply_hook_payload(r, scene, grok_hook("user_prompt_submit", "parent-sess"), t0);
+    let mut start = grok_hook("subagent_start", "parent-sess");
+    start["subagentId"] = child_sess.into();
+    let started = t0 + Duration::from_secs(1);
+    apply_hook_payload(r, scene, start, started);
+    assert_eq!(
+        scene.agents.get(&child).map(|s| s.parent_id),
+        Some(Some(parent)),
+        "first life: child registered with the parent link"
+    );
+    (parent, child_sess, child, started)
+}
+
+/// A [`linked_grok_child`] that then ended and was GC'd; returns its stop in
+/// place of its start.
+fn ended_grok_child(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+) -> (AgentId, &'static str, AgentId, SystemTime) {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    for transport in [Transport::Jsonl, Transport::Hook] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let parent = AgentId::from_parts("grok", "parent-sess");
-        let child_sess = "02000000-0000-7000-8000-0000000000cd";
-        let child = AgentId::from_parts("grok", child_sess);
-        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (parent, child_sess, child, started) = linked_grok_child(r, scene);
+    let stop = started + Duration::from_secs(1);
+    let mut end = grok_hook("subagent_stop", child_sess);
+    end["subagentId"] = child_sess.into();
+    apply_hook_payload(r, scene, end, stop);
+    apply_hook_payload(
+        r,
+        scene,
+        grok_hook("session_end", child_sess),
+        stop + Duration::from_millis(1),
+    );
+    r.tick(scene, stop + EXIT_GRACE_WINDOW + Duration::from_secs(1));
+    assert!(!scene.agents.contains_key(&child), "child GC'd");
+    (parent, child_sess, child, stop)
+}
 
-        apply_hook_payload(
-            &mut r,
-            &mut scene,
-            grok_hook("user_prompt_submit", "parent-sess"),
-            t0,
-        );
-        let mut start = grok_hook("subagent_start", "parent-sess");
-        start["subagentId"] = child_sess.into();
-        apply_hook_payload(&mut r, &mut scene, start, t0 + Duration::from_secs(1));
-        assert_eq!(
-            scene.agents.get(&child).map(|s| s.parent_id),
-            Some(Some(parent)),
-            "first life: child registered with the parent link ({transport:?})"
-        );
-        let stop = t0 + Duration::from_secs(2);
-        let mut end = grok_hook("subagent_stop", "");
-        end["subagentId"] = child_sess.into();
-        apply_hook_payload(&mut r, &mut scene, end, stop);
-        r.tick(
-            &mut scene,
-            stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
-        );
-        assert!(
-            !scene.agents.contains_key(&child),
-            "child GC'd after its first life"
-        );
+/// A grok child's next `user_prompt_submit` names no parent: inside the end
+/// gate it is the CLI starting the child again, readmitted under its
+/// remembered parent.
+#[test]
+fn a_grok_childs_parentless_next_start_is_readmitted_under_its_remembered_parent() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
+    apply_hook_payload(
+        &mut r,
+        &mut scene,
+        grok_hook("user_prompt_submit", child_sess),
+        stop + Duration::from_secs(20),
+    );
+    assert_eq!(
+        scene.agents.get(&child).map(|s| s.parent_id),
+        Some(Some(parent)),
+        "the child's next turn was refused or orphaned"
+    );
+}
 
-        let next = stop + Duration::from_secs(20);
-        if transport == Transport::Hook {
-            apply_hook_payload(
-                &mut r,
-                &mut scene,
-                grok_hook("user_prompt_submit", child_sess),
-                next,
-            );
-        } else {
-            r.apply(
-                &mut scene,
-                AgentEvent::SessionStart {
-                    agent_id: child,
-                    source: "grok".into(),
-                    session_id: child_sess.into(),
-                    cwd: PathBuf::from("/repo"),
-                    parent_id: None,
-                },
-                next,
-                transport,
-            );
-        }
-        assert_eq!(
-            scene.agents.get(&child).map(|s| s.parent_id),
-            Some(Some(parent)),
-            "the parentless revival start must re-link to its \
-             remembered parent, not register as an orphan ({transport:?})"
-        );
-    }
+/// A linked grok child the stale sweep walks out, under a live parent, revives
+/// in place on its next `user_prompt_submit`, though that names no parent.
+#[test]
+fn a_walking_out_grok_childs_parentless_next_start_revives_it_under_its_parent() {
+    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, STALE_WAITING_TIMEOUT};
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child_sess, child, started) = linked_grok_child(&mut r, &mut scene);
+    let sweep = started + STALE_WAITING_TIMEOUT + Duration::from_secs(1);
+    let mut busy = grok_hook("pre_tool_use", "parent-sess");
+    busy["toolName"] = "read_file".into();
+    apply_hook_payload(&mut r, &mut scene, busy, sweep - Duration::from_secs(1));
+    r.tick(&mut scene, sweep);
+    assert!(scene.agents[&parent].exiting_at.is_none(), "parent swept");
+    assert!(scene.agents[&child].exiting_at.is_some(), "child not swept");
+
+    apply_hook_payload(
+        &mut r,
+        &mut scene,
+        grok_hook("user_prompt_submit", child_sess),
+        sweep + EXIT_GRACE_WINDOW / 2,
+    );
+    let slot = &scene.agents[&child];
+    assert!(
+        slot.exiting_at.is_none(),
+        "the child's next turn left it walking out"
+    );
+    assert_eq!(slot.parent_id, Some(parent));
+}
+
+/// A grok child's transcript names no parent, so the watcher's late first
+/// sight of it is parentless: inside the end gate it is still the dead child's
+/// echo (#244).
+#[test]
+fn an_ended_grok_childs_late_parentless_first_sight_is_refused() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (_, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
+    let first_sight = stop + STRAGGLER_TTL + Duration::from_secs(1);
+    assert!(first_sight < stop + CHILD_END_GATE_TTL);
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: child,
+            source: "grok".into(),
+            session_id: child_sess.into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        },
+        first_sight,
+        Transport::Jsonl,
+    );
+    assert!(
+        !scene.agents.contains_key(&child),
+        "the ended child's late first sight came back"
+    );
+}
+
+/// Past the end gate, a grok child's tool hook decoded ahead of its turn's
+/// `user_prompt_submit` registers the child under its remembered parent too.
+#[test]
+fn a_grok_childs_tool_hook_past_the_end_gate_registers_under_its_remembered_parent() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
+    let mut tool = grok_hook("pre_tool_use", child_sess);
+    tool["toolName"] = "read_file".into();
+    apply_hook_payload(
+        &mut r,
+        &mut scene,
+        tool,
+        stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
+    );
+    assert_eq!(
+        scene.agents.get(&child).map(|s| s.parent_id),
+        Some(Some(parent)),
+        "the child's next turn came back an orphan"
+    );
 }
 
 #[test]
@@ -967,132 +1044,6 @@ fn a_multi_turn_child_idle_past_the_end_gate_still_revives_adopted_not_orphaned(
 }
 
 #[test]
-fn parentless_session_start_enriching_a_parentless_child_slot_adopts_its_remembered_parent() {
-    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let parent = AgentId::from_parts("codex", "parent-sess");
-    let child_uuid = "05000000-0000-7000-8000-0000000000d0";
-    let child = AgentId::from_parts("codex", child_uuid);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let session_start = |agent_id, sid: &str, parent_id| AgentEvent::SessionStart {
-        agent_id,
-        source: "codex".into(),
-        session_id: sid.into(),
-        cwd: PathBuf::from("/repo"),
-        parent_id,
-    };
-
-    r.apply(
-        &mut scene,
-        session_start(parent, "parent-sess", None),
-        t0,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        session_start(child, child_uuid, Some(parent)),
-        t0 + Duration::from_secs(1),
-        Transport::Hook,
-    );
-    sess_end(
-        &mut r,
-        &mut scene,
-        child,
-        true,
-        t0 + Duration::from_secs(2),
-        Transport::Hook,
-    );
-    let gone = t0 + Duration::from_secs(2) + EXIT_GRACE_WINDOW + Duration::from_secs(1);
-    r.tick(&mut scene, gone);
-    assert!(!scene.agents.contains_key(&child), "child GC'd");
-
-    // Past the end gate, inside the parent memory.
-    let late = t0 + Duration::from_secs(2) + CHILD_END_GATE_TTL + Duration::from_secs(1);
-    act_start(
-        &mut r,
-        &mut scene,
-        child,
-        Some("t-straggler"),
-        None,
-        late,
-        Transport::Hook,
-    );
-    assert_eq!(
-        scene.agents.get(&child).map(|s| s.parent_id),
-        Some(None),
-        "precondition: the straggler re-registered the child parentless"
-    );
-
-    r.apply(
-        &mut scene,
-        session_start(child, child_uuid, None),
-        late + Duration::from_secs(1),
-        Transport::Jsonl,
-    );
-    assert_eq!(
-        scene.agents.get(&child).map(|s| s.parent_id),
-        Some(Some(parent)),
-        "the enrichment path must adopt its remembered parent for a \
-         parentless child slot"
-    );
-}
-
-/// A grok child's transcript path names no parent, so its first sight is
-/// parentless: inside the end gate it still registers linked (#244-w1).
-#[test]
-fn an_ended_grok_childs_parentless_first_sight_relinks_inside_the_end_gate() {
-    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let parent = AgentId::from_parts("grok", "parent-sess");
-    let child_sess = "03000000-0000-7000-8000-0000000000ce";
-    let child = AgentId::from_parts("grok", child_sess);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    apply_hook_payload(
-        &mut r,
-        &mut scene,
-        grok_hook("user_prompt_submit", "parent-sess"),
-        t0,
-    );
-    let mut start = grok_hook("subagent_start", "parent-sess");
-    start["subagentId"] = child_sess.into();
-    apply_hook_payload(&mut r, &mut scene, start, t0 + Duration::from_secs(1));
-    let mut subagent_stop = grok_hook("subagent_stop", "");
-    subagent_stop["subagentId"] = child_sess.into();
-    let stop = t0 + Duration::from_secs(2);
-    apply_hook_payload(&mut r, &mut scene, subagent_stop.clone(), stop);
-    r.tick(
-        &mut scene,
-        stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
-    );
-    assert!(!scene.agents.contains_key(&child), "child GC'd");
-
-    let straggler = stop + EXIT_GRACE_WINDOW + Duration::from_secs(2);
-    apply_hook_payload(&mut r, &mut scene, subagent_stop, straggler);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "grok".into(),
-            session_id: child_sess.into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        straggler + Duration::from_millis(500),
-        Transport::Jsonl,
-    );
-    assert_eq!(
-        scene.agents.get(&child).map(|s| s.parent_id),
-        Some(Some(parent)),
-        "the ended child's parentless flat first-sight must register \
-         parent-LINKED to its remembered parent (#244-w1), not as an orphan phantom"
-    );
-}
-
-#[test]
 fn an_adopted_remembered_parent_still_runs_the_cycle_filter() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
@@ -1149,7 +1100,7 @@ fn an_adopted_remembered_parent_still_runs_the_cycle_filter() {
     r.apply(
         &mut scene,
         session_start(x, "x-child", None),
-        t0 + Duration::from_secs(11),
+        t0 + Duration::from_secs(2) + CHILD_END_GATE_TTL + Duration::from_secs(1),
         Transport::Jsonl,
     );
     let slot = scene.agents.get(&x).expect("X re-registers");
