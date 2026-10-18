@@ -38,9 +38,8 @@ pub(crate) struct AppConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub last_seen_version: Option<String>,
-    /// The flag-only sources' connection flags (registry source id →
-    /// connected); a hook-bearing source's is its installed hooks, never a key
-    /// here. Keep BEFORE `pets` (see `pets`).
+    /// The connection flags `sources::is_on` reads (registry source id →
+    /// connected). Keep BEFORE `pets` (see `pets`).
     #[serde(
         rename = "sources",
         default,

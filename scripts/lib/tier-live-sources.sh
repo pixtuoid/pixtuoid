@@ -89,9 +89,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The hookless sources are connected by their `[sources]` flag; a hook source's
-# key is ignored — it is connected when its hooks are installed in its real
-# config, which the loop below checks before spending a turn on it.
+# A flag connects a hookless source, and an `ONCE_FLAG_ONLY` one (sources.rs),
+# which a headless run never adopts; any other hook source's key is ignored — its
+# hooks in its real config connect it, which the loop below checks first.
 {
     echo '[sources]'
     "$ROSTER_BIN" --roster | cut -f1 | sed 's/$/ = true/'

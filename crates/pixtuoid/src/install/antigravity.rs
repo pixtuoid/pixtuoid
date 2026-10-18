@@ -262,6 +262,18 @@ mod tests {
         );
 
         let mut doc = installed("", CMD);
+        doc[HOOK_NAME]["Stop"][0]["command"] = json!(format!(
+            "{} --hook-event Stop",
+            CMD.replace("/opt/", "/old/")
+        ));
+        let parse = verify_schema(&doc.to_string());
+        assert!(
+            parse.issues.iter().any(|i| i.contains("Stop")),
+            "{:?}",
+            parse.issues
+        );
+
+        let mut doc = installed("", CMD);
         doc[HOOK_NAME]["enabled"] = json!(false);
         let parse = verify_schema(&doc.to_string());
         assert!(

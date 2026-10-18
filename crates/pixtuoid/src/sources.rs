@@ -1,9 +1,8 @@
 //! The source-control CORE: detect / connect / disconnect / reconcile, TUI-free.
 //!
-//! A source is connected by ONE fact: a hook-bearing source's installed hooks,
-//! a flag-only source's `[sources]` flag. The mutating ops here change that
-//! fact but not a running instance's live `ConnectedSources`, which reflects
-//! the change on its next launch.
+//! A source is connected by ONE fact, [`is_on`]'s. The mutating ops here change
+//! that fact but not a running instance's live `ConnectedSources`, which
+//! reflects the change on its next launch.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -187,8 +186,7 @@ pub(crate) fn post_install_hint(id: &str) -> Option<&'static str> {
     crate::install::target::by_source(id).and_then(|t| t.post_install_hint)
 }
 
-/// Whether each registered source is connected: by its hooks when it has an
-/// install target, else by its `[sources]` flag.
+/// Whether each registered source is connected, by [`is_on`].
 pub(crate) fn connected(app: &config::AppConfig) -> HashSet<String> {
     connected_with(app, installed_hooks)
 }
@@ -342,32 +340,36 @@ fn adopt_flagged_with(
     install: impl Fn(&'static Target) -> Result<()>,
 ) -> Vec<(&'static Target, Result<()>)> {
     let mut adopted = Vec::new();
-    let mut failed = Vec::new();
-    let mut flagged = false;
     for &sid in ONCE_FLAG_ONLY {
         let Some(t) = target_of(sid).filter(|_| app.sources.get(sid) == Some(&true)) else {
             continue;
         };
-        flagged = true;
         if hooked(t) {
+            settle_flag(cfg, sid);
             continue;
         }
         let installed = install(t);
-        if let Err(e) = &installed {
-            tracing::warn!(source = sid, error = ?e, "could not install an adopted source's hooks");
-            failed.push(sid);
+        match &installed {
+            Ok(()) => settle_flag(cfg, sid),
+            Err(e) => {
+                tracing::warn!(source = sid, error = ?e, "could not install an adopted source's hooks");
+            }
         }
         adopted.push((t, installed));
     }
-    if flagged {
-        let keep: Vec<&str> = registry::registered_source_names()
-            .filter(|sid| target_of(sid).is_none() || failed.contains(sid))
-            .collect();
-        if let Err(e) = config::save_flag_sources(cfg, &keep, None) {
-            tracing::warn!(error = ?e, "could not drop the flags of adopted sources");
-        }
-    }
     adopted
+}
+
+/// Drop `sid`'s [`ONCE_FLAG_ONLY`] flag now that its hooks are in: it goes then
+/// or at a disconnect, never before. A failed write leaves it for the next
+/// adoption, which drops a hooked source's flag.
+fn settle_flag(cfg: &Path, sid: &str) {
+    if !ONCE_FLAG_ONLY.contains(&sid) {
+        return;
+    }
+    if let Err(e) = write_flags(cfg, sid, Some(false)) {
+        tracing::warn!(source = sid, error = ?e, "could not drop an adopted source's flag");
+    }
 }
 
 /// The line a launch prints for one source [`adopt_flagged_targets`] adopted.
@@ -378,7 +380,7 @@ pub(crate) fn adopted_notice(t: &Target, installed: &Result<()>) -> String {
             t.display_name
         ),
         Err(e) => format!(
-            "⚠ pixtuoid: could not install {}'s hooks ({e:#}); retrying at the next launch",
+            "⚠ pixtuoid: could not install {}'s hooks ({e:#}); retrying at the next interactive launch",
             t.display_name
         ),
     }
@@ -389,15 +391,13 @@ pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
     is_on(&config::load(cfg, &mut Vec::new()), sid, installed_hooks)
 }
 
-/// Rewrite `[sources]` whole, as the flag-only sources that are on once `sid`'s
-/// `change` applies, so a key no reader looks at never outlives a change. A
-/// [`ONCE_FLAG_ONLY`] flag awaiting adoption survives, unless `sid` is that
-/// source, whose own connect or disconnect settles it.
+/// Rewrite `[sources]` whole, as the flags [`is_on`] reads once `sid`'s `change`
+/// applies, so a key no reader looks at never outlives a change.
 /// Runs before any hook write: a config `update_config` refuses stops the op
 /// with nothing to undo.
 fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
     let keep: Vec<&str> = registry::registered_source_names()
-        .filter(|s| by_source(s).is_none() || (ONCE_FLAG_ONLY.contains(s) && *s != sid))
+        .filter(|s| by_source(s).is_none() || ONCE_FLAG_ONLY.contains(s))
         .collect();
     config::save_flag_sources(cfg, &keep, change.map(|on| (sid, on)))
 }
@@ -427,10 +427,12 @@ fn connect_target(
     target: Option<&Target>,
 ) -> Result<ConnectOutcome> {
     write_flags(cfg, sid, target.is_none().then_some(true))?;
-    Ok(match target {
-        Some(t) => ConnectOutcome::Installed(install::install_target(t, None)?),
-        None => ConnectOutcome::FlagOnly,
-    })
+    let Some(t) = target else {
+        return Ok(ConnectOutcome::FlagOnly);
+    };
+    let installed = install::install_target(t, None)?;
+    settle_flag(cfg, sid);
+    Ok(ConnectOutcome::Installed(installed))
 }
 
 /// Disconnect a source: uninstall its hooks, or turn off a flag-only source's
@@ -449,7 +451,7 @@ fn disconnect_target(
     sid: &'static str,
     target: Option<&Target>,
 ) -> Result<DisconnectOutcome> {
-    write_flags(cfg, sid, target.is_none().then_some(false))?;
+    write_flags(cfg, sid, Some(false))?;
     Ok(match target {
         Some(t) => DisconnectOutcome::Uninstalled(install::uninstall_target(t, None)?),
         None => DisconnectOutcome::FlagOnly,
@@ -488,8 +490,25 @@ pub(crate) fn plan_reconcile(
 /// Declarative apply: make the connected set EXACTLY `desired`, reporting each
 /// source (a failed item doesn't abort the batch).
 pub(crate) fn reconcile_to(cfg: &Path, desired: &HashSet<String>) -> Vec<(String, ChangeOutcome)> {
-    let current = connected(&config::load(cfg, &mut Vec::new()));
-    reconcile_from(cfg, &current, desired)
+    let app = config::load(cfg, &mut Vec::new());
+    reconcile_from(
+        cfg,
+        &planned_current(&app, desired, installed_hooks),
+        desired,
+    )
+}
+
+/// [`connected`] as a reconcile toward `desired` plans from: a desired source
+/// that only its [`ONCE_FLAG_ONLY`] flag connects is not connected yet, so the
+/// plan installs its hooks.
+fn planned_current(
+    app: &config::AppConfig,
+    desired: &HashSet<String>,
+    hooked: impl Fn(&str) -> Option<bool>,
+) -> HashSet<String> {
+    let mut current = connected_with(app, &hooked);
+    current.retain(|sid| !(desired.contains(sid) && hooked(sid) == Some(false)));
+    current
 }
 
 /// [`reconcile_to`] from an injected `current`.
@@ -1146,6 +1165,39 @@ mod tests {
     }
 
     #[test]
+    fn a_connect_drops_a_pending_flag_only_once_its_hooks_are_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
+        assert!(connect_target(&cfg, "antigravity", Some(&FAIL_TARGET)).is_err());
+        let app = config::load(&cfg, &mut Vec::new());
+        assert_eq!(
+            app.sources,
+            flags(&[("antigravity", true), ("copilot", true)]).sources
+        );
+
+        connect_target(&cfg, "antigravity", Some(&OK_TARGET)).unwrap();
+        let _ = std::fs::remove_dir_all(ok_target_config().parent().unwrap());
+        let app = config::load(&cfg, &mut Vec::new());
+        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
+    }
+
+    #[test]
+    fn a_reconcile_settles_a_pending_flag_whichever_way_it_goes() {
+        let app = flags(&[("antigravity", true)]);
+        let none_hooked = |sid: &str| (sid != "copilot").then_some(false);
+        for (desired, action) in [
+            (set(&["antigravity"]), Action::Connect),
+            (HashSet::new(), Action::Disconnect),
+        ] {
+            let current = planned_current(&app, &desired, none_hooked);
+            let plan: std::collections::HashMap<_, _> =
+                plan_reconcile(&current, &desired).into_iter().collect();
+            assert_eq!(plan["antigravity"], action, "{desired:?}");
+        }
+    }
+
+    #[test]
     fn a_config_with_nothing_to_adopt_is_left_byte_for_byte() {
         let seeded = "theme = \"x\"  # mine\n[sources]\ncopilot = true\n";
         let (adopted, _, raw) = adopt_under(seeded, false, |_| panic!("nothing to adopt"));
@@ -1181,7 +1233,7 @@ mod tests {
 
     // Its `default_config_path` errs, so `install_target` bails before any FS —
     // a deterministic, cross-platform install failure.
-    static FAIL_TARGET: Target = Target {
+    const FAIL_TARGET: Target = Target {
         name: "rollbacktest",
         core_source: "rollbacktest",
         display_name: "RollbackTest",
@@ -1210,6 +1262,21 @@ mod tests {
         #[cfg(feature = "upstream")]
         upstream: &[],
         registers: Vec::new,
+    };
+
+    // A fn-pointer `default_config_path` can't capture a TempDir; the PID suffix
+    // keeps concurrent runs apart, as `install/tests.rs`'s FAKE2 does.
+    fn ok_target_config() -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("pixtuoid-test-ok-{}", std::process::id()))
+            .join("hooks.json")
+    }
+
+    // FAIL_TARGET with an install that succeeds and leaves the file as it was.
+    static OK_TARGET: Target = Target {
+        default_config_path: || Ok(ok_target_config()),
+        binary_strategy: crate::install::target::BinaryStrategy::BareNameOnPath,
+        ..FAIL_TARGET
     };
 
     #[test]
