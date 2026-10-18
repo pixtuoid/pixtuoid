@@ -5,7 +5,7 @@ use super::health::FailureLatch;
 use super::liveness::{ProbeLadder, ProbeSnapshot, emit_session_exit, revouch_gated_files};
 use super::unclaim::drain_child_end_unclaims;
 use super::walk::{
-    TASK_SCAN_BYTES, detect_parent_id, extract_cwd, park_if_truncated_below_cursor, scan_root,
+    TASK_SCAN_BYTES, detect_parent_id, first_found, park_if_truncated_below_cursor, scan_root,
     walk_jsonl,
 };
 use super::*;
@@ -308,25 +308,25 @@ fn detect_parent_id_handles_backslash_paths() {
 }
 
 #[test]
-fn extract_cwd_dispatches_the_scanned_sources_shape() {
+fn first_found_dispatches_the_scanned_sources_shape() {
     let top = br#"{"cwd":"/repo/a"}"#;
     assert_eq!(
-        extract_cwd(top, cwd_extractor_for("claude-code")),
+        first_found(top, cwd_extractor_for("claude-code")),
         Some(PathBuf::from("/repo/a"))
     );
     assert_eq!(
-        extract_cwd(top, cwd_extractor_for("test")),
+        first_found(top, cwd_extractor_for("test")),
         Some(PathBuf::from("/repo/a")),
         "an unregistered harness source keeps the shared top-level default"
     );
     let nested = br#"{"type":"session_meta","payload":{"cwd":"/repo/b","id":"u"}}"#;
     assert_eq!(
-        extract_cwd(nested, cwd_extractor_for("codex")),
+        first_found(nested, cwd_extractor_for("codex")),
         Some(PathBuf::from("/repo/b"))
     );
     let mixed = b"not-json\n{\"type\":\"noise\"}\n{\"cwd\":\"/repo/c\"}\n";
     assert_eq!(
-        extract_cwd(mixed, cwd_extractor_for("claude-code")),
+        first_found(mixed, cwd_extractor_for("claude-code")),
         Some(PathBuf::from("/repo/c"))
     );
 }
@@ -335,7 +335,7 @@ fn extract_cwd_dispatches_the_scanned_sources_shape() {
 fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
     let codex_shaped = br#"{"type":"session_meta","payload":{"cwd":"/foreign/repo","id":"u"}}"#;
     assert_eq!(
-        extract_cwd(codex_shaped, cwd_extractor_for("claude-code")),
+        first_found(codex_shaped, cwd_extractor_for("claude-code")),
         None,
         "a foreign source's cwd shape must not extract for a CC transcript"
     );
@@ -934,30 +934,38 @@ fn t_head_label(v: &serde_json::Value) -> Option<String> {
 #[test]
 fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
     let plain = "{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n{\"type\":\"assistant\"}\n";
-    let (cwd, label) =
-        super::walk::extract_head_fields(plain.as_bytes(), cwd_extractor_for("test"), None);
-    assert_eq!(cwd.as_deref(), Some(Path::new("/repo/head")));
-    assert_eq!(label, None, "a source with no head label must name nothing");
+    let head =
+        super::walk::extract_head_fields(plain.as_bytes(), cwd_extractor_for("test"), None, None);
+    assert_eq!(head.cwd.as_deref(), Some(Path::new("/repo/head")));
+    assert_eq!(
+        head.label, None,
+        "a source with no head label must name nothing"
+    );
 
     let titled = "{\"type\":\"title\",\"title\":\"Ship it\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let (cwd, label) = super::walk::extract_head_fields(
+    let head = super::walk::extract_head_fields(
         titled.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),
+        None,
     );
-    assert_eq!(cwd.as_deref(), Some(Path::new("/repo/head")));
-    assert_eq!(label.as_deref(), Some("t·Ship it"));
+    assert_eq!(head.cwd.as_deref(), Some(Path::new("/repo/head")));
+    assert_eq!(head.label.as_deref(), Some("t·Ship it"));
 
     // The title slot exists but is EMPTY (omp's subagents, forever): the head
     // read must fall through to the cwd-basename deriver, not name it "".
     let empty =
         "{\"type\":\"title\",\"title\":\"\"}\n{\"type\":\"session\",\"cwd\":\"/repo/head\"}\n";
-    let (_, label) = super::walk::extract_head_fields(
+    let head = super::walk::extract_head_fields(
         empty.as_bytes(),
         cwd_extractor_for("test"),
         Some(t_head_label),
+        None,
     );
-    assert_eq!(label, None, "an empty slot must not become an empty name");
+    assert_eq!(
+        head.label, None,
+        "an empty slot must not become an empty name"
+    );
 }
 
 async fn walk_once_with_head_label(
@@ -993,6 +1001,74 @@ async fn walk_once_with_head_label(
         events.push(ev);
     }
     events
+}
+
+/// A codex child's rollout path is flat, so its parent rides the head
+/// `session_meta` the recorded child rollout carries.
+#[tokio::test]
+async fn a_codex_child_rollouts_first_sight_names_its_parent() {
+    let child = "01a14e51-6b67-7d71-bf09-674db3be3c5e";
+    let recorded = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "tests/sources/codex/fixtures/rollout-2026-10-18T02-22-01-{child}.jsonl"
+    ));
+    let head = std::fs::read_to_string(&recorded)
+        .expect("the recorded child rollout")
+        .lines()
+        .next()
+        .expect("its head")
+        .to_owned();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(recorded.file_name().unwrap());
+    tokio::fs::write(&path, head + "\n").await.unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(64);
+    let source: Arc<str> = Arc::from(crate::source::codex::SOURCE_NAME);
+    let decoders = SourceDecoders {
+        decode_line: crate::source::codex::decode_codex_line,
+        derive_label: t_label,
+        check_ended: t_ended,
+        activity_recency: super::no_activity_recency,
+        id_derive: super::folded::FoldedDeriver::new(crate::source::codex::codex_id_from_path),
+        path_filter: accept_all_paths,
+        cwd_derive: no_cwd_from_path,
+        head_label: None,
+    };
+    let (cursors, seen) = (
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(Mutex::new(HashMap::new())),
+    );
+    let live = Arc::new(Mutex::new(HashSet::new()));
+    let ctx = WatchCtx {
+        source: &source,
+        cursors: &cursors,
+        seen: &seen,
+        tx: &tx,
+        window: Duration::from_secs(3600),
+        live: &live,
+    };
+    walk_jsonl(&path, decoders, &ctx).await;
+    drop(tx);
+    let mut starts = Vec::new();
+    while let Ok((_, e)) = rx.try_recv() {
+        if let AgentEvent::SessionStart {
+            agent_id,
+            parent_id,
+            ..
+        } = e
+        {
+            starts.push((agent_id, parent_id));
+        }
+    }
+    assert_eq!(
+        starts,
+        [(
+            AgentId::from_parts("codex", child),
+            Some(AgentId::from_parts(
+                "codex",
+                "01a14e51-5f02-7a71-aed3-a441edeac91d"
+            ))
+        )]
+    );
 }
 
 fn first_rename(events: &[(Transport, AgentEvent)]) -> Option<&str> {

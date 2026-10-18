@@ -1,11 +1,8 @@
-//! Regression for the real Codex subagent hook lifecycle.
-//!
-//! Codex's `spawn_agent` subagents signal their lifecycle ONLY via the
-//! `SubagentStart`/`SubagentStop` hooks: the subagent has its own rollout file,
-//! but a flat `~/.codex/sessions/.../rollout-*.jsonl` path has no `/subagents/`
-//! segment to derive a parent from. The payloads here were captured live (Codex
-//! 0.135, gpt-5.5) and sanitized: synthetic UUIDs, generic cwd, the huge
-//! `last_assistant_message` truncated.
+//! The Codex subagent lifecycle, recorded hermetically (the codex profile's
+//! Subagent scenario): the root's `spawn_agent` starts a child, the child's own
+//! hooks name it in `agent_id`, and its SubagentStop ends it. Its rollout is
+//! flat, so the hooks and the rollout head's `parent_thread_id` carry the
+//! parent link.
 
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -16,8 +13,8 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
-const PARENT: &str = "01000000-0000-7000-8000-000000000001";
-const CHILD: &str = "01000000-0000-7000-8000-000000000002";
+const PARENT: &str = "01a14e51-5f02-7a71-aed3-a441edeac91d";
+const CHILD: &str = "01a14e51-6b67-7d71-bf09-674db3be3c5e";
 
 fn captured_hook_events() -> Vec<AgentEvent> {
     super::captures::fixture_lines(
@@ -32,28 +29,43 @@ fn captured_hook_events() -> Vec<AgentEvent> {
 }
 
 #[test]
-fn codex_subagent_hook_lifecycle_links_child_and_exits_on_stop() {
+fn a_codex_child_works_under_its_root_and_its_stop_ends_it_alone() {
     let parent = AgentId::from_parts("codex", PARENT);
     let child = AgentId::from_parts("codex", CHILD);
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
 
-    for ev in captured_hook_events() {
-        r.apply(&mut scene, ev, now, Transport::Hook);
+    // Up to the root's own end, which the capture closes with.
+    let events = captured_hook_events();
+    let root_ends = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == parent))
+        .expect("the root's SessionEnd");
+    for ev in &events[..root_ends] {
+        r.apply(&mut scene, ev.clone(), now, Transport::Hook);
     }
 
+    let tools = |id: AgentId| -> Vec<bool> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ActivityStart {
+                    agent_id,
+                    detail: Some(d),
+                    ..
+                } if *agent_id == id => Some(d.is_task()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(tools(parent), [true], "the root's one call is its spawn");
+    assert_eq!(tools(child), [false], "the child's shell call is its own");
     let child_slot = scene
         .agents
         .get(&child)
         .expect("SubagentStart must create the subagent sprite");
-    assert_eq!(
-        child_slot.parent_id,
-        Some(parent),
-        "subagent must be linked to its parent session"
-    );
-    // SubagentStop ends the CHILD; the parent's `Stop` is only turn-end → idle
-    // (its teardown SessionEnd hook is not in this capture).
+    assert_eq!(child_slot.parent_id, Some(parent));
     assert!(
         child_slot.exiting_at.is_some(),
         "SubagentStop must mark the subagent exiting"
@@ -65,50 +77,44 @@ fn codex_subagent_hook_lifecycle_links_child_and_exits_on_stop() {
     );
 }
 
+/// `spawn_agent` returns at launch, and a hook delivery rides its own shim
+/// process, so the child's SubagentStart may land before that return: the
+/// return must not walk the running child out.
 #[test]
-fn codex_subagent_jsonl_first_orphan_is_enriched_by_subagent_start() {
+fn a_spawn_returning_after_its_child_started_leaves_the_child_running() {
     let parent = AgentId::from_parts("codex", PARENT);
     let child = AgentId::from_parts("codex", CHILD);
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
 
-    r.apply(
+    let mut events = captured_hook_events();
+    let returned = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::ActivityEnd { agent_id, .. } if *agent_id == parent))
+        .expect("the spawn's return");
+    let started = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::SessionStart { agent_id, .. } if *agent_id == child))
+        .expect("the child's SubagentStart");
+    let start = events.remove(started);
+    events.insert(returned, start);
+    let child_stops = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child))
+        .expect("the child's SubagentStop");
+    for ev in &events[..child_stops] {
+        r.apply(&mut scene, ev.clone(), now, Transport::Hook);
+    }
+    r.tick(
         &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "codex".into(),
-            session_id: PARENT.into(),
-            cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: None,
-        },
-        now,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "codex".into(),
-            session_id: CHILD.into(),
-            cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: None,
-        },
-        now,
-        Transport::Jsonl,
-    );
-    assert!(
-        scene.agents.get(&child).unwrap().parent_id.is_none(),
-        "JSONL-rendered subagent starts orphaned"
+        now + pixtuoid_core::state::reducer::B1_CASCADE_GRACE + std::time::Duration::from_millis(1),
     );
 
-    for ev in captured_hook_events() {
-        r.apply(&mut scene, ev, now, Transport::Hook);
-    }
-    assert_eq!(
-        scene.agents.get(&child).unwrap().parent_id,
-        Some(parent),
-        "SubagentStart hook must enrich the JSONL-first orphan with its parent link"
+    let slot = scene.agents.get(&child).expect("the child is registered");
+    assert!(
+        slot.exiting_at.is_none(),
+        "the spawn's return walked the child out"
     );
 }
 
@@ -125,12 +131,16 @@ fn codex_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
 
     let (stops, rest): (Vec<_>, Vec<_>) = captured_hook_events()
         .into_iter()
-        .partition(|ev| matches!(ev, AgentEvent::SessionEnd { .. }));
+        .partition(|ev| matches!(ev, AgentEvent::SessionEnd { as_child: true, .. }));
     for ev in stops {
         r.apply(&mut scene, ev, now, Transport::Hook);
     }
     let later = now + std::time::Duration::from_millis(50);
-    for ev in rest {
+    // Short of the root's own end, which the capture closes with.
+    for ev in rest
+        .into_iter()
+        .filter(|ev| !matches!(ev, AgentEvent::SessionEnd { .. }))
+    {
         r.apply(&mut scene, ev, later, Transport::Hook);
     }
 
@@ -159,7 +169,7 @@ fn codex_subagent_stop_before_start_is_a_safe_noop() {
             agent_id: parent,
             source: "codex".into(),
             session_id: PARENT.into(),
-            cwd: PathBuf::from("/home/user/demo-project"),
+            cwd: PathBuf::from("/private/tmp/pixtuoid-capture/proj"),
             parent_id: None,
         },
         now,

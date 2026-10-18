@@ -12,10 +12,10 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, make_tool_detail};
 #[cfg(any(test, feature = "upstream"))]
 use crate::source::upstream::{Family, Finding, Read, Release, Repo, Siblings, Watch, When};
+use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -51,11 +51,15 @@ fn is_uuid(s: &str) -> bool {
         })
 }
 
-/// Codex's source-specific hook arms — `SubagentStart`/`SubagentStop`. These
-/// change the event's SUBJECT (the child's AgentId, not the session's), which
-/// the shared CC-shaped arms cannot express; every other Codex hook event
-/// falls through (`Ok(None)`) to them. The parent link carried here is the
-/// ONLY one a flat Codex rollout gets.
+/// The subagent dispatch tool, `multi_agent_v1`'s `spawn_agent`: it returns at
+/// launch, and the child's SubagentStop ends the child.
+pub(crate) const DISPATCH_TOOL: &str = "spawn_agent";
+
+/// Codex's source-specific hook arms, which change the event's SUBJECT to a
+/// child's AgentId where the shared session-keyed arms cannot:
+/// `SubagentStart`/`SubagentStop`, and any other event a child fires. A
+/// `spawn_agent` call's start is a Task wherever it fires; every other root
+/// event falls through (`Ok(None)`) to the shared arms.
 pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>> {
     let Some(obj) = v.as_object() else {
         return Ok(None); // shared path reports the malformed payload
@@ -113,7 +117,43 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
                 as_child: true,
             }]))
         }
-        _ => Ok(None),
+        // A child's other events name it in `agent_id` beside the root's
+        // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
+        // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
+        _ => {
+            let dispatch = obj.get("tool_name").and_then(Value::as_str) == Some(DISPATCH_TOOL);
+            let evs = match crate::source::decoder::subagent_fired(obj, SOURCE_NAME, str::to_owned)?
+            {
+                Some(evs) => evs,
+                None if dispatch => crate::source::decoder::shared_hook_arms(
+                    obj,
+                    SOURCE_NAME,
+                    crate::source::registry::descriptor_for(SOURCE_NAME),
+                )?,
+                None => return Ok(None),
+            };
+            Ok(Some(if dispatch {
+                evs.into_iter().map(dispatched).collect()
+            } else {
+                evs
+            }))
+        }
+    }
+}
+
+/// The shared arms detail only CC's dispatch as a Task.
+fn dispatched(event: AgentEvent) -> AgentEvent {
+    match event {
+        AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id,
+            ..
+        } => AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id,
+            detail: Some(ToolDetail::Task),
+        },
+        other => other,
     }
 }
 
@@ -121,6 +161,17 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
 /// under `payload`.
 pub(crate) fn extract_codex_cwd(v: &Value) -> Option<PathBuf> {
     v.get("payload")?.get("cwd")?.as_str().map(PathBuf::from)
+}
+
+/// A thread-spawned child's rollout names its parent on that same line
+/// (`codex-rs/protocol/src/protocol.rs` `SessionMeta::parent_thread_id` at
+/// rust-v0.163.0), its flat path naming none.
+pub(crate) fn codex_head_parent(v: &Value) -> Option<String> {
+    v.get("payload")?
+        .get("parent_thread_id")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 pub(crate) const EVENT_MSG: &str = "event_msg";
@@ -258,6 +309,21 @@ pub(crate) const UPSTREAM: &[Watch] = &[
         finding: Finding::Breaking(
             "the approval gate never fires, so a codex session sits Active through every prompt",
         ),
+        siblings: None,
+    },
+    Watch {
+        id: "codex.dispatch",
+        ours: || vec![DISPATCH_TOOL],
+        docs: &[REPO.doc(
+            "codex-rs/core/src/tools/handlers/multi_agents/spawn.rs",
+            r"fn tool_name\(&self\) -> ToolName",
+            "the spawn handler's `tool_name`",
+        )],
+        read: Read::Each {
+            pattern: r#""{name}""#,
+        },
+        when: When::Vanishes,
+        finding: Finding::Breaking("a codex parent never goes Delegating"),
         siblings: None,
     },
 ];
@@ -415,9 +481,11 @@ fn codex_tool_start(agent_id: AgentId, payload: Option<&Map<String, Value>>) -> 
     AgentEvent::ActivityStart {
         agent_id,
         tool_use_id: None,
-        // Codex tool calls are never subagent dispatches (those arrive as the
-        // SubagentStart hook), so there is no `subagent_type` to pass.
-        detail: Some(make_tool_detail(SOURCE_NAME, name, None)),
+        detail: Some(if name == DISPATCH_TOOL {
+            ToolDetail::Task
+        } else {
+            make_tool_detail(SOURCE_NAME, name, None)
+        }),
     }
 }
 
@@ -580,10 +648,121 @@ mod tests {
     }
 
     #[test]
-    fn non_subagent_events_fall_through_to_shared_arms() {
+    fn a_roots_events_fall_through_to_shared_arms() {
         let stop = json!({"hook_event_name": "Stop", "session_id": "s"});
         assert!(matches!(decode_codex_hook_custom(&stop), Ok(None)));
         assert!(matches!(decode_codex_hook_custom(&json!("nope")), Ok(None)));
+    }
+
+    const ROOT: &str = "01a14e36-774b-7a43-a766-5159e4eb32f6";
+    const CHILD: &str = "01a14e36-77e4-7220-8c8e-4b2d4c31dd41";
+
+    /// Line shapes from a 0.163.0 `codex exec` whose root spawned a child,
+    /// sanitized of its paths.
+    fn hook(event: &str, child: bool, extra: Value) -> Vec<AgentEvent> {
+        let mut v = json!({
+            "session_id": ROOT, "turn_id": "01a14e36-7827-7f92-a603-b700dc3aa71c",
+            "transcript_path": "/h/.codex/sessions/rollout.jsonl", "cwd": "/repo",
+            "hook_event_name": event, "model": "gpt-5.5",
+            "permission_mode": "bypassPermissions", "_pixtuoid_source": SOURCE_NAME,
+        });
+        if child {
+            v["agent_id"] = json!(CHILD);
+            v["agent_type"] = json!("default");
+        }
+        for (k, x) in extra.as_object().expect("an object") {
+            v[k] = x.clone();
+        }
+        crate::source::decoder::decode_hook_payload(v).expect("decodes")
+    }
+
+    #[test]
+    fn a_childs_own_events_land_on_the_child() {
+        let child = AgentId::from_parts(SOURCE_NAME, CHILD);
+        let root = AgentId::from_parts(SOURCE_NAME, ROOT);
+        let tool = json!({"tool_name": "Bash", "tool_input": {"command": "cat NOTE.txt"},
+                          "tool_use_id": "call_nNP7xMfvOrkUQWwa", "tool_response": "pong"});
+        for event in ["PreToolUse", "PostToolUse"] {
+            let evs = hook(event, true, tool.clone());
+            assert!(!evs.is_empty(), "{event}");
+            assert!(
+                evs.iter().all(|e| e.agent_id() == child),
+                "{event}: {evs:?}"
+            );
+            assert!(
+                evs.iter()
+                    .any(|e| matches!(e, AgentEvent::Identity { session_id, .. }
+                    if session_id == CHILD)),
+                "{event}: the Identity must name the child's session: {evs:?}"
+            );
+            let evs = hook(event, false, tool.clone());
+            assert!(evs.iter().all(|e| e.agent_id() == root), "{event}: {evs:?}");
+        }
+    }
+
+    /// A parentless start would be refused inside the child's end gate, where
+    /// a parented one is readmitted.
+    #[test]
+    fn a_childs_prompt_starts_it_under_its_root() {
+        let evs = hook("UserPromptSubmit", true, json!({"prompt": "CHILD-TASK"}));
+        let [
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id,
+                ..
+            },
+        ] = &evs[..]
+        else {
+            panic!("one SessionStart: {evs:?}");
+        };
+        assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, CHILD));
+        assert_eq!(*parent_id, Some(AgentId::from_parts(SOURCE_NAME, ROOT)));
+        let evs = hook("UserPromptSubmit", false, json!({"prompt": "go"}));
+        assert!(
+            matches!(
+                &evs[..],
+                [AgentEvent::SessionStart {
+                    parent_id: None,
+                    ..
+                }]
+            ),
+            "{evs:?}"
+        );
+    }
+
+    #[test]
+    fn a_spawn_agent_call_is_a_task_on_either_transport() {
+        let spawn = json!({"tool_name": DISPATCH_TOOL, "tool_use_id": "call_Fxnld0qmszdIwSfB",
+                           "tool_input": {"message": "CHILD-TASK"}});
+        for child in [false, true] {
+            let evs = hook("PreToolUse", child, spawn.clone());
+            assert!(
+                evs.iter().any(|e| matches!(e, AgentEvent::ActivityStart {
+                    detail: Some(d), tool_use_id: Some(_), .. } if d.is_task())),
+                "child={child}: {evs:?}"
+            );
+        }
+        let line = json!({"type": "response_item", "payload": {"type": "function_call",
+            "name": DISPATCH_TOOL, "namespace": "multi_agent_v1",
+            "arguments": "{\"message\":\"CHILD-TASK\"}", "call_id": "call_Fxnld0qmszdIwSfB"}});
+        let evs =
+            decode_codex_line("/p/rollout-2026-10-18T01-52-34-x.jsonl", "codex", line).unwrap();
+        assert!(
+            evs.iter().any(|e| matches!(e, AgentEvent::ActivityStart {
+                detail: Some(d), .. } if d.is_task())),
+            "{evs:?}"
+        );
+        let other = hook(
+            "PreToolUse",
+            false,
+            json!({"tool_name": "Bash", "tool_use_id": "c",
+                                                    "tool_input": {"command": "ls"}}),
+        );
+        assert!(
+            !other.iter().any(|e| matches!(e, AgentEvent::ActivityStart {
+                detail: Some(d), .. } if d.is_task())),
+            "{other:?}"
+        );
     }
 
     #[test]

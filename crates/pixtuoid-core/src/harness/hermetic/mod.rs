@@ -399,20 +399,36 @@ wire_api = "responses"
 sandbox = "unelevated"
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            expects: &[
-                "SessionStart",
-                "UserPromptSubmit",
-                "PreToolUse",
-                "PostToolUse",
-                "Stop",
-                "SessionEnd",
-            ],
-            fixture: "fixtures/codex/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/codex/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "SubagentStart",
+                    "SubagentStop",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "codex/fixtures",
+            },
+        ],
         script_vars: &[],
-        not_yet: &["SubagentStart", "SubagentStop", "PermissionRequest"],
+        not_yet: &["PermissionRequest"],
         event_name: hook_event_name,
         // aimock's Responses usage has no token details (`CopilotKit/aimock`
         // `src/responses.ts:266-279` at v1.43.0).

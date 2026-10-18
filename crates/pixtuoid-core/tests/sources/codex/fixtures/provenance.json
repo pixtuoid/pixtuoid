@@ -1,12 +1,13 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "0.135",
-  "captured": "unknown",
-  "command": "see the module header",
-  "note": "Captured live (Codex 0.135, gpt-5.5) and sanitized: synthetic UUIDs, generic cwd, the huge `last_assistant_message` truncated. Predates the socket recorder, hence no shim stamps.",
+  "version": "codex-cli 0.163.0",
+  "captured": "2026-10-18",
+  "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 16
-  }
+    "blanked": 251
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/codex/subagent.json"
 }

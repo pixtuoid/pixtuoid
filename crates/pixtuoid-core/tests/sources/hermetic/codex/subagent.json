@@ -1,0 +1,41 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "CHILD-TASK", "toolResultContains": "{note}" },
+      "response": { "content": "{note}", "usage": { "input_tokens": 12, "output_tokens": 7 } },
+      "latency": 300
+    },
+    {
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "response": {
+        "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      },
+      "latency": 300
+    },
+    {
+      "match": { "userMessage": "subagent_notification" },
+      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } },
+      "latency": 300
+    },
+    {
+      "match": { "hasToolResult": true },
+      "response": { "content": "The reader is on it.", "usage": { "input_tokens": 12, "output_tokens": 7 } },
+      "latency": 3000
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [
+          {
+            "name": "spawn_agent",
+            "namespace": "multi_agent_v1",
+            "arguments": { "message": "CHILD-TASK: read NOTE.txt and report its text." }
+          }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      },
+      "latency": 300
+    }
+  ]
+}

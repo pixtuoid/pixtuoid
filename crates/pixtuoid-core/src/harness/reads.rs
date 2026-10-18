@@ -219,14 +219,22 @@ type Decoded = (
 /// Everything the registry reads from a line, not only the line decoder: a
 /// daemon's envelopes decode to no `AgentEvent` by design (presence rides
 /// `presence_decoder`), and the watcher registers a transcript through
-/// `cwd_extractor`, which the harness never calls — it seeds a fixed cwd.
+/// `cwd_extractor` and `parent_extractor`, which the harness never calls — it
+/// seeds a fixed cwd and no parent.
 /// Compared as rendered, the way a golden is: `PathBuf` equality drops a
 /// trailing slash, and grok's `workspaceRoot` fallback differs by exactly that.
 fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
     let d = drive.lines(lines.iter().map(Value::to_string));
+    let parent = registry::parent_extractor_for(source);
     let cwds = lines
         .iter()
-        .map(|l| format!("{:?}", registry::cwd_extractor_for(source)(l)))
+        .map(|l| {
+            format!(
+                "{:?} {:?}",
+                registry::cwd_extractor_for(source)(l),
+                parent.and_then(|f| f(l))
+            )
+        })
         .collect();
     let presence = lines
         .iter()

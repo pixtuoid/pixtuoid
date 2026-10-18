@@ -1022,6 +1022,11 @@ mod run {
             .envs(aimock.launch.env.iter().map(|(k, v)| (k, v)));
         let model = Reaped(
             model
+                // Codex's subagent tools are namespaced Responses tools
+                // (`codex-rs/core/src/tools/handlers/multi_agents/spawn.rs:31`
+                // at rust-v0.163.0), which only this mode lets a script call
+                // (`CopilotKit/aimock` `CHANGELOG.md`, 1.45.0).
+                .args(["--responses-tools", "extended"])
                 .args(["-p", &port.to_string(), "-f"])
                 .arg(&script)
                 .stdout(log(dir, AIMOCK_LOG)?)

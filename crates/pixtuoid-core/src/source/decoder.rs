@@ -114,6 +114,11 @@ impl DecodeError {
 /// foreign, identity-bearing cwd).
 pub(crate) type CwdExtractor = fn(&Value) -> Option<PathBuf>;
 
+/// The first-sight parent-extractor fn pointer: ONE parsed transcript line → the
+/// parent's session key it names, for a transcript whose flat path names none
+/// (`detect_parent_id` reads a nested one).
+pub(crate) type ParentExtractor = fn(&Value) -> Option<String>;
+
 /// Derives the opaque session-id string a transcript PATH keys its agent on —
 /// what the JSONL watcher's first-sight `SessionStart` carries, and therefore
 /// what a hook event must agree with or one session renders as two sprites.
@@ -313,7 +318,7 @@ fn decodes_to_nothing(
 
 /// A source's OWN hook arms, run before the shared field requirements so an alien
 /// envelope (Reasonix: camelCase, `event` discriminator, no `session_id` at all) or
-/// a subject-changing event (a CC subagent's, whose AgentId is the CHILD's)
+/// a subject-changing event (a subagent's, whose AgentId is the CHILD's)
 /// decodes in its own module. An `Extend` decoder that declines (`Ok(None)`) falls
 /// through to the shared CC-shaped arms; a `ClaimsAll` decoder cannot.
 fn source_owned_arms(
@@ -590,6 +595,39 @@ pub(crate) fn shared_hook_arms(
             Err(DecodeError::unsupported(source, other))
         }
     }
+}
+
+/// An event a subagent fired, which names it in `agent_id` beside its root's
+/// `session_id`, decoded as the subagent's own session: `session` maps the
+/// wire's `agent_id` to that session's id, and a start it decodes to is
+/// parented on the root. An event naming no subagent declines (`Ok(None)`).
+pub(crate) fn subagent_fired(
+    obj: &serde_json::Map<String, Value>,
+    source: &str,
+    session: fn(&str) -> String,
+) -> DecodeResult<Option<Vec<AgentEvent>>> {
+    let Some(agent) = obj
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let desc = crate::source::registry::descriptor_for(source);
+    let root = obj
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(|root| hook_agent_id(desc, obj, source, root));
+    let mut own = obj.clone();
+    own.insert("session_id".into(), Value::from(session(agent)));
+    let mut evs = shared_hook_arms(&own, source, desc)?;
+    for e in &mut evs {
+        if let AgentEvent::SessionStart { parent_id, .. } = e {
+            *parent_id = parent_id.or(root);
+        }
+    }
+    Ok(Some(evs))
 }
 
 /// The dispatch tool's current NAME, renamed from `Task` in CC v2.1.63 with no

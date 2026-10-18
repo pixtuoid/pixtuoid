@@ -8,8 +8,8 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::source::decoder::{
-    CwdExtractor, IdDeriver, LineDecoder, PathFilter, accept_all_paths, default_id_from_path,
-    extract_top_level_cwd,
+    CwdExtractor, IdDeriver, LineDecoder, ParentExtractor, PathFilter, accept_all_paths,
+    default_id_from_path, extract_top_level_cwd,
 };
 use crate::source::{
     AgentEvent, antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes,
@@ -221,6 +221,9 @@ pub struct Transcript {
     /// walker dispatches by the SCANNED source, so one source's shape is never
     /// tried against another's transcript.
     pub(crate) cwd_extractor: CwdExtractor,
+    /// First-sight parent extractor for the same head scan, read on the line
+    /// it stops at.
+    pub(crate) parent_extractor: Option<ParentExtractor>,
 }
 
 /// Where this source's OS pid comes from — a DATA-only capability: this const
@@ -312,6 +315,11 @@ impl SourceDescriptor {
     /// The first-sight cwd extractor (`None` for a hook-only agent or a daemon).
     pub(crate) fn cwd_extractor(&self) -> Option<CwdExtractor> {
         self.transcript().map(|t| t.cwd_extractor)
+    }
+
+    /// The first-sight parent extractor (`None` without one).
+    pub(crate) fn parent_extractor(&self) -> Option<ParentExtractor> {
+        self.transcript().and_then(|t| t.parent_extractor)
     }
 
     /// The transcript path→session-id derivation (`None` without a transcript).
@@ -471,6 +479,11 @@ pub fn cwd_extractor_for(source: &str) -> CwdExtractor {
         .unwrap_or(extract_top_level_cwd)
 }
 
+/// `source`'s first-sight parent extractor, if its transcripts name a parent.
+pub(crate) fn parent_extractor_for(source: &str) -> Option<ParentExtractor> {
+    descriptor_for(source).and_then(|d| d.parent_extractor())
+}
+
 /// How this source keys a transcript path onto a session id. THE single
 /// derivation: [`crate::source::jsonl::JsonlWatcher::new`] defaults to it and
 /// the offline `harness::Drive` seeds with it, so a driven transcript lands on
@@ -533,6 +546,7 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             // in the SAME projects tree.
             path_filter: claude_code::admits_transcript,
             cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
         }),
         hook: Some(HookDecoding {
             // The session UUID == the transcript filename stem, so keying on it
@@ -576,12 +590,13 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             path_filter: accept_all_paths,
             // Rollouts carry cwd ONLY on the head session_meta line, under `payload`.
             cwd_extractor: codex::extract_codex_cwd,
+            parent_extractor: Some(codex::codex_head_parent),
         }),
         hook: Some(HookDecoding {
             id_key: IdKey::SessionId,
             tool_id_key: ToolIdKey::ToolUse,
-            // SubagentStart/Stop change the event's SUBJECT — inexpressible in
-            // the shared arms.
+            // A child's events change their SUBJECT — inexpressible in the
+            // shared arms.
             custom: Some(HookCustom::Extend(codex::decode_codex_hook_custom)),
         }),
         caps: SourceCaps {
@@ -590,7 +605,9 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             has_exit_signal: false,
             resurrects_on_prompt: true,
             delegations_are_hook_silent: false,
-            child_end_inference: ChildEndInference::TaskDrain,
+            // `spawn_agent` returns at launch, and a child's SubagentStop ends
+            // it (`codex-rs/core/src/hook_runtime.rs:401-437` at rust-v0.163.0).
+            child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },
         focus: FocusChannel::TranscriptProbe,
@@ -619,6 +636,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             // AG step lines carry no cwd field at all — the shared shape never
             // matches and the label falls back to the bare `ag` prefix.
             cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
         }),
         // A real spec despite the missing install target (unlike copilot, which
         // has no hook path at all): the payload does decode via the shared arms.
@@ -845,6 +863,7 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
             id_from_path: copilot::copilot_id_from_path,
             path_filter: accept_all_paths,
             cwd_extractor: copilot::extract_copilot_cwd,
+            parent_extractor: None,
         }),
         hook: None,
         caps: SourceCaps {
@@ -967,6 +986,7 @@ const GROK: SourceDescriptor = SourceDescriptor {
             // Always-None: grok lines carry no cwd — the URL-encoded group dir
             // does, applied via the watcher's cwd deriver.
             cwd_extractor: grok::extract_grok_cwd,
+            parent_extractor: None,
         }),
         hook: Some(HookDecoding {
             id_key: IdKey::SessionId,        // inert: custom claims all
@@ -1022,6 +1042,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
             id_from_path: omp::omp_id_from_path,
             path_filter: accept_all_paths,
             cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
         }),
         hook: Some(HookDecoding {
             id_key: IdKey::SessionId,        // inert: custom claims all
