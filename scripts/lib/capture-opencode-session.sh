@@ -12,7 +12,7 @@ set -uo pipefail
 OC_VERSION="${PIXTUOID_CAPTURE_VERSION:?run through just capture-fixture, which names the version}"
 PORT="${OC_PORT:-4103}"
 BASE="http://127.0.0.1:$PORT"
-LOGS="${PIXTUOID_CAPTURE_SCRATCH:-$(mktemp -d)}"
+LOGS="${PIXTUOID_CAPTURE_DRIVER_DIR:-$(mktemp -d)}"
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 # A missing shim would otherwise yield a silently EMPTY (still billed) capture:

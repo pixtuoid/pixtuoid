@@ -18,7 +18,7 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19099}"
 SESSION="${OC_SESSION:-pixcap-$(date +%s)}"
-LOGS="${PIXTUOID_CAPTURE_SCRATCH:-$(mktemp -d)}"
+LOGS="${PIXTUOID_CAPTURE_DRIVER_DIR:-$(mktemp -d)}"
 # `agent` dials this port, and the variable outranks the operator's configured
 # `gateway.port` (`resolveGatewayPort`, openclaw's dist `paths-*.mjs`, 2026.10.4).
 export OPENCLAW_GATEWAY_PORT="$PORT"

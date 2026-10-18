@@ -16,7 +16,7 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19098}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SBX="${PIXTUOID_CAPTURE_SCRATCH:-$(mktemp -d)}/openclaw-home"
+SBX="${PIXTUOID_CAPTURE_DRIVER_DIR:-$(mktemp -d)}/openclaw-home"
 mkdir -p "$SBX/.openclaw" "$SBX/xdg"
 export HOME="$SBX" OPENCLAW_HOME="$SBX" OPENCLAW_STATE_DIR="$SBX/.openclaw" \
     OPENCLAW_CONFIG_PATH="$SBX/.openclaw/openclaw.json" XDG_CONFIG_HOME="$SBX/xdg" \

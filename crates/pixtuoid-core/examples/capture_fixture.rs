@@ -53,7 +53,7 @@ mod recorder {
     /// Where the recorder names the dir a driver keeps its own logs and homes
     /// in, [`driver_dir`]: gone with a capture that worked and kept, and named,
     /// for one that did not, since only the recorder knows which.
-    const SCRATCH_ENV: &str = "PIXTUOID_CAPTURE_SCRATCH";
+    const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
 
     /// The driver's own part of the recorder's scratch, apart from everything the
     /// recorder and its listener create there.
@@ -708,7 +708,7 @@ mod recorder {
             .env(Endpoint::ENV, wiring.endpoint.path());
         let own = driver_dir(wiring.scratch);
         std::fs::create_dir_all(&own)?;
-        c.env(SCRATCH_ENV, own);
+        c.env(DRIVER_DIR_ENV, own);
         c.env(CLI_ENV, named_cli(wiring.scratch))
             .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
@@ -1670,8 +1670,8 @@ mod recorder {
             // opt-out outlives the scrub.
             let script = format!(
                 r#"test "${VERSION_ENV}" = 1.0.0 && test -z "$CLAUDE_CODE_CHILD_SESSION" \
-                   && test "$CLAUDE_CODE_PROBE" = 1 && test "${SCRATCH_ENV}" = "{}" \
-                   && test -d "${SCRATCH_ENV}" && echo dsh >"${CLI_ENV}""#,
+                   && test "$CLAUDE_CODE_PROBE" = 1 && test "${DRIVER_DIR_ENV}" = "{}" \
+                   && test -d "${DRIVER_DIR_ENV}" && echo dsh >"${CLI_ENV}""#,
                 driver_dir(sandbox.path()).display()
             );
             let cmd = ["sh", "-c", &script].map(String::from);
@@ -1701,21 +1701,19 @@ mod recorder {
 
         #[test]
         fn a_failed_capture_keeps_only_a_scratch_a_driver_wrote_in() {
-            // Whatever the recorder and its listener leave at the scratch's top
-            // level (the CLI name, a socket's lock) is never the driver's.
-            let recorders = |scratch: &Path| {
+            let top_level = |scratch: &Path| {
                 std::fs::write(named_cli(scratch), "openclaw\n").expect("cli");
                 std::fs::write(scratch.join("capture.sock.lock"), "").expect("lock");
                 std::fs::create_dir_all(driver_dir(scratch)).expect("driver dir");
             };
             let bare = tempfile::tempdir().expect("scratch");
-            recorders(bare.path());
+            top_level(bare.path());
             let at = bare.path().to_path_buf();
             keep_scratch(bare);
-            assert!(!at.exists(), "the recorder's own entries alone go");
+            assert!(!at.exists(), "top-level entries alone go");
 
             let used = tempfile::tempdir().expect("scratch");
-            recorders(used.path());
+            top_level(used.path());
             let log = driver_dir(used.path()).join("openclaw-agent.log");
             std::fs::write(&log, "refused").expect("log");
             let at = used.path().to_path_buf();
@@ -1747,7 +1745,7 @@ mod recorder {
                             .collect();
                         let var = format!("PIXTUOID_CAPTURE_{tail}");
                         assert!(
-                            [CLI_ENV, VERSION_ENV, SCRATCH_ENV].contains(&var.as_str()),
+                            [CLI_ENV, VERSION_ENV, DRIVER_DIR_ENV].contains(&var.as_str()),
                             "{name} reads ${var}, which the recorder never sets"
                         );
                     }
