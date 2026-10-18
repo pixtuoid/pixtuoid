@@ -398,6 +398,13 @@ mod recorder {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
                 _ => {}
             }
+            // A session dir the old run named would stay behind empty, beside
+            // the new run's. `remove_dir` takes only an empty one.
+            for dir in old.ancestors().skip(1).take_while(|d| *d != dest) {
+                if std::fs::remove_dir(dir).is_err() {
+                    break;
+                }
+            }
         }
         let mut wrote = Vec::new();
         for raw in jsonl_files_under(run) {
@@ -939,7 +946,8 @@ mod recorder {
 
         /// The run's raw capture is the committed recording with a key no
         /// decoder reads planted on line 1, then `edit`ed; the root's fixture
-        /// holds `old.jsonl` and the `record` given.
+        /// holds `old/old.jsonl`, as a session dir holds its transcript, and
+        /// the `record` given.
         fn promotable(
             record: serde_json::Value,
             edit: impl FnOnce(&mut [serde_json::Value]),
@@ -981,8 +989,8 @@ mod recorder {
             )
             .expect("manifest");
             let dest = root.join(fixture);
-            std::fs::create_dir_all(&dest).expect("mkdir");
-            std::fs::write(dest.join("old.jsonl"), "{}\n").expect("old");
+            std::fs::create_dir_all(dest.join("old")).expect("mkdir");
+            std::fs::write(dest.join("old").join("old.jsonl"), "{}\n").expect("old");
             std::fs::write(dest.join(PROVENANCE), record.to_string()).expect("record");
             Promotable {
                 _dir: d,
@@ -1010,8 +1018,8 @@ mod recorder {
             );
             promote(&p.run, &p.root, &needles()).expect("promote");
             assert!(
-                !p.dest.join("old.jsonl").exists(),
-                "the old bytes leave whole"
+                !p.dest.join("old").exists(),
+                "the old bytes leave whole, with the dir that held them"
             );
             let (bytes, record) = written(&p.dest);
             assert!(!bytes.contains("unread"), "the planted key is stripped");
