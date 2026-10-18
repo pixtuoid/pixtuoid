@@ -632,8 +632,6 @@ mod run {
         c
     }
 
-    /// Run `c` to success. Its error names the program and arguments alone: a
-    /// `Command`'s `Debug` prints its environment, npm's credentials included.
     /// How many times curl retries a transient failure.
     const CURL_RETRIES: &str = "3";
 
@@ -664,7 +662,6 @@ mod run {
         Ok(out.stdout)
     }
 
-    /// Download `url` into `dest`.
     fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
         let mut c = tool(CURL);
         c.args(["-fsSL", "--retry", CURL_RETRIES, "-o"])
@@ -673,6 +670,8 @@ mod run {
         succeed(c)
     }
 
+    /// Run `c` to success. Its error names the program and arguments alone: a
+    /// `Command`'s `Debug` prints its environment, npm's credentials included.
     fn succeed(mut c: Command) -> std::io::Result<()> {
         let status = c.status()?;
         if status.success() {

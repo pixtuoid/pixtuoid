@@ -128,15 +128,32 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
         ));
     };
     let mut missing = Vec::new();
+    let mut mislabelled = Vec::new();
     let mut shim = ShimRef::Unknown;
     for &(event, grouped) in AG_EVENTS {
-        match installed_command(set, event, grouped) {
-            Some(cmd) if shim == ShimRef::Unknown => shim = shell_shim_ref(cmd),
-            Some(_) => {}
-            None => missing.push(event),
+        let Some(cmd) = installed_command(set, event, grouped) else {
+            missing.push(event);
+            continue;
+        };
+        let own = shell_shim_ref(cmd);
+        let other_shim = if shim == ShimRef::Unknown {
+            shim = own;
+            false
+        } else {
+            own != shim
+        };
+        // The shim stamps whatever event the command names.
+        if other_shim || !cmd.ends_with(&format!("{HOOK_EVENT_FLAG}{event}")) {
+            mislabelled.push(event);
         }
     }
     let mut extra = Vec::new();
+    if !mislabelled.is_empty() {
+        extra.push(format!(
+            "the `{HOOK_NAME}` hook's command for {} names another event or shim",
+            mislabelled.join(", ")
+        ));
+    }
     // agy skips a hook switched off by `"enabled": false` (`HOOKS_PAGE`, "Hook
     // definition fields").
     if set.get("enabled") == Some(&Value::Bool(false)) {
@@ -231,6 +248,15 @@ mod tests {
         let parse = verify_schema(&doc.to_string());
         assert!(
             parse.issues.iter().any(|i| i.contains("PostToolUse")),
+            "{:?}",
+            parse.issues
+        );
+
+        let mut doc = installed("", CMD);
+        doc[HOOK_NAME]["SessionStart"][0]["command"] = json!(format!("{CMD} --hook-event Stop"));
+        let parse = verify_schema(&doc.to_string());
+        assert!(
+            parse.issues.iter().any(|i| i.contains("SessionStart")),
             "{:?}",
             parse.issues
         );

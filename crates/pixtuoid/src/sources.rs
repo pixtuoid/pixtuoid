@@ -209,9 +209,12 @@ fn installed_hooks(sid: &str) -> Option<bool> {
     by_source(sid).map(|t| install::has_hooks(t, None))
 }
 
-/// The one fact for `sid`: `hooked(sid)`, else its `[sources]` flag.
+/// The one fact for `sid`: `hooked(sid)`, else its `[sources]` flag, which also
+/// still connects a [`ONCE_FLAG_ONLY`] source until its hooks are adopted, as the
+/// release that wrote it did.
 fn is_on(app: &config::AppConfig, sid: &str, hooked: impl Fn(&str) -> Option<bool>) -> bool {
-    hooked(sid).unwrap_or_else(|| app.sources.get(sid) == Some(&true))
+    let flag = app.sources.get(sid) == Some(&true);
+    hooked(sid).map_or(flag, |h| h || (flag && ONCE_FLAG_ONLY.contains(&sid)))
 }
 
 /// Rewrite every target's [`RetiredStub`](install::target::RetiredStub), connected
@@ -315,7 +318,7 @@ const ONCE_FLAG_ONLY: &[&str] = &[
 
 /// Install the hooks of each [`ONCE_FLAG_ONLY`] source whose flag is on: the
 /// flag was the user's consent to connect it. A flag goes only once its hooks
-/// are in, so a failed install retries at the next launch.
+/// are in, so a failed install retries at the next interactive launch.
 pub(crate) fn adopt_flagged_targets(
     cfg: &Path,
     app: &config::AppConfig,
@@ -386,15 +389,17 @@ pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
     is_on(&config::load(cfg, &mut Vec::new()), sid, installed_hooks)
 }
 
-/// Rewrite `[sources]` whole, as the flag-only sources that are on once
-/// `change` applies, so a key no reader looks at never outlives a change.
+/// Rewrite `[sources]` whole, as the flag-only sources that are on once `sid`'s
+/// `change` applies, so a key no reader looks at never outlives a change. A
+/// [`ONCE_FLAG_ONLY`] flag awaiting adoption survives, unless `sid` is that
+/// source, whose own connect or disconnect settles it.
 /// Runs before any hook write: a config `update_config` refuses stops the op
 /// with nothing to undo.
-fn write_flags(cfg: &Path, change: Option<(&str, bool)>) -> Result<()> {
-    let flag_only: Vec<&str> = registry::registered_source_names()
-        .filter(|sid| by_source(sid).is_none())
+fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
+    let keep: Vec<&str> = registry::registered_source_names()
+        .filter(|s| by_source(s).is_none() || (ONCE_FLAG_ONLY.contains(s) && *s != sid))
         .collect();
-    config::save_flag_sources(cfg, &flag_only, change)
+    config::save_flag_sources(cfg, &keep, change.map(|on| (sid, on)))
 }
 
 /// Connect a source: install its hooks, or turn on a flag-only source's flag.
@@ -421,7 +426,7 @@ fn connect_target(
     sid: &'static str,
     target: Option<&Target>,
 ) -> Result<ConnectOutcome> {
-    write_flags(cfg, target.is_none().then_some((sid, true)))?;
+    write_flags(cfg, sid, target.is_none().then_some(true))?;
     Ok(match target {
         Some(t) => ConnectOutcome::Installed(install::install_target(t, None)?),
         None => ConnectOutcome::FlagOnly,
@@ -444,7 +449,7 @@ fn disconnect_target(
     sid: &'static str,
     target: Option<&Target>,
 ) -> Result<DisconnectOutcome> {
-    write_flags(cfg, target.is_none().then_some((sid, false)))?;
+    write_flags(cfg, sid, target.is_none().then_some(false))?;
     Ok(match target {
         Some(t) => DisconnectOutcome::Uninstalled(install::uninstall_target(t, None)?),
         None => DisconnectOutcome::FlagOnly,
@@ -1105,6 +1110,39 @@ mod tests {
         );
         assert!(adopted.is_empty());
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), seeded);
+    }
+
+    #[test]
+    fn a_pending_flag_connects_its_source_until_its_hooks_are_adopted() {
+        let app = flags(&[("antigravity", true), ("codex", true)]);
+        let none_hooked = |sid: &str| (sid != "copilot").then_some(false);
+        assert_eq!(
+            connected_with(&app, none_hooked),
+            set(&["antigravity"]),
+            "a hook source's flag connects nothing"
+        );
+    }
+
+    #[test]
+    fn a_pending_flag_outlives_another_sources_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
+        connect(&cfg, "copilot").unwrap();
+        disconnect(&cfg, "copilot").unwrap();
+        let app = config::load(&cfg, &mut Vec::new());
+        assert_eq!(app.sources, flags(&[("antigravity", true)]).sources);
+    }
+
+    #[test]
+    fn its_own_change_settles_a_pending_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
+        // The flag write runs before FAIL_TARGET's uninstall refuses.
+        assert!(disconnect_target(&cfg, "antigravity", Some(&FAIL_TARGET)).is_err());
+        let app = config::load(&cfg, &mut Vec::new());
+        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
     }
 
     #[test]

@@ -199,13 +199,8 @@ fn build_run_config(
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
     let graphics = config::resolve_graphics(&cfg, cli_graphics, &mut cfg_warnings);
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
-    // A headless run is a tool's, whose real homes a launch must not write into
-    // (`tier-live-sources.sh` flags every source).
-    let adopted = if headless {
-        Vec::new()
-    } else {
-        sources::adopt_flagged_targets(&cfg_path, &cfg)
-    };
+    let adopted =
+        adopt_unless_headless(headless, || sources::adopt_flagged_targets(&cfg_path, &cfg));
     let connected = sources::connected(&cfg);
     let first_run = sources::is_first_run(&connected, load_degraded);
     if !headless {
@@ -249,6 +244,13 @@ fn build_run_config(
         graphics,
         motion,
     })
+}
+
+/// Run `adopt` ([`sources::adopt_flagged_targets`]) on an interactive launch
+/// only: adoption installs hooks, and a headless run's flags are no user's
+/// consent (`tier-live-sources.sh` sets every one with real homes in play).
+fn adopt_unless_headless<T>(headless: bool, adopt: impl FnOnce() -> Vec<T>) -> Vec<T> {
+    if headless { Vec::new() } else { adopt() }
 }
 
 /// Bring the connected sources' plugin files up to this build, then name on `out`
@@ -299,6 +301,19 @@ fn warn_broken_installs(connected: &std::collections::HashSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_interactive_launch_adopts() {
+        let ran = std::cell::Cell::new(0);
+        let adopt = || {
+            ran.set(ran.get() + 1);
+            vec![()]
+        };
+        assert!(adopt_unless_headless(true, adopt).is_empty());
+        assert_eq!(ran.get(), 0, "headless never adopts");
+        assert_eq!(adopt_unless_headless(false, adopt).len(), 1);
+        assert_eq!(ran.get(), 1);
+    }
 
     #[test]
     fn both_boot_modes_converge_and_only_an_interactive_one_prints() {
