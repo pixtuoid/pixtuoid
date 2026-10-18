@@ -985,7 +985,7 @@ async:
             Scenario {
                 shape: Shape::ToolRun,
                 expects: &["session_start", "session_shutdown"],
-                fixture: "fixtures/omp/tool-run-hermetic",
+                fixture: "omp/fixtures/tool-run-hermetic",
             },
             Scenario {
                 shape: Shape::Permission,
@@ -995,7 +995,7 @@ async:
                     "tool_approval_resolved",
                     "session_shutdown",
                 ],
-                fixture: "fixtures/omp/permission-hermetic",
+                fixture: "omp/fixtures/permission-hermetic",
             },
             Scenario {
                 shape: Shape::Subagent,
