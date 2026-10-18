@@ -940,7 +940,7 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
 const HERMES: SourceDescriptor = SourceDescriptor {
     name: hermes::SOURCE_NAME,
     label_prefix: "hm",
-    verified_version: "0.21.0",
+    verified_version: "0.22.2",
     version_probe: Some(&["hermes", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("HERMES_HOME"),

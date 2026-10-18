@@ -656,7 +656,7 @@ mod run {
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
-            (Versions::Latest, Package::GithubRelease { repo, .. }) => {
+            (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
                 let url = format!("https://github.com/{}/releases/latest", repo.name);
@@ -678,6 +678,8 @@ mod run {
     }
 
     const CURL: &str = "curl";
+    const GIT: &str = "git";
+    const UV: &str = "uv";
 
     /// The release a `releases/latest` response's `location` names.
     fn latest_tag(headers: &str) -> Option<Version> {
@@ -807,6 +809,35 @@ mod run {
                         env: Vec::new(),
                     },
                     bin: prefix,
+                })
+            }
+            Package::UvLocked(repo) => {
+                let src = prefix.join("src");
+                install_once(&prefix, |_| {
+                    let mut clone = tool(GIT);
+                    clone
+                        .args(["clone", "--quiet", "--depth", "1", "--branch"])
+                        .arg(format!("v{version}"))
+                        .arg(format!("https://github.com/{}.git", repo.name))
+                        .arg(&src);
+                    succeed(clone)?;
+                    // A workspace's members too, as hermes's own installer syncs
+                    // (`pm/environment.py:406-409` at v0.22.2).
+                    let mut sync = tool(UV);
+                    sync.args(["sync", "--frozen", "--all-packages"])
+                        .current_dir(&src);
+                    succeed(sync)
+                })?;
+                let bin = src
+                    .join(".venv")
+                    .join(if cfg!(windows) { "Scripts" } else { "bin" });
+                Ok(Installed {
+                    launch: Launch {
+                        program: bin.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)),
+                        args: Vec::new(),
+                        env: Vec::new(),
+                    },
+                    bin,
                 })
             }
         }
@@ -1185,10 +1216,7 @@ mod run {
             serde_json::to_string_pretty(&journal)?,
         )?;
         let entries = journal.as_array().cloned().unwrap_or_default();
-        let unmatched = entries
-            .iter()
-            .filter(|e| e["response"]["fixture"].is_null())
-            .count();
+        let unmatched = unmatched_turns(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
         // one means the CLI never did; it fails past one only on a capture it
@@ -1328,6 +1356,16 @@ mod run {
         args.extend(run.launch.argv());
         args.extend(p.invocation[1..].iter().map(OsString::from));
         args
+    }
+
+    /// The model turns no script line answered. A turn is a POST: a CLI's GET
+    /// of a model catalog (hermes probes LM Studio's `/api/v1/models`,
+    /// `agent/model_metadata.py:745` at v0.22.2) has no line to match.
+    fn unmatched_turns(journal: &[serde_json::Value]) -> usize {
+        journal
+            .iter()
+            .filter(|e| e["method"] == "POST" && e["response"]["fixture"].is_null())
+            .count()
     }
 
     /// The scenario's script with its placeholders expanded in every string,
@@ -2006,6 +2044,16 @@ mod run {
                     .is_err_and(|why| why.contains(&format!("exited {failed}"))),
                 "no npm error line still says why"
             );
+        }
+
+        #[test]
+        fn only_a_model_turn_no_script_line_answered_is_unmatched() {
+            let journal = serde_json::json!([
+                {"method": "GET", "path": "/api/v1/models", "response": {"status": 200, "fixture": null}},
+                {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 200, "fixture": {"match": {}}}},
+                {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 404, "fixture": null}},
+            ]);
+            assert_eq!(unmatched_turns(journal.as_array().expect("entries")), 1);
         }
 
         #[test]

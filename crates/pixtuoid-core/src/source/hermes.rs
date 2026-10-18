@@ -268,8 +268,8 @@ mod tests {
 
     #[test]
     fn session_start_reports_the_model_from_extra() {
-        // The shape from fixtures/hermes/tool-run: hermes nests it one level down,
-        // and only the session events carry it.
+        // The shape from fixtures/hermes/tool-run-hermetic: hermes nests it one
+        // level down, and only the session events carry it.
         let evs = decode_all(json!({
             "hook_event_name": "on_session_start", "session_id": "s1", "cwd": "/repo",
             "extra": {"model": "gpt-4o-mini"}
@@ -387,7 +387,7 @@ mod tests {
         );
     }
 
-    /// The shape `hermes/tool-run` could never show, because a one-shot capture
+    /// The shape `hermes/tool-run-hermetic` could never show, because a one-shot capture
     /// ends its only turn and its session together. `approval-recorded` is the
     /// multi-turn capture that falsifies it: one session_id, one pid, TWO
     /// `on_session_end`, and work after the first.

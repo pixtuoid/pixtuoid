@@ -100,6 +100,10 @@ jobs:
       - uses: ./.github/actions/setup-npm
         with:
           directory: crates/pixtuoid-core/tests/sources/hermetic/aimock
+      # `Package::UvLocked` profiles (hermes) sync their tag's lock with it.
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: uv
       # The release every drift leg passed, not a `latest` published since.
       - env:
           SOURCE: ${{ matrix.source }}

@@ -268,7 +268,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "hermes",
             source: "hermes",
-            fixture: "fixtures/hermes/tool-run/hook-payloads.jsonl",
+            fixture: "fixtures/hermes/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Active],
         },
