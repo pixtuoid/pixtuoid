@@ -1243,13 +1243,12 @@ fn long_delegation_keeps_parent_and_live_subagent_alive() {
         Transport::Hook,
     );
 
-    // Subagent tool calls that CC misattributes to the parent's AgentId, so
-    // the reducer suppresses them.
+    // The subagent's own tool calls refresh its parent's lineage.
     for (mins, tuid) in [(5u64, "sub-R1"), (9u64, "sub-R2")] {
         act_start(
             &mut r,
             &mut scene,
-            parent,
+            child,
             Some(tuid),
             Some("Read: /x"),
             t0 + Duration::from_secs(mins * 60),

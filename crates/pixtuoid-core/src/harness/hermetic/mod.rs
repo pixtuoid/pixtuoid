@@ -312,18 +312,27 @@ pub const PROFILES: &[Profile] = &[
         // (code.claude.com/docs/en/memory).
         ancestor_config: &["CLAUDE.md", "CLAUDE.local.md", ".claude", "AGENTS.md"],
         config: &[],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
-            fixture: "fixtures/claude-code/tool-run-hermetic",
-        }],
-        script_vars: &[],
-        not_yet: &[
-            "Notification",
-            "PermissionRequest",
-            "SubagentStart",
-            "SubagentStop",
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
+                fixture: "fixtures/claude-code/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                expects: &[
+                    "SessionStart",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "SubagentStart",
+                    "SubagentStop",
+                    "SessionEnd",
+                ],
+                fixture: "claude/fixtures/subagent-hermetic",
+            },
         ],
+        script_vars: &[],
+        not_yet: &["Notification", "PermissionRequest"],
         event_name: hook_event_name,
         not_yet_fields: &[
             // A Bash call's; the scripted turn reads a file.
@@ -332,8 +341,6 @@ pub const PROFILES: &[Profile] = &[
             // `claude -p` sends no model; the interactive TUI does
             // (fixtures/claude-code/permission-recorded).
             ("hook:SessionStart", "/model"),
-            // A subagent transcript's (fixtures/claude-code/subagent-recorded).
-            ("tx:assistant", "/attributionAgent"),
             // aimock's Messages usage is input and output tokens alone
             // (`CopilotKit/aimock` `src/messages.ts:405-414` at v1.43.0).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),

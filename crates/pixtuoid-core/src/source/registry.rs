@@ -116,11 +116,24 @@ pub(crate) struct SourceCaps {
     /// `last_event_at` freezes for the whole delegation, so the reducer gives it
     /// the Waiting-class stale window instead of sweeping mid-delegation.
     pub(crate) delegations_are_hook_silent: bool,
-    /// Do this source's subagents end unannounced, with no end event naming
-    /// the child? When true, an id-less Task's end is the only sign its
-    /// children returned, so it arms the b1 cascade a tracked Task's drain
-    /// does, over the parent's whole subtree.
-    pub(crate) child_ends_unannounced: bool,
+    pub(crate) child_end_inference: ChildEndInference,
+    /// Does a subagent's hook arrive under its parent's key, naming no child?
+    /// Then while the parent has a Task in flight its hook activity is the
+    /// child's, and the reducer drops it.
+    pub(crate) child_hooks_unnamed: bool,
+}
+
+/// Which Task end also walks the parent's whole subtree out (the b1 cascade),
+/// beside any end the wire names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChildEndInference {
+    /// No Task end: each child turn ends by its own event, and a dispatch can
+    /// return while its child runs.
+    None,
+    /// A tracked Task's drain.
+    TaskDrain,
+    /// Any Task's end, an id-less one included: no end event names the child.
+    AnyTaskEnd,
 }
 
 impl SourceCaps {
@@ -129,7 +142,8 @@ impl SourceCaps {
         has_exit_signal: false,
         resurrects_on_prompt: false,
         delegations_are_hook_silent: false,
-        child_ends_unannounced: false,
+        child_end_inference: ChildEndInference::None,
+        child_hooks_unnamed: false,
     };
 
     /// The short-idle-reaper policy, derived: only safe when the sweep is the
@@ -535,7 +549,11 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             // would not walk back in — moot with a real exit signal anyway.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            // A subagent turn fires SubagentStart, and SubagentStop once it has
+            // finished responding (hooks.md); the main conversation's Agent call
+            // returns `async_launched` at launch (CHANGELOG 2.1.302).
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::TranscriptProbe,
     },
@@ -572,7 +590,8 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             has_exit_signal: false,
             resurrects_on_prompt: true,
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::TranscriptProbe,
     },
@@ -616,7 +635,8 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             has_exit_signal: false,
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::Unsupported,
     },
@@ -657,7 +677,8 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
             // by a call id its parent's tool hooks don't carry
             // (`internal/assembly/boot/delegation.go:127-133`,
             // `internal/ext/hook/hook.go:827-847` at v2.39.0).
-            child_ends_unannounced: true,
+            child_end_inference: ChildEndInference::AnyTaskEnd,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp,
     },
@@ -706,7 +727,8 @@ const DSH: SourceDescriptor = SourceDescriptor {
             // (`dsh-subagent-claude-code`/`-codex`/`-acp`) publishes no
             // local child at all. `true` can only over-retain a dead slot.
             delegations_are_hook_silent: true,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         // The plugin runs in-process (a cordis plugin in the launcher's one
         // root context; no worker mode exists for plugins), so its stamped
@@ -746,7 +768,8 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
             // The recorded dispatch fires nothing of the child's own between
             // `subagent_spawn` and `subagent_complete`.
             delegations_are_hook_silent: true,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp,
     },
@@ -777,7 +800,8 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
             // A `subagent` child is parented by its `session.created`'s `parentID`,
             // so its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         // The plugin runs in the background server every TUI attaches to
         // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
@@ -832,7 +856,8 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
             // The `task` dispatch emits `tool.execution_start`/`complete` AND
             // explicit `subagent.started`/`completed` events.
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::Unsupported,
     },
@@ -872,7 +897,8 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
             // A `Task` dispatch gets NO `postToolUse`, and its children are separate
             // unlinkable sessions.
             delegations_are_hook_silent: true,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp,
     },
@@ -908,7 +934,8 @@ const HERMES: SourceDescriptor = SourceDescriptor {
             resurrects_on_prompt: false,
             // No subagent nesting on the wire — sessions render flat.
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp,
     },
@@ -958,7 +985,8 @@ const GROK: SourceDescriptor = SourceDescriptor {
             // A BLOCKING spawn's Task detail gets its post_tool_use at
             // completion, and a background spawn never mints a Task at all.
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         // `active_sessions.json` maps session_id → pid with an `opened_at` recycle
         // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
@@ -1017,7 +1045,8 @@ const OMP: SourceDescriptor = SourceDescriptor {
             // The `task` dispatch emits a toolCall/toolResult pair on the parent
             // AND the child persists its own parent-linked transcript.
             delegations_are_hook_silent: false,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
         },
         // The bridge extension runs IN-PROCESS (upstream: extensions share
         // the runtime), so its stamped `process.pid` IS omp's own —
@@ -1069,7 +1098,10 @@ const KIMI: SourceDescriptor = SourceDescriptor {
             // mints Task. `AgentSwarm` has NO such injection, so an omitting swarm
             // call mints Generic instead; `true` can only over-retain a dead slot.
             delegations_are_hook_silent: true,
-            child_ends_unannounced: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            // A subagent's tool hooks carry the session's id alone
+            // (kimi-code@2.2.0 `agentExternalHooksService.ts:301-313`).
+            child_hooks_unnamed: true,
         },
         focus: FocusChannel::ShimStamp,
     },

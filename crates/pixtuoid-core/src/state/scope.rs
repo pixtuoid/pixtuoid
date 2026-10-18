@@ -148,10 +148,9 @@ pub(crate) fn would_create_cycle(
 }
 
 /// True if any ancestor of `id` is in `Waiting` state. A subagent's permission
-/// `Notification` is attributed to the PARENT (the hook `transcript_path` is the
-/// parent's), so the parent goes `Waiting` while the blocked subagent stays
-/// `Active` — paused on a human gate, not dead, so `sweep_stale` exempts it from
-/// the aggressive Active timer.
+/// event that lands on an ancestor leaves the blocked subagent `Active` — paused
+/// on a human gate, not dead, so `sweep_stale` exempts it from the aggressive
+/// Active timer.
 pub(crate) fn has_waiting_ancestor(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
     has_ancestor_where(agents, id, |p| {
         matches!(p.state, ActivityState::Waiting { .. })

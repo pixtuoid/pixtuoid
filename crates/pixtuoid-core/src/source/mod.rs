@@ -31,8 +31,8 @@ pub enum Transport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ToolDetail {
-    /// A subagent dispatch. The reducer suppresses hook-sourced Activity
-    /// events for the parent until the matching `ActivityEnd` arrives.
+    /// A subagent dispatch: the parent shows Delegating until its
+    /// `ActivityEnd`.
     Task,
     /// Any other tool.
     Generic {
@@ -138,7 +138,7 @@ pub enum AgentEvent {
         /// child*. Source-trait CONTRACT: only subagent-END decoders may stamp
         /// `true`; every other constructor stamps `false` on a root end. The
         /// reducer's lifecycle record keys on the stamp: `true`, or any end of a
-        /// child it already knows, starts the child's gate on a late
+        /// child it already knows, starts the child's gate on a late transcript
         /// re-registration, and any other `false` from a hook makes only a hook
         /// start revive the root for the straggler window.
         as_child: bool,

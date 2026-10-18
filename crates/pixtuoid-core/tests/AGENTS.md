@@ -19,10 +19,10 @@ tests/
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
-│   ├── claude/ codex/ codewhale/   per-CLI subagent lifecycle, each with its OWN
+│   ├── codex/ codewhale/   per-CLI subagent lifecycle, each with its OWN
 │   │                    single-owner fixtures/hook-payloads.jsonl (NOT scanned)
-│   ├── cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is an independent
-│   │                    session (two sprites), so these can't live under the one-AgentId rule
+│   ├── claude/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is an
+│   │                    independent session (two sprites), so these can't live under the one-AgentId rule
 │   ├── omp/             the bridge-extension rounds (#951) — hook keys FOLD
 │   │                    platform-dependently, so expectations derive through the
 │   │                    fold, not the platform-invariant conformance goldens

@@ -15,6 +15,7 @@ use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, profile};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
+use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
 /// The tracing target every drift breadcrumb rides (`source::drift::TARGET`).
@@ -401,7 +402,12 @@ fn judge(
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
         Shape::Permission => permission(&events, &reached, findings),
-        Shape::Subagent => subagent(&events, &reached, findings),
+        Shape::Subagent => subagent(
+            &events,
+            &reached,
+            p.descriptor().caps().child_end_inference,
+            findings,
+        ),
     }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent => "active",
@@ -535,7 +541,12 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     }
 }
 
-fn subagent(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label, String)>) {
+fn subagent(
+    events: &[AgentEvent],
+    reached: &[Reach],
+    inference: ChildEndInference,
+    findings: &mut Vec<(Label, String)>,
+) {
     let ids: BTreeSet<_> = events.iter().map(AgentEvent::agent_id).collect();
     let children: BTreeSet<(AgentId, AgentId)> = events
         .iter()
@@ -567,7 +578,9 @@ fn subagent(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(t),
-            } => *agent_id == parent && tasks.contains(&(parent, t.as_str())),
+            } if inference != ChildEndInference::None => {
+                *agent_id == parent && tasks.contains(&(parent, t.as_str()))
+            }
             _ => false,
         })
     };
@@ -575,6 +588,41 @@ fn subagent(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
         findings.push((Label::Fail, "no session started as another's child".into()));
     } else if !children.iter().all(|&(child, parent)| ended(child, parent)) {
         findings.push((Label::Fail, "the child session never ended".into()));
+    }
+    // A call shown on both is the child's work on the parent's sprite (#1701).
+    let calls = |id: AgentId| -> BTreeSet<&str> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ActivityStart {
+                    agent_id,
+                    tool_use_id: Some(t),
+                    ..
+                } if *agent_id == id => Some(t.as_str()),
+                _ => None,
+            })
+            .collect()
+    };
+    if children
+        .iter()
+        .any(|&(child, parent)| !calls(child).is_disjoint(&calls(parent)))
+    {
+        findings.push((
+            Label::Fail,
+            "the parent showed a tool of the child's".into(),
+        ));
+    }
+    let works = |id: AgentId| {
+        events.iter().any(|e| {
+            matches!(e, AgentEvent::ActivityStart { agent_id, detail, .. }
+                if *agent_id == id && !detail.as_ref().is_some_and(|d| d.is_task()))
+        })
+    };
+    if !children.iter().all(|&(child, _)| works(child)) {
+        findings.push((
+            Label::Fail,
+            "a child's tool never landed on the child".into(),
+        ));
     }
     if !reached.contains(&Reach::Delegating) {
         findings.push((Label::Fail, "the parent never went Delegating".into()));
@@ -824,6 +872,56 @@ mod tests {
         );
     }
 
+    const CC_DELEGATE_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Delegating), \
+        general-purpose@1:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
+
+    /// The recorded CC delegation keys the child's tool hooks by `agent_id`;
+    /// without it they land on the root while the child's transcript shows
+    /// the same call (#1701), and with the transcript gone too the child shows
+    /// no tool of its own.
+    #[test]
+    fn a_childs_tool_on_its_parent_or_on_neither_fails() {
+        let clean = recorded("claude-code", Shape::Subagent, CC_DELEGATE_SCENE);
+        let v = verify(clean.path()).expect("verify");
+        assert!(v.findings().is_empty(), "{:?}", v.findings());
+        // As main keyed them: on the root's session, `agent_id` unread.
+        let mut root = Value::Null;
+        let unkeyed = |mut v: Value| {
+            if v["hook_event_name"] == "SessionStart" {
+                root = v["session_id"].clone();
+            } else if v["hook_event_name"] != "SubagentStart"
+                && v["hook_event_name"] != "SubagentStop"
+            {
+                let o = v.as_object_mut().expect("a payload");
+                if o.remove("agent_id").is_some() {
+                    o.insert("session_id".into(), root.clone());
+                }
+            }
+            Some(v)
+        };
+        let d = recorded("claude-code", Shape::Subagent, CC_DELEGATE_SCENE);
+        edit_hooks(d.path(), unkeyed);
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "parent showed a tool of the child's"),
+            "{:?}",
+            v.findings()
+        );
+        for t in jsonl_files_under(d.path()) {
+            if t.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("agent-"))
+            {
+                std::fs::write(&t, "").expect("blank the child's transcript");
+            }
+        }
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "child's tool never landed on the child"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
     #[test]
     fn a_parent_that_never_delegates_or_a_child_that_never_works_fails() {
         let delegation = |v: &Value| v["type"] == "tool_call" && v["toolName"] == "subagent";
@@ -888,10 +986,13 @@ mod tests {
             |v| v["type"] == "tool_result" && v.get("parentSession").is_none(),
         ];
         let reasonix: &[fn(&Value) -> bool] = &[|v| v["event"] == "SubagentStop"];
+        // claude-code infers no end from the drained Agent call: its Stop alone.
+        let claude: &[fn(&Value) -> bool] = &[|v| v["hook_event_name"] == "SubagentStop"];
         let never = "child session never ended";
         for (source, scene, ends) in [
             ("dsh", DS_DELEGATE_SCENE, dsh),
             ("reasonix", RX_DELEGATE_SCENE, reasonix),
+            ("claude-code", CC_DELEGATE_SCENE, claude),
         ] {
             for keep in 0..ends.len() {
                 let d = recorded(source, Shape::Subagent, scene);

@@ -6,7 +6,7 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
-use crate::{act_end, act_start, start, waiting};
+use crate::{UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, waiting};
 
 #[test]
 fn activity_start_sets_state_active() {
@@ -1034,8 +1034,8 @@ fn parallel_gated_approvals_resolve_member_by_member() {
 fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/f.jsonl");
-    start(&mut r, &mut scene, id);
+    let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "f");
+    start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     // A Task in flight arms `suppress_subagent_leak` for this id.

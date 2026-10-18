@@ -206,7 +206,7 @@ pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
 /// layout alone: the provenance gates walk it and the recorder re-strips it, so
 /// a fix lands on the whole population. Three shapes: `fixtures/<source>/<scenario>/`;
 /// `<module>/fixtures/` declaring at its root; `<module>/fixtures/<sub>/`, owned by
-/// the module when it is itself a registered source (omp's scenario tree), else
+/// the module when its `MODULE_TO_SOURCE` id is registered (omp's, claude's), else
 /// by the sub (delegation's per-source rule families). `decode/` holds hand-built
 /// decoder inputs, not captures. A module `fixtures/` that declares nothing at
 /// its root and holds no sub-tree is returned as a capture, so the provenance
@@ -261,17 +261,15 @@ pub fn captures(root: &Path) -> Vec<Capture> {
             });
             continue;
         }
-        let module_is_source = registry::descriptor_for(&module_name).is_some();
-        out.extend(subs.into_iter().map(|sub| {
-            let raw = if module_is_source {
-                module_name.clone()
+        let module_source = source_id(&module_name);
+        let module_is_source = registry::descriptor_for(&module_source).is_some();
+        out.extend(subs.into_iter().map(|sub| Capture {
+            source: if module_is_source {
+                module_source.clone()
             } else {
-                name(&sub)
-            };
-            Capture {
-                source: source_id(&raw),
-                dir: sub,
-            }
+                source_id(&name(&sub))
+            },
+            dir: sub,
         }));
     }
     out.sort_by(|a, b| a.dir.cmp(&b.dir));

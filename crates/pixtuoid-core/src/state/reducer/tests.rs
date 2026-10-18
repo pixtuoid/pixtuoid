@@ -70,7 +70,8 @@ fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
         has_exit_signal: true,
         resurrects_on_prompt: true,
         delegations_are_hook_silent: true,
-        child_ends_unannounced: false,
+        child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
+        child_hooks_unnamed: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -140,7 +141,8 @@ fn generic_tool_displaying_delegating_keeps_the_active_window() {
         has_exit_signal: true,
         resurrects_on_prompt: true,
         delegations_are_hook_silent: true,
-        child_ends_unannounced: false,
+        child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
+        child_hooks_unnamed: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -682,11 +684,12 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
 
     let mut r = super::Reducer::new();
     let mut scene = SceneState::uniform(4);
-    let id = AgentId::from_transcript_path("/p/res-maps.jsonl");
+    // A source whose Task drain arms b1.
+    let id = AgentId::from_parts("omp", "/p/res-maps.jsonl");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let session_start = |sid: &str| AgentEvent::SessionStart {
         agent_id: id,
-        source: "claude-code".into(),
+        source: "omp".into(),
         session_id: sid.into(),
         cwd: PathBuf::from("/repo"),
         parent_id: None,

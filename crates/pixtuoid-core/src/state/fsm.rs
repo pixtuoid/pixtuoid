@@ -3,7 +3,7 @@
 //! scope tree over `parent_id` lives in [`super::scope`].
 //!
 //! **Scope:** these fns mutate ONE `AgentSlot` only. The cross-slot correlation
-//! state — `active_tasks` (subagent-leak suppression), `gated_before_waiting`
+//! state — `active_tasks` (Tasks in flight), `gated_before_waiting`
 //! (permission), the hook-wins dedup — stays in the reducer: it spans slots and
 //! is not the FSM. The reducer decides *whether* and *which* transition fires;
 //! these fns decide *how* the slot changes.
@@ -48,10 +48,10 @@ pub(crate) fn enter_active(
     slot.pending_idle_at = None;
 }
 
-/// Enter the `Active("Delegating")` state — a parent dispatched a Task, or a
-/// suppressed child event resumed a parent that was Waiting on the subagent's
-/// gate. Deliberately does NOT stamp `last_event_at`: both callers already
-/// refreshed lineage.
+/// Enter the `Active("Delegating")` state — a parent dispatched a Task, its
+/// own tool ended while one is in flight, or an unnamed child's dropped event
+/// resumed it from the child's gate. Deliberately does NOT stamp
+/// `last_event_at`: every caller already refreshed lineage.
 pub(crate) fn enter_delegating(
     slot: &mut AgentSlot,
     tool_use_id: Option<Arc<str>>,
