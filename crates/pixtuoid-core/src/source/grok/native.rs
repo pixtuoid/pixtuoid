@@ -138,9 +138,8 @@ fn grok_ids_from_registry(
     Some(snap)
 }
 
-/// Attach the probe ONLY for grok's first-party layout, so a
-/// `--grok-sessions-root /tmp/fixture` replay keeps the pure-mtime first-sight
-/// gate. The registry file is a SIBLING of the sessions root, so the probe root
+/// Attach the probe ONLY for grok's first-party layout, so a root pointed
+/// elsewhere (a test's temp dir) keeps the pure-mtime first-sight gate. The registry file is a SIBLING of the sessions root, so the probe root
 /// is the sessions root's PARENT.
 fn grok_probe_root(sessions_root: &Path) -> Option<PathBuf> {
     grok_probe_root_resolved(sessions_root, &grok_home())

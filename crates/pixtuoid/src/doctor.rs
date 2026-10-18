@@ -763,12 +763,9 @@ fn collect_roots() -> Vec<RootStatus> {
         .collect()
 }
 
-/// The four hand-written probe roots (three `TranscriptProbe` + omp's
-/// stamp-less fallback), resolved exactly as the probe resolves
-/// them so the report cannot claim a root the probe would not use. grok's is a registry
-/// FILE, not a directory. DEFAULT resolution throughout: a `--projects-root` /
-/// `--codex-sessions-root` override changes the RUNNING app, but doctor deliberately
-/// diagnoses the default setup.
+/// The click's probe roots ([`crate::focus::FocusPaths::from_env`]), so the
+/// report cannot claim a root a click would not read. grok's is a registry
+/// FILE, not a directory; omp's is its primary root.
 struct ProbeRoots {
     cc_registry: Option<(std::path::PathBuf, bool)>,
     codex_sessions: std::path::PathBuf,
@@ -780,15 +777,18 @@ struct ProbeRoots {
 }
 
 fn probe_roots() -> ProbeRoots {
-    let cc_projects =
-        pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths().projects_root;
-    let cc_registry = pixtuoid_core::source::cc_registry_dir(&cc_projects).map(|d| {
+    let roots = crate::focus::FocusPaths::from_env();
+    let cc_registry = pixtuoid_core::source::cc_registry_dir(&roots.cc_projects_root).map(|d| {
         let exists = d.is_dir();
         (d, exists)
     });
-    let codex_sessions = pixtuoid_core::source::codex::CodexSource::default_paths().sessions_root;
-    let omp_sessions = pixtuoid_core::source::omp::omp_sessions_dir();
-    let grok_registry = pixtuoid_core::source::grok::grok_home().join("active_sessions.json");
+    let codex_sessions = roots.codex_sessions_root;
+    let omp_sessions = roots
+        .omp_sessions_roots
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    let grok_registry = roots.grok_root.join("active_sessions.json");
     ProbeRoots {
         cc_registry,
         codex_exists: codex_sessions.is_dir(),

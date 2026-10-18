@@ -246,7 +246,6 @@ mod tests {
         audio_ctl: crate::audio::AudioController,
         connected: crate::runtime::ConnectedSources,
         snapshot: SceneState,
-        focus_roots: (Option<std::path::PathBuf>, Option<std::path::PathBuf>),
         config_path: std::path::PathBuf,
         _tmp: tempfile::TempDir,
     }
@@ -282,7 +281,6 @@ mod tests {
                 ),
                 connected: crate::runtime::ConnectedSources::default(),
                 snapshot: SceneState::uniform(4),
-                focus_roots: (None, None),
                 config_path,
                 _tmp: tmp,
             }
@@ -303,7 +301,6 @@ mod tests {
                     config_path: &self.config_path,
                     connected: &self.connected,
                     snapshot: &self.snapshot,
-                    focus_roots: &self.focus_roots,
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
                     installed: Vec::new,

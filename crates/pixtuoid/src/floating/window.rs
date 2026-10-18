@@ -83,9 +83,6 @@ pub(crate) struct FloatingApp {
     cursor_icon: Option<winit::window::CursorIcon>,
     /// The last petting, played while it lasts.
     petting: Option<pixtuoid_scene::pet::PetState>,
-    /// Where a clicked agent's transcript roots are, for its focus jump:
-    /// (CC projects root, Codex sessions root).
-    focus_roots: (Option<PathBuf>, Option<PathBuf>),
     /// The animation-tick deadline — see [`super::cadence`] for why the redraw
     /// REQUEST (not just the wait) has to be gated on it.
     clock: super::cadence::FrameClock,
@@ -160,7 +157,6 @@ impl FloatingApp {
         let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
         renderer.set_audio(audio_ctl.handle().clone());
         renderer.set_pets(pets);
-        let focus_roots = boot.focus_roots();
         let proxy = boot.proxy.clone();
         let ui = crate::panels::ui_state::UiState::boot(crate::panels::ui_state::Boot {
             theme,
@@ -195,7 +191,6 @@ impl FloatingApp {
             cursor_in: false,
             hovered: false,
             petting: None,
-            focus_roots,
             clock: super::cadence::FrameClock::new(Instant::now(), motion),
             cursor_icon: None,
             zoom: cfg.zoom,
@@ -353,7 +348,7 @@ impl FloatingApp {
                     .as_ref()
                     .and_then(|l| l.scene_rx.borrow().agents.get(&id).cloned());
                 if let Some(slot) = slot {
-                    crate::focus::focus_slot(&slot, &self.focus_roots);
+                    crate::focus::focus_slot(&slot);
                 }
             }
             Some(HitAction::Pet(kind)) => {
@@ -396,7 +391,6 @@ impl FloatingApp {
                 config_path: &self.config_path,
                 connected: &self.connected,
                 snapshot: &snapshot,
-                focus_roots: &self.focus_roots,
                 now,
                 respawn: crate::audio::respawn,
                 installed: crate::sources::detect,

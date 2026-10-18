@@ -45,10 +45,10 @@ fn is_rollout_filename(path: &Path) -> bool {
 /// Attach the probe ONLY for codex's first-party layout: the standard
 /// `~/.codex/sessions` shape, or the resolved `codex_home()/sessions` for THIS
 /// environment (a `CODEX_HOME` user's real rollout root — rejecting it would
-/// silently drop the whole liveness ladder for a supported config). A
-/// `--codex-sessions-root /tmp/fixture` replay must keep the pure-mtime
-/// first-sight gate, or a replayed rollout vouched for by a coincidentally-
-/// running codex would resurrect as live.
+/// silently drop the whole liveness ladder for a supported config). A root
+/// pointed elsewhere (a test's temp dir) must keep the pure-mtime first-sight
+/// gate, or a rollout there vouched for by a coincidentally-running codex would
+/// resurrect as live.
 fn codex_probe_root(sessions_root: &Path) -> Option<PathBuf> {
     codex_probe_root_resolved(sessions_root, &codex_home())
 }

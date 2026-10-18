@@ -44,7 +44,7 @@ crates/   DAG: pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web}  (+
 ├── pixtuoid-web/    third painter — wasm canvas, publish=false; a SITE BUILD INPUT
 │                    (`just gen-wasm` → gitignored site/public/wasm/, built in CI)
 └── pixtuoid-hook/   tiny shim CC invokes — stdin JSON → socket/named pipe
-scripts/  gen-media.py (the ONE driver for the README's committed media and the site's CI-rendered demos), gen-art.py (the generated sprites: every @Nx + the 1x pieces it owns), e2e tiers (lib/)
+scripts/  gen-media.py (the ONE driver for the README's committed media and the site's CI-rendered demos), gen-art.py (the generated sprites: every @Nx + the 1x pieces it owns), capture drivers and the openclaw tier (lib/)
 policy/   CI contracts no linter sees (jq over yq) + behavior tests of workflow shell
 site/     Astro landing page; integrations/raycast/  Raycast extension
 ```
@@ -155,5 +155,5 @@ taller-cell terminals; bundled base character sprites max at 8×12 px (their
 
 - Tool call → sprite: `runtime/driver.rs::run_async` → `SourceManager::spawn` → source → decoder → `reducer::Reducer::apply` → watch channel → `TuiRenderer::render` → `pixtuoid_scene::floor::OfficeSession::render` → `pixtuoid_scene::look::render` → `tui::renderer::flush_classic`.
 - Architecture + data flow: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- Refactoring the channel type, `Source` trait, `AgentEvent`, or reducer signature touches all four test areas (`tests/reducer/`, `tests/e2e.rs`, `tests/transport/socket.rs`, `tests/watcher/`) + `runtime/driver.rs`; a new `AgentEvent` variant needs an `agent_id()` arm.
+- Refactoring the channel type, `Source` trait, `AgentEvent`, or reducer signature touches all three test areas (`tests/reducer/`, `tests/transport/socket.rs`, `tests/watcher/`) + `runtime/driver.rs`; a new `AgentEvent` variant needs an `agent_id()` arm.
 - Adding an agent CLI: [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#adding-a-new-agent-cli)'s checklist, which the `add-source` skill drives.

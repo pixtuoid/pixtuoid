@@ -250,9 +250,8 @@ pub(crate) fn pid_alive(pid: i32) -> bool {
 
 /// The sessions registry is a SIBLING of the projects root. Derived only when
 /// the parent layout matches (the root's file_name is literally `projects`) —
-/// a custom `--projects-root /tmp/fixture` replay points at an arbitrary dir
-/// whose parent could hold an unrelated `sessions/`, so those runs get no
-/// probe and keep the pure-mtime gate.
+/// a root pointed elsewhere (a test's temp dir) has a parent that could hold an
+/// unrelated `sessions/`, so it gets no probe and keeps the pure-mtime gate.
 pub(crate) fn cc_sessions_dir(projects_root: &Path) -> Option<PathBuf> {
     if projects_root.file_name().and_then(|n| n.to_str()) != Some("projects") {
         return None;

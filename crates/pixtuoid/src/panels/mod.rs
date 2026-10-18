@@ -602,7 +602,6 @@ pub(crate) struct KeyCtx<'a, H: Host> {
     pub(crate) config_path: &'a std::path::Path,
     pub(crate) connected: &'a crate::runtime::ConnectedSources,
     pub(crate) snapshot: &'a pixtuoid_core::state::SceneState,
-    pub(crate) focus_roots: &'a (Option<std::path::PathBuf>, Option<std::path::PathBuf>),
     pub(crate) now: SystemTime,
     /// Injected because the real `crate::audio::respawn` opens an output device, so a
     /// test firing an audio arm would grab the machine's sound hardware.
@@ -684,7 +683,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
                 .dashboard_focus()
                 .and_then(|id| cx.snapshot.agents.get(&id))
             {
-                crate::focus::focus_slot(slot, cx.focus_roots);
+                crate::focus::focus_slot(slot);
             }
         }
         KeyAction::ToggleConnection => {

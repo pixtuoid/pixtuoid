@@ -215,8 +215,8 @@ fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot> {
 }
 
 /// The FOCUS-jump entry point: the same snapshot the liveness probe takes,
-/// behind the same first-party-layout gate, so a `--sessions-root` replay can
-/// never resolve a pid for a transcript it merely replayed. Re-probed at CLICK
+/// behind the same first-party-layout gate, so a root pointed elsewhere can
+/// never resolve a pid for a transcript merely replayed there. Re-probed at CLICK
 /// time rather than cached, which is what makes the pid recycle-safe: a dead
 /// omp holds no fd, so its id simply drops out of the snapshot.
 pub(crate) fn live_omp_session_ids_for_focus(sessions_root: &Path) -> Option<ProbeSnapshot> {

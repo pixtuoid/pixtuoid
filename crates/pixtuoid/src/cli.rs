@@ -38,20 +38,14 @@ fn theme_help() -> String {
 }
 
 /// The source-input flags shared VERBATIM by `run` and `floating` (the two
-/// commands that wire sources → reducer → renderer). Flattened in via
-/// `#[command(flatten)]` so the four flags can't drift between the two commands.
+/// commands that wire sources → reducer → renderer), flattened into both so
+/// they can't drift.
 #[derive(Debug, clap::Args)]
 pub(crate) struct SourceArgs {
     /// Empty/whitespace is rejected: an explicit override deserves a loud
     /// answer, and bind("") would strand a relative `.lock` in the CWD.
     #[arg(long, value_parser = parse_nonempty_path, value_hint = clap::ValueHint::FilePath)]
     pub socket: Option<PathBuf>,
-    #[arg(long, value_hint = clap::ValueHint::DirPath)]
-    pub projects_root: Option<PathBuf>,
-    /// Override the Codex sessions root (default ~/.codex/sessions).
-    /// Point at a temp dir to replay fixtures into a headless run.
-    #[arg(long, value_hint = clap::ValueHint::DirPath)]
-    pub codex_sessions_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -197,11 +191,7 @@ impl Cli {
         let level = self.log_level;
         let theme = self.theme;
         let cmd = self.cmd.unwrap_or(Cmd::Run {
-            source: SourceArgs {
-                socket: None,
-                projects_root: None,
-                codex_sessions_root: None,
-            },
+            source: SourceArgs { socket: None },
             max_desks: None,
             headless: false,
             graphics: None,
@@ -364,15 +354,11 @@ mod tests {
 
     #[test]
     fn floating_subcommand_parses_with_shared_run_flags() {
-        let cli =
-            Cli::try_parse_from(["pixtuoid", "floating", "--projects-root", "/tmp/p"]).unwrap();
+        let cli = Cli::try_parse_from(["pixtuoid", "floating", "--socket", "/tmp/p.sock"]).unwrap();
         assert!(matches!(
             cli.cmd,
             Some(Cmd::Floating {
-                source: SourceArgs {
-                    projects_root: Some(_),
-                    ..
-                },
+                source: SourceArgs { socket: Some(_) },
             })
         ));
     }

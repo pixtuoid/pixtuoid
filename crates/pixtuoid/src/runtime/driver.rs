@@ -76,8 +76,6 @@ fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
 async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSignal>> {
     let RunConfig {
         socket,
-        projects_root,
-        codex_sessions_root,
         desk_cap,
         headless: _,
         config_path,
@@ -93,9 +91,6 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
     } = cfg;
     // Audio owns no state here: `run_tui` builds the AudioController, which owns
     // the device thread and tears it down on Drop at any exit.
-    // Focus-jump pid point-query roots (cloned: build_source_set consumes the
-    // originals).
-    let focus_roots = (projects_root.clone(), codex_sessions_root.clone());
     let connected = ConnectedSources::new(connected);
     let socket_path = socket.unwrap_or_else(ClaudeCodeSource::default_socket_path);
     // The terminal-size query stays here in the shell (the injected `measure`);
@@ -112,13 +107,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
         health_rx,
         floor_caps,
         _source_handles,
-    } = super::pipeline::spawn_pipeline(
-        socket_path.clone(),
-        projects_root,
-        codex_sessions_root,
-        connected.clone(),
-        boot_caps,
-    );
+    } = super::pipeline::spawn_pipeline(socket_path.clone(), connected.clone(), boot_caps);
 
     match tui {
         None => headless_loop(scene_rx, health_rx).await,
@@ -139,7 +128,6 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
                 log,
                 drift,
                 first_run,
-                focus_roots,
                 audio_cfg: audio,
             })
             .await
@@ -148,28 +136,19 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
 }
 
 /// Build the runtime source set `run_async` spawns — the ONE place that set is
-/// constructed. Each transcript source carries different typed config (CC's
-/// projects root, Codex's sessions root), so this stays imperative rather than a
-/// registry-driven loop. Hook-only sources + the daemon (OpenClaw) are absent by
+/// constructed. Imperative rather than a registry-driven loop: cc, codex and
+/// grok share one `ChildEndUnclaims` the others don't take. Hook-only sources + the daemon (OpenClaw) are absent by
 /// design — they ride the router's shared socket.
 pub(crate) fn build_source_set(
     socket_path: PathBuf,
-    projects_root: Option<PathBuf>,
-    codex_sessions_root: Option<PathBuf>,
     presence_tx: Option<daemon::PresenceSender>,
 ) -> Vec<Box<dyn DynSource>> {
     let mut cc_src = ClaudeCodeSource::default_paths();
-    if let Some(p) = projects_root {
-        cc_src.projects_root = p;
-    }
     let ag_src = AntigravitySource::default_paths();
     let copilot_src = CopilotSource::default_paths();
     let omp_src = OmpSource::default_paths();
 
     let mut codex_src = CodexSource::default_paths();
-    if let Some(p) = codex_sessions_root {
-        codex_src.sessions_root = p;
-    }
 
     // The hook tee is the sole PRODUCER, and each watcher drains only ids whose
     // transcripts it claims (AgentId is source-namespaced), so a Codex child waits
@@ -369,7 +348,7 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        let sources = build_source_set(PathBuf::from("/tmp/pixtuoid-test.sock"), None, None, None);
+        let sources = build_source_set(PathBuf::from("/tmp/pixtuoid-test.sock"), None);
         let built: BTreeSet<&str> = sources.iter().map(|s| s.name()).collect();
 
         // The HookRouter is infrastructure, not a registered CLI: it has no

@@ -186,11 +186,7 @@ fn build_run_config(
     cli_graphics: Option<crate::GraphicsMode>,
     drift: crate::doctor::DriftSeen,
 ) -> Result<runtime::RunConfig> {
-    let SourceArgs {
-        socket,
-        projects_root,
-        codex_sessions_root,
-    } = source;
+    let SourceArgs { socket } = source;
     let cfg_path = config::config_path();
     let mut cfg_warnings = Vec::new();
     let (cfg, load_degraded) = config::load_with_status(&cfg_path, &mut cfg_warnings);
@@ -220,8 +216,6 @@ fn build_run_config(
     }
     Ok(runtime::RunConfig {
         socket,
-        projects_root,
-        codex_sessions_root,
         desk_cap,
         headless,
         config_path: cfg_path,

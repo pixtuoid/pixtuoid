@@ -134,8 +134,9 @@ fn headless_replay(connect: &[&str], budget: std::time::Duration) -> Replay {
 
     let home = tempfile::tempdir().expect("home");
     let cfg = tempfile::tempdir().expect("config");
-    let sessions = tempfile::tempdir().expect("sessions");
-    let projects = tempfile::tempdir().expect("projects");
+    let sessions = home.path().join(".codex/sessions");
+    std::fs::create_dir_all(&sessions).expect("sessions");
+    std::fs::create_dir_all(home.path().join(".claude/projects")).expect("projects");
     let out = tempfile::NamedTempFile::new().expect("stdout file");
     let err = tempfile::NamedTempFile::new().expect("stderr file");
 
@@ -162,10 +163,6 @@ fn headless_replay(connect: &[&str], budget: std::time::Duration) -> Replay {
     // `debug` is required, not incidental: the gate's announcement is the only
     // observable proof of WHY a scene stayed empty.
     let child = common::isolated(&["run", "--headless"], home.path())
-        .arg("--codex-sessions-root")
-        .arg(sessions.path())
-        .arg("--projects-root")
-        .arg(projects.path())
         .args(["--log-level", "debug"])
         .env("XDG_CONFIG_HOME", cfg.path())
         .env("PIXTUOID_SOCKET", &sock)
@@ -179,9 +176,8 @@ fn headless_replay(connect: &[&str], budget: std::time::Duration) -> Replay {
     // picked up whether it arrives as an append or is already present.
     std::thread::sleep(std::time::Duration::from_millis(200));
 
-    let landed = sessions
-        .path()
-        .join("rollout-2026-01-01T00-00-00-0a0a0a0a-0b0b-0c0c-0d0d-0e0e0e0e0e0e.jsonl");
+    let landed =
+        sessions.join("rollout-2026-01-01T00-00-00-0a0a0a0a-0b0b-0c0c-0d0d-0e0e0e0e0e0e.jsonl");
     let mut f = std::fs::File::create(&landed).unwrap();
     f.write_all(body.as_bytes()).unwrap();
     f.sync_all().unwrap();
