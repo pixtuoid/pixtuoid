@@ -866,7 +866,7 @@ impl Reducer {
                             && slot.parent_id.as_ref().is_some_and(parent_lives)
                             && slot
                                 .exiting_at
-                                .is_none_or(|exit| !corr.child_ended_since(id, exit))
+                                .is_some_and(|exit| !corr.child_ended_since(id, exit))
                     }
                     Attempt::Identity | Attempt::HookActivity => false,
                 };
@@ -1331,8 +1331,8 @@ impl Reducer {
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
         // A node gated by a `Waiting` relative is blocked with it, not dead: a
         // subagent under a waiting parent, or a parent over a waiting subagent.
-        // A waiting node keeps its own Waiting window, so a waiting pair can't
-        // exempt each other (#238).
+        // A waiting descendant never exempts a waiting node, so a waiting pair
+        // can't exempt each other (#238).
         let agents = &scene.agents;
         let stale: Vec<(AgentId, Duration, Duration)> = agents
             .values()
