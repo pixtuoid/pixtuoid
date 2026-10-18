@@ -116,7 +116,7 @@ pub(crate) type CwdExtractor = fn(&Value) -> Option<PathBuf>;
 
 /// The first-sight parent-extractor fn pointer: ONE parsed transcript line → the
 /// parent's session key it names, for a transcript whose flat path names none
-/// (`detect_parent_id` reads a nested one).
+/// (`detect_parent_id` reads a nested one), on or before its cwd's line.
 pub(crate) type ParentExtractor = fn(&Value) -> Option<String>;
 
 /// Derives the opaque session-id string a transcript PATH keys its agent on —
@@ -457,8 +457,8 @@ pub fn decode_hook_payload(v: Value) -> DecodeResult<Vec<AgentEvent>> {
 
 /// The shared CC-shaped arms, for every source whose row has no claiming decoder.
 /// `UserPromptSubmit` ALSO emits `SessionStart` (idempotent in the reducer) because
-/// Codex's tool hooks fire only for shell/apply_patch/MCP — ~25 other handlers fire
-/// nothing (openai/codex#20204) — and hook firing is version-unstable: a
+/// Codex's tool hooks fire for only some handlers — ~25 others fire nothing
+/// (openai/codex#20204) — and hook firing is version-unstable: a
 /// `matcher="*"` group is silently dropped, some builds emit none (openai/codex#21639).
 pub(crate) fn shared_hook_arms(
     obj: &serde_json::Map<String, Value>,
@@ -597,6 +597,9 @@ pub(crate) fn shared_hook_arms(
     }
 }
 
+/// The hook field naming the subagent that fired an event.
+pub(crate) const SUBAGENT_ID: &str = "agent_id";
+
 /// An event a subagent fired, which names it in `agent_id` beside its root's
 /// `session_id`, decoded as the subagent's own session: `session` maps the
 /// wire's `agent_id` to that session's id, and a start it decodes to is
@@ -607,7 +610,7 @@ pub(crate) fn subagent_fired(
     session: fn(&str) -> String,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
     let Some(agent) = obj
-        .get("agent_id")
+        .get(SUBAGENT_ID)
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
     else {

@@ -305,7 +305,7 @@ async fn first_sight_extracts_cwd_past_non_json_prefix() {
     assert_eq!(
         found_cwd,
         Some(std::path::PathBuf::from("/real-repo")),
-        "extract_cwd must scan past non-JSON lines to find cwd"
+        "the head scan must pass non-JSON lines to find cwd"
     );
     handle.abort();
 }

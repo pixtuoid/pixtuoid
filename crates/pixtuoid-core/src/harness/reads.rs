@@ -226,7 +226,7 @@ type Decoded = (
 fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
     let d = drive.lines(lines.iter().map(Value::to_string));
     let parent = registry::parent_extractor_for(source);
-    let cwds = lines
+    let first_sight = lines
         .iter()
         .map(|l| {
             format!(
@@ -250,7 +250,7 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
         failures(&d.panics),
         d.breadcrumbs,
         presence,
-        cwds,
+        first_sight,
     )
 }
 

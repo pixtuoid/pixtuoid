@@ -345,11 +345,8 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
     // the short reap. The same bounded head read also carries the title, which the
     // tail is likewise past.
     let extract = cwd_extractor_for(source);
-    let mut first_sight = HeadFields {
-        cwd: first_found(new_bytes, extract),
-        label: None,
-        parent: parent_extractor_for(source).and_then(|f| first_found(new_bytes, f)),
-    };
+    let mut first_sight =
+        extract_head_fields(new_bytes, extract, None, parent_extractor_for(source));
     if first_sight.cwd.is_none()
         && seen.lock().await.get(path) != Some(&Sight::Claimed)
         && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
@@ -641,23 +638,6 @@ pub(super) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
     None
 }
 
-/// Scan a byte span line-by-line and return the first value the SCANNED
-/// source's own extractor finds. The per-source shape knowledge stays in the
-/// registry row (invariant #3): an if-chain trying every source's shape against
-/// every transcript lets a foreign-shaped line label a session with a foreign,
-/// identity-bearing cwd.
-pub(super) fn first_found<T>(
-    bytes: &[u8],
-    extract: fn(&serde_json::Value) -> Option<T>,
-) -> Option<T> {
-    let mut found = None;
-    scan_jsonl(bytes, |v| {
-        found = extract(v);
-        found.is_some()
-    });
-    found
-}
-
 /// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it
 /// returns `true`. Malformed/non-UTF-8 lines are skipped — a transcript head can
 /// straddle a partial write.
@@ -689,7 +669,10 @@ fn head_scan_complete(cwd: Option<&Path>, label: Option<&str>, wants_label: bool
 }
 
 /// The first-sight fields a HEAD read yields, pulled in ONE parse pass: scanning
-/// a 1 MiB head once per field is a real cost. For a TITLED omp root — the only
+/// a 1 MiB head once per field is a real cost. Each comes from the SCANNED
+/// source's own extractor (invariant #3): an if-chain trying every source's
+/// shape against every transcript lets a foreign-shaped line label a session
+/// with a foreign, identity-bearing cwd. For a TITLED omp root — the only
 /// source with a head label — the two land on adjacent lines (`title`, then
 /// `session`) and the scan stops there. A title-less head (every subagent, and
 /// legacy files with no slot) has no label to find, so it scans to the byte cap:
@@ -720,7 +703,8 @@ pub(super) fn extract_head_fields(
     head
 }
 
-/// What a first sight reads off a transcript's head.
+/// What a first sight reads off a transcript's head, or off a revived file's
+/// new bytes.
 #[derive(Debug, Default)]
 pub(super) struct HeadFields {
     pub(super) cwd: Option<PathBuf>,

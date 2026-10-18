@@ -3,8 +3,9 @@
 //! the lifecycle signals the shared hook socket lacks — most importantly the
 //! post-approval resume (`function_call_output`).
 //!
-//! Coalescing: hook.session_id == session_meta.id == filename UUID (verified),
-//! so both transports merge onto one sprite.
+//! Coalescing: a root's hook `session_id` (a child's: its `agent_id`) ==
+//! session_meta.id == filename UUID (verified), so both transports merge onto
+//! one sprite.
 
 use std::path::{Path, PathBuf};
 
@@ -51,9 +52,11 @@ fn is_uuid(s: &str) -> bool {
         })
 }
 
-/// The subagent dispatch tool, `multi_agent_v1`'s `spawn_agent`: it returns at
-/// launch, and the child's SubagentStop ends the child.
+/// The subagent dispatch tool, `multi_agent_v1`'s `spawn_agent`.
 pub(crate) const DISPATCH_TOOL: &str = "spawn_agent";
+
+/// The `session_meta` field naming a child rollout's parent.
+const PARENT_THREAD_ID: &str = "parent_thread_id";
 
 /// Codex's source-specific hook arms, which change the event's SUBJECT to a
 /// child's AgentId where the shared session-keyed arms cannot:
@@ -88,10 +91,9 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
     };
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
-        // `agent_id`) that the watcher renders ORPHANED — a flat rollout path
-        // has no `/subagents/` for `detect_parent_id`. Keying the child on
-        // `agent_id` coalesces with that rollout and joins the parent's scope
-        // tree (cascade / liveness / readiness).
+        // `agent_id`). Keying the child on `agent_id` coalesces with that
+        // rollout and joins the parent's scope tree (cascade / liveness /
+        // readiness).
         "SubagentStart" => {
             let (session_id, child) = guards(obj)?;
             let child = child
@@ -163,12 +165,13 @@ pub(crate) fn extract_codex_cwd(v: &Value) -> Option<PathBuf> {
     v.get("payload")?.get("cwd")?.as_str().map(PathBuf::from)
 }
 
-/// A thread-spawned child's rollout names its parent on that same line
-/// (`codex-rs/protocol/src/protocol.rs` `SessionMeta::parent_thread_id` at
-/// rust-v0.163.0), its flat path naming none.
-pub(crate) fn codex_head_parent(v: &Value) -> Option<String> {
+/// A thread-spawned child's rollout names its parent on the head
+/// `session_meta` line, beside the cwd where the head scan stops
+/// (`codex-rs/protocol/src/protocol.rs:3262` at rust-v0.163.0); its flat path
+/// names none.
+pub(crate) fn extract_codex_parent(v: &Value) -> Option<String> {
     v.get("payload")?
-        .get("parent_thread_id")?
+        .get(PARENT_THREAD_ID)?
         .as_str()
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
@@ -324,6 +327,38 @@ pub(crate) const UPSTREAM: &[Watch] = &[
         },
         when: When::Vanishes,
         finding: Finding::Breaking("a codex parent never goes Delegating"),
+        siblings: None,
+    },
+    Watch {
+        id: "codex.rollout_parent",
+        ours: || vec![PARENT_THREAD_ID],
+        docs: &[REPO.doc(
+            "codex-rs/protocol/src/protocol.rs",
+            r"pub struct SessionMeta\b",
+            "`SessionMeta`",
+        )],
+        read: Read::RustStruct {
+            name: "SessionMeta",
+        },
+        when: When::Vanishes,
+        finding: Finding::Breaking(
+            "a child rollout first seen after its end resurrects the child as a root",
+        ),
+        siblings: None,
+    },
+    Watch {
+        id: "codex.child_hook",
+        ours: || vec![crate::source::decoder::SUBAGENT_ID],
+        docs: &[REPO.doc(
+            "codex-rs/hooks/src/schema.rs",
+            r"pub\(crate\) struct PreToolUseCommandInput\b",
+            "`PreToolUseCommandInput`",
+        )],
+        read: Read::RustStruct {
+            name: "PreToolUseCommandInput",
+        },
+        when: When::Vanishes,
+        finding: Finding::Breaking("a codex child's tools show on its root"),
         siblings: None,
     },
 ];
@@ -700,8 +735,8 @@ mod tests {
         }
     }
 
-    /// A parentless start would be refused inside the child's end gate, where
-    /// a parented one is readmitted.
+    /// A linked child walking out revives only on a parented hook start
+    /// (`Reducer::authorizes`).
     #[test]
     fn a_childs_prompt_starts_it_under_its_root() {
         let evs = hook("UserPromptSubmit", true, json!({"prompt": "CHILD-TASK"}));

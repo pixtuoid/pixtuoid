@@ -424,7 +424,7 @@ sandbox = "unelevated"
                     "Stop",
                     "SessionEnd",
                 ],
-                fixture: "codex/fixtures",
+                fixture: "codex/fixtures/subagent-hermetic",
             },
         ],
         script_vars: &[],

@@ -221,8 +221,12 @@ pub struct Transcript {
     /// walker dispatches by the SCANNED source, so one source's shape is never
     /// tried against another's transcript.
     pub(crate) cwd_extractor: CwdExtractor,
-    /// First-sight parent extractor for the same head scan, read on the line
-    /// it stops at.
+    /// First-sight parent extractor for the same head scan, which stops at the
+    /// cwd's line: a parent must sit on or before it.
+    #[cfg_attr(
+        not(any(feature = "native", feature = "harness")),
+        expect(dead_code, reason = "only a tree walk reads it")
+    )]
     pub(crate) parent_extractor: Option<ParentExtractor>,
 }
 
@@ -318,6 +322,7 @@ impl SourceDescriptor {
     }
 
     /// The first-sight parent extractor (`None` without one).
+    #[cfg(any(feature = "native", feature = "harness"))]
     pub(crate) fn parent_extractor(&self) -> Option<ParentExtractor> {
         self.transcript().and_then(|t| t.parent_extractor)
     }
@@ -480,6 +485,7 @@ pub fn cwd_extractor_for(source: &str) -> CwdExtractor {
 }
 
 /// `source`'s first-sight parent extractor, if its transcripts name a parent.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn parent_extractor_for(source: &str) -> Option<ParentExtractor> {
     descriptor_for(source).and_then(|d| d.parent_extractor())
 }
@@ -590,7 +596,7 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             path_filter: accept_all_paths,
             // Rollouts carry cwd ONLY on the head session_meta line, under `payload`.
             cwd_extractor: codex::extract_codex_cwd,
-            parent_extractor: Some(codex::codex_head_parent),
+            parent_extractor: Some(codex::extract_codex_parent),
         }),
         hook: Some(HookDecoding {
             id_key: IdKey::SessionId,
