@@ -348,8 +348,6 @@ mod tests {
         ));
     }
 
-    /// omp's rounds fold their hook keys per platform, so no conformance golden
-    /// holds them (`tests/sources/omp/mod.rs`).
     #[test]
     fn every_profile_with_a_conformance_scenario_admits_the_snapshot_insta_wrote() {
         let root = repo_root();
@@ -363,6 +361,14 @@ mod tests {
                 .iter()
                 .any(|s| sources_root().join(s.fixture).starts_with(&conformance))
         };
+        let skipped: Vec<_> = PROFILES
+            .iter()
+            .filter(|p| !scanned(p))
+            .map(|p| p.source)
+            .collect();
+        // omp's rounds fold their hook keys per platform, so no conformance
+        // golden holds them (`tests/sources/omp/mod.rs`).
+        assert_eq!(skipped, ["omp"], "a profile left conformance");
         for p in PROFILES.iter().filter(scanned) {
             assert!(
                 snapshots
