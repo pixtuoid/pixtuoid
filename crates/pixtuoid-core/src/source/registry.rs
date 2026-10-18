@@ -573,8 +573,8 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has
-            // finished responding; an Agent call that backgrounds its subagent,
-            // the default, returns `async_launched` at launch (hooks.md).
+            // finished responding; an Agent call that backgrounds its subagent
+            // returns `async_launched` at launch (hooks.md).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },
@@ -597,15 +597,15 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             // The rollout filename's trailing UUID (the stem also has a timestamp).
             id_from_path: codex::codex_id_from_path,
             path_filter: accept_all_paths,
-            // Rollouts carry cwd ONLY on the head session_meta line, under `payload`.
+            // `payload.cwd`, on the head `session_meta` and each `turn_context`.
             cwd_extractor: codex::extract_codex_cwd,
             parent_extractor: Some(codex::extract_codex_parent),
         }),
         hook: Some(HookDecoding {
             id_key: IdKey::SessionId,
             tool_id_key: ToolIdKey::ToolUse,
-            // A child's events change their SUBJECT — inexpressible in the
-            // shared arms.
+            // A child's events change their SUBJECT, and a root's `spawn_agent`
+            // is a Task: neither is expressible in the shared arms.
             custom: Some(HookCustom::Extend(codex::decode_codex_hook_custom)),
         }),
         caps: SourceCaps {

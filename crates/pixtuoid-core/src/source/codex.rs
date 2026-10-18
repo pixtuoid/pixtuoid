@@ -71,10 +71,9 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
         .get("hook_event_name")
         .and_then(|s| s.as_str())
         .unwrap_or("");
-    // The custom-decoder contract: claim our two events FULLY (Err on a
-    // malformed instance), Ok(None) for everything else. An empty
+    // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
-    // the real rollout — reject rather than decode.
+    // the real rollout.
     let guards = |obj: &Map<String, Value>| -> Result<(String, Option<String>)> {
         let session_id = obj
             .get("session_id")

@@ -1103,7 +1103,7 @@ async fn an_oversized_codex_child_rollouts_first_sight_names_its_parent() {
 }
 
 /// A revived gated rollout reads its parent off the head too: the append
-/// carries none.
+/// carries none, though its `turn_context` carries a cwd.
 #[tokio::test]
 async fn a_revived_codex_child_rollout_names_its_parent() {
     let dir = tempfile::tempdir().unwrap();
@@ -1111,6 +1111,7 @@ async fn a_revived_codex_child_rollout_names_its_parent() {
     let (cursors, seen) = gated_fixture(&path, &codex_child_head()).await;
     let mut full = codex_child_head();
     full.push_str("{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n");
+    full.push_str("{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/repo\"}}\n");
     tokio::fs::write(&path, &full).await.unwrap();
     assert_eq!(
         codex_first_sights(&path, &cursors, &seen).await,

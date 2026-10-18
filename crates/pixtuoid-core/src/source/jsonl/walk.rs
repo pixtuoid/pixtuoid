@@ -340,23 +340,18 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
     // per-line key disagree and every JSONL event lands on a phantom id.
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
 
-    // A revived GATED file reads only the tail, but Codex rollouts carry cwd ONLY
-    // on the head `session_meta` line — so the revive would register empty-cwd onto
-    // the short reap. The same bounded head read also carries the title, which the
-    // tail is likewise past.
+    // A revived GATED file reads only the tail, which may lack what only a head
+    // carries: Codex's `session_meta` cwd and parent, and the title. Without
+    // them the revive registers empty-cwd onto the short reap, or a child as a
+    // root.
     let extract = cwd_extractor_for(source);
-    let mut first_sight =
-        extract_head_fields(new_bytes, extract, None, parent_extractor_for(source));
-    if first_sight.cwd.is_none()
+    let parent = parent_extractor_for(source);
+    let mut first_sight = extract_head_fields(new_bytes, extract, None, parent);
+    if (first_sight.cwd.is_none() || (parent.is_some() && first_sight.parent.is_none()))
         && seen.lock().await.get(path) != Some(&Sight::Claimed)
         && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
     {
-        first_sight = extract_head_fields(
-            &head,
-            extract,
-            decoders.head_label,
-            parent_extractor_for(source),
-        );
+        first_sight = extract_head_fields(&head, extract, decoders.head_label, parent);
     }
 
     let path_agent_id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
