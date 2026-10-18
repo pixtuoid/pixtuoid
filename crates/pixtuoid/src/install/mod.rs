@@ -261,8 +261,8 @@ pub(crate) enum OwnedState {
 }
 
 /// Compare `files` byte for byte with this binary's render, re-rendered with the shim
-/// the install baked, so a build run from elsewhere (a worktree, `just live-sources`)
-/// never re-points a real plugin at its own shim.
+/// the install baked, so a build run from elsewhere (a worktree) never re-points a
+/// real plugin at its own shim.
 pub(crate) fn owned_state(
     files: target::OwnedFiles,
     hook_command: target::HookCommand,

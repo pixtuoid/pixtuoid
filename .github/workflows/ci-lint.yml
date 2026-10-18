@@ -145,7 +145,7 @@ jobs:
       - run: just json-schemas
       - run: just links
       - run: just tuidrive-selftest
-      - run: just e2e-scrub-selftest
+      - run: just hook-scrub-selftest
       - run: just star-history-selftest
       - run: just bmc-button-selftest
       # The capture-tree provenance rules are NOT here: they are Rust tests

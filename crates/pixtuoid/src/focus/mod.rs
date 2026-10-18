@@ -15,8 +15,6 @@
 //! is PURE over an injected [`ProcessTable`], the per-OS glue thin and
 //! codecov-ignored.
 
-use std::path::Path;
-
 use pixtuoid_core::AgentSlot;
 
 #[cfg(target_os = "linux")]
@@ -62,21 +60,35 @@ pub(crate) fn ancestor_walk(table: &impl ProcessTable, start: i32) -> Option<i32
     None
 }
 
-/// The per-source pid lookup roots click-time resolution needs; `None` disables
-/// that family.
-pub(crate) struct FocusPaths<'a> {
-    /// CC's projects root (`~/.claude/projects`).
-    pub cc_projects_root: Option<&'a Path>,
+/// The roots click-time pid resolution consults, each as its source's own
+/// default resolves it: a click looks a pid up where the source found the
+/// session, and doctor reports these same roots.
+pub(crate) struct FocusPaths {
+    /// CC's projects root.
+    pub cc_projects_root: std::path::PathBuf,
     /// Codex's sessions root (rollout tree) for the fd probe.
-    pub codex_sessions_root: Option<&'a Path>,
-    /// grok's home root (`active_sessions.json`'s parent). No CLI override exists
-    /// — `focus_slot` resolves it from `grok_home()`; the field exists so a test
-    /// can inject it as it can the other roots.
-    pub grok_root: Option<&'a Path>,
+    pub codex_sessions_root: std::path::PathBuf,
+    /// grok's home root (`active_sessions.json`'s parent).
+    pub grok_root: std::path::PathBuf,
     /// omp's sessions roots — the primary plus every profile's — for the fd
-    /// probe. Like `grok_root` there is no CLI override — `focus_slot`
-    /// derives them.
-    pub omp_sessions_roots: &'a [std::path::PathBuf],
+    /// probe.
+    pub omp_sessions_roots: Vec<std::path::PathBuf>,
+}
+
+impl FocusPaths {
+    /// The roots this process's environment resolves.
+    pub(crate) fn from_env() -> Self {
+        let mut omp_sessions_roots = vec![pixtuoid_core::source::omp::omp_sessions_dir()];
+        omp_sessions_roots.extend(pixtuoid_core::source::omp::omp_profile_sessions_dirs());
+        Self {
+            cc_projects_root: pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths()
+                .projects_root,
+            codex_sessions_root: pixtuoid_core::source::codex::CodexSource::default_paths()
+                .sessions_root,
+            grok_root: pixtuoid_core::source::grok::grok_home(),
+            omp_sessions_roots,
+        }
+    }
 }
 
 /// Resolve the agent's OS pid. Precedence: the slot's cached pid (hook-family
@@ -89,7 +101,7 @@ pub(crate) struct FocusPaths<'a> {
 /// stamped WITHOUT a marker skips the check — an unguarded pid.
 pub(crate) fn resolve_pid(
     slot: &AgentSlot,
-    paths: &FocusPaths<'_>,
+    paths: &FocusPaths,
     table: &impl ProcessTable,
 ) -> Option<i32> {
     if slot.exiting_at.is_some() {
@@ -118,15 +130,18 @@ pub(crate) fn resolve_pid(
     // bridge install — resolve only here), and an arm-less source falls to
     // `_ => None` without one.
     match slot.source.as_ref() {
-        s if s == pixtuoid_core::source::claude_code::SOURCE_NAME => paths
-            .cc_projects_root
-            .and_then(|d| pixtuoid_core::source::cc_pid_for_session(d, &slot.session_id)),
-        s if s == pixtuoid_core::source::codex::SOURCE_NAME => paths
-            .codex_sessions_root
-            .and_then(|d| pixtuoid_core::source::codex_pid_for_session(d, &slot.session_id)),
-        s if s == pixtuoid_core::source::grok::SOURCE_NAME => paths
-            .grok_root
-            .and_then(|d| pixtuoid_core::source::grok_pid_for_session(d, &slot.session_id)),
+        s if s == pixtuoid_core::source::claude_code::SOURCE_NAME => {
+            pixtuoid_core::source::cc_pid_for_session(&paths.cc_projects_root, &slot.session_id)
+        }
+        s if s == pixtuoid_core::source::codex::SOURCE_NAME => {
+            pixtuoid_core::source::codex_pid_for_session(
+                &paths.codex_sessions_root,
+                &slot.session_id,
+            )
+        }
+        s if s == pixtuoid_core::source::grok::SOURCE_NAME => {
+            pixtuoid_core::source::grok_pid_for_session(&paths.grok_root, &slot.session_id)
+        }
         s if s == pixtuoid_core::source::omp::SOURCE_NAME => paths
             .omp_sessions_roots
             .iter()
@@ -136,29 +151,16 @@ pub(crate) fn resolve_pid(
 }
 
 /// The painter-agnostic focus dispatch: ANY painter's trigger resolves + walks +
-/// activates through this ONE entry with the real OS table. `roots` = (CC
-/// projects root, Codex sessions root).
-pub(crate) fn focus_slot(
-    slot: &AgentSlot,
-    roots: &(Option<std::path::PathBuf>, Option<std::path::PathBuf>),
-) {
-    let grok_home = pixtuoid_core::source::grok::grok_home();
-    let mut omp_sessions = vec![pixtuoid_core::source::omp::omp_sessions_dir()];
-    omp_sessions.extend(pixtuoid_core::source::omp::omp_profile_sessions_dirs());
-    let paths = FocusPaths {
-        cc_projects_root: roots.0.as_deref(),
-        codex_sessions_root: roots.1.as_deref(),
-        grok_root: Some(&grok_home),
-        omp_sessions_roots: &omp_sessions,
-    };
-    focus_agent(slot, &paths, &OsProcessTable, activate_os);
+/// activates through this ONE entry with the real OS table.
+pub(crate) fn focus_slot(slot: &AgentSlot) {
+    focus_agent(slot, &FocusPaths::from_env(), &OsProcessTable, activate_os);
 }
 
 /// The ONE caller of the per-OS glue. `activate` is injected so dispatch tests
 /// never touch the OS; production passes [`activate_os`].
 pub(crate) fn focus_agent(
     slot: &AgentSlot,
-    paths: &FocusPaths<'_>,
+    paths: &FocusPaths,
     table: &impl ProcessTable,
     activate: impl FnOnce(i32) -> bool,
 ) {
@@ -324,12 +326,31 @@ mod tests {
         }
     }
 
-    const NO_PATHS: FocusPaths<'static> = FocusPaths {
-        cc_projects_root: None,
-        codex_sessions_root: None,
-        grok_root: None,
-        omp_sessions_roots: &[],
-    };
+    #[test]
+    fn a_click_looks_up_claude_code_and_codex_pids_where_their_env_points() {
+        let home = tempfile::tempdir().expect("home");
+        let (cc, codex) = (home.path().join("cc"), home.path().join("codex"));
+        std::fs::create_dir_all(&codex).expect("CODEX_HOME exists");
+        let paths = temp_env::with_vars(
+            [
+                ("CLAUDE_CONFIG_DIR", Some(&cc)),
+                ("CODEX_HOME", Some(&codex)),
+            ],
+            FocusPaths::from_env,
+        );
+        assert_eq!(paths.cc_projects_root, cc.join("projects"));
+        assert_eq!(paths.codex_sessions_root, codex.join("sessions"));
+    }
+
+    /// Roots no probe gate admits: each family resolves nothing.
+    fn no_paths() -> FocusPaths {
+        FocusPaths {
+            cc_projects_root: "/nonexistent/fixture".into(),
+            codex_sessions_root: "/nonexistent/fixture".into(),
+            grok_root: "/nonexistent/fixture".into(),
+            omp_sessions_roots: Vec::new(),
+        }
+    }
 
     fn empty_table() -> MockTable {
         MockTable {
@@ -343,7 +364,7 @@ mod tests {
     fn resolve_pid_prefers_the_slot_cache() {
         // Markerless cache (no marker was readable): the identity check is skipped.
         let s = slot("dsh", "ses_a", Some(pid_id(4242, None)));
-        assert_eq!(resolve_pid(&s, &NO_PATHS, &empty_table()), Some(4242));
+        assert_eq!(resolve_pid(&s, &no_paths(), &empty_table()), Some(4242));
     }
 
     #[test]
@@ -351,7 +372,7 @@ mod tests {
         let s = slot("dsh", "ses_a", Some(pid_id(4242, Some(1_000))));
         let mut t = empty_table();
         t.started.insert(4242, 1_000);
-        assert_eq!(resolve_pid(&s, &NO_PATHS, &t), Some(4242));
+        assert_eq!(resolve_pid(&s, &no_paths(), &t), Some(4242));
     }
 
     #[test]
@@ -359,9 +380,9 @@ mod tests {
         let s = slot("dsh", "ses_a", Some(pid_id(4242, Some(1_000))));
         let mut t = empty_table();
         t.started.insert(4242, 2_000);
-        assert_eq!(resolve_pid(&s, &NO_PATHS, &t), None, "recycled → refuse");
+        assert_eq!(resolve_pid(&s, &no_paths(), &t), None, "recycled → refuse");
         assert_eq!(
-            resolve_pid(&s, &NO_PATHS, &empty_table()),
+            resolve_pid(&s, &no_paths(), &empty_table()),
             None,
             "dead → refuse"
         );
@@ -371,17 +392,17 @@ mod tests {
     fn resolve_pid_refuses_an_exiting_slot() {
         let mut s = slot("dsh", "ses_a", Some(pid_id(4242, None)));
         s.exiting_at = Some(std::time::SystemTime::UNIX_EPOCH);
-        assert_eq!(resolve_pid(&s, &NO_PATHS, &empty_table()), None);
+        assert_eq!(resolve_pid(&s, &no_paths(), &empty_table()), None);
     }
 
     #[test]
     fn resolve_pid_misses_when_no_channel_exists() {
         let s = slot("cursor", "ses_b", None);
-        assert_eq!(resolve_pid(&s, &NO_PATHS, &empty_table()), None);
+        assert_eq!(resolve_pid(&s, &no_paths(), &empty_table()), None);
         let r = slot("some-remote", "ses_c", None);
-        assert_eq!(resolve_pid(&r, &NO_PATHS, &empty_table()), None);
+        assert_eq!(resolve_pid(&r, &no_paths(), &empty_table()), None);
         let a = slot("copilot", "ses_d", None);
-        assert_eq!(resolve_pid(&a, &NO_PATHS, &empty_table()), None);
+        assert_eq!(resolve_pid(&a, &no_paths(), &empty_table()), None);
     }
 
     #[test]
@@ -421,7 +442,7 @@ mod tests {
         let mut activated = None;
         focus_agent(
             &slot("dsh", "s", Some(pid_id(4242, None))),
-            &NO_PATHS,
+            &no_paths(),
             &t,
             |p| {
                 activated = Some(p);
@@ -431,7 +452,7 @@ mod tests {
         assert_eq!(activated, Some(100), "the terminal app pid is activated");
 
         let mut called = false;
-        focus_agent(&slot("cursor", "s", None), &NO_PATHS, &t, |_| {
+        focus_agent(&slot("cursor", "s", None), &no_paths(), &t, |_| {
             called = true;
             true
         });
@@ -448,7 +469,7 @@ mod tests {
         let mut activated: Option<i32> = None;
         focus_agent(
             &slot("dsh", "s", Some(pid_id(4242, None))),
-            &NO_PATHS,
+            &no_paths(),
             &t,
             |p| {
                 activated = Some(p);

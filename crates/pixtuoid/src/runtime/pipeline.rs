@@ -46,8 +46,6 @@ pub(crate) struct Pipeline {
 /// atomics → [`reducer_task`] → `SourceManager::spawn_with_health`.
 pub(crate) fn spawn_pipeline(
     socket_path: PathBuf,
-    projects_root: Option<PathBuf>,
-    codex_sessions_root: Option<PathBuf>,
     connected: ConnectedSources,
     boot_caps: [usize; MAX_FLOORS],
 ) -> Pipeline {
@@ -56,12 +54,7 @@ pub(crate) fn spawn_pipeline(
     // gateway-pid deaths into the SAME channel; the reducer task merges both.
     let (presence_tx, presence_rx) = mpsc::unbounded_channel();
     let presence_exit_watch = daemon::spawn_presence_exit_watch(presence_tx.clone());
-    let sources = build_source_set(
-        socket_path,
-        projects_root,
-        codex_sessions_root,
-        Some(presence_tx),
-    );
+    let sources = build_source_set(socket_path, Some(presence_tx));
 
     let (tx, rx) =
         mpsc::channel::<(Transport, AgentEvent)>(pixtuoid_core::source::EVENT_CHANNEL_CAPACITY);

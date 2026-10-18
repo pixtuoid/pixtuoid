@@ -43,8 +43,6 @@ use window::{FloatingApp, FloatingEvent};
 pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> {
     let RunConfig {
         socket,
-        projects_root,
-        codex_sessions_root,
         theme,
         pets,
         connected,
@@ -111,8 +109,6 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
         },
         PipelineBoot {
             socket_path,
-            projects_root,
-            codex_sessions_root,
             connected,
             proxy,
             rt: rt.handle().clone(),
@@ -144,8 +140,6 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<crate::runtime::QuitSignal>> 
 /// live source set behind.
 pub(crate) struct PipelineBoot {
     socket_path: std::path::PathBuf,
-    projects_root: Option<std::path::PathBuf>,
-    codex_sessions_root: Option<std::path::PathBuf>,
     connected: ConnectedSources,
     proxy: winit::event_loop::EventLoopProxy<FloatingEvent>,
     /// How `resumed` enters the runtime to boot the pipeline
@@ -181,12 +175,6 @@ impl LivePipeline {
 }
 
 impl PipelineBoot {
-    /// The transcript roots a clicked agent's focus jump reads: (CC projects
-    /// root, Codex sessions root).
-    pub(crate) fn focus_roots(&self) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
-        (self.projects_root.clone(), self.codex_sessions_root.clone())
-    }
-
     /// Boot the source pipeline seeded from the REAL window size, and wire the
     /// two background consumers that need the event-loop proxy.
     pub(crate) fn spawn(
@@ -207,13 +195,7 @@ impl PipelineBoot {
             health_rx,
             floor_caps,
             _source_handles,
-        } = crate::runtime::pipeline::spawn_pipeline(
-            self.socket_path,
-            self.projects_root,
-            self.codex_sessions_root,
-            self.connected,
-            boot_caps,
-        );
+        } = crate::runtime::pipeline::spawn_pipeline(self.socket_path, self.connected, boot_caps);
 
         {
             let mut scene_rx = scene_rx.clone();

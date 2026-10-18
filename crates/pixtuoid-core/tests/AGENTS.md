@@ -36,7 +36,6 @@ tests/
 ├── reducer/main.rs      state-machine behavior; shared builders + apply-DSL in main.rs
 │                        (lifecycle · activity · tasks · liveness · display ·
 │                        child_ledger · snapshot.rs, the full-scene insta golden #279)
-├── e2e.rs               end-to-end driver wiring
 ├── watcher/main.rs      JsonlWatcher behavior; the poll-seam harness in main.rs
 │                        (tailing · first_sight · liveness · unclaim · attach ·
 │                        sources.rs — ALL SIX transcript sources bind+spawn, keep all

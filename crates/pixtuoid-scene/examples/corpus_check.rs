@@ -11,8 +11,8 @@
 //! transcripts register, how many render, and the provenance spread.
 //!
 //! Usage: `corpus_check <source> [root] [--json]`, plus `--roster` — the
-//! id/prefix/kind/home-env/version-probe rows, read by the shells instead of
-//! keeping a second copy of the roster.
+//! id/kind rows `just corpus-all` reads instead of keeping a second copy of the
+//! roster.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -147,39 +147,27 @@ fn newest_activity(source: &str, body: &[u8]) -> Option<u64> {
     }
 }
 
-/// One `--roster` row: `id \t prefix \t kind \t home_env \t probe`.
-///
-/// `scripts/lib/tier-live-sources.sh` and `just corpus-all` index these columns
-/// POSITIONALLY, so inserting a column shifts both at once, quietly.
+/// The `--roster` rows, `id \t kind`, which `just corpus-all` reads by column:
 /// `the_whole_roster_is_pinned_row_by_row` is the pin AGENTS.md's magic-number
-/// rule asks for at a cross-language boundary.
-fn roster_row(name: &str, d: &registry::SourceDescriptor, kind: &str) -> String {
-    let probe = d
-        .version_probe
-        .map(|p| p.join(" "))
-        .unwrap_or_else(|| "-".into());
-    format!(
-        "{name}\t{}\t{kind}\t{}\t{probe}",
-        d.label_prefix,
-        d.home_env.unwrap_or("-")
-    )
-}
-
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    // id, label prefix, transcript? — so a shell tier can attribute a sprite to its
-    // source without a second copy of the roster or of the badge prefixes.
-    if args.iter().any(|a| a == "--roster") {
-        for name in registry::registered_source_names() {
-            let Some(d) = registry::descriptor_for(name) else {
-                continue;
-            };
+/// rule asks for at that cross-language boundary.
+fn roster() -> Vec<String> {
+    registry::registered_source_names()
+        .map(|name| {
             let kind = if Drive::transcript(name, "/probe.jsonl").is_some() {
                 "transcript"
             } else {
                 "hook"
             };
-            println!("{}", roster_row(name, d, kind));
+            format!("{name}\t{kind}")
+        })
+        .collect()
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--roster") {
+        for row in roster() {
+            println!("{row}");
         }
         return;
     }
@@ -322,44 +310,29 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
-    /// EVERY row, byte for byte. The arity loop this replaces could not fail from
-    /// any data change — `roster_row`'s four `\t` are in its format literal — and
-    /// the single-row pin it replaces left every other row unpinned: changing grok's
-    /// `label_prefix`, a column the shell tiers grep for, was caught only
-    /// incidentally by an unrelated badge-colour test.
+    /// EVERY row, byte for byte: a column-count check could not fail from any
+    /// data change, since `roster`'s `\t` is in its own format literal.
     fn the_whole_roster_is_pinned_row_by_row() {
-        let rows: Vec<String> = registry::registered_source_names()
-            .filter_map(|name| {
-                let d = registry::descriptor_for(name)?;
-                let kind = if Drive::transcript(name, "/probe.jsonl").is_some() {
-                    "transcript"
-                } else {
-                    "hook"
-                };
-                Some(roster_row(name, d, kind))
-            })
-            .collect();
         assert_eq!(
-            rows,
+            roster(),
             [
-                "claude-code\tcc\ttranscript\tCLAUDE_CONFIG_DIR\tclaude --version",
-                "codex\tcx\ttranscript\tCODEX_HOME\tcodex --version",
-                "antigravity\tag\ttranscript\t-\tagy --version",
-                "dsh\tds\thook\t-\tdsh --version",
-                "reasonix\trx\thook\t-\treasonix --version",
-                "codewhale\tcw\thook\t-\tcodewhale --version",
-                "opencode\toc\thook\t-\topencode --version",
-                "copilot\tcp\ttranscript\tCOPILOT_HOME\tcopilot --version",
-                "cursor\tcu\thook\t-\tcursor-agent --version",
-                "hermes\thm\thook\tHERMES_HOME\thermes --version",
-                "omp\tom\ttranscript\tPI_CODING_AGENT_DIR\tomp --version",
-                "openclaw\tok\thook\t-\topenclaw --version",
-                "grok\tgk\ttranscript\tGROK_HOME\tgrok --version",
-                "kimi\tkm\thook\t-\tkimi --version",
+                "claude-code\ttranscript",
+                "codex\ttranscript",
+                "antigravity\ttranscript",
+                "dsh\thook",
+                "reasonix\thook",
+                "codewhale\thook",
+                "opencode\thook",
+                "copilot\ttranscript",
+                "cursor\thook",
+                "hermes\thook",
+                "omp\ttranscript",
+                "openclaw\thook",
+                "grok\ttranscript",
+                "kimi\thook",
             ],
             "the --roster columns are indexed POSITIONALLY by \
-             tier-live-sources.sh and `just corpus-all`. Update every consumer in \
-             the same change, then this pin."
+             `just corpus-all`. Update it in the same change, then this pin."
         );
     }
 }

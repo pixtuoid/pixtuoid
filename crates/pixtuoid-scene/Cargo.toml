@@ -74,7 +74,7 @@ harness = false
 
 # Without this an example is not a test target, so its `#[test]`s build and never
 # run — the same wiring `pixtuoid-core`'s `capture_fixture` carries. This sibling
-# produces the `--roster` contract three programs parse positionally.
+# produces the `--roster` rows `just corpus-all` parses by column.
 [[example]]
 name = "corpus_check"
 test = true

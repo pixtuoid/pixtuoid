@@ -3,8 +3,7 @@
 # its own isolated state dir on its own port, all feeding ONE headless pixtuoid; kill
 # one and only ITS `daemons=[…]` row goes down.
 #
-# The sibling scripts are hermetic or model-burning; this one runs a REAL gateway with
-# ZERO model calls, the only way to check that the config keys `pixtuoid connect
+# This runs a REAL gateway with ZERO model calls, the only way to check that the config keys `pixtuoid connect
 # openclaw` writes are the keys OpenClaw actually reads, and that N mascots coexist on
 # the ONE ground floor they share — the crowding where a 4-gateway render was found
 # drawing only 3 lobsters.
@@ -16,18 +15,17 @@
 # Run:          just openclaw-multi-e2e [port ...]   (default: 4 ports)
 set -uo pipefail
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-. "$here/e2e-common.sh"
-
-REPO="$(e2e_repo_root)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PIX="$REPO/target/release/pixtuoid"
 # Four by default: two would prove the keying, four also exercises the one-floor
 # crowding the visit-spot offset logic exists for.
 PORTS=("$@")
 [ "${#PORTS[@]}" -gt 0 ] || PORTS=(18901 18902 18903 18904)
 
-e2e_require_bin "$PIX"
+[ -x "$PIX" ] || {
+    echo "missing $PIX — run: just build --release" >&2
+    exit 2
+}
 command -v openclaw >/dev/null 2>&1 || {
     echo "missing 'openclaw' on PATH — this live test drives the REAL gateway" >&2
     exit 2
@@ -39,7 +37,11 @@ for port in "${PORTS[@]}"; do
     fi
 done
 
-MG="$(e2e_sandbox)"
+# 0700 by construction, with the SOCKET inside it: a fixed or `mktemp -u`
+# socket name in shared temp lets concurrent runs clobber each other and is
+# pre-plantable by another user, which nothing downstream polices —
+# `ensure_owned_socket_dir` leaves an explicit PIXTUOID_SOCKET path alone.
+MG="$(mktemp -d)"
 SOCK="$MG/pixtuoid.sock"
 OUT="$MG/pixtuoid.log"
 GW_PIDS=()
@@ -67,7 +69,7 @@ trap cleanup EXIT
 # (install/openclaw.rs), so one exported in the dev's shell would send those
 # connects to their real config.
 unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH
-mkdir -p "$MG/proj" "$MG/cfg/pixtuoid"
+mkdir -p "$MG/claude" "$MG/cfg/pixtuoid"
 
 # One throwaway state dir per gateway. `gateway.mode` is REQUIRED — `gateway run`
 # refuses a config without it as possibly-clobbered.
@@ -91,8 +93,9 @@ done
 
 # Connected is read from ONE state dir; any gateway's install marks it, and the
 # presence connection-gate drops every delta for a source with none.
+# CLAUDE_CONFIG_DIR keeps the dev's real CC sessions out of the headless roster.
 OPENCLAW_HOME="$MG/home${PORTS[0]}" XDG_CONFIG_HOME="$MG/cfg" PIXTUOID_SOCKET="$SOCK" \
-    "$PIX" run --headless --projects-root "$MG/proj" >"$OUT" 2>&1 &
+    CLAUDE_CONFIG_DIR="$MG/claude" "$PIX" run --headless >"$OUT" 2>&1 &
 PIXPID=$!
 for _ in $(seq 1 50); do
     [ -S "$SOCK" ] && break
@@ -107,8 +110,6 @@ echo "  headless pixtuoid up (pid $PIXPID), HookRouter owns $SOCK"
 FAILED=0
 # Wait until the LATEST `daemons=` line contains `want` — a substring match, so a
 # per-instance assertion does not have to name every sibling.
-# Deliberately NOT shared with the sibling tiers' pollers — the WHY (differing
-# retry-bound event classes) is at `tier-openclaw-hermetic.sh`'s `expect_line`.
 expect_line() {
     local want="$1" label="$2" last
     for _ in $(seq 1 120); do

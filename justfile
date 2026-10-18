@@ -303,7 +303,7 @@ lint:
     run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
     run tuidrive just tuidrive-selftest   & pids+=($!)
-    run e2escrub just e2e-scrub-selftest  & pids+=($!)
+    run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
     run fixpii  just fixture-pii          & pids+=($!)
@@ -640,7 +640,7 @@ corpus-all:
     rc=0
     n=0
     uncovered=()
-    while IFS=$'\t' read -r id _ kind _; do
+    while IFS=$'\t' read -r id kind; do
         [ "$kind" = transcript ] || continue
         n=$((n + 1))
         echo "── $id"
@@ -693,44 +693,16 @@ fuzz source dir:
     cargo build --release --example decoder_fuzz -p pixtuoid-core
     find "$dir" -name '*.jsonl' -print0 | xargs -0 cat | ./target/release/examples/decoder_fuzz "$source"
 
-# Hermetic OpenClaw daemon live-e2e: drives the REAL shim with crafted gateway
-# envelopes on an isolated socket and asserts the lobster's
-# idle/busy/degraded/down via the headless `daemons=` line. Zero gateway, zero
-# model calls. Same on-demand local tier as `fuzz` — it needs a release build
-# and an ExitWatch backend (macOS kqueue / Linux pidfd), so it is not a CI gate.
-[doc('Hermetic OpenClaw daemon live-e2e (needs `just build --release`)')]
-[group('rust')]
-openclaw-e2e:
-    scripts/lib/tier-openclaw-hermetic.sh
-
 # N REAL `openclaw gateway run` processes, each in its own throwaway
 # OPENCLAW_HOME on its own port, feeding one headless pixtuoid: one
 # `openclaw@<port>` row per gateway, instance-local death, and OpenClaw's OWN
 # `plugins list` confirming our plugin loads. Zero model calls, zero account
-# footprint, but it needs a real `openclaw` on PATH — same on-demand local tier
-# as `openclaw-e2e`. Ports are forwarded (default: the script's `PORTS`).
+# footprint, but it needs a real `openclaw` on PATH. Ports are forwarded
+# (default: the script's `PORTS`).
 [doc('Multi-gateway live-e2e against the REAL openclaw CLI (needs `just build --release`)')]
 [group('rust')]
 openclaw-multi-e2e *ports:
     scripts/lib/tier-openclaw-multi.sh "$@"
-
-# The EXPENSIVE one: a real `openclaw gateway run` PLUS one real model turn on
-# the claude-cli backend, proving the gateway's lobster and its backend's `cc·`
-# desk sprite coexist live. Real account footprint (your gateway's channels
-# connect) and it bills a turn, so no CI job runs it: a change to the headless
-# `agents=`/`daemons=` line it greps breaks it silently until it is run by hand.
-[doc('OpenClaw + claude-cli backend live-e2e — REAL gateway AND one BILLED model turn')]
-[group('rust')]
-openclaw-backend-e2e:
-    scripts/lib/tier-openclaw-backend.sh
-
-# The broadest tier: launches each installed agent CLI non-interactively and
-# asserts ITS badge renders. One real model turn PER CLI, on each provider's own
-# account — the only proof a real CLI's real output reaches a real sprite.
-[doc('Live multi-source e2e — every installed agent CLI, one BILLED turn each')]
-[group('rust')]
-live-sources *ids:
-    scripts/lib/tier-live-sources.sh "$@"
 
 # Two builds: one would unify the examples' `harness` feature into the binary
 # under test.
@@ -1238,16 +1210,10 @@ drift-watch:
 tuidrive-selftest:
     python3 scripts/lib/tuidrive.py --selftest
 
-# The git env scrub, both copies: `e2e_init_repo` and the pre-push hook. A git
-# hook exports GIT_DIR/GIT_INDEX_FILE into every child and those OUTRANK
-# `git -C <dir>`, so an unscrubbed helper COMMITS to the developer's real repo
-# while printing nothing. The suite runs the unscrubbed form first and proves
-# it leaks, so a scrub that stopped scrubbing cannot pass. Hermetic: one
-# mktemp -d, no network, no real repo.
-[doc("Self-test the git env scrub — the e2e helper and the pre-push hook")]
+[doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]
-e2e-scrub-selftest:
-    bash scripts/lib/e2e-common-selftest.sh
+hook-scrub-selftest:
+    bash scripts/lib/hook-scrub-selftest.sh
 
 # The README star chart's renderer — bitmap font, axes, paging. (Its copied
 # office colours are pinned from Rust: scene's `tests/readme_chart_palette.rs`.)

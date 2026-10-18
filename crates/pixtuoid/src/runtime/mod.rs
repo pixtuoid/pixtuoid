@@ -34,8 +34,6 @@ pub(crate) const FALLBACK_DESKS: usize = 16;
 #[derive(Debug)]
 pub(crate) struct RunConfig {
     pub(crate) socket: Option<PathBuf>,
-    pub(crate) projects_root: Option<PathBuf>,
-    pub(crate) codex_sessions_root: Option<PathBuf>,
     pub(crate) desk_cap: Option<usize>,
     pub(crate) headless: bool,
     pub(crate) config_path: PathBuf,

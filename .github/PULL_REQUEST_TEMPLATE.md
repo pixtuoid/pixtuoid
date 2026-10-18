@@ -27,7 +27,7 @@ Delete sections that don't apply.
 
 <!--
 - Each REVIEW.md must-run item the change touches, with its result
-- Live: ./target/release/pixtuoid run --headless --projects-root ~/.claude/projects
+- Live: ./target/release/pixtuoid run --headless
 -->
 
 ## Visual verification (required for sprite / rendering changes)

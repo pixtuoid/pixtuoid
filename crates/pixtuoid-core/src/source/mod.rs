@@ -330,8 +330,8 @@ pub fn cc_pid_for_session(projects_root: &std::path::Path, session_id: &str) -> 
 }
 
 /// The CC sessions-registry dir the pid queries consult — the SAME
-/// standard-layout gate the probe applies (a `--projects-root /tmp/fixture`
-/// replay yields `None`). Exposed so `doctor` can report the focus channel's
+/// standard-layout gate the probe applies (a root pointed elsewhere yields
+/// `None`). Exposed so `doctor` can report the focus channel's
 /// on-disk state without re-deriving the sibling layout.
 #[cfg(feature = "native")]
 pub fn cc_registry_dir(projects_root: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -488,7 +488,7 @@ mod focus_pid_tests {
             "miss: unknown session resolves nothing"
         );
         // A NON-standard projects root (file_name != "projects") derives no
-        // registry — the custom --projects-root replay case resolves nothing.
+        // registry, so it resolves nothing.
         assert_eq!(cc_pid_for_session(home.path(), "focus-sess"), None);
     }
 
@@ -506,8 +506,8 @@ mod focus_pid_tests {
             Some(home.path().join("sessions")),
             "the standard layout derives the SIBLING sessions dir"
         );
-        // A custom --projects-root replay (file_name != "projects") derives
-        // nothing, so those runs keep the pure-mtime gate.
+        // A root pointed elsewhere (file_name != "projects") derives nothing,
+        // so it keeps the pure-mtime gate.
         assert_eq!(cc_registry_dir(&home.path().join("fixture")), None);
     }
 
