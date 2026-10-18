@@ -3,6 +3,7 @@ mod claude;
 mod codewhale;
 mod codex;
 mod conformance;
+mod copilot;
 mod cursor;
 mod decode;
 mod delegation;
