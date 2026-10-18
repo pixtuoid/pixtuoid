@@ -17,7 +17,7 @@ mod recorder {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::time::SystemTime;
+    use std::time::{Duration, Instant, SystemTime};
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
     use pixtuoid_core::source::{registry, resolved_source_root};
@@ -530,6 +530,44 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
+    /// How long a capture waits for the previous run's processes to let go of
+    /// its workspace, and how often it asks meanwhile.
+    const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
+    const RELEASE_POLL: Duration = Duration::from_millis(250);
+
+    /// The error std's Windows `remove_dir_all` gives up on after a few yields
+    /// (`library/std/src/sys/fs/windows/remove_dir_all.rs:152-170`, `:188-191`
+    /// at 1.98.1), while a previous run's process can hold the workspace for
+    /// seconds (codex/subagent in actions run 39128433306).
+    #[cfg(windows)]
+    const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32;
+
+    /// `remove`, retried while another process holds what it removes, for up
+    /// to `patience`; a tree already gone counts as removed.
+    fn remove_once_released(
+        patience: Duration,
+        mut remove: impl FnMut() -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let deadline = Instant::now() + patience;
+        loop {
+            match remove() {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(e) if held(&e) && Instant::now() < deadline => std::thread::sleep(RELEASE_POLL),
+                done => return done,
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn held(e: &std::io::Error) -> bool {
+        e.raw_os_error() == Some(SHARING_VIOLATION)
+    }
+
+    #[cfg(not(windows))]
+    fn held(_: &std::io::Error) -> bool {
+        false
+    }
+
     fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
@@ -546,10 +584,7 @@ mod recorder {
                 );
                 std::process::exit(2);
             }
-            match std::fs::remove_dir_all(base) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                _ => {}
-            }
+            remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(base))?;
         }
         // Made in one call no other local user can write into, and refused if
         // anyone re-created it since the remove.
@@ -936,6 +971,61 @@ mod recorder {
 
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
+
+        /// Busy the way a held tree is on this platform.
+        fn busy() -> std::io::Error {
+            #[cfg(windows)]
+            return std::io::Error::from_raw_os_error(SHARING_VIOLATION);
+            #[cfg(not(windows))]
+            std::io::Error::from(std::io::ErrorKind::ResourceBusy)
+        }
+
+        #[test]
+        fn a_held_base_is_retried_only_on_windows() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::from_secs(5), || {
+                calls += 1;
+                if calls < 3 { Err(busy()) } else { Ok(()) }
+            });
+            if cfg!(windows) {
+                assert!(removed.is_ok() && calls == 3, "{removed:?} after {calls}");
+            } else {
+                assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+            }
+        }
+
+        #[test]
+        fn a_base_held_past_the_patience_fails() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::ZERO, || {
+                calls += 1;
+                Err(busy())
+            });
+            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn a_base_refused_for_another_reason_fails_at_once() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::from_secs(5), || {
+                calls += 1;
+                Err(std::io::Error::from_raw_os_error(
+                    windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
+                ))
+            });
+            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+        }
+
+        #[test]
+        fn an_absent_base_counts_as_removed() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::ZERO, || {
+                calls += 1;
+                Err(std::io::ErrorKind::NotFound.into())
+            });
+            assert!(removed.is_ok() && calls == 1, "{removed:?} after {calls}");
+        }
 
         struct Promotable {
             _dir: tempfile::TempDir,
