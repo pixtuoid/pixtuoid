@@ -176,8 +176,10 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
     }
 }
 
-/// The screen row by row: `contents()` joins a row the CLI let wrap onto the
-/// next, as ConPTY's repaint of a full-width rule does.
+/// The screen row by row: `contents()` joins a wrapped row onto the next
+/// (`src/grid.rs:212-213` at vt100 0.17.0), and a ConPTY repaint wraps a
+/// full-width rule into the composer's row (`hermetic.yml`'s Windows leg, run
+/// 39172132633's `claude-code/permission/tui.log`).
 fn shown(screen: &vt100::Screen) -> String {
     let rows: Vec<String> = screen.rows(0, SIZE.cols).collect();
     rows.join("\n").trim_end().to_owned()
