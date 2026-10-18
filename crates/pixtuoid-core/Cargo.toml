@@ -104,6 +104,8 @@ tempfile = { workspace = true }
 temp-env = { workspace = true }
 filetime = "0.2"
 regex = { workspace = true }
+# `just hermetic`'s check of a release binary against its checksum list.
+sha2 = { workspace = true }
 insta = { workspace = true, features = ["yaml"] }
 tracing-subscriber = { workspace = true }
 # Wire→state benchmarks (`just bench`); same CodSpeed compat passthrough as

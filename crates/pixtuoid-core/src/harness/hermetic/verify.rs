@@ -151,10 +151,18 @@ fn census(
     let mut findings = Vec::new();
     for (kind, paths) in &reads.by_kind {
         let Some(seen) = carried.by_kind.get(kind) else {
-            if !kind
-                .strip_prefix(HOOK)
-                .is_some_and(|h| owed_hooks.contains(&h))
-            {
+            let owed = match kind.strip_prefix(HOOK) {
+                Some(h) => owed_hooks.contains(&h),
+                // A transcript kind has no hook name to owe, so it is owed
+                // through every field a decoder reads in it.
+                None => {
+                    !paths.is_empty()
+                        && paths
+                            .iter()
+                            .all(|p| owed_fields.contains(&(kind.as_str(), p.as_str())))
+                }
+            };
+            if !owed {
                 findings.push((
                     Label::Fail,
                     format!(
@@ -1487,6 +1495,27 @@ mod tests {
             ],
             "the owed hook B is silent; a renamed or unharvested transcript kind is not"
         );
+    }
+
+    #[test]
+    fn a_transcript_kind_no_run_produced_is_owed_through_every_field_it_reads() {
+        let reads = fields(
+            &[
+                ("tx:title_change", &["/title"]),
+                ("tx:title", &["/title", "/v"]),
+                ("tx:bare", &[]),
+            ],
+            &[],
+        );
+        let owed = [("tx:title_change", "/title"), ("tx:title", "/title")];
+        let got = census(&reads, &Fields::default(), &[], &owed, "s");
+        let produced = |kind: &str| {
+            (
+                Label::Fail,
+                format!("{kind}: a committed capture has it, and no run of s produced it"),
+            )
+        };
+        assert_eq!(got, [produced("tx:bare"), produced("tx:title")]);
     }
 
     #[test]

@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "CHILD-TASK", "toolResultContains": "{note}"},
+      "response": {"content": "{note}"},
+      "latency": 300
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Reading the note", "path": "NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "pong"},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "NOTE.txt"},
+      "response": {"toolCalls": [{"name": "task", "arguments": {"i": "Delegating the read", "context": "Read the note.", "tasks": [{"name": "Reader", "task": "CHILD-TASK: read NOTE.txt and report its text.", "solutionSpace": "NOTE.txt"}]}}]},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Listing the workspace", "path": "."}}]},
+      "latency": 300
+    }
+  ]
+}

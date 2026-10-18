@@ -1,0 +1,71 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 334244466212410177
+    source: omp
+    session_id: 2026-10-18T13-07-26-001Z_01a14f1f-cab1-706b-ad9c-62659da06bc6
+    cwd: /tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 334244466212410177
+    model: ~
+    effort: high
+- ModelInfo:
+    agent_id: 334244466212410177
+    model: gpt-4.1
+    effort: ~
+- Usage:
+    agent_id: 334244466212410177
+    fresh_tokens: 2629
+- ActivityStart:
+    agent_id: 334244466212410177
+    tool_use_id: call_75yvk1tbyaxb740c
+    detail:
+      Generic:
+        display: "bash: rm NOTE.txt"
+- ActivityEnd:
+    agent_id: 334244466212410177
+    tool_use_id: call_75yvk1tbyaxb740c
+- ModelInfo:
+    agent_id: 334244466212410177
+    model: gpt-4.1
+    effort: ~
+- Usage:
+    agent_id: 334244466212410177
+    fresh_tokens: 2670
+- SessionEnd:
+    agent_id: 334244466212410177
+    as_child: false
+- SessionStart:
+    agent_id: 334244466212410177
+    source: omp
+    session_id: 2026-10-18T13-07-26-001Z_01a14f1f-cab1-706b-ad9c-62659da06bc6
+    cwd: /tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 334244466212410177
+    source: omp
+    session_id: 2026-10-18T13-07-26-001Z_01a14f1f-cab1-706b-ad9c-62659da06bc6
+    cwd: /tmp/pixtuoid-capture/proj
+- Identity:
+    agent_id: 334244466212410177
+    source: omp
+    session_id: 2026-10-18T13-07-26-001Z_01a14f1f-cab1-706b-ad9c-62659da06bc6
+    cwd: /tmp/pixtuoid-capture/proj
+- Waiting:
+    agent_id: 334244466212410177
+    reason: bash
+    tool_use_id: call_75yvk1tbyaxb740c
+- Identity:
+    agent_id: 334244466212410177
+    source: omp
+    session_id: 2026-10-18T13-07-26-001Z_01a14f1f-cab1-706b-ad9c-62659da06bc6
+    cwd: /tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 334244466212410177
+    tool_use_id: call_75yvk1tbyaxb740c
+- SessionEnd:
+    agent_id: 334244466212410177
+    as_child: false

@@ -71,6 +71,16 @@ pub enum HostConfig {
 pub enum Package {
     /// An npm package; the tier installs `<name>@<version>` into its own prefix.
     Npm(&'static str),
+    /// A prebuilt binary attached to a `v<version>` GitHub release.
+    GithubRelease {
+        /// `owner/name`.
+        repo: &'static str,
+        /// The binary's asset name, with `{os}`, `{arch}` and `{exe}` the tier
+        /// fills for its platform.
+        asset: &'static str,
+        /// The release's SHA-256 list, which the download must match.
+        checksums: &'static str,
+    },
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
@@ -907,6 +917,99 @@ model = "deepseek-v4-flash"
         // and no event of it names a cwd.
         children_inherit_cwd: true,
     },
+    // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, under
+    // `packages/coding-agent/`.
+    Profile {
+        source: "omp",
+        // The npm package needs Bun (its `engines`); the install script without
+        // Bun, and Homebrew, install this binary (`README.md:35-51`).
+        package: Package::GithubRelease {
+            repo: "can1357/oh-my-pi",
+            asset: "omp-{os}-{arch}{exe}",
+            checksums: "SHA256SUMS.txt",
+        },
+        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", "{prompt}"],
+        // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
+        env: &[("PI_AUTO_QA", "0")],
+        homes: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
+        // Context files stop at the git root when the workspace is outside the
+        // home (`src/discovery/helpers.ts:721-735`), and the recorder's
+        // `git init` makes the workspace that root.
+        ancestor_config: &[],
+        config: &[
+            ConfigFile {
+                home: "PI_CODING_AGENT_DIR",
+                path: "models.yml",
+                template: r#"providers:
+  aimock:
+    baseUrl: http://127.0.0.1:{port}/v1
+    apiKey: "{key}"
+    api: openai-completions
+    models:
+      - id: gpt-4.1
+        reasoning: true
+"#,
+            },
+            // A headless prompt is refused, and `always-ask` prompts for every
+            // tool but a read (`docs/approval-mode.md:18-24`), so only the spawn
+            // is allowed. `-p` exits once the turn ends, killing a background
+            // child, so the spawn blocks (`src/task/settings.ts:251`).
+            ConfigFile {
+                home: "PI_CODING_AGENT_DIR",
+                path: "config.yml",
+                template: r#"tools:
+  approvalMode: always-ask
+  approval:
+    task: allow
+async:
+  enabled: false
+"#,
+            },
+        ],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                expects: &["session_start", "session_shutdown"],
+                fixture: "fixtures/omp/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Permission,
+                expects: &[
+                    "session_start",
+                    "tool_approval_requested",
+                    "tool_approval_resolved",
+                    "session_shutdown",
+                ],
+                fixture: "fixtures/omp/permission-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                expects: &["session_start", "session_shutdown"],
+                fixture: "delegation/fixtures/omp",
+            },
+        ],
+        script_vars: &[],
+        not_yet: &["session_switch", "session_branch"],
+        event_name: type_field,
+        not_yet_fields: &[
+            // Only a UI approves a prompt (`src/extensibility/extensions/wrapper.ts:386-398`).
+            ("hook:tool_approval_resolved", "/approved"),
+            // Only an interactive run titles a session (`src/main.ts:2258`).
+            ("tx:title", "/title"),
+            ("tx:title_change", "/title"),
+            ("tx:title_change", "/type"),
+            // An `ask` round, which no shape scripts.
+            (
+                "tx:message",
+                "/message/content/*/arguments/questions/*/question",
+            ),
+        ],
+        children_inherit_cwd: false,
+    },
 ];
 
 /// Every registered source without a profile, and why.
@@ -917,7 +1020,6 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     ("codewhale", Absence::AwaitingProfile),
     ("openclaw", Absence::AwaitingProfile),
     ("hermes", Absence::AwaitingProfile),
-    ("omp", Absence::AwaitingProfile),
 ];
 
 /// The profile for `source`, if it has one.
@@ -1039,6 +1141,14 @@ mod tests {
             let p = profile(source).expect("profiled");
             assert_eq!(p.package, Package::Npm(package), "{source}");
         }
+    }
+
+    #[test]
+    fn a_release_binary_comes_from_the_repo_the_drift_watch_reads() {
+        let Package::GithubRelease { repo, .. } = profile("omp").expect("profiled").package else {
+            panic!("omp installs its release binary");
+        };
+        assert_eq!(repo, crate::source::omp::REPO.name);
     }
 
     #[test]

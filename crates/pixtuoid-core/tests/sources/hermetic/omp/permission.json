@@ -1,0 +1,14 @@
+{
+  "fixtures": [
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Removing the note", "command": "rm NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": true},
+      "response": {"content": "pong"},
+      "latency": 300
+    }
+  ]
+}
