@@ -1,13 +1,13 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.278 (Claude Code)",
-  "captured": "2026-10-13",
+  "version": "2.1.302 (Claude Code)",
+  "captured": "2026-10-18",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 203
+    "blanked": 228
   },
-  "aimock": "1.43.0",
+  "aimock": "1.44.0",
   "script": "tests/sources/hermetic/claude-code/tool-run.json"
 }
