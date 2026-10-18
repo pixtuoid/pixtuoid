@@ -222,7 +222,7 @@ pub(crate) const UPSTREAM: &[Watch] = &[
 /// # Errors
 ///
 /// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_copilot_line(
+pub(crate) fn decode_copilot_line(
     transcript_path: &str,
     source: &str,
     v: Value,
