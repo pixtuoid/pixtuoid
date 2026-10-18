@@ -201,7 +201,6 @@ pub fn pixtuoid_scene::floor::floor_capacity(u16, u16, u64) -> usize
 pub fn pixtuoid_scene::floor::floor_seed(usize) -> u64
 pub fn pixtuoid_scene::floor::num_floors(&pixtuoid_core::state::SceneState) -> usize
 pub fn pixtuoid_scene::floor::project_floor_scene(&pixtuoid_core::state::SceneState, usize) -> pixtuoid_core::state::SceneState
-pub fn pixtuoid_scene::floor::track_for(std::time::SystemTime, pixtuoid_scene::sky::WeatherPolicy) -> crate::audio::TrackId
 pub mod pixtuoid_scene::layout
 pub enum pixtuoid_scene::layout::Facing
 pub pixtuoid_scene::layout::Facing::East

@@ -10,17 +10,17 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use pixtuoid_scene::audio::AudioFrame;
+#[cfg(all(feature = "audio", test))]
+use pixtuoid_scene::audio::OneShot;
 #[cfg(feature = "audio")]
 use pixtuoid_scene::audio::mixer::LoopStem;
 #[cfg(feature = "audio")]
 use pixtuoid_scene::audio::{AudioEngine, MAX_DT_S};
-#[cfg(all(feature = "audio", test))]
-use pixtuoid_scene::audio::{OneShot, TrackId};
 #[cfg(feature = "audio")]
 use sink::AudioSink;
 
 #[cfg(feature = "audio")]
-use pixtuoid_scene::audio::bank::{Synthesis, TRACK_STEMS};
+use pixtuoid_scene::audio::bank::Synthesis;
 
 /// The +/- keys' volume increment.
 pub(crate) const VOLUME_STEP: f32 = 0.05;
@@ -589,7 +589,7 @@ pub(crate) struct AudioHandle {
     /// Mute is STATE, not an event: it rides this atomic instead of the
     /// droppable frame channel. During the bank-synthesis window the channel
     /// saturates and try_sends drop — an `m`/`p` keypress there must still
-    /// land, or the beds fade in unmuted against a footer that says muted.
+    /// land, or the rain fades in unmuted against a footer that says muted.
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Master volume (f32 bits) — same state-not-event rationale as `muted`.
     volume: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -667,8 +667,8 @@ impl AudioHandle {
             match std::thread::Builder::new()
                 .name("pixtuoid-audio".into())
                 .spawn(move || {
-                    // Its synthesis runs for seconds at a launch and a track
-                    // swap: utility work, "work that may take some time to
+                    // Its synthesis runs at a launch: utility work, "work
+                    // that may take some time to
                     // complete and doesn't require an immediate result"
                     // (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
                     // The device plays on its output callback's own thread.
@@ -768,10 +768,10 @@ const TICK_MS: u64 = 50;
 
 /// Upper bound on [`AudioHandle::shutdown`]'s wait for the device thread's teardown. The
 /// common case returns within one [`TICK_MS`], but `run_loop` is BLIND to the closed channel
-/// while inside a multi-second synthesis build, so a quit landing there must wait the build
-/// out: a ceiling under a release build's worst case times the join out and leaves the thread
-/// DETACHED, the very failure the join exists to prevent. Debug's longer synth may exceed it.
-const SHUTDOWN_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+/// while it synthesizes the one-shots and rain at spawn, so a quit landing there must wait
+/// that build out: a ceiling under its worst case times the join out and leaves the thread
+/// DETACHED, the very failure the join exists to prevent.
+const SHUTDOWN_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Join `handle`, but give up after `timeout` so a hung device-close (or a
 /// still-in-flight synth build, see [`SHUTDOWN_JOIN_TIMEOUT`]) can't block the
@@ -892,10 +892,10 @@ mod utility_tests {
     }
 }
 
-/// After the first frame's track build the channel holds a backlog. Adopt
-/// its freshest LEVELS (they re-send every render frame) but drop its event
-/// backlog — a replayed stack of chimes is a clank pile — while KEEPING the
-/// first frame's own events, which haven't played yet.
+/// After the spawn-time build the channel holds a backlog. Adopt its freshest
+/// LEVELS (they re-send every render frame) but drop its event backlog — a
+/// replayed stack of chimes is a clank pile — while KEEPING the first frame's
+/// own events, which haven't played yet.
 #[cfg(feature = "audio")]
 fn merge_backlog_levels(rx: &mpsc::Receiver<AudioFrame>, mut first: AudioFrame) -> AudioFrame {
     while let Ok(f) = rx.try_recv() {
@@ -906,8 +906,8 @@ fn merge_backlog_levels(rx: &mpsc::Receiver<AudioFrame>, mut first: AudioFrame) 
 
 /// The per-tick dt, CLAMPED to `MAX_DT_S` — the shell's half of the engine's
 /// gap-immunity (the wasm painter clamps its `now_ms` delta the same way). A
-/// track-build stall or a scheduler-starvation gap must not cover seconds and
-/// snap the crossfade or burst the schedulers.
+/// scheduler-starvation gap must not cover seconds and snap a ramp or burst
+/// the schedulers.
 #[cfg(feature = "audio")]
 fn clamped_dt(prev: Instant, now: Instant) -> f32 {
     now.saturating_duration_since(prev)
@@ -916,7 +916,7 @@ fn clamped_dt(prev: Instant, now: Instant) -> f32 {
 }
 
 /// The audio thread body — the DEVICE shell over the shared [`AudioEngine`],
-/// which owns all mixing/crossfade/scheduling.
+/// which owns all mixing/scheduling.
 #[cfg(feature = "audio")]
 fn run_loop(
     rx: mpsc::Receiver<AudioFrame>,
@@ -929,20 +929,24 @@ fn run_loop(
     let built_at = Instant::now();
     let mut synthesis = Synthesis::new();
     let bank = synthesis.assets();
-    // Rain is weather — track-independent, registered once. The TRACK beds wait for the FIRST
-    // frame: booting Day at night would synthesize a track just to crossfade it away.
     device.start_loop(LoopStem::Rain, synthesis.rain());
     tracing::debug!(
         ms = built_at.elapsed().as_millis(),
-        "audio: one-shots + rain synthesized; track beds await the first frame"
+        "audio: one-shots + rain synthesized"
     );
 
     let mut engine = AudioEngine::new(f32::from_bits(volume.load(Relaxed)));
-    let mut inited = false;
+    let mut backlog = rx
+        .try_recv()
+        .ok()
+        .map(|first| merge_backlog_levels(&rx, first));
     let mut last_step = Instant::now();
 
     loop {
-        let msg = rx.recv_timeout(std::time::Duration::from_millis(TICK_MS));
+        let msg = match backlog.take() {
+            Some(frame) => Ok(frame),
+            None => rx.recv_timeout(std::time::Duration::from_millis(TICK_MS)),
+        };
         engine.set_muted(muted.load(Relaxed));
         engine.set_master(f32::from_bits(volume.load(Relaxed)));
 
@@ -951,23 +955,7 @@ fn run_loop(
         last_step = now;
 
         let frame = match msg {
-            Ok(frame) => {
-                if !inited {
-                    // The first frame's synth stalls the thread: drop the backlog it queued
-                    // and re-anchor the clock, so the build's seconds ramp nothing.
-                    let beds = synthesis.track(frame.track);
-                    for stem in TRACK_STEMS {
-                        device.start_loop(stem, beds.bed(stem));
-                    }
-                    engine.init_track(frame.track);
-                    inited = true;
-                    let fresh = merge_backlog_levels(&rx, frame);
-                    last_step = Instant::now();
-                    Some(fresh)
-                } else {
-                    Some(frame)
-                }
-            }
+            Ok(frame) => Some(frame),
             Err(mpsc::RecvTimeoutError::Timeout) => None,
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
@@ -976,14 +964,6 @@ fn run_loop(
 
         for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
             device.set_loop_gain(stem, gain);
-        }
-        if let Some(to) = cmds.swap {
-            let beds = synthesis.track(to);
-            for stem in TRACK_STEMS {
-                device.swap_loop(stem, beds.bed(stem));
-            }
-            for _ in rx.try_iter() {}
-            last_step = Instant::now();
         }
         for play in cmds.plays {
             device.play_once(bank.sample(play.pool, play.index), play.gain);
@@ -1022,9 +1002,6 @@ mod tests {
             fn start_loop(&mut self, stem: LoopStem, s: Arc<Vec<f32>>) {
                 self.record(|r| r.start_loop(stem, s));
             }
-            fn swap_loop(&mut self, stem: LoopStem, s: Arc<Vec<f32>>) {
-                self.record(|r| r.swap_loop(stem, s));
-            }
             fn set_loop_gain(&mut self, stem: LoopStem, g: f32) {
                 self.record(|r| r.set_loop_gain(stem, g));
             }
@@ -1049,7 +1026,6 @@ mod tests {
         tx.send(AudioFrame {
             stems: StemLevels::default(),
             events: vec![OneShot::DoorChime, OneShot::PrinterWhir],
-            track: Default::default(),
         })
         .unwrap();
         // Wait out frame 1 (the bank build delays it by seconds) so the mute lands BETWEEN
@@ -1065,7 +1041,6 @@ mod tests {
         tx.send(AudioFrame {
             stems: StemLevels::default(),
             events: vec![OneShot::DoorChime, OneShot::VendingDrop],
-            track: Default::default(),
         })
         .unwrap();
         drop(tx);
@@ -1082,10 +1057,9 @@ mod tests {
         for stem in LoopStem::ALL {
             assert!(
                 rec.loops_started.contains(&stem),
-                "rain at spawn + the first frame's track beds — missing {stem:?}"
+                "every loop registers at spawn — missing {stem:?}"
             );
         }
-        assert!(rec.swaps.is_empty(), "no track switch happened");
         assert_eq!(
             rec.one_shots, 2,
             "the unmuted frame's 2 events played; the post-mute frame's 2 did not"
@@ -1093,12 +1067,12 @@ mod tests {
     }
 
     #[test]
-    fn clamped_dt_caps_a_build_stall_gap_but_passes_a_normal_tick() {
+    fn clamped_dt_caps_a_stall_gap_but_passes_a_normal_tick() {
         let t0 = Instant::now();
         assert_eq!(
             clamped_dt(t0, t0 + std::time::Duration::from_secs(2)),
             MAX_DT_S,
-            "a multi-second build stall clamps to the ceiling"
+            "a multi-second stall clamps to the ceiling"
         );
         let dt = clamped_dt(t0, t0 + std::time::Duration::from_millis(20));
         assert!(
@@ -1116,7 +1090,7 @@ mod tests {
 #[cfg(all(test, feature = "audio"))]
 mod listen_gate {
     use super::*;
-    use pixtuoid_scene::audio::bank::{AssetBank, TrackBeds};
+    use pixtuoid_scene::audio::bank::AssetBank;
     use pixtuoid_scene::audio::{SAMPLE_RATE, StemLevels};
     use std::io::Write;
     use std::sync::Arc;
@@ -1157,11 +1131,6 @@ mod listen_gate {
         fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
             self.loops.push((samples, 0.0));
             self.loop_ids.push(stem);
-        }
-        fn swap_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
-            if let Some(i) = self.loop_ids.iter().position(|s| *s == stem) {
-                self.loops[i].0 = samples;
-            }
         }
         fn set_loop_gain(&mut self, stem: LoopStem, gain: f32) {
             if let Some(i) = self.loop_ids.iter().position(|s| *s == stem) {
@@ -1204,22 +1173,16 @@ mod listen_gate {
 
     fn render_tier(
         bank: &AssetBank,
-        beds: &TrackBeds,
         rain: &Arc<Vec<f32>>,
-        track: TrackId,
         stems: StemLevels,
         events_at: &[(f32, OneShot)],
         secs: f32,
     ) -> Vec<f32> {
         let mut sink = OfflineSink::new(secs);
         sink.start_loop(LoopStem::Rain, Arc::clone(rain));
-        for stem in TRACK_STEMS {
-            sink.start_loop(stem, beds.bed(stem));
-        }
         // Drive the SAME shared `AudioEngine` the app runs, so the audition
         // mixes exactly what ships (incl. the production bus trim).
         let mut engine = AudioEngine::new(1.0);
-        engine.init_track(track);
         let step_s = 0.05f32;
         let step_n = (step_s * SAMPLE_RATE as f32) as usize;
         let mut fired = vec![false; events_at.len()];
@@ -1232,14 +1195,7 @@ mod listen_gate {
                     events.push(*ev);
                 }
             }
-            let cmds = engine.tick(
-                step_s,
-                Some(AudioFrame {
-                    stems,
-                    events,
-                    track,
-                }),
-            );
+            let cmds = engine.tick(step_s, Some(AudioFrame { stems, events }));
             for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
                 sink.set_loop_gain(stem, gain);
             }
@@ -1260,8 +1216,6 @@ mod listen_gate {
         let mut synthesis = Synthesis::new();
         let bank = synthesis.assets();
         let rain = synthesis.rain();
-        let beds = synthesis.track(TrackId::GenDay(0));
-        let night = synthesis.track(TrackId::GenNight(0));
         // Tier levels come from the PRODUCTION mapping, not hand-rolled
         // literals — the wavs must audition what the app will mix.
         let counts = |active: usize| pixtuoid_scene::tally::StateCounts {
@@ -1271,7 +1225,6 @@ mod listen_gate {
             exiting: 0,
             total: active,
         };
-        let quiet = pixtuoid_scene::audio::stem_levels(&counts(0), 0.0);
         let moderate = pixtuoid_scene::audio::stem_levels(&counts(1), 0.0);
         let busy = pixtuoid_scene::audio::stem_levels(&counts(3), 0.0);
         let rainy = pixtuoid_scene::audio::stem_levels(&counts(3), 1.0);
@@ -1294,24 +1247,15 @@ mod listen_gate {
             })
             .collect();
         for (name, stems, events) in [
-            ("tier_1_empty", quiet, &[][..]),
             ("tier_2_moderate", moderate, &[][..]),
             ("tier_3_busy_oneshot_volley", busy, &volley[..]),
             ("tier_4_rainy_busy", rainy, &[][..]),
             ("tier_5_rainy_busy_pileup", rainy, &pileup[..]),
         ] {
-            let buf = render_tier(&bank, &beds, &rain, TrackId::GenDay(0), stems, events, 60.0);
+            let buf = render_tier(&bank, &rain, stems, events, 60.0);
             assert!(
                 buf.iter().any(|&s| s.abs() > 0.01),
                 "{name}: every tier is audible"
-            );
-            write_wav(&out.join(format!("{name}.wav")), &buf);
-        }
-        for (name, stems) in [("night_moderate", moderate), ("night_rainy", rainy)] {
-            let buf = render_tier(&bank, &night, &rain, TrackId::GenNight(0), stems, &[], 60.0);
-            assert!(
-                buf.iter().any(|&s| s.abs() > 0.01),
-                "{name}: the night track is audible"
             );
             write_wav(&out.join(format!("{name}.wav")), &buf);
         }

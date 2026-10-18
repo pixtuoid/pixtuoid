@@ -1020,7 +1020,7 @@ fn session_types_default_equals_new() {
 }
 
 #[test]
-fn audio_observer_frame_composes_stems_and_track_from_the_scene() {
+fn audio_observer_frame_composes_stems_from_the_scene() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = make_scene(4, 16);
     let occupied = std::collections::HashSet::new();
@@ -1031,15 +1031,6 @@ fn audio_observer_frame_composes_stems_and_track_from_the_scene() {
         frame.stems,
         crate::audio::stem_levels(&crate::tally::per_floor_counts(&scene)[0], precip),
         "stems must equal stem_levels(per_floor_counts[floor], precip)"
-    );
-    assert_eq!(
-        frame.track,
-        crate::audio::select_track(
-            crate::sky::is_day_at(now),
-            precip,
-            crate::audio::track_epoch(now),
-        ),
-        "track must equal select_track(is_day_at(now), precip, track_epoch(now))"
     );
 }
 

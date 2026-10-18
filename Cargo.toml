@@ -86,11 +86,6 @@ debug = false
 # wider than any codegen-level float difference.
 opt-level = 2
 
-[profile.dev.package.pixtuoid-lofi]
-# The bank's synthesis tests render every music lane through it, the
-# workspace's other compute-bound tests.
-opt-level = 2
-
 # Opt-in full debuginfo for an actual debugger session:
 # `cargo build --profile debugging`.
 [profile.debugging]
