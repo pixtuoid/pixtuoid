@@ -200,8 +200,8 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "antigravity",
             source: "antigravity",
-            fixture: "fixtures/antigravity/tool-run-recorded/transcript.jsonl",
-            wire: Wire::Transcript { seeded: true },
+            fixture: "fixtures/antigravity/tool-run-hermetic/hook-payloads.jsonl",
+            wire: Wire::Hooks,
             must_reach: &[Reach::Active],
         },
         WireCase {

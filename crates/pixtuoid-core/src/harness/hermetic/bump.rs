@@ -136,14 +136,17 @@ fn registry_relative() -> PathBuf {
 }
 
 /// Whether a bump of `p` may change `path`, relative to the repository: the
-/// registry, a file under one of its scenarios' fixtures, or one of their
-/// conformance snapshots, named as insta derives it (`conformance.rs`).
+/// registry, its manifest lock, a file under one of its scenarios' fixtures,
+/// or one of their conformance snapshots, named as insta derives it
+/// (`conformance.rs`).
 pub fn admits(p: &Profile, path: &Path) -> bool {
     if !path.components().all(|c| matches!(c, Component::Normal(_))) {
         return false;
     }
     let sources = relative(&sources_root());
     path == registry_relative()
+        || p.manifest_lock()
+            .is_some_and(|lock| path == relative(&lock))
         || p.scenarios.iter().any(|s| {
             let fixture = sources.join(s.fixture);
             let snapshot = fixture.file_name().map(|scenario| {
@@ -346,6 +349,15 @@ mod tests {
             p,
             &relative(&sources_root().join("conformance.rs"))
         ));
+    }
+
+    #[test]
+    fn a_bump_admits_its_own_manifest_lock_alone() {
+        let ag = profile("antigravity").expect("antigravity's profile");
+        let lock = relative(&ag.manifest_lock().expect("a manifest lock"));
+        assert!(admits(ag, &lock));
+        assert!(!admits(codex(), &lock), "a profile without one");
+        assert!(!admits(ag, &lock.with_file_name("tool-run.json")));
     }
 
     #[test]

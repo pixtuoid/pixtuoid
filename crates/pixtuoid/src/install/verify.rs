@@ -145,21 +145,23 @@ pub(crate) fn flat_json_verify(content: &str, events: &[&str], sentinel: &str) -
 /// Extract the shim path from a shell-form managed command — the form
 /// `hook_cmd::shell_hook_command` writes: Unix `PIXTUOID_SOURCE=<source> '<abs>'`
 /// (single-quoted) and Windows `<abs> --source <source>` (bare), either with an
-/// optional trailing ` --event <name>` (CodeWhale).
+/// optional trailing ` --event <name>` (CodeWhale) or ` --hook-event <name>` (agy).
 pub(crate) fn shell_shim_ref(command: &str) -> ShimRef {
-    // Strip the trailing ` --event <name>` with rsplit_once, and only when the
+    use crate::install::hook_cmd::{EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_FLAG};
+    // Strip the trailing event flag with rsplit_once, and only when the
     // residual head still parses as a writer shape (ends with `'` = Unix quoted
     // form, contains " --source " = Windows bare form): a quoted path that
-    // literally contains " --event " would otherwise be cut mid-path into a bogus
+    // literally contains the flag would otherwise be cut mid-path into a bogus
     // partial token that never `.exists()`.
-    let head = match command.rsplit_once(crate::install::hook_cmd::EVENT_FLAG) {
-        Some((before, _))
-            if before.ends_with('\'') || before.contains(crate::install::hook_cmd::SOURCE_FLAG) =>
-        {
-            before
-        }
-        _ => command,
-    };
+    let head = [EVENT_FLAG, HOOK_EVENT_FLAG]
+        .into_iter()
+        .find_map(|flag| match command.rsplit_once(flag) {
+            Some((before, _)) if before.ends_with('\'') || before.contains(SOURCE_FLAG) => {
+                Some(before)
+            }
+            _ => None,
+        })
+        .unwrap_or(command);
     // The trailing-quote test discriminates the two forms unambiguously: the Unix
     // form is single-quoted by `shell_single_quote` so it ENDS with `'`, while a
     // Windows bare path never does even when it CONTAINS apostrophes

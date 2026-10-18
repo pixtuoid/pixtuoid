@@ -1263,22 +1263,22 @@ mod apply_key_action_tests {
 
     #[test]
     fn skipping_onboarding_writes_nothing() {
-        let mut h = Harness::onboarding(&["antigravity"]);
+        let mut h = Harness::onboarding(&["copilot"]);
         assert!(h.ui.onboarding_open());
         h.apply(KeyAction::OnboardingSkip);
         assert!(!h.ui.onboarding_open());
         assert!(!h.config_path.exists(), "skip must not touch the config");
-        assert!(!h.connected.is_connected("antigravity"));
+        assert!(!h.connected.is_connected("copilot"));
     }
 
     #[test]
     fn confirming_onboarding_connects_the_checked_rows_and_opens_their_gate() {
-        let mut h = Harness::onboarding(&["antigravity"]);
+        let mut h = Harness::onboarding(&["copilot"]);
         h.apply(KeyAction::OnboardingConfirm);
         assert!(!h.ui.onboarding_open());
-        assert!(h.connected.is_connected("antigravity"));
+        assert!(h.connected.is_connected("copilot"));
         let cfg = crate::config::load(&h.config_path, &mut Vec::new());
-        assert_eq!(cfg.sources, [("antigravity".to_string(), true)].into());
+        assert_eq!(cfg.sources, [("copilot".to_string(), true)].into());
     }
 
     /// `v` reopens the popup with the notices due against the LIVE connections:

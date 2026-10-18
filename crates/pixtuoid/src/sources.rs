@@ -505,7 +505,6 @@ pub(crate) struct RowInput {
 /// Title-case the no-target sources — the registry omits their display names.
 fn display_name_for(source_id: &'static str) -> &'static str {
     match source_id {
-        "antigravity" => "Antigravity",
         "copilot" => "Copilot CLI",
         other => other,
     }
@@ -853,7 +852,7 @@ mod tests {
         let app = flags(&[("claude-code", true), ("codex", false)]);
         let hooked = |sid: &str| match sid {
             "codex" => Some(true),
-            "copilot" | "antigravity" => None,
+            "copilot" => None,
             _ => Some(false),
         };
         assert_eq!(connected_with(&app, hooked), set(&["codex"]));
@@ -879,12 +878,12 @@ mod tests {
 
     #[test]
     fn a_flag_only_source_is_connected_by_its_flag() {
-        let app = flags(&[("copilot", true), ("antigravity", false)]);
-        let hooked = |sid: &str| match sid {
-            "copilot" | "antigravity" => None,
-            _ => Some(false),
-        };
-        assert_eq!(connected_with(&app, hooked), set(&["copilot"]));
+        let hooked = |sid: &str| (sid != "copilot").then_some(false);
+        assert_eq!(
+            connected_with(&flags(&[("copilot", true)]), hooked),
+            set(&["copilot"])
+        );
+        assert!(connected_with(&flags(&[("copilot", false)]), hooked).is_empty());
     }
 
     #[test]
@@ -893,22 +892,18 @@ mod tests {
         let cfg = dir.path().join("config.toml");
         std::fs::write(
             &cfg,
-            "theme = \"x\"\n[sources]\nclaude-code = true\ncodex = false\nantigravity = true\n",
+            "theme = \"x\"\n[sources]\nclaude-code = true\ncodex = false\n",
         )
         .unwrap();
         connect(&cfg, "copilot").unwrap();
         let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(
-            app.sources,
-            flags(&[("antigravity", true), ("copilot", true)]).sources
-        );
+        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
         assert_eq!(
             app.theme.as_deref(),
             Some("x"),
             "only [sources] is rewritten"
         );
 
-        disconnect(&cfg, "antigravity").unwrap();
         disconnect(&cfg, "copilot").unwrap();
         let raw = std::fs::read_to_string(&cfg).unwrap();
         assert!(
@@ -950,13 +945,13 @@ mod tests {
     fn connect_each_connects_only_the_ids_it_is_given() {
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
-        let outcomes = connect_each(&cfg, &["antigravity"]);
+        let outcomes = connect_each(&cfg, &["copilot"]);
         assert_eq!(
             outcomes,
-            vec![("antigravity".to_string(), AppliedChange::Connected)]
+            vec![("copilot".to_string(), AppliedChange::Connected)]
         );
         let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(app.sources, flags(&[("antigravity", true)]).sources);
+        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
     }
 
     #[test]
@@ -967,26 +962,22 @@ mod tests {
         let cfg = dir.path().join("config.toml");
 
         assert!(matches!(
-            connect(&cfg, "antigravity").unwrap(),
+            connect(&cfg, "copilot").unwrap(),
             ConnectOutcome::FlagOnly
         ));
         let app = config::load(&cfg, &mut Vec::new());
         assert_eq!(
-            app.sources.get("antigravity"),
+            app.sources.get("copilot"),
             Some(&true),
             "flag persisted true"
         );
 
         assert!(matches!(
-            disconnect(&cfg, "antigravity").unwrap(),
+            disconnect(&cfg, "copilot").unwrap(),
             DisconnectOutcome::FlagOnly
         ));
         let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(
-            app.sources.get("antigravity"),
-            None,
-            "an off flag is not kept"
-        );
+        assert_eq!(app.sources.get("copilot"), None, "an off flag is not kept");
     }
 
     // Its `default_config_path` errs, so `install_target` bails before any FS —
@@ -1160,14 +1151,14 @@ mod tests {
         // The injected current set keeps this off the machine's real hooks.
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
-        connect(&cfg, "antigravity").unwrap();
+        connect(&cfg, "copilot").unwrap();
 
         let outcomes: std::collections::HashMap<_, _> =
-            reconcile_from(&cfg, &set(&["antigravity"]), &HashSet::new())
+            reconcile_from(&cfg, &set(&["copilot"]), &HashSet::new())
                 .into_iter()
                 .collect();
 
-        assert_eq!(outcomes["antigravity"], ChangeOutcome::Disconnected);
+        assert_eq!(outcomes["copilot"], ChangeOutcome::Disconnected);
         assert_eq!(
             outcomes["codex"],
             ChangeOutcome::NoOp,

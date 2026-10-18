@@ -352,45 +352,6 @@ fn hook_session_id(
         .map(str::to_string)
 }
 
-/// The per-session key is registry DATA (`HookDecoding::id_key`), never a name
-/// match. Codex MUST use `session_id`, since its `transcript_path` is
-/// `string | null` and keying on the path would split hook and JSONL into two
-/// sprites; CC keys on it because that UUID equals its transcript filename stem, so
-/// a subagent→parent link survives a git-worktree cwd-split.
-fn hook_agent_id(
-    desc: Option<&'static crate::source::registry::SourceDescriptor>,
-    obj: &serde_json::Map<String, Value>,
-    source: &str,
-    session_id: &str,
-) -> AgentId {
-    use crate::source::registry::IdKey;
-    // Normalized: fold `\`→`/` + lowercase on Windows, so the hook key and the JSONL
-    // watcher key hash to the same AgentId.
-    let normalized_transcript_path: String;
-    let id_key = match desc
-        .and_then(|d| d.hook())
-        .map_or(IdKey::TranscriptPathThenSessionId, |h| h.id_key)
-    {
-        // A UUID, deliberately NOT normalized — case folding could collide two
-        // variants that differ only in case.
-        IdKey::SessionId => session_id,
-        IdKey::TranscriptPathThenSessionId => {
-            match obj
-                .get("transcript_path")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-            {
-                Some(tp) => {
-                    normalized_transcript_path = normalize_path_key(tp);
-                    &normalized_transcript_path
-                }
-                None => session_id,
-            }
-        }
-    };
-    AgentId::from_parts(source, id_key)
-}
-
 /// The identity context the tool/permission arms attach ahead of their activity
 /// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
 /// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
@@ -473,7 +434,7 @@ pub(crate) fn shared_hook_arms(
             DecodeError::missing(source, "hook_event_name")
         })?;
     let session_id = hook_session_id(obj, source, event)?;
-    let agent_id = hook_agent_id(desc, obj, source, &session_id);
+    let agent_id = AgentId::from_parts(source, &session_id);
     let tool_id_key = desc
         .and_then(|d| d.hook())
         .map_or(crate::source::registry::ToolIdKey::ToolUse, |h| {
@@ -621,7 +582,7 @@ pub(crate) fn subagent_fired(
         .get("session_id")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
-        .map(|root| hook_agent_id(desc, obj, source, root));
+        .map(|root| AgentId::from_parts(source, root));
     let mut own = obj.clone();
     own.insert("session_id".into(), Value::from(session(agent)));
     let mut evs = shared_hook_arms(&own, source, desc)?;
@@ -1019,43 +980,6 @@ mod tests {
                 assert_eq!(agent_id, AgentId::from_parts("codex", "codex-sess-1"));
                 assert_eq!(cwd, std::path::PathBuf::from("/Users/me/work/myrepo"));
             }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn transcript_path_key_strategy_prefers_a_non_empty_path() {
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "ag-sess-1",
-            "_pixtuoid_source": "antigravity",
-            "transcript_path": "/tmp/ag/brain/x.json",
-            "cwd": "/repo"
-        }));
-        match ev {
-            AgentEvent::SessionStart { agent_id, .. } => assert_eq!(
-                agent_id,
-                AgentId::from_parts(
-                    "antigravity",
-                    &crate::id::normalize_path_key("/tmp/ag/brain/x.json")
-                ),
-                "a non-empty transcript_path is the key, not session_id"
-            ),
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "ag-sess-1",
-            "_pixtuoid_source": "antigravity",
-            "transcript_path": "",
-            "cwd": "/repo"
-        }));
-        match ev {
-            AgentEvent::SessionStart { agent_id, .. } => assert_eq!(
-                agent_id,
-                AgentId::from_parts("antigravity", "ag-sess-1"),
-                "an EMPTY transcript_path falls back to session_id"
-            ),
             other => panic!("expected SessionStart, got {other:?}"),
         }
     }

@@ -330,64 +330,6 @@ async fn codex_rollout_yields_uuid_keyed_session_start() {
 }
 
 #[tokio::test]
-async fn default_id_deriver_stays_path_keyed() {
-    // `antigravity`'s registry row carries the `default_id_from_path` deriver,
-    // where Codex/copilot/grok/omp rows carry their own session-key fn.
-    fast_watch();
-    let dir = TempDir::new().unwrap();
-    let root = dir.path().to_path_buf();
-    let project_dir = root.join("proj-y");
-    tokio::fs::create_dir_all(&project_dir).await.unwrap();
-    let transcript = project_dir.join("abc.jsonl");
-
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let watcher = JsonlWatcher::new(
-        root.clone(),
-        "antigravity".to_string(),
-        decode_ag_line,
-        |_t| false,
-    );
-    let handle = tokio::spawn(async move { watcher.run(tx).await });
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut f = tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&transcript)
-        .await
-        .unwrap();
-    f.write_all(format!("{}\n", ag_step_line()).as_bytes())
-        .await
-        .unwrap();
-    f.flush().await.unwrap();
-    drop(f);
-
-    // The EXACT id (`from_parts(source, normalize_path_key(path))`) is
-    // platform-dependent, so assert only that it is NOT the stem-keyed one; the
-    // value itself is pinned at the unit level in `jsonl/tests.rs` + `id.rs`.
-    let stem_keyed = AgentId::from_parts("antigravity", "abc");
-    let mut ok = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_t, AgentEvent::SessionStart { agent_id, .. }))) => {
-                assert_ne!(
-                    agent_id, stem_keyed,
-                    "default deriver must be path-keyed, not stem-keyed"
-                );
-                ok = true;
-                break;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {}
-        }
-    }
-    assert!(ok, "expected a path-keyed SessionStart");
-    handle.abort();
-}
-
-#[tokio::test]
 async fn watcher_skips_oversized_pending_tail() {
     let dir = TempDir::new().unwrap();
     let session_dir = dir.path().join("big");

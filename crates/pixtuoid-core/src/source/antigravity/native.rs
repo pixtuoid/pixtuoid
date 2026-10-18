@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use super::{SOURCE_NAME, decode_ag_line};
+use super::{CLI_APP_DATA_DIR, SOURCE_NAME, decode_ag_line, gemini_dir};
 use crate::source::jsonl::JsonlWatcher;
 use crate::source::{Source, TaggedSender};
 
@@ -21,9 +21,8 @@ impl AntigravitySource {
     /// (never under `%APPDATA%`). Note `antigravity-cli` (the CLI), NOT
     /// `antigravity` (the IDE's brain) — don't "fix" this to the IDE path.
     pub fn default_paths() -> Self {
-        let home = crate::platform::user_home();
         Self {
-            brain_root: home.join(".gemini").join("antigravity-cli").join("brain"),
+            brain_root: gemini_dir().join(CLI_APP_DATA_DIR).join("brain"),
         }
     }
 }

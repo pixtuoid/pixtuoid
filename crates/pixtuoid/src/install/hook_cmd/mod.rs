@@ -28,6 +28,7 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 /// const can't reach; keep them in sync by hand.
 pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
+pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
 
 /// The OS-correct hook `command` string for a shell-running CLI — the single OS
 /// fork for that strategy.

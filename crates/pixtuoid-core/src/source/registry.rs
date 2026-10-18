@@ -21,25 +21,6 @@ use crate::source::{
     upstream::{Upstream, Watch},
 };
 
-/// How the shared hook decoder derives the AgentId for this source. Moot for a
-/// [`HookCustom::ClaimsAll`] source (its decoder builds its own AgentIds and the
-/// shared id-key branch is never reached) — pick `TranscriptPathThenSessionId`
-/// with an `// inert` comment there.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum IdKey {
-    /// `transcript_path` when present and non-empty, else `session_id`. Correct
-    /// for path-keyed sources whose hook and JSONL both carry the transcript
-    /// path, so they coalesce on it. NOT CC — see [`Self::SessionId`].
-    TranscriptPathThenSessionId,
-    /// Always `session_id`, ignoring any `transcript_path`. Correct for CC and
-    /// Codex: their hook `session_id` IS the transcript filename stem, so hook
-    /// and JSONL events coalesce on it. Keying on the path instead would split
-    /// them into two sprites — CC's transcript path is cwd-derived (a
-    /// git-worktree split rebuilds the wrong parent) and Codex's is
-    /// `string | null`.
-    SessionId,
-}
-
 /// A source's own hook-payload decoder, dispatched ahead of the shared CC-shaped
 /// arms — TYPED by whether it may decline, so a [`Self::ClaimsAll`] fn has no
 /// `Option` to get wrong.
@@ -61,8 +42,8 @@ pub(crate) enum HookCustom {
 /// because reading the wrong name is SILENT — the field is optional, so a
 /// mis-spelling is indistinguishable from an absent id, and every kimi tool call
 /// decoded to `None` for the whole source's life. Moot for a
-/// `HookCustom::ClaimsAll` source, exactly as `IdKey` is — pick `ToolUse`
-/// with an `// inert` comment there.
+/// `HookCustom::ClaimsAll` source — pick `ToolUse` with an `// inert` comment
+/// there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolIdKey {
     /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
@@ -86,8 +67,6 @@ impl ToolIdKey {
 /// Per-source hook decoding behaviour beyond the shared CC-shaped arms.
 #[derive(Debug)]
 pub struct HookDecoding {
-    /// The per-session AgentId key strategy, read by the shared arms only.
-    pub(crate) id_key: IdKey,
     /// The per-call tool id's wire name, read by the shared arms only.
     pub tool_id_key: ToolIdKey,
     /// The source's own decoder, dispatched FIRST — before any shared field
@@ -560,7 +539,6 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
         hook: Some(HookDecoding {
             // The session UUID == the transcript filename stem, so keying on it
             // (not the cwd-derived path) survives a git-worktree cwd-split.
-            id_key: IdKey::SessionId,
             tool_id_key: ToolIdKey::ToolUse,
             // They swap the event's SUBJECT (child AgentId ≠ session AgentId), which
             // the shared arms can't express; Stop is a fleet subagent's ONLY end (#241).
@@ -601,7 +579,6 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             parent_extractor: Some(codex::extract_codex_parent),
         }),
         hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,
             tool_id_key: ToolIdKey::ToolUse,
             // A child's events change their SUBJECT, and a root's `spawn_agent`
             // is a Task: neither is expressible in the shared arms.
@@ -625,38 +602,30 @@ const CODEX: SourceDescriptor = SourceDescriptor {
 const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
     name: antigravity::SOURCE_NAME,
     label_prefix: "ag",
-    verified_version: "unknown",
+    verified_version: "1.4.2",
     version_probe: Some(&["agy", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
     #[cfg(any(test, feature = "upstream"))]
-    upstream: Upstream::Closed {
-        why: "a closed Google IDE with no fetchable schema: its decoder breadcrumbs a \
-              renamed step instead",
-    },
+    upstream: Upstream::Watched(&[antigravity::UPSTREAM]),
     kind: SourceKind::Agent {
         transcript: Some(Transcript {
             line_decoder: antigravity::decode_ag_line,
-            // Path-keyed: its hook keys on `transcript_path` too, so the
-            // default coalesces the two transports.
-            id_from_path: default_id_from_path,
+            id_from_path: antigravity::ag_id_from_path,
             path_filter: antigravity::admits_transcript,
-            // AG step lines carry no cwd field at all — the shared shape never
-            // matches and the label falls back to the bare `ag` prefix.
+            // AG step lines carry no cwd field at all; the cwd rides the
+            // `SessionStart` hook.
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
         }),
-        // A real spec despite the missing install target (unlike copilot, which
-        // has no hook path at all): the payload does decode via the shared arms.
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId,
-            tool_id_key: ToolIdKey::ToolUse,
-            custom: None,
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
+            custom: Some(HookCustom::ClaimsAll(antigravity::decode_ag_hook_payload)),
         }),
-        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE),
-        // and nothing re-registers a swept session — unknown-id JSONL lines are
-        // no-ops and the hook never fires without an install target. Flipping
-        // `resurrects_on_prompt` for the 5-min reaper strands a live idle session.
+        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
+        // and no end hook, and no prompt-time hook re-registers a swept session.
+        // Flipping `resurrects_on_prompt` for the 5-min reaper strands a live idle
+        // session. An exit rides the shim-stamped pid.
         caps: SourceCaps {
             has_exit_signal: false,
             resurrects_on_prompt: false,
@@ -664,7 +633,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::Unsupported,
+        focus: FocusChannel::ShimStamp,
     },
 };
 
@@ -684,8 +653,7 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(reasonix::decode_rx_hook_payload)),
         }),
         caps: SourceCaps {
@@ -732,7 +700,6 @@ const DSH: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
             tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(dsh::decode_dsh_payload)),
         }),
@@ -781,8 +748,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(codewhale::decode_cw_hook_payload)),
         }),
         caps: SourceCaps {
@@ -813,8 +779,7 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(opencode::decode_oc_hook_payload)),
         }),
         caps: SourceCaps {
@@ -909,8 +874,7 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(cursor::decode_cursor_hook_payload)),
         }),
         caps: SourceCaps {
@@ -949,8 +913,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Agent {
         transcript: None,
         hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
+            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(hermes::decode_hermes_hook_payload)),
         }),
         caps: SourceCaps {
@@ -997,7 +960,6 @@ const GROK: SourceDescriptor = SourceDescriptor {
             parent_extractor: None,
         }),
         hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
             tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(grok::decode_grok_hook_payload)),
         }),
@@ -1053,7 +1015,6 @@ const OMP: SourceDescriptor = SourceDescriptor {
             parent_extractor: None,
         }),
         hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
             tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
             custom: Some(HookCustom::ClaimsAll(omp::decode_omp_hook_payload)),
         }),
@@ -1110,7 +1071,6 @@ const KIMI: SourceDescriptor = SourceDescriptor {
         transcript: None,
         hook: Some(HookDecoding {
             // session_id is the base field on every Kimi event.
-            id_key: IdKey::SessionId,
             // The ONE source that does not spell the per-call id `tool_use_id`.
             tool_id_key: ToolIdKey::ToolCall,
             custom: Some(HookCustom::Extend(kimi::decode_kimi_hook_custom)),
@@ -1310,10 +1270,7 @@ mod tests {
         }
 
         let ag = "/h/.gemini/antigravity-cli/brain/x/.system_generated/logs/transcript.jsonl";
-        assert_eq!(
-            id_deriver_for(antigravity::SOURCE_NAME)(Path::new(ag)),
-            crate::id::normalize_path_key(ag),
-        );
+        assert_eq!(id_deriver_for(antigravity::SOURCE_NAME)(Path::new(ag)), "x");
         assert_eq!(
             id_deriver_for("not-a-source")(Path::new(ag)),
             crate::id::normalize_path_key(ag),

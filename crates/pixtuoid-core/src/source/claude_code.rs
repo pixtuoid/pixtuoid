@@ -311,7 +311,7 @@ fn fresh_spend(message: &serde_json::Map<String, Value>) -> u64 {
 }
 
 /// Decode one CC JSONL transcript line into 0..N AgentEvents, keyed on the
-/// filename STEM — the hook decoder's `IdKey::SessionId` and the watcher's
+/// filename STEM — the hook decoder's `session_id` and the watcher's
 /// deriver key the same way, so every CC keying site coalesces onto one sprite.
 /// There is deliberately NO user-content arm: content is user-controllable and a
 /// message QUOTING the slash-command wrapper would false-positive, so lifecycle

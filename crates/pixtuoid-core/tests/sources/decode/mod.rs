@@ -61,11 +61,11 @@ fn decode_session_start() {
 #[test]
 fn decode_session_start_with_custom_source() {
     let mut payload = load("session_start");
-    payload["_pixtuoid_source"] = serde_json::Value::String("antigravity".into());
+    payload["_pixtuoid_source"] = serde_json::Value::String("codex".into());
     let ev = decode_single(payload);
     match ev {
         AgentEvent::SessionStart { source, .. } => {
-            assert_eq!(source, "antigravity");
+            assert_eq!(source, "codex");
         }
         other => panic!("expected SessionStart, got {other:?}"),
     }
@@ -716,7 +716,7 @@ fn cc_jsonl_plain_string_user_message_yields_no_events() {
 }
 
 #[test]
-fn ag_planner_response_emits_activity_start_with_indexed_tool_use_id() {
+fn ag_planner_response_keys_each_call_on_the_step_it_runs_as() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
     let v = serde_json::json!({
         "step_index": 2,
@@ -731,13 +731,13 @@ fn ag_planner_response_emits_activity_start_with_indexed_tool_use_id() {
     assert_eq!(events.len(), 2);
     match &events[0] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {
-            assert_eq!(tool_use_id.as_deref(), Some("ag-2-0"));
+            assert_eq!(tool_use_id.as_deref(), Some("ag-3"));
         }
         other => panic!("got {other:?}"),
     }
     match &events[1] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {
-            assert_eq!(tool_use_id.as_deref(), Some("ag-2-1"));
+            assert_eq!(tool_use_id.as_deref(), Some("ag-4"));
         }
         other => panic!("got {other:?}"),
     }
@@ -755,7 +755,7 @@ fn ag_tool_result_emits_activity_end() {
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityEnd { tool_use_id, .. } => {
-            assert_eq!(tool_use_id.as_deref(), Some("ag-2-0"));
+            assert_eq!(tool_use_id.as_deref(), Some("ag-3"));
         }
         other => panic!("got {other:?}"),
     }
@@ -1009,7 +1009,7 @@ fn ag_skips_non_object_tool_call_and_keys_run_command() {
     );
     match &events[0] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {
-            assert_eq!(tool_use_id.as_deref(), Some("ag-3-1"));
+            assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
         other => panic!("expected ActivityStart, got {other:?}"),
     }
@@ -1040,7 +1040,7 @@ fn ag_grep_search_decodes_to_activity_start() {
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {
-            assert_eq!(tool_use_id.as_deref(), Some("ag-4-0"));
+            assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
         other => panic!("expected ActivityStart, got {other:?}"),
     }
@@ -1149,7 +1149,7 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     use std::path::{Path, PathBuf};
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures");
-    let cases: [(&str, &str, Option<&str>); 4] = [
+    let cases: [(&str, &str, Option<&str>); 3] = [
         (
             "claude-code",
             "claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl",
@@ -1164,11 +1164,6 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
             "copilot",
             "copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl",
             Some(r"d:\contentforge-fullstack (1)"),
-        ),
-        (
-            "antigravity",
-            "antigravity/tool-run-recorded/transcript.jsonl",
-            None,
         ),
     ];
     for (source, rel, expected) in cases {
@@ -1186,27 +1181,4 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
             "cwd extracted from {source}'s real fixture head"
         );
     }
-}
-
-#[cfg(windows)]
-#[test]
-fn mixed_separator_and_case_forms_coalesce_on_windows() {
-    let a = serde_json::json!({
-        "hook_event_name": "SessionStart",
-        "session_id": "s1",
-        "transcript_path": r"C:\Users\Me\.gemini\antigravity-cli\brain\X\s1.jsonl",
-        "_pixtuoid_source": "antigravity"
-    });
-    let b = serde_json::json!({
-        "hook_event_name": "SessionStart",
-        "session_id": "s1",
-        "transcript_path": "C:/users/me/.gemini/antigravity-cli/brain/x/s1.jsonl",
-        "_pixtuoid_source": "antigravity"
-    });
-    assert_eq!(
-        decode_single(a).agent_id(),
-        decode_single(b).agent_id(),
-        "backslash and forward-slash forms of the same Windows path must produce \
-         the same AgentId after normalize_path_key folds both to lowercase forward-slashes"
-    );
 }
