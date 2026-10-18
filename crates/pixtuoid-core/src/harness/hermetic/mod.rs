@@ -234,9 +234,9 @@ pub struct Manifest {
     pub capture: CaptureRecord,
     /// The aimock version that played the model.
     pub aimock: String,
-    /// Requests aimock answered.
+    /// Model turns aimock answered.
     pub requests: usize,
-    /// Requests no script fixture matched.
+    /// Model turns no script line matched.
     pub unmatched: usize,
 }
 
@@ -1031,16 +1031,19 @@ async:
     Profile {
         source: "hermes",
         // Its build refuses a wheel (`setup.py:37`), so no index carries a
-        // current release; users run the installer, which syncs the tag's lock.
+        // current release; a source checkout tracks the latest `vX.Y.Z` tag
+        // (`website/docs/getting-started/updating.md:33-36`). Its installer
+        // would rewrite the operator's shell rc files and run `sudo -n -v`
+        // (`scripts/install.sh:851-853`, `:882-908`).
         package: Package::UvLocked(&crate::source::hermes::REPO),
         // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
         // and a hook runs only once accepted.
         invocation: &["hermes", "--accept-hooks", "-z", "{prompt}"],
         env: &[],
-        homes: &[],
-        // The managed scope, unless `HERMES_MANAGED_DIR` names another
-        // (`hermes_cli/managed_scope.py:31`, `:45-58`). On Windows the same
-        // literal is relative to the cwd's drive, which no fixed path names.
+        // The managed scope, which otherwise is `/etc/hermes`
+        // (`hermes_cli/managed_scope.py:31`, `:45-58`).
+        homes: &["HERMES_MANAGED_DIR"],
+        // Read there whatever the managed scope is (`hermes_cli/image_provenance.py:16`).
         system_config: PerOs {
             unix: &[HostConfig::Path("/etc/hermes")],
             windows: &[],

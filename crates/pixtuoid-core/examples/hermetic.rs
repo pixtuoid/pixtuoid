@@ -42,7 +42,7 @@ mod run {
         CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
         required_version_probe, version_answer,
     };
-    use pixtuoid_core::source::upstream;
+    use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
 
     /// How long a server gets to come up before the run gives up.
@@ -85,9 +85,10 @@ mod run {
             "TEMP",
         ],
     };
-    /// What the tier's tools (npm, curl, aimock) inherit beyond [`inherited`]:
-    /// network settings, with npm's home in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts and the
-    /// npm-installed aimock are untrusted code, so no provider key reaches them.
+    /// What the tier's tools inherit beyond [`inherited`]: network settings,
+    /// with their homes in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts
+    /// and the npm-installed aimock are untrusted code, so no provider key
+    /// reaches them.
     const TOOL_INHERITED: &[&str] = &[
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -96,9 +97,12 @@ mod run {
         "https_proxy",
         "no_proxy",
         "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "UV_SYSTEM_CERTS",
     ];
-    /// npm's home, whose `cache` is `~/.npm`, or `%LocalAppData%\npm-cache` on
-    /// Windows (docs.npmjs.com/cli/v11/using-npm/config).
+    /// npm's and uv's homes, whose caches are `~/.npm` and `~/.cache/uv`, or
+    /// `%LocalAppData%\npm-cache` and `%LOCALAPPDATA%\uv\cache` on Windows
+    /// (docs.npmjs.com/cli/v11/using-npm/config, docs.astral.sh/uv/reference/storage).
     const PLATFORM_TOOL_INHERITED: PerOs<&[&str]> = PerOs {
         unix: &["HOME"],
         windows: &["USERPROFILE", "APPDATA", "LOCALAPPDATA"],
@@ -657,6 +661,12 @@ mod run {
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
             (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
+                if repo.release != Release::GithubLatest {
+                    return Err(format!(
+                        "{} releases as {:?}, which `--cli latest` can't read",
+                        repo.name, repo.release
+                    ));
+                }
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
                 let url = format!("https://github.com/{}/releases/latest", repo.name);
@@ -821,10 +831,15 @@ mod run {
                         .arg(format!("https://github.com/{}.git", repo.name))
                         .arg(&src);
                     succeed(clone)?;
-                    // A workspace's members too, as hermes's own installer syncs
-                    // (`pm/environment.py:406-409` at v0.22.2).
+                    // A workspace's members, a Python of uv's own at the tag's pin and
+                    // no operator's uv config, as hermes's installer syncs
+                    // (`pm/environment.py:406-409`, `scripts/install.sh:21` at v0.22.2);
+                    // with no config uv reads no `.python-version` either.
+                    let python = std::fs::read_to_string(src.join(".python-version"))?;
                     let mut sync = tool(UV);
-                    sync.args(["sync", "--frozen", "--all-packages"])
+                    sync.args(["sync", "--frozen", "--all-packages", "--managed-python"])
+                        .args(["--python", python.trim()])
+                        .env("UV_NO_CONFIG", "1")
                         .current_dir(&src);
                     succeed(sync)
                 })?;
@@ -1216,7 +1231,7 @@ mod run {
             serde_json::to_string_pretty(&journal)?,
         )?;
         let entries = journal.as_array().cloned().unwrap_or_default();
-        let unmatched = unmatched_turns(&entries);
+        let (requests, unmatched) = turns(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
         // one means the CLI never did; it fails past one only on a capture it
@@ -1241,7 +1256,7 @@ mod run {
             scenario: scenario.shape.name().into(),
             capture,
             aimock: aimock.version.clone(),
-            requests: entries.len(),
+            requests,
             unmatched,
         };
         std::fs::write(dir.join(MANIFEST), serde_json::to_string_pretty(&manifest)?)?;
@@ -1358,14 +1373,16 @@ mod run {
         args
     }
 
-    /// The model turns no script line answered. A turn is a POST: a CLI's GET
-    /// of a model catalog (hermes probes LM Studio's `/api/v1/models`,
-    /// `agent/model_metadata.py:745` at v0.22.2) has no line to match.
-    fn unmatched_turns(journal: &[serde_json::Value]) -> usize {
-        journal
+    /// The model turns aimock answered, and those no script line matched. A
+    /// CLI's GET of a model catalog (hermes probes LM Studio's `/api/v1/models`,
+    /// `agent/model_metadata.py:745` at v0.22.2) is no turn.
+    fn turns(journal: &[serde_json::Value]) -> (usize, usize) {
+        let turns: Vec<_> = journal.iter().filter(|e| e["method"] != "GET").collect();
+        let unmatched = turns
             .iter()
-            .filter(|e| e["method"] == "POST" && e["response"]["fixture"].is_null())
-            .count()
+            .filter(|e| e["response"]["fixture"].is_null())
+            .count();
+        (turns.len(), unmatched)
     }
 
     /// The scenario's script with its placeholders expanded in every string,
@@ -2047,13 +2064,14 @@ mod run {
         }
 
         #[test]
-        fn only_a_model_turn_no_script_line_answered_is_unmatched() {
+        fn a_catalog_get_is_no_turn_and_a_websocket_turn_is_one() {
             let journal = serde_json::json!([
                 {"method": "GET", "path": "/api/v1/models", "response": {"status": 200, "fixture": null}},
                 {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 200, "fixture": {"match": {}}}},
                 {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 404, "fixture": null}},
+                {"method": "WS", "path": "/v1/responses", "response": {"status": 404, "fixture": null}},
             ]);
-            assert_eq!(unmatched_turns(journal.as_array().expect("entries")), 1);
+            assert_eq!(turns(journal.as_array().expect("entries")), (3, 2));
         }
 
         #[test]
