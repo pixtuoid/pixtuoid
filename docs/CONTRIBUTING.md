@@ -189,9 +189,9 @@ final head; every finding's review thread resolved by its disposition; zero
 open confirmed blocking finding. Each [must-run](../REVIEW.md#must-run) item
 the change touches has its result in the PR body, and a
 [local review](../.claude/skills/local-review/SKILL.md)'s findings take
-dispositions like the bots'. A refuted blocking finding clears
-without a push: once its thread is resolved with the disposition, re-run the
-review (`gh run rerun <id> --failed`).
+dispositions like the bots'. A refuted blocking finding needs no push: resolve
+its thread with the disposition and re-run the review
+(`gh run rerun <id> --failed`), whose verifier judges the refutation once.
 
 Once the gate holds, comment `@mergifyio queue` ([`.mergify.yml`](../.mergify.yml)):
 entry is a command because no queue condition can confirm a finding. The
