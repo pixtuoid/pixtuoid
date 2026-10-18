@@ -100,7 +100,7 @@ async fn child_end_unclaim_lets_a_turn_n_plus_1_append_re_register() {
 #[tokio::test]
 async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
     use pixtuoid_core::source::decoder::decode_hook_payload;
-    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, EXIT_GRACE_WINDOW};
     use pixtuoid_core::{Reducer, SceneState};
 
     fast_watch();
@@ -215,7 +215,10 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
             if let Ok(Some((transport, ev))) =
                 tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
             {
-                r.apply(&mut scene, ev, SystemTime::now(), transport);
+                // Inside the end gate a transcript start of the child is its
+                // echo (#244).
+                let turn = SystemTime::now() + CHILD_END_GATE_TTL;
+                r.apply(&mut scene, ev, turn, transport);
                 relinked = scene.agents.get(&child).map(|s| s.parent_id) == Some(Some(parent));
                 if relinked {
                     break;

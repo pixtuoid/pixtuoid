@@ -266,7 +266,7 @@ fn gated_before_waiting_evicted_on_apply_path_sweep() {
 /// Every attempt against every end it can meet, on both sides of each window.
 #[test]
 fn authorizes_decides_each_attempt_by_the_end_it_meets() {
-    use super::{Attempt, Refusal, Verdict};
+    use super::{Attempt, AttemptKind, Refusal, Verdict};
     use crate::AgentId;
     use crate::source::{AgentEvent, Transport};
     use crate::state::SceneState;
@@ -278,14 +278,17 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
     let parent = AgentId::from_parts("codex", "p");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let ms = Duration::from_millis(1);
+    let at = |kind, parent| Attempt { kind, parent };
     let (root, child) = (
-        Attempt::Start { parent: None },
-        Attempt::Start {
-            parent: Some(parent),
-        },
+        at(AttemptKind::Start, None),
+        at(AttemptKind::Start, Some(parent)),
+    );
+    let (identity, activity) = (
+        at(AttemptKind::Identity, None),
+        at(AttemptKind::HookActivity, None),
     );
     let (hook, jsonl) = (Transport::Hook, Transport::Jsonl);
-    use Verdict::{Create, Readmit, Refuse};
+    use Verdict::{Create, Refuse};
 
     // No slot: the attempt meets only the recorded end.
     for (end, rows) in [
@@ -294,8 +297,8 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
             vec![
                 (root, jsonl, t0, Create),
                 (child, jsonl, t0, Create),
-                (Attempt::Identity, hook, t0, Create),
-                (Attempt::HookActivity, hook, t0, Create),
+                (identity, hook, t0, Create),
+                (activity, hook, t0, Create),
             ],
         ),
         (
@@ -316,19 +319,19 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    Attempt::Identity,
+                    identity,
                     hook,
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    Attempt::HookActivity,
+                    activity,
                     hook,
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
                 ),
-                (Attempt::HookActivity, hook, t0 + STRAGGLER_TTL, Create),
-                (Attempt::Identity, hook, t0 + STRAGGLER_TTL, Create),
+                (activity, hook, t0 + STRAGGLER_TTL, Create),
+                (identity, hook, t0 + STRAGGLER_TTL, Create),
             ],
         ),
         (
@@ -336,7 +339,7 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
             vec![
                 (root, jsonl, t0 + STRAGGLER_TTL - ms, Create),
                 (
-                    Attempt::HookActivity,
+                    activity,
                     hook,
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
@@ -348,18 +351,18 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    Attempt::Identity,
+                    identity,
                     hook,
                     t0 + STRAGGLER_TTL - ms,
                     Refuse(Refusal::Straggler),
                 ),
                 (
-                    Attempt::HookActivity,
+                    activity,
                     hook,
                     t0 + STRAGGLER_TTL,
                     Refuse(Refusal::ChildEnded),
                 ),
-                (Attempt::HookActivity, hook, t0 + CHILD_END_GATE_TTL, Create),
+                (activity, hook, t0 + CHILD_END_GATE_TTL, Create),
                 (
                     child,
                     jsonl,
@@ -367,7 +370,7 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
                     Refuse(Refusal::ChildEnded),
                 ),
                 (
-                    Attempt::Identity,
+                    identity,
                     hook,
                     t0 + CHILD_END_GATE_TTL - ms,
                     Refuse(Refusal::ChildEnded),
@@ -391,8 +394,8 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         }
     }
 
-    // An end pixtuoid only inferred: no straggler window, and a hook re-admits
-    // the child under its live parent, explicit or remembered.
+    // An end pixtuoid only inferred: no straggler window, and only a hook
+    // re-admits the child, under its live parent, explicit or remembered.
     let mut r = super::Reducer::new();
     let mut scene = SceneState::uniform(4);
     r.apply(
@@ -409,12 +412,16 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
     );
     r.corr.link_applied_parent(id, parent);
     r.corr.note_removed(id, t0);
+    let remembered = |kind| r.attempt(id, kind, None);
+    assert!(
+        remembered(AttemptKind::Start) == child,
+        "a known child's parentless start is judged under its remembered parent"
+    );
     for (attempt, from, want) in [
-        (child, hook, Readmit(parent)),
+        (child, hook, Create),
         (child, jsonl, Refuse(Refusal::ChildEnded)),
-        (Attempt::Identity, hook, Readmit(parent)),
-        (Attempt::HookActivity, hook, Readmit(parent)),
-        (root, jsonl, Create),
+        (remembered(AttemptKind::Identity), hook, Create),
+        (remembered(AttemptKind::HookActivity), hook, Create),
     ] {
         assert_eq!(
             r.authorizes(&scene, id, attempt, from, t0 + ms),
@@ -484,7 +491,13 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
     );
     r.apply(&mut scene, end, t0, hook);
     assert_eq!(
-        r.authorizes(&scene, child_id, root, hook, t0 + ms),
+        r.authorizes(
+            &scene,
+            child_id,
+            r.attempt(child_id, AttemptKind::Start, None),
+            hook,
+            t0 + ms
+        ),
         enrich(false),
         "a cascaded subagent never revives in place"
     );

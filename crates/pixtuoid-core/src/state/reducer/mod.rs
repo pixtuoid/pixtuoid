@@ -153,10 +153,18 @@ fn backfill_identity<'a>(slot: &mut AgentSlot, ctx: IdentityCtx<'a>) -> Option<&
 
 /// What a creating or reviving event asks of an id, for [`Reducer::authorizes`].
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Attempt {
-    /// A `SessionStart`, judged on the parent it names itself, before its
-    /// remembered parent is adopted.
-    Start { parent: Option<AgentId> },
+struct Attempt {
+    kind: AttemptKind,
+    /// The one parent both the decision and the link read: the event's own,
+    /// else the one the id was last linked under, a known child's next life
+    /// (#246).
+    parent: Option<AgentId>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AttemptKind {
+    /// A `SessionStart`.
+    Start,
     /// A hook `Identity` (#221), which names no parent.
     Identity,
     /// A hook tool or permission event that shows activity, synthesizing a slot.
@@ -166,14 +174,10 @@ enum Attempt {
 /// What [`Reducer::authorizes`] lets an attempt do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {
+    /// Create under the attempt's parent.
     Create,
-    /// Create under this live parent, explicit or remembered: a hook after the
-    /// child's end starts it again.
-    Readmit(AgentId),
     /// Fold into the id's slot, and resurrect it in place when `revive`.
-    Enrich {
-        revive: bool,
-    },
+    Enrich { revive: bool },
     /// Neither: the id has no slot and may not get one.
     Refuse(Refusal),
 }
@@ -763,7 +767,7 @@ impl Reducer {
             // unknown-cwd flag must not keep `STALE_UNKNOWN_CWD_TIMEOUT` armed.
             slot.unknown_cwd = false;
         } else if let Some(parent) =
-            self.parent_to_create(scene, agent_id, ctx, Attempt::Identity, from, now)
+            self.parent_to_create(scene, agent_id, ctx, AttemptKind::Identity, from, now)
             && self.register_and_link(scene, agent_id, ctx, parent, now)
             && let Some(slot) = scene.agents.get_mut(&agent_id)
         {
@@ -806,9 +810,7 @@ impl Reducer {
         }
     }
 
-    /// The `SessionStart` arm. The authority decision runs on the start's own
-    /// parent, BEFORE its remembered parent is adopted, so a parentless revival
-    /// still passes and gets re-linked (#246).
+    /// The `SessionStart` arm.
     fn apply_session_start(
         &mut self,
         scene: &mut SceneState,
@@ -818,18 +820,25 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let attempt = Attempt::Start { parent: parent_id };
+        let attempt = self.attempt(agent_id, AttemptKind::Start, parent_id);
         let verdict = self.authorizes(scene, agent_id, attempt, from, now);
         if let Verdict::Refuse(refusal) = verdict {
-            refusal.log_start(agent_id, ctx, parent_id);
+            refusal.log_start(agent_id, ctx, attempt.parent);
             return;
         }
-        let parent_id = self.resolve_parent_link(scene, agent_id, ctx, parent_id);
+        let parent_id = self.resolve_parent_link(scene, agent_id, ctx, attempt.parent);
         if let Verdict::Enrich { revive } = verdict {
             self.enrich_existing_start(scene, agent_id, ctx, parent_id, revive, now);
         } else {
             // A desk-exhaustion refusal records nothing — nothing registered.
             self.register_and_link(scene, agent_id, ctx, parent_id, now);
+        }
+    }
+
+    fn attempt(&self, id: AgentId, kind: AttemptKind, named: Option<AgentId>) -> Attempt {
+        Attempt {
+            kind,
+            parent: named.or_else(|| self.corr.remembered_parent(id)),
         }
     }
 
@@ -845,7 +854,7 @@ impl Reducer {
         now: SystemTime,
     ) -> Verdict {
         let corr = &self.corr;
-        let starts_fresh = attempt == Attempt::Start { parent: None };
+        let starts_fresh = attempt.kind == AttemptKind::Start && attempt.parent.is_none();
         // A transcript's first sight proves only that a file exists: codex
         // writes its rollout at exit, after its hook end.
         let revival_owned =
@@ -857,31 +866,32 @@ impl Reducer {
             // on a hook start while its linked parent lives: a late duplicate
             // can't un-exit a cascaded subagent.
             let revive = slot.exiting_at.is_some()
-                && match attempt {
-                    Attempt::Start { parent: None } => slot.parent_id.is_none() && !revival_owned,
+                && match attempt.kind {
+                    AttemptKind::Start if starts_fresh => {
+                        slot.parent_id.is_none() && !revival_owned
+                    }
                     // An end that landed on the walking-out slot is a turn whose
                     // own Start is still to come, reordered (#242).
-                    Attempt::Start { parent: Some(_) } => {
+                    AttemptKind::Start => {
                         from == Transport::Hook
                             && slot.parent_id.as_ref().is_some_and(parent_lives)
                             && slot
                                 .exiting_at
                                 .is_some_and(|exit| !corr.child_ended_since(id, exit))
                     }
-                    Attempt::Identity | Attempt::HookActivity => false,
+                    AttemptKind::Identity | AttemptKind::HookActivity => false,
                 };
             return Verdict::Enrich { revive };
         }
-        let refusal = match attempt {
-            Attempt::Start { parent: None } if revival_owned => Some(Refusal::HookOwnsRevival),
-            Attempt::Start { parent: None } => None,
+        let refusal = match attempt.kind {
+            AttemptKind::Start if starts_fresh => revival_owned.then_some(Refusal::HookOwnsRevival),
             // #242: hook deliveries ride per-connection tasks, so an end can be
             // DECODED ahead of its life's trailing events. A hook start after
             // the walkout is the child's next turn, judged below: the slot's
             // own revive covered the window before it.
             _ if corr.ended_within_straggler_window(id, now)
                 && !(from == Transport::Hook
-                    && matches!(attempt, Attempt::Start { parent: Some(_) })
+                    && attempt.kind == AttemptKind::Start
                     && corr.child_ended_before(id, now, EXIT_GRACE_WINDOW)) =>
             {
                 Some(Refusal::Straggler)
@@ -892,15 +902,11 @@ impl Reducer {
                 None => None,
                 // A hook is the CLI starting the child again (a CC resume),
                 // under a parent that still lives.
-                Some(_) if from == Transport::Hook => {
-                    let parent = match attempt {
-                        Attempt::Start { parent } => parent,
-                        Attempt::Identity | Attempt::HookActivity => corr.remembered_parent(id),
-                    };
-                    if let Some(p) = parent.filter(parent_lives) {
-                        return Verdict::Readmit(p);
-                    }
-                    Some(Refusal::ChildEnded)
+                Some(_)
+                    if from == Transport::Hook
+                        && attempt.parent.as_ref().is_some_and(parent_lives) =>
+                {
+                    None
                 }
                 Some(_) => Some(Refusal::ChildEnded),
             },
@@ -908,12 +914,9 @@ impl Reducer {
         refusal.map_or(Verdict::Create, Verdict::Refuse)
     }
 
-    /// Adoption of the remembered parent (#246 / #244-w1) then the #240 cycle
-    /// refusal. A PARENTLESS start for an id whose lifecycle remembers an
-    /// applied parent is a same-id new life of a known CHILD; adopting re-joins
-    /// it to the scope tree, and a poisoned memory still degrades to
-    /// parentless. This is the ONE seam where `parent_id` is set or enriched,
-    /// so a cycle can never EXIST.
+    /// The #240 cycle refusal on an attempt's parent: a poisoned memory
+    /// degrades to parentless. This is the ONE seam where `parent_id` is set or
+    /// enriched, so a cycle can never EXIST.
     fn resolve_parent_link(
         &self,
         scene: &SceneState,
@@ -921,9 +924,6 @@ impl Reducer {
         ctx: IdentityCtx,
         parent_id: Option<AgentId>,
     ) -> Option<AgentId> {
-        // Revivals are deliberately NOT blocked the way parented
-        // re-registrations are: a linked slot rides the parent cascade.
-        let parent_id = parent_id.or_else(|| self.corr.remembered_parent(agent_id));
         // Gated on the link APPLYING, so a duplicate's bad parent stays quiet.
         let link_would_apply = scene
             .agents
@@ -953,7 +953,7 @@ impl Reducer {
     /// pending parent link is applied ONCE — never re-parented — and revives its
     /// lifecycle (#244/#246). A duplicate is genuine liveness (Codex/Reasonix
     /// re-emit one per `UserPromptSubmit`), and an exiting slot resurrects when
-    /// `revive` and no parent was adopted here, or a live root resets.
+    /// `revive`.
     fn enrich_existing_start(
         &mut self,
         scene: &mut SceneState,
@@ -989,10 +989,7 @@ impl Reducer {
             ));
         }
         slot.last_event_at = now;
-        // A root that adopts a parent here is a child, which rides its
-        // parent's cascade; a child linked only by this Start is that life's
-        // reordered Start, not a new turn's.
-        if revive && (was_linked || parent_id.is_none()) {
+        if revive {
             // Route through fsm so an in-flight Active span folds into
             // `active_ms` — a direct `state = Idle` here silently dropped it.
             fsm::resurrect_in_place(slot, now);
@@ -1026,9 +1023,14 @@ impl Reducer {
             cwd: std::path::Path::new(""),
         };
         // A blank Idle ghost of a DEAD session is unremovable.
-        let Some(parent) =
-            self.parent_to_create(scene, id, ctx, Attempt::HookActivity, Transport::Hook, now)
-        else {
+        let Some(parent) = self.parent_to_create(
+            scene,
+            id,
+            ctx,
+            AttemptKind::HookActivity,
+            Transport::Hook,
+            now,
+        ) else {
             return;
         };
         if self.register_and_link(scene, id, ctx, parent, now)
@@ -1041,21 +1043,20 @@ impl Reducer {
     }
 
     /// [`Reducer::authorizes`] for an arm whose event names no parent: `None`
-    /// when it may not create, else the parent to create under. A re-admission
-    /// takes its parent through [`Reducer::resolve_parent_link`], so the cycle
-    /// refusal runs on it too.
+    /// when it may not create, else the parent to create under, through
+    /// [`Reducer::resolve_parent_link`].
     fn parent_to_create(
         &self,
         scene: &SceneState,
         id: AgentId,
         ctx: IdentityCtx,
-        attempt: Attempt,
+        kind: AttemptKind,
         from: Transport,
         now: SystemTime,
     ) -> Option<Option<AgentId>> {
+        let attempt = self.attempt(id, kind, None);
         match self.authorizes(scene, id, attempt, from, now) {
-            Verdict::Create => Some(None),
-            Verdict::Readmit(p) => Some(self.resolve_parent_link(scene, id, ctx, Some(p))),
+            Verdict::Create => Some(self.resolve_parent_link(scene, id, ctx, attempt.parent)),
             Verdict::Enrich { .. } | Verdict::Refuse(_) => None,
         }
     }
