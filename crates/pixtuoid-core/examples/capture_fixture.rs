@@ -51,19 +51,24 @@ mod recorder {
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
     /// Where the recorder names the dir a driver keeps its own logs and homes
-    /// in: the recorder's scratch, gone with a capture that worked and kept,
-    /// and named, for one that did not, since only the recorder knows which.
+    /// in, [`driver_dir`]: gone with a capture that worked and kept, and named,
+    /// for one that did not, since only the recorder knows which.
     const SCRATCH_ENV: &str = "PIXTUOID_CAPTURE_SCRATCH";
 
-    /// Keep `scratch` for the diagnosis of a capture that did not work, when a
-    /// driver left anything in it beside the recorder's own endpoint and CLI name.
-    fn keep_scratch(scratch: tempfile::TempDir, endpoint: &Endpoint) {
-        let own = [endpoint.path().to_path_buf(), named_cli(scratch.path())];
-        let left = std::fs::read_dir(scratch.path())
-            .map(|d| d.flatten().any(|e| !own.contains(&e.path())))
-            .unwrap_or(false);
+    /// The driver's own part of the recorder's scratch, apart from everything the
+    /// recorder and its listener create there.
+    fn driver_dir(scratch: &Path) -> PathBuf {
+        scratch.join("driver")
+    }
+
+    /// Keep `scratch` for the diagnosis of a capture that did not work, when its
+    /// driver left anything in [`driver_dir`].
+    fn keep_scratch(scratch: tempfile::TempDir) {
+        let left =
+            std::fs::read_dir(driver_dir(scratch.path())).is_ok_and(|mut d| d.next().is_some());
         if left {
-            eprintln!("the driver's logs stay in {}", scratch.keep().display());
+            let kept = scratch.keep();
+            eprintln!("the driver's logs stay in {}", driver_dir(&kept).display());
         }
     }
 
@@ -299,7 +304,7 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if options.out.is_none() => {
-                keep_scratch(sandbox, &endpoint);
+                keep_scratch(sandbox);
                 return Err(e);
             }
             kept => kept,
@@ -344,7 +349,7 @@ mod recorder {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
             if incomplete.is_some() || !status.success() {
-                keep_scratch(sandbox, &endpoint);
+                keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
         }
@@ -354,7 +359,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox, &endpoint);
+            keep_scratch(sandbox);
             std::process::exit(1);
         }
 
@@ -376,11 +381,12 @@ mod recorder {
             Deidentified::Stripped(n) => println!("blanked {n} subtrees no decoder reads"),
             Deidentified::Exempt(why) => println!("not stripped, as the record declares: {why}"),
         }
-        refuse_on_pii(&wrote, &identity_needles(git_config))?;
+        let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
-            keep_scratch(sandbox, &endpoint);
+            keep_scratch(sandbox);
         }
+        pii?;
         println!("next: just test conformance   then   cargo insta review");
         Ok(())
     }
@@ -700,7 +706,9 @@ mod recorder {
         c.args(&cmd[1..])
             .current_dir(ws)
             .env(Endpoint::ENV, wiring.endpoint.path());
-        c.env(SCRATCH_ENV, wiring.scratch);
+        let own = driver_dir(wiring.scratch);
+        std::fs::create_dir_all(&own)?;
+        c.env(SCRATCH_ENV, own);
         c.env(CLI_ENV, named_cli(wiring.scratch))
             .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
@@ -1663,8 +1671,8 @@ mod recorder {
             let script = format!(
                 r#"test "${VERSION_ENV}" = 1.0.0 && test -z "$CLAUDE_CODE_CHILD_SESSION" \
                    && test "$CLAUDE_CODE_PROBE" = 1 && test "${SCRATCH_ENV}" = "{}" \
-                   && echo dsh >"${CLI_ENV}""#,
-                sandbox.path().display()
+                   && test -d "${SCRATCH_ENV}" && echo dsh >"${CLI_ENV}""#,
+                driver_dir(sandbox.path()).display()
             );
             let cmd = ["sh", "-c", &script].map(String::from);
             let env = [("CLAUDE_CODE_PROBE".to_string(), "1".to_string())];
@@ -1693,22 +1701,26 @@ mod recorder {
 
         #[test]
         fn a_failed_capture_keeps_only_a_scratch_a_driver_wrote_in() {
+            // Whatever the recorder and its listener leave at the scratch's top
+            // level (the CLI name, a socket's lock) is never the driver's.
+            let recorders = |scratch: &Path| {
+                std::fs::write(named_cli(scratch), "openclaw\n").expect("cli");
+                std::fs::write(scratch.join("capture.sock.lock"), "").expect("lock");
+                std::fs::create_dir_all(driver_dir(scratch)).expect("driver dir");
+            };
             let bare = tempfile::tempdir().expect("scratch");
-            let endpoint = Endpoint::in_dir(bare.path(), "capture");
-            std::fs::write(named_cli(bare.path()), "openclaw\n").expect("cli");
+            recorders(bare.path());
             let at = bare.path().to_path_buf();
-            keep_scratch(bare, &endpoint);
+            keep_scratch(bare);
             assert!(!at.exists(), "the recorder's own entries alone go");
 
             let used = tempfile::tempdir().expect("scratch");
-            let endpoint = Endpoint::in_dir(used.path(), "capture");
-            std::fs::write(used.path().join("openclaw-agent.log"), "refused").expect("log");
+            recorders(used.path());
+            let log = driver_dir(used.path()).join("openclaw-agent.log");
+            std::fs::write(&log, "refused").expect("log");
             let at = used.path().to_path_buf();
-            keep_scratch(used, &endpoint);
-            assert!(
-                at.join("openclaw-agent.log").is_file(),
-                "a driver's log stays"
-            );
+            keep_scratch(used);
+            assert!(log.is_file(), "a driver's log stays");
             std::fs::remove_dir_all(&at).expect("cleanup");
         }
 
