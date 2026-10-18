@@ -7,8 +7,8 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried UP** — [`has_waiting_ancestor`]: a node blocked under a
-//!   `Waiting` ancestor is "not ready", not dead.
+//! - **readiness, queried both ways** — [`has_waiting_ancestor`] and
+//!   [`has_waiting_descendant`]: a node gated by a `Waiting` relative is "not ready", not dead.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::SystemTime;
@@ -53,8 +53,7 @@ pub(crate) fn cascade_exit(
     }
 }
 
-/// Every descendant of `root`, BFS over `parent_id` links; a cycle is walked
-/// once.
+/// Every descendant of `root` over `parent_id` links; a cycle is walked once.
 fn descendants(agents: &BTreeMap<AgentId, AgentSlot>, root: AgentId) -> Vec<AgentId> {
     let mut visited: HashSet<AgentId> = HashSet::new();
     visited.insert(root);
@@ -71,13 +70,13 @@ fn descendants(agents: &BTreeMap<AgentId, AgentSlot>, root: AgentId) -> Vec<Agen
     out
 }
 
-/// True if any live descendant of `id` is in `Waiting` state: a parent whose
+/// True if any descendant of `id` is in `Waiting` state: a parent whose
 /// subagent is blocked on a human gate waits with it, not dead.
 pub(crate) fn has_waiting_descendant(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
     descendants(agents, id).into_iter().any(|d| {
-        agents.get(&d).is_some_and(|s| {
-            s.exiting_at.is_none() && matches!(s.state, ActivityState::Waiting { .. })
-        })
+        agents
+            .get(&d)
+            .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }))
     })
 }
 
