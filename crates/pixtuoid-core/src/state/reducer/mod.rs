@@ -864,10 +864,9 @@ impl Reducer {
                     Attempt::Start { parent: Some(_) } => {
                         from == Transport::Hook
                             && slot.parent_id.as_ref().is_some_and(parent_lives)
-                            && corr
-                                .recent_child_end(id, now)
-                                .zip(slot.exiting_at)
-                                .is_none_or(|(end, exit)| end.at() <= exit)
+                            && slot
+                                .exiting_at
+                                .is_none_or(|exit| !corr.child_ended_since(id, exit))
                     }
                     Attempt::Identity | Attempt::HookActivity => false,
                 };
@@ -1330,14 +1329,19 @@ impl Reducer {
     /// liveness signal, NOT `state_started_at`, which only tracks the current
     /// state's age.
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
-        // A node blocked under a `Waiting` ancestor (a subagent whose permission
-        // Notification was attributed to the parent) is gated, not dead.
+        // A node gated by a `Waiting` relative is blocked with it, not dead: a
+        // subagent under a waiting parent, or a parent over a waiting subagent.
+        // A waiting node keeps its own Waiting window, so a waiting pair can't
+        // exempt each other (#238).
         let agents = &scene.agents;
         let stale: Vec<(AgentId, Duration, Duration)> = agents
             .values()
             .filter(|slot| slot.exiting_at.is_none())
             .filter_map(|slot| {
-                if scope::has_waiting_ancestor(agents, slot.agent_id) {
+                let waiting = matches!(slot.state, ActivityState::Waiting { .. });
+                if scope::has_waiting_ancestor(agents, slot.agent_id)
+                    || (!waiting && scope::has_waiting_descendant(agents, slot.agent_id))
+                {
                     return None;
                 }
                 // Probe-vouched (#220): a recent ProofOfLife means the process

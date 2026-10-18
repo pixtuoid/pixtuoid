@@ -101,7 +101,7 @@ pub(super) enum ChildEnd {
 }
 
 impl ChildEnd {
-    pub(super) fn at(self) -> SystemTime {
+    fn at(self) -> SystemTime {
         match self {
             Self::Reported(at) | Self::Inferred(at) => at,
         }
@@ -217,6 +217,14 @@ impl Correlation {
             .get(id)
             .and_then(|s| s.iter().next())
             .map(|t| Arc::<str>::from(t.as_str()))
+    }
+
+    /// Whether a child end of `id` landed after `since`, however old.
+    pub(super) fn child_ended_since(&self, id: AgentId, since: SystemTime) -> bool {
+        self.lifecycles
+            .get(&id)
+            .and_then(|l| l.child_end)
+            .is_some_and(|end| end.at() > since)
     }
 
     /// Whether `id`'s child end is at least `age` old.

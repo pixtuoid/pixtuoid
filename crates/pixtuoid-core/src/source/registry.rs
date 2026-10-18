@@ -116,6 +116,7 @@ pub(crate) struct SourceCaps {
     /// `last_event_at` freezes for the whole delegation, so the reducer gives it
     /// the Waiting-class stale window instead of sweeping mid-delegation.
     pub(crate) delegations_are_hook_silent: bool,
+    /// What a subagent dispatch's end says about its child.
     pub(crate) child_end_inference: ChildEndInference,
     /// Does a subagent's hook arrive under its parent's key, naming no child?
     /// Then while the parent has a Task in flight its hook activity is the
@@ -123,16 +124,18 @@ pub(crate) struct SourceCaps {
     pub(crate) child_hooks_unnamed: bool,
 }
 
-/// Which Task end also walks the parent's whole subtree out (the b1 cascade),
-/// beside any end the wire names.
+/// What a subagent dispatch's end says about its child; where it says the
+/// child returned, the end walks the parent's whole subtree out (b1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChildEndInference {
-    /// No Task end: each child turn ends by its own event, and a dispatch can
-    /// return while its child runs.
+    /// Nothing: a dispatch can return while its child runs, and each child
+    /// turn ends by its own event.
     None,
-    /// A tracked Task's drain.
+    /// A tracked dispatch's end means its child returned: the dispatch blocks
+    /// until then.
     TaskDrain,
-    /// Any Task's end, an id-less one included: no end event names the child.
+    /// As `TaskDrain`, and the end may carry no id: no end event names the
+    /// child.
     AnyTaskEnd,
 }
 
@@ -570,8 +573,9 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has
-            // finished responding (hooks.md); the main conversation's Agent call
-            // returns `async_launched` at launch (CHANGELOG 2.1.302).
+            // finished responding; a background Agent call returns
+            // `async_launched` at launch (hooks.md), the main conversation's
+            // always (CHANGELOG 2.1.302).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },

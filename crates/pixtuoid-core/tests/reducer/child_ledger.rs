@@ -1309,7 +1309,7 @@ impl CcTurns {
 }
 
 /// #1701: CC resumes a subagent under the same `agent_id`, a SubagentStart per
-/// turn. 37 ms after its Stop, its exit still animating, it revives in place.
+/// turn. Inside `EXIT_GRACE_WINDOW`, its exit still animating, it revives in place.
 #[test]
 fn a_resumed_subagent_revives_in_place_while_its_exit_animates() {
     let mut scene = SceneState::uniform(4);
@@ -1342,8 +1342,8 @@ fn an_identity_first_subagent_is_not_revived_by_its_delayed_start() {
     );
 }
 
-/// Past its exit window and the straggler window, inside the child-end gate
-/// (the report's 16.874 s gap): a hook start is a new life under a live parent.
+/// Past its exit window and the straggler window, inside the child-end gate, a
+/// hook start is a new life under a live parent.
 #[test]
 fn a_resumed_subagent_past_its_exit_is_readmitted_under_its_parent() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
@@ -1541,5 +1541,34 @@ fn a_subagents_start_just_inside_the_walkout_after_its_own_stop_is_refused() {
     assert!(
         !scene.agents.contains_key(&cc.child),
         "the walkout bound let a reorder in"
+    );
+}
+
+/// A subagent blocked on its own permission prompt keeps its delegating parent
+/// alive with it: no probe vouches either (Windows), and the parent's own Active
+/// window would otherwise sweep both mid-gate.
+#[test]
+fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
+    use pixtuoid_core::state::reducer::STALE_ACTIVE_TIMEOUT;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    let t1 = cc.t0 + Duration::from_secs(1);
+    let dispatch = serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+        "tool_use_id": "toolu_a", "tool_input": {"description": "d", "prompt": "p",
+        "subagent_type": "general-purpose"}});
+    cc.hook(&mut r, &mut scene, dispatch, t1);
+    cc.start(&mut r, &mut scene, t1);
+    let ask = serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": CcTurns::AGENT,
+        "agent_type": "general-purpose", "tool_name": "Bash", "tool_input": {"command": "ls"}});
+    cc.hook(&mut r, &mut scene, ask, t1 + Duration::from_secs(1));
+    r.tick(
+        &mut scene,
+        t1 + Duration::from_secs(1) + STALE_ACTIVE_TIMEOUT + Duration::from_secs(1),
+    );
+    assert!(cc.live(&scene), "the waiting subagent was swept");
+    assert!(
+        scene.agents[&cc.root].exiting_at.is_none(),
+        "the parent waiting on its subagent's prompt was swept"
     );
 }
