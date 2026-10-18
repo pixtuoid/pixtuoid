@@ -85,9 +85,9 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
-/// The role vocabulary and the spawning tools are read outside the field
-/// census, so a rename would leave every child a parentless sprite with no
-/// breadcrumb.
+/// Read outside the field census, so a rename goes unbreadcrumbed: of a role,
+/// every child is a parentless sprite; of a spawning tool, its parent never
+/// reads Delegating and its child is never walked out.
 #[cfg(any(test, feature = "upstream"))]
 pub(crate) const UPSTREAM: &[crate::source::upstream::Watch] = {
     use crate::source::upstream::{Finding, Read, Watch, When};
@@ -159,7 +159,9 @@ pub(crate) const UPSTREAM: &[crate::source::upstream::Watch] = {
                 pattern: r#""{name}""#,
             },
             when: When::Vanishes,
-            finding: Finding::Review("a parent spawning through it may no longer read Delegating"),
+            finding: Finding::Review(
+                "a parent spawning through it may no longer read Delegating, nor its child walk out",
+            ),
             siblings: None,
         },
     ]

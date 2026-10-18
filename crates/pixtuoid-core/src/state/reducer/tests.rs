@@ -283,7 +283,7 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
         },
     );
     let (hook, jsonl) = (Transport::Hook, Transport::Jsonl);
-    use Verdict::{Create, Refuse, Rejoin};
+    use Verdict::{Create, Readmit, Refuse};
 
     // No slot: the attempt meets only the recorded end.
     for (end, rows) in [
@@ -408,10 +408,10 @@ fn authorizes_decides_each_attempt_by_the_end_it_meets() {
     r.corr.link_applied_parent(id, parent);
     r.corr.note_removed(id, t0);
     for (attempt, from, want) in [
-        (child, hook, Rejoin),
+        (child, hook, Readmit(parent)),
         (child, jsonl, Refuse(Refusal::ChildEnded)),
-        (Attempt::Identity, hook, Rejoin),
-        (Attempt::HookActivity, hook, Rejoin),
+        (Attempt::Identity, hook, Readmit(parent)),
+        (Attempt::HookActivity, hook, Readmit(parent)),
         (root, jsonl, Create),
     ] {
         assert_eq!(

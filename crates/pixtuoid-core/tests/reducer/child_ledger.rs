@@ -551,10 +551,10 @@ fn an_identity_or_bare_activity_re_admits_an_inferred_child_under_its_parent() {
     }
 }
 
-/// A rejoin takes its remembered parent through the #240 cycle refusal: under
+/// A re-admission takes its parent through the #240 cycle refusal: under
 /// a parent since re-parented onto it, the child comes back parentless.
 #[test]
-fn a_rejoin_under_a_parent_that_would_close_a_cycle_comes_back_parentless() {
+fn a_readmission_under_a_parent_that_would_close_a_cycle_comes_back_parentless() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let (parent, child, gone) = walked_out_child(&mut r, &mut scene);
@@ -584,10 +584,10 @@ fn a_rejoin_under_a_parent_that_would_close_a_cycle_comes_back_parentless() {
     assert_eq!(scene.agents.get(&child).map(|s| s.parent_id), Some(None));
 }
 
-/// A rejoin records its link, so its next end restarts the gate's clock: a
+/// A re-admission records its link, so its next end restarts the gate's clock: a
 /// late transcript echo of that end is refused like any child's.
 #[test]
-fn a_rejoined_childs_next_end_gates_from_that_end() {
+fn a_readmitted_childs_next_end_gates_from_that_end() {
     use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW};
     for led_by_identity in [true, false] {
         let mut scene = SceneState::uniform(4);
@@ -618,7 +618,7 @@ fn a_rejoined_childs_next_end_gates_from_that_end() {
                 Transport::Hook,
             );
         }
-        assert!(scene.agents.contains_key(&child), "rejoined");
+        assert!(scene.agents.contains_key(&child), "re-admitted");
 
         let dispatch = back + CHILD_END_GATE_TTL;
         act_start(

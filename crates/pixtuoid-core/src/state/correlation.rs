@@ -29,10 +29,10 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 
-/// How long a child's end keeps gating a PARENTED re-registration of that
-/// child (#244). Sized past the
+/// How long a child's end keeps gating a re-registration of that child
+/// (#244): a parented Start, an Identity, a hook synthesis. Sized past the
 /// watcher's poll backstop (`DEFAULT_POLL_INTERVAL`), the worst case for a late transcript
-/// first-sight; a parented Start inside the window is the dead child's late
+/// first-sight; a registration inside the window is the dead child's late
 /// echo, unless [`authorizes`](crate::state::reducer::Reducer::authorizes)
 /// re-admits it.
 /// Parentless Starts are deliberately NOT gated — a Codex resurrect-on-prompt
@@ -76,7 +76,8 @@ pub const PROOF_OF_LIFE_TTL: Duration = Duration::from_secs(150);
 pub(super) struct Lifecycle {
     /// The last APPLIED parent link.
     pub(super) parent_id: Option<AgentId>,
-    /// The child's end, or its slot's removal, whichever came first.
+    /// The child's end; its slot's removal stamps one only when none came, and
+    /// a reported end replaces an inferred one.
     pub(super) child_end: Option<ChildEnd>,
     /// When a hook ended this top-level life.
     pub(super) hook_ended_at: Option<SystemTime>,
@@ -221,8 +222,8 @@ impl Correlation {
             .map(|t| Arc::<str>::from(t.as_str()))
     }
 
-    /// Whether `id` ended within [`STRAGGLER_TTL`] by a hook
-    /// or as a child: a reordered trailing event of that life is a straggler.
+    /// Whether `id` ended within [`STRAGGLER_TTL`] by a hook or by a reported
+    /// child end: a reordered trailing event of that life is a straggler.
     pub(super) fn ended_within_straggler_window(&self, id: AgentId, now: SystemTime) -> bool {
         self.lifecycles.get(&id).is_some_and(|l| {
             let reported = match l.child_end {

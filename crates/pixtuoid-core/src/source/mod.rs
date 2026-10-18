@@ -137,10 +137,10 @@ pub enum AgentEvent {
         /// True ONLY when this end's SUBJECT is a CHILD agent ending *as a
         /// child*. Source-trait CONTRACT: only subagent-END decoders may stamp
         /// `true`; every other constructor stamps `false` on a root end. The
-        /// reducer's lifecycle record keys on the stamp: `true` starts the
-        /// child's gate on a late/reordered parented re-registration, and a
-        /// `false` from a hook makes only a hook start revive the root for the
-        /// straggler window.
+        /// reducer's lifecycle record keys on the stamp: `true`, or any end of a
+        /// child it already knows, starts the child's gate on a late
+        /// re-registration, and any other `false` from a hook makes only a hook
+        /// start revive the root for the straggler window.
         as_child: bool,
     },
     /// Emitted by a watcher once per liveness-probe refresh for EVERY session

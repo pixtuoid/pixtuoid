@@ -161,9 +161,9 @@ enum Attempt {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {
     Create,
-    /// Create under its parent, explicit or remembered: a hook disproved an end
-    /// pixtuoid only inferred.
-    Rejoin,
+    /// Create under this live parent, explicit or remembered: a hook disproved
+    /// an end pixtuoid only inferred.
+    Readmit(AgentId),
     /// Fold into the id's slot, and resurrect it in place when `revive`.
     Enrich {
         revive: bool,
@@ -177,7 +177,7 @@ enum Verdict {
 enum Refusal {
     /// An event of a life that ended within the straggler window (#242).
     Straggler,
-    /// A parented re-registration of a child that already ended (#244).
+    /// A re-registration of a child that already ended (#244).
     ChildEnded,
     /// A transcript sight of a top-level life a hook ended.
     HookOwnsRevival,
@@ -868,10 +868,10 @@ impl Reducer {
                         Attempt::Start { parent } => parent,
                         Attempt::Identity | Attempt::HookActivity => corr.remembered_parent(id),
                     };
-                    if parent.is_some_and(|p| {
-                        scene.agents.get(&p).is_some_and(|s| s.exiting_at.is_none())
-                    }) {
-                        return Verdict::Rejoin;
+                    if let Some(p) = parent
+                        && scene.agents.get(&p).is_some_and(|s| s.exiting_at.is_none())
+                    {
+                        return Verdict::Readmit(p);
                     }
                     Some(Refusal::ChildEnded)
                 }
@@ -1010,9 +1010,9 @@ impl Reducer {
     }
 
     /// [`Reducer::authorizes`] for an arm whose event names no parent: `None`
-    /// when it may not create, else the parent to create under. A rejoin
-    /// takes its remembered parent through [`Reducer::resolve_parent_link`],
-    /// so the cycle refusal runs on it too.
+    /// when it may not create, else the parent to create under. A re-admission
+    /// takes its parent through [`Reducer::resolve_parent_link`], so the cycle
+    /// refusal runs on it too.
     fn parent_to_create(
         &self,
         scene: &SceneState,
@@ -1024,7 +1024,7 @@ impl Reducer {
     ) -> Option<Option<AgentId>> {
         match self.authorizes(scene, id, attempt, from, now) {
             Verdict::Create => Some(None),
-            Verdict::Rejoin => Some(self.resolve_parent_link(scene, id, ctx, None)),
+            Verdict::Readmit(p) => Some(self.resolve_parent_link(scene, id, ctx, Some(p))),
             Verdict::Enrich { .. } | Verdict::Refuse(_) => None,
         }
     }
