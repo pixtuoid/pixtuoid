@@ -17,7 +17,7 @@ mod recorder {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::time::SystemTime;
+    use std::time::{Duration, Instant, SystemTime};
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
     use pixtuoid_core::source::{registry, resolved_source_root};
@@ -530,6 +530,43 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
+    /// How long a capture waits for the previous run's processes to let go of
+    /// its workspace, and how often it asks meanwhile.
+    const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
+    const RELEASE_POLL: Duration = Duration::from_millis(250);
+
+    /// Windows refuses to remove a directory another process has open, and a
+    /// CLI's run can leave one holding the workspace after it exits: codex's
+    /// did, failing the next scenario on the hermetic Windows legs.
+    #[cfg(windows)]
+    const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32;
+
+    /// `remove`, retried while another process holds what it removes, for up
+    /// to `patience`; a tree already gone counts as removed.
+    fn remove_once_released(
+        patience: Duration,
+        mut remove: impl FnMut() -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let deadline = Instant::now() + patience;
+        loop {
+            match remove() {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(e) if held(&e) && Instant::now() < deadline => std::thread::sleep(RELEASE_POLL),
+                done => return done,
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn held(e: &std::io::Error) -> bool {
+        e.raw_os_error() == Some(SHARING_VIOLATION)
+    }
+
+    #[cfg(not(windows))]
+    fn held(_: &std::io::Error) -> bool {
+        false
+    }
+
     fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
@@ -546,10 +583,7 @@ mod recorder {
                 );
                 std::process::exit(2);
             }
-            match std::fs::remove_dir_all(base) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                _ => {}
-            }
+            remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(base))?;
         }
         // Made in one call no other local user can write into, and refused if
         // anyone re-created it since the remove.
@@ -936,6 +970,30 @@ mod recorder {
 
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
+
+        #[test]
+        fn a_workspace_another_process_holds_is_removed_once_released_on_windows() {
+            #[cfg(windows)]
+            let busy = || std::io::Error::from_raw_os_error(SHARING_VIOLATION);
+            #[cfg(not(windows))]
+            let busy = || std::io::Error::from(std::io::ErrorKind::ResourceBusy);
+            let mut calls = 0;
+            let held = remove_once_released(Duration::from_secs(5), || {
+                calls += 1;
+                if calls < 3 { Err(busy()) } else { Ok(()) }
+            });
+            if cfg!(windows) {
+                assert!(held.is_ok() && calls == 3, "{held:?} after {calls}");
+            } else {
+                assert!(held.is_err() && calls == 1, "{held:?} after {calls}");
+            }
+            let mut calls = 0;
+            let gone = remove_once_released(Duration::ZERO, || {
+                calls += 1;
+                Err(std::io::ErrorKind::NotFound.into())
+            });
+            assert!(gone.is_ok() && calls == 1, "an absent workspace is removed");
+        }
 
         struct Promotable {
             _dir: tempfile::TempDir,
