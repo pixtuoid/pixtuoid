@@ -37,9 +37,10 @@ fn the_recorded_auto_deny_resolves_its_wait() {
     assert_the_refusal_resolves_its_wait("auto-deny", &d);
 }
 
-/// No headless run reaches the prompt, so these lines are the round of a pty
-/// run against aimock, every field no decoder reads blanked as the recorder
-/// blanks it.
+/// No headless run reaches the prompt, so these lines are hand-trimmed from a
+/// pty run against aimock: unread keys dropped or blanked, and the turn's
+/// `assistant.turn_end` and `abort` kept to show no `tool.execution_complete`
+/// follows.
 #[test]
 fn an_esc_at_the_prompt_resolves_its_wait() {
     let d = Drive::transcript(
