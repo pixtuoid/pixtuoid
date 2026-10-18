@@ -798,7 +798,7 @@ mod tests {
 
     #[test]
     fn an_ordinary_updates_meta_carries_the_model() {
-        // The shape from fixtures/grok/permission-recorded — `model_changed`
+        // The shape from fixtures/grok/permission-hermetic — `model_changed`
         // never appears in a real session.
         let evs = decode_line(json!({
             "method": "session/update",

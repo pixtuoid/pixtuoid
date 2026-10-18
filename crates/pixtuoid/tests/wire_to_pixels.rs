@@ -230,7 +230,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "grok",
             source: "grok",
-            fixture: "fixtures/grok/permission-recorded/01a0059d-ece9-7931-8e07-c91d77ba5943/updates.jsonl",
+            fixture: "fixtures/grok/permission-hermetic/01a15125-ebfb-7e31-9f94-7368637d0570/updates.jsonl",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Active],
         },
@@ -273,12 +273,9 @@ fn agent_cases() -> Vec<WireCase> {
             must_reach: &[Reach::Active],
         },
         WireCase {
-            // The gate fires TWICE for one command, so this also drives the
-            // reducer path where a re-notified Waiting must not clear the gate
-            // the first one set.
             name: "hermes_approval",
             source: "hermes",
-            fixture: "fixtures/hermes/approval-recorded/hook-payloads.jsonl",
+            fixture: "fixtures/hermes/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Waiting],
         },

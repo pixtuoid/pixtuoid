@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You name chat sessions"},
+      "response": {"content": "Hermetic"},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "terminal", "arguments": {"command": "rm -rf NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": true},
+      "response": {"content": "refused"},
+      "latency": 300
+    }
+  ]
+}

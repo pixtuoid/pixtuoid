@@ -357,6 +357,46 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
 };
 
+/// grok's TUI. Its default mode asks before a shell command off the read-only
+/// list (`crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md:140-175`).
+const GROK_TUI: tui::Tui = tui::Tui {
+    args: &["--permission-mode", "default"],
+    composer: tui::Composer {
+        marker: "  │ ❯",
+        rule: '─',
+    },
+    gates: &[tui::Gate {
+        shows: "No, reject (type to add feedback)",
+        deny: &[tui::Key::Text("4")],
+        dwell: std::time::Duration::from_millis(400),
+    }],
+    // `/exit` is `/quit`'s alias (`docs/user-guide/04-slash-commands.md:71-73`).
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+};
+
+/// hermes's classic REPL, where a dangerous terminal command waits on the
+/// user.
+const HERMES_TUI: tui::Tui = tui::Tui {
+    args: &["--accept-hooks", "--cli", "chat"],
+    composer: tui::Composer {
+        marker: "❯",
+        rule: '─',
+    },
+    gates: &[tui::Gate {
+        shows: "Dangerous Command",
+        // "4. Deny" is the dialog's last choice, reached only by arrows
+        // (`locales/en.yaml:2167`).
+        deny: &[
+            tui::Key::Down,
+            tui::Key::Down,
+            tui::Key::Down,
+            tui::Key::Enter,
+        ],
+        dwell: std::time::Duration::from_millis(400),
+    }],
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+};
+
 /// The profiled CLIs.
 pub const PROFILES: &[Profile] = &[
     Profile {
@@ -845,19 +885,26 @@ sandbox = "unelevated"
                 ],
                 fixture: "grok/fixtures/subagent-hermetic",
             },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&GROK_TUI),
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Notification",
+                    "PermissionDenied",
+                    "StopCancelled",
+                    "SessionEnd",
+                    "Stop",
+                ],
+                fixture: "fixtures/grok/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &[
-            "PostToolUseFailure",
-            "PermissionDenied",
-            "Notification",
-            "StopFailure",
-            "StopCancelled",
-            "SubagentEnd",
-        ],
+        not_yet: &["PostToolUseFailure", "StopFailure", "SubagentEnd"],
         event_name: grok_event,
-        // A shell call's; the scripted turns read a file and spawn a child.
-        not_yet_fields: &[("hook:PreToolUse", "/toolInput/command")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -1150,6 +1197,10 @@ async:
         // Context files stop at the git root (`agent/prompt_builder.py:141`,
         // `:1722-1732`), which the recorder's `git init` makes the workspace.
         ancestor_config: &[],
+        // `manual` approvals ask the user where the default asks an LLM guardian
+        // (`tests/e2e/core/security/test_approval_boundary.py:17`), and an answered
+        // shared-metrics offer never opens before a chat
+        // (`hermes_cli/observability/shared_metrics_consent.py:3-8`, `:58-72`).
         config: &[ConfigFile {
             home: "HERMES_HOME",
             path: "config.yaml",
@@ -1158,27 +1209,46 @@ async:
   provider: custom
   base_url: http://127.0.0.1:{port}/v1
   api_key: "{key}"
+approvals:
+  mode: manual
+telemetry:
+  shared_metrics:
+    enabled: false
+    send: false
+    offer_version: 2
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "on_session_start",
-                "pre_tool_call",
-                "post_tool_call",
-                "on_session_end",
-                "on_session_finalize",
-            ],
-            fixture: "fixtures/hermes/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "on_session_start",
+                    "pre_tool_call",
+                    "post_tool_call",
+                    "on_session_end",
+                    "on_session_finalize",
+                ],
+                fixture: "fixtures/hermes/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&HERMES_TUI),
+                expects: &[
+                    "on_session_start",
+                    "pre_tool_call",
+                    "pre_approval_request",
+                    "post_tool_call",
+                    "on_session_end",
+                    "on_session_finalize",
+                ],
+                fixture: "fixtures/hermes/permission-hermetic",
+            },
+        ],
         script_vars: &[],
-        // `-z` approves every call before the gate's hook
-        // (`tools/approval.py:967`).
-        not_yet: &["pre_approval_request"],
+        not_yet: &[],
         event_name: hook_event_name,
-        // A terminal call's; the scripted turn reads a file.
-        not_yet_fields: &[("hook:pre_tool_call", "/tool_input/command")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
     },

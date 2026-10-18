@@ -31,6 +31,8 @@ pub enum Key {
     Enter,
     /// Dismisses a dialog.
     Esc,
+    /// Moves a dialog's highlight to the next choice.
+    Down,
     /// Literal text, a slash command for one.
     Text(&'static str),
 }
@@ -41,6 +43,7 @@ impl Key {
         match self {
             Self::Enter => b"\r",
             Self::Esc => b"\x1b",
+            Self::Down => b"\x1b[B",
             Self::Text(text) => text.as_bytes(),
         }
     }
@@ -63,8 +66,9 @@ pub(crate) struct Composer {
     /// What its input line starts with, at the line's first column.
     pub(crate) marker: &'static str,
     /// The character a full-width rule directly above the input line is drawn
-    /// with: a dialog's highlighted choice and the conversation's echo of a
-    /// prompt start with the same marker, and neither sits under the rule.
+    /// with, a corner closing each end when the composer is boxed: a dialog's
+    /// highlighted choice and the conversation's echo of a prompt start with
+    /// the same marker, and neither sits under the rule.
     pub(crate) rule: char,
 }
 
@@ -242,8 +246,7 @@ impl<'a> Driver<'a> {
         let Composer { marker, rule } = self.tui.composer;
         let lines: Vec<&str> = self.screen.lines().collect();
         lines.windows(2).rev().find_map(|pair| {
-            let above = pair[0].trim_end();
-            (!above.is_empty() && above.chars().all(|c| c == rule))
+            is_rule(pair[0], rule)
                 .then(|| pair[1].strip_prefix(marker))
                 .flatten()
         })
@@ -254,6 +257,14 @@ impl<'a> Driver<'a> {
         self.composer()
             .is_some_and(|typed| typed.trim_start().starts_with(head.trim_end()))
     }
+}
+
+/// Whether `line` is drawn with `rule`, bar one corner at each end.
+fn is_rule(line: &str, rule: char) -> bool {
+    let line = line.trim();
+    let line = line.strip_prefix(|c| c != rule).unwrap_or(line);
+    let line = line.strip_suffix(|c| c != rule).unwrap_or(line);
+    !line.is_empty() && line.chars().all(|c| c == rule)
 }
 
 /// `tui_drive`'s command line, which the recorder runs in place of the CLI.
@@ -317,8 +328,8 @@ mod tests {
     const DONE: &str = include_str!("screens/claude-code-done.txt");
     const PROMPT: &str = "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
 
-    fn claude_code() -> &'static Tui {
-        profile("claude-code")
+    fn row(source: &str) -> &'static Tui {
+        profile(source)
             .expect("profiled")
             .scenarios
             .iter()
@@ -326,7 +337,11 @@ mod tests {
                 Surface::Tui(tui) => Some(tui),
                 Surface::Headless => None,
             })
-            .expect("claude-code drives a TUI scenario")
+            .expect("drives a TUI scenario")
+    }
+
+    fn claude_code() -> &'static Tui {
+        row("claude-code")
     }
 
     fn dwell() -> Duration {
@@ -450,6 +465,51 @@ mod tests {
             assert_eq!(
                 d.step(screen, t0 + STALL),
                 Action::Fail("the screen stood still with the turn unfinished")
+            );
+        }
+    }
+
+    #[test]
+    fn a_rule_may_close_on_one_corner_at_each_end_and_nothing_else() {
+        assert!(is_rule("────", '─'));
+        assert!(is_rule("  ╭────╮  ", '─'));
+        assert!(!is_rule("│ ❯ 1. Allow once │", '─'));
+        assert!(!is_rule("╭─ title ─╮", '─'));
+        assert!(!is_rule("  ", '─'));
+    }
+
+    #[test]
+    fn each_row_takes_the_prompt_and_refuses_the_gate_its_run_recorded() {
+        for (source, boot, gate) in [
+            ("claude-code", BOOT, GATE),
+            (
+                "grok",
+                include_str!("screens/grok-boot.txt"),
+                include_str!("screens/grok-gate.txt"),
+            ),
+            (
+                "hermes",
+                include_str!("screens/hermes-boot.txt"),
+                include_str!("screens/hermes-gate.txt"),
+            ),
+        ] {
+            let tui = row(source);
+            let t0 = Instant::now();
+            let mut d = Driver::new(tui, PROMPT.to_owned(), t0);
+            assert_eq!(
+                d.step(boot, t0),
+                Action::Type(PROMPT.to_owned()),
+                "{source}"
+            );
+            assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
+            assert_eq!(d.step(gate, t0), Action::Wait, "{source}");
+            let [refused] = tui.gates else {
+                panic!("{source}: one gate per row");
+            };
+            assert_eq!(
+                d.step(gate, t0 + refused.dwell),
+                Action::Keys(refused.deny),
+                "{source}"
             );
         }
     }

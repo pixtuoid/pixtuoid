@@ -1,0 +1,57 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 7100831433049174356
+    source: hermes
+    session_id: 20261018_153400_e15189
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 7100831433049174356
+    model: hermetic
+    effort: ~
+- Identity:
+    agent_id: 7100831433049174356
+    source: hermes
+    session_id: 20261018_153400_e15189
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 7100831433049174356
+    tool_use_id: call_pYEMdFOY-2DCFmhE
+    detail:
+      Generic:
+        display: "terminal: rm -rf NOTE.txt"
+- Identity:
+    agent_id: 7100831433049174356
+    source: hermes
+    session_id: 20261018_153400_e15189
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Waiting:
+    agent_id: 7100831433049174356
+    reason: recursive delete
+    tool_use_id: call_pYEMdFOY-2DCFmhE
+- Identity:
+    agent_id: 7100831433049174356
+    source: hermes
+    session_id: 20261018_153400_e15189
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 7100831433049174356
+    tool_use_id: call_pYEMdFOY-2DCFmhE
+- Identity:
+    agent_id: 7100831433049174356
+    source: hermes
+    session_id: 20261018_153400_e15189
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 7100831433049174356
+    tool_use_id: ~
+- ModelInfo:
+    agent_id: 7100831433049174356
+    model: hermetic
+    effort: ~
+- SessionEnd:
+    agent_id: 7100831433049174356
+    as_child: false

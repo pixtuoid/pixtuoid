@@ -138,7 +138,13 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
         let out_of_time = now.duration_since(started) >= BUDGET
             || quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE);
         if out_of_time {
-            note(&mut log, "out of time: killing the CLI");
+            note(
+                &mut log,
+                &format!(
+                    "out of time: killing the CLI\n--- screen ---\n{}",
+                    screen.screen().contents()
+                ),
+            );
             child.kill()?;
             return Ok(GAVE_UP);
         }

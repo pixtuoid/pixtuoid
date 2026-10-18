@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "hermes",
+  "version": "Hermes Agent v0.22.2 (2026.9.24) · stable · local d923a5eb487a",
+  "captured": "2026-10-18",
+  "command": "just hermetic --record hermes",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 37
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/hermes/permission.json"
+}

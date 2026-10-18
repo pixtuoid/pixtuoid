@@ -951,7 +951,7 @@ mod recorder {
     /// Windows), and a re-record sent to the root instead lands as a NEW directory
     /// `conformance.rs` auto-scans, with no committed bytes for `.new` to protect.
     /// Keyed on the SOURCE, never a search across modules: scenario names repeat
-    /// (`approval-recorded` is hermes' and omp's), so a search finds the wrong
+    /// (`permission-hermetic` is hermes' and omp's), so a search finds the wrong
     /// module's single match and a billed capture lands as `.new` files inside it.
     /// `claude/` owning `claude-code` is the one name mismatch, and it holds no
     /// scenario subdirectory, so it cannot reach here.
@@ -1401,13 +1401,13 @@ mod recorder {
                 root.join("fixtures/kimi/tool-run")
             );
 
-            let mine = root.join("omp/fixtures/approval-recorded");
+            let mine = root.join("omp/fixtures/permission-hermetic");
             std::fs::create_dir_all(&mine).expect("mkdir");
             std::fs::write(mine.join("provenance.json"), "{}").expect("write");
-            assert_eq!(scenario_dest(root, "omp", "approval-recorded"), mine);
+            assert_eq!(scenario_dest(root, "omp", "permission-hermetic"), mine);
             assert_eq!(
-                scenario_dest(root, "hermes", "approval-recorded"),
-                root.join("fixtures/hermes/approval-recorded")
+                scenario_dest(root, "hermes", "permission-hermetic"),
+                root.join("fixtures/hermes/permission-hermetic")
             );
         }
 
