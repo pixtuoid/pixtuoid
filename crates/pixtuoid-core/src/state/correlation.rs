@@ -32,7 +32,7 @@ pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 /// How long a child's end keeps refusing a transcript re-registration of that
 /// child (#244). Sized past the watcher's poll backstop (`DEFAULT_POLL_INTERVAL`),
 /// the worst case for a late transcript first-sight, the dead child's echo; a
-/// hook inside the window is a new life, which
+/// hook past the straggler window is a new life, which
 /// [`authorizes`](crate::state::reducer::Reducer::authorizes) readmits under a
 /// live parent.
 /// Parentless Starts are deliberately NOT gated — a Codex resurrect-on-prompt
@@ -101,7 +101,7 @@ pub(super) enum ChildEnd {
 }
 
 impl ChildEnd {
-    fn at(self) -> SystemTime {
+    pub(super) fn at(self) -> SystemTime {
         match self {
             Self::Reported(at) | Self::Inferred(at) => at,
         }
@@ -224,7 +224,7 @@ impl Correlation {
         self.lifecycles
             .get(&id)
             .and_then(|l| l.child_end)
-            .is_some_and(|end| !is_fresh(now, end.at(), age))
+            .is_some_and(|end| elapsed_at_least(now, end.at(), age))
     }
 
     /// Whether `id` ended within [`STRAGGLER_TTL`] by a hook or by a reported

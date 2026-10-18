@@ -859,8 +859,15 @@ impl Reducer {
             let revive = slot.exiting_at.is_some()
                 && match attempt {
                     Attempt::Start { parent: None } => slot.parent_id.is_none() && !revival_owned,
+                    // An end that landed on the walking-out slot is a turn whose
+                    // own Start is still to come, reordered (#242).
                     Attempt::Start { parent: Some(_) } => {
-                        from == Transport::Hook && slot.parent_id.as_ref().is_some_and(parent_lives)
+                        from == Transport::Hook
+                            && slot.parent_id.as_ref().is_some_and(parent_lives)
+                            && corr
+                                .recent_child_end(id, now)
+                                .zip(slot.exiting_at)
+                                .is_none_or(|(end, exit)| end.at() <= exit)
                     }
                     Attempt::Identity | Attempt::HookActivity => false,
                 };
@@ -946,8 +953,8 @@ impl Reducer {
     /// Fold a duplicate or late `SessionStart` into an EXISTING slot. A
     /// pending parent link is applied ONCE — never re-parented — and revives its
     /// lifecycle (#244/#246). A duplicate is genuine liveness (Codex/Reasonix
-    /// re-emit one per `UserPromptSubmit`), and an exiting root resurrects when
-    /// `revive` and no parent was adopted, or a live root resets.
+    /// re-emit one per `UserPromptSubmit`), and an exiting slot resurrects when
+    /// `revive` and no parent was adopted here, or a live root resets.
     fn enrich_existing_start(
         &mut self,
         scene: &mut SceneState,
