@@ -738,7 +738,7 @@ live-sources *ids:
 [group('rust')]
 hermetic-build:
     cargo build --release -q -p pixtuoid -p pixtuoid-hook
-    cargo build --release -q -p pixtuoid-core --example hermetic --example capture_fixture --example bump
+    cargo build --release -q -p pixtuoid-core --example hermetic --example capture_fixture --example bump --example tui_drive
 
 [doc('Run each profiled agent CLI against a scripted model (aimock) and judge what pixtuoid made of it')]
 [group('rust')]

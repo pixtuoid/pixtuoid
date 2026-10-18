@@ -544,9 +544,30 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
             _ => None,
         })
         .collect();
-    let ended = events.iter().any(
-        |e| matches!(e, AgentEvent::ActivityEnd { tool_use_id: Some(t), .. } if waited.contains(t)),
-    );
+    let ids = |pick: fn(&AgentEvent) -> Option<&String>| -> BTreeSet<&String> {
+        events.iter().filter_map(pick).collect()
+    };
+    let ended_ids = ids(|e| match e {
+        AgentEvent::ActivityEnd {
+            tool_use_id: Some(t),
+            ..
+        } => Some(t),
+        _ => None,
+    });
+    let ended = if waited.is_empty() {
+        // A wait that names no call (claude-code's `PermissionRequest`) is held to
+        // every started tool ending.
+        let started = ids(|e| match e {
+            AgentEvent::ActivityStart {
+                tool_use_id: Some(t),
+                ..
+            } => Some(t),
+            _ => None,
+        });
+        !started.is_empty() && started.is_subset(&ended_ids)
+    } else {
+        waited.iter().any(|t| ended_ids.contains(t))
+    };
     if !ended {
         findings.push((
             Label::Fail,
@@ -777,6 +798,22 @@ mod tests {
         });
     }
 
+    /// Keep the transcript lines `keep` admits.
+    fn edit_transcripts(dir: &Path, mut keep: impl FnMut(&str) -> bool) {
+        for t in jsonl_files_under(dir)
+            .into_iter()
+            .filter(|f| !is_hook_envelope(f))
+        {
+            let text = std::fs::read_to_string(&t).expect("read");
+            let kept: String = text
+                .lines()
+                .filter(|l| keep(l))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            std::fs::write(&t, kept).expect("write");
+        }
+    }
+
     fn blank_transcripts(dir: &Path) {
         for t in jsonl_files_under(dir)
             .into_iter()
@@ -798,6 +835,8 @@ mod tests {
                                      cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
                                      agents=[] daemons=[]\n";
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CC_WAIT_SCENE: &str =
+        "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
 
     const DS_WAIT_SCENE: &str =
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
@@ -842,6 +881,25 @@ mod tests {
         );
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "agent waiting"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_claude_code_tui_permission_run_passes() {
+        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_wait_naming_no_call_fails_when_a_started_tool_never_ends() {
+        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        edit_transcripts(d.path(), |line| !line.contains("tool_result"));
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "the slot waited on never ended"),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]
@@ -1410,20 +1468,19 @@ mod tests {
 
     #[test]
     fn a_not_yet_field_a_run_carries_is_stale() {
+        // A billed capture's usage carries the cache tokens aimock's never does.
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
-        edit_hooks(d.path(), |mut v| {
-            if v["hook_event_name"] == "SessionStart" {
-                v["model"] = "claude-test".into();
-            }
-            Some(v)
-        });
         let v = verify_source(
             profile("claude-code").expect("profile"),
             &[d.path().to_path_buf()],
         )
         .expect("verify");
         assert!(
-            has(&v, Label::Stale, "hook:SessionStart /model"),
+            has(
+                &v,
+                Label::Stale,
+                "tx:assistant /message/usage/cache_creation_input_tokens"
+            ),
             "{:?}",
             v.findings()
         );
@@ -1519,8 +1576,8 @@ mod tests {
 
     #[test]
     fn a_committed_hook_the_profile_owes_needs_no_run() {
-        // fixtures/claude-code/permission-recorded fires both; a tool run neither.
-        let owed = ["hook:Notification", "hook:PermissionRequest"];
+        // fixtures/claude-code/permission-recorded fires it; a tool run doesn't.
+        let owed = ["hook:Notification"];
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         let v = verify_source(
             profile("claude-code").expect("profile"),

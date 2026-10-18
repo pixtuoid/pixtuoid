@@ -75,12 +75,17 @@ impl Written {
     }
 }
 
-/// Whether an item compiles only under test: `#[test]`, or a `cfg` that holds
-/// only when `test` does (`test`, or `all(…)` naming it).
+/// Whether an item compiles only for tests or for core's dev-only `harness`,
+/// which no painter links: `#[test]`, or a `cfg` that holds only when one of
+/// them does (`test`, `feature = "harness"`, or `all(…)` naming one).
 fn is_test(attrs: &[syn::Attribute]) -> bool {
     fn needs_test(meta: &syn::Meta) -> bool {
         match meta {
             syn::Meta::Path(p) => p.is_ident("test"),
+            syn::Meta::NameValue(nv) if nv.path.is_ident("feature") => matches!(
+                &nv.value,
+                syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) if s.value() == "harness"
+            ),
             syn::Meta::List(l) if l.path.is_ident("all") => l
                 .parse_args_with(
                     syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
