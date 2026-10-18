@@ -9,8 +9,8 @@
 //! in ONE project and cwd-keying would merge them (the Cursor lesson).
 //!
 //! The envelope reuses CC's `hook_event_name` field NAME but with snake_case VALUES
-//! alien to the shared CC-shaped arms, so per the `HookDecoding::custom` contract the
-//! decoder claims EVERY event (`.map(Some)`, never `Ok(None)`).
+//! alien to the shared CC-shaped arms, so the decoder is `HookDecoding::ClaimsAll`:
+//! it claims EVERY event.
 //!
 //! `extra.tool_call_id` IS on the wire — capture-verified on BOTH tool events, and
 //! they pair — and dropped anyway. The original reason (no permission event to

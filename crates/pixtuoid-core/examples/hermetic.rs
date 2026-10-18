@@ -634,6 +634,45 @@ mod run {
 
     /// Run `c` to success. Its error names the program and arguments alone: a
     /// `Command`'s `Debug` prints its environment, npm's credentials included.
+    /// How many times curl retries a transient failure.
+    const CURL_RETRIES: &str = "3";
+
+    /// What [`curl_get`] returns of a response.
+    enum Curl {
+        /// The headers, redirects unfollowed: a redirect's `location` is the answer.
+        Headers,
+        Body,
+    }
+
+    /// `url`'s headers or body; a failure names curl's own reason.
+    fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
+        let mode = match part {
+            Curl::Headers => "-fsSI",
+            Curl::Body => "-fsSL",
+        };
+        let out = tool(CURL)
+            .args([mode, "--retry", CURL_RETRIES, url])
+            .output()
+            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
+        if !out.status.success() {
+            return Err(std::io::Error::other(format!(
+                "curl {url} exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(out.stdout)
+    }
+
+    /// Download `url` into `dest`.
+    fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
+        let mut c = tool(CURL);
+        c.args(["-fsSL", "--retry", CURL_RETRIES, "-o"])
+            .arg(dest)
+            .arg(url);
+        succeed(c)
+    }
+
     fn succeed(mut c: Command) -> std::io::Result<()> {
         let status = c.status()?;
         if status.success() {
@@ -685,18 +724,8 @@ mod run {
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
                 let url = format!("https://github.com/{}/releases/latest", repo.name);
-                let out = tool(CURL)
-                    .args(["-fsSI", "--retry", "3", &url])
-                    .output()
-                    .map_err(|e| format!("curl {url}: {e}"))?;
-                if !out.status.success() {
-                    return Err(format!(
-                        "curl {url} exited {}: {}",
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    ));
-                }
-                latest_tag(&String::from_utf8_lossy(&out.stdout))
+                let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
+                latest_tag(&String::from_utf8_lossy(&headers))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
             }
             (
@@ -726,15 +755,7 @@ mod run {
     /// `platform`'s build that the updater serves now.
     fn fetch_manifest(manifest: &str, platform: &str) -> std::io::Result<Build> {
         let url = manifest.replace("{platform}", platform);
-        let out = tool(CURL).args(["-fsSL", "--retry", "3", &url]).output()?;
-        if !out.status.success() {
-            return Err(std::io::Error::other(format!(
-                "curl {url} exited {}: {}",
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            )));
-        }
-        Ok(serde_json::from_slice(&out.stdout)?)
+        Ok(serde_json::from_slice(&curl_get(&url, Curl::Body)?)?)
     }
 
     /// The pinned build of every platform, as `--record` writes it.
@@ -854,13 +875,7 @@ mod run {
         to: &Path,
     ) -> std::io::Result<()> {
         let base = format!("https://github.com/{repo}/releases/download/v{version}");
-        let fetch = |name: &str, dest: &Path| {
-            let mut c = tool(CURL);
-            c.args(["-fsSL", "--retry", "3", "-o"])
-                .arg(dest)
-                .arg(format!("{base}/{name}"));
-            succeed(c)
-        };
+        let fetch = |name: &str, dest: &Path| curl_download(&format!("{base}/{name}"), dest);
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         fetch(asset, to)?;
@@ -1007,12 +1022,7 @@ mod run {
                     let lock = committed_lock(p)?;
                     let build = build_of(lock.as_ref(), manifest, asset_here(platforms)?, version)?;
                     let payload = dir.join("payload");
-                    let mut fetch = tool(CURL);
-                    fetch
-                        .args(["-fsSL", "--retry", "3", "-o"])
-                        .arg(&payload)
-                        .arg(&build.url);
-                    succeed(fetch)?;
+                    curl_download(&build.url, &payload)?;
                     if !matches_sha512(&std::fs::read(&payload)?, &build.sha512) {
                         return Err(std::io::Error::other(format!(
                             "{} does not match its manifest's SHA-512",

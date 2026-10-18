@@ -279,11 +279,10 @@ step 10 by the theme guards; steps 1–3, 11 and step 12's `#[test]` are on you.
 3. **Implement the `Source` trait** (an async `run(self, tx)` watching +
    decoding until the session universe ends). **Hook-only CLI?** Skip the
    decoder, trait, and step 7: `transcript: None` in the registry row, format
-   knowledge in a `hook.custom` decoder (it must claim EVERY event), and do
-   step 8 instead.
+   knowledge in a `HookDecoding::ClaimsAll` decoder, and do step 8 instead.
 4. **Add ONE `SourceDescriptor` row** in `source/registry.rs` — label prefix,
-   decoder, hook keying, `tool_id_key` (verify against a CAPTURED tool call,
-   not a neighbour — kimi's `ToolCall` cost a source its tool ids), truthful
+   decoder, `HookDecoding` (a `Shared` row's `tool_id_key` verified against a
+   CAPTURED tool call — kimi's `ToolCall` cost a source its tool ids), truthful
    capability flags, `verified_version` + `version_probe`. Lifecycle policy
    derives from the flags; you do **not** edit the reducer.
 5. The descriptor's `name` **is the roster** — `registered_source_names()`
@@ -317,9 +316,8 @@ step 10 by the theme guards; steps 1–3, 11 and step 12's `#[test]` are on you.
     `just drift-watch` runs them. A value our shipped artifacts bake in is a
     `Watch` too, its `ours` read off the artifact rather than copied
     (OpenClaw's `default_gateway_port`).
-12. **Three roster literals in three test binaries** (a scoped run misses
-    them): the row-by-row byte pin in `corpus_check.rs`; `TOOL_ID_KEY_UNPROVEN`
-    in `tests/sources/captures.rs`; a case row + `#[test]` in
+12. **Two roster literals in two test binaries** (a scoped run misses them):
+    the row-by-row byte pin in `corpus_check.rs`; a case row + `#[test]` in
     `crates/pixtuoid/tests/wire_to_pixels.rs`.
 
 ## License

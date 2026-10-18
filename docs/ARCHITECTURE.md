@@ -124,7 +124,7 @@ Load-bearing — see `AGENTS.md` and the nested crate guides before changing:
   CLIs are the documented exception: registry rows with `transcript: None`, a
   custom hook decoder, and an install target.
 - **Cross-source facts live in ONE registry row** (`SourceDescriptor`):
-  prefix, decoders, hook keying, capability flags. The reducer derives
+  prefix, decoders, hook decoding, capability flags. The reducer derives
   lifecycle policy from the flags — it never matches CLI names.
 - **Events flow through one tagged channel**; producers tag their own events.
 - **Subagent supervision is a scope tree**: exit cascades down, liveness

@@ -305,11 +305,17 @@ pub(crate) fn is_first_run(connected: &HashSet<String>, load_degraded: bool) -> 
     !load_degraded && connected.is_empty()
 }
 
-/// Install the hooks of each source an older pixtuoid connected by its
-/// `[sources]` flag and that has since gained an install target (antigravity,
-/// flag-only through v0.19.0): the flag was the user's consent to connect it.
-/// A flag goes only once its hooks are in, so a failed install retries at the
-/// next launch.
+/// The sources a released pixtuoid connected by their `[sources]` flag that have
+/// since gained an install target; any other hook source's flag never connected
+/// it, so it consents to nothing.
+const ONCE_FLAG_ONLY: &[&str] = &[
+    // Flag-only through v0.19.0.
+    pixtuoid_core::source::antigravity::SOURCE_NAME,
+];
+
+/// Install the hooks of each [`ONCE_FLAG_ONLY`] source whose flag is on: the
+/// flag was the user's consent to connect it. A flag goes only once its hooks
+/// are in, so a failed install retries at the next launch.
 pub(crate) fn adopt_flagged_targets(
     cfg: &Path,
     app: &config::AppConfig,
@@ -335,7 +341,7 @@ fn adopt_flagged_with(
     let mut adopted = Vec::new();
     let mut failed = Vec::new();
     let mut flagged = false;
-    for sid in registry::registered_source_names() {
+    for &sid in ONCE_FLAG_ONLY {
         let Some(t) = target_of(sid).filter(|_| app.sources.get(sid) == Some(&true)) else {
             continue;
         };
@@ -1081,6 +1087,24 @@ mod tests {
         });
         assert!(adopted.is_empty());
         assert_eq!(after.sources, flags(&[("copilot", true)]).sources);
+    }
+
+    #[test]
+    fn a_hook_sources_flag_consents_to_no_install() {
+        let seeded = "[sources]\ncodex = true\n";
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, seeded).unwrap();
+        let app = config::load(&cfg, &mut Vec::new());
+        let adopted = adopt_flagged_with(
+            &cfg,
+            &app,
+            |_| Some(&FAIL_TARGET),
+            |_| false,
+            |_| panic!("codex's flag never connected it"),
+        );
+        assert!(adopted.is_empty());
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), seeded);
     }
 
     #[test]

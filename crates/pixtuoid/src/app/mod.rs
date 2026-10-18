@@ -199,7 +199,13 @@ fn build_run_config(
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
     let graphics = config::resolve_graphics(&cfg, cli_graphics, &mut cfg_warnings);
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
-    let adopted = sources::adopt_flagged_targets(&cfg_path, &cfg);
+    // A headless run is a tool's, whose real homes a launch must not write into
+    // (`tier-live-sources.sh` flags every source).
+    let adopted = if headless {
+        Vec::new()
+    } else {
+        sources::adopt_flagged_targets(&cfg_path, &cfg)
+    };
     let connected = sources::connected(&cfg);
     let first_run = sources::is_first_run(&connected, load_degraded);
     if !headless {
