@@ -608,51 +608,79 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
 }
 
 #[test]
-fn copilot_denied_permission_clears_waiting_through_the_reducer() {
+fn copilot_refused_permission_clears_waiting_through_the_reducer() {
     use pixtuoid_core::source::copilot::decode_copilot_line;
     use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let path = "/p/session-state/1cc31698-5440-496e-b938-f1e907b60c1c/events.jsonl";
-    let id = AgentId::from_parts("copilot", "1cc31698-5440-496e-b938-f1e907b60c1c");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str| {
-        for ev in decode_copilot_line(path, "copilot", serde_json::from_str(line).unwrap()).unwrap()
-        {
-            r.apply(scene, ev, t0, Transport::Jsonl);
-        }
-    };
-    // BYTE-REAL: the round `fixtures/copilot/denial-hermetic` recorded, in its order.
-    for line in [
-        r#"{"type":"session.start","data":{"sessionId":"1cc31698-5440-496e-b938-f1e907b60c1c","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}"#,
-        r#"{"type":"tool.execution_start","data":{"toolCallId":"call_ZI4toTQLDBbSE4iH","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}"#,
-        r#"{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_ZI4toTQLDBbSE4iH","fullCommandText":"","shellType":"","intention":"","commands":[],"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"possibleUrls":[],"hasWriteFileRedirection":false},"promptRequest":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}"#,
-    ] {
-        feed(&mut r, &mut scene, line);
-    }
-    assert!(
-        matches!(
-            scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+    // 1.0.98's two refusal endings: the `-p` auto-deny `permission-hermetic`
+    // recorded, whose call then ends, and Esc at an interactive prompt, which
+    // aborts the turn with no end for the call (line shapes from a pty run
+    // against aimock, sanitized).
+    for (what, session, [start, requested, refused, after]) in [
+        (
+            "auto-deny",
+            "e3f326e8-50c0-42a4-b597-81ab72d8eb2b",
+            [
+                r#"{"type":"tool.execution_start","data":{"toolCallId":"call_ACSldlgLlmokCTS4","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}"#,
+                r#"{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_ACSldlgLlmokCTS4","fullCommandText":"","shellType":"","intention":"","commands":[],"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"possibleUrls":[],"hasWriteFileRedirection":false},"promptRequest":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}"#,
+                r#"{"type":"permission.completed","data":{"requestId":"","toolCallId":"call_ACSldlgLlmokCTS4","result":{},"decisionSource":""},"id":"","timestamp":"","parentId":""}"#,
+                r#"{"type":"tool.execution_complete","data":{"toolCallId":"call_ACSldlgLlmokCTS4","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}"#,
+            ],
         ),
-        "permission.requested should set Waiting"
-    );
-    for line in [
-        r#"{"type":"permission.completed","data":{},"id":"","timestamp":"","parentId":""}"#,
-        r#"{"type":"tool.execution_complete","data":{"toolCallId":"call_ZI4toTQLDBbSE4iH","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}"#,
+        (
+            "Esc cancel",
+            "492b82f3-6fb8-427d-be59-e06c2d723d5c",
+            [
+                r#"{"type":"tool.execution_start","data":{"toolCallId":"call_-Dbzv4Ev_Get6cFh","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":"Remove the note"},"turnId":"0","model":"gpt-4.1","toolTitle":"Running command"},"id":"4878b7e1-8a8a-4708-8ffc-2dd8fdfbe3f0","timestamp":"2026-10-18T08:08:58.980Z","parentId":"c8e243d1-c712-43c6-bda4-f27d253f34eb"}"#,
+                r#"{"type":"permission.requested","data":{"requestId":"b310d4e0-1e0e-4600-955d-871b5a951e13","permissionRequest":{"kind":"shell","toolCallId":"call_-Dbzv4Ev_Get6cFh","fullCommandText":"rm NOTE.txt","shellType":"bash"},"agentMode":"interactive","permissionMode":"manual"},"id":"571e3185-d040-4403-b319-738711e0bb62","timestamp":"2026-10-18T08:08:59.011Z","parentId":"4878b7e1-8a8a-4708-8ffc-2dd8fdfbe3f0"}"#,
+                r#"{"type":"permission.completed","data":{"requestId":"b310d4e0-1e0e-4600-955d-871b5a951e13","toolCallId":"call_-Dbzv4Ev_Get6cFh","result":{"kind":"cancelled","reason":"Session aborted"}},"id":"f36f04ef-3c73-4b7e-88a0-f00c036e2185","timestamp":"2026-10-18T08:09:01.252Z","parentId":"571e3185-d040-4403-b319-738711e0bb62"}"#,
+                r#"{"type":"abort","data":{"reason":"user_initiated"},"id":"2a182f9e-177a-43fd-a079-25e4d15f83f5","timestamp":"2026-10-18T08:09:01.253Z","parentId":"820d3dba-d109-4f6f-95d8-cb0d0067b4b6"}"#,
+            ],
+        ),
     ] {
-        feed(&mut r, &mut scene, line);
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let path = format!("/p/session-state/{session}/events.jsonl");
+        let id = AgentId::from_parts("copilot", session);
+        let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str| {
+            for ev in
+                decode_copilot_line(&path, "copilot", serde_json::from_str(line).unwrap()).unwrap()
+            {
+                r.apply(scene, ev, t0, Transport::Jsonl);
+            }
+        };
+        feed(
+            &mut r,
+            &mut scene,
+            &format!(
+                r#"{{"type":"session.start","data":{{"sessionId":"{session}","context":{{"cwd":"/repo"}}}},"id":"","timestamp":"","parentId":null}}"#
+            ),
+        );
+        feed(&mut r, &mut scene, start);
+        feed(&mut r, &mut scene, requested);
+        assert!(
+            matches!(
+                scene.agents.get(&id).unwrap().state,
+                ActivityState::Waiting { .. }
+            ),
+            "{what}: permission.requested should set Waiting"
+        );
+        feed(&mut r, &mut scene, refused);
+        feed(&mut r, &mut scene, after);
+        r.tick(
+            &mut scene,
+            t0 + ACTIVE_GRACE_WINDOW + Duration::from_millis(1),
+        );
+        let slot = scene.agents.get(&id).unwrap();
+        assert!(
+            !matches!(slot.state, ActivityState::Waiting { .. }),
+            "{what}: a refusal must clear Waiting (else the sprite hangs 60 min)"
+        );
+        assert_eq!(
+            slot.tool_call_count, 1,
+            "{what}: a refused call is one call"
+        );
     }
-    r.tick(
-        &mut scene,
-        t0 + ACTIVE_GRACE_WINDOW + Duration::from_millis(1),
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(
-        !matches!(slot.state, ActivityState::Waiting { .. }),
-        "the denied call's own end must clear Waiting (else the sprite hangs 60 min)"
-    );
-    assert_eq!(slot.tool_call_count, 1, "a denied call is one call");
 }
 
 // Line shapes follow a captured omp ask round, sanitized.

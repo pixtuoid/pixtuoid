@@ -855,8 +855,9 @@ model = "deepseek-v4-flash"
                 fixture: "delegation/fixtures/copilot",
             },
         ],
-        // Windows runs PowerShell (`changelog.md:1651`), whose native tool is
-        // `powershell` beside `bash` (1.0.98's `runtime.node`).
+        // The shell tool is `bash` or `powershell`
+        // (`/en/copilot/reference/copilot-cli-reference/cli-command-reference`),
+        // `powershell` on Windows (`github/copilot-cli#4594`, `#4719`).
         script_vars: &[(
             SHELL_TOOL_PLACEHOLDER,
             PerOs {
