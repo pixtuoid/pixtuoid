@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # One whole OpenClaw gateway lifecycle for `just capture-fixture openclaw <scenario>`.
 #
-# The turn goes through `openclaw tui`. A gateway-backed `openclaw agent` turn
-# fires the session hooks too (checked live at 2026.7.1 and 2026.10.1), so either
-# door records the whole lifecycle. `--deliver` stays off, so nothing reaches a
-# real chat channel.
+# The turn is a gateway-backed `openclaw agent` turn, which fires the session
+# hooks as `openclaw tui` does (checked live at 2026.7.1 and 2026.10.1).
+# `--deliver` stays off, so nothing reaches a real chat channel.
 #
-# `session_start` additionally needs a FRESH session key: a reused one RESUMES
-# and stays silent, which is why OC_SESSION defaults to a timestamp.
+# `session_start` additionally needs a FRESH session: a reused one RESUMES and
+# stays silent, which is why OC_SESSION defaults to a timestamp.
 #
 # Note the recorded order: `session_end` lands AFTER `gateway_stop`, because
 # shutdown is what closes the session.
@@ -19,11 +18,10 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19099}"
 SESSION="${OC_SESSION:-pixcap-$(date +%s)}"
-DRIVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tuidrive.py"
-# Beside the recorder's own private sandbox, never a fixed shared-temp name: the
-# same symlink-followable, concurrently-clobbered class the recorder's socket and
-# the driver's transcript were both moved out of.
-LOGS="$(dirname "${TUIDRIVE_LOG:-$(mktemp -d)/x}")"
+LOGS="${PIXTUOID_CAPTURE_DRIVER_DIR:-$(mktemp -d)}"
+# `agent` dials this port, and the variable outranks the operator's configured
+# `gateway.port` (`resolveGatewayPort`, openclaw's dist `paths-*.mjs`, 2026.10.4).
+export OPENCLAW_GATEWAY_PORT="$PORT"
 
 openclaw gateway --port "$PORT" --force --allow-unconfigured >"$LOGS/openclaw-gw.log" 2>&1 &
 gw=$!
@@ -34,10 +32,12 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 
-python3 "$DRIVER" "$PROMPT" openclaw tui --session "$SESSION" >"$LOGS/openclaw-tui.log" 2>&1
-echo "tui rc=$?"
+openclaw agent --session-id "$SESSION" -m "$PROMPT" >"$LOGS/openclaw-agent.log" 2>&1
+rc=$?
+echo "agent rc=$rc"
 
 # SIGTERM, not kill: `gateway_stop` is a clean-shutdown hook.
 kill -TERM "$gw" 2>/dev/null
 wait "$gw" 2>/dev/null
 sleep 2
+exit "$rc"

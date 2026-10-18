@@ -12,9 +12,7 @@ set -uo pipefail
 OC_VERSION="${PIXTUOID_CAPTURE_VERSION:?run through just capture-fixture, which names the version}"
 PORT="${OC_PORT:-4103}"
 BASE="http://127.0.0.1:$PORT"
-# See the sibling scripts: a fixed shared-temp log is the class the recorder's
-# own socket and the driver's transcript were moved out of.
-LOGS="$(dirname "${TUIDRIVE_LOG:-$(mktemp -d)/x}")"
+LOGS="${PIXTUOID_CAPTURE_DRIVER_DIR:-$(mktemp -d)}"
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 # A missing shim would otherwise yield a silently EMPTY (still billed) capture:
@@ -46,8 +44,7 @@ oc() { "$oc_bin" "$@"; }
 
 # The plugin loads from a private config dir, so the operator's own opencode
 # config and plugin stay untouched.
-export OPENCODE_CONFIG_DIR=/tmp/pixtuoid-capture/opencode-config
-rm -rf "$OPENCODE_CONFIG_DIR"
+export OPENCODE_CONFIG_DIR="$LOGS/opencode-config"
 mkdir -p "$OPENCODE_CONFIG_DIR/plugins"
 python3 - "$repo" "$OPENCODE_CONFIG_DIR/plugins/pixtuoid.ts" "$shim" <<'PY'
 import json, pathlib, sys
@@ -99,6 +96,7 @@ sleep 3
 
 # OC_MODEL picks the turn's model; opencode's default can be a retired free one.
 oc run --server "$BASE" --auto ${OC_MODEL:+--model "$OC_MODEL"} "$1"
+rc=$?
 
 sid="$(oc session list --server "$BASE" --format json --max-count 1 |
     python3 -c 'import json, sys; s = json.load(sys.stdin); print(s[0]["id"] if s else "")')"
@@ -107,4 +105,4 @@ if [[ -n $sid ]]; then
     oc session delete --server "$BASE" "$sid"
 fi
 sleep 3
-exit 0
+exit "$rc"

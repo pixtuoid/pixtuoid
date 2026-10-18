@@ -302,7 +302,6 @@ lint:
     run ci-obs  just ci-observability     & pids+=($!)
     run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
-    run tuidrive just tuidrive-selftest   & pids+=($!)
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
@@ -1200,15 +1199,6 @@ compare-selftest:
 [group('meta')]
 drift-watch:
     cargo run -q -p pixtuoid --no-default-features --features upstream --example drift_watch
-
-# The pty driver's pure halves — the ANSI stripper, the composer comparison, the
-# gate/menu wording. Each fails silently, at the price of a BILLED turn: a broken
-# stripper just stops matching, and the capture comes back empty blaming the
-# CLI.
-[doc("Self-test the TUI capture driver's pure logic")]
-[group('meta')]
-tuidrive-selftest:
-    python3 scripts/lib/tuidrive.py --selftest
 
 [doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]
