@@ -78,8 +78,8 @@ impl Written {
 /// Whether an item compiles only for tests or for core's dev-only `harness`,
 /// which no painter links: `#[test]`, or a `cfg` that holds only when one of
 /// them does (`test`, `feature = "harness"`, or `all(…)` naming one).
-fn is_test(attrs: &[syn::Attribute]) -> bool {
-    fn needs_test(meta: &syn::Meta) -> bool {
+fn off_screen(attrs: &[syn::Attribute]) -> bool {
+    fn only_under(meta: &syn::Meta) -> bool {
         match meta {
             syn::Meta::Path(p) => p.is_ident("test"),
             syn::Meta::NameValue(nv) if nv.path.is_ident("feature") => matches!(
@@ -90,14 +90,14 @@ fn is_test(attrs: &[syn::Attribute]) -> bool {
                 .parse_args_with(
                     syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
                 )
-                .is_ok_and(|all| all.iter().any(needs_test)),
+                .is_ok_and(|all| all.iter().any(only_under)),
             _ => false,
         }
     }
     attrs.iter().any(|a| {
         a.path().is_ident("test")
             || (a.path().is_ident("cfg")
-                && a.parse_args::<syn::Meta>().is_ok_and(|m| needs_test(&m)))
+                && a.parse_args::<syn::Meta>().is_ok_and(|m| only_under(&m)))
     })
 }
 
@@ -105,7 +105,7 @@ impl<'ast> Visit<'ast> for Written {
     fn visit_attribute(&mut self, _: &'ast syn::Attribute) {}
 
     fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
-        if !is_test(&m.attrs) {
+        if !off_screen(&m.attrs) {
             syn::visit::visit_item_mod(self, m);
         } else if m.content.is_none() {
             self.test_mods.push(m.ident.to_string());
@@ -115,13 +115,13 @@ impl<'ast> Visit<'ast> for Written {
     fn visit_pat(&mut self, _: &'ast syn::Pat) {}
 
     fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
-        if !is_test(&f.attrs) {
+        if !off_screen(&f.attrs) {
             syn::visit::visit_item_fn(self, f);
         }
     }
 
     fn visit_item_impl(&mut self, i: &'ast syn::ItemImpl) {
-        if !is_test(&i.attrs) {
+        if !off_screen(&i.attrs) {
             syn::visit::visit_item_impl(self, i);
         }
     }

@@ -534,20 +534,17 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     }
     // In any order: a hook payload's arrival order is its shim process's, not
     // the CLI's, so the wait, the decision and the result can land in any order.
-    let waited: BTreeSet<&String> = events
-        .iter()
-        .filter_map(|e| match e {
-            AgentEvent::Waiting {
-                tool_use_id: Some(t),
-                ..
-            } => Some(t),
-            _ => None,
-        })
-        .collect();
-    let ids = |pick: fn(&AgentEvent) -> Option<&String>| -> BTreeSet<&String> {
+    let calls = |pick: fn(&AgentEvent) -> Option<&String>| -> BTreeSet<&String> {
         events.iter().filter_map(pick).collect()
     };
-    let ended_ids = ids(|e| match e {
+    let waited = calls(|e| match e {
+        AgentEvent::Waiting {
+            tool_use_id: Some(t),
+            ..
+        } => Some(t),
+        _ => None,
+    });
+    let ended_calls = calls(|e| match e {
         AgentEvent::ActivityEnd {
             tool_use_id: Some(t),
             ..
@@ -557,16 +554,16 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     let ended = if waited.is_empty() {
         // A wait that names no call (claude-code's `PermissionRequest`) is held to
         // every started tool ending.
-        let started = ids(|e| match e {
+        let started = calls(|e| match e {
             AgentEvent::ActivityStart {
                 tool_use_id: Some(t),
                 ..
             } => Some(t),
             _ => None,
         });
-        !started.is_empty() && started.is_subset(&ended_ids)
+        !started.is_empty() && started.is_subset(&ended_calls)
     } else {
-        waited.iter().any(|t| ended_ids.contains(t))
+        waited.iter().any(|t| ended_calls.contains(t))
     };
     if !ended {
         findings.push((
@@ -815,12 +812,7 @@ mod tests {
     }
 
     fn blank_transcripts(dir: &Path) {
-        for t in jsonl_files_under(dir)
-            .into_iter()
-            .filter(|f| !is_hook_envelope(f))
-        {
-            std::fs::write(&t, "").expect("blank");
-        }
+        edit_transcripts(dir, |_| false);
     }
 
     fn has(v: &Verdict, label: Label, text: &str) -> bool {
@@ -894,6 +886,21 @@ mod tests {
     fn a_wait_naming_no_call_fails_when_a_started_tool_never_ends() {
         let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
         edit_transcripts(d.path(), |line| !line.contains("tool_result"));
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "the slot waited on never ended"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_wait_naming_no_call_fails_when_no_tool_started() {
+        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        edit_hooks(d.path(), |v| {
+            (v["hook_event_name"] != "PreToolUse").then_some(v)
+        });
+        edit_transcripts(d.path(), |line| !line.contains("tool_use"));
         let v = verify(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "the slot waited on never ended"),

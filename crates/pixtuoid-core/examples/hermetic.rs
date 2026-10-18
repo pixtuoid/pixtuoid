@@ -32,10 +32,11 @@ mod run {
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::pin;
+    use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, Drive, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package,
-        PerOs, Profile, SCENE_LOG, Scenario, TUI_TRANSCRIPT, USER_PLACEHOLDER,
+        self, DUMMY_KEY, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
+        Profile, SCENE_LOG, Scenario, Surface, TUI_TRANSCRIPT, USER_PLACEHOLDER,
         WORKSPACE_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
@@ -1038,10 +1039,7 @@ mod run {
             for var in p.home_vars() {
                 env.push((var.into(), at(&format!("homes/{var}"))?.into()));
             }
-            let expand = |t: &str| {
-                t.replace("{port}", &port.to_string())
-                    .replace("{key}", DUMMY_KEY)
-            };
+            let expand = |t: &str| expanded(t, port);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
             for (k, v) in p.env {
@@ -1385,18 +1383,29 @@ mod run {
             args.extend([recorder_flag::ENV.into(), kv.into()]);
         }
         args.extend([p.source, scenario.shape.name()].map(OsString::from));
-        match (scenario.drive, &p.tui) {
-            (Drive::Tui, Some(tui)) => {
-                args.push(run.driver.into());
-                args.extend([p.source, scenario.shape.name()].map(OsString::from));
-                args.push(run.out.join(TUI_TRANSCRIPT).into());
-                args.extend(["{prompt}", "--"].map(OsString::from));
-                args.extend(run.launch.argv());
-                args.extend(tui.argv[1..].iter().map(OsString::from));
-            }
-            _ => {
+        match scenario.surface {
+            Surface::Headless => {
                 args.extend(run.launch.argv());
                 args.extend(p.invocation[1..].iter().map(OsString::from));
+            }
+            Surface::Tui(tui) => {
+                args.push(run.driver.into());
+                args.extend(
+                    tui::CommandLine {
+                        source: p.source.to_owned(),
+                        scenario: scenario.shape.name().to_owned(),
+                        transcript: run.out.join(TUI_TRANSCRIPT),
+                        // The recorder expands it, as in a headless invocation.
+                        prompt: "{prompt}".to_owned(),
+                        program: run
+                            .launch
+                            .argv()
+                            .into_iter()
+                            .chain(tui.args().iter().map(OsString::from))
+                            .collect(),
+                    }
+                    .to_args(),
+                );
             }
         }
         args
@@ -1434,13 +1443,18 @@ mod run {
     }
 
     /// A [`ConfigFile`](pixtuoid_core::harness::hermetic::ConfigFile)'s text,
-    /// its workspace escaped as a JSON or TOML basic string holds it: a raw
-    /// `C:\…` would be an invalid escape in either.
+    /// its workspace with `/` separators: how Claude Code keys its projects on
+    /// Windows (`Xz` in the 2.1.302 bundle), and a JSON or TOML string holds it
+    /// unescaped.
     fn config_text(template: &str, port: u16, workspace: &str) -> String {
+        expanded(template, port).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
+    }
+
+    /// A profile string with the scripted model's port and key in it.
+    fn expanded(template: &str, port: u16) -> String {
         template
             .replace("{port}", &port.to_string())
             .replace("{key}", DUMMY_KEY)
-            .replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "\\\\"))
     }
 
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
@@ -1721,13 +1735,60 @@ mod run {
         }
 
         #[test]
-        fn a_windows_workspace_keys_claude_codes_trust_seed_as_valid_json() {
+        fn a_tui_scenario_hands_the_recorder_the_driver_and_the_clis_interactive_launch() {
+            let p = hermetic::profile("claude-code").expect("profile");
+            let (scenario, tui) = p
+                .scenarios
+                .iter()
+                .find_map(|s| match s.surface {
+                    Surface::Tui(tui) => Some((s, tui)),
+                    Surface::Headless => None,
+                })
+                .expect("a TUI scenario");
+            let launch = Launch {
+                program: PathBuf::from("/cli/node"),
+                args: vec!["/cli/claude.js".into()],
+                env: Vec::new(),
+            };
+            let args = recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                },
+                p,
+                scenario,
+            );
+            let driver = args
+                .iter()
+                .position(|a| a == "/build/tui_drive")
+                .expect("the driver runs as the command");
+            let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
+            assert_eq!(line.scenario, scenario.shape.name());
+            assert_eq!(line.transcript, Path::new("/runs/x").join(TUI_TRANSCRIPT));
+            assert_eq!(line.prompt, "{prompt}");
+            let program: Vec<OsString> = launch
+                .argv()
+                .into_iter()
+                .chain(tui.args().iter().map(OsString::from))
+                .collect();
+            assert_eq!(line.program, program);
+        }
+
+        #[test]
+        fn a_windows_workspace_keys_claude_codes_trust_seed_as_it_looks_it_up() {
             let workspace = r"C:\ProgramData\pixtuoid-capture\proj";
             let seed = hermetic::profile("claude-code").expect("profile").config[0].template;
             let parsed: serde_json::Value =
                 serde_json::from_str(&config_text(seed, 4321, workspace)).expect("valid JSON");
             assert!(
-                parsed["projects"][workspace]["hasTrustDialogAccepted"] == true,
+                parsed["projects"]["C:/ProgramData/pixtuoid-capture/proj"]["hasTrustDialogAccepted"]
+                    == true,
                 "{parsed}"
             );
         }

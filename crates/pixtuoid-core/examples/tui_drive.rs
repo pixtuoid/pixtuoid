@@ -12,12 +12,11 @@
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use pixtuoid_core::harness::hermetic::tui::{Action, Driver, Key, Tui};
-use pixtuoid_core::harness::hermetic::{self, Drive, Scenario};
+use pixtuoid_core::harness::hermetic::tui::{Action, CommandLine, Driver, Key, Tui};
+use pixtuoid_core::harness::hermetic::{self, Scenario, Surface};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 /// How long one run may take, end to end, before the CLI is killed: well under
@@ -37,9 +36,14 @@ const SIZE: PtySize = PtySize {
     pixel_width: 0,
     pixel_height: 0,
 };
-/// The terminal's cursor-position query. ConPTY is created inheriting the
-/// cursor and may hang until the host answers it.
+/// The terminal's cursor-position query. portable-pty creates the ConPTY
+/// inheriting the cursor (`src/win/psuedocon.rs:87` at 0.9.0), and its host
+/// must then answer that query or may hang
+/// (learn.microsoft.com/en-us/windows/console/createpseudoconsole).
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
+/// The terminal the CLI is told it runs in: what the screen parser emulates,
+/// whatever the host's own is.
+const TERM: &str = "xterm-256color";
 
 const GAVE_UP: i32 = 3;
 const USAGE_ERROR: i32 = 2;
@@ -48,88 +52,58 @@ const USAGE: &str =
 
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-    let Some((source, scenario, transcript, prompt, command)) = parse(&args) else {
+    let Some(line) = CommandLine::parse(&args) else {
         eprintln!("{USAGE}");
         std::process::exit(USAGE_ERROR);
     };
-    let code = match drive(&source, &scenario, Path::new(&transcript), prompt, &command) {
-        Ok(code) => code,
-        Err(e) => {
-            eprintln!("tui_drive: {e}");
-            GAVE_UP
-        }
-    };
+    let code = drive(line).unwrap_or_else(|e| {
+        eprintln!("tui_drive: {e}");
+        GAVE_UP
+    });
     std::process::exit(code);
-}
-
-type Parsed = (String, String, OsString, String, Vec<OsString>);
-
-fn parse(args: &[OsString]) -> Option<Parsed> {
-    let split = args.iter().position(|a| a == "--")?;
-    let [source, scenario, transcript, prompt] = &args[..split] else {
-        return None;
-    };
-    let command = args[split + 1..].to_vec();
-    if command.is_empty() {
-        return None;
-    }
-    Some((
-        source.to_str()?.to_owned(),
-        scenario.to_str()?.to_owned(),
-        transcript.clone(),
-        prompt.to_str()?.to_owned(),
-        command,
-    ))
 }
 
 fn tui_scenario(
     source: &str,
     scenario: &str,
 ) -> std::io::Result<(&'static Tui, &'static Scenario)> {
-    let p = hermetic::profile(source)
-        .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?;
-    let tui = p
-        .tui
-        .as_ref()
-        .ok_or_else(|| std::io::Error::other(format!("{source}: no Tui profile")))?;
-    let found = p
+    hermetic::profile(source)
+        .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
         .scenarios
         .iter()
-        .find(|s| s.drive == Drive::Tui && s.shape.name() == scenario)
-        .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))?;
-    Ok((tui, found))
+        .find_map(|s| match s.surface {
+            Surface::Tui(tui) if s.shape.name() == scenario => Some((tui, s)),
+            _ => None,
+        })
+        .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))
 }
 
-/// The CLI's pty command: exactly this process's environment. portable-pty's
-/// own base environment merges the Windows registry's over it, which would let
-/// a key set with `setx` past the tier's sandbox.
+/// The CLI's pty command: exactly this process's environment, and [`TERM`].
+/// portable-pty's own base environment merges the Windows registry's over it
+/// (`src/cmdbuilder.rs:74-190` at 0.9.0), which would let a key set with
+/// `setx` past the tier's sandbox.
 fn command(argv: &[OsString], env: impl Iterator<Item = (OsString, OsString)>) -> CommandBuilder {
     let mut cmd = CommandBuilder::from_argv(argv.to_vec());
     cmd.env_clear();
     for (k, v) in env {
         cmd.env(k, v);
     }
+    cmd.env("TERM", TERM);
     if let Ok(cwd) = std::env::current_dir() {
         cmd.cwd(cwd);
     }
     cmd
 }
 
-fn drive(
-    source: &str,
-    scenario: &str,
-    transcript: &Path,
-    prompt: String,
-    argv: &[OsString],
-) -> std::io::Result<i32> {
-    let (tui, scenario) = tui_scenario(source, scenario)?;
-    let mut log = std::fs::File::create(transcript)?;
+fn drive(line: CommandLine) -> std::io::Result<i32> {
+    let (tui, scenario) = tui_scenario(&line.source, &line.scenario)?;
+    let mut log = std::fs::File::create(&line.transcript)?;
     let pair = NativePtySystem::default()
         .openpty(SIZE)
         .map_err(std::io::Error::other)?;
     let mut child = pair
         .slave
-        .spawn_command(command(argv, std::env::vars_os()))
+        .spawn_command(command(&line.program, std::env::vars_os()))
         .map_err(std::io::Error::other)?;
     drop(pair.slave);
     let mut reader = pair
@@ -138,8 +112,9 @@ fn drive(
         .map_err(std::io::Error::other)?;
     let mut writer = pair.master.take_writer().map_err(std::io::Error::other)?;
 
-    // Output drains on its own thread, apart from the close: a ConPTY before
-    // Windows 11 24H2 can block its close until the output is read.
+    // Output drains on its own thread, apart from the close: before Windows 11
+    // 24H2 a ConPTY's close waits until its output is read
+    // (learn.microsoft.com/en-us/windows/console/closepseudoconsole).
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -152,10 +127,14 @@ fn drive(
 
     let started = Instant::now();
     let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
-    let mut driver = Driver::new(tui, scenario.shape, prompt, started);
+    let mut driver = Driver::new(tui, scenario.shape, line.prompt, started);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
+            // The CLI's last output may still be queued behind its exit.
+            while let Ok(chunk) = rx.recv_timeout(TICK) {
+                log.write_all(&chunk)?;
+            }
             note(&mut log, &format!("exited: {status:?}"));
             return Ok(i32::try_from(status.exit_code()).unwrap_or(GAVE_UP));
         }
@@ -178,7 +157,12 @@ fn drive(
                 )?;
             }
         }
-        match driver.step(&screen.screen().contents(), Instant::now()) {
+        let shown = screen.screen().contents();
+        let action = driver.step(&shown, Instant::now());
+        if action != Action::Wait {
+            note(&mut log, &format!("screen:\n{shown}"));
+        }
+        match action {
             Action::Wait => {}
             Action::Type(text) => {
                 note(&mut log, "type the prompt");
@@ -230,7 +214,7 @@ mod tests {
 
     #[test]
     fn the_cli_gets_exactly_the_drivers_environment() {
-        let given = [("ONLY", "this"), ("PATH", "/sandbox/bin")];
+        let given = [("ONLY", "this"), ("PATH", "/sandbox/bin"), ("TERM", "dumb")];
         let cmd = command(
             &["cli".into()],
             given.iter().map(|(k, v)| ((*k).into(), (*v).into())),
@@ -238,30 +222,10 @@ mod tests {
         let got: std::collections::BTreeMap<&str, &str> = cmd.iter_full_env_as_str().collect();
         assert_eq!(
             got,
-            given.into_iter().collect(),
+            [("ONLY", "this"), ("PATH", "/sandbox/bin"), ("TERM", TERM)]
+                .into_iter()
+                .collect(),
             "portable-pty's base environment reached the CLI past the sandbox"
         );
-    }
-
-    #[test]
-    fn the_command_line_needs_four_operands_and_a_program() {
-        let args = |v: &[&str]| v.iter().map(OsString::from).collect::<Vec<_>>();
-        let (source, scenario, _, prompt, command) = parse(&args(&[
-            "claude-code",
-            "permission",
-            "t.log",
-            "hi",
-            "--",
-            "claude",
-            "-x",
-        ]))
-        .unwrap();
-        assert_eq!(
-            (source.as_str(), scenario.as_str(), prompt.as_str()),
-            ("claude-code", "permission", "hi")
-        );
-        assert_eq!(command, args(&["claude", "-x"]));
-        assert!(parse(&args(&["claude-code", "permission", "t.log", "hi", "--"])).is_none());
-        assert!(parse(&args(&["claude-code", "permission", "hi", "--", "claude"])).is_none());
     }
 }

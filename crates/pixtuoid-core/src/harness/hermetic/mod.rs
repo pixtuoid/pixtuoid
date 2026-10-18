@@ -115,13 +115,13 @@ impl Shape {
     }
 }
 
-/// How a scenario's turn is driven.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Drive {
+/// Which of a CLI's surfaces a scenario's turn is driven through.
+#[derive(Debug, Clone, Copy)]
+pub enum Surface {
     /// The profile's headless invocation, with the prompt in its argv.
     Headless,
-    /// The profile's [`Profile::tui`], under a pty: for a turn only a TUI asks.
-    Tui,
+    /// Its interactive TUI under a pty, for a turn only the TUI asks.
+    Tui(&'static tui::Tui),
 }
 
 /// One scripted turn of a CLI.
@@ -129,8 +129,8 @@ pub enum Drive {
 pub struct Scenario {
     /// What the run must look like.
     pub shape: Shape,
-    /// How the turn is driven.
-    pub drive: Drive,
+    /// The surface the turn is driven through.
+    pub surface: Surface,
     /// The hook events this run must fire, as `Profile::event_name` reads them.
     pub expects: &'static [&'static str],
     /// The committed recording `--record` rewrites, under `tests/sources`: the
@@ -176,8 +176,6 @@ pub struct Profile {
     pub config: &'static [ConfigFile],
     /// The scripted turns.
     pub scenarios: &'static [Scenario],
-    /// Its interactive TUI, which drives the [`Drive::Tui`] scenarios.
-    pub tui: Option<tui::Tui>,
     /// Placeholders the scenario scripts spell, each the platform's value.
     pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
     /// Registered hooks no scenario expects yet. Shrink-only: a run that fires
@@ -234,7 +232,7 @@ impl Profile {
 pub const MANIFEST: &str = "run.json";
 /// The headless pixtuoid's output (scene lines and its log) for a run.
 pub const SCENE_LOG: &str = "scene.log";
-/// The pty transcript of a [`Drive::Tui`] run: the CLI's raw output and the
+/// The pty transcript of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_TRANSCRIPT: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
@@ -263,6 +261,9 @@ pub struct Manifest {
 pub enum Absence {
     /// Its model endpoint cannot be redirected, so no scripted turn can run.
     NoModelEndpoint,
+    /// Its headless run fires no session lifecycle, so no headless shape can
+    /// pass.
+    NoHeadlessLifecycle,
     /// A profile is owed. Shrink-only.
     AwaitingProfile,
 }
@@ -313,6 +314,25 @@ fn grok_event(v: &Value) -> Option<Cow<'_, str>> {
     Some(Cow::Owned(key))
 }
 
+/// Claude Code's TUI. Manual mode asks before a non-read-only Bash call
+/// (code.claude.com/docs/en/permission-modes).
+const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
+    invocation: &["claude", "--permission-mode", "manual"],
+    composer: tui::Composer {
+        marker: "❯",
+        rule: '─',
+    },
+    gates: &[tui::Gate {
+        shows: "Do you want to proceed?",
+        accept: &[tui::Key::Enter],
+        deny: &[tui::Key::Esc],
+        // A dialog ignores keys for its first 150 ms and restarts that on each
+        // ignored key (`AM=150` in the 2.1.302 bundle).
+        dwell: std::time::Duration::from_millis(400),
+    }],
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+};
+
 /// The profiled CLIs.
 pub const PROFILES: &[Profile] = &[
     Profile {
@@ -357,13 +377,13 @@ pub const PROFILES: &[Profile] = &[
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
                 fixture: "fixtures/claude-code/tool-run-hermetic",
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
@@ -376,7 +396,7 @@ pub const PROFILES: &[Profile] = &[
             },
             Scenario {
                 shape: Shape::Permission,
-                drive: Drive::Tui,
+                surface: Surface::Tui(&CLAUDE_CODE_TUI),
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
@@ -386,23 +406,6 @@ pub const PROFILES: &[Profile] = &[
                 fixture: "fixtures/claude-code/permission-hermetic",
             },
         ],
-        // Manual: a non-read-only Bash call asks (code.claude.com/docs/en/permission-modes).
-        tui: Some(tui::Tui {
-            argv: &["claude", "--permission-mode", "manual"],
-            composer: "❯",
-            gates: &[tui::Gate {
-                shows: "Do you want to proceed?",
-                accept: PerOs {
-                    unix: &[tui::Key::Enter],
-                    windows: &[tui::Key::Enter],
-                },
-                deny: PerOs {
-                    unix: &[tui::Key::Esc],
-                    windows: &[tui::Key::Esc],
-                },
-            }],
-            quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-        }),
         script_vars: &[],
         not_yet: &["Notification"],
         event_name: hook_event_name,
@@ -469,7 +472,7 @@ sandbox = "unelevated"
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -482,7 +485,7 @@ sandbox = "unelevated"
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -496,7 +499,6 @@ sandbox = "unelevated"
                 fixture: "codex/fixtures/subagent-hermetic",
             },
         ],
-        tui: None,
         script_vars: &[],
         not_yet: &["PermissionRequest"],
         event_name: hook_event_name,
@@ -577,7 +579,7 @@ sandbox = "unelevated"
         }],
         scenarios: &[Scenario {
             shape: Shape::ToolRun,
-            drive: Drive::Headless,
+            surface: Surface::Headless,
             expects: &[
                 "session.created",
                 "session.execution.started",
@@ -587,7 +589,6 @@ sandbox = "unelevated"
             ],
             fixture: "fixtures/opencode/tool-run-hermetic",
         }],
-        tui: None,
         script_vars: &[],
         not_yet: &[
             "session.deleted",
@@ -631,7 +632,7 @@ sandbox = "unelevated"
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "agent/created",
                     "request/header",
@@ -644,7 +645,7 @@ sandbox = "unelevated"
             },
             Scenario {
                 shape: Shape::Permission,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "agent/created",
                     "request/header",
@@ -659,7 +660,7 @@ sandbox = "unelevated"
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "agent/created",
                     "request/header",
@@ -673,7 +674,6 @@ sandbox = "unelevated"
         ],
         // The shell tool win32 mounts in bash's place, which alone can
         // escalate there.
-        tui: None,
         script_vars: &[(
             SHELL_TOOL_PLACEHOLDER,
             PerOs {
@@ -714,11 +714,10 @@ sandbox = "unelevated"
         config: &[],
         scenarios: &[Scenario {
             shape: Shape::ToolRun,
-            drive: Drive::Headless,
+            surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
             fixture: "fixtures/kimi/tool-run-hermetic",
         }],
-        tui: None,
         script_vars: &[],
         not_yet: &[
             "PostToolUseFailure",
@@ -791,7 +790,7 @@ sandbox = "unelevated"
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -804,7 +803,7 @@ sandbox = "unelevated"
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -818,7 +817,6 @@ sandbox = "unelevated"
                 fixture: "grok/fixtures/subagent-hermetic",
             },
         ],
-        tui: None,
         script_vars: &[],
         not_yet: &[
             "PostToolUseFailure",
@@ -870,7 +868,7 @@ model = "deepseek-v4-flash"
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -883,7 +881,7 @@ model = "deepseek-v4-flash"
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -897,7 +895,6 @@ model = "deepseek-v4-flash"
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
         ],
-        tui: None,
         script_vars: &[],
         not_yet: &["PermissionRequest", "Notification"],
         event_name: event_field,
@@ -944,19 +941,19 @@ model = "deepseek-v4-flash"
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/tool-run-hermetic",
             },
             Scenario {
                 shape: Shape::Permission,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/permission-hermetic",
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[],
                 fixture: "delegation/fixtures/copilot",
             },
@@ -964,7 +961,6 @@ model = "deepseek-v4-flash"
         // The shell tool is `bash` or `powershell`
         // (`/en/copilot/reference/copilot-cli-reference/cli-command-reference`),
         // `powershell` on Windows (`github/copilot-cli#4594`, `#4719`).
-        tui: None,
         script_vars: &[(
             SHELL_TOOL_PLACEHOLDER,
             PerOs {
@@ -1057,13 +1053,13 @@ async:
         scenarios: &[
             Scenario {
                 shape: Shape::ToolRun,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
                 fixture: "omp/fixtures/tool-run-hermetic",
             },
             Scenario {
                 shape: Shape::Permission,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &[
                     "session_start",
                     "tool_approval_requested",
@@ -1074,12 +1070,11 @@ async:
             },
             Scenario {
                 shape: Shape::Subagent,
-                drive: Drive::Headless,
+                surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
                 fixture: "delegation/fixtures/omp",
             },
         ],
-        tui: None,
         script_vars: &[],
         not_yet: &["session_switch", "session_branch"],
         event_name: type_field,
@@ -1134,6 +1129,7 @@ async:
         }],
         scenarios: &[Scenario {
             shape: Shape::ToolRun,
+            surface: Surface::Headless,
             expects: &[
                 "on_session_start",
                 "pre_tool_call",
@@ -1159,10 +1155,9 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     // Owner, 2026-10-13: no custom model endpoint, so no upstream detection.
     ("cursor", Absence::NoModelEndpoint),
     ("antigravity", Absence::AwaitingProfile),
-    // `exec --hooks` fires only `tool_call_before` and `shell_env`
-    // (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1), so its profile
-    // drives the TUI.
-    ("codewhale", Absence::AwaitingProfile),
+    // Owner, 2026-10-18: `exec --hooks` fires only `tool_call_before` and
+    // `shell_env` (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1).
+    ("codewhale", Absence::NoHeadlessLifecycle),
     ("openclaw", Absence::AwaitingProfile),
 ];
 
@@ -1258,27 +1253,16 @@ mod tests {
                 "{}: the invocation runs a binary the registry does not name",
                 p.source
             );
-            if let Some(tui) = &p.tui {
-                assert_eq!(
-                    tui.argv.first(),
-                    probe.first(),
-                    "{}: the TUI runs a binary the registry does not name",
-                    p.source
-                );
+            for s in p.scenarios {
+                if let Surface::Tui(tui) = s.surface {
+                    assert_eq!(
+                        tui.binary(),
+                        probe.first().copied(),
+                        "{}: the TUI runs a binary the registry does not name",
+                        p.source
+                    );
+                }
             }
-        }
-    }
-
-    #[test]
-    fn a_tui_scenario_exists_exactly_where_a_profile_has_a_tui() {
-        for p in PROFILES {
-            let driven = p.scenarios.iter().any(|s| s.drive == Drive::Tui);
-            assert_eq!(
-                driven,
-                p.tui.is_some(),
-                "{}: a TUI with no scenario is upkeep, a scenario with no TUI can't run",
-                p.source
-            );
         }
     }
 
