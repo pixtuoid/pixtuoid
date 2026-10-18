@@ -675,9 +675,6 @@ mod recorder {
         c.args(&cmd[1..])
             .current_dir(ws)
             .env(Endpoint::ENV, wiring.endpoint.path());
-        // A driver's transcript goes in this run's private scratch: a fixed
-        // shared-temp name is symlink-followable and two concurrent captures interleave.
-        c.env("TUIDRIVE_LOG", wiring.scratch.join("tuidrive.log"));
         c.env(CLI_ENV, named_cli(wiring.scratch))
             .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
@@ -1678,7 +1675,7 @@ mod recorder {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or_default();
-                if name.starts_with("capture-") || name == "tuidrive.py" {
+                if name.starts_with("capture-") {
                     drivers += 1;
                     let text = std::fs::read_to_string(&path).expect("a driver");
                     assert!(text.contains(CLI_ENV), "{name} names no CLI at ${CLI_ENV}");

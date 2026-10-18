@@ -302,7 +302,6 @@ lint:
     run ci-obs  just ci-observability     & pids+=($!)
     run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
-    run tuidrive just tuidrive-selftest   & pids+=($!)
     run e2escrub just e2e-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
@@ -1228,15 +1227,6 @@ compare-selftest:
 [group('meta')]
 drift-watch:
     cargo run -q -p pixtuoid --no-default-features --features upstream --example drift_watch
-
-# The pty driver's pure halves — the ANSI stripper, the composer comparison, the
-# gate/menu wording. Each fails silently, at the price of a BILLED turn: a broken
-# stripper just stops matching, and the capture comes back empty blaming the
-# CLI.
-[doc("Self-test the TUI capture driver's pure logic")]
-[group('meta')]
-tuidrive-selftest:
-    python3 scripts/lib/tuidrive.py --selftest
 
 # The git env scrub, both copies: `e2e_init_repo` and the pre-push hook. A git
 # hook exports GIT_DIR/GIT_INDEX_FILE into every child and those OUTRANK

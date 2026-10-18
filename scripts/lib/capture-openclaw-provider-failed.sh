@@ -3,7 +3,7 @@
 # `just capture-fixture openclaw <scenario>`: the run a failed provider ends
 # `success: true`, which the plugin's `errored` marks. No model call is billed and
 # no real config is read: the gateway, its config and the plugin `pixtuoid connect`
-# installs all live in a throwaway home beside the recorder's own sandbox. At
+# installs all live in a throwaway home. At
 # 2026.10.1 `openclaw agent` fires the session pair around the run as well.
 #
 # `openclaw` is whatever is first on PATH; put the release under test there. The
@@ -16,7 +16,7 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19098}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SBX="$(dirname "${TUIDRIVE_LOG:-$(mktemp -d)/x}")/openclaw-home"
+SBX="$(mktemp -d)/openclaw-home"
 mkdir -p "$SBX/.openclaw" "$SBX/xdg"
 export HOME="$SBX" OPENCLAW_HOME="$SBX" OPENCLAW_STATE_DIR="$SBX/.openclaw" \
     OPENCLAW_CONFIG_PATH="$SBX/.openclaw/openclaw.json" XDG_CONFIG_HOME="$SBX/xdg" \
