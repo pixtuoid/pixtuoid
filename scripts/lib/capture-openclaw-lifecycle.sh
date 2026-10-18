@@ -18,7 +18,7 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19099}"
 SESSION="${OC_SESSION:-pixcap-$(date +%s)}"
-LOGS="$(mktemp -d)"
+LOGS="${PIXTUOID_CAPTURE_SCRATCH:-$(mktemp -d)}"
 # `agent` dials this port, and the variable outranks the operator's configured
 # `gateway.port` (`resolveGatewayPort`, openclaw's dist `paths-*.mjs`, 2026.10.4).
 export OPENCLAW_GATEWAY_PORT="$PORT"
@@ -34,12 +34,10 @@ done
 
 openclaw agent --session-id "$SESSION" -m "$PROMPT" >"$LOGS/openclaw-agent.log" 2>&1
 rc=$?
-echo "agent rc=$rc (log: $LOGS/openclaw-agent.log)"
+echo "agent rc=$rc"
 
 # SIGTERM, not kill: `gateway_stop` is a clean-shutdown hook.
 kill -TERM "$gw" 2>/dev/null
 wait "$gw" 2>/dev/null
 sleep 2
-# A failed turn's logs stay for the diagnosis the rc line points to.
-[[ $rc -ne 0 ]] || rm -rf "$LOGS"
 exit "$rc"

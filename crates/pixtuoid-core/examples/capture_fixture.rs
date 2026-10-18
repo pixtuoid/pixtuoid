@@ -50,6 +50,16 @@ mod recorder {
     /// driver that installs its CLI: a capture must anchor that version.
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
+    /// Where the recorder names the dir a driver keeps its own logs and homes
+    /// in: the recorder's scratch, gone with a capture that worked and kept,
+    /// and named, for one that did not, since only the recorder knows which.
+    const SCRATCH_ENV: &str = "PIXTUOID_CAPTURE_SCRATCH";
+
+    /// Keep `scratch` for the diagnosis of a capture that did not work.
+    fn keep_scratch(scratch: tempfile::TempDir) {
+        eprintln!("the driver's logs stay in {}", scratch.keep().display());
+    }
+
     /// A hermetic run's overrides: where the capture goes, and what the harvest
     /// and the CLI may see.
     #[derive(Debug, Default, Clone, PartialEq)]
@@ -281,7 +291,10 @@ mod recorder {
 
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
-            Some(e) if options.out.is_none() => return Err(e),
+            Some(e) if options.out.is_none() => {
+                keep_scratch(sandbox);
+                return Err(e);
+            }
             kept => kept,
         };
         std::fs::create_dir_all(&dest)?;
@@ -331,6 +344,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
+            keep_scratch(sandbox);
             std::process::exit(1);
         }
 
@@ -675,6 +689,7 @@ mod recorder {
         c.args(&cmd[1..])
             .current_dir(ws)
             .env(Endpoint::ENV, wiring.endpoint.path());
+        c.env(SCRATCH_ENV, wiring.scratch);
         c.env(CLI_ENV, named_cli(wiring.scratch))
             .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
@@ -1636,7 +1651,9 @@ mod recorder {
             // opt-out outlives the scrub.
             let script = format!(
                 r#"test "${VERSION_ENV}" = 1.0.0 && test -z "$CLAUDE_CODE_CHILD_SESSION" \
-                   && test "$CLAUDE_CODE_PROBE" = 1 && echo dsh >"${CLI_ENV}""#
+                   && test "$CLAUDE_CODE_PROBE" = 1 && test "${SCRATCH_ENV}" = "{}" \
+                   && echo dsh >"${CLI_ENV}""#,
+                sandbox.path().display()
             );
             let cmd = ["sh", "-c", &script].map(String::from);
             let env = [("CLAUDE_CODE_PROBE".to_string(), "1".to_string())];
@@ -1679,6 +1696,17 @@ mod recorder {
                     drivers += 1;
                     let text = std::fs::read_to_string(&path).expect("a driver");
                     assert!(text.contains(CLI_ENV), "{name} names no CLI at ${CLI_ENV}");
+                    for named in text.split("PIXTUOID_CAPTURE_").skip(1) {
+                        let tail: String = named
+                            .chars()
+                            .take_while(|c| c.is_ascii_uppercase() || *c == '_')
+                            .collect();
+                        let var = format!("PIXTUOID_CAPTURE_{tail}");
+                        assert!(
+                            [CLI_ENV, VERSION_ENV, SCRATCH_ENV].contains(&var.as_str()),
+                            "{name} reads ${var}, which the recorder never sets"
+                        );
+                    }
                 }
             }
             assert!(drivers > 0, "scripts/lib holds the drivers");

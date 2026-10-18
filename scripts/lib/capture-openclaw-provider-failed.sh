@@ -16,8 +16,7 @@ set -uo pipefail
 PROMPT="${1:?prompt}"
 PORT="${OC_PORT:-19098}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d)"
-SBX="$TMP/openclaw-home"
+SBX="${PIXTUOID_CAPTURE_SCRATCH:-$(mktemp -d)}/openclaw-home"
 mkdir -p "$SBX/.openclaw" "$SBX/xdg"
 export HOME="$SBX" OPENCLAW_HOME="$SBX" OPENCLAW_STATE_DIR="$SBX/.openclaw" \
     OPENCLAW_CONFIG_PATH="$SBX/.openclaw/openclaw.json" XDG_CONFIG_HOME="$SBX/xdg" \
@@ -44,10 +43,18 @@ EOF
 openclaw gateway run --bind loopback --port "$PORT" >"$SBX/gateway.log" 2>&1 &
 gw=$!
 trap 'kill -TERM "$gw" 2>/dev/null' EXIT
+up=0
 for _ in $(seq 1 90); do
-    openclaw gateway health --port "$PORT" >/dev/null 2>&1 && break
+    openclaw gateway health --port "$PORT" >/dev/null 2>&1 && {
+        up=1
+        break
+    }
     sleep 1
 done
+[[ $up -eq 1 ]] || {
+    echo "the gateway never answered: see $SBX/gateway.log" >&2
+    exit 1
+}
 
 openclaw agent --session-id "pixcap-$(date +%s)" -m "$PROMPT" --timeout 120 >"$SBX/agent.log" 2>&1
 echo "agent rc=$? (non-zero: the provider refused, as intended)"
@@ -56,4 +63,3 @@ echo "agent rc=$? (non-zero: the provider refused, as intended)"
 kill -TERM "$gw" 2>/dev/null
 wait "$gw" 2>/dev/null
 sleep 2
-rm -rf "$TMP"
