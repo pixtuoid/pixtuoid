@@ -85,9 +85,8 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
-/// Read outside the field census, so a rename goes unbreadcrumbed: of a role,
-/// every child is a parentless sprite; of a spawning tool, its parent never
-/// reads Delegating and its child is never walked out.
+/// Read outside the field census, so a rename goes unbreadcrumbed; each
+/// watch's `finding` names what it breaks.
 #[cfg(any(test, feature = "upstream"))]
 pub(crate) const UPSTREAM: &[crate::source::upstream::Watch] = {
     use crate::source::upstream::{Finding, Read, Watch, When};
