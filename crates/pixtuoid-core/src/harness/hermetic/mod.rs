@@ -73,13 +73,14 @@ pub enum Package {
     Npm(&'static str),
     /// A prebuilt binary attached to a `v<version>` GitHub release.
     GithubRelease {
-        /// `owner/name`.
-        repo: &'static str,
-        /// The binary's asset name, with `{os}`, `{arch}` and `{exe}` the tier
-        /// fills for its platform.
-        asset: &'static str,
-        /// The release's SHA-256 list, which the download must match.
-        checksums: &'static str,
+        /// The source's drift-watched repository.
+        repo: &'static crate::source::upstream::Repo,
+        /// Each platform's binary, as `(OS, ARCH, asset)` in
+        /// [`std::env::consts`]' spelling.
+        assets: &'static [(&'static str, &'static str, &'static str)],
+        /// The release's file that must vouch for the download
+        /// ([`crate::source::upstream::vouches`]).
+        sums: &'static str,
     },
 }
 
@@ -917,16 +918,25 @@ model = "deepseek-v4-flash"
         // and no event of it names a cwd.
         children_inherit_cwd: true,
     },
-    // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, under
-    // `packages/coding-agent/`.
+    // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, `src/` its
+    // `packages/coding-agent/src/`.
     Profile {
         source: "omp",
-        // The npm package needs Bun (its `engines`); the install script without
-        // Bun, and Homebrew, install this binary (`README.md:35-51`).
+        // The release's own binaries: the npm package runs only under Bun (its
+        // `engines`), and `scripts/install.sh` fetches from build.stencil.so
+        // and runs `omp --version` under the operator's home (`:21`, `:331`).
         package: Package::GithubRelease {
-            repo: "can1357/oh-my-pi",
-            asset: "omp-{os}-{arch}{exe}",
-            checksums: "SHA256SUMS.txt",
+            repo: &crate::source::omp::REPO,
+            // `scripts/ci-build-upload.ts:39-48`, glibc's on Linux.
+            assets: &[
+                ("macos", "aarch64", "omp-darwin-arm64"),
+                ("macos", "x86_64", "omp-darwin-x64"),
+                ("linux", "aarch64", "omp-linux-arm64"),
+                ("linux", "x86_64", "omp-linux-x64"),
+                ("windows", "aarch64", "omp-windows-arm64.exe"),
+                ("windows", "x86_64", "omp-windows-x64.exe"),
+            ],
+            sums: "SHA256SUMS.txt",
         },
         invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", "{prompt}"],
         // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
@@ -938,8 +948,9 @@ model = "deepseek-v4-flash"
         },
         // Context files stop at the git root when the workspace is outside the
         // home (`src/discovery/helpers.ts:721-735`), and the recorder's
-        // `git init` makes the workspace that root.
-        ancestor_config: &[],
+        // `git init` makes the workspace that root; Cline's rules don't stop
+        // (`src/discovery/cline.ts:19-35`).
+        ancestor_config: &[".clinerules"],
         config: &[
             ConfigFile {
                 home: "PI_CODING_AGENT_DIR",
@@ -1141,14 +1152,6 @@ mod tests {
             let p = profile(source).expect("profiled");
             assert_eq!(p.package, Package::Npm(package), "{source}");
         }
-    }
-
-    #[test]
-    fn a_release_binary_comes_from_the_repo_the_drift_watch_reads() {
-        let Package::GithubRelease { repo, .. } = profile("omp").expect("profiled").package else {
-            panic!("omp installs its release binary");
-        };
-        assert_eq!(repo, crate::source::omp::REPO.name);
     }
 
     #[test]

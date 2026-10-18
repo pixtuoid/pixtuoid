@@ -42,8 +42,8 @@ mod run {
         CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
         required_version_probe, version_answer,
     };
+    use pixtuoid_core::source::upstream;
     use semver::Version;
-    use sha2::Digest;
 
     /// How long a server gets to come up before the run gives up.
     const BOOT: Duration = Duration::from_secs(60);
@@ -85,8 +85,8 @@ mod run {
             "TEMP",
         ],
     };
-    /// What npm and aimock inherit beyond [`inherited`]: network settings, with
-    /// npm's home in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts and the
+    /// What the tier's tools (npm, curl, aimock) inherit beyond [`inherited`]:
+    /// network settings, with npm's home in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts and the
     /// npm-installed aimock are untrusted code, so no provider key reaches them.
     const TOOL_INHERITED: &[&str] = &[
         "HTTP_PROXY",
@@ -583,7 +583,7 @@ mod run {
         }
     }
 
-    /// Marks a finished install; written only after npm succeeds.
+    /// Marks a finished install; written only after it succeeds.
     const INSTALL_DONE: &str = ".hermetic-installed";
 
     /// `install` into a fresh `dir` unless an earlier one finished there: an
@@ -657,16 +657,19 @@ mod run {
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
             (Versions::Latest, Package::GithubRelease { repo, .. }) => {
-                // The page redirects to the latest release's tag, with none of
-                // the REST API's unauthenticated rate limit
-                // (docs.github.com, "Linking to the latest release").
-                let url = format!("https://github.com/{repo}/releases/latest");
+                // It redirects to the latest release
+                // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
+                let url = format!("https://github.com/{}/releases/latest", repo.name);
                 let out = tool(CURL)
-                    .args(["-fsSI", &url])
+                    .args(["-fsSI", "--retry", "3", &url])
                     .output()
                     .map_err(|e| format!("curl {url}: {e}"))?;
                 if !out.status.success() {
-                    return Err(format!("curl {url} exited {}", out.status));
+                    return Err(format!(
+                        "curl {url} exited {}: {}",
+                        out.status,
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
                 }
                 latest_tag(&String::from_utf8_lossy(&out.stdout))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
@@ -674,8 +677,6 @@ mod run {
         }
     }
 
-    /// curl, which Windows ships as `curl.exe` (learn.microsoft.com, "Tar and
-    /// Curl Come to Windows").
     const CURL: &str = "curl";
 
     /// The release a `releases/latest` response's `location` names.
@@ -688,60 +689,24 @@ mod run {
         Version::parse(tag.strip_prefix('v')?).ok()
     }
 
-    /// A release `asset` template with this platform's `{os}`, `{arch}` and
-    /// `{exe}`, spelt as Bun's compiled targets name them
-    /// (bun.sh/docs/bundler/executables, "Supported targets").
-    fn asset_here(asset: &str) -> std::io::Result<String> {
-        let os = match std::env::consts::OS {
-            "macos" => "darwin",
-            os @ ("linux" | "windows") => os,
-            os => return Err(std::io::Error::other(format!("no release asset for {os}"))),
-        };
-        let arch = match std::env::consts::ARCH {
-            "aarch64" => "arm64",
-            "x86_64" => "x64",
-            arch => {
-                return Err(std::io::Error::other(format!(
-                    "no release asset for {arch}"
-                )));
-            }
-        };
-        Ok(asset
-            .replace("{os}", os)
-            .replace("{arch}", arch)
-            .replace("{exe}", std::env::consts::EXE_SUFFIX))
-    }
-
-    /// The SHA-256 a `sha256sum`-format list gives `asset`, whose name a
-    /// binary-mode line marks with `*`.
-    fn listed_sha256<'a>(sums: &'a str, asset: &str) -> Option<&'a str> {
-        sums.lines().find_map(|l| {
-            let (hash, name) = l.split_once(char::is_whitespace)?;
-            (name.trim_start().trim_start_matches('*') == asset).then_some(hash)
-        })
-    }
-
-    /// Whether `bytes` hash to the SHA-256 `sums` lists for `asset`.
-    fn matches_listed_sha256(bytes: &[u8], sums: &str, asset: &str) -> Result<(), String> {
-        let want = listed_sha256(sums, asset).ok_or_else(|| format!("no {asset}"))?;
-        let got: String = sha2::Sha256::digest(bytes)
+    /// This platform's binary among a release's `assets`.
+    fn asset_here(assets: &[(&str, &str, &'static str)]) -> std::io::Result<&'static str> {
+        let here = (std::env::consts::OS, std::env::consts::ARCH);
+        assets
             .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        if got.eq_ignore_ascii_case(want) {
-            Ok(())
-        } else {
-            Err(format!("{asset} hashes to {got}, not {want}"))
-        }
+            .find(|(os, arch, _)| (*os, *arch) == here)
+            .map(|(_, _, asset)| *asset)
+            .ok_or_else(|| std::io::Error::other(format!("no release asset for {here:?}")))
     }
 
-    /// `asset` of `repo`'s `v<version>` release, saved as `to` once its SHA-256
-    /// matches the release's `checksums` list, and made executable.
+    /// Downloads `asset` of `repo`'s `v<version>` release to `to`, holds it to
+    /// the release's `sums` file, and makes it executable. A failure leaves no
+    /// install marker, so [`install_once`] discards the download.
     fn fetch_release(
         repo: &str,
         version: &Version,
         asset: &str,
-        checksums: &str,
+        sums: &str,
         to: &Path,
     ) -> std::io::Result<()> {
         let base = format!("https://github.com/{repo}/releases/download/v{version}");
@@ -752,11 +717,18 @@ mod run {
                 .arg(format!("{base}/{name}"));
             succeed(c)
         };
-        let sums = to.with_file_name(checksums);
-        fetch(checksums, &sums)?;
+        let listed = to.with_file_name(sums);
+        fetch(sums, &listed)?;
         fetch(asset, to)?;
-        matches_listed_sha256(&std::fs::read(to)?, &std::fs::read_to_string(&sums)?, asset)
-            .map_err(|why| std::io::Error::other(format!("{checksums}: {why}")))?;
+        if !upstream::vouches(
+            &std::fs::read_to_string(&listed)?,
+            asset,
+            &std::fs::read(to)?,
+        ) {
+            return Err(std::io::Error::other(format!(
+                "{asset} does not match v{version}'s {sums}"
+            )));
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -797,14 +769,15 @@ mod run {
         Version::parse(&v).map_err(|_| format!("npm view {spec} gave {v:?}, not a release"))
     }
 
-    /// The CLI at the version this run tests, installed into its own project the
-    /// way users install it. Its own install scripts run, since they link the
-    /// binary: npm 12 blocks a dependency's unless the project's `allowScripts`
-    /// names it (`npm help install-scripts`), and older npm ignores the field.
+    /// The CLI at the version this run tests, installed into its own prefix the
+    /// way users install it.
     fn install_cli(tier: &Path, p: &Profile, version: &Version) -> std::io::Result<Installed> {
         let prefix = tier.join("cli").join(format!("{}-{version}", p.source));
         let name = p.invocation[0];
         match p.package {
+            // Its own install scripts run, since they link the binary: npm 12
+            // blocks a dependency's unless the project's `allowScripts` names it
+            // (`npm help install-scripts`), and older npm ignores the field.
             Package::Npm(package) => {
                 let spec = format!("{package}@{version}");
                 install_once(&prefix, |dir| {
@@ -822,14 +795,10 @@ mod run {
                     bin,
                 })
             }
-            Package::GithubRelease {
-                repo,
-                asset,
-                checksums,
-            } => {
+            Package::GithubRelease { repo, assets, sums } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
-                    fetch_release(repo, version, &asset_here(asset)?, checksums, &program)
+                    fetch_release(repo.name, version, asset_here(assets)?, sums, &program)
                 })?;
                 Ok(Installed {
                     launch: Launch {
@@ -843,14 +812,14 @@ mod run {
         }
     }
 
-    /// An installed CLI: the directory npm links its commands into, and how to
-    /// start it.
+    /// An installed CLI: the directory holding its command, which the sandbox's
+    /// PATH names, and how to start it.
     struct Installed {
         bin: PathBuf,
         launch: Launch,
     }
 
-    /// How to start an npm-installed command; on Windows not the `.cmd` npm
+    /// How to start an installed command; on Windows not the `.cmd` npm
     /// writes. std runs a batch file's arguments through `cmd.exe` escaping,
     /// refuses at spawn any it "might not be possible to safely escape", and
     /// says not to rely on it (std::process, "Batch file special handling"):
@@ -2053,29 +2022,15 @@ mod run {
             }
         }
 
+        /// Each OS leg of the tier runs every profile on its own host.
         #[test]
-        fn a_checksum_list_gives_each_asset_its_own_hash() {
-            let sums = "aa11  omp-darwin-arm64\nbb22 *omp-linux-x64\ncc33  omp-darwin-arm64.zip\n";
-            assert_eq!(listed_sha256(sums, "omp-darwin-arm64"), Some("aa11"));
-            assert_eq!(listed_sha256(sums, "omp-linux-x64"), Some("bb22"));
-            assert_eq!(listed_sha256(sums, "omp-windows-x64.exe"), None);
-        }
-
-        #[test]
-        fn a_download_must_hash_to_its_listed_sha256() {
-            // FIPS 180-2's "abc" vector.
-            let abc = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
-            let sums = format!("{abc}  omp\n");
-            assert_eq!(matches_listed_sha256(b"abc", &sums, "omp"), Ok(()));
-            assert!(matches_listed_sha256(b"abd", &sums, "omp").is_err());
-            assert!(matches_listed_sha256(b"abc", &sums, "omp.exe").is_err());
-        }
-
-        #[test]
-        fn a_release_asset_names_this_platform() {
-            let asset = asset_here("omp-{os}-{arch}{exe}").expect("a supported platform");
-            assert!(!asset.contains('{'), "{asset}");
-            assert_eq!(asset.ends_with(".exe"), cfg!(windows), "{asset}");
+        fn every_release_profile_names_this_hosts_binary() {
+            for p in PROFILES {
+                if let Package::GithubRelease { assets, .. } = p.package {
+                    let asset = asset_here(assets).expect(p.source);
+                    assert_eq!(asset.ends_with(".exe"), cfg!(windows), "{asset}");
+                }
+            }
         }
     }
 }

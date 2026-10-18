@@ -1066,7 +1066,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
             has_exit_signal: true,
             // The header `SessionStart` decodes once per transcript life. A
             // `--resume` fires the bridge's `session_start` on the SAME id
-            // (probe-verified at this row's `verified_version`), so an ended
+            // (`omp/fixtures/resume-recorded`), so an ended
             // session CAN walk back in — through the SessionStart arm's
             // ordinary parentless re-registration, not this prompt-resurrect
             // flag.

@@ -135,7 +135,8 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
 }
 
 /// The field census proper: each kind a committed capture has must be produced
-/// by some run, unless it is a hook `owed_hooks` names, and each read field of
+/// by some run, unless it is a hook `owed_hooks` names or a transcript kind
+/// whose every read field, `/type` included, `owed_fields` names; each read field of
 /// a produced kind carried, unless `owed_fields` names it; an owed field
 /// carried is Stale. A committed transcript line the strip left untyped has no
 /// kind to match: some run's transcript line must carry all of its read fields
@@ -153,8 +154,6 @@ fn census(
         let Some(seen) = carried.by_kind.get(kind) else {
             let owed = match kind.strip_prefix(HOOK) {
                 Some(h) => owed_hooks.contains(&h),
-                // A transcript kind has no hook name to owe, so it is owed
-                // through every field a decoder reads in it.
                 None => {
                     !paths.is_empty()
                         && paths
