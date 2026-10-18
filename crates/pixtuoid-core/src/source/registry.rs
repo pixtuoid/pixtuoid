@@ -597,7 +597,6 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             // The rollout filename's trailing UUID (the stem also has a timestamp).
             id_from_path: codex::codex_id_from_path,
             path_filter: accept_all_paths,
-            // `payload.cwd`, on the head `session_meta` and each `turn_context`.
             cwd_extractor: codex::extract_codex_cwd,
             parent_extractor: Some(codex::extract_codex_parent),
         }),

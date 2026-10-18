@@ -168,8 +168,7 @@ fn dispatched(event: AgentEvent) -> AgentEvent {
     }
 }
 
-/// Codex rollouts carry the cwd ONLY on the head `session_meta` line, nested
-/// under `payload`.
+/// `payload.cwd`, on the head `session_meta` and each `turn_context`.
 pub(crate) fn extract_codex_cwd(v: &Value) -> Option<PathBuf> {
     v.get("payload")?.get("cwd")?.as_str().map(PathBuf::from)
 }
