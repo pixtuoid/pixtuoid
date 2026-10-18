@@ -16,13 +16,24 @@ fn lines(cli: &str, name: &str) -> Vec<String> {
     )
 }
 
+/// The recording's transcript, under the session dir copilot keys the session
+/// on: its path relative to `delegation/fixtures/copilot`.
+fn copilot_transcript() -> String {
+    let dir = super::captures::sources_root().join("delegation/fixtures/copilot");
+    let session = std::fs::read_dir(&dir)
+        .expect("the copilot recording")
+        .filter_map(Result::ok)
+        .find(|e| e.path().is_dir())
+        .expect("one session dir")
+        .file_name();
+    format!("{}/events.jsonl", session.to_string_lossy())
+}
+
 fn copilot_events() -> Vec<AgentEvent> {
-    // copilot keys the session on the transcript's PARENT dir, so the logical
-    // path has to carry the session id the capture ran under.
-    let logical = "d28d6fbd-b0cb-421a-abaa-1240ee4dae97/events.jsonl";
-    let d = Drive::transcript("copilot", logical)
+    let logical = copilot_transcript();
+    let d = Drive::transcript("copilot", &logical)
         .expect("copilot has a line decoder")
-        .lines(lines("copilot", "events.jsonl"));
+        .lines(lines("copilot", &logical));
     d.assert_clean("copilot delegation transcript");
     d.events
 }
@@ -134,7 +145,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
         (
             "copilot",
             copilot_events(),
-            lines("copilot", "events.jsonl"),
+            lines("copilot", &copilot_transcript()),
             "task",
         ),
         ("omp", omp_events(), lines("omp", "parent.jsonl"), "task"),

@@ -1,12 +1,13 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "unknown",
-  "captured": "2026-08-15",
-  "command": "copilot (interactive TUI, driven under a pty), prompted to delegate with its `task` tool",
-  "note": "First real bytes through copilot's Task path — claimed by NAME (`task`), deliberately not by a `subagent_type` key, so a model-authored arg cannot spoof an ordinary tool into a delegation and drain active_tasks. Flat here, unlike the conformance tree: copilot keys on the transcript's PARENT DIR, and this module hands the decoder that logical path explicitly rather than reproducing the directory. The recorder's own roster and instruction attachments rode fields no decoder reads and are stripped (see `deidentified`).",
+  "version": "GitHub Copilot CLI 1.0.98.",
+  "captured": "2026-10-18",
+  "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 381
-  }
+    "blanked": 102
+  },
+  "aimock": "1.44.0",
+  "script": "tests/sources/hermetic/copilot/subagent.json"
 }

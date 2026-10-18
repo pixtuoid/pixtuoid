@@ -1,0 +1,14 @@
+{
+  "fixtures": [
+    {
+      "match": {"model": "gpt-4.1", "hasToolResult": false},
+      "response": {"toolCalls": [{"name": "view", "arguments": {"path": "{workspace}/NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"model": "gpt-4.1", "toolResultContains": "{note}"},
+      "response": {"content": "pong"},
+      "latency": 300
+    }
+  ]
+}

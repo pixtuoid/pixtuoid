@@ -307,8 +307,8 @@ pub fn decode_copilot_line(
             out
         }
         PERMISSION_REQUESTED => {
-            let reason = data
-                .and_then(|d| d.get("permissionRequest"))
+            let request = data.and_then(|d| d.get("permissionRequest"));
+            let reason = request
                 .and_then(|p| str_at(p, "kind"))
                 // Capped at the decode boundary: `kind` is raw wire content that
                 // persists in the slot + egresses on the headless summary.
@@ -317,7 +317,11 @@ pub fn decode_copilot_line(
             vec![AgentEvent::Waiting {
                 agent_id: acting,
                 reason,
-                tool_use_id: None,
+                // The gated call (#951), so its own end resolves the wait.
+                tool_use_id: request
+                    .and_then(|p| str_at(p, "toolCallId"))
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned),
             }]
         }
         // On APPROVED the gated tool's own `tool.execution_start` follows and
@@ -877,11 +881,18 @@ mod tests {
         match &decode(req)[..] {
             [
                 AgentEvent::Waiting {
-                    agent_id, reason, ..
+                    agent_id,
+                    reason,
+                    tool_use_id,
                 },
             ] => {
                 assert_eq!(*agent_id, root());
                 assert!(reason.contains("shell"), "reason names the gate: {reason}");
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some("call_K8WLZkwufHsI9bTvkZmMKec2"),
+                    "the wait names the call it gates"
+                );
             }
             other => panic!("expected Waiting, got {other:?}"),
         }

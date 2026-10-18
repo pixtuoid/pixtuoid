@@ -394,17 +394,23 @@ fn judge(
     }
 
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission => 1,
+        Shape::ToolRun | Shape::Permission | Shape::Denial => 1,
         Shape::Subagent => 2,
     };
-    started_in(&events, &manifest.capture.workspace, sessions, findings);
+    started_in(
+        &events,
+        &manifest.capture.workspace,
+        sessions,
+        p.children_inherit_cwd,
+        findings,
+    );
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
-        Shape::Permission => permission(&events, &reached, findings),
+        Shape::Permission | Shape::Denial => permission(&events, &reached, findings),
         Shape::Subagent => subagent(&events, &reached, findings),
     }
     let shown = match scenario.shape {
-        Shape::ToolRun | Shape::Subagent => "active",
+        Shape::ToolRun | Shape::Denial | Shape::Subagent => "active",
         Shape::Permission => "waiting",
     };
     judge_scene(p, scene, shown, findings);
@@ -415,6 +421,7 @@ fn started_in(
     events: &[AgentEvent],
     workspace: &Path,
     sessions: usize,
+    children_inherit_cwd: bool,
     findings: &mut Vec<(Label, String)>,
 ) {
     let ids: BTreeSet<_> = events.iter().map(AgentEvent::agent_id).collect();
@@ -466,7 +473,10 @@ fn started_in(
         }
         // A child's registration may carry no cwd when another event keyed on
         // it names one (grok's spawn line, whose `subagent_start` does).
-        let own = named(agent_id);
+        let own = match parent_id {
+            Some(parent) if children_inherit_cwd && named(agent_id).is_empty() => named(parent),
+            _ => named(agent_id),
+        };
         if own.is_empty() {
             findings.push((Label::Fail, "a child's cwd was never named".into()));
         }
@@ -738,6 +748,11 @@ mod tests {
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
     const DS_DELEGATE_SCENE: &str = "agents=[ds\u{b7}proj@0:active(Delegating), \
                                      ds\u{b7}proj@1:active(read)]\nagents=[] daemons=[]\n";
+    const CP_SCENE: &str = "agents=[cp\u{b7}proj@0:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_DENIAL_SCENE: &str =
+        "agents=[cp\u{b7}proj@0:active(bash: rm NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
+                                     reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
     const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
     const GK_DELEGATE_SCENE: &str = "agents=[gk\u{b7}proj@0:active(Delegating), \
                                      Read the note@1:active(read_file)]\nagents=[] daemons=[]\n";
@@ -963,6 +978,40 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_copilot_run_passes_each_scenario() {
+        for (shape, scene) in [
+            (Shape::ToolRun, CP_SCENE),
+            (Shape::Denial, CP_DENIAL_SCENE),
+            (Shape::Subagent, CP_DELEGATE_SCENE),
+        ] {
+            let d = recorded("copilot", shape, scene);
+            let v = verify(d.path()).expect("verify");
+            assert_eq!(
+                v.label(),
+                Label::Pass,
+                "{}: {:?}",
+                shape.name(),
+                v.findings()
+            );
+        }
+    }
+
+    #[test]
+    fn a_denial_whose_waited_call_never_ends_fails() {
+        let d = recorded("copilot", Shape::Denial, CP_DENIAL_SCENE);
+        for t in jsonl_files_under(d.path()) {
+            let text = std::fs::read_to_string(&t).expect("read");
+            let kept: Vec<&str> = text
+                .lines()
+                .filter(|l| !l.contains(r#""type":"tool.execution_complete""#))
+                .collect();
+            std::fs::write(&t, kept.join("\n") + "\n").expect("write");
+        }
+        let v = verify(d.path()).expect("verify");
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+    }
+
+    #[test]
     fn a_recorded_claude_code_tool_run_passes() {
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         let v = verify(d.path()).expect("verify");
@@ -1020,7 +1069,7 @@ mod tests {
         let ws = Path::new("/w");
         let judged = |events: &[AgentEvent]| {
             let mut f = Vec::new();
-            started_in(events, ws, 2, &mut f);
+            started_in(events, ws, 2, false, &mut f);
             Verdict::new(f)
         };
         let root = start("p", "/w", None);
@@ -1028,9 +1077,22 @@ mod tests {
         let child = start("c", "", Some("p"));
         let v = judged(&[root.clone(), child.clone(), backfill("c", "/w")]);
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
-        // The root naming the workspace does not stand in for the child.
+        // The root naming the workspace does not stand in for the child, unless
+        // the CLI's children run where their parent does.
         let v = judged(&[root.clone(), child.clone()]);
         assert!(has(&v, Label::Fail, "never named"), "{:?}", v.findings());
+        let mut f = Vec::new();
+        started_in(&[root.clone(), child.clone()], ws, 2, true, &mut f);
+        assert_eq!(Verdict::new(f).label(), Label::Pass);
+        let mut f = Vec::new();
+        started_in(
+            &[start("p", "/elsewhere", None), child.clone()],
+            ws,
+            2,
+            true,
+            &mut f,
+        );
+        assert!(has(&Verdict::new(f), Label::Fail, "is not the workspace"));
         // A back-filled cwd is held to the workspace too.
         let v = judged(&[root, child, backfill("c", "/elsewhere")]);
         assert!(

@@ -83,6 +83,10 @@ pub enum Shape {
     /// A turn whose tool call needs an approval the run cannot give: the slot
     /// waits on it, then the refused tool ends.
     Permission,
+    /// A turn whose tool call needs an approval that the CLI, with no one to
+    /// ask, refuses on the spot: the slot waits on the call it names, and that
+    /// call ends. The wait lasts no frame, so the scene shows the tool, not it.
+    Denial,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
@@ -94,6 +98,7 @@ impl Shape {
         match self {
             Self::ToolRun => "tool-run",
             Self::Permission => "permission",
+            Self::Denial => "denial",
             Self::Subagent => "subagent",
         }
     }
@@ -160,6 +165,9 @@ pub struct Profile {
     /// yet, as `(kind, path)` the field census names them. Shrink-only: a run
     /// that carries one is Stale.
     pub(crate) not_yet_fields: &'static [(&'static str, &'static str)],
+    /// Whether a child session names no cwd of its own, running where its
+    /// parent does: the judge then holds the parent's to the workspace.
+    pub(crate) children_inherit_cwd: bool,
 }
 
 impl Profile {
@@ -338,6 +346,7 @@ pub const PROFILES: &[Profile] = &[
             // (`CopilotKit/aimock` `src/messages.ts:405-414` at v1.43.0).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
+        children_inherit_cwd: false,
     },
     Profile {
         source: "codex",
@@ -419,6 +428,7 @@ sandbox = "unelevated"
                 "/payload/info/last_token_usage/reasoning_output_tokens",
             ),
         ],
+        children_inherit_cwd: false,
     },
     // opencode's cites are at v2.0.28, the release that added the system
     // config below.
@@ -506,6 +516,7 @@ sandbox = "unelevated"
             ("hook:session.created", "/data/parentID"),
             ("hook:session.execution.started", "/data/parentID"),
         ],
+        children_inherit_cwd: false,
     },
     // dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
     Profile {
@@ -583,6 +594,7 @@ sandbox = "unelevated"
         not_yet: &[],
         event_name: dsh_event,
         not_yet_fields: &[],
+        children_inherit_cwd: false,
     },
     // kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.0.1`.
     Profile {
@@ -625,6 +637,7 @@ sandbox = "unelevated"
         event_name: hook_event_name,
         // A Bash call's; the scripted turn reads a file.
         not_yet_fields: &[("hook:PreToolUse", "/tool_input/command")],
+        children_inherit_cwd: false,
     },
     // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
     // nearest 1.0.25: the repo tags no release.
@@ -723,6 +736,7 @@ sandbox = "unelevated"
         event_name: grok_event,
         // A shell call's; the scripted turns read a file and spawn a child.
         not_yet_fields: &[("hook:PreToolUse", "/toolInput/command")],
+        children_inherit_cwd: false,
     },
     // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
     Profile {
@@ -791,6 +805,81 @@ model = "deepseek-v4-flash"
         event_name: event_field,
         // A bash call's; the scripted turn reads a file.
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
+        children_inherit_cwd: false,
+    },
+    // copilot is closed source: its cites are docs.github.com and the
+    // `@github/copilot-<platform>@1.0.98` binaries.
+    Profile {
+        source: "copilot",
+        package: Package::Npm("@github/copilot"),
+        invocation: &["copilot", "-p", "{prompt}"],
+        // The BYOK provider, with GitHub's servers kept out
+        // (`/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models`).
+        env: &[
+            ("COPILOT_OFFLINE", "true"),
+            ("COPILOT_PROVIDER_BASE_URL", AIMOCK_V1),
+            ("COPILOT_PROVIDER_API_KEY", "{key}"),
+            ("COPILOT_MODEL", "gpt-4.1"),
+        ],
+        homes: &[],
+        // Managed settings and the policy directory, and on Windows the
+        // registry policy beside them: each a string of the platform's
+        // `runtime.node`.
+        system_config: PerOs {
+            unix: &[
+                HostConfig::Path(
+                    "/Library/Application Support/GitHubCopilot/managed-settings.json",
+                ),
+                HostConfig::Path("/etc/github-copilot/managed-settings.json"),
+                HostConfig::Path("/etc/github-copilot/policy.d"),
+            ],
+            windows: &[
+                HostConfig::Registry(r"HKLM\SOFTWARE\Policies\GitHubCopilot"),
+                HostConfig::Registry(r"HKLM\Software\Policies\GitHub\Copilot"),
+                HostConfig::Path(r"{FOLDERID_ProgramData}\GitHub\Copilot\policy.d"),
+            ],
+        },
+        // Instructions stop at the repository root
+        // (`/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions`),
+        // which the recorder's `git init` makes the workspace.
+        ancestor_config: &[],
+        config: &[],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                expects: &[],
+                fixture: "fixtures/copilot/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Denial,
+                expects: &[],
+                fixture: "fixtures/copilot/denial-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                expects: &[],
+                fixture: "delegation/fixtures/copilot",
+            },
+        ],
+        script_vars: &[],
+        not_yet: &[],
+        event_name: hook_event_name,
+        // GitHub's billing response carries them (1.0.98's bundled
+        // `cli-main.js` reads `copilotUsage.tokenDetails`); a BYOK run has none.
+        not_yet_fields: &[
+            (
+                "tx:session.shutdown",
+                "/data/tokenDetails/cache_write/tokenCount",
+            ),
+            ("tx:session.shutdown", "/data/tokenDetails/input/tokenCount"),
+            (
+                "tx:session.shutdown",
+                "/data/tokenDetails/output/tokenCount",
+            ),
+        ],
+        // A `subagent.started` child runs in-process, in the parent's transcript,
+        // and no event of it names a cwd.
+        children_inherit_cwd: true,
     },
 ];
 
@@ -801,7 +890,6 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     ("antigravity", Absence::AwaitingProfile),
     ("codewhale", Absence::AwaitingProfile),
     ("openclaw", Absence::AwaitingProfile),
-    ("copilot", Absence::AwaitingProfile),
     ("hermes", Absence::AwaitingProfile),
     ("omp", Absence::AwaitingProfile),
 ];
@@ -870,9 +958,11 @@ mod tests {
                     p.source,
                     script.display()
                 );
-                assert!(
-                    !s.expects.is_empty(),
-                    "{}: a scenario expecting nothing",
+                // A CLI pixtuoid hears only through its transcript fires no hook.
+                assert_eq!(
+                    s.expects.is_empty(),
+                    p.descriptor().hook().is_none(),
+                    "{}: a scenario expects hooks if and only if the CLI has them",
                     p.source
                 );
             }
