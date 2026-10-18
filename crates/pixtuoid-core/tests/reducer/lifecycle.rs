@@ -407,7 +407,7 @@ fn resurrect_in_place_clears_stale_active_tasks_so_fresh_session_hooks_apply() {
             parent_id: None,
         },
         t0 + Duration::from_millis(2_500),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     assert!(
         scene.agents.get(&id).unwrap().exiting_at.is_none(),
@@ -491,7 +491,7 @@ fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
             parent_id: None,
         },
         t0 + Duration::from_millis(2_400),
-        Transport::Jsonl,
+        Transport::Hook,
     );
     let child = AgentId::from_parts("claude-code", "/p/resurr-b1/subagents/agent-1.jsonl");
     r.apply(
@@ -1465,7 +1465,7 @@ fn hook_identity_does_not_clobber_existing_identity() {
 }
 
 #[test]
-fn hook_identity_respects_session_end_tombstone() {
+fn hook_identity_respects_the_straggler_window() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "exited-invisible");
@@ -1486,7 +1486,7 @@ fn hook_identity_respects_session_end_tombstone() {
     );
     assert!(
         !scene.agents.contains_key(&id),
-        "a tombstoned id must not be re-registered by a reordered Identity"
+        "an id that just ended must not be re-registered by a reordered Identity"
     );
 }
 

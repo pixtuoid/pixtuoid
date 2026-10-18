@@ -4,3 +4,9 @@ paths:
       # GitHub supports concurrency.queue; actionlint does not yet know the
       # field. Drop when https://github.com/rhysd/actionlint/pull/654 ships.
       - 'unexpected key "queue" for "concurrency" section'
+  .github/workflows/hermetic*.yml:
+    ignore:
+      # GitHub enforces `cache-mode` on a job's cache token; actionlint does not
+      # yet know the key. Drop when https://github.com/rhysd/actionlint/pull/745 ships.
+      - 'unexpected key "cache-mode" for "workflow" section'
+      - 'unexpected key "cache-mode" for "job" section'

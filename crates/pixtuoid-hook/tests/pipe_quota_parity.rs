@@ -46,7 +46,12 @@ fn shim_stdin_cap_and_daemon_pipe_quota_stay_in_lockstep() {
 fn const_product(src: &str, prefix: &str) -> u64 {
     let line = src
         .lines()
-        .find_map(|l| l.trim().strip_prefix(prefix))
+        .find_map(|l| {
+            let l = l.trim();
+            l.strip_prefix("pub(crate) ")
+                .unwrap_or(l)
+                .strip_prefix(prefix)
+        })
         .unwrap_or_else(|| panic!("`{prefix}` definition changed/moved — re-point this pin"));
     line.trim_end_matches(';')
         .split('*')

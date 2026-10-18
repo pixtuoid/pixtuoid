@@ -22,13 +22,14 @@ shape=$(jq -r '
     else
         (map(.id) | group_by(.)[] | select(length > 1) | "duplicate id \(.[0])"),
         (.[] | (.id // "?") as $id
-            | ((keys - ["id", "file", "why", "assert", "break", "expected"])[] | "\($id): unknown key `\(.)`"),
+            | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"),
               ((["id", "file", "why", "assert", "break"] - keys)[] | "\($id): missing `\(.)`"),
               (select((.id | text) and (.why | text) and (.assert | text) | not)
                   | "\($id): id, why and assert must be non-empty strings"),
               (select(.file | texts | not) | "\($id): file must be a path or a non-empty list of paths"),
               (select(.break | texts | not) | "\($id): break must be a jq edit or a non-empty list of them"),
-              (select(has("expected") and (.expected | type) != "string") | "\($id): expected must be a string"))
+              (select(has("expected") and (.expected | type) != "string") | "\($id): expected must be a string"),
+              (select(has("covers") and (.covers | text | not)) | "\($id): covers must be a non-empty string"))
     end' <<<"$contracts")
 if [[ -n $shape ]]; then
     printf 'error: %s: %s\n' "$contracts_path" "$shape" >&2
@@ -45,6 +46,16 @@ for ((i = 0; i < count; i++)); do
     breaks=$(jq -c ".[$i].break | [.] | flatten | .[]" <<<"$contracts")
     expected=$(jq -r ".[$i].expected // \"\"" <<<"$contracts")
     files=$(jq -r ".[$i].file | [.] | flatten | .[]" <<<"$contracts")
+    # A contract over every file holding `covers` must list each: a new file
+    # holding it would otherwise go unchecked with the contract still green.
+    covers=$(jq -r ".[$i].covers // \"\"" <<<"$contracts")
+    if [[ -n $covers ]]; then
+        unlisted=$(comm -23 <(git grep -l --untracked -F -e "$covers" -- .github | sort) <(sort <<<"$files"))
+        if [[ -n $unlisted ]]; then
+            printf 'error: %s does not list these files holding %s:\n%s\n' "$id" "$covers" "$unlisted" >&2
+            failed=1
+        fi
+    fi
     while IFS= read -r file; do
         # yq's `==` is false for any two maps or arrays, identical ones included,
         # so yq only turns the file into JSON and jq makes every comparison.

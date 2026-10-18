@@ -13,6 +13,8 @@ use serde_json::Value;
 use crate::harness::CaptureRecord;
 use crate::source::registry;
 
+pub mod bump;
+pub mod pin;
 pub mod verify;
 
 /// The key a profile hands its CLI for its scripted model: aimock accepts
@@ -22,10 +24,47 @@ pub const DUMMY_KEY: &str = "hermetic-dummy-key";
 /// The scripted model's `/v1` base, as a profile's env spells it.
 const AIMOCK_V1: &str = "http://127.0.0.1:{port}/v1";
 
-/// What a `system_config` path spells the operator's user name as.
+/// What a Unix [`Profile::system_config`] path spells the operator's user name as.
 pub const USER_PLACEHOLDER: &str = "{user}";
 /// What a script spells [`CAPTURE_NOTE`](crate::harness::CAPTURE_NOTE) as.
-pub const NOTE_PLACEHOLDER: &str = "{note}";
+pub(crate) const NOTE_PLACEHOLDER: &str = "{note}";
+/// What a script spells the workspace the recorder runs the CLI in as.
+pub(crate) const WORKSPACE_PLACEHOLDER: &str = "{workspace}";
+/// What a script spells the platform's shell tool as, a profile's
+/// [`Profile::script_vars`] naming it.
+pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = "{shell_tool}";
+
+/// A fact that differs between Unix and Windows. Both arms are plain data, so
+/// a test on any host reads both, as `platform::resolve_user_home_opt` takes
+/// its `windows` flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PerOs<T> {
+    /// macOS and Linux.
+    pub unix: T,
+    /// Windows.
+    pub windows: T,
+}
+
+impl<T> PerOs<T> {
+    /// The arm for the platform this was built for.
+    pub const fn here(&self) -> &T {
+        if cfg!(windows) {
+            &self.windows
+        } else {
+            &self.unix
+        }
+    }
+}
+
+/// Where a CLI reads policy or config that no sandbox variable redirects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostConfig {
+    /// A path; a Unix one may spell [`USER_PLACEHOLDER`], a Windows one start
+    /// with a placeholder [`crate::harness::host::known_folders_expanded`] resolves.
+    Path(&'static str),
+    /// A Windows registry key, `HKLM\…` or `HKCU\…`.
+    Registry(&'static str),
+}
 
 /// How users install the CLI, so the tier runs the artifact they run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,12 +136,12 @@ pub struct Profile {
     /// `{key}` expand.
     pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
-    pub homes: &'static [&'static str],
-    /// Fixed system paths the CLI reads policy or config from, which no home
-    /// redirects: a run on a machine that has one is not hermetic.
-    /// [`USER_PLACEHOLDER`] is the operator's user name. A macOS managed-preferences domain whose
-    /// plist path upstream does not fix is not checked.
-    pub system_config: &'static [&'static str],
+    pub(crate) homes: &'static [&'static str],
+    /// Fixed places the CLI reads policy or config from, which no home
+    /// redirects: a run on a machine that has one is not hermetic. A macOS
+    /// managed-preferences domain whose plist path upstream does not fix is not
+    /// checked.
+    pub system_config: PerOs<&'static [HostConfig]>,
     /// Names the CLI reads from the workspace's ancestor directories, which
     /// sit outside the sandbox: a run under one that has any is not hermetic.
     pub ancestor_config: &'static [&'static str],
@@ -110,6 +149,8 @@ pub struct Profile {
     pub config: &'static [ConfigFile],
     /// The scripted turns.
     pub scenarios: &'static [Scenario],
+    /// Placeholders the scenario scripts spell, each the platform's value.
+    pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
     /// Registered hooks no scenario expects yet. Shrink-only: a run that fires
     /// one is Stale (`verify::verify_source`).
     pub not_yet: &'static [&'static str],
@@ -138,6 +179,22 @@ impl Profile {
             .home_env
             .into_iter()
             .chain(self.homes.iter().copied())
+    }
+
+    /// Every placeholder this profile's scripts may spell, with its value on
+    /// this platform: `workspace` as the CLI reports its cwd.
+    pub fn script_values(&self, workspace: &str) -> Vec<(&'static str, String)> {
+        [
+            (WORKSPACE_PLACEHOLDER, workspace.to_owned()),
+            (NOTE_PLACEHOLDER, crate::harness::CAPTURE_NOTE.to_owned()),
+        ]
+        .into_iter()
+        .chain(
+            self.script_vars
+                .iter()
+                .map(|(k, v)| (*k, (*v.here()).to_owned())),
+        )
+        .collect()
     }
 }
 
@@ -237,12 +294,20 @@ pub const PROFILES: &[Profile] = &[
             ("CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL", "1"),
         ],
         homes: &[],
-        // Managed settings, managed MCP servers and a managed CLAUDE.md, on
-        // macOS and Linux (code.claude.com/docs/en/managed-settings).
-        system_config: &[
-            "/Library/Application Support/ClaudeCode",
-            "/etc/claude-code",
-        ],
+        // Managed settings, managed MCP servers and a managed CLAUDE.md, and
+        // on Windows the registry policy beside them
+        // (code.claude.com/docs/en/managed-settings).
+        system_config: PerOs {
+            unix: &[
+                HostConfig::Path("/Library/Application Support/ClaudeCode"),
+                HostConfig::Path("/etc/claude-code"),
+            ],
+            windows: &[
+                HostConfig::Path(r"C:\Program Files\ClaudeCode"),
+                HostConfig::Registry(r"HKLM\SOFTWARE\Policies\ClaudeCode"),
+                HostConfig::Registry(r"HKCU\SOFTWARE\Policies\ClaudeCode"),
+            ],
+        },
         // Memory files up to `/`, and AGENTS.md where none is found
         // (code.claude.com/docs/en/memory).
         ancestor_config: &["CLAUDE.md", "CLAUDE.local.md", ".claude", "AGENTS.md"],
@@ -252,6 +317,7 @@ pub const PROFILES: &[Profile] = &[
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
             fixture: "fixtures/claude-code/tool-run-hermetic",
         }],
+        script_vars: &[],
         not_yet: &[
             "Notification",
             "PermissionRequest",
@@ -291,12 +357,24 @@ pub const PROFILES: &[Profile] = &[
         homes: &[],
         // System config, requirements and managed config; `CODEX_HOME` never
         // reaches them (`codex-rs/config/src/loader/mod.rs:69`, `:102-107`,
-        // `layer_io.rs:222-227`).
-        system_config: &["/etc/codex"],
+        // `layer_io.rs:222-227`). On Windows they live in the known
+        // ProgramData (`:72`, `:823-885`), and skills come from the known
+        // profile, which no variable moves (`ext/skills/src/host_roots.rs:18-36`).
+        system_config: PerOs {
+            unix: &[HostConfig::Path("/etc/codex")],
+            windows: &[
+                HostConfig::Path(r"{FOLDERID_ProgramData}\OpenAI\Codex"),
+                HostConfig::Path(r"{FOLDERID_Profile}\.agents\skills"),
+            ],
+        },
         // Its project config and AGENTS.md stop at the project root
         // (`codex-rs/config/src/loader/mod.rs:1662`, `core/src/agents_md.rs:8-12`),
         // which the recorder's `git init` makes the workspace.
         ancestor_config: &[],
+        // `[windows]` is what codex's own setup writes for its non-admin
+        // sandbox (`codex-rs/tui/src/config_update.rs:111-126`), without which
+        // read-only exec is Forbidden (`core/src/exec_policy.rs:799-806`);
+        // only Windows reads it (`sandboxing/src/manager.rs:67-81`).
         config: &[ConfigFile {
             home: "CODEX_HOME",
             path: "config.toml",
@@ -309,6 +387,9 @@ name = "aimock"
 base_url = "http://127.0.0.1:{port}/v1"
 env_key = "HERMETIC_API_KEY"
 wire_api = "responses"
+
+[windows]
+sandbox = "unelevated"
 "#,
         }],
         scenarios: &[Scenario {
@@ -323,6 +404,7 @@ wire_api = "responses"
             ],
             fixture: "fixtures/codex/tool-run-hermetic",
         }],
+        script_vars: &[],
         not_yet: &["SubagentStart", "SubagentStop", "PermissionRequest"],
         event_name: hook_event_name,
         // aimock's Responses usage has no token details (`CopilotKit/aimock`
@@ -361,15 +443,21 @@ wire_api = "responses"
             ("OPENCODE_DISABLE_MODELS_FETCH", "1"),
             ("OPENCODE_DISABLE_AUTOUPDATE", "1"),
         ],
-        homes: &["OPENCODE_CONFIG_DIR"],
+        // On Windows its system config is under `env.ProgramData`
+        // (`packages/core/src/config/discovery.ts:27-31`), so a sandboxed
+        // ProgramData holds none.
+        homes: &["OPENCODE_CONFIG_DIR", "ProgramData"],
         // System config and managed preferences
         // (`packages/core/src/config/discovery.ts:27-38`).
-        system_config: &[
-            "/Library/Application Support/opencode",
-            "/etc/opencode",
-            "/Library/Managed Preferences/ai.opencode.managed.plist",
-            "/Library/Managed Preferences/{user}/ai.opencode.managed.plist",
-        ],
+        system_config: PerOs {
+            unix: &[
+                HostConfig::Path("/Library/Application Support/opencode"),
+                HostConfig::Path("/etc/opencode"),
+                HostConfig::Path("/Library/Managed Preferences/ai.opencode.managed.plist"),
+                HostConfig::Path("/Library/Managed Preferences/{user}/ai.opencode.managed.plist"),
+            ],
+            windows: &[],
+        },
         // Project config up to `/` (`packages/core/src/config/discovery.ts:12`,
         // `:80`); its AGENTS.md walk stops at the git worktree
         // (`config/plugin/instruction.ts:37`), the workspace the recorder inits.
@@ -404,6 +492,7 @@ wire_api = "responses"
             ],
             fixture: "fixtures/opencode/tool-run-hermetic",
         }],
+        script_vars: &[],
         not_yet: &[
             "session.deleted",
             "session.execution.failed",
@@ -433,7 +522,10 @@ wire_api = "responses"
             ("DSH_TELEMETRY_DISABLED", "1"),
         ],
         homes: &["DSH_HOME"],
-        system_config: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
         // AGENTS.md and CLAUDE.md stop at the nearest `.git`
         // (`packages/context/agent-instructions/README.md:36`), which the
         // recorder's `git init` makes the workspace.
@@ -479,6 +571,15 @@ wire_api = "responses"
                 fixture: "delegation/fixtures/dsh",
             },
         ],
+        // The shell tool win32 mounts in bash's place, which alone can
+        // escalate there.
+        script_vars: &[(
+            SHELL_TOOL_PLACEHOLDER,
+            PerOs {
+                unix: "bash",
+                windows: "pwsh",
+            },
+        )],
         not_yet: &[],
         event_name: dsh_event,
         not_yet_fields: &[],
@@ -493,13 +594,16 @@ wire_api = "responses"
         // update-check switches (`:27`, `:183`).
         env: &[
             ("KIMI_MODEL_NAME", "kimi-k2"),
-            ("KIMI_MODEL_BASE_URL", "http://127.0.0.1:{port}/v1"),
+            ("KIMI_MODEL_BASE_URL", AIMOCK_V1),
             ("KIMI_MODEL_API_KEY", "{key}"),
             ("KIMI_DISABLE_TELEMETRY", "1"),
             ("KIMI_CODE_NO_AUTO_UPDATE", "1"),
         ],
         homes: &[],
-        system_config: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
         // AGENTS.md and project skills stop at the git work tree
         // (`packages/agent-core-v2/src/agent/profile/context.ts:173`,
         // `packages/agent-core-v2/src/features/skill/catalog/skillRoots.ts:73`),
@@ -511,6 +615,7 @@ wire_api = "responses"
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
             fixture: "fixtures/kimi/tool-run-hermetic",
         }],
+        script_vars: &[],
         not_yet: &[
             "PostToolUseFailure",
             "PermissionRequest",
@@ -562,12 +667,17 @@ wire_api = "responses"
         ],
         homes: &[],
         // Its system config, and the Claude Code managed settings it imports
-        // (`crates/codegen/xai-grok-config/src/paths.rs:5-9`, `:23-29`).
-        system_config: &[
-            "/etc/grok",
-            "/Library/Application Support/ClaudeCode/managed-settings.json",
-            "/etc/claude-code/managed-settings.json",
-        ],
+        // (`crates/codegen/xai-grok-config/src/paths.rs:5-9`, `:23-29`): none
+        // on Windows, where every home path is std's, which reads USERPROFILE
+        // (`crates/codegen/xai-dirs/src/lib.rs:32-36`).
+        system_config: PerOs {
+            unix: &[
+                HostConfig::Path("/etc/grok"),
+                HostConfig::Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+                HostConfig::Path("/etc/claude-code/managed-settings.json"),
+            ],
+            windows: &[],
+        },
         // Instructions, rules and project config stop at the git work tree
         // (`crates/codegen/xai-grok-agent/src/repo.rs:23-52`), which the
         // recorder's `git init` makes the workspace.
@@ -601,6 +711,7 @@ wire_api = "responses"
                 fixture: "grok/fixtures/subagent-hermetic",
             },
         ],
+        script_vars: &[],
         not_yet: &[
             "PostToolUseFailure",
             "PermissionDenied",
@@ -624,7 +735,10 @@ wire_api = "responses"
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
         homes: &["REASONIX_HOME"],
-        system_config: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
         // Instructions stop at the nearest git root
         // (`internal/state/instruction/resolver.go:80-84`), which the
         // recorder's `git init` makes the workspace; `./reasonix.toml` is the
@@ -672,6 +786,7 @@ model = "deepseek-v4-flash"
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
         ],
+        script_vars: &[],
         not_yet: &["PermissionRequest", "Notification"],
         event_name: event_field,
         // A bash call's; the scripted turn reads a file.
@@ -849,24 +964,43 @@ mod tests {
         }
     }
 
+    /// Lexical, on both arms, so a Unix host catches a misspelled Windows row:
+    /// a misspelled placeholder or hive is checked as a place that never exists.
     #[test]
     fn config_outside_the_sandbox_is_spelled_as_its_reader_expands_it() {
+        use crate::harness::host::KnownFolder;
         for p in PROFILES {
-            // Unix paths, as the tier runs only on Unix: `Path::is_absolute`
-            // would want a drive on Windows.
-            for path in p.system_config {
-                assert!(
-                    path.starts_with('/'),
-                    "{}: {path} is not absolute",
-                    p.source
-                );
-                // A misspelled placeholder would be checked as a literal path
-                // that never exists.
+            for row in p.system_config.unix {
+                let HostConfig::Path(path) = row else {
+                    panic!("{}: {row:?} on Unix", p.source);
+                };
+                assert!(path.starts_with('/'), "{}: {path}", p.source);
                 assert!(
                     !path.replace(USER_PLACEHOLDER, "").contains(['{', '}']),
                     "{}: {path} spells a placeholder other than {USER_PLACEHOLDER}",
                     p.source
                 );
+            }
+            for row in p.system_config.windows {
+                match row {
+                    HostConfig::Path(path) => {
+                        let rest = KnownFolder::ALL
+                            .iter()
+                            .find_map(|f| path.strip_prefix(f.placeholder()))
+                            .or_else(|| path.get(2..).filter(|_| path.as_bytes()[1] == b':'))
+                            .unwrap_or_else(|| panic!("{}: {path} is not absolute", p.source));
+                        assert!(
+                            rest.starts_with('\\') && !rest.contains(['{', '}', '/']),
+                            "{}: {path}",
+                            p.source
+                        );
+                    }
+                    HostConfig::Registry(key) => assert!(
+                        ["HKLM\\", "HKCU\\"].iter().any(|h| key.starts_with(h)),
+                        "{}: {key} names no hive",
+                        p.source
+                    ),
+                }
             }
             for name in p.ancestor_config {
                 assert_eq!(
@@ -875,6 +1009,42 @@ mod tests {
                     "{}: {name} is not one name",
                     p.source
                 );
+            }
+        }
+    }
+
+    /// A script placeholder no profile declares reaches the CLI as a literal;
+    /// one declared and never spelled is dead.
+    #[test]
+    fn every_script_placeholder_is_declared_and_spelled() {
+        for p in PROFILES {
+            let mut spelled = BTreeSet::new();
+            for s in p.scenarios {
+                let text = std::fs::read_to_string(s.script(p.source)).expect("script");
+                let mut rest = text.as_str();
+                while let Some(open) = rest.find('{') {
+                    let tail = &rest[open..];
+                    let close = tail.find('}').expect("a closed brace");
+                    let word = &tail[..=close];
+                    if word[1..word.len() - 1]
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c == '_')
+                        && word.len() > 2
+                    {
+                        spelled.insert(word.to_owned());
+                    }
+                    rest = &tail[1..];
+                }
+            }
+            let declared: BTreeSet<String> = p
+                .script_values("")
+                .into_iter()
+                .map(|(k, _)| k.to_owned())
+                .collect();
+            let undeclared: Vec<_> = spelled.difference(&declared).collect();
+            assert!(undeclared.is_empty(), "{}: {undeclared:?}", p.source);
+            for (k, _) in p.script_vars {
+                assert!(spelled.contains(*k), "{}: {k} is never spelled", p.source);
             }
         }
     }

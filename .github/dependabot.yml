@@ -152,8 +152,8 @@ updates:
     cooldown:
       default-days: 7
 
-  # The hermetic tier's scripted model; the merge queue's full tier runs every
-  # profile against a bump before it lands.
+  # The hermetic tier's scripted model; the full tier runs every profile against
+  # a bump, in the queue's draft PR or on main.
   - package-ecosystem: npm
     directory: /crates/pixtuoid-core/tests/sources/hermetic/aimock
     schedule:

@@ -42,7 +42,8 @@ TARGET_DIRS = {
     "docs": ROOT / "docs/images",
     "site": ROOT / "site/public/demos",
 }
-# Outside the temp dir so --check's diff overlays survive for CI artifact upload.
+# Outside the temp dir so --check's diff overlays survive for REVIEW.md's
+# Render and look.
 DIFF_DIR = ROOT / "target/gen-check-diff"
 # --check must REGENERATE the proof posters (pixel-gated stills) but skip the
 # video encodes (presence-gated, non-byte-stable) — handlers read this flag.

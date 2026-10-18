@@ -214,18 +214,16 @@ json-schemas:
     check-jsonschema --check-metaschema "${schemas[@]}"
     echo "${#schemas[@]} JSON Schemas validated"
 
-# Offline link + anchor check (lychee) over the repo's OWN markdown: every
-# relative cross-link between the nested AGENTS.md guides + docs/ must
-# resolve, and `#anchor` fragments must exist. Directory-walk mode respects
-# .gitignore (vendored node_modules etc. auto-skipped); `--offline` = no network,
-# so it's deterministic + flake-free. External-URL decay is deliberately NOT
-# gated here (it's flaky on the PR path).
+# Link + anchor check (lychee) over the tree's markdown, hidden dirs included
+# (lychee skips them by default) and .gitignore respected: every relative link
+# must resolve and every `#anchor` exist. `--offline`, so external-URL decay is
+# not gated (it's flaky on the PR path).
 [doc('Offline link + anchor check (lychee) over the repo markdown — no network, .gitignore-aware')]
 [group('rust')]
 links:
     # Source CSS uses Vite package specifiers; its module graph belongs to the
     # site build, while this gate owns documentation links and anchors.
-    lychee --offline --include-fragments --extensions md .
+    lychee --offline --include-fragments --extensions md --hidden .
 
 # Clippy across the workspace, warnings denied.
 [group('rust')]
@@ -341,7 +339,7 @@ bench-pacing:
 
 # Local only, never CI: a shared runner's wall clock is too noisy for a frame
 # budget. `--live` runs in this terminal, the only run a real parser sees.
-[doc('The fluency gate: the release binary through a transition into a storm (or dusk); fail when frames shown past their interval pass 10 ms a second')]
+[doc('The fluency gate: the release binary through a transition into a storm (or dusk); fail when frames shown past their interval pass HITCH_RATE_MS_PER_S in scripts/pace-check.py')]
 [group('rust')]
 pace-check *args:
     cargo build --release -p pixtuoid --bins --example pacing
@@ -562,18 +560,6 @@ _doc-targets:
 coverage *args:
     TZ={{ TEST_TZ }} cargo llvm-cov nextest --workspace --codecov --output-path codecov.json --profile ci "$@"
 
-# Runs the suite under nextest and FAILS on a
-# pending (un-accepted `.snap.new`) OR unreferenced (orphan `.snap` — e.g. a
-# deleted test's leftover) snapshot. This is the gap `just test` misses:
-# a CHANGED snapshot already fails its own assertion, but an ORPHAN one rots
-# silently. CI-only in practice (a second full test run, like coverage) —
-# NOT in preflight; run it after adding/removing an insta-snapshot test. Needs
-# cargo-insta + cargo-nextest.
-[doc('Snapshot hygiene (cargo-insta): fail on pending OR orphan snapshots — CI-only')]
-[group('rust')]
-snapshots:
-    TZ={{ TEST_TZ }} cargo insta test --check --unreferenced=reject --test-runner nextest --workspace
-
 # Injects bugs into the CHANGED lines and checks the tests catch them — the
 # "do your assertions have TEETH?" dimension that
 # line/region coverage can't see (a covered-but-toothless assertion). DIFF-scoped
@@ -748,12 +734,25 @@ live-sources *ids:
 
 # Two builds: one would unify the examples' `harness` feature into the binary
 # under test.
+[doc('Build what `just hermetic` runs, and run no CLI')]
+[group('rust')]
+hermetic-build:
+    cargo build --release -q -p pixtuoid -p pixtuoid-hook
+    cargo build --release -q -p pixtuoid-core --example hermetic --example capture_fixture --example bump
+
 [doc('Run each profiled agent CLI against a scripted model (aimock) and judge what pixtuoid made of it')]
 [group('rust')]
-hermetic *args:
-    cargo build --release -q -p pixtuoid -p pixtuoid-hook
-    cargo build --release -q -p pixtuoid-core --example hermetic --example capture_fixture
-    target/release/examples/hermetic "$@"
+hermetic *args: hermetic-build
+    cargo run --release -q -p pixtuoid-core --example hermetic -- "$@"
+
+# The nightly's bump leg: snapshots rewritten for the re-recorded fixtures,
+# then judged as CI judges them.
+[doc('Re-record a source at a release, moving its pin, and write the bump as a patch')]
+[group('rust')]
+hermetic-bump source release out: (hermetic "--cli" release "--record" source)
+    TZ={{ TEST_TZ }} INSTA_UPDATE=always INSTA_FORCE_PASS=1 cargo test -q -p pixtuoid-core --test sources
+    TZ={{ TEST_TZ }} cargo test -q -p pixtuoid-core --test sources
+    cargo run --release -q -p pixtuoid-core --example bump -- patch "$1" "$3"
 
 # Compile the workspace; extra args are forwarded:
 #   just build                                # debug
@@ -796,7 +795,7 @@ site-demos:
 site-dev: site-demos
     npm --prefix site run dev
 
-# Agent-facing dev-server lifecycle (Astro 7 `--background`): the daemon has no
+# Agent-facing dev-server lifecycle (Astro's `--background`): the daemon has no
 # stdin/TTY tie, so it survives the launching shell — the foreground `astro dev`
 # quits on stdin EOF, which killed agent-driven servers between commands.
 # Readiness = the DEV-ONLY /_astro/status health endpoint (preview 404s it);
@@ -1015,9 +1014,9 @@ gen-icons-check:
 
 # scripts/gen-media.py's docstring says what `--check` compares. The README's
 # media only: the site's demos are rendered in CI and never committed. On a PR
-# a drift here is evidence for the generated-art lens, not a gate (ci-tests.yml's
-# smoke job); main's land through media-regen.yml.
-# Requires the .venv + node; it builds the examples it renders with.
+# a drift here is evidence for REVIEW.md's Render and look, not a gate; main's
+# land through media-regen.yml.
+# Requires the .venv; it builds the examples it renders with.
 [doc("Diff the README's committed media against what gen-media renders")]
 [group('gen')]
 gen-media-check:
@@ -1209,11 +1208,12 @@ wasm-check-selftest:
     just gen-wasm-check >/dev/null
     echo "wasm-check-selftest: OK (reds on a broken measurement, greens on a real one)"
 
-# The pixel comparator is the primitive under `gen-check` and the smoke job; an
-# always-green comparator reports success for any render at all. Its own recipe
-# because it needs only Pillow, while `gen-check` needs the toolchain its header
-# lists: a developer who cannot run that gate should still be able to run this.
-[doc('Self-test the pixel comparator that gen-check and smoke ride on')]
+# The pixel comparator is the primitive under `gen-check` and
+# `gen-media-check`; an always-green comparator reports success for any render
+# at all. Its own recipe because it needs only Pillow, while `gen-check` needs
+# every generator's toolchain: a developer who cannot run that gate should still
+# be able to run this.
+[doc('Self-test the pixel comparator that gen-check and gen-media-check ride on')]
 [group('meta')]
 compare-selftest:
     #!/usr/bin/env sh

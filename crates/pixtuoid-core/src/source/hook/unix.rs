@@ -4,14 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Semaphore;
 use tracing::warn;
 
-use crate::source::TaggedSender;
 use crate::source::jsonl::FailureLatch;
 
-use super::{CONN_TIMEOUT, MAX_CONCURRENT_CONNS, handle_conn};
+use super::{CONN_TIMEOUT, MAX_CONCURRENT_CONNS};
 
 /// First retry delay after an accept() error. mio/tokio only clear readiness on
 /// EWOULDBLOCK, so a persistent accept errno (the EMFILE class) returns
@@ -208,6 +207,9 @@ fn binds_via_temp(tmp: &Path) -> bool {
     tmp.as_os_str().len() < SUN_PATH_CAP
 }
 
+/// One accepted hook connection.
+pub(super) type Conn = UnixStream;
+
 #[derive(Debug)]
 pub(super) struct Listener {
     listener: UnixListener,
@@ -286,12 +288,12 @@ impl Listener {
         })
     }
 
-    pub(super) async fn run(
-        self,
-        tx: TaggedSender,
-        pid_watch: Option<super::HookPidWatch>,
-        presence_tx: Option<super::PresenceSender>,
-    ) -> Result<()> {
+    /// Accept connections forever, each handed to `handle` under [`CONN_TIMEOUT`].
+    pub(super) async fn serve<F, Fut>(self, handle: F) -> Result<()>
+    where
+        F: Fn(Conn) -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
         let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNS));
         let mut backoff = AcceptBackoff::default();
         let mut accept_health = FailureLatch::default();
@@ -308,16 +310,10 @@ impl Listener {
                         tracing::info!("hook socket accepting connections again");
                     }
                     backoff.on_success();
-                    let tx = tx.clone();
-                    let pid_watch = pid_watch.clone();
-                    let presence_tx = presence_tx.clone();
+                    let handled = handle(stream);
                     tokio::spawn(async move {
                         let _permit = permit;
-                        let _ = tokio::time::timeout(
-                            CONN_TIMEOUT,
-                            handle_conn(stream, tx, pid_watch, presence_tx),
-                        )
-                        .await;
+                        let _ = tokio::time::timeout(CONN_TIMEOUT, handled).await;
                     });
                 }
                 Err(e) => {

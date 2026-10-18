@@ -34,6 +34,12 @@ just test -p pixtuoid --features upstream drift_watch   # the drift watch's test
 Activate the git hooks once per clone: `git config core.hooksPath .githooks`
 (`pre-commit` = `just fmt-check`; `pre-push` = `just preflight`).
 
+`just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
+scripted model (aimock) with a headless pixtuoid: the full tier gates on it at
+each `verified_version`, the nightly runs it at latest. `scripts/lib/`'s tiers
+run in no CI: `just openclaw-e2e` · `just openclaw-multi-e2e`
+· `just openclaw-backend-e2e` (BILLED) · `just live-sources [id ...]` (BILLED).
+
 ## Releasing
 
 ### Versioning
@@ -127,7 +133,11 @@ the per-crate/per-package Trusted Publishers, each naming environment
 
 ## The arc loop
 
-Non-trivial work runs as an **arc**: design → build → gate → wrap.
+Non-trivial work (a new feature, config key, flag, seam or module, a
+documented sharp edge, or 3+ *counted files*: changed files outside tests,
+fixtures, snapshots, lockfiles, `.md`, binary assets and what a `just gen*`
+recipe regenerates; not a typo, a docs fix, a mechanical move or a one-file
+fix with its pinning test) runs as an **arc**: design → build → gate → wrap.
 
 1. **Pick** — an issue (`gh issue list`) or backlog item.
 2. **Grill the design** — decide the open questions one at a time, each with a
@@ -136,28 +146,26 @@ Non-trivial work runs as an **arc**: design → build → gate → wrap.
    best-practice search (confirm the idiomatic way against real docs online,
    never memory) · adversarial design review (red-team the design before code
    exists) · deepening lens (would deleting this concentrate complexity or
-   just move it? does the change deepen a module or add a shallow one?).
-4. **Spec** — synthesize into `docs/superpowers/specs/` (LOCAL, git-ignored)
-   and plan against [`impl-plan.prompt.md`](../.github/prompts/impl-plan.prompt.md).
+   just move it? does the change deepen a module or add a shallow one? a
+   refactor it warrants is in scope).
+4. **Spec** — synthesize into `docs/superpowers/specs/` (LOCAL, git-ignored),
+   planned against [`REVIEW.md`](../REVIEW.md)'s lenses; the PR body states
+   the change's claims, which the correctness lens holds it to.
 5. **Mock gate** (taste/visual work only) — ratify the AFTER visual before code
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
-7. **Self-review** — a standards+spec pass before EVERY push, a review fold's
-   included, over everything the PR adds, not only the lines a finding names,
-   with the whole-file comment audit: every file the PR touches, by even one
-   line, gets its whole comment population re-read against `AGENTS.md`'s comment
-   rules; the cleanup rides the same PR ([`REVIEW.md`](../REVIEW.md#every-changed-file)'s comment audit). Not the merge gate.
-8. **Merge gate** — [the gate](#the-merge-gate); the `local-review` skill
-   runs its local rows; merging is `@mergifyio queue`, a release PR by hand.
+7. **Local review** — before the push, when the change touches 5+ counted
+   files or the owner asks: the `local-review` skill runs
+   [`REVIEW.md`](../REVIEW.md) with the reviewers CI runs; the cleanup rides
+   the same PR.
+8. **Merge gate** — [the gate](#the-merge-gate).
 9. **Wrap** — retro; a durable lesson becomes a mechanism (a test, a gate) or
    a line on the narrowest rule it amends — never an agent's private memory,
    which nobody reviews and nothing executes.
 
-`just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
-scripted model (aimock) with a headless pixtuoid: the full tier gates on it at
-each `verified_version`, the nightly runs it at latest. `scripts/lib/`'s tiers
-run in no CI: `just openclaw-e2e` · `just openclaw-multi-e2e`
-· `just openclaw-backend-e2e` (BILLED) · `just live-sources [id ...]` (BILLED).
+Checks hold only the merge gate ([`.mergify.yml`](../.mergify.yml)'s
+`queue_conditions`) and step 6's tests (the review's test teeth); every other
+step is the session's to keep.
 
 ### Parallel sessions
 
@@ -176,35 +184,26 @@ run in no CI: `just openclaw-e2e` · `just openclaw-multi-e2e`
 
 ### The merge gate
 
-Green `ci-gate`; the required `claude-review / claude-review` check green at
-the final head; every finding's review thread resolved by its
-disposition; zero open confirmed blocking finding; each matching
-[local row](../REVIEW.md#escalation)'s run recorded as a PR comment starting
-`<!-- local-row:<row>:<head sha> -->`, where `<row>` is the row's first column
-up to any colon or parenthesis, lowercased, each run of non-alphanumerics one
-`-`, leading and trailing `-` dropped, and the sha is the head the run judged;
-an update that only merges `main` in, or whose every changed line is a comment
-or prose, leaves the record standing. After any other update, the re-run judges
-the change from the head the last record names to the new head, over the files
-the PR changes at either head, reading each file that change touches whole at
-the new head, or at the old one when the change deletes it; its marker names
-the new head and its text the old one. When that old head is no longer an
-ancestor of the new one (a rebase), the re-run judges the whole PR. The
-[`local-review`](../.claude/skills/local-review/SKILL.md) skill runs those
-rows. A refuted blocking finding clears without a push: once its thread is
-resolved with the disposition, re-run the review (`gh run rerun <id> --failed`).
+Every [`.mergify.yml`](../.mergify.yml) `queue_conditions` check green at the
+final head; every finding's review thread resolved by its disposition; zero
+open confirmed blocking finding. Each [must-run](../REVIEW.md#must-run) item
+the change touches has its result in the PR body, and a
+[local review](../.claude/skills/local-review/SKILL.md)'s findings take
+dispositions like the bots'. A refuted blocking finding clears
+without a push: once its thread is resolved with the disposition, re-run the
+review (`gh run rerun <id> --failed`).
 
 Once the gate holds, comment `@mergifyio queue` ([`.mergify.yml`](../.mergify.yml)):
-entry is a command because no queue condition can confirm a finding or match a
-local row. The queue tests up to `batch_size` PRs together on a draft PR
+entry is a command because no queue condition can confirm a finding. The
+queue tests up to `batch_size` PRs together on a draft PR
 (`mergify/merge-queue/…`) running the full tier, then merges the PRs
-themselves; it never updates a PR's own branch
+themselves, but merges an up-to-date PR alone at the front on its own CI
+([direct merge](https://docs.mergify.com/merge-queue/direct-merge/)); it never updates a PR's own branch
 ([batches](https://docs.mergify.com/merge-queue/batches/): "the original PRs
 are the ones merged"), so the bots' statuses on the PR's head are the ones its
-`queue_conditions` read. [`media-regen.yml`](../.github/workflows/media-regen.yml)'s
-bot PR (`bot/media-regen`, `docs/images/` only) queues itself and needs no
-generated-art record: it renders main's merged code, which each look PR's lens
-already read as evidence.
+`queue_conditions` read. A session or the owner queues a bot's PR after reading
+what no review sees: `media-regen.yml`'s images, `hermetic-nightly.yml`'s whole
+diff, fixtures included.
 
 The review skips a fork's or a bot's PR, and its skipped check passes. A
 maintainer reviews a fork's or Dependabot's PR by hand before queueing it; a
@@ -222,7 +221,7 @@ change, and bigger than the PR: split it off into #N; a redesign that brings
 the finding into scope ends FIXED) · FOLLOW-UP → #N (real and PRE-EXISTING,
 and not FIXED in place
 — in place fits a small defect inside code this change already touches,
-adding no local row — so it is fixed in #N; a defect in another session's
+pulling in no new must-run item — so it is fixed in #N; a defect in another session's
 tree cites that session's PR). A
 disposition is the reply that resolves the thread, STARTING with its state:
 `FIXED: …` · `REFUTED: … — <mechanism>` · `RE-SCOPED → #N: …` ·
@@ -253,7 +252,8 @@ before re-litigating.
   it; the rest of a fold is a revert, a deletion, a
   comment or doc change, or a refactor the existing tests cover. Anything
   else reverts the fold.
-- **A fix round adds no new gate** — a wanted check is its own PR, asserting
+- **A fix round adds no gate** beyond a refutation's mechanism — any other
+  wanted check is its own PR, asserting
   facts in its own layer (a Rust fact from Rust, never a Python regex over
   `.rs`).
 

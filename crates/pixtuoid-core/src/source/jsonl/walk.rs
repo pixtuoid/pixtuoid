@@ -8,14 +8,14 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{CwdExtractor, SUBAGENTS_DIR};
+use crate::source::decoder::{CwdExtractor, LineDecoder, SUBAGENTS_DIR};
 use crate::source::registry::cwd_extractor_for;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
 use super::health::FailureLatch;
 use super::liveness::{probe_admits, revouch_gated_files};
 use super::{
-    ActivityRecency, HeadLabel, SessionEndChecker, SourceDecoders, TailActivity, WatchCtx,
+    ActivityRecency, HeadLabel, SessionEndChecker, Sight, SourceDecoders, TailActivity, WatchCtx,
 };
 
 /// Oversized-span skip threshold: a pending span past this is never replayed.
@@ -260,26 +260,30 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
                     },
                 ))
                 .await;
-            // Un-claim AFTER the terminator, so a later append re-registers. Leaving
-            // the claim pinned the path "registered" until a watcher restart.
-            seen.lock().await.remove(path);
+            // Ended AFTER the terminator, as a decoded end is below: a pinned
+            // claim kept the path "registered" until a watcher restart.
+            seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
             return;
         }
         // #204: register even on an oversized first sight, or a >1 MB transcript
         // stays invisible until its next small append; the backlog is not replayed.
         // Keys on `seen`, NOT `!known` — a first-sight-GATED file is already `known`,
         // and keying on `!known` left it invisible until a later ≤1 MiB append.
-        let registered = seen.lock().await.get(path) == Some(&true);
+        let sight = seen.lock().await.get(path).copied();
         // The span is too big to hold, so the tail is the instrument — a
         // metadata run always lands at the end.
+        let tail = read_tail(path, TAIL_BYTES).await;
         let metadata_only = matches!(
-            read_tail(path, TAIL_BYTES)
-                .await
-                .as_deref()
-                .map(decoders.activity_recency),
+            tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        if !registered && !metadata_only {
+        // Judged on the window `scan_pending_tasks` reads, wide enough to hold a
+        // tool result's whole line.
+        let revives = sight != Some(Sight::Ended)
+            || read_tail(path, TASK_SCAN_BYTES)
+                .await
+                .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line));
+        if sight != Some(Sight::Claimed) && !metadata_only && revives {
             // The decoder never reaches a head-borne title once the backlog is
             // skipped, so this bounded read is its only carrier.
             let (head_cwd, head_label) = match read_head(path, MAX_PENDING_BYTES).await {
@@ -292,7 +296,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         }
         // #222: the skipped span may bury an IN-FLIGHT Task dispatch. Only when
         // registered — JSONL events for an unknown id are reducer no-ops.
-        if seen.lock().await.get(path) == Some(&true) {
+        if seen.lock().await.get(path) == Some(&Sight::Claimed) {
             scan_pending_tasks(path, decoders, ctx).await;
         }
         return;
@@ -341,29 +345,17 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
     let mut first_sight_cwd = extract_cwd(new_bytes, extract);
     let mut head_label = None;
     if first_sight_cwd.is_none()
-        && seen.lock().await.get(path) != Some(&true)
+        && seen.lock().await.get(path) != Some(&Sight::Claimed)
         && let Some(head) = read_head(path, MAX_PENDING_BYTES).await
     {
         (first_sight_cwd, head_label) = extract_head_fields(&head, extract, decoders.head_label);
     }
-    if !matches!(
-        (decoders.activity_recency)(new_bytes),
-        super::TailActivity::SidecarOnly
-    ) {
-        emit_first_sight(
-            path,
-            source,
-            decoders,
-            seen,
-            tx,
-            first_sight_cwd,
-            head_label,
-        )
-        .await;
-    }
 
     let path_agent_id = AgentId::from_parts(source, &decoders.id_derive.id_for(path));
-    let mut session_ended = false;
+    let ends_this_agent = |ev: &AgentEvent| {
+        matches!(ev, AgentEvent::SessionEnd { .. }) && ev.agent_id() == path_agent_id
+    };
+    let mut decoded = Vec::new();
     for line in new_bytes.split(|b| *b == b'\n') {
         if line.is_empty() {
             continue;
@@ -383,27 +375,61 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
             }
         };
         match decode_line(&transcript_path_str, source, v) {
-            Ok(events) => {
-                for ev in events {
-                    let ends_this_agent = matches!(
-                        &ev,
-                        AgentEvent::SessionEnd { agent_id, .. } if *agent_id == path_agent_id
-                    );
-                    if tx.send((Transport::Jsonl, ev)).await.is_err() {
-                        return;
-                    }
-                    session_ended |= ends_this_agent;
-                }
-            }
+            Ok(events) => decoded.extend(events),
             Err(e) => warn!(path = ?path, error = %e, "decode error"),
         }
     }
-    if session_ended {
-        // RELEASED (`false`), not removed: `emit_first_sight` treats `Some(false)`
-        // like an absent entry, while `revouch_gated_files` keys on `contains_key`
-        // and would otherwise replay the whole transcript once per scan pass.
-        seen.lock().await.insert(path.to_path_buf(), false);
+
+    // A trailer flushed after the end line (grok's `hook_execution{stop}`)
+    // proves no revival.
+    let ended = seen.lock().await.get(path) == Some(&Sight::Ended);
+    if (!ended || decoded.iter().any(|ev| ev.shows_activity()))
+        && !matches!(
+            (decoders.activity_recency)(new_bytes),
+            super::TailActivity::SidecarOnly
+        )
+    {
+        emit_first_sight(
+            path,
+            source,
+            decoders,
+            seen,
+            tx,
+            first_sight_cwd,
+            head_label,
+        )
+        .await;
     }
+
+    let session_ended = decoded.iter().any(ends_this_agent);
+    for ev in decoded {
+        if tx.send((Transport::Jsonl, ev)).await.is_err() {
+            return;
+        }
+    }
+    if session_ended {
+        seen.lock().await.insert(path.to_path_buf(), Sight::Ended);
+    }
+}
+
+/// Whether `tail`'s whole lines decode to an event that shows activity: the
+/// evidence an ended claim's oversized append is judged on, since its skipped
+/// span is never decoded.
+fn tail_shows_activity(
+    tail: &[u8],
+    path: &Path,
+    source: &Arc<str>,
+    decode_line: LineDecoder,
+) -> bool {
+    let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
+    // The window starts mid-file, so its first chunk is a partial line.
+    tail.split(|b| *b == b'\n')
+        .skip(1)
+        .filter_map(|line| std::str::from_utf8(line).ok())
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .filter_map(|v| decode_line(&transcript, source, v).ok())
+        .flatten()
+        .any(|ev| ev.shows_activity())
 }
 
 /// Pre-drain guard for the exit-path drains: a transcript truncated/recreated
@@ -434,14 +460,15 @@ async fn emit_first_sight(
     path: &Path,
     source: &Arc<str>,
     decoders: SourceDecoders,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
     tx: &TaggedSender,
     cwd: Option<PathBuf>,
     head_label: Option<String>,
 ) {
-    // `Some(false)` — released by the child-end un-claim (#246) — registers like
-    // an absent entry: that next append IS the revival the release exists for.
-    let already_claimed = seen.lock().await.insert(path.to_path_buf(), true) == Some(true);
+    // An `Ended` claim registers like an absent one: the walk calls here for it
+    // only on an append that shows activity.
+    let already_claimed =
+        seen.lock().await.insert(path.to_path_buf(), Sight::Claimed) == Some(Sight::Claimed);
     if already_claimed {
         return;
     }

@@ -336,7 +336,9 @@ fn judge(
         findings.push((
             Label::Blocked,
             format!(
-                "the CLI did not complete a turn (exit {:?}, {} model requests)",
+                "the CLI did not complete a turn against the scripted model (exit {:?}, {} \
+                 model requests): it could not run, or its model calls went elsewhere \
+                 through a home the sandbox did not redirect",
                 manifest.capture.exit_code, manifest.requests
             ),
         ));

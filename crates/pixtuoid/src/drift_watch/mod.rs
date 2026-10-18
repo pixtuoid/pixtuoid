@@ -9,6 +9,7 @@ mod net;
 mod read;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use pixtuoid_core::source::registry::REGISTRY;
@@ -444,7 +445,7 @@ impl<'f> Fetched<'f> {
         let listed =
             String::from_utf8_lossy(&self.fetch.get(&format!("{base}{sums}"), FETCH_TIMEOUT)?)
                 .into_owned();
-        let digest = format!("{:x}", Sha256::digest(&tarball));
+        let digest = sha256_hex(&tarball);
         let vouched = listed.lines().any(|l| {
             let mut cols = l.split_whitespace();
             cols.next() == Some(digest.as_str()) && cols.next() == Some(name.as_str())
@@ -797,6 +798,16 @@ fn check_all(fetch: &dyn Fetch, report: &mut Report) {
     for (source, w) in declared() {
         check_watch(source, w, &mut fetched, report);
     }
+}
+
+/// `bytes`' SHA-256 as a sums file lists it: sha2's digest has no `LowerHex`.
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }
 
 #[cfg(test)]

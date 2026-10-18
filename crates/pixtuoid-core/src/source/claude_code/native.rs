@@ -32,7 +32,7 @@ impl ClaudeCodeSource {
     pub fn default_socket_path() -> PathBuf {
         // Set-but-empty/whitespace = unset: fall through to the default rather
         // than bind it verbatim. Same shape as the shim's paths.rs.
-        if let Some(p) = crate::platform::path_env("PIXTUOID_SOCKET") {
+        if let Some(p) = crate::platform::path_env(crate::source::hook::SOCKET_ENV) {
             return p;
         }
         #[cfg(unix)]

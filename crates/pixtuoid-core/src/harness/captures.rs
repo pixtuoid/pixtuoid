@@ -42,7 +42,77 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
 /// every payload embeds its own cwd, the decoders read it, so the strip keeps it —
 /// capturing somewhere already generic is what keeps a per-run path out of the
 /// bytes. The recorder prepares it; a hermetic script names files under it.
-pub const CAPTURE_WORKSPACE: &str = "/tmp/pixtuoid-capture/proj";
+///
+/// On Windows it sits under ProgramData, outside every user's profile: CC reads
+/// config from each ancestor of its cwd, a home's `.claude` included.
+///
+/// # Errors
+///
+/// On Windows, if the shell has no ProgramData, as in an environment cleared
+/// of the host's.
+pub fn capture_workspace() -> std::io::Result<PathBuf> {
+    #[cfg(windows)]
+    let root = crate::harness::host::known_folder(crate::harness::host::KnownFolder::ProgramData)?;
+    #[cfg(not(windows))]
+    let root = PathBuf::from("/tmp");
+    Ok(root.join(capture_workspace_tail()))
+}
+
+/// The end every [`capture_workspace`] path has, whatever the host's root: the
+/// part [`capture_base`] checks.
+pub fn capture_workspace_tail() -> PathBuf {
+    Path::new(CAPTURE_BASE).join(CAPTURE_PROJ)
+}
+
+/// The directory a capture workspace sits in, which a recorder clears and
+/// recreates.
+const CAPTURE_BASE: &str = "pixtuoid-capture";
+/// The workspace's own name inside [`CAPTURE_BASE`].
+const CAPTURE_PROJ: &str = "proj";
+
+/// The base a recorder may clear for the workspace `ws`: only that of an
+/// absolute path ending in [`capture_workspace_tail`], so a path an operator
+/// names can clear only a directory named as [`capture_workspace`]'s base is.
+pub fn capture_base(ws: &Path) -> Option<&Path> {
+    (ws.is_absolute() && ws.ends_with(capture_workspace_tail()))
+        .then(|| ws.parent())
+        .flatten()
+}
+
+/// The command `descriptor`'s CLI answers its version to: a capture anchors
+/// that version, so a row without one can't be recorded.
+///
+/// # Errors
+///
+/// If the row has no version probe.
+pub fn required_version_probe(
+    descriptor: &crate::source::registry::SourceDescriptor,
+) -> std::io::Result<&'static [&'static str]> {
+    descriptor
+        .version_probe
+        .ok_or_else(|| std::io::Error::other(format!("{} has no version probe", descriptor.name)))
+}
+
+/// Why this host may not write the committed corpus, which pins Unix
+/// realpaths and cwds.
+pub const CORPUS_REFUSAL: Option<&str> = if cfg!(unix) {
+    None
+} else {
+    Some("the committed corpus pins Unix paths: record on macOS or Linux")
+};
+
+/// What a `--version` run answered: the first non-blank line of a successful
+/// run's stdout.
+pub fn version_answer(out: &std::process::Output) -> Option<String> {
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())?
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(str::to_owned)
+}
+
 /// The `NOTE.txt` the recorder writes into the workspace: what every scripted
 /// turn reads, and what a script waits for before it replies.
 pub const CAPTURE_NOTE: &str = "pong";
@@ -67,6 +137,12 @@ pub mod recorder_flag {
     pub const ENV: &str = "--env";
     /// `Options::promote`.
     pub const PROMOTE: &str = "--promote";
+    /// `Options::cli_version`.
+    pub const CLI_VERSION: &str = "--cli-version";
+    /// `Options::workspace`.
+    pub const WORKSPACE: &str = "--workspace";
+    /// `Options::prepare_root`.
+    pub const PREPARE_ROOT: &str = "--prepare-root";
 }
 
 /// What only the recorder knows about a raw (`--out`) capture.
@@ -205,6 +281,61 @@ pub fn captures(root: &Path) -> Vec<Capture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_capture_workspace_names_a_base_to_clear() {
+        let ws = capture_workspace().expect("the workspace");
+        assert_eq!(capture_base(&ws), ws.parent());
+        let root = std::env::temp_dir();
+        let named = root.join(CAPTURE_BASE).join(CAPTURE_PROJ);
+        assert_eq!(
+            capture_base(&named),
+            Some(root.join(CAPTURE_BASE).as_path())
+        );
+        assert_eq!(
+            capture_base(&root.join("proj")),
+            None,
+            "its parent is the operator's"
+        );
+        assert_eq!(
+            capture_base(&Path::new(CAPTURE_BASE).join(CAPTURE_PROJ)),
+            None,
+            "relative"
+        );
+    }
+
+    #[test]
+    fn a_version_is_the_first_line_a_successful_run_printed() {
+        let ran = |ok: bool, stdout: &str| std::process::Output {
+            status: if ok {
+                std::process::ExitStatus::default()
+            } else {
+                failed()
+            },
+            stdout: stdout.into(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            version_answer(&ran(true, "\n 2.0.1 \nbuilt today\n")).as_deref(),
+            Some("2.0.1")
+        );
+        assert_eq!(
+            version_answer(&ran(true, " \n")),
+            None,
+            "it printed nothing"
+        );
+        assert_eq!(version_answer(&ran(false, "2.0.1\n")), None, "it failed");
+    }
+
+    fn failed() -> std::process::ExitStatus {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        // A Unix raw status is a wait(2) word, exit code in its high byte; a
+        // Windows one is the exit code itself.
+        std::process::ExitStatus::from_raw(if cfg!(unix) { 1 << 8 } else { 1 })
+    }
 
     #[test]
     fn the_walk_scales_past_the_size_that_broke_the_shell_version() {

@@ -52,7 +52,7 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^2.6.3",
+    "@raycast/api": "^2.7.1",
     "@raycast/utils": "^2.3.2",
     "ajv": "^8.20.0"
   },

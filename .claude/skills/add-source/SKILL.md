@@ -35,4 +35,4 @@ while these two were red, caught only by the full suite. Run
 
 - `just gen-contract` only if you touched the `--json`/`SourceStatus`/`OutcomeRow`
   SHAPE (adding a row doesn't).
-- Run the **local-review** skill on the open PR; CI runs the tests.
+- **local-review** when [arc step 7](../../../docs/CONTRIBUTING.md#the-arc-loop) calls for it; CI runs the tests.

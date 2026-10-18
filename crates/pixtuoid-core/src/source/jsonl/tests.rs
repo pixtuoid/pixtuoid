@@ -359,7 +359,19 @@ fn t_decode_lifecycle(
             as_child: false,
         }]);
     }
-    Ok(vec![])
+    let agent_id = AgentId::from_parts(s, t);
+    Ok(match v.get("type").and_then(|x| x.as_str()) {
+        Some("tool_use") => vec![AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: None,
+            detail: None,
+        }],
+        Some("usage") => vec![AgentEvent::Usage {
+            agent_id,
+            fresh_tokens: 1,
+        }],
+        _ => vec![],
+    })
 }
 fn t_label(_p: &Path, _s: &str, _c: &Path) -> String {
     "t".to_string()
@@ -374,7 +386,7 @@ async fn walk_once_with(
     decode_line: LineDecoder,
     check_ended: SessionEndChecker,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     walk_once_with_recency(
         path,
@@ -395,7 +407,7 @@ async fn walk_once_with_recency(
     check_ended: SessionEndChecker,
     activity_recency: super::ActivityRecency,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
     let source: Arc<str> = Arc::from("test");
@@ -484,7 +496,7 @@ async fn walk_once_live(
     window: Duration,
     live_ids: &[&str],
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     let live: Arc<Mutex<HashSet<String>>> =
         Arc::new(Mutex::new(live_ids.iter().map(|s| s.to_string()).collect()));
@@ -532,7 +544,7 @@ async fn walk_once(
     window: Duration,
     check_ended: SessionEndChecker,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     walk_once_with(path, window, t_decode, check_ended, cursors, seen).await
 }
@@ -758,7 +770,7 @@ async fn gated_fixture(
     initial: &str,
 ) -> (
     Arc<Mutex<HashMap<PathBuf, u64>>>,
-    Arc<Mutex<HashMap<PathBuf, bool>>>,
+    Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) {
     tokio::fs::write(path, initial).await.unwrap();
     backdate_one_hour(path);
@@ -823,6 +835,60 @@ async fn walk_jsonl_honors_the_path_filter() {
         !cursors.contains_key(&dropped),
         "transcript_full.jsonl must be filtered before any cursor work"
     );
+}
+
+#[tokio::test]
+async fn an_oversized_append_revives_an_ended_transcript_only_on_activity() {
+    // The last row's final line is longer than the activity tail's window.
+    let long_tool = format!(
+        "{{\"type\":\"tool_use\",\"pad\":\"{}\"}}\n",
+        "x".repeat(super::walk::TAIL_BYTES as usize * 2)
+    );
+    for (filler, last, revives) in [
+        ("{\"type\":\"usage\"}\n", "", false),
+        ("{\"type\":\"tool_use\"}\n", "", true),
+        ("{\"type\":\"usage\"}\n", long_tool.as_str(), true),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ended-big.jsonl");
+        std::fs::write(&path, "{\"type\":\"tool_use\"}\n").unwrap();
+        let cursors = Arc::new(Mutex::new(HashMap::new()));
+        let seen = Arc::new(Mutex::new(HashMap::new()));
+        let window = Duration::from_secs(3600);
+        let append = |bytes: &[u8]| {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(bytes)
+                .unwrap();
+        };
+        walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+        append(b"{\"type\":\"system\",\"subtype\":\"session_end\"}\n");
+        walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+        assert_eq!(
+            seen.lock().await.get(&path),
+            Some(&Sight::Ended),
+            "fixture: ended"
+        );
+
+        let span = filler.repeat(70_000) + last;
+        assert!(
+            span.len() as u64 > super::walk::MAX_PENDING_BYTES,
+            "fixture: oversized"
+        );
+        append(span.as_bytes());
+        let events =
+            walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+        assert_eq!(
+            events
+                .iter()
+                .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+            revives,
+            "an oversized {filler:?} span ending {:?} revives only on activity: {events:?}",
+            last.get(..24)
+        );
+    }
 }
 
 #[tokio::test]
@@ -897,7 +963,7 @@ fn a_head_read_yields_cwd_and_the_optional_title_in_one_pass() {
 async fn walk_once_with_head_label(
     path: &Path,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(64);
     let source: Arc<str> = Arc::from("test");
@@ -1079,7 +1145,7 @@ async fn gated_file_oversized_metadata_only_append_stays_unregistered() {
 }
 
 #[tokio::test]
-async fn session_end_unclaims_seen_so_a_later_append_re_registers() {
+async fn session_end_ends_its_claim_so_later_activity_re_registers() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("resumed.jsonl");
     tokio::fs::write(&path, "{\"type\":\"assistant\",\"cwd\":\"/repo\"}\n")
@@ -1119,8 +1185,8 @@ async fn session_end_unclaims_seen_so_a_later_append_re_registers() {
     );
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&false),
-        "SessionEnd must RELEASE `seen` (not remove it) so a revival can \
+        Some(&Sight::Ended),
+        "SessionEnd must END `seen` (not remove it) so a revival can \
          re-register while the re-vouch sweep still skips the path"
     );
 
@@ -1129,17 +1195,76 @@ async fn session_end_unclaims_seen_so_a_later_append_re_registers() {
         .open(&path)
         .await
         .unwrap();
-    tokio::io::AsyncWriteExt::write_all(&mut f, b"{\"type\":\"assistant\"}\n")
+    tokio::io::AsyncWriteExt::write_all(&mut f, b"{\"type\":\"tool_use\"}\n")
         .await
         .unwrap();
     tokio::io::AsyncWriteExt::flush(&mut f).await.unwrap();
     drop(f);
     let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
     assert!(
+        matches!(
+            events.as_slice(),
+            [
+                (_, AgentEvent::SessionStart { .. }),
+                ..,
+                (_, AgentEvent::ActivityStart { .. })
+            ]
+        ),
+        "a post-end append that decodes to activity must re-register the agent \
+         ahead of that activity, got {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_post_end_trailer_that_decodes_to_nothing_never_re_registers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ended.jsonl");
+    tokio::fs::write(&path, "{\"type\":\"tool_use\"}\n")
+        .await
+        .unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let window = Duration::from_secs(3600);
+    let append = |line: &[u8]| {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(line)
+            .unwrap();
+    };
+    walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+    append(b"{\"type\":\"system\",\"subtype\":\"session_end\"}\n");
+    walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+    assert_eq!(
+        seen.lock().await.get(&path),
+        Some(&Sight::Ended),
+        "fixture: ended"
+    );
+
+    // grok flushes `hook_execution{stop}` after its end line; it decodes to nothing.
+    // Nor does one that decodes to usage, which proves no life either.
+    append(b"{\"type\":\"system\",\"subtype\":\"hook_trailer\"}\n{\"type\":\"usage\"}\n");
+    let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+    assert!(
+        !events
+            .iter()
+            .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+        "a trailer that proves no life must not resurrect the ended session, got {events:?}"
+    );
+    assert_eq!(
+        seen.lock().await.get(&path),
+        Some(&Sight::Ended),
+        "the claim stays ended, so a real revival still re-registers"
+    );
+
+    append(b"{\"type\":\"tool_use\"}\n");
+    let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
+    assert!(
         events
             .iter()
             .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
-        "a post-end append must re-register the agent, got {events:?}"
+        "activity after the trailer is the revival, got {events:?}"
     );
 }
 
@@ -1327,7 +1452,7 @@ fn drain_events(
 }
 
 #[tokio::test]
-async fn child_end_unclaim_drains_stragglers_then_releases_without_session_end() {
+async fn child_end_unclaim_drains_stragglers_then_ends_the_claim_without_session_end() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("child.jsonl");
     std::fs::write(&path, "{\"type\":\"assistant\"}\n").unwrap();
@@ -1379,28 +1504,28 @@ async fn child_end_unclaim_drains_stragglers_then_releases_without_session_end()
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
         Some(file_len),
-        "stragglers must be drained to EOF BEFORE the release (#228)"
+        "stragglers must be drained to EOF BEFORE the end (#228)"
     );
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&false),
-        "the claim must be RELEASED (kept known, so the re-vouch sweep \
+        Some(&Sight::Ended),
+        "the claim must be ENDED (kept known, so the re-vouch sweep \
          cannot replay it)"
     );
 
     let events = walk_once(&path, window, t_ended, &cursors, &seen).await;
     assert!(
         events.is_empty(),
-        "a straggler walk after the release must not resurrect, got {events:?}"
+        "a straggler walk after the end must not resurrect, got {events:?}"
     );
 
     std::fs::OpenOptions::new()
         .append(true)
         .open(&path)
         .unwrap()
-        .write_all(b"{\"type\":\"assistant\"}\n")
+        .write_all(b"{\"type\":\"tool_use\"}\n")
         .unwrap();
-    let events = walk_once(&path, window, t_ended, &cursors, &seen).await;
+    let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
     assert!(
         events.iter().any(|(_, e)| matches!(
             e,
@@ -1411,7 +1536,7 @@ async fn child_end_unclaim_drains_stragglers_then_releases_without_session_end()
 }
 
 #[tokio::test]
-async fn released_claim_is_not_revouched_into_a_full_replay() {
+async fn an_ended_claim_is_not_revouched_into_a_full_replay() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("child.jsonl");
     std::fs::write(&path, "{\"type\":\"assistant\"}\n").unwrap();
@@ -1443,11 +1568,11 @@ async fn released_claim_is_not_revouched_into_a_full_replay() {
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     let events = drain_events(&mut rx);
-    assert!(events.is_empty(), "release emits nothing, got {events:?}");
+    assert!(events.is_empty(), "the end emits nothing, got {events:?}");
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&false),
-        "the claim must be RELEASED (false), not removed — removal is \
+        Some(&Sight::Ended),
+        "the claim must be ENDED (`Sight::Ended`), not removed — removal is \
          exactly what would expose the path to the re-vouch replay below"
     );
 
@@ -1456,17 +1581,17 @@ async fn released_claim_is_not_revouched_into_a_full_replay() {
     let events = drain_events(&mut rx);
     assert!(
         events.is_empty(),
-        "a re-vouch sweep over a RELEASED claim must not replay/re-register, got {events:?}"
+        "a re-vouch sweep over an ENDED claim must not replay/re-register, got {events:?}"
     );
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
         Some(file_len),
-        "the released path's cursor must stay parked at EOF (no reset-to-0 replay)"
+        "the ended path's cursor must stay parked at EOF (no reset-to-0 replay)"
     );
 }
 
 #[tokio::test]
-async fn decoded_terminator_release_is_not_revouched_into_a_full_replay() {
+async fn a_decoded_terminators_ended_claim_is_not_revouched_into_a_full_replay() {
     fn never_ended(_tail: &[u8]) -> bool {
         false
     }
@@ -1499,8 +1624,8 @@ async fn decoded_terminator_release_is_not_revouched_into_a_full_replay() {
     );
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&false),
-        "the claim must be RELEASED (false), not removed — removal is exactly \
+        Some(&Sight::Ended),
+        "the claim must be ENDED (`Sight::Ended`), not removed — removal is exactly \
          what exposes the path to the re-vouch replay below"
     );
 
@@ -1530,12 +1655,12 @@ async fn decoded_terminator_release_is_not_revouched_into_a_full_replay() {
     let events = drain_events(&mut rx);
     assert!(
         events.is_empty(),
-        "a re-vouch sweep over an ENDED, released path must not replay it, got {events:?}"
+        "a re-vouch sweep over an ENDED path must not replay it, got {events:?}"
     );
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
         Some(file_len),
-        "the released path's cursor must stay parked at EOF (no reset-to-0 replay)"
+        "the ended path's cursor must stay parked at EOF (no reset-to-0 replay)"
     );
 }
 
@@ -1547,7 +1672,7 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
     walk_once(&path, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
-    assert_eq!(seen.lock().await.get(&path), Some(&true));
+    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
 
     let unclaims = ChildEndUnclaims::new();
     let foreign = AgentId::from_parts("codex", "not-claimed-here");
@@ -1566,8 +1691,8 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&true),
-        "a foreign id must not release this watcher's claims"
+        Some(&Sight::Claimed),
+        "a foreign id must not end this watcher's claims"
     );
     assert_eq!(
         unclaims.take_matching(|x| *x == foreign),
@@ -1602,7 +1727,7 @@ async fn child_end_unclaims_ttl_prunes_unmatched_entries() {
 }
 
 #[tokio::test]
-async fn child_end_unclaim_releases_only_the_matched_ids_own_path() {
+async fn child_end_unclaim_ends_only_the_matched_ids_own_path() {
     let dir = tempfile::tempdir().unwrap();
     let ended_child = dir.path().join("ended-child.jsonl");
     let sibling = dir.path().join("live-sibling.jsonl");
@@ -1611,7 +1736,11 @@ async fn child_end_unclaim_releases_only_the_matched_ids_own_path() {
     for p in [&ended_child, &sibling] {
         std::fs::write(p, "{\"type\":\"assistant\"}\n").unwrap();
         walk_once(p, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
-        assert_eq!(seen.lock().await.get(p), Some(&true), "fixture: registered");
+        assert_eq!(
+            seen.lock().await.get(p),
+            Some(&Sight::Claimed),
+            "fixture: registered"
+        );
     }
 
     let unclaims = ChildEndUnclaims::new();
@@ -1633,18 +1762,18 @@ async fn child_end_unclaim_releases_only_the_matched_ids_own_path() {
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
         seen.lock().await.get(&ended_child),
-        Some(&false),
-        "the ended child's claim is released"
+        Some(&Sight::Ended),
+        "the ended child's claim is ended"
     );
     assert_eq!(
         seen.lock().await.get(&sibling),
-        Some(&true),
+        Some(&Sight::Claimed),
         "the sibling session's claim must survive another child's un-claim"
     );
 }
 
 #[tokio::test]
-async fn oversized_ended_skip_unclaims_seen_so_a_later_append_re_registers() {
+async fn oversized_ended_skip_ends_its_claim_so_later_activity_re_registers() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("big-resumed.jsonl");
     let initial = "{\"type\":\"assistant\",\"cwd\":\"/repo\"}\n";
@@ -1673,8 +1802,8 @@ async fn oversized_ended_skip_unclaims_seen_so_a_later_append_re_registers() {
         "the buried terminator must emit SessionEnd, got {events:?}"
     );
     assert!(
-        !seen.lock().await.contains_key(&path),
-        "the oversized-ended skip must un-claim `seen`"
+        seen.lock().await.get(&path) == Some(&Sight::Ended),
+        "the oversized-ended skip must end `seen`"
     );
 
     let mut f = tokio::fs::OpenOptions::new()
@@ -1682,17 +1811,17 @@ async fn oversized_ended_skip_unclaims_seen_so_a_later_append_re_registers() {
         .open(&path)
         .await
         .unwrap();
-    tokio::io::AsyncWriteExt::write_all(&mut f, b"{\"type\":\"assistant\"}\n")
+    tokio::io::AsyncWriteExt::write_all(&mut f, b"{\"type\":\"tool_use\"}\n")
         .await
         .unwrap();
     tokio::io::AsyncWriteExt::flush(&mut f).await.unwrap();
     drop(f);
-    let events = walk_once(&path, window, t_ended, &cursors, &seen).await;
+    let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
     assert!(
         events
             .iter()
             .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
-        "a post-end append must re-register the agent, got {events:?}"
+        "post-end activity must re-register the agent, got {events:?}"
     );
 }
 
@@ -2306,7 +2435,7 @@ async fn walk_oversized_cc(
     path: &Path,
     window: Duration,
     cursors: &Arc<Mutex<HashMap<PathBuf, u64>>>,
-    seen: &Arc<Mutex<HashMap<PathBuf, bool>>>,
+    seen: &Arc<Mutex<HashMap<PathBuf, Sight>>>,
 ) -> Vec<(Transport, AgentEvent)> {
     walk_once_with(
         path,
@@ -2720,7 +2849,7 @@ async fn session_exit_parks_truncated_transcript_so_a_straggler_walk_cannot_resu
 }
 
 #[tokio::test]
-async fn child_end_unclaim_parks_truncated_transcript_before_release() {
+async fn child_end_unclaim_parks_truncated_transcript_before_the_end() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("child.jsonl");
     std::fs::write(
@@ -2770,27 +2899,27 @@ async fn child_end_unclaim_parks_truncated_transcript_before_release() {
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
         Some(new_len),
-        "a truncated rollout must be PARKED at the new EOF before release"
+        "a truncated rollout must be PARKED at the new EOF before the end"
     );
     assert_eq!(
         seen.lock().await.get(&path),
-        Some(&false),
-        "the claim must still be RELEASED (kept known)"
+        Some(&Sight::Ended),
+        "the claim must still be ENDED (kept known)"
     );
 
     let events = walk_once(&path, window, t_ended, &cursors, &seen).await;
     assert!(
         events.is_empty(),
-        "a straggler walk after the release must not resurrect, got {events:?}"
+        "a straggler walk after the end must not resurrect, got {events:?}"
     );
 
     std::fs::OpenOptions::new()
         .append(true)
         .open(&path)
         .unwrap()
-        .write_all(b"{\"type\":\"assistant\"}\n")
+        .write_all(b"{\"type\":\"tool_use\"}\n")
         .unwrap();
-    let events = walk_once(&path, window, t_ended, &cursors, &seen).await;
+    let events = walk_once_with(&path, window, t_decode_lifecycle, t_ended, &cursors, &seen).await;
     assert!(
         events.iter().any(|(_, e)| matches!(
             e,
@@ -3040,7 +3169,7 @@ async fn walk_jsonl_resets_cursor_to_zero_when_known_file_truncated_below_cursor
     // `seen` is pre-claimed so this takes the normal-walk truncation arm (the
     // first-sight gate is skipped for a known file).
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
-    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), true)])));
+    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Claimed)])));
 
     let events = walk_once(&path, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
     assert!(

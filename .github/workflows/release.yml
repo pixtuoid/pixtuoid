@@ -33,9 +33,6 @@ jobs:
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-gpu
       - uses: pixtuoid/.github/.github/actions/setup-rust@main
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # zizmor: ignore[cache-poisoning] PR caches are merge-ref scoped; stable tags are ancestry-gated to main # v2.9.2
-        with:
-          prefix-key: v1-rust
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
@@ -101,15 +98,6 @@ jobs:
       - uses: pixtuoid/.github/.github/actions/setup-rust@main
         with:
           targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # zizmor: ignore[cache-poisoning] PR caches are merge-ref scoped; stable tags are ancestry-gated to main # v2.9.2
-        with:
-          prefix-key: v1-rust
-          # One key for the pair: a re-run of a failed deb leg (aarch64, the one
-          # target both jobs build, same flags) restores this cache instead of
-          # repeating the cross build. A FRESH tag still pays both cold: the
-          # jobs start together, and a tag's caches are scoped to that tag.
-          shared-key: release-${{ matrix.target }}
 
       - uses: ./.github/actions/setup-just
 
@@ -179,12 +167,6 @@ jobs:
       - uses: pixtuoid/.github/.github/actions/setup-rust@main
         with:
           targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # zizmor: ignore[cache-poisoning] PR caches are merge-ref scoped; stable tags are ancestry-gated to main # v2.9.2
-        with:
-          prefix-key: v1-rust
-          # Paired with the build job's shared-key — the rationale lives there.
-          shared-key: release-${{ matrix.target }}
 
       - uses: ./.github/actions/setup-just
 

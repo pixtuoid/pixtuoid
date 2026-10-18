@@ -70,10 +70,11 @@ NO CSP; regressions surface in `just site-e2e`'s console watchdog.
 
 `just site-dev-bg` daemonizes (`astro dev --background`, polls the dev-only
 `/_astro/status` endpoint); `just site-dev-stop` frees the port. Two edges:
-the status endpoint is dev-server only (astro 7.3.4's `core/create-vite.js` registers it
-under `command === "dev"`; `astro preview` daemonizes too but has nothing to
-poll), and dev/preview share port 4321 — stop the
-daemon before `just site-e2e` (its webServer fails loud on a squatted port).
+the status endpoint is dev-server only (astro's `core/create-vite.js`, at
+`package.json`'s version, registers it under `command === "dev"`; `astro
+preview` daemonizes too but has nothing to poll), and dev/preview share port
+4321 — stop the daemon before `just site-e2e` (its webServer fails loud on a
+squatted port).
 `npm run lighthouse` needs 4321 AND `collect.previewPort` free: its preview
 moves there so the gzip proxy can take the audited port.
 
@@ -86,7 +87,7 @@ PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
 - **Lighthouse** (`npm run lighthouse`, in-repo runner
-  `config/lighthouse-runner.mjs`, lighthouse 13 programmatic API, median of
+  `config/lighthouse-runner.mjs`, lighthouse's programmatic API, median of
   `lighthouserc.json`'s `numberOfRuns` serial runs; runner-semantics pinned by
   its test — a renamed audit FAILS instead of passing vacuously).
   **A category score is a budget, not a
@@ -107,7 +108,7 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 - **npm**: `audit` runs LAST in `verify` (a live advisory would short-circuit
   the checks below it — #847/#849); CI runs it when a PR changes
   `package.json` or `package-lock.json`, and daily in `audit.yml`.
-  npm 12 pinned (`packageManager` + `engine-strict`); install scripts
+  npm pinned (`packageManager` + `engine-strict`); install scripts
   fail-closed (`strict-allow-scripts`, exact-version `allowScripts`, explicit
   `fsevents` denial) — review with `npm install-scripts ls`.
 - **Nothing gates a STALE `overrides` entry**: to retire one, fresh-resolve

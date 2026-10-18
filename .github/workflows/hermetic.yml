@@ -15,29 +15,56 @@ on:
         type: string
         default: pinned
     outputs:
-      runs:
-        description: 'The artifact the runs upload as when `just hermetic` exits non-zero'
-        value: ${{ jobs.run.outputs.runs }}
+      runs-stem:
+        description: 'The stem each OS leg uploads its runs under, as `<runs-stem><os>`, when `just hermetic` exits non-zero'
+        value: ${{ jobs.run.outputs.runs-stem }}
+      moved_macos:
+        description: 'The macOS leg''s `bump::MOVED` rows: each source whose latest passed above its pin'
+        value: ${{ jobs.run.outputs.moved_macos }}
+      moved_windows:
+        description: 'The Windows leg''s `bump::MOVED` rows'
+        value: ${{ jobs.run.outputs.moved_windows }}
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+# `run` executes third-party CLIs, so no job here saves a cache
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode).
+cache-mode: read
 
 jobs:
   run:
-    name: hermetic (${{ inputs.cli }})
+    name: hermetic (${{ inputs.cli }}, ${{ matrix.os }})
     if: ${{ inputs.full }}
-    # The recorded workspace's realpath (`/private/tmp`) and kqueue liveness are
-    # macOS's, the platform the corpus was recorded on.
-    runs-on: macos-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The recorded workspace's realpath (`/private/tmp`) and kqueue
+          # liveness are macOS's, the platform the corpus was recorded on.
+          - { os: macos, runner: macos-latest, timeout: 30 }
+          - { os: windows, runner: windows-latest, timeout: 45 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    defaults:
+      run:
+        # Windows' default is pwsh.
+        shell: bash
+    # A matrix job's output is the last leg's to finish (docs.github.com
+    # workflow-syntax, "Using job outputs in a matrix job"), so it comes from
+    # job-level env, which `jobs.<id>.outputs` can read (docs.github.com
+    # contexts, "Context availability") and no step has to reach.
+    env:
+      RUNS_STEM: hermetic-runs-${{ github.run_id }}-${{ github.run_attempt }}-
     outputs:
-      runs: ${{ steps.run.outputs.runs }}
+      runs-stem: ${{ env.RUNS_STEM }}
+      # Each leg sets only its own, and a matrix combines its legs' outputs.
+      moved_macos: ${{ steps.moved.outputs.moved_macos }}
+      moved_windows: ${{ steps.moved.outputs.moved_windows }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
+        with:
+          shared-key: hermetic
       # Node, and the repo's one npm, whose allowScripts policy the tier's CLI
       # installs rely on.
       - uses: ./.github/actions/setup-npm
@@ -47,15 +74,21 @@ jobs:
         id: run
         env:
           CLI: ${{ inputs.cli }}
+          CARGO_TERM_COLOR: always
+          RUST_BACKTRACE: 1
         run: |
           set +e
           just hermetic --cli "$CLI"
           echo "exit=$?" >> "$GITHUB_OUTPUT"
-          echo "runs=hermetic-runs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Report the moved releases
+        id: moved
+        env:
+          OS: ${{ matrix.os }}
+        run: echo "moved_${OS}=$(cat target/hermetic/runs/moved.json)" >> "$GITHUB_OUTPUT"
       - if: steps.run.outputs.exit != '0'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.run.outputs.runs }}
+          name: ${{ env.RUNS_STEM }}${{ matrix.os }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error

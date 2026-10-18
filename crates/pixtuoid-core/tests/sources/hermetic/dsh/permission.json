@@ -6,7 +6,7 @@
     },
     {
       "match": { "hasToolResult": false },
-      "response": { "reasoning": "The note needs wider access.", "toolCalls": [ { "name": "bash", "arguments": { "command": "cat NOTE.txt", "description": "Read the note", "sandbox_permissions": "danger-full-access", "justification": "The note needs wider access." } } ], "usage": { "input_tokens": 12, "output_tokens": 7 } }
+      "response": { "reasoning": "The note needs wider access.", "toolCalls": [ { "name": "{shell_tool}", "arguments": { "command": "cat NOTE.txt", "description": "Read the note", "sandbox_permissions": "danger-full-access", "justification": "The note needs wider access." } } ], "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
       "match": { "hasToolResult": true },

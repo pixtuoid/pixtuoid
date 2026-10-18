@@ -1,16 +1,18 @@
 # A PR enters by `@mergifyio queue` once docs/CONTRIBUTING.md#the-merge-gate
-# holds: its local rows are a judgement no condition can make.
+# holds: confirming a finding is a judgement no condition can make.
 #
 # Two-step CI (docs.mergify.com/merge-queue/two-step): a PR's pushes run the
 # light tier, and the queue's draft PR (`mergify/merge-queue/…`) runs the full
-# tier, batching several PRs into one run. Branch protection is not injected:
+# tier, batching several PRs into one run; an up-to-date PR alone at the front
+# merges on its own CI (docs.mergify.com/merge-queue/direct-merge), since
+# merge_conditions add nothing. Branch protection is not injected:
 # the bots review the PR, never the queue's draft, so an injected review
 # condition, which the queue also checks on that draft
 # (docs.mergify.com/merge-queue/rules: "the merge conditions for checks are
 # evaluated against the temporary pull request"), would never pass there.
 merge_queue:
   max_parallel_checks: 1
-  # Its "ready to queue" box cannot see the local rows.
+  # Its "ready to queue" box cannot confirm a finding.
   queue_controls_comment: false
 
 queue_rules:
@@ -46,15 +48,3 @@ queue_rules:
     # The queue's draft PR, where ci-gate is the full tier.
     merge_conditions:
       - check-success = ci-gate
-
-pull_request_rules:
-  # media-regen.yml's bot PR queues itself: it renders main's merged code, which
-  # each look PR's generated-art lens already read as evidence. Every file it
-  # touches must sit under docs/images/ (the list operator matches any file).
-  - name: queue the README media regen
-    conditions:
-      - head = bot/media-regen
-      - -from-fork
-      - -files ~= ^(?!docs/images/)
-    actions:
-      queue:

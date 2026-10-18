@@ -544,7 +544,7 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
 const CODEX: SourceDescriptor = SourceDescriptor {
     name: codex::SOURCE_NAME,
     label_prefix: "cx",
-    verified_version: "0.155.1",
+    verified_version: "0.163.0",
     version_probe: Some(&["codex", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("CODEX_HOME"),
@@ -755,7 +755,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
 const OPENCODE: SourceDescriptor = SourceDescriptor {
     name: opencode::SOURCE_NAME,
     label_prefix: "oc",
-    verified_version: "2.0.27",
+    verified_version: "2.0.32",
     version_probe: Some(&["opencode", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
@@ -924,7 +924,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
 const GROK: SourceDescriptor = SourceDescriptor {
     name: grok::SOURCE_NAME,
     label_prefix: "gk",
-    verified_version: "1.0.25",
+    verified_version: "1.0.62",
     version_probe: Some(&["grok", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("GROK_HOME"),
@@ -1042,7 +1042,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
 const KIMI: SourceDescriptor = SourceDescriptor {
     name: kimi::SOURCE_NAME,
     label_prefix: "km",
-    verified_version: "2.0.1",
+    verified_version: "2.2.0",
     version_probe: Some(&["kimi", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,

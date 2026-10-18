@@ -268,3 +268,47 @@ git init -q "$test_dir/no-parent" && echo a >"$test_dir/no-parent/lock" && git -
     fail "path-changed passed a diff it could not run: $(<"$test_dir/no-parent.err")"
 grep -q 'bad revision' "$test_dir/no-parent.err" ||
     fail "the parentless repo's diff did not fail on its missing parent: $(<"$test_dir/no-parent.err")"
+
+# ── hermetic-nightly.yml: one issue, titled by every failed leg, each report on it ──
+file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "Open or update tracking issue")"
+file_bin="$test_dir/file-bin"
+mkdir -p "$file_bin"
+cat >"$file_bin/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$GH_LOG"
+case "$1 $2" in
+"issue list") echo "${FAKE_OPEN:-}" ;;
+"issue create") echo "https://github.com/o/r/issues/9" ;;
+esac
+STUB
+chmod +x "$file_bin/gh"
+file_runs="$test_dir/file-runs"
+for os in macos windows; do
+    mkdir -p "$file_runs/hermetic-runs-1-1-$os"
+    printf '# hermetic, latest CLIs on %s: Fail\n\nbody %s\n' "$os" "$os" >"$file_runs/hermetic-runs-1-1-$os/report.md"
+done
+filed() {
+    : >"$test_dir/gh.log"
+    (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN="$1" GH_TOKEN=t GH_REPO=o/r \
+        bash -c "$file_script") >/dev/null 2>&1 || fail "the file step exited non-zero"
+    cat "$test_dir/gh.log"
+}
+title='hermetic, latest CLIs on macos: Fail; hermetic, latest CLIs on windows: Fail'
+log="$(filed '')"
+if ! { grep -qxF "issue create --title $title --label hermetic --body-file hermetic-runs-1-1-macos/report.md" <<<"$log" &&
+    grep -qxF "issue comment 9 --body-file hermetic-runs-1-1-windows/report.md" <<<"$log"; }; then
+    fail "a new issue is not titled by both legs' H1s with both reports on it: $log"
+fi
+log="$(filed 7)"
+if ! { grep -qxF "issue edit 7 --title $title" <<<"$log" && [[ $(grep -c '^issue comment 7 --body-file' <<<"$log") == 2 ]]; }; then
+    fail "an open issue is not retitled with both legs' reports added: $log"
+fi
+# A leg that could not run uploads runs with no report.md: the others still file, and the step goes red.
+mkdir -p "$file_runs/hermetic-runs-1-1-linux"
+: >"$test_dir/gh.log"
+if (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1; then
+    fail "the file step passed with a leg that wrote no report"
+fi
+[[ $(grep -c '^issue comment 7 --body-file' "$test_dir/gh.log") == 2 ]] ||
+    fail "a leg with no report kept the others' reports off the issue: $(<"$test_dir/gh.log")"

@@ -24,8 +24,9 @@ permissions:
 
 jobs:
   # Two-step CI (docs.mergify.com/merge-queue/two-step): a PR's pushes run the
-  # light tier and pass ci-gate on it; the full tier runs on the merge queue's
-  # draft PR, where .mergify.yml's merge_conditions read ci-gate, and on main.
+  # light tier and pass ci-gate on it; the full tier runs on main, and on the
+  # merge queue's draft PR, which Mergify skips for an up-to-date PR alone at
+  # the front of the queue.
   tier:
     runs-on: ubuntu-latest
     timeout-minutes: 2

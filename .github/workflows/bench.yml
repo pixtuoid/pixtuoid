@@ -24,11 +24,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: pixtuoid/.github/.github/actions/setup-rust@main
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v1-rust # match setup-cargo-just's default cache namespace
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-cargo-just
       - name: Run frame + wire benchmarks (advisory, non-blocking)
         run: just bench
       # `bench-pacing` builds the binary, whose default `audio` feature links ALSA.

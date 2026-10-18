@@ -1,14 +1,14 @@
 <!--
 Thanks for contributing to pixtuoid! Before you open this PR:
 - Read AGENTS.md (root) — architecture invariants & conventions are load-bearing.
-- Push: the pre-push hook runs `just preflight` (lint + clippy); CI runs the tests. `just preflight full` runs CI's Rust recipes locally.
+- Push: the pre-push hook runs `just preflight`; CI runs the tests.
 - From a fork: the automatic review skips it, and a maintainer reviews it by hand.
-Delete sections that don't apply. Keep it short — the diff speaks for itself.
+Delete sections that don't apply.
 -->
 
 ## Summary
 
-<!-- What does this change and why? One or two sentences. -->
+<!-- What this changes and why, and the claims the review should hold the diff to. -->
 
 ## Related issue
 
@@ -26,7 +26,7 @@ Delete sections that don't apply. Keep it short — the diff speaks for itself.
 ## How I tested it
 
 <!--
-- CI's light tier (runs on push); the local-review rows that apply
+- Each REVIEW.md must-run item the change touches, with its result
 - Live: ./target/release/pixtuoid run --headless --projects-root ~/.claude/projects
 -->
 
@@ -34,23 +34,11 @@ Delete sections that don't apply. Keep it short — the diff speaks for itself.
 
 <!--
 Skip this block for non-visual changes. For any .sprite edit or change to the
-pixel painter, attach a cropped snapshot and self-critique:
-  cargo build --release --example snapshot
-  ./target/release/examples/snapshot --cols 192 --rows 80 /tmp/snap.png
-  .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png --scale 3
+pixel painter, attach a cropped snapshot from the beautify-decoration skill's
+loop (.claude/skills/beautify-decoration/SKILL.md) and self-critique.
 -->
 
 - [ ] Not a visual change, or — screenshot/GIF attached below and it reads at half-block scale.
-
-## Checklist
-
-- [ ] I read the relevant `AGENTS.md` (root + the nested one for the crate I touched).
-- [ ] New behavior has a test (this repo is TDD-first).
-- [ ] Errors propagate via `anyhow`/`thiserror`.
-- [ ] No new `println!`/`eprintln!` on a production path (use `tracing`).
-- [ ] Docs updated in the same commit if I changed module structure, architecture, or public API (`AGENTS.md` / `README.md`).
-- [ ] Checked against [`REVIEW.md`](https://github.com/pixtuoid/pixtuoid/blob/main/REVIEW.md#common), the rules the review bots apply.
-- [ ] CI is green.
 
 ## AI assistance
 

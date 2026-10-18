@@ -93,30 +93,6 @@ jobs:
           job_name: ${{ matrix.platform }}-test
           test_step_outcome: ${{ steps.tests.outcome }}
 
-  snapshots:
-    name: snapshot hygiene
-    # Declared, not inherited: an omitted block would take the caller's
-    # id-token: write and hand this job a repo-scoped OIDC minting capability.
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-alsa
-      - uses: ./.github/actions/setup-gpu
-      - uses: ./.github/actions/setup-cargo-just
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-nextest
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-insta
-      # An uninstrumented run lets insta detect pending and orphan snapshots.
-      - run: just snapshots
-
   smoke:
     name: smoke
     if: ${{ inputs.full }}
@@ -140,31 +116,6 @@ jobs:
           out=$(echo '{}' | ./target/release/pixtuoid-hook 2>&1)
           test -z "$out"
           echo "hook shim exited 0 silently (expected no-op with no socket)"
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.x"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Set up Python virtual environment
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install -r requirements-dev.txt
-      # Evidence, not a gate: a look-changing PR doesn't commit media, and the
-      # generated-art lens reads the overlays below.
-      - name: README media drift (evidence)
-        continue-on-error: true
-        run: just gen-media-check
-      - name: Upload gen-check diff overlays
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: gen-check-diffs
-          path: target/gen-check-diff/
-          retention-days: 7
-          if-no-files-found: ignore
 
   required:
     name: required-test-jobs
@@ -174,7 +125,7 @@ jobs:
     # single protected ci-gate silently lose coverage.
     if: ${{ always() }}
     needs:
-      [test, snapshots, smoke]
+      [test, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

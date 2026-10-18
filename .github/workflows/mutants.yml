@@ -20,21 +20,17 @@ jobs:
         with:
           fetch-depth: 0 # `--in-diff` needs the merge base in history
           persist-credentials: false
-      - uses: pixtuoid/.github/.github/actions/setup-rust@main
+      - uses: ./.github/actions/setup-cargo-just
       # cargo-mutants builds its baseline with DEFAULT features — it needs
       # ALSA even where a reader assumes the flag-stripped release shape.
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-gpu
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v1-rust # match setup-cargo-just's default cache namespace
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-mutants
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
-      - uses: ./.github/actions/setup-just
       # workflow_dispatch has no pull_request context, so MUTANTS_BASE is left
       # empty — `just mutants` falls back to its origin/main default.
       - name: Mutation-test the diff vs main (advisory, non-blocking)

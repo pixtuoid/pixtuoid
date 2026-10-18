@@ -137,10 +137,10 @@ pub enum AgentEvent {
         /// True ONLY when this end's SUBJECT is a CHILD agent ending *as a
         /// child*. Source-trait CONTRACT: only subagent-END decoders may stamp
         /// `true`; every other constructor stamps `false` on a root end. The
-        /// reducer's child ledger keys on the stamp — it remembers the child's
-        /// applied parent and starts the ended-recently window that blocks a
-        /// late/reordered parented re-registration, so parentless root
-        /// resurrects stay untouched by construction.
+        /// reducer's lifecycle record keys on the stamp: `true` starts the
+        /// child's gate on a late/reordered parented re-registration, and a
+        /// `false` from a hook makes only a hook start revive the root for the
+        /// straggler window.
         as_child: bool,
     },
     /// Emitted by a watcher once per liveness-probe refresh for EVERY session
@@ -266,6 +266,26 @@ impl AgentEvent {
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
+        }
+    }
+
+    /// Whether this event shows its session working now: the creation
+    /// polarity's evidence for a slot no start announced. A start carries its
+    /// own authority, and an end, a model, usage or title line shows nothing,
+    /// nor does [`ProofOfLife`](Self::ProofOfLife), which vouches a visible
+    /// slot past the sweeps and must never create one.
+    pub(crate) fn shows_activity(&self) -> bool {
+        match self {
+            AgentEvent::ActivityStart { .. }
+            | AgentEvent::ActivityEnd { .. }
+            | AgentEvent::Waiting { .. } => true,
+            AgentEvent::SessionStart { .. }
+            | AgentEvent::Rename { .. }
+            | AgentEvent::SessionEnd { .. }
+            | AgentEvent::ProofOfLife { .. }
+            | AgentEvent::Identity { .. }
+            | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Usage { .. } => false,
         }
     }
 }

@@ -10,6 +10,8 @@ runs:
         prefix-key: v1-rust
         # rust-cache isolates by OS, so one shared-key is safe across platforms.
         shared-key: packaging-build
+        # As setup-cargo-just's: only main's copy is ever restored by others.
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: ./.github/actions/setup-alsa
     - name: cargo install --locked (both binaries, default features)
       shell: bash

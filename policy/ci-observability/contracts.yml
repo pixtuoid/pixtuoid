@@ -9,6 +9,8 @@
 # key fails its contract instead of slipping past it. Each `break` is a jq edit
 # of the same document that must turn `assert` red, and every run applies them
 # all; a clause is proven able to fire only while some break falsifies it alone.
+# A `covers` string makes every file under .github/ holding it one the contract
+# must list.
 
 # ── Scopes that only look narrow
 
@@ -42,37 +44,57 @@
     - '.runs.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
     - '.runs.steps += [{"uses": "Swatinem/rust-cache@v2"}]'
 
-- id: media-regen-bounds-its-token
-  file: .github/workflows/media-regen.yml
+- id: bot-publish-runs-no-tree-code
+  file:
+    - .github/workflows/media-regen.yml
+    - .github/workflows/hermetic-nightly.yml
   why: >-
-    publish holds the App's key and the write token it mints, which stay bounded
-    only while no other job can read them, publish builds and runs nothing from
-    the tree, and the one thing it commits is the README's media.
+    publish holds the bot App's key and the write token it mints, and commits
+    what an earlier job produced: the media a render left, or the patch a leg
+    that ran a just-published CLI wrote. Both stay bounded only while no other
+    job can read the key and publish builds and runs nothing from the tree.
   assert: |
     ([.jobs.publish.steps[] | .run // ""] | join("\n")) as $publish
     | .permissions == {}
-      and .jobs.render.permissions == {"contents": "read"}
       and ([.jobs | to_entries[] | select(.key != "publish") | .value | tostring | test("secrets\\.")] | any | not)
       and .jobs.publish.permissions == {}
       and ([.jobs.publish.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/checkout", "actions/download-artifact", "actions/create-github-app-token", "peter-evans/create-pull-request"]) == []
       and ([.jobs.publish.steps[] | select((.uses // "") | startswith("actions/checkout@")) | .with["persist-credentials"]] | all(. == false))
       and ($publish | test("\\b(cargo|just|npm|node|pip|python3?|make|bash|sh)\\b|\\./") | not)
       and ($publish | test("\\bgit\\s+(add|commit|push)\\b") | not)
-      and ([.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/create-pull-request@")) | .with["add-paths"]] == ["docs/images"])
-      and ((.on | keys) - ["push", "workflow_dispatch"]) == []
   break:
-    - '.jobs.render.steps += [{"env": {"T": "${{ secrets.MEDIA_APP_KEY }}"}, "run": "true"}]'
-    - '.jobs.render.permissions.contents = "write"'
+    - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.BOT_APP_KEY }}"}, "run": "true"}]}'
+    - '.permissions = {"contents": "write"}'
     - '.jobs.publish.permissions = {"contents": "write"}'
     - '.jobs.publish.steps += [{"run": "cargo build"}]'
-    - '(.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/")) | .with["add-paths"]) = "."'
     - '.jobs.publish.steps += [{"run": "git add -A && git commit -m x"}]'
-    - .on.pull_request = {}
-    - '.permissions = {"contents": "write"}'
-    - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.MEDIA_APP_KEY }}"}, "run": "true"}]}'
     - '.jobs.publish.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
     - '.jobs.publish.steps[0].with["persist-credentials"] = true'
     - '.jobs.publish.steps += [{"run": "bash scripts/x.sh"}]'
+
+- id: media-regen-commits-only-the-readme-media
+  file: .github/workflows/media-regen.yml
+  why: >-
+    Beside `bot-publish-runs-no-tree-code`: render only reads, and the one thing
+    publish commits is the README's media, from main.
+  assert: |
+    .jobs.render.permissions == {"contents": "read"}
+    and ([.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/create-pull-request@")) | .with["add-paths"]] == ["docs/images"])
+    and ((.on | keys) - ["push", "workflow_dispatch"]) == []
+  break:
+    - '.jobs.render.permissions.contents = "write"'
+    - '(.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/")) | .with["add-paths"]) = "."'
+    - .on.pull_request = {}
+
+- id: hermetic-publish-only-on-main
+  file: .github/workflows/hermetic-nightly.yml
+  why: >-
+    Beside `bot-publish-runs-no-tree-code`: a dispatch on a branch is a
+    pre-merge proof, so only main's nightly opens bump PRs.
+  assert: |
+    .jobs.publish.if | test("github\\.ref == 'refs/heads/main'")
+  break:
+    - '.jobs.publish.if = "${{ true }}"'
 
 - id: drift-watch-files-issues-from-a-job-that-runs-no-tree-code
   file:
@@ -105,19 +127,94 @@
 - id: hermetic-nightly-files-the-runs-the-tier-named
   file: .github/workflows/hermetic-nightly.yml
   why: >-
-    The issue is filed from the runs the tier uploaded, under the name its
-    upload chose and its `runs` output hands on. A name rebuilt here can
-    disagree with it and find nothing.
+    The issue is filed from the runs each OS leg uploaded, under the stem the
+    tier's `runs-stem` output hands on, each leg's in its own directory: a name
+    rebuilt here can disagree with it and find nothing, and merged legs would
+    overwrite one report with the other.
   assert: |
-    [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with.name]
-    == ["${{ needs.drift.outputs.runs }}"]
+    [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
+    == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*"}]
   break:
     - |
       .jobs.file.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with.name = "hermetic-runs-${{ github.run_id }}" else . end)
+        if (.uses // "") | startswith("actions/download-artifact") then .with.pattern = "hermetic-runs-${{ github.run_id }}*" else . end)
     - |
       .jobs.file.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with = {"merge-multiple": true} else . end)
+        if (.uses // "") | startswith("actions/download-artifact") then .with["merge-multiple"] = true else . end)
+    - |
+      .jobs.file.steps |= map(
+        if (.uses // "") | startswith("actions/download-artifact") then .with = {"name": "${{ needs.drift.outputs.runs-stem }}"} else . end)
+
+- id: only-main-saves-the-rust-cache
+  covers: Swatinem/rust-cache@
+  file:
+    - .github/actions/setup-cargo-just/action.yml
+    - .github/actions/packaging-build/action.yml
+    - .github/workflows/ci-builds.yml
+    - .github/workflows/ci-lint.yml
+  expected: ${{ github.ref == 'refs/heads/main' }}
+  why: >-
+    Every ref restores main's rust-cache, and the 10 GB quota evicts by last
+    access (docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching),
+    so a step that saves on other refs pushes main's full-tier entries out and
+    they rebuild cold, with nothing red.
+  assert: |
+    [(.jobs[]?.steps[]?, .runs.steps[]?) | select((.uses // "") | startswith("Swatinem/rust-cache@"))] as $caches
+    | ($caches | length > 0) and all($caches[]; .with["save-if"] == $expected)
+  break:
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then del(.with["save-if"]) else . end)
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["save-if"] = "true" else . end)
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .uses = "actions/cache@v5" else . end)
+
+- id: hermetic-caches-restore-only-but-their-one-writer
+  file:
+    - .github/workflows/hermetic.yml
+    - .github/workflows/hermetic-nightly.yml
+  why: >-
+    These workflows run agent CLIs nobody here vets, on runners holding the
+    job's cache token, and a cache saved into main's scope reaches every ref's
+    restore, release builds included. Only `cache-mode` scopes the token, so
+    each workflow defaults to read, and the one job that may write runs no CLI.
+    `run` restores what `build` saved only while both share one rust-cache key:
+    the same shared key, and none of the env rust-cache hashes (Swatinem/rust-cache
+    src/config.ts `envPrefixes`) at workflow or job level; a split key would
+    cold-build every run with nothing red.
+  expected: hermetic
+  assert: |
+    .["cache-mode"] == "read"
+    and ([.jobs | to_entries[] | select((.value["cache-mode"] // "read") | IN("read", "none") | not) | .key]
+         | . == [] or . == ["build"])
+    and (.jobs.build == null
+         or ([.jobs.build.steps[] | .run // empty] == ["just hermetic-build"]
+             and ([.jobs.build.steps[] | .uses // empty | sub("@.*"; "")]
+                  - ["actions/checkout", "./.github/actions/setup-cargo-just"]) == []))
+    and ([.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["shared-key"]]
+         | length > 0 and all(. == $expected))
+    and ([(.env // {}), (.jobs[] | .env // {}) | keys[] | select(test("^(CARGO|CC|CFLAGS|CXX|CMAKE|RUST)"))] == [])
+  break:
+    - del(.["cache-mode"])
+    - '.["cache-mode"] = "write"'
+    - '.jobs.extra = {"runs-on": "macos-latest", "cache-mode": "write-only", "steps": [{"run": "true"}]}'
+    - '.jobs.build = {"runs-on": "macos-latest", "cache-mode": "write", "steps": [{"run": "just hermetic --cli latest"}]}'
+    - '.jobs.build.steps += [{"uses": "anthropics/claude-code-action@v1"}]'
+    - '.env = {"CARGO_TERM_COLOR": "always"}'
+    - '(.jobs[] | select(.steps != null)).env = {"RUST_BACKTRACE": "1"}'
+    - '(.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["shared-key"]) = "other"'
+
+- id: hermetic-build-covers-every-run-os
+  file:
+    - .github/workflows/hermetic.yml
+    - .github/workflows/hermetic-nightly.yml
+  why: >-
+    rust-cache keys a save by OS and arch (Swatinem/rust-cache src/config.ts),
+    so a `run` leg restores only what a `build` leg on its runner saved; a leg
+    `build` lacks cold-builds every run with nothing red.
+  expected: macos-latest windows-latest
+  assert: |
+    [.jobs.run.strategy.matrix.include[]?.runner, .jobs.build.strategy.matrix.runner[]?] | join(" ") == $expected
+  break:
+    - '.jobs.run.strategy.matrix.include += [{"runner": "ubuntu-latest"}]'
+    - '.jobs.build.strategy.matrix.runner += ["ubuntu-latest"]'
 
 - id: oidc-only-on-the-tests-call
   file: .github/workflows/ci.yml
@@ -148,7 +245,7 @@
                  and (.permissions["id-token"] != "write"
                       or any(.steps[]?; .uses == "pixtuoid/.github/.github/actions/upload-codecov@main")))
   break:
-    - del(.jobs.snapshots.permissions)
+    - del(.jobs.smoke.permissions)
     - .jobs.smoke.permissions["id-token"] = "write"
     - .jobs.test.steps |= map(select(.uses != "pixtuoid/.github/.github/actions/upload-codecov@main"))
 
@@ -286,6 +383,7 @@
     - (.jobs[] | select(has("if")) | .if) |= sub("github.repository_id == '[0-9]+'"; "github.repository == 'pixtuoid/pixtuoid'")
     - (.jobs[] | select(has("if")) | .if) |= sub("( && )?github.repository_id == '[0-9]+'"; "")
     - '.jobs.ungated = {"runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
+    - .jobs |= with_entries(.value.needs = ["x"])
 
 - id: publishers-need-the-release-environment
   file: [.github/workflows/release-plz.yml, .github/workflows/release.yml]
@@ -301,6 +399,7 @@
   break:
     - del(.jobs[].environment)
     - (.jobs[] | select(has("environment")) | .environment) = "staging"
+    - del(.jobs[].permissions["id-token"])
 
 - id: credential-jobs-restore-no-cache
   file: .github/workflows/release-plz.yml
@@ -315,6 +414,25 @@
   break:
     - (.jobs.release.steps[] | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with) |= del(.["enable-cache"])
     - (.jobs["release-pr"].steps[] | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["enable-cache"]) = "true"
+    - .jobs |= map_values(.steps |= map(select((.uses // "") != "./.github/actions/setup-cargo-just")))
+
+- id: release-builds-restore-no-cache
+  file: .github/workflows/release.yml
+  why: >-
+    A tag's run restores main's caches ("Workflow runs can restore caches
+    created in either the current branch or the default branch",
+    docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+    into the builds whose binaries are attested and published. zizmor's
+    cache-poisoning audit reads only a job's own steps, never a local
+    composite's (zizmorcore/zizmor v1.30.0
+    crates/zizmor/src/audit/cache_poisoning.rs:796-813), and setup-cargo-just
+    restores by default.
+  assert: |
+    all(.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just");
+        (.with["enable-cache"] // "") == "false")
+  break:
+    - '.jobs.build.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
+    - '.jobs.build.steps += [{"uses": "./.github/actions/setup-cargo-just", "with": {"enable-cache": "true"}}]'
 
 - id: release-attests-before-publishing
   file: .github/workflows/release.yml
@@ -326,7 +444,7 @@
     .jobs.release.steps as $steps
     | ([$steps | to_entries[] | select((.value.uses // "") | startswith("actions/attest")) | .key] | min) as $attest
     | ([$steps | to_entries[] | select((.value.uses // "") | startswith("softprops/action-gh-release@")) | .key] | min) as $publish
-    | $attest != null and $publish != null and $attest < $publish
+    | $attest != null and $attest < $publish
   break:
     - .jobs.release.steps |= ([.[] | select((.uses // "") | startswith("actions/attest") | not)] + [.[] | select((.uses // "") | startswith("actions/attest"))])
     - .jobs.release.steps |= map(select((.uses // "") | startswith("actions/attest") | not))
@@ -358,6 +476,7 @@
     - .jobs["ci-passed"].steps[0].env.CHECK_NAME = "lint"
     - .jobs["ci-passed"].steps[0]["continue-on-error"] = true
     - .jobs["ci-passed"].steps[0].if = "${{ false }}"
+    - .jobs.dup = .jobs.release
 
 - id: every-main-push-gets-its-ci-gate
   file: .github/workflows/ci.yml
@@ -407,6 +526,8 @@
     - del(.jobs["release-merge"].steps[0].env.PR_BRANCH_PREFIX)
     - del(.jobs["version-tagged"].if)
     - .jobs["version-tagged"].if = "${{ !cancelled() && needs.release-merge.outputs.release == 'true' }}"
+    - .jobs.dup = .jobs["ci-passed"]
+    - .jobs.dup = .jobs["version-tagged"]
 
 - id: release-plz-publishes-only-release-prs
   file: release-plz.toml

@@ -61,6 +61,21 @@ pub(crate) fn copilot_id_from_path(path: &Path) -> String {
         .to_string()
 }
 
+/// The root's `SessionStart`, at the cwd its event's `context` names.
+fn root_start(root: AgentId, source: &str, session_id: &str, data: Option<&Value>) -> AgentEvent {
+    let cwd = data
+        .and_then(|d| d.get("context"))
+        .and_then(|c| str_at(c, "cwd"))
+        .unwrap_or("");
+    AgentEvent::SessionStart {
+        agent_id: root,
+        source: source.to_string(),
+        session_id: session_id.to_string(),
+        cwd: PathBuf::from(cwd),
+        parent_id: None,
+    }
+}
+
 fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(|x| x.as_str())
 }
@@ -86,6 +101,7 @@ pub(crate) fn extract_copilot_cwd(v: &Value) -> Option<PathBuf> {
 }
 
 const SESSION_START: &str = "session.start";
+const SESSION_RESUME: &str = "session.resume";
 const TOOL_EXECUTION_START: &str = "tool.execution_start";
 const TOOL_EXECUTION_COMPLETE: &str = "tool.execution_complete";
 const PERMISSION_REQUESTED: &str = "permission.requested";
@@ -105,6 +121,7 @@ const SESSION_SHUTDOWN: &str = "session.shutdown";
 #[cfg(any(test, feature = "upstream"))]
 pub(crate) const DECODED_KINDS: &[&str] = &[
     SESSION_START,
+    SESSION_RESUME,
     TOOL_EXECUTION_START,
     TOOL_EXECUTION_COMPLETE,
     PERMISSION_REQUESTED,
@@ -230,18 +247,16 @@ pub fn decode_copilot_line(
                     crate::source::drift::missing_field(source, "session.start", "sessionId");
                     ""
                 });
-            let cwd = data
-                .and_then(|d| d.get("context"))
-                .and_then(|c| str_at(c, "cwd"))
-                .unwrap_or("");
-            vec![AgentEvent::SessionStart {
-                agent_id: root,
-                source: source.to_string(),
-                session_id: session_id.to_string(),
-                cwd: PathBuf::from(cwd),
-                parent_id: None,
-            }]
+            vec![root_start(root, source, session_id, data)]
         }
+        // The id rides the path: a resume keeps the sessionId, and its
+        // `ResumeData` carries none.
+        SESSION_RESUME => vec![root_start(
+            root,
+            source,
+            &copilot_id_from_path(Path::new(transcript_path)),
+            data,
+        )],
         TOOL_EXECUTION_START => {
             let Some(d) = data else {
                 crate::source::drift::missing_field(source, "tool.execution_start", "data");
@@ -562,6 +577,31 @@ mod tests {
                 assert!(as_child);
             }
             other => panic!("expected one child SessionEnd, got {other:?}"),
+        }
+    }
+
+    /// A `--resume` keeps the sessionId and appends to the same events.jsonl
+    /// past its `session.shutdown`, so its structural marker is what revives
+    /// the session; the schema's `ResumeData` carries no sessionId.
+    #[test]
+    fn session_resume_revives_the_root_with_its_cwd() {
+        let line = r#"{"type":"session.resume","data":{"resumeTime":"2026-05-22T06:20:00.000Z","eventCount":42,"context":{"cwd":"d:\\contentforge-fullstack (1)"}},"id":"r1","timestamp":"2026-05-22T06:20:00.010Z","parentId":"220c4131"}"#;
+        match &decode(line)[..] {
+            [
+                AgentEvent::SessionStart {
+                    agent_id,
+                    session_id,
+                    cwd,
+                    parent_id,
+                    ..
+                },
+            ] => {
+                assert_eq!(*agent_id, root());
+                assert_eq!(session_id, "65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3");
+                assert_eq!(cwd, Path::new(r"d:\contentforge-fullstack (1)"));
+                assert_eq!(*parent_id, None);
+            }
+            other => panic!("expected one SessionStart, got {other:?}"),
         }
     }
 

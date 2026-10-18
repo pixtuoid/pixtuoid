@@ -9,29 +9,15 @@
 //! Recording its INPUT cannot cover every source: codewhale is env-mode, so a
 //! stdin tee captures a file of empty payloads.
 
-#[cfg(not(unix))]
-fn main() {
-    // Non-zero like every other "cannot do the job" path here: a caller that
-    // scripts this must not read a silent no-capture as a successful one.
-    eprintln!("capture-fixture records at the shim's Unix-socket output; run it on macOS or Linux");
-    std::process::exit(2);
-}
-
-#[cfg(unix)]
 fn main() -> std::io::Result<()> {
     recorder::main()
 }
 
-/// The whole tool, Unix-gated: it records at a `UnixListener` the shim connects
-/// back to, and the Windows shim speaks a named pipe instead.
-#[cfg(unix)]
 mod recorder {
     use std::collections::BTreeSet;
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixListener;
+    use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex};
-    use std::time::{Duration, SystemTime};
+    use std::time::SystemTime;
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
     use pixtuoid_core::source::{registry, resolved_source_root};
@@ -44,11 +30,16 @@ mod recorder {
     const DEFAULT_PROMPT: &str =
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
 
-    use pixtuoid_core::harness::CAPTURE_WORKSPACE as WORKSPACE;
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest};
-    use pixtuoid_core::harness::recorder_flag::{ENV, OUT, PROMOTE, TEE, WITHIN};
+    use pixtuoid_core::harness::host::{create_private_dir, owned_by_us};
+    use pixtuoid_core::harness::recorder_flag::{
+        CLI_VERSION, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
+    };
+    use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        CAPTURE_NOTE, CAPTURE_RECORD, CaptureRecord, HOOK_PAYLOADS, PROVENANCE, jsonl_files_under,
+        CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, HOOK_PAYLOADS, PROVENANCE,
+        capture_base, capture_workspace, capture_workspace_tail, jsonl_files_under,
+        required_version_probe, version_answer,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -59,22 +50,16 @@ mod recorder {
     /// driver that installs its CLI: a capture must anchor that version.
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
-    /// A hook can still be in flight when the CLI's own process exits, so the wait
-    /// is measured from the LAST PAYLOAD rather than from that exit.
-    const SETTLE: Duration = Duration::from_millis(500);
-    const QUIET_ROUNDS: u32 = 4;
-    const MAX_ROUNDS: u32 = 40;
-
     /// A hermetic run's overrides: where the capture goes, and what the harvest
     /// and the CLI may see.
-    #[derive(Debug, Default, PartialEq)]
+    #[derive(Debug, Default, Clone, PartialEq)]
     struct Options {
         /// Write the RAW capture here: not stripped, no provenance, no PII scan.
         /// The strip blanks what the decoder under test does not read, which is
         /// exactly where a renamed upstream field lands, so drift evidence must
         /// keep it; these bytes are never committed.
         out: Option<PathBuf>,
-        /// Forward each payload, as received, to this socket: a headless pixtuoid
+        /// Forward each payload, as received, to this endpoint: a headless pixtuoid
         /// renders the same run the recorder records.
         tee: Option<PathBuf>,
         /// Refuse a harvest root outside this directory, a sandbox the caller
@@ -87,6 +72,38 @@ mod recorder {
         /// Run no CLI: write this hermetic run's raw capture into the committed
         /// fixture its scenario names, as a live recording would be written.
         promote: Option<PathBuf>,
+        /// The CLI's `--version`, asked by a caller that launched it some way
+        /// the recorder cannot repeat (an interpreter and an entry script).
+        cli_version: Option<String>,
+        /// The workspace as the caller resolved it: Windows resolves its known
+        /// ProgramData only in an environment the sandbox's no longer holds.
+        workspace: Option<PathBuf>,
+        /// Run no CLI: create this source's transcript root inside `within`, as
+        /// a user who ran the CLI before has it.
+        prepare_root: Option<String>,
+    }
+
+    impl Options {
+        /// Why this host may not run what these options ask: a raw [`OUT`]
+        /// capture is any host's, the committed corpus [`CORPUS_REFUSAL`]'s.
+        fn corpus_refusal(&self) -> Option<&'static str> {
+            CORPUS_REFUSAL.filter(|_| self.promote.is_some() || self.out.is_none())
+        }
+
+        /// [`PREPARE_ROOT`] runs no CLI, so it takes [`WITHIN`] and nothing else:
+        /// any other option asks for a run or a write this mode never makes.
+        fn prepare_root_alone(&self, positionals: &[String]) -> Result<(), String> {
+            let alone = Options {
+                prepare_root: self.prepare_root.clone(),
+                within: self.within.clone(),
+                ..Options::default()
+            };
+            if *self == alone && positionals.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("{PREPARE_ROOT} takes {WITHIN} and nothing else"))
+            }
+        }
     }
 
     /// Leading option pairs, each a [`pixtuoid_core::harness::recorder_flag`]
@@ -107,6 +124,20 @@ mod recorder {
                 TEE => options.tee = Some(PathBuf::from(take(&mut args, TEE)?)),
                 WITHIN => options.within = Some(PathBuf::from(take(&mut args, WITHIN)?)),
                 PROMOTE => options.promote = Some(PathBuf::from(take(&mut args, PROMOTE)?)),
+                CLI_VERSION => options.cli_version = Some(take(&mut args, CLI_VERSION)?),
+                PREPARE_ROOT => options.prepare_root = Some(take(&mut args, PREPARE_ROOT)?),
+                WORKSPACE => {
+                    let ws = PathBuf::from(take(&mut args, WORKSPACE)?);
+                    if capture_base(&ws).is_none() {
+                        return Err(format!(
+                            "{WORKSPACE} {} must be absolute and end in {}: the recorder clears \
+                             its parent",
+                            ws.display(),
+                            capture_workspace_tail().display()
+                        ));
+                    }
+                    options.workspace = Some(ws);
+                }
                 ENV => {
                     let value = take(&mut args, ENV)?;
                     let (k, v) = value
@@ -136,6 +167,21 @@ mod recorder {
         })
     }
 
+    /// Create `root` when it lies inside `within`: an operator's own root would
+    /// read to pixtuoid's auto-detect as an installed CLI. A source with no
+    /// transcript root has nothing to create.
+    fn prepare_root(root: Option<&Path>, within: Option<&Path>) -> std::io::Result<()> {
+        let Some(root) = root else {
+            return Ok(());
+        };
+        let within = within
+            .ok_or_else(|| std::io::Error::other(format!("{PREPARE_ROOT} needs {WITHIN}")))?;
+        if let Some(why) = harvest_root_refusal(Some(root), within) {
+            return Err(std::io::Error::other(why));
+        }
+        std::fs::create_dir_all(root)
+    }
+
     pub(crate) fn main() -> std::io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if args.first().map(String::as_str) == Some("--strip-corpus") {
@@ -148,16 +194,31 @@ mod recorder {
                 std::process::exit(2);
             }
         };
+        if let Some(source) = options.prepare_root.as_deref() {
+            if let Err(why) = options.prepare_root_alone(&args) {
+                eprintln!("{why}");
+                std::process::exit(2);
+            }
+            return prepare_root(
+                resolved_source_root(source).as_deref(),
+                options.within.as_deref(),
+            );
+        }
+        if let Some(why) = options.corpus_refusal() {
+            eprintln!("{why}");
+            std::process::exit(2);
+        }
         if let Some(run) = options.promote.as_deref() {
             return promote(run, &sources_root(), &identity_needles(git_config));
         }
         if args.len() < 3 {
             eprintln!(
-                "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket>] [{WITHIN} <dir>] [{ENV} K=V]... \
-                 <source-id> <scenario> <cmd...>   \
+                "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket|pipe>] [{WITHIN} <dir>] [{ENV} K=V]... \
+                 [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] <source-id> <scenario> <cmd...>   \
                  ('{{prompt}}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
-                 capture_fixture {PROMOTE} <run>   (write a hermetic run into its fixture)"
+                 capture_fixture {PROMOTE} <run>   (write a hermetic run into its fixture)\n       \
+                 capture_fixture {WITHIN} <dir> {PREPARE_ROOT} <source-id>   (create its root; no CLI)"
             );
             std::process::exit(2);
         }
@@ -190,23 +251,39 @@ mod recorder {
             std::process::exit(2);
         }
 
-        let workspace = prepare_workspace()?;
+        let workspace = prepare_workspace(match options.workspace.clone() {
+            Some(ws) => ws,
+            None => capture_workspace()?,
+        })?;
         let sandbox = tempfile::tempdir()?;
-        let sock = sandbox.path().join("capture.sock");
-        let listener = Listener::bind(&sock, options.tee.clone())?;
+        let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+        let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
 
         println!("capturing {source}/{scenario} — one real model turn");
         let started = SystemTime::now();
         let status = run_cli(
             &cmd,
             &workspace,
-            &sock,
+            CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            },
             descriptor.verified_version,
             &options.env,
         )?;
-        listener.settle();
-        let payloads = listener.take();
+        tap.settle();
+        let payloads = tap.payloads();
+        let incomplete = tap.stopped().map(|why| {
+            std::io::Error::other(format!(
+                "the tap stopped accepting, so this capture is incomplete: {why}"
+            ))
+        });
 
+        // A committed capture is complete or not written at all.
+        let incomplete = match incomplete {
+            Some(e) if options.out.is_none() => return Err(e),
+            kept => kept,
+        };
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
 
@@ -223,8 +300,13 @@ mod recorder {
             wrote.push(write_payloads(&payloads, &dest)?);
         }
 
-        let named = std::fs::read_to_string(named_cli(&sock)).ok();
-        let (cli, version) = identity(&cmd[0], named.as_deref(), probe_version);
+        let (cli, version) = match options.cli_version {
+            Some(version) => (registered_cli(descriptor)?, version),
+            None => {
+                let named = std::fs::read_to_string(named_cli(sandbox.path())).ok();
+                identity(&cmd[0], named.as_deref(), probe_version)
+            }
+        };
         if options.out.is_some() {
             // An empty raw capture is still recorded: a hook that never fired
             // is evidence about the run, which a missing record would hide.
@@ -241,7 +323,7 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            return Ok(());
+            return incomplete.map_or(Ok(()), Err);
         }
         if wrote.is_empty() {
             eprintln!(
@@ -328,11 +410,14 @@ mod recorder {
         }
         let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
         let script = scenario.script(&manifest.source);
+        // The record names its script as every host's checkout spells it.
         let script = script
             .strip_prefix(env!("CARGO_MANIFEST_DIR"))
             .unwrap_or(&script)
-            .display()
-            .to_string();
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
         let command = ["just", "hermetic", "--record", manifest.source.as_str()].map(String::from);
         write_provenance(
             &dest,
@@ -438,83 +523,31 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// One connection per event (`transport::send_line` connects, writes one line,
-    /// closes), so a whole payload arrives per accept and cannot interleave.
-    /// THREADED, and not as an optimization: the shim write-times-out under a
-    /// watchdog and a CLI whose hook then fails RETRIES it, so a serial listener
-    /// would add copies on top of the re-delivery a CLI already does.
-    struct Listener {
-        lines: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl Listener {
-        fn bind(sock: &Path, tee: Option<PathBuf>) -> std::io::Result<Self> {
-            let listener = UnixListener::bind(sock)?;
-            let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-            let sink = Arc::clone(&lines);
-            let tee = Arc::new(tee);
-            std::thread::spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(mut stream) = stream else { continue };
-                    let sink = Arc::clone(&sink);
-                    let tee = Arc::clone(&tee);
-                    std::thread::spawn(move || {
-                        let mut buf = String::new();
-                        if stream.read_to_string(&mut buf).is_ok() && !buf.trim().is_empty() {
-                            if let Some(to) = tee.as_deref() {
-                                forward(to, &buf);
-                            }
-                            sink.lock().expect("listener sink").push(buf);
-                        }
-                    });
-                }
-            });
-            Ok(Self { lines })
-        }
-
-        fn len(&self) -> usize {
-            self.lines.lock().expect("listener sink").len()
-        }
-
-        fn settle(&self) {
-            let (mut prev, mut quiet, mut round) = (usize::MAX, 0, 0);
-            while quiet < QUIET_ROUNDS && round < MAX_ROUNDS {
-                let n = self.len();
-                quiet = if n == prev { quiet + 1 } else { 0 };
-                prev = n;
-                round += 1;
-                std::thread::sleep(SETTLE);
+    fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
+        let base = capture_base(&ws).ok_or_else(|| {
+            std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
+        })?;
+        // A fixed name in a shared directory is pre-plantable; a foreign owner is
+        // refused, not removed — under the sticky bit the remove fails and the
+        // capture lands in theirs. Asked of the entry, so a dangling planted link
+        // is refused too.
+        if std::fs::symlink_metadata(base).is_ok() {
+            if !owned_by_us(base) {
+                eprintln!(
+                    "{} exists and is not yours — remove it or run as its owner",
+                    base.display()
+                );
+                std::process::exit(2);
+            }
+            match std::fs::remove_dir_all(base) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                _ => {}
             }
         }
-
-        fn take(&self) -> Vec<String> {
-            self.lines.lock().expect("listener sink").clone()
-        }
-    }
-
-    /// One connection per payload, as the shim itself sends. A tee that cannot
-    /// connect is the headless renderer's failure, left in its scene log; the
-    /// recording goes on.
-    fn forward(to: &Path, payload: &str) {
-        if let Ok(mut s) = std::os::unix::net::UnixStream::connect(to) {
-            let _ = s.write_all(payload.as_bytes());
-        }
-    }
-
-    fn prepare_workspace() -> std::io::Result<PathBuf> {
-        let ws = PathBuf::from(WORKSPACE);
-        let base = ws.parent().expect("WORKSPACE has a parent");
-        // A fixed name in shared temp is pre-plantable; a foreign owner is refused, not
-        // removed — under the sticky bit the remove fails and the capture lands in theirs.
-        if base.exists() && !owned_by_us(base) {
-            eprintln!(
-                "{} exists and is not yours — remove it or run as its owner",
-                base.display()
-            );
-            std::process::exit(2);
-        }
-        let _ = std::fs::remove_dir_all(base);
-        std::fs::create_dir_all(&ws)?;
+        // Made in one call no other local user can write into, and refused if
+        // anyone re-created it since the remove.
+        create_private_dir(base)?;
+        std::fs::create_dir(&ws)?;
         std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n"))?;
         if let Some(seed) = std::env::var_os("CAPTURE_SEED") {
             copy_tree(Path::new(&seed), &ws)?;
@@ -583,33 +616,28 @@ mod recorder {
         Ok(())
     }
 
-    /// `symlink_metadata`, not `metadata`: the squat this refuses IS a planted
-    /// entry, and following it would stat the target the attacker chose.
-    #[cfg(unix)]
-    fn owned_by_us(p: &Path) -> bool {
-        use std::os::unix::fs::MetadataExt;
-        std::fs::symlink_metadata(p)
-            .map(|m| m.uid() == rustix::process::getuid().as_raw())
-            .unwrap_or(false)
+    /// Where one run's shim connects, and its private scratch directory.
+    struct CliWiring<'a> {
+        endpoint: &'a Endpoint,
+        scratch: &'a Path,
     }
 
     fn run_cli(
         cmd: &[String],
         ws: &Path,
-        sock: &Path,
+        wiring: CliWiring<'_>,
         verified: &str,
         env: &[(String, String)],
     ) -> std::io::Result<std::process::ExitStatus> {
         let mut c = std::process::Command::new(&cmd[0]);
         c.args(&cmd[1..])
             .current_dir(ws)
-            .env("PIXTUOID_SOCKET", sock);
-        // Transcripts go beside the socket in this run's private sandbox: a fixed
+            .env(Endpoint::ENV, wiring.endpoint.path());
+        // A driver's transcript goes in this run's private scratch: a fixed
         // shared-temp name is symlink-followable and two concurrent captures interleave.
-        if let Some(dir) = sock.parent() {
-            c.env("TUIDRIVE_LOG", dir.join("tuidrive.log"));
-        }
-        c.env(CLI_ENV, named_cli(sock)).env(VERSION_ENV, verified);
+        c.env("TUIDRIVE_LOG", wiring.scratch.join("tuidrive.log"));
+        c.env(CLI_ENV, named_cli(wiring.scratch))
+            .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
             c.env_remove(k);
         }
@@ -629,9 +657,19 @@ mod recorder {
         Ok(out)
     }
 
-    /// Beside the socket, in this run's private sandbox.
-    fn named_cli(sock: &Path) -> PathBuf {
-        sock.with_file_name("cli")
+    /// In this run's private scratch.
+    fn named_cli(scratch: &Path) -> PathBuf {
+        scratch.join("cli")
+    }
+
+    /// The CLI's own name, as its registry row asks it its version.
+    fn registered_cli(descriptor: &registry::SourceDescriptor) -> std::io::Result<String> {
+        required_version_probe(descriptor)?
+            .first()
+            .map(|cli| (*cli).to_owned())
+            .ok_or_else(|| {
+                std::io::Error::other(format!("{}'s version probe names no CLI", descriptor.name))
+            })
     }
 
     /// The CLI a capture ran, and its version, asked of that CLI alone: a
@@ -662,9 +700,8 @@ mod recorder {
             .arg("--version")
             .output()
             .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.lines().next().map(|l| l.trim().to_owned()))
+            .as_ref()
+            .and_then(version_answer)
     }
 
     fn write_provenance(
@@ -886,6 +923,8 @@ mod recorder {
 
     #[cfg(test)]
     mod tests {
+        use std::time::Duration;
+
         use super::*;
 
         /// An operator nobody's bytes carry, so no test reads the machine's.
@@ -927,7 +966,7 @@ mod recorder {
                 source: "dsh".into(),
                 scenario: "tool-run".into(),
                 capture: CaptureRecord {
-                    workspace: PathBuf::from(WORKSPACE),
+                    workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
@@ -1033,6 +1072,7 @@ mod recorder {
             std::fs::create_dir(&hooks).expect("mkdir");
             let hook = hooks.join("commit-msg");
             std::fs::write(&hook, "#!/bin/sh\nexit 1\n").expect("hook");
+            #[cfg(unix)]
             std::fs::set_permissions(
                 &hook,
                 <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o755),
@@ -1063,13 +1103,98 @@ mod recorder {
         }
 
         #[test]
+        fn a_workspace_whose_parent_is_not_a_capture_base_is_refused() {
+            let args = |ws: &Path| vec![WORKSPACE.to_owned(), ws.display().to_string()];
+            let root = std::env::temp_dir();
+            assert!(
+                parse_options(args(&root.join("proj"))).is_err(),
+                "its parent is the operator's"
+            );
+            let tail = capture_workspace_tail();
+            let why = parse_options(args(&tail)).expect_err("a relative path with the right tail");
+            assert!(
+                why.contains("absolute"),
+                "refused for being relative: {why}"
+            );
+            assert!(
+                why.contains(&format!("end in {}:", tail.display())),
+                "names the tail it checks, never a root any absolute one may have: {why}"
+            );
+            let ws = root.join(&tail);
+            let (o, _) = parse_options(args(&ws)).expect("a capture workspace");
+            assert_eq!(o.workspace, Some(ws));
+        }
+
+        #[test]
+        fn prepare_root_takes_within_and_nothing_else() {
+            let alone = Options {
+                within: Some(PathBuf::from("sandbox")),
+                prepare_root: Some("codex".into()),
+                ..Options::default()
+            };
+            assert_eq!(alone.prepare_root_alone(&[]), Ok(()));
+            assert!(
+                alone.prepare_root_alone(&["codex".into()]).is_err(),
+                "a positional"
+            );
+            let promote = Options {
+                promote: Some(PathBuf::from("run")),
+                ..alone.clone()
+            };
+            assert!(
+                promote.prepare_root_alone(&[]).is_err(),
+                "a promote it would skip"
+            );
+            let out = Options {
+                out: Some(PathBuf::from("raw")),
+                ..alone
+            };
+            assert!(
+                out.prepare_root_alone(&[]).is_err(),
+                "a capture it never makes"
+            );
+        }
+
+        #[test]
+        fn only_a_unix_host_writes_the_corpus() {
+            let raw = Options {
+                out: Some(PathBuf::from("raw")),
+                ..Options::default()
+            };
+            assert_eq!(raw.corpus_refusal(), None, "a raw capture is any host's");
+            let promote = Options {
+                promote: Some(PathBuf::from("run")),
+                ..raw
+            };
+            for corpus in [Options::default(), promote] {
+                assert_eq!(corpus.corpus_refusal().is_some(), !cfg!(unix), "{corpus:?}");
+            }
+        }
+
+        #[test]
         fn leading_option_pairs_are_options_and_the_rest_is_positional() {
             let args = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+            let ws = capture_workspace().expect("the workspace");
             let (o, rest) = parse_options(args(&[
-                "--tee", "/s", "--out", "/o", "--within", "/w", "--env", "A=b=c", "codex",
-                "tool-run", "codex",
+                "--tee",
+                "/s",
+                "--out",
+                "/o",
+                "--within",
+                "/w",
+                "--env",
+                "A=b=c",
+                "--cli-version",
+                "1.2",
+                "--workspace",
+                &ws.display().to_string(),
+                "codex",
+                "tool-run",
+                "codex",
             ]))
             .expect("parse");
+            assert_eq!(o.cli_version.as_deref(), Some("1.2"));
+            assert_eq!(o.workspace, Some(ws));
             assert_eq!(o.out, Some(PathBuf::from("/o")));
             assert_eq!(o.tee, Some(PathBuf::from("/s")));
             assert_eq!(o.within, Some(PathBuf::from("/w")));
@@ -1096,6 +1221,27 @@ mod recorder {
         }
 
         #[test]
+        fn a_root_is_prepared_only_inside_the_sandbox() {
+            let sandbox = tempfile::tempdir().expect("tempdir");
+            let elsewhere = tempfile::tempdir().expect("tempdir");
+            let inside = sandbox.path().join("homes/GROK_HOME/sessions");
+            prepare_root(Some(&inside), Some(sandbox.path())).expect("inside");
+            assert!(inside.is_dir());
+
+            let outside = elsewhere.path().join("sessions");
+            assert!(prepare_root(Some(&outside), Some(sandbox.path())).is_err());
+            assert!(
+                prepare_root(Some(&outside), None).is_err(),
+                "no sandbox named"
+            );
+            assert!(!outside.exists(), "a refusal creates nothing");
+            assert!(
+                prepare_root(None, None).is_ok(),
+                "a hook-only source has no root"
+            );
+        }
+
+        #[test]
         fn a_harvest_root_outside_the_sandbox_is_refused() {
             let within = Path::new("/sandbox");
             assert_eq!(harvest_root_refusal(None, within), None);
@@ -1118,30 +1264,6 @@ mod recorder {
             assert!(
                 harvest_root_refusal(Some(Path::new("/sandboxed")), within).is_some(),
                 "a sibling sharing the prefix's text"
-            );
-        }
-
-        #[test]
-        fn the_listener_forwards_each_payload_to_the_tee_as_received() {
-            let d = tempfile::tempdir().expect("tempdir");
-            let tee = d.path().join("tee.sock");
-            let downstream = UnixListener::bind(&tee).expect("bind tee");
-            let sock = d.path().join("capture.sock");
-            let listener = Listener::bind(&sock, Some(tee)).expect("bind");
-            let payload = "{\"hook_event_name\":\"SessionStart\"}\n";
-            std::os::unix::net::UnixStream::connect(&sock)
-                .expect("connect")
-                .write_all(payload.as_bytes())
-                .expect("send");
-            let (mut got, _) = downstream.accept().expect("forwarded");
-            let mut buf = String::new();
-            got.read_to_string(&mut buf).expect("read");
-            assert_eq!(buf, payload);
-            listener.settle();
-            assert_eq!(
-                listener.take(),
-                vec![payload.to_string()],
-                "recorded as well"
             );
         }
 
@@ -1325,21 +1447,6 @@ mod recorder {
             assert!(no_clobber(p).to_string_lossy().ends_with(".new"));
         }
 
-        /// A link PLANTED by another user cannot be created in a unit test, so this
-        /// pins the discriminator instead: a link WE own pointing at a root-owned dir
-        /// reads as ours — `fs::metadata` would stat the target and read as root's,
-        /// which is how a planted link would have slipped past the refusal.
-        #[test]
-        fn ownership_is_judged_on_the_link_itself_not_on_what_it_points_at() {
-            let d = tempfile::tempdir().expect("tempdir");
-            let link = d.path().join("to-root-owned");
-            std::os::unix::fs::symlink("/usr", &link).expect("symlink");
-            assert!(
-                owned_by_us(&link),
-                "the link is ours; only its target belongs to root"
-            );
-        }
-
         #[test]
         fn provenance_records_an_override_only_when_it_was_actually_set() {
             // Both directions: committed records predate these fields and must stay
@@ -1423,11 +1530,13 @@ mod recorder {
             );
         }
 
+        /// A driver is a Unix shell script.
+        #[cfg(unix)]
         #[test]
         fn a_driver_gets_the_verified_version_and_its_callers_env_and_names_its_cli() {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
-            let sock = sandbox.path().join("capture.sock");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
             // An inherited agent var is scrubbed; a caller's `CLAUDE_CODE_*`
             // opt-out outlives the scrub.
             let script = format!(
@@ -1442,11 +1551,19 @@ mod recorder {
                     ("CLAUDE_CODE_CHILD_SESSION", Some("1")),
                     ("CLAUDE_CODE_PROBE", Some("0")),
                 ],
-                || run_cli(&cmd, ws.path(), &sock, "1.0.0", &env).expect("runs"),
+                || {
+                    let wiring = CliWiring {
+                        endpoint: &endpoint,
+                        scratch: sandbox.path(),
+                    };
+                    run_cli(&cmd, ws.path(), wiring, "1.0.0", &env).expect("runs")
+                },
             );
             assert!(ran.success());
             assert_eq!(
-                std::fs::read_to_string(named_cli(&sock)).ok().as_deref(),
+                std::fs::read_to_string(named_cli(sandbox.path()))
+                    .ok()
+                    .as_deref(),
                 Some("dsh\n")
             );
         }

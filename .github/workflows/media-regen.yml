@@ -7,7 +7,14 @@ name: media regen
 on:
   push:
     branches: [main]
-    paths: ["crates/**", "Cargo.lock", "scripts/gen-media.py", "scripts/media.json"]
+    paths:
+      - "crates/**"
+      - Cargo.lock
+      - scripts/gen-media.py
+      - scripts/media.json
+      # themes-composite's `over` file, and the Pillow pin its PNGs come from.
+      - site/src/themes.json
+      - requirements-dev.txt
   workflow_dispatch:
 
 permissions: {}
@@ -65,8 +72,8 @@ jobs:
       - id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.MEDIA_APP_ID }}
-          private-key: ${{ secrets.MEDIA_APP_KEY }}
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_KEY }}
           permission-contents: write
           permission-pull-requests: write
       - run: |
@@ -88,4 +95,4 @@ jobs:
           sign-commits: true
           commit-message: "chore(media): regenerate from ${{ github.sha }}"
           title: "chore(media): regenerate"
-          body: "The README's `docs/images`, rendered from main (`media-regen.yml`). Mergify queues it once the gate holds."
+          body: "The README's `docs/images`, rendered from main (`media-regen.yml`). A session queues it after reading the images."

@@ -161,11 +161,11 @@ tempfile           = "3"
 # one process-wide lock.
 temp-env           = "0.3"
 # The drift watch's patterns and its release-tarball check (pixtuoid's
-# `upstream` feature). regex is already built through criterion. sha2 is new to
-# the build but already locked, and a platform hasher would need a seam of its
-# own to keep the sums check testable.
+# `upstream` feature). regex is already built through criterion, sha2 is new to
+# the build; a platform hasher would need a seam of its own to keep the sums
+# check testable.
 regex              = "1"
-sha2               = "0.10"
+sha2               = { version = "0.11", default-features = false }
 # Its readers parse the source they read, as `syn` does for the Rust: TS
 # through oxc, Markdown through pulldown-cmark, both new to the build.
 oxc_allocator      = "0.153"

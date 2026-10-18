@@ -1,7 +1,7 @@
 ---
 name: local-review
-version: 3.0.0
-description: "Run pixtuoid's review locally at either scope — a DIFF review (one lens per matching REVIEW.md local escalation row; the correctness and design lenses are the automatic CI review's, never re-run locally) or a whole-codebase AUDIT (subsystem × factor fan-out). Use when a diff touches a local-only row, on 'is this ready to merge', or on 'whole-codebase review' / pre-release / periodic audit."
+version: 4.0.0
+description: "Run pixtuoid's review locally at either scope — a DIFF review (REVIEW.md with the CI review's own reviewers, plus the must-run items the read-only CI review can't run) or a whole-codebase AUDIT (subsystem × factor fan-out). Use when CONTRIBUTING's arc step 7 calls for a local review, when the owner asks, for a must-run item, on 'is this ready to merge', or on 'whole-codebase review' / pre-release / periodic audit."
 metadata:
   scope: "pixtuoid repo only"
 ---
@@ -13,45 +13,39 @@ contract; fill briefs from them, never a paraphrase here.
 
 ## When to run
 
-- **Diff scope**: the diff matches a REVIEW.md escalation row marked
-  **local**. The correctness and design lenses are the automatic review's;
-  never re-run them here.
+- **Diff scope**: when [arc step 7](../../../docs/CONTRIBUTING.md#the-arc-loop)
+  calls for it, and for each [must-run](../../../REVIEW.md#must-run) item a
+  change touches.
 - **Whole-codebase scope**: "audit the repo", a pre-release or periodic sweep.
 
 ## Diff scope
 
-1. **Isolate** the branch in a worktree (two sessions on one tree race on
-   HEAD). Note `path`, `branch`, `base` and `head` sha.
-2. **Dispatch** one lens per matching local row, in parallel, in the
-   background: `model: sonnet` for a lens that reads evidence or runs a
-   mechanical check (test lists, mutations, renders, a walk), `opus` only for
-   a design gate. Each briefed:
-
-   ```
-   You are the <row> lens for <PR/branch> on pixtuoid.
-   Worktree: <path> (branch <name>, base <sha>, head <sha>), read-only;
-   stop if HEAD is not that head.
-   Diff: git -C <path> diff <base>..<head>.
-   Read AGENTS.md, then apply the review contract (pixtuoid/.github's
-   claude-review.yml prompt), REVIEW.md's <row> and its Common section.
-   <change-specific claims (from the PR body's impl-plan answers) or design
-   questions, one per line>
-   Run the applicable gates; report each exit code as observed, never through
-   a pipe. Each finding carries an integer confidence 0–100. Your final
-   message is the report, ending in one verdict: APPROVE or
-   REQUEST-CHANGES.
-   ```
-
-   The filled slots are the quality lever; a lazily filled one turns every
-   lens generic.
+1. **Isolate** the head in a detached worktree at its sha (two sessions on
+   one tree race on HEAD). Note `path` and the `head` sha; `base` is the
+   branch the PR targets, `origin/main` unless stacked.
+2. **Run the CI review's orchestration here**, so both runners judge alike.
+   Take the review contract and the `correctness-reviewer`, `design-reviewer`
+   and `verifier` prompts and models verbatim from the shared workflow
+   (`gh api repos/pixtuoid/.github/contents/.github/workflows/claude-review.yml --jq .content | base64 -d`),
+   with three overrides: their GitHub tools become local read-only ones
+   (`git diff <base>...<head>`, the worktree's files), since no PR may exist
+   yet; the scope is `<base>...<head>`; and a reviewer may fetch the docs a
+   best-practice question needs, which CI can't. Spawn the two reviewers in
+   parallel, then one verifier per candidate. Run each must-run item the
+   change touches as its own lens, with Bash,
+   `model: sonnet` when it is mechanical, reporting each exit code as
+   observed, never through a pipe.
+   Give every brief the change's claims, from the PR body or, before it
+   exists, the spec: a lazily filled brief turns every lens generic.
 3. **Collect and verify.** A one-word or placeholder return is a STUB, not a
-   review: re-run that lens alone (#455). Verify every finding's premise
+   review: re-run that lens alone. Verify every kept finding's premise
    yourself before coding a fix — read the comments on the item it names
-   first — and REFUTE deliberate design with its mechanism.
-4. **Fold** accepted findings into ONE commit, with a `plan-miss:` line per
-   finding the plan never named.
-5. **Disposition** each finding in a review thread. The bots open theirs; open
-   each local finding the same way, then reply and resolve:
+   first — and REFUTE one that REVIEW.md's Do not flag covers, or deliberate
+   design, with its mechanism.
+4. **Fold** accepted findings into ONE commit.
+5. **Disposition** each finding in a review thread once the PR is open. The
+   bots open theirs; open each local finding the same way, then reply and
+   resolve:
 
    ```sh
    pr=<N>; head=$(gh pr view $pr --json headRefOid -q .headRefOid)
@@ -68,11 +62,8 @@ contract; fill briefs from them, never a paraphrase here.
      -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}'
    ```
 
-6. **Record** each row's run as
-   [the gate](../../../docs/CONTRIBUTING.md#the-merge-gate) defines, naming
-   the head the lens judged; a push the gate does not carry over needs the
-   lens run again at the new head, scoped as the gate says.
-7. **Before merge**, judge against the gate.
+6. **Before merge**, judge against
+   [the gate](../../../docs/CONTRIBUTING.md#the-merge-gate).
 
 ## Whole-codebase scope
 
@@ -96,7 +87,7 @@ the owner keeps becomes a FOLLOW-UP PR.
 | Thought | Reality |
 |---------|---------|
 | "CI is green, that's enough" | CI can't see design, blast radius, drift, or a deliberate-looking real bug. |
-| "The bots will render it" | A bot reads the diff and the base tree; a local row's run is yours. |
+| "The bots will render it" | A bot reads the diff and the base tree; a must-run item is yours. |
 | "I'll note the finding and move on" | Every finding needs a terminal state. |
 | "The diff looks clean, we're done" (audit) | Drift, debt accretion and erosion accumulate between PRs; only the audit sees them. |
 | "The finder found it, report it" (audit) | A separate skeptic tries to REFUTE each survivor first. |

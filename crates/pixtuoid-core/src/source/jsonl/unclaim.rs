@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::AgentId;
 
 use super::walk::{park_if_truncated_below_cursor, walk_jsonl};
-use super::{SourceDecoders, WatchCtx};
+use super::{Sight, SourceDecoders, WatchCtx};
 
 /// How long an un-drained [`ChildEndUnclaims`] entry survives. Bounds the set:
 /// an id no watcher ever matches would otherwise accrue one entry per child end
@@ -18,8 +18,8 @@ const CHILD_END_UNCLAIM_TTL: Duration = crate::state::reducer::CHILD_END_RELINK_
 
 /// The child-end un-claim side-channel: child ids whose hook
 /// `SessionEnd { as_child: true }` (a decoded `SubagentStop`) was observed, and
-/// whose `seen`-claimed transcript should therefore be RELEASED so the next
-/// append re-registers.
+/// whose `seen`-claimed transcript should therefore be ENDED
+/// (`Sight::Ended`).
 ///
 /// WHY a side-channel: a multi-turn Codex child gets a `SubagentStop` hook at
 /// EVERY turn end but no `SessionStart` carrier of any kind at turn N+1 —
@@ -109,11 +109,12 @@ impl Default for ChildEndUnclaims {
 /// WHY). For every pending id matching one of THIS watcher's `seen` paths: walk
 /// the path's pending bytes to EOF FIRST — a pre-stop straggler that re-entered
 /// as a first-sight would resurrect the just-ended child as a ghost — then
-/// RELEASE the claim. Two deliberate differences from `emit_session_exit`:
+/// END the claim. Two deliberate differences from
+/// [`emit_session_exit`](super::liveness::emit_session_exit):
 ///
 /// * **No `SessionEnd` is emitted** — the reducer already ended the slot from
 ///   the hook `SubagentStop`.
-/// * **Release = `seen` → `false`, not removal.** The path must stay KNOWN: the
+/// * **`seen` → [`Sight::Ended`], not removal.** The path must stay KNOWN: the
 ///   Codex FD probe keeps vouching an in-flight child's still-open rollout, so a
 ///   removed claim would let `revouch_gated_files` reset the cursor to 0 on the
 ///   next scan — a full stale-activity replay plus an instant re-registration
@@ -133,45 +134,44 @@ pub(super) async fn drain_child_end_unclaims(
     if unclaims.is_empty() {
         return;
     }
-    // Snapshot under a short lock so the later walk/release loop is lock-free.
-    let claimed: Vec<(PathBuf, AgentId, bool)> = {
+    // Snapshot under a short lock so the later walk/end loop is lock-free.
+    let claimed: Vec<(PathBuf, AgentId, Sight)> = {
         let seen = ctx.seen.lock().await;
         seen.iter()
-            .map(|(p, &held)| {
+            .map(|(p, &sight)| {
                 (
                     p.clone(),
                     AgentId::from_parts(ctx.source, &decoders.id_derive.id_for(p)),
-                    held,
+                    sight,
                 )
             })
             .collect()
     };
     // Consume ids matching ANY of this watcher's known paths, held or already
-    // released: a duplicate stop's work is done either way.
+    // ended: a duplicate stop's work is done either way.
     let matched = unclaims.take_matching(|id| claimed.iter().any(|(_, pid, _)| pid == id));
     for id in matched {
-        for (path, pid, held) in &claimed {
-            if *pid != id || !*held {
+        for (path, pid, sight) in &claimed {
+            if *pid != id || *sight != Sight::Claimed {
                 continue;
             }
             // Drain pending bytes to EOF while the claim is still held (a
             // straggler decodes as an already-claimed walk, registering
-            // nothing), THEN release. The release only DOWNGRADES an entry that
-            // still exists: if the drained chunk decoded this path's own
-            // terminator, walk_jsonl fully retired the claim, and a blind
-            // insert would resurrect it as merely-released.
+            // nothing), THEN end it. The end only DOWNGRADES an entry that
+            // still exists: a drain that met NotFound retired the claim, and a
+            // blind insert would bring it back as ended.
             park_if_truncated_below_cursor(path, ctx).await;
             walk_jsonl(path, decoders, ctx).await;
             {
                 let mut seen = ctx.seen.lock().await;
                 if seen.contains_key(path) {
-                    seen.insert(path.clone(), false);
+                    seen.insert(path.clone(), Sight::Ended);
                 }
             }
             debug!(
                 path = ?path,
-                "child-end un-claim: released first-sight claim — the next append \
-                 re-registers (#246)"
+                "child-end un-claim: ended first-sight claim — the next append \
+                 that proves life re-registers (#246)"
             );
         }
     }

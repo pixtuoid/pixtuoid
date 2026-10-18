@@ -116,17 +116,26 @@ mod folded {
     }
 }
 
+/// What the watcher's first sight of a transcript still holds. Absent = never
+/// registered, or fully retired by an exit un-claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Sight {
+    /// Registered: appends decode without re-registering.
+    Claimed,
+    /// Its session ended: a DECODED terminator, an oversized span whose tail
+    /// its [`SessionEndChecker`] matches, or a child-end un-claim: the path
+    /// stays KNOWN, so [`revouch_gated_files`](liveness::revouch_gated_files)
+    /// won't replay it however live the probe says the (still-open) rollout is,
+    /// and only an append that shows activity re-registers it.
+    Ended,
+}
+
 #[derive(Clone, Copy)]
 struct WatchCtx<'a> {
     source: &'a Arc<str>,
     cursors: &'a Arc<Mutex<HashMap<PathBuf, u64>>>,
-    /// First-sight claims: path → claim-held. `true` = registered and HELD
-    /// (appends decode without re-registering). `false` = RELEASED, by a
-    /// child-end un-claim or a DECODED terminator: the path stays KNOWN — so
-    /// `revouch_gated_files` won't replay it however live the probe says the
-    /// (still-open) rollout is — but its next append re-registers. Absent =
-    /// never registered, or fully retired by an exit un-claim.
-    seen: &'a Arc<Mutex<HashMap<PathBuf, bool>>>,
+    /// First-sight claims, by path.
+    seen: &'a Arc<Mutex<HashMap<PathBuf, Sight>>>,
     tx: &'a TaggedSender,
     /// Recency window for the first-sight gate (an older file is seeded at EOF
     /// without a SessionStart). One window for the whole watch, so every path
@@ -314,8 +323,8 @@ impl JsonlWatcher {
 
     /// Attach the child-end un-claim side-channel (see [`ChildEndUnclaims`]).
     /// The watcher becomes the CONSUMER: on each pass it drains the handle's
-    /// ids that match its own claimed transcripts and releases those claims so
-    /// the next append re-registers.
+    /// ids that match its own claimed transcripts and ends those claims
+    /// ([`Sight::Ended`]).
     #[doc(hidden)]
     pub fn with_child_end_unclaims(mut self, unclaims: ChildEndUnclaims) -> Self {
         self.child_end_unclaims = Some(unclaims);
@@ -360,7 +369,7 @@ impl JsonlWatcher {
     /// If the file-watch backend cannot be created, or the watch root cannot be stat'ed or watched.
     pub async fn run(self, tx: TaggedSender) -> Result<()> {
         let cursors: Arc<Mutex<HashMap<PathBuf, u64>>> = Arc::new(Mutex::new(HashMap::new()));
-        let seen_sessions: Arc<Mutex<HashMap<PathBuf, bool>>> =
+        let seen_sessions: Arc<Mutex<HashMap<PathBuf, Sight>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let live: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
         let mut scan_state = ScanState::new(self.negative_vouch_min_span);

@@ -45,7 +45,16 @@ default = ["native"]
 native  = ["dep:tokio", "dep:notify"]
 # The recorder writes captured lines back; without insertion order every
 # rewritten object would come out alphabetized, an edit past the sanctioned one.
-harness = ["serde_json/preserve_order"]
+harness = [
+    "serde_json/preserve_order",
+    # The capture rig's host calls (`harness::{host, tap}`), kept off the
+    # shipped build's feature set.
+    "windows-sys/Win32_Storage_FileSystem",
+    "windows-sys/Win32_System_Com",
+    "windows-sys/Win32_System_Pipes",
+    "windows-sys/Win32_System_Registry",
+    "windows-sys/Win32_UI_Shell",
+]
 # What each source depends on upstream, for pixtuoid's drift watch and its
 # tests: no shipped build reads it.
 upstream = []
@@ -94,6 +103,7 @@ proptest = { workspace = true }
 tempfile = { workspace = true }
 temp-env = { workspace = true }
 filetime = "0.2"
+regex = { workspace = true }
 insta = { workspace = true, features = ["yaml"] }
 tracing-subscriber = { workspace = true }
 # Wire→state benchmarks (`just bench`); same CodSpeed compat passthrough as

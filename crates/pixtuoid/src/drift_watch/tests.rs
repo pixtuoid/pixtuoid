@@ -74,7 +74,7 @@ impl Served {
         let base = format!("https://github.com/{repo}/releases/download/{tag}/");
         let name = asset.replace("{version}", tag.trim_start_matches('v'));
         let tarball = format!("TARBALL {repo} {name}");
-        let digest = format!("{:x}", Sha256::digest(tarball.as_bytes()));
+        let digest = sha256_hex(tarball.as_bytes());
         self.tarballs
             .insert(format!("{tarball}#{member}"), text.as_bytes().to_vec());
         self.with(&format!("{base}{name}"), &tarball)
@@ -742,7 +742,7 @@ fn a_release_member_is_read_only_once_its_sums_vouch_for_it() {
         "a sums miss is retried: {r:?}"
     );
     // The right digest vouches only for the name it is listed under.
-    let digest = format!("{:x}", Sha256::digest(b"TARBALL o/r cli-1.0.0-linux.tgz"));
+    let digest = sha256_hex(b"TARBALL o/r cli-1.0.0-linux.tgz");
     let misnamed = served()
         .release(
             &RELEASED,
@@ -790,6 +790,15 @@ fn a_release_member_is_read_only_once_its_sums_vouch_for_it() {
     assert!(
         r.blind.is_empty() && r.errors.len() == 1,
         "a tagless reply is retried: {r:?}"
+    );
+}
+
+/// FIPS 180-2's "abc" vector, whose bytes below 0x10 catch a dropped pad.
+#[test]
+fn a_digest_reads_as_a_sums_file_lists_it() {
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
 
