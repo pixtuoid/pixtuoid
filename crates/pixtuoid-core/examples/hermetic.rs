@@ -36,8 +36,7 @@ mod run {
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
         self, DUMMY_KEY, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
-        Profile, SCENE_LOG, Scenario, Surface, TUI_TRANSCRIPT, USER_PLACEHOLDER,
-        WORKSPACE_PLACEHOLDER,
+        Profile, SCENE_LOG, Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -498,7 +497,7 @@ mod run {
         pixtuoid: PathBuf,
         shim: PathBuf,
         recorder: PathBuf,
-        /// What runs a [`Drive::Tui`] scenario's CLI under a pty.
+        /// What runs a [`Surface::Tui`] scenario's CLI under a pty.
         driver: PathBuf,
     }
 
@@ -1394,7 +1393,7 @@ mod run {
                     tui::CommandLine {
                         source: p.source.to_owned(),
                         scenario: scenario.shape.name().to_owned(),
-                        transcript: run.out.join(TUI_TRANSCRIPT),
+                        log: run.out.join(TUI_LOG),
                         // The recorder expands it, as in a headless invocation.
                         prompt: "{prompt}".to_owned(),
                         program: run
@@ -1459,12 +1458,26 @@ mod run {
 
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
     /// `/tmp` is `/private/tmp`); Windows' cwd reads back as it was set, and
-    /// canonicalizing would resolve a junction it never sees.
+    /// canonicalizing would resolve a junction it never sees. The workspace may
+    /// not exist yet (a config seeded before the recorder makes it), so its
+    /// nearest existing ancestor is the part resolved.
     fn reported_cwd(workspace: &Path) -> String {
         let workspace = if cfg!(windows) {
             workspace.to_path_buf()
         } else {
-            std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf())
+            workspace
+                .ancestors()
+                .find_map(|have| {
+                    let real = std::fs::canonicalize(have).ok()?;
+                    let tail = workspace.strip_prefix(have).ok()?;
+                    // `join("")` would end the path in a separator.
+                    Some(if tail.as_os_str().is_empty() {
+                        real
+                    } else {
+                        real.join(tail)
+                    })
+                })
+                .unwrap_or_else(|| workspace.to_path_buf())
         };
         workspace.to_string_lossy().into_owned()
     }
@@ -1770,7 +1783,7 @@ mod run {
                 .expect("the driver runs as the command");
             let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.shape.name());
-            assert_eq!(line.transcript, Path::new("/runs/x").join(TUI_TRANSCRIPT));
+            assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
             assert_eq!(line.prompt, "{prompt}");
             let program: Vec<OsString> = launch
                 .argv()
@@ -1778,6 +1791,24 @@ mod run {
                 .chain(tui.args().iter().map(OsString::from))
                 .collect();
             assert_eq!(line.program, program);
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_workspace_reports_its_real_path_made_or_not() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let real = d.path().join("real");
+            std::fs::create_dir(&real).expect("real");
+            std::os::unix::fs::symlink(&real, d.path().join("alias")).expect("alias");
+            let real = std::fs::canonicalize(&real).expect("real");
+            // A string, not a `PathBuf`: Claude Code matches the trust key's text,
+            // and a `PathBuf` compare ignores a trailing separator.
+            let want = |tail: &str| format!("{}{tail}", real.display());
+            assert_eq!(
+                reported_cwd(&d.path().join("alias/capture/proj")),
+                want("/capture/proj")
+            );
+            assert_eq!(reported_cwd(&d.path().join("alias")), want(""));
         }
 
         #[test]

@@ -234,7 +234,7 @@ pub const MANIFEST: &str = "run.json";
 pub const SCENE_LOG: &str = "scene.log";
 /// The pty transcript of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
-pub const TUI_TRANSCRIPT: &str = "tui.log";
+pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
@@ -317,14 +317,13 @@ fn grok_event(v: &Value) -> Option<Cow<'_, str>> {
 /// Claude Code's TUI. Manual mode asks before a non-read-only Bash call
 /// (code.claude.com/docs/en/permission-modes).
 const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
-    invocation: &["claude", "--permission-mode", "manual"],
+    args: &["--permission-mode", "manual"],
     composer: tui::Composer {
         marker: "❯",
         rule: '─',
     },
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
-        accept: &[tui::Key::Enter],
         deny: &[tui::Key::Esc],
         // A dialog ignores keys for its first 150 ms and restarts that on each
         // ignored key (`AM=150` in the 2.1.302 bundle).
@@ -1241,6 +1240,20 @@ mod tests {
     }
 
     #[test]
+    fn a_tui_scenario_is_a_permission_turn() {
+        for p in PROFILES {
+            for s in p.scenarios {
+                assert!(
+                    matches!(s.surface, Surface::Headless) || s.shape == Shape::Permission,
+                    "{}/{}: the TUI driver refuses its dialog, which only a Permission turn wants",
+                    p.source,
+                    s.shape.name()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_profile_runs_its_registered_binary() {
         for p in PROFILES {
             let probe = p
@@ -1253,16 +1266,6 @@ mod tests {
                 "{}: the invocation runs a binary the registry does not name",
                 p.source
             );
-            for s in p.scenarios {
-                if let Surface::Tui(tui) = s.surface {
-                    assert_eq!(
-                        tui.binary(),
-                        probe.first().copied(),
-                        "{}: the TUI runs a binary the registry does not name",
-                        p.source
-                    );
-                }
-            }
         }
     }
 

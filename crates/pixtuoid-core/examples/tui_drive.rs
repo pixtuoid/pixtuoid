@@ -4,11 +4,11 @@
 //! the profile's `Tui` row; this shell only moves bytes and renders the screen.
 //!
 //! ```text
-//! tui_drive <source> <scenario> <transcript> <prompt> -- <program> [args...]
+//! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; [`GAVE_UP`] when the driver gave up or the
-//! [`BUDGET`] ran out, and [`USAGE_ERROR`] on a bad command line.
+//! Exits with the CLI's status; `GAVE_UP` when the driver gave up or the
+//! `BUDGET` ran out, and `USAGE_ERROR` on a bad command line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -16,7 +16,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic::tui::{Action, CommandLine, Driver, Key, Tui};
-use pixtuoid_core::harness::hermetic::{self, Scenario, Surface};
+use pixtuoid_core::harness::hermetic::{self, Surface};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 /// How long one run may take, end to end, before the CLI is killed: well under
@@ -47,8 +47,7 @@ const TERM: &str = "xterm-256color";
 
 const GAVE_UP: i32 = 3;
 const USAGE_ERROR: i32 = 2;
-const USAGE: &str =
-    "usage: tui_drive <source> <scenario> <transcript> <prompt> -- <program> [args...]";
+const USAGE: &str = "usage: tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]";
 
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -63,16 +62,13 @@ fn main() {
     std::process::exit(code);
 }
 
-fn tui_scenario(
-    source: &str,
-    scenario: &str,
-) -> std::io::Result<(&'static Tui, &'static Scenario)> {
+fn tui_of(source: &str, scenario: &str) -> std::io::Result<&'static Tui> {
     hermetic::profile(source)
         .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
         .scenarios
         .iter()
         .find_map(|s| match s.surface {
-            Surface::Tui(tui) if s.shape.name() == scenario => Some((tui, s)),
+            Surface::Tui(tui) if s.shape.name() == scenario => Some(tui),
             _ => None,
         })
         .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))
@@ -96,8 +92,8 @@ fn command(argv: &[OsString], env: impl Iterator<Item = (OsString, OsString)>) -
 }
 
 fn drive(line: CommandLine) -> std::io::Result<i32> {
-    let (tui, scenario) = tui_scenario(&line.source, &line.scenario)?;
-    let mut log = std::fs::File::create(&line.transcript)?;
+    let tui = tui_of(&line.source, &line.scenario)?;
+    let mut log = std::fs::File::create(&line.log)?;
     let pair = NativePtySystem::default()
         .openpty(SIZE)
         .map_err(std::io::Error::other)?;
@@ -127,7 +123,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
 
     let started = Instant::now();
     let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
-    let mut driver = Driver::new(tui, scenario.shape, line.prompt, started);
+    let mut driver = Driver::new(tui, line.prompt, started);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -203,7 +199,7 @@ fn send_keys(writer: &mut impl Write, keys: &[Key]) -> std::io::Result<()> {
     keys.iter().try_for_each(|k| send(writer, k.bytes()))
 }
 
-/// The driver's own lines in the transcript, between the CLI's raw output.
+/// The driver's own lines in the log, between the CLI's raw output.
 fn note(log: &mut std::fs::File, line: &str) {
     let _ = writeln!(log, "\n[tui_drive] {line}");
 }
