@@ -89,6 +89,10 @@ fn curl_args(url: &str, timeout: Duration, token_on_stdin: bool) -> Vec<String> 
         .map(str::to_owned)
         .into();
     args.push(timeout.as_secs().to_string());
+    // A CDN can serve its cached gzip to a request that never asked for one, and
+    // curl decodes a body only under `--compressed`
+    // (curl.se/docs/manpage.html#--compressed).
+    args.push("--compressed".to_owned());
     args.extend(
         [
             "--user-agent",
@@ -273,6 +277,14 @@ mod tests {
         let bare = curl_args("u", timeout, false);
         assert!(!bare.iter().any(|a| a == "--header"), "{bare:?}");
         assert_eq!(bare.last().map(String::as_str), Some("u"));
+    }
+
+    #[test]
+    fn every_fetch_decodes_whatever_encoding_the_server_chose() {
+        for token in [true, false] {
+            let args = curl_args("u", Duration::from_secs(1), token);
+            assert!(args.iter().any(|a| a == "--compressed"), "{args:?}");
+        }
     }
 
     /// What `--write-out` makes curl print is what `classify` reads: curl
