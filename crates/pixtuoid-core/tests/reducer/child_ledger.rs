@@ -761,58 +761,45 @@ fn inside_the_end_gate_a_hook_activity_readmits_an_ended_child_only_under_its_pa
     }
 }
 
+/// A grok hook envelope, the shape its recorded subagent run carries.
+fn grok_hook(event: &str, session: &str) -> serde_json::Value {
+    serde_json::json!({
+        "hookEventName": event, "sessionId": session, "workspaceRoot": "/repo",
+        "_pixtuoid_source": "grok",
+    })
+}
+
+/// A grok child's next `user_prompt_submit` names no parent: a parentless
+/// start re-links to its remembered parent (#246), on either transport.
 #[test]
-fn parentless_revival_start_of_an_ended_codex_child_relinks_to_its_remembered_parent() {
+fn a_grok_childs_parentless_next_start_relinks_to_its_remembered_parent() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    use serde_json::json;
     for transport in [Transport::Jsonl, Transport::Hook] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
-        let parent = AgentId::from_parts("codex", "parent-sess");
-        let child_uuid = "02000000-0000-7000-8000-0000000000cd";
-        let child = AgentId::from_parts("codex", child_uuid);
+        let parent = AgentId::from_parts("grok", "parent-sess");
+        let child_sess = "02000000-0000-7000-8000-0000000000cd";
+        let child = AgentId::from_parts("grok", child_sess);
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
         apply_hook_payload(
             &mut r,
             &mut scene,
-            json!({
-                "hook_event_name": "UserPromptSubmit",
-                "session_id": "parent-sess",
-                "_pixtuoid_source": "codex",
-                "cwd": "/repo",
-            }),
+            grok_hook("user_prompt_submit", "parent-sess"),
             t0,
         );
-        apply_hook_payload(
-            &mut r,
-            &mut scene,
-            json!({
-                "hook_event_name": "SubagentStart",
-                "session_id": "parent-sess",
-                "agent_id": child_uuid,
-                "cwd": "/repo",
-                "_pixtuoid_source": "codex",
-            }),
-            t0 + Duration::from_secs(1),
-        );
+        let mut start = grok_hook("subagent_start", "parent-sess");
+        start["subagentId"] = child_sess.into();
+        apply_hook_payload(&mut r, &mut scene, start, t0 + Duration::from_secs(1));
         assert_eq!(
             scene.agents.get(&child).map(|s| s.parent_id),
             Some(Some(parent)),
             "first life: child registered with the parent link ({transport:?})"
         );
         let stop = t0 + Duration::from_secs(2);
-        apply_hook_payload(
-            &mut r,
-            &mut scene,
-            json!({
-                "hook_event_name": "SubagentStop",
-                "session_id": "parent-sess",
-                "agent_id": child_uuid,
-                "_pixtuoid_source": "codex",
-            }),
-            stop,
-        );
+        let mut end = grok_hook("subagent_stop", "");
+        end["subagentId"] = child_sess.into();
+        apply_hook_payload(&mut r, &mut scene, end, stop);
         r.tick(
             &mut scene,
             stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
@@ -822,18 +809,28 @@ fn parentless_revival_start_of_an_ended_codex_child_relinks_to_its_remembered_pa
             "child GC'd after its first life"
         );
 
-        r.apply(
-            &mut scene,
-            AgentEvent::SessionStart {
-                agent_id: child,
-                source: "codex".into(),
-                session_id: child_uuid.into(),
-                cwd: PathBuf::from("/repo"),
-                parent_id: None,
-            },
-            stop + Duration::from_secs(20),
-            transport,
-        );
+        let next = stop + Duration::from_secs(20);
+        if transport == Transport::Hook {
+            apply_hook_payload(
+                &mut r,
+                &mut scene,
+                grok_hook("user_prompt_submit", child_sess),
+                next,
+            );
+        } else {
+            r.apply(
+                &mut scene,
+                AgentEvent::SessionStart {
+                    agent_id: child,
+                    source: "grok".into(),
+                    session_id: child_sess.into(),
+                    cwd: PathBuf::from("/repo"),
+                    parent_id: None,
+                },
+                next,
+                transport,
+            );
+        }
         assert_eq!(
             scene.agents.get(&child).map(|s| s.parent_id),
             Some(Some(parent)),
@@ -1041,46 +1038,29 @@ fn parentless_session_start_enriching_a_parentless_child_slot_adopts_its_remembe
     );
 }
 
+/// A grok child's transcript path names no parent, so its first sight is
+/// parentless: inside the end gate it still registers linked (#244-w1).
 #[test]
-fn an_ended_codex_childs_flat_first_sight_relinks_inside_the_end_gate() {
+fn an_ended_grok_childs_parentless_first_sight_relinks_inside_the_end_gate() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    use serde_json::json;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let parent = AgentId::from_parts("codex", "parent-sess");
-    let child_uuid = "03000000-0000-7000-8000-0000000000ce";
-    let child = AgentId::from_parts("codex", child_uuid);
+    let parent = AgentId::from_parts("grok", "parent-sess");
+    let child_sess = "03000000-0000-7000-8000-0000000000ce";
+    let child = AgentId::from_parts("grok", child_sess);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     apply_hook_payload(
         &mut r,
         &mut scene,
-        json!({
-            "hook_event_name": "UserPromptSubmit",
-            "session_id": "parent-sess",
-            "_pixtuoid_source": "codex",
-            "cwd": "/repo",
-        }),
+        grok_hook("user_prompt_submit", "parent-sess"),
         t0,
     );
-    let subagent_stop = json!({
-        "hook_event_name": "SubagentStop",
-        "session_id": "parent-sess",
-        "agent_id": child_uuid,
-        "_pixtuoid_source": "codex",
-    });
-    apply_hook_payload(
-        &mut r,
-        &mut scene,
-        json!({
-            "hook_event_name": "SubagentStart",
-            "session_id": "parent-sess",
-            "agent_id": child_uuid,
-            "cwd": "/repo",
-            "_pixtuoid_source": "codex",
-        }),
-        t0 + Duration::from_secs(1),
-    );
+    let mut start = grok_hook("subagent_start", "parent-sess");
+    start["subagentId"] = child_sess.into();
+    apply_hook_payload(&mut r, &mut scene, start, t0 + Duration::from_secs(1));
+    let mut subagent_stop = grok_hook("subagent_stop", "");
+    subagent_stop["subagentId"] = child_sess.into();
     let stop = t0 + Duration::from_secs(2);
     apply_hook_payload(&mut r, &mut scene, subagent_stop.clone(), stop);
     r.tick(
@@ -1096,8 +1076,8 @@ fn an_ended_codex_childs_flat_first_sight_relinks_inside_the_end_gate() {
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: child,
-            source: "codex".into(),
-            session_id: child_uuid.into(),
+            source: "grok".into(),
+            session_id: child_sess.into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
         },

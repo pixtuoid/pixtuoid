@@ -35,8 +35,9 @@ pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 /// hook past the straggler window is a new life, which
 /// [`authorizes`](crate::state::reducer::Reducer::authorizes) readmits under a
 /// live parent.
-/// Parentless Starts are deliberately NOT gated — a Codex resurrect-on-prompt
-/// is a legitimate same-id new life and re-links to its remembered parent (#246).
+/// Parentless Starts are deliberately NOT gated — a grok child's next
+/// `user_prompt_submit` names no parent, a legitimate same-id new life that
+/// re-links to its remembered parent (#246).
 #[doc(hidden)]
 pub const CHILD_END_GATE_TTL: Duration = Duration::from_secs(90);
 

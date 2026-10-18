@@ -83,7 +83,7 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
             .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?
             .to_string();
         let child = obj
-            .get("agent_id")
+            .get(crate::source::decoder::SUBAGENT_ID)
             .and_then(|s| s.as_str())
             .filter(|s| !s.is_empty())
             .map(String::from);
@@ -96,8 +96,13 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
         // readiness).
         "SubagentStart" => {
             let (session_id, child) = guards(obj)?;
-            let child = child
-                .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, "SubagentStart", "agent_id"))?;
+            let child = child.ok_or_else(|| {
+                DecodeError::missing_in(
+                    SOURCE_NAME,
+                    "SubagentStart",
+                    crate::source::decoder::SUBAGENT_ID,
+                )
+            })?;
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
             Ok(Some(vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
@@ -112,8 +117,13 @@ pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEven
         // leaves a harmless no-op plus that same fallback.
         "SubagentStop" => {
             let (_session_id, child) = guards(obj)?;
-            let child = child
-                .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, "SubagentStop", "agent_id"))?;
+            let child = child.ok_or_else(|| {
+                DecodeError::missing_in(
+                    SOURCE_NAME,
+                    "SubagentStop",
+                    crate::source::decoder::SUBAGENT_ID,
+                )
+            })?;
             Ok(Some(vec![AgentEvent::SessionEnd {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
                 as_child: true,

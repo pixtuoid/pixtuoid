@@ -174,10 +174,12 @@ pub(crate) fn decode_cc_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>
         .filter(|s| !s.is_empty())
         .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))?;
     let wire_agent_id = obj
-        .get("agent_id")
+        .get(crate::source::decoder::SUBAGENT_ID)
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "agent_id"))?;
+        .ok_or_else(|| {
+            DecodeError::missing_in(SOURCE_NAME, event, crate::source::decoder::SUBAGENT_ID)
+        })?;
     let prefixed = subagent_session(wire_agent_id);
     if event == "SubagentStart" {
         let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
