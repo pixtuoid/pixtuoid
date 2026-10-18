@@ -232,7 +232,7 @@ impl Profile {
 pub const MANIFEST: &str = "run.json";
 /// The headless pixtuoid's output (scene lines and its log) for a run.
 pub const SCENE_LOG: &str = "scene.log";
-/// The pty transcript of a [`Surface::Tui`] run: the CLI's raw output and the
+/// The pty log of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
