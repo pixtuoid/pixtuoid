@@ -222,7 +222,7 @@ pub(crate) const UPSTREAM: &[Watch] = &[
 /// # Errors
 ///
 /// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_copilot_line(
+pub(crate) fn decode_copilot_line(
     transcript_path: &str,
     source: &str,
     v: Value,
@@ -307,8 +307,8 @@ pub fn decode_copilot_line(
             out
         }
         PERMISSION_REQUESTED => {
-            let reason = data
-                .and_then(|d| d.get("permissionRequest"))
+            let request = data.and_then(|d| d.get("permissionRequest"));
+            let reason = request
                 .and_then(|p| str_at(p, "kind"))
                 // Capped at the decode boundary: `kind` is raw wire content that
                 // persists in the slot + egresses on the headless summary.
@@ -317,26 +317,27 @@ pub fn decode_copilot_line(
             vec![AgentEvent::Waiting {
                 agent_id: acting,
                 reason,
-                tool_use_id: None,
+                // The gated call (#951), so its own end resolves the wait.
+                tool_use_id: request
+                    .and_then(|p| str_at(p, "toolCallId"))
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned),
             }]
         }
-        // On APPROVED the gated tool's own `tool.execution_start` follows and
-        // clears the Waiting gate, so emit nothing (a detail-less ActivityStart
-        // here would only inflate tool_call_count). On a DENIAL/cancel no tool
-        // runs, so emit the clearing ActivityStart ourselves.
+        // A refusal ends the gated call: a denial's `tool.execution_complete`
+        // follows, a cancel's (Esc at the prompt) never does, and the second
+        // end is a no-op. An approved call ends on its own.
         PERMISSION_COMPLETED => {
             let approved = data
                 .and_then(|d| d.get("result"))
                 .and_then(|r| str_at(r, "kind"))
                 .is_some_and(|k| k.starts_with("approved"));
-            if approved {
-                vec![]
-            } else {
-                vec![AgentEvent::ActivityStart {
+            match data.and_then(|d| str_at(d, "toolCallId")) {
+                Some(id) if !approved && !id.is_empty() => vec![AgentEvent::ActivityEnd {
                     agent_id: acting,
-                    tool_use_id: None,
-                    detail: None,
-                }]
+                    tool_use_id: Some(id.to_owned()),
+                }],
+                _ => vec![],
             }
         }
         SUBAGENT_STARTED => {
@@ -872,35 +873,54 @@ mod tests {
     }
 
     #[test]
-    fn permission_requested_waits_and_completed_clears() {
+    fn a_permission_waits_on_its_call_and_a_refusal_ends_it() {
         let req = r#"{"type":"permission.requested","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","permissionRequest":{"kind":"shell","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","fullCommandText":"cat /etc/hostname","intention":"Print /etc/hostname contents","commands":[{"identifier":"cat","readOnly":true}],"possiblePaths":["/etc/hostname"],"possibleUrls":[],"hasWriteFileRedirection":false,"canOfferSessionApproval":true},"promptRequest":{"kind":"path","accessKind":"shell","paths":["/etc/hostname"],"toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2"}},"id":"1f975691-a108-4d6f-924b-d48263d46274","timestamp":"2026-06-14T21:35:55.637Z","parentId":"e0a534c6-d548-4def-b0bd-316c83efe5fd"}"#;
         match &decode(req)[..] {
             [
                 AgentEvent::Waiting {
-                    agent_id, reason, ..
+                    agent_id,
+                    reason,
+                    tool_use_id,
                 },
             ] => {
                 assert_eq!(*agent_id, root());
                 assert!(reason.contains("shell"), "reason names the gate: {reason}");
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some("call_K8WLZkwufHsI9bTvkZmMKec2"),
+                    "the wait names the call it gates"
+                );
             }
             other => panic!("expected Waiting, got {other:?}"),
         }
         let approved = r#"{"type":"permission.completed","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","result":{"kind":"approved"}},"id":"8123a44a-3471-4262-9191-b3cddaf5224d","timestamp":"2026-06-14T21:35:58.218Z","parentId":"1f975691-a108-4d6f-924b-d48263d46274"}"#;
         assert!(
             decode(approved).is_empty(),
-            "approved → no event (tool start clears the gate)"
+            "approved → no event (the call ends on its own)"
         );
 
-        // Two REAL deny variants: the interactive user reject and the
-        // non-interactive no-rule auto-deny.
-        for denied in [
-            r#"{"type":"permission.completed","data":{"requestId":"954afe31-559a-4afc-9eb6-13e30cf48aea","toolCallId":"call_nf1RvU9GxssNg2g7WtPgHqQ4","result":{"kind":"denied-interactively-by-user"}},"id":"60dae716-c76c-45e2-84e1-c3248ce3790c","timestamp":"2026-06-14T21:38:43.086Z","parentId":"5240af45-3ad2-4bf7-bc37-83c329c9c2ea"}"#,
-            r#"{"type":"permission.completed","data":{"requestId":"eab9bd2c-ca42-4ab6-8567-1c11906500a6","toolCallId":"toolu_bdrk_015JoceQkzNKnLkeCj5NaLzT","result":{"kind":"denied-no-approval-rule-and-could-not-request-from-user"}},"id":"2cc6bffe-6443-4d8b-9765-dbfeda13c4de","timestamp":"2026-06-14T21:27:17.209Z","parentId":"c113f81d-6f12-4080-bd13-8613526543dc"}"#,
+        // The REAL refusals: the interactive reject, the non-interactive
+        // no-rule auto-deny, and Esc at the prompt (1.0.98).
+        for (refused, call) in [
+            (
+                r#"{"type":"permission.completed","data":{"requestId":"954afe31-559a-4afc-9eb6-13e30cf48aea","toolCallId":"call_nf1RvU9GxssNg2g7WtPgHqQ4","result":{"kind":"denied-interactively-by-user"}},"id":"60dae716-c76c-45e2-84e1-c3248ce3790c","timestamp":"2026-06-14T21:38:43.086Z","parentId":"5240af45-3ad2-4bf7-bc37-83c329c9c2ea"}"#,
+                "call_nf1RvU9GxssNg2g7WtPgHqQ4",
+            ),
+            (
+                r#"{"type":"permission.completed","data":{"requestId":"eab9bd2c-ca42-4ab6-8567-1c11906500a6","toolCallId":"toolu_bdrk_015JoceQkzNKnLkeCj5NaLzT","result":{"kind":"denied-no-approval-rule-and-could-not-request-from-user"}},"id":"2cc6bffe-6443-4d8b-9765-dbfeda13c4de","timestamp":"2026-06-14T21:27:17.209Z","parentId":"c113f81d-6f12-4080-bd13-8613526543dc"}"#,
+                "toolu_bdrk_015JoceQkzNKnLkeCj5NaLzT",
+            ),
+            (
+                r#"{"type":"permission.completed","data":{"requestId":"b310d4e0-1e0e-4600-955d-871b5a951e13","toolCallId":"call_-Dbzv4Ev_Get6cFh","result":{"kind":"cancelled","reason":"Session aborted"}},"id":"f36f04ef-3c73-4b7e-88a0-f00c036e2185","timestamp":"2026-10-18T08:09:01.252Z","parentId":"571e3185-d040-4403-b319-738711e0bb62"}"#,
+                "call_-Dbzv4Ev_Get6cFh",
+            ),
         ] {
-            assert!(
-                matches!(&decode(denied)[..], [AgentEvent::ActivityStart { .. }]),
-                "a non-approved result must clear Waiting: {denied}"
-            );
+            match &decode(refused)[..] {
+                [AgentEvent::ActivityEnd { tool_use_id, .. }] => {
+                    assert_eq!(tool_use_id.as_deref(), Some(call), "{refused}");
+                }
+                other => panic!("a refusal must end the gated call, got {other:?}"),
+            }
         }
     }
 

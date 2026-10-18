@@ -84,6 +84,12 @@ pub(crate) fn transcripts_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+pub(crate) fn transcript_in(dir: &Path) -> PathBuf {
+    let mut t = transcripts_in(dir);
+    assert_eq!(t.len(), 1, "{} must ship one transcript", dir.display());
+    t.remove(0)
+}
+
 /// A fixture's JSONL payload as its non-empty lines — this binary's one line
 /// reader. One definition so a semantics change (a BOM skip, say) cannot reach
 /// one source's tests and miss its siblings (#936's diverging-copies class).

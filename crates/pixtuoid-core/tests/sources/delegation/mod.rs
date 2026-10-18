@@ -4,6 +4,8 @@
 //! model-authored argument on an ordinary tool cannot spoof a delegation, seed
 //! `active_tasks`, and cascade a real child out on drain.
 
+use std::path::PathBuf;
+
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::source::{AgentEvent, ToolDetail};
 
@@ -16,13 +18,17 @@ fn lines(cli: &str, name: &str) -> Vec<String> {
     )
 }
 
+fn copilot_transcript() -> PathBuf {
+    super::captures::transcript_in(
+        &super::captures::sources_root().join("delegation/fixtures/copilot"),
+    )
+}
+
 fn copilot_events() -> Vec<AgentEvent> {
-    // copilot keys the session on the transcript's PARENT dir, so the logical
-    // path has to carry the session id the capture ran under.
-    let logical = "d28d6fbd-b0cb-421a-abaa-1240ee4dae97/events.jsonl";
-    let d = Drive::transcript("copilot", logical)
+    let transcript = copilot_transcript();
+    let d = Drive::transcript_at("copilot", &transcript)
         .expect("copilot has a line decoder")
-        .lines(lines("copilot", "events.jsonl"));
+        .lines(super::captures::fixture_lines(&transcript));
     d.assert_clean("copilot delegation transcript");
     d.events
 }
@@ -134,7 +140,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
         (
             "copilot",
             copilot_events(),
-            lines("copilot", "events.jsonl"),
+            super::captures::fixture_lines(&copilot_transcript()),
             "task",
         ),
         ("omp", omp_events(), lines("omp", "parent.jsonl"), "task"),

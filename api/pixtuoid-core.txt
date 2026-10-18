@@ -162,7 +162,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::copilot::CopilotSource
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::copilot::CopilotSource
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::copilot::CopilotSource
 pub const pixtuoid_core::source::copilot::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::copilot::decode_copilot_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
 pub mod pixtuoid_core::source::cursor
 pub const pixtuoid_core::source::cursor::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::daemon
