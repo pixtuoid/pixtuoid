@@ -1,13 +1,13 @@
 {
   "origin": "recorded",
   "cli": "reasonix",
-  "version": "reasonix v2.39.0",
-  "captured": "2026-10-14",
+  "version": "reasonix v2.44.0",
+  "captured": "2026-10-18",
   "command": "just hermetic --record reasonix",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 9
   },
-  "aimock": "1.43.0",
+  "aimock": "1.44.0",
   "script": "tests/sources/hermetic/reasonix/tool-run.json"
 }
