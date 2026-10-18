@@ -325,10 +325,10 @@ fn source_owned_arms(
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
     v: &Value,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    use crate::source::registry::HookCustom;
-    match desc.and_then(|d| d.hook()).and_then(|h| h.custom) {
-        Some(HookCustom::ClaimsAll(decode)) => decode(v).map(Some),
-        Some(HookCustom::Extend(decode)) => decode(v),
+    use crate::source::registry::HookDecoding;
+    match desc.and_then(|d| d.hook()) {
+        Some(HookDecoding::ClaimsAll(decode)) => decode(v).map(Some),
+        Some(HookDecoding::Shared { extend, .. }) => extend(v),
         None => Ok(None),
     }
 }
@@ -350,45 +350,6 @@ fn hook_session_id(
             DecodeError::missing_in(source, event, "session_id")
         })
         .map(str::to_string)
-}
-
-/// The per-session key is registry DATA (`HookDecoding::id_key`), never a name
-/// match. Codex MUST use `session_id`, since its `transcript_path` is
-/// `string | null` and keying on the path would split hook and JSONL into two
-/// sprites; CC keys on it because that UUID equals its transcript filename stem, so
-/// a subagent→parent link survives a git-worktree cwd-split.
-fn hook_agent_id(
-    desc: Option<&'static crate::source::registry::SourceDescriptor>,
-    obj: &serde_json::Map<String, Value>,
-    source: &str,
-    session_id: &str,
-) -> AgentId {
-    use crate::source::registry::IdKey;
-    // Normalized: fold `\`→`/` + lowercase on Windows, so the hook key and the JSONL
-    // watcher key hash to the same AgentId.
-    let normalized_transcript_path: String;
-    let id_key = match desc
-        .and_then(|d| d.hook())
-        .map_or(IdKey::TranscriptPathThenSessionId, |h| h.id_key)
-    {
-        // A UUID, deliberately NOT normalized — case folding could collide two
-        // variants that differ only in case.
-        IdKey::SessionId => session_id,
-        IdKey::TranscriptPathThenSessionId => {
-            match obj
-                .get("transcript_path")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-            {
-                Some(tp) => {
-                    normalized_transcript_path = normalize_path_key(tp);
-                    &normalized_transcript_path
-                }
-                None => session_id,
-            }
-        }
-    };
-    AgentId::from_parts(source, id_key)
 }
 
 /// The identity context the tool/permission arms attach ahead of their activity
@@ -427,6 +388,10 @@ fn hook_effort(agent_id: AgentId, obj: &serde_json::Map<String, Value>) -> Optio
             effort: Some(ellipsize(level, MAX_DECODED_FIELD_CHARS)),
         })
 }
+
+/// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
+/// payload names no event.
+pub const EVENT_STAMP: &str = "_pixtuoid_event";
 
 /// Decode one hook payload into the event sequence the reducer applies.
 ///
@@ -473,13 +438,12 @@ pub(crate) fn shared_hook_arms(
             DecodeError::missing(source, "hook_event_name")
         })?;
     let session_id = hook_session_id(obj, source, event)?;
-    let agent_id = hook_agent_id(desc, obj, source, &session_id);
-    let tool_id_key = desc
-        .and_then(|d| d.hook())
-        .map_or(crate::source::registry::ToolIdKey::ToolUse, |h| {
-            h.tool_id_key
-        })
-        .wire_name();
+    let agent_id = AgentId::from_parts(source, &session_id);
+    let tool_id_key = match desc.and_then(|d| d.hook()) {
+        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
+        _ => crate::source::registry::ToolIdKey::ToolUse,
+    }
+    .wire_name();
 
     match event {
         "SessionStart" => {
@@ -621,7 +585,7 @@ pub(crate) fn subagent_fired(
         .get("session_id")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
-        .map(|root| hook_agent_id(desc, obj, source, root));
+        .map(|root| AgentId::from_parts(source, root));
     let mut own = obj.clone();
     own.insert("session_id".into(), Value::from(session(agent)));
     let mut evs = shared_hook_arms(&own, source, desc)?;
@@ -1024,43 +988,6 @@ mod tests {
     }
 
     #[test]
-    fn transcript_path_key_strategy_prefers_a_non_empty_path() {
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "ag-sess-1",
-            "_pixtuoid_source": "antigravity",
-            "transcript_path": "/tmp/ag/brain/x.json",
-            "cwd": "/repo"
-        }));
-        match ev {
-            AgentEvent::SessionStart { agent_id, .. } => assert_eq!(
-                agent_id,
-                AgentId::from_parts(
-                    "antigravity",
-                    &crate::id::normalize_path_key("/tmp/ag/brain/x.json")
-                ),
-                "a non-empty transcript_path is the key, not session_id"
-            ),
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "ag-sess-1",
-            "_pixtuoid_source": "antigravity",
-            "transcript_path": "",
-            "cwd": "/repo"
-        }));
-        match ev {
-            AgentEvent::SessionStart { agent_id, .. } => assert_eq!(
-                agent_id,
-                AgentId::from_parts("antigravity", "ag-sess-1"),
-                "an EMPTY transcript_path falls back to session_id"
-            ),
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn codex_permission_request_maps_to_identity_plus_waiting() {
         // The captured Codex shape carries no cwd.
         let evs = decode_hook_payload(json!({
@@ -1305,10 +1232,9 @@ mod tests {
                 "session_id": "s",
                 "agent_id": "child",
                 "cwd": "/repo",
-                // antigravity's row has no custom fn
-                "_pixtuoid_source": "antigravity"
+                "_pixtuoid_source": "some-future-cli"
             }));
-            assert!(ev.is_err(), "antigravity-attributed {event} must bail");
+            assert!(ev.is_err(), "an unregistered source's {event} must bail");
         }
     }
 

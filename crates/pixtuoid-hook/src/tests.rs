@@ -11,7 +11,13 @@ fn stamp_headroom_covers_worst_case_stamps() {
     let mut p = json!({});
     let map = p.as_object_mut().unwrap();
     // 64 is far longer than any registered CLI name — headroom for custom ones.
-    enrich_payload(map, Some("x".repeat(64)), u64::MAX, || Some(u32::MAX));
+    enrich_payload(
+        map,
+        Some("x".repeat(64)),
+        Some("x".repeat(64)),
+        u64::MAX,
+        || Some(u32::MAX),
+    );
     let stamped = serde_json::to_vec(&p).unwrap();
     // minus the bare `{}` baseline, plus the trailing '\n' main appends.
     let overhead = (stamped.len() - 2 + 1) as u64;
@@ -25,7 +31,7 @@ fn stamp_headroom_covers_worst_case_stamps() {
 fn stamps_parent_pid_under_pid_when_absent() {
     let mut p = json!({ "hook_event_name": "Stop" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, Some("hermes".into()), 1, || Some(4242));
+    enrich_payload(map, Some("hermes".into()), None, 1, || Some(4242));
     assert_eq!(map["_pid"], json!(4242u32));
 }
 
@@ -37,7 +43,7 @@ fn an_upstream_pid_is_kept_and_the_resolver_never_runs() {
     let mut p = json!({ "_pid": 777 });
     let map = p.as_object_mut().unwrap();
     let mut resolved = false;
-    enrich_payload(map, Some("opencode".into()), 1, || {
+    enrich_payload(map, Some("opencode".into()), None, 1, || {
         resolved = true;
         Some(4242)
     });
@@ -62,7 +68,7 @@ fn now_ms_narrowing_saturates_instead_of_wrapping() {
 fn stamps_cli_source_under_private_key_and_leaves_public_source_untouched() {
     let mut p = json!({ "hook_event_name": "SessionStart", "source": "startup" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, Some("claude-code".into()), 123, || None);
+    enrich_payload(map, Some("claude-code".into()), None, 123, || None);
     assert_eq!(map["_pixtuoid_source"], json!("claude-code"));
     assert_eq!(map["source"], json!("startup"), "public reason untouched");
     assert_eq!(map["_shim_ts_ms"], json!(123u64));
@@ -72,7 +78,7 @@ fn stamps_cli_source_under_private_key_and_leaves_public_source_untouched() {
 fn no_source_env_omits_private_key_so_decoder_defaults_to_claude() {
     let mut p = json!({ "hook_event_name": "Stop" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, None, 1, || None);
+    enrich_payload(map, None, None, 1, || None);
     assert!(map.get("_pixtuoid_source").is_none());
 }
 
@@ -82,7 +88,7 @@ fn empty_source_env_is_ignored() {
     // not merely decline to insert.
     let mut p = json!({ "_pixtuoid_source": "codex" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, Some(String::new()), 1, || None);
+    enrich_payload(map, Some(String::new()), None, 1, || None);
     assert!(map.get("_pixtuoid_source").is_none());
 }
 
@@ -90,7 +96,7 @@ fn empty_source_env_is_ignored() {
 fn inbound_spoofed_private_key_is_stripped_when_no_source_resolves() {
     let mut p = json!({ "hook_event_name": "Stop", "_pixtuoid_source": "codex" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, None, 1, || None);
+    enrich_payload(map, None, None, 1, || None);
     assert!(
         map.get("_pixtuoid_source").is_none(),
         "inbound spoofed key must be stripped, not passed through"
@@ -101,8 +107,21 @@ fn inbound_spoofed_private_key_is_stripped_when_no_source_resolves() {
 fn inbound_spoofed_private_key_is_overwritten_when_source_resolves() {
     let mut p = json!({ "_pixtuoid_source": "codex" });
     let map = p.as_object_mut().unwrap();
-    enrich_payload(map, Some("reasonix".into()), 1, || None);
+    enrich_payload(map, Some("reasonix".into()), None, 1, || None);
     assert_eq!(map["_pixtuoid_source"], json!("reasonix"));
+}
+
+#[test]
+fn a_hook_event_from_argv_is_stamped_and_an_inbound_one_is_stripped() {
+    let mut p = json!({ "conversationId": "c", "_pixtuoid_event": "Stop" });
+    let map = p.as_object_mut().unwrap();
+    enrich_payload(map, None, Some("PreToolUse".into()), 1, || None);
+    assert_eq!(map["_pixtuoid_event"], json!("PreToolUse"));
+
+    let mut p = json!({ "_pixtuoid_event": "Stop" });
+    let map = p.as_object_mut().unwrap();
+    enrich_payload(map, None, None, 1, || None);
+    assert!(map.get("_pixtuoid_event").is_none());
 }
 
 fn argv(parts: &[&str]) -> Vec<String> {
@@ -176,6 +195,37 @@ fn event_from_argv_reads_both_forms_and_rejects_empty() {
 }
 
 #[test]
+fn hook_event_from_argv_reads_both_forms_and_never_the_env_mode_flag() {
+    assert_eq!(
+        hook_event_from_argv(&argv(&[
+            "pixtuoid-hook",
+            "--source",
+            "antigravity",
+            "--hook-event",
+            "PreToolUse"
+        ])),
+        Some("PreToolUse".into())
+    );
+    assert_eq!(
+        hook_event_from_argv(&argv(&["pixtuoid-hook", "--hook-event=Stop"])),
+        Some("Stop".into())
+    );
+    assert_eq!(
+        hook_event_from_argv(&argv(&["pixtuoid-hook", "--hook-event", ""])),
+        None
+    );
+    assert_eq!(
+        hook_event_from_argv(&argv(&["pixtuoid-hook", "--event", "session_start"])),
+        None
+    );
+    assert_eq!(
+        event_from_argv(&argv(&["pixtuoid-hook", "--hook-event", "Stop"])),
+        None,
+        "a stdin payload's event name must never switch on env mode"
+    );
+}
+
+#[test]
 fn env_payload_folds_codewhale_env_into_the_envelope() {
     let env: std::collections::HashMap<&str, &str> = [
         ("DEEPSEEK_WORKSPACE", "/repo"),
@@ -199,7 +249,7 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
 fn env_mode_gets_its_pid_from_the_single_enrich_site() {
     let mut map = env_payload_from("tool_call_before", None, |_| None);
     assert!(!map.contains_key("_pid"), "not stamped at envelope build");
-    enrich_payload(&mut map, None, 0, || Some(4321));
+    enrich_payload(&mut map, None, None, 0, || Some(4321));
     assert_eq!(map["_pid"], json!(4321), "stamped once, by enrich_payload");
 }
 

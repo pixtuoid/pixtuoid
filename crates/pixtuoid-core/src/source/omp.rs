@@ -2900,7 +2900,7 @@ mod tests {
 
     #[test]
     fn a_stamped_omp_payload_routes_to_this_decoder_through_the_registry() {
-        // Red until the registry row carries `HookCustom::ClaimsAll`: without
+        // Red until the registry row carries `HookDecoding::ClaimsAll`: without
         // it the payload falls through to the CC-shaped shared arms, which
         // find no `hook_event_name` and decode nothing.
         let evs = crate::source::decoder::decode_hook_payload(serde_json::json!({

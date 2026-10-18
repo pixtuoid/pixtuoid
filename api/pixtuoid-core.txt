@@ -92,8 +92,10 @@ impl core::marker::Unpin for pixtuoid_core::source::antigravity::AntigravitySour
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::antigravity::AntigravitySource
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::antigravity::AntigravitySource
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::antigravity::AntigravitySource
+pub const pixtuoid_core::source::antigravity::CLI_APP_DATA_DIR: &str
 pub const pixtuoid_core::source::antigravity::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::antigravity::decode_ag_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub fn pixtuoid_core::source::antigravity::gemini_dir() -> std::path::PathBuf
 pub mod pixtuoid_core::source::claude_code
 pub struct pixtuoid_core::source::claude_code::ClaudeCodeSource
 pub pixtuoid_core::source::claude_code::ClaudeCodeSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
@@ -341,6 +343,7 @@ impl core::marker::Unpin for pixtuoid_core::source::decoder::TailActivity
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::decoder::TailActivity
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::decoder::TailActivity
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::decoder::TailActivity
+pub const pixtuoid_core::source::decoder::EVENT_STAMP: &str
 pub fn pixtuoid_core::source::decoder::decode_hook_payload(serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
 pub type pixtuoid_core::source::decoder::DecodeResult<T> = core::result::Result<T, pixtuoid_core::source::decoder::DecodeError>
 pub type pixtuoid_core::source::decoder::IdDeriver = fn(&std::path::Path) -> alloc::string::String

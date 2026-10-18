@@ -1072,6 +1072,7 @@ mod recorder {
                 aimock: "1.43.0".into(),
                 requests: 3,
                 unmatched: 0,
+                results_seen: 1,
             };
             std::fs::write(
                 run.join(MANIFEST),
@@ -1528,12 +1529,16 @@ mod recorder {
             );
             let cc = Path::new("/sb/.claude/projects/-w/5f2c.jsonl");
             assert_eq!(placement("claude-code", cc, dest), dest.join("5f2c.jsonl"));
-            // Keyed on the whole path, which any placement changes.
-            let ag = Path::new("/sb/.gemini/x/conversations/9/transcript.jsonl");
+            // agy keys its session on the conversation dir `ag_id_from_path` names.
+            let ag =
+                Path::new("/sb/.gemini/antigravity-cli/brain/9/.system_generated/logs/t.jsonl");
             assert_eq!(
                 placement("antigravity", ag, dest),
-                dest.join("transcript.jsonl")
+                dest.join("9/.system_generated/logs/t.jsonl")
             );
+            // Keyed on the whole path, which any placement changes.
+            let whole = Path::new("/sb/x/9/t.jsonl");
+            assert_eq!(placement("not-a-source", whole, dest), dest.join("t.jsonl"));
         }
 
         #[test]

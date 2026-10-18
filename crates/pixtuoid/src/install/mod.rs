@@ -1,3 +1,4 @@
+pub(crate) mod antigravity;
 pub(crate) mod claude;
 pub(crate) mod codewhale;
 pub(crate) mod codex;

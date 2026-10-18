@@ -315,6 +315,18 @@ mod run {
             }
             _ => None,
         };
+        let lock = match (&installed, args.record, p.package) {
+            (
+                Ok(v),
+                true,
+                Package::UpdaterManifest {
+                    manifest,
+                    platforms,
+                    ..
+                },
+            ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
+            _ => None,
+        };
         let (mut judged, mut banners, mut passed) = (Vec::new(), Vec::new(), true);
         for scenario in selected {
             let dir = run_dir(runs, p, scenario);
@@ -352,6 +364,9 @@ mod run {
                         record(ctx, p, runs)?;
                         if let Some(text) = registry {
                             std::fs::write(pin::registry_path(), text)?;
+                        }
+                        if let (Some(lock), Some(path)) = (&lock, p.manifest_lock()) {
+                            std::fs::write(path, serde_json::to_string_pretty(lock)? + "\n")?;
                         }
                     }
                     if pin::moves(p.descriptor(), installed) == Ok(true) {
@@ -621,6 +636,44 @@ mod run {
         c
     }
 
+    /// How many times curl retries a transient failure.
+    const CURL_RETRIES: &str = "3";
+
+    /// What [`curl_get`] returns of a response.
+    enum Curl {
+        /// The headers, redirects unfollowed: a redirect's `location` is the answer.
+        Headers,
+        Body,
+    }
+
+    /// `url`'s headers or body; a failure names curl's own reason.
+    fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
+        let mode = match part {
+            Curl::Headers => "-fsSI",
+            Curl::Body => "-fsSL",
+        };
+        let out = tool(CURL)
+            .args([mode, "--retry", CURL_RETRIES, url])
+            .output()
+            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
+        if !out.status.success() {
+            return Err(std::io::Error::other(format!(
+                "curl {url} exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(out.stdout)
+    }
+
+    fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
+        let mut c = tool(CURL);
+        c.args(["-fsSL", "--retry", CURL_RETRIES, "-o"])
+            .arg(dest)
+            .arg(url);
+        succeed(c)
+    }
+
     /// Run `c` to success. Its error names the program and arguments alone: a
     /// `Command`'s `Debug` prints its environment, npm's credentials included.
     fn succeed(mut c: Command) -> std::io::Result<()> {
@@ -674,25 +727,124 @@ mod run {
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
                 let url = format!("https://github.com/{}/releases/latest", repo.name);
-                let out = tool(CURL)
-                    .args(["-fsSI", "--retry", "3", &url])
-                    .output()
-                    .map_err(|e| format!("curl {url}: {e}"))?;
-                if !out.status.success() {
-                    return Err(format!(
-                        "curl {url} exited {}: {}",
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    ));
-                }
-                latest_tag(&String::from_utf8_lossy(&out.stdout))
+                let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
+                latest_tag(&String::from_utf8_lossy(&headers))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
+            }
+            (
+                Versions::Latest,
+                Package::UpdaterManifest {
+                    manifest,
+                    platforms,
+                    ..
+                },
+            ) => {
+                let here = asset_here(platforms).map_err(|e| e.to_string())?;
+                let current = fetch_manifest(manifest, here).map_err(|e| e.to_string())?;
+                Version::parse(&current.version)
+                    .map_err(|_| format!("{here}'s manifest names {:?}", current.version))
             }
         }
     }
 
+    /// One platform's build, as an updater manifest and a manifest lock name it.
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct Build {
+        version: String,
+        url: String,
+        sha512: String,
+    }
+
+    /// `platform`'s build that the updater serves now.
+    fn fetch_manifest(manifest: &str, platform: &str) -> std::io::Result<Build> {
+        let url = manifest.replace("{platform}", platform);
+        Ok(serde_json::from_slice(&curl_get(&url, Curl::Body)?)?)
+    }
+
+    /// The pinned build of every platform, as `--record` writes it.
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct ManifestLock {
+        version: String,
+        platforms: std::collections::BTreeMap<String, Build>,
+    }
+
+    /// `p`'s committed manifest lock, if it has one.
+    fn committed_lock(p: &Profile) -> std::io::Result<Option<ManifestLock>> {
+        match p.manifest_lock().map(std::fs::read_to_string) {
+            Some(Ok(text)) => Ok(Some(serde_json::from_str(&text)?)),
+            Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(None),
+        }
+    }
+
+    /// The lock of `version`: `committed` when it pins it, since the updater
+    /// serves only its newest build, else every platform's current manifest, each
+    /// of which must serve `version`, so the pin installs on every leg.
+    fn lock_of(
+        committed: Option<ManifestLock>,
+        manifest: &str,
+        platforms: &[(&str, &str, &'static str)],
+        version: &Version,
+    ) -> std::io::Result<ManifestLock> {
+        if let Some(lock) = committed.filter(|l| {
+            l.version == version.to_string()
+                && platforms
+                    .iter()
+                    .all(|(_, _, pf)| l.platforms.contains_key(*pf))
+        }) {
+            return Ok(lock);
+        }
+        let mut lock = ManifestLock {
+            version: version.to_string(),
+            platforms: std::collections::BTreeMap::new(),
+        };
+        for (_, _, platform) in platforms {
+            let build = fetch_manifest(manifest, platform)?;
+            if build.version != lock.version {
+                return Err(std::io::Error::other(format!(
+                    "{platform}'s manifest serves {}, not {version}",
+                    build.version
+                )));
+            }
+            lock.platforms.insert((*platform).to_string(), build);
+        }
+        Ok(lock)
+    }
+
+    /// `platform`'s build of `version`: the lock's when it pins that version,
+    /// else the updater's when it serves it now.
+    fn build_of(
+        lock: Option<&ManifestLock>,
+        manifest: &str,
+        platform: &str,
+        version: &Version,
+    ) -> std::io::Result<Build> {
+        let wanted = version.to_string();
+        if let Some(build) = lock
+            .filter(|l| l.version == wanted)
+            .and_then(|l| l.platforms.get(platform))
+        {
+            return Ok(build.clone());
+        }
+        let current = fetch_manifest(manifest, platform)?;
+        if current.version == wanted {
+            return Ok(current);
+        }
+        Err(std::io::Error::other(format!(
+            "no {platform} build of {version}: the lock pins {}, the updater serves {}",
+            lock.map_or("none", |l| l.version.as_str()),
+            current.version
+        )))
+    }
+
+    /// Whether `bytes` hash to the lowercase hex SHA-512 `want`.
+    fn matches_sha512(bytes: &[u8], want: &str) -> bool {
+        upstream::digest_hex::<sha2::Sha512>(bytes) == want
+    }
+
     const CURL: &str = "curl";
     const GIT: &str = "git";
+    const TAR: &str = "tar";
     const UV: &str = "uv";
 
     /// The release a `releases/latest` response's `location` names.
@@ -726,13 +878,7 @@ mod run {
         to: &Path,
     ) -> std::io::Result<()> {
         let base = format!("https://github.com/{repo}/releases/download/v{version}");
-        let fetch = |name: &str, dest: &Path| {
-            let mut c = tool(CURL);
-            c.args(["-fsSL", "--retry", "3", "-o"])
-                .arg(dest)
-                .arg(format!("{base}/{name}"));
-            succeed(c)
-        };
+        let fetch = |name: &str, dest: &Path| curl_download(&format!("{base}/{name}"), dest);
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         fetch(asset, to)?;
@@ -745,11 +891,17 @@ mod run {
                 "{asset} does not match v{version}'s {sums}"
             )));
         }
+        make_executable(to)
+    }
+
+    fn make_executable(path: &Path) -> std::io::Result<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(to, std::fs::Permissions::from_mode(0o755))?;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
         }
+        #[cfg(not(unix))]
+        let _ = path;
         Ok(())
     }
 
@@ -858,6 +1010,50 @@ mod run {
                         env: Vec::new(),
                     },
                     bin,
+                })
+            }
+            // As agy's own installer does: the build's SHA-512 against the
+            // manifest's, then its tarball's binary installed under the CLI's
+            // name (antigravity.google/cli/install.sh, `:54`, `:191-196`, `:210`).
+            Package::UpdaterManifest {
+                manifest,
+                platforms,
+                member,
+            } => {
+                let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+                install_once(&prefix, |dir| {
+                    let lock = committed_lock(p)?;
+                    let build = build_of(lock.as_ref(), manifest, asset_here(platforms)?, version)?;
+                    let payload = dir.join("payload");
+                    curl_download(&build.url, &payload)?;
+                    if !matches_sha512(&std::fs::read(&payload)?, &build.sha512) {
+                        return Err(std::io::Error::other(format!(
+                            "{} does not match its manifest's SHA-512",
+                            build.url
+                        )));
+                    }
+                    if build.url.ends_with(".tar.gz") {
+                        let mut untar = tool(TAR);
+                        untar
+                            .arg("-xzf")
+                            .arg(&payload)
+                            .arg("-C")
+                            .arg(dir)
+                            .arg(member);
+                        succeed(untar)?;
+                        std::fs::rename(dir.join(member), &program)?;
+                    } else {
+                        std::fs::rename(&payload, &program)?;
+                    }
+                    make_executable(&program)
+                })?;
+                Ok(Installed {
+                    launch: Launch {
+                        program,
+                        args: Vec::new(),
+                        env: Vec::new(),
+                    },
+                    bin: prefix,
                 })
             }
         }
@@ -1180,6 +1376,10 @@ mod run {
                 // at rust-v0.163.0), which only this mode lets a script call
                 // (`CopilotKit/aimock` `CHANGELOG.md`, 1.45.0).
                 .args(["--responses-tools", "extended"])
+                // A script's `turnIndex` is a rule, not a tiebreak (aimock
+                // `README.md`, "Replay matching"): for a `result_unseen` CLI only
+                // the assistant count tells its turns apart.
+                .env("AIMOCK_STRICT_TURN_INDEX", "1")
                 .args(["-p", &port.to_string(), "-f"])
                 .arg(&script)
                 .stdout(log(dir, AIMOCK_LOG)?)
@@ -1244,6 +1444,7 @@ mod run {
         )?;
         let entries = journal.as_array().cloned().unwrap_or_default();
         let (requests, unmatched) = model_requests(&entries);
+        let results_seen = results_seen(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
         // one means the CLI never did; it fails past one only on a capture it
@@ -1270,6 +1471,7 @@ mod run {
             aimock: aimock.version.clone(),
             requests,
             unmatched,
+            results_seen,
         };
         std::fs::write(dir.join(MANIFEST), serde_json::to_string_pretty(&manifest)?)?;
         Ok(manifest)
@@ -1421,6 +1623,18 @@ mod run {
             .filter(|e| e["response"]["fixture"].is_null())
             .count();
         (requests.len(), unmatched)
+    }
+
+    /// The requests whose messages, as aimock normalized them, carry a tool result.
+    fn results_seen(journal: &[serde_json::Value]) -> usize {
+        journal
+            .iter()
+            .filter(|e| {
+                e["body"]["messages"]
+                    .as_array()
+                    .is_some_and(|m| m.iter().any(|m| m["role"] == "tool"))
+            })
+            .count()
     }
 
     /// The scenario's script with its placeholders expanded in every string,
@@ -2218,6 +2432,68 @@ mod run {
                 {"method": "WS", "path": "/v1/responses", "response": {"status": 404, "fixture": null}},
             ]);
             assert_eq!(model_requests(journal.as_array().expect("entries")), (3, 2));
+        }
+
+        #[test]
+        fn a_payload_matches_only_its_own_sha512() {
+            // FIPS 180-2's one-block example.
+            let abc = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a\
+                       2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f";
+            assert!(matches_sha512(b"abc", abc));
+            assert!(!matches_sha512(b"abd", abc));
+        }
+
+        #[test]
+        fn a_lock_pinning_the_version_records_again_without_the_updater() {
+            let build = Build {
+                version: "1.4.2".into(),
+                url: "https://example.invalid/agy.tar.gz".into(),
+                sha512: "00".into(),
+            };
+            let lock = ManifestLock {
+                version: "1.4.2".into(),
+                platforms: [("darwin_arm64".to_string(), build)].into(),
+            };
+            let platforms: &[(&str, &str, &'static str)] = &[("macos", "aarch64", "darwin_arm64")];
+            let again = lock_of(
+                Some(lock),
+                "https://example.invalid/{platform}.json",
+                platforms,
+                &Version::new(1, 4, 2),
+            )
+            .expect("the committed lock");
+            assert_eq!(again.version, "1.4.2");
+        }
+
+        #[test]
+        fn a_lock_pinning_the_version_installs_without_the_updater() {
+            let build = Build {
+                version: "1.4.2".into(),
+                url: "https://example.invalid/agy.tar.gz".into(),
+                sha512: "00".into(),
+            };
+            let lock = ManifestLock {
+                version: "1.4.2".into(),
+                platforms: [("darwin_arm64".to_string(), build.clone())].into(),
+            };
+            let got = build_of(
+                Some(&lock),
+                "https://example.invalid/{platform}.json",
+                "darwin_arm64",
+                &Version::new(1, 4, 2),
+            )
+            .expect("the lock's build");
+            assert_eq!(got, build);
+        }
+
+        #[test]
+        fn a_result_counts_only_where_aimock_read_a_tool_message() {
+            let journal = serde_json::json!([
+                {"method": "POST", "body": {"messages": [{"role": "user"}]}},
+                {"method": "POST", "body": {"messages": [{"role": "assistant"}, {"role": "assistant"}]}},
+                {"method": "POST", "body": {"messages": [{"role": "assistant"}, {"role": "tool"}]}},
+            ]);
+            assert_eq!(results_seen(journal.as_array().expect("entries")), 1);
         }
 
         #[test]

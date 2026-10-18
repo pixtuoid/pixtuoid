@@ -70,8 +70,8 @@ fn build_rows_from_state_follows_connected_set_with_nocli_override() {
         health: None,
     };
     let no_target = |connected| RowInput {
-        source_id: "antigravity",
-        label_prefix: "ag",
+        source_id: "copilot",
+        label_prefix: "cp",
         target: None,
         facts: None,
         connected,
@@ -94,7 +94,7 @@ fn build_rows_from_state_follows_connected_set_with_nocli_override() {
     assert_eq!(rows[4].state, ConnState::Disconnected);
     assert_eq!(rows[0].display_name, "Claude Code");
     assert_eq!(rows[0].config_path, Some(PathBuf::from("/c")));
-    assert_eq!(rows[3].display_name, "Antigravity");
+    assert_eq!(rows[3].display_name, "Copilot CLI");
     assert!(rows[3].target.is_none());
     assert!(rows[3].config_path.is_none());
 }
@@ -222,8 +222,8 @@ fn move_selection_clamps_at_both_ends() {
             health: None,
         },
         RowInput {
-            source_id: "antigravity",
-            label_prefix: "ag",
+            source_id: "copilot",
+            label_prefix: "cp",
             target: None,
             facts: None,
             connected: false,
@@ -243,8 +243,8 @@ fn build_rows_covers_every_registry_source_with_aligned_live_view() {
     assert!(rows.len() >= 5, "expected the 5 install targets + sources");
     assert!(
         rows.iter()
-            .any(|r| r.source_id == "antigravity" && r.target.is_none()),
-        "antigravity must appear as a no-target (JSONL) row"
+            .any(|r| r.source_id == "copilot" && r.target.is_none()),
+        "copilot must appear as a no-target (JSONL) row"
     );
     let scene = SceneState::uniform(8);
     let live = live_view(SystemTime::UNIX_EPOCH, &rows, &scene, &[]);
@@ -268,12 +268,12 @@ fn a_disconnected_row_shows_no_health_line() {
 #[test]
 fn build_rows_honors_the_connected_set() {
     let mut set = HashSet::new();
-    set.insert("antigravity".to_string()); // no-target → flag alone drives it
+    set.insert("copilot".to_string()); // no-target → flag alone drives it
     let rows = build_rows(&set, "");
-    let ag = rows.iter().find(|r| r.source_id == "antigravity").unwrap();
-    assert_eq!(ag.state, ConnState::Connected);
+    let cp = rows.iter().find(|r| r.source_id == "copilot").unwrap();
+    assert_eq!(cp.state, ConnState::Connected);
     for r in &rows {
-        if r.source_id != "antigravity" {
+        if r.source_id != "copilot" {
             assert_ne!(
                 r.state,
                 ConnState::Connected,

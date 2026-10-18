@@ -151,7 +151,7 @@ tests/sources/fixtures/<source>/<scenario>/
 ```
 
 A scenario ships the transports its source actually has: both files
-(CC/Codex), transcript-only (antigravity — no hooks), or hook-payloads-only
+(CC/Codex), transcript-only (copilot — no hooks), or hook-payloads-only
 (reasonix — hook-only, no watchable JSONL).
 
 **A transcript whose id comes from its PARENT DIR must keep that dir.**

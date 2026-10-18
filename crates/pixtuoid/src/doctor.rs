@@ -1506,8 +1506,8 @@ mod tests {
             "a server-stamped `_pid` owns no window: {no_channel_line}"
         );
         assert!(
-            no_channel_line.contains("antigravity") && no_channel_line.contains("copilot"),
-            "transcript-only sources listed: {no_channel_line}"
+            no_channel_line.contains("copilot") && !no_channel_line.contains("antigravity"),
+            "a transcript-only source listed, a shim stamper not: {no_channel_line}"
         );
         assert!(!s.contains("openclaw"), "daemons are excluded: {s}");
     }

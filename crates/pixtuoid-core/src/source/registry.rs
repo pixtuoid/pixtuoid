@@ -21,48 +21,11 @@ use crate::source::{
     upstream::{Upstream, Watch},
 };
 
-/// How the shared hook decoder derives the AgentId for this source. Moot for a
-/// [`HookCustom::ClaimsAll`] source (its decoder builds its own AgentIds and the
-/// shared id-key branch is never reached) — pick `TranscriptPathThenSessionId`
-/// with an `// inert` comment there.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum IdKey {
-    /// `transcript_path` when present and non-empty, else `session_id`. Correct
-    /// for path-keyed sources whose hook and JSONL both carry the transcript
-    /// path, so they coalesce on it. NOT CC — see [`Self::SessionId`].
-    TranscriptPathThenSessionId,
-    /// Always `session_id`, ignoring any `transcript_path`. Correct for CC and
-    /// Codex: their hook `session_id` IS the transcript filename stem, so hook
-    /// and JSONL events coalesce on it. Keying on the path instead would split
-    /// them into two sprites — CC's transcript path is cwd-derived (a
-    /// git-worktree split rebuilds the wrong parent) and Codex's is
-    /// `string | null`.
-    SessionId,
-}
-
-/// A source's own hook-payload decoder, dispatched ahead of the shared CC-shaped
-/// arms — TYPED by whether it may decline, so a [`Self::ClaimsAll`] fn has no
-/// `Option` to get wrong.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum HookCustom {
-    /// EXTENDS the shared arms: tried first; `Ok(Some(events))` short-circuits,
-    /// `Ok(None)` DECLINES and falls through to the shared arms, `Err`
-    /// propagates.
-    Extend(fn(&Value) -> Result<Option<Vec<AgentEvent>>>),
-    /// CLAIMS every event: an alien-envelope source (no shared
-    /// `hook_event_name`/`session_id` for the shared arms to key on) whose
-    /// decoder handles EVERYTHING and constructs its own AgentIds. It can NOT
-    /// decline, so a payload never silently falls through to the shared arms.
-    ClaimsAll(fn(&Value) -> Result<Vec<AgentEvent>>),
-}
-
 /// The wire NAME of the per-call tool id in this source's hook envelope, read by
 /// the shared arms. It is a registry row and not a per-source copy of those arms
 /// because reading the wrong name is SILENT — the field is optional, so a
 /// mis-spelling is indistinguishable from an absent id, and every kimi tool call
-/// decoded to `None` for the whole source's life. Moot for a
-/// `HookCustom::ClaimsAll` source, exactly as `IdKey` is — pick `ToolUse`
-/// with an `// inert` comment there.
+/// decoded to `None` for the whole source's life.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolIdKey {
     /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
@@ -83,17 +46,26 @@ impl ToolIdKey {
     }
 }
 
-/// Per-source hook decoding behaviour beyond the shared CC-shaped arms.
-#[derive(Debug)]
-pub struct HookDecoding {
-    /// The per-session AgentId key strategy, read by the shared arms only.
-    pub(crate) id_key: IdKey,
-    /// The per-call tool id's wire name, read by the shared arms only.
-    pub tool_id_key: ToolIdKey,
-    /// The source's own decoder, dispatched FIRST — before any shared field
-    /// requirement — so an alien envelope (no `session_id` at all) can still
-    /// decode. `None` = ride the shared arms only.
-    pub(crate) custom: Option<HookCustom>,
+/// How a source's hook payloads decode. The source's own decoder runs FIRST,
+/// before any shared field requirement, so an alien envelope (no `session_id` at
+/// all) can still decode; TYPED by whether it may decline, so a
+/// [`Self::ClaimsAll`] row has no `Option` to get wrong and no shared-arm setting
+/// it would never read.
+#[derive(Debug, Clone, Copy)]
+pub enum HookDecoding {
+    /// The shared CC-shaped arms, keyed on `session_id`, which `extend` EXTENDS:
+    /// `Ok(Some(events))` short-circuits, `Ok(None)` DECLINES and falls through
+    /// to the shared arms, `Err` propagates.
+    Shared {
+        /// The per-call tool id's wire name.
+        tool_id_key: ToolIdKey,
+        extend: fn(&Value) -> Result<Option<Vec<AgentEvent>>>,
+    },
+    /// CLAIMS every event: an alien-envelope source (no shared
+    /// `hook_event_name`/`session_id` for the shared arms to key on) whose
+    /// decoder handles EVERYTHING and constructs its own AgentIds. It can NOT
+    /// decline, so a payload never silently falls through to the shared arms.
+    ClaimsAll(fn(&Value) -> Result<Vec<AgentEvent>>),
 }
 
 /// Reducer-facing capability flags — stable facts about the source's wire
@@ -557,14 +529,11 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
         }),
-        hook: Some(HookDecoding {
-            // The session UUID == the transcript filename stem, so keying on it
-            // (not the cwd-derived path) survives a git-worktree cwd-split.
-            id_key: IdKey::SessionId,
+        hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
             // They swap the event's SUBJECT (child AgentId ≠ session AgentId), which
             // the shared arms can't express; Stop is a fleet subagent's ONLY end (#241).
-            custom: Some(HookCustom::Extend(claude_code::decode_cc_hook_custom)),
+            extend: claude_code::decode_cc_hook_custom,
         }),
         caps: SourceCaps {
             has_exit_signal: true,
@@ -600,12 +569,11 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             cwd_extractor: codex::extract_codex_cwd,
             parent_extractor: Some(codex::extract_codex_parent),
         }),
-        hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,
+        hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
             // A child's events change their SUBJECT, and a root's `spawn_agent`
             // is a Task: neither is expressible in the shared arms.
-            custom: Some(HookCustom::Extend(codex::decode_codex_hook_custom)),
+            extend: codex::decode_codex_hook_custom,
         }),
         caps: SourceCaps {
             // Still false after #710 registered Codex's SessionEnd hook: it is
@@ -625,38 +593,27 @@ const CODEX: SourceDescriptor = SourceDescriptor {
 const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
     name: antigravity::SOURCE_NAME,
     label_prefix: "ag",
-    verified_version: "unknown",
+    verified_version: "1.4.2",
     version_probe: Some(&["agy", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
     #[cfg(any(test, feature = "upstream"))]
-    upstream: Upstream::Closed {
-        why: "a closed Google IDE with no fetchable schema: its decoder breadcrumbs a \
-              renamed step instead",
-    },
+    upstream: Upstream::Watched(&[antigravity::UPSTREAM]),
     kind: SourceKind::Agent {
         transcript: Some(Transcript {
             line_decoder: antigravity::decode_ag_line,
-            // Path-keyed: its hook keys on `transcript_path` too, so the
-            // default coalesces the two transports.
-            id_from_path: default_id_from_path,
+            id_from_path: antigravity::ag_id_from_path,
             path_filter: antigravity::admits_transcript,
-            // AG step lines carry no cwd field at all — the shared shape never
-            // matches and the label falls back to the bare `ag` prefix.
+            // AG step lines carry no cwd field at all; the cwd rides the
+            // `SessionStart` hook.
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
         }),
-        // A real spec despite the missing install target (unlike copilot, which
-        // has no hook path at all): the payload does decode via the shared arms.
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId,
-            tool_id_key: ToolIdKey::ToolUse,
-            custom: None,
-        }),
-        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE),
-        // and nothing re-registers a swept session — unknown-id JSONL lines are
-        // no-ops and the hook never fires without an install target. Flipping
-        // `resurrects_on_prompt` for the 5-min reaper strands a live idle session.
+        hook: Some(HookDecoding::ClaimsAll(antigravity::decode_ag_hook_payload)),
+        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
+        // and no end hook, and no prompt-time hook re-registers a swept session.
+        // Flipping `resurrects_on_prompt` for the 5-min reaper strands a live idle
+        // session. An exit rides the shim-stamped pid.
         caps: SourceCaps {
             has_exit_signal: false,
             resurrects_on_prompt: false,
@@ -664,7 +621,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::Unsupported,
+        focus: FocusChannel::ShimStamp,
     },
 };
 
@@ -683,11 +640,7 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Watched(&[reasonix::UPSTREAM]),
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(reasonix::decode_rx_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(reasonix::decode_rx_hook_payload)),
         caps: SourceCaps {
             // SessionEnd fires on clean exit — best-effort counts.
             has_exit_signal: true,
@@ -731,11 +684,7 @@ const DSH: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Installer,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(dsh::decode_dsh_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(dsh::decode_dsh_payload)),
         caps: SourceCaps {
             // `agent/disposed` + the plugin's own effect-disposer sweep fire
             // on clean quit AND signal shutdown (dsh runs disposers there
@@ -780,11 +729,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Watched(&[codewhale::UPSTREAM]),
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(codewhale::decode_cw_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(codewhale::decode_cw_hook_payload)),
         caps: SourceCaps {
             // session_end fires on a clean TUI quit — best-effort counts.
             has_exit_signal: true,
@@ -812,11 +757,7 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Watched(&[opencode::UPSTREAM]),
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(opencode::decode_oc_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(opencode::decode_oc_hook_payload)),
         caps: SourceCaps {
             // A TUI quit ends nothing: the session lives on in the server.
             has_exit_signal: false,
@@ -908,11 +849,7 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Installer,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(cursor::decode_cursor_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(cursor::decode_cursor_hook_payload)),
         caps: SourceCaps {
             // `sessionEnd` fires on clean completion. An abrupt exit rides the
             // shim-stamped pid, which reaches the CLI only because the ancestor walk
@@ -948,11 +885,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Installer,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            id_key: IdKey::TranscriptPathThenSessionId, // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse,            // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(hermes::decode_hermes_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(hermes::decode_hermes_hook_payload)),
         caps: SourceCaps {
             // `on_session_finalize`, fired by upstream's atexit `_run_cleanup` with
             // `reason="shutdown"`. NOT `on_session_end`, which despite the name is a
@@ -996,11 +929,7 @@ const GROK: SourceDescriptor = SourceDescriptor {
             cwd_extractor: grok::extract_grok_cwd,
             parent_extractor: None,
         }),
-        hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(grok::decode_grok_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(grok::decode_grok_hook_payload)),
         caps: SourceCaps {
             // `session_end` does NOT fire on a plain TUI quit (the loop breaks without
             // draining the session actor), so the DOMINANT exit is signal-less; the
@@ -1052,11 +981,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
         }),
-        hook: Some(HookDecoding {
-            id_key: IdKey::SessionId,        // inert: custom claims all
-            tool_id_key: ToolIdKey::ToolUse, // inert: custom claims all
-            custom: Some(HookCustom::ClaimsAll(omp::decode_omp_hook_payload)),
-        }),
+        hook: Some(HookDecoding::ClaimsAll(omp::decode_omp_hook_payload)),
         caps: SourceCaps {
             // The `session_exit` entry is appended + flushed on every clean
             // teardown incl. SIGINT/SIGTERM (and the bridge fires
@@ -1108,12 +1033,10 @@ const KIMI: SourceDescriptor = SourceDescriptor {
     upstream: Upstream::Installer,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding {
-            // session_id is the base field on every Kimi event.
-            id_key: IdKey::SessionId,
+        hook: Some(HookDecoding::Shared {
             // The ONE source that does not spell the per-call id `tool_use_id`.
             tool_id_key: ToolIdKey::ToolCall,
-            custom: Some(HookCustom::Extend(kimi::decode_kimi_hook_custom)),
+            extend: kimi::decode_kimi_hook_custom,
         }),
         caps: SourceCaps {
             // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
@@ -1310,10 +1233,7 @@ mod tests {
         }
 
         let ag = "/h/.gemini/antigravity-cli/brain/x/.system_generated/logs/transcript.jsonl";
-        assert_eq!(
-            id_deriver_for(antigravity::SOURCE_NAME)(Path::new(ag)),
-            crate::id::normalize_path_key(ag),
-        );
+        assert_eq!(id_deriver_for(antigravity::SOURCE_NAME)(Path::new(ag)), "x");
         assert_eq!(
             id_deriver_for("not-a-source")(Path::new(ag)),
             crate::id::normalize_path_key(ag),
@@ -1547,16 +1467,14 @@ mod tests {
         #[test]
         fn every_hook_and_presence_decoder_never_panics(v in arb_json()) {
             for d in REGISTRY {
-                if let Some(hook) = d.hook() {
-                    match hook.custom {
-                        Some(HookCustom::Extend(f)) => {
-                            let _ = f(&v);
-                        }
-                        Some(HookCustom::ClaimsAll(f)) => {
-                            let _ = f(&v);
-                        }
-                        None => {}
+                match d.hook() {
+                    Some(HookDecoding::Shared { extend, .. }) => {
+                        let _ = extend(&v);
                     }
+                    Some(HookDecoding::ClaimsAll(f)) => {
+                        let _ = f(&v);
+                    }
+                    None => {}
                 }
                 if let Some(presence) = d.presence_decoder() {
                     let _ = presence(&v);

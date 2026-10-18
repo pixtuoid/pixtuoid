@@ -28,8 +28,7 @@ use paths::default_socket_path;
 
 mod transport;
 
-/// What the shim adds to stdin: the `_shim_ts_ms`/`_pixtuoid_source` stamps and
-/// the trailing newline.
+/// What [`enrich_payload`] stamps, plus the trailing newline.
 const STAMP_HEADROOM: u64 = 256;
 
 /// `STDIN_CAP + STAMP_HEADROOM` is the daemon's pipe `IN_BUFFER_SIZE` (pinned by
@@ -99,7 +98,7 @@ fn main() {
         // serves both). `--event` is orthogonal and never implies a source.
         let source = source_from_argv(&args)
             .or_else(|| std::env::var_os("PIXTUOID_SOURCE").and_then(|v| v.into_string().ok()));
-        enrich_payload(map, source, now_ms(), cli_pid);
+        enrich_payload(map, source, hook_event_from_argv(&args), now_ms(), cli_pid);
     }
 
     // Best-effort send, hard-bounded so a stuck daemon can never block CC's
@@ -184,6 +183,12 @@ fn event_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--event")
 }
 
+/// The event a stdin payload fires for, named in argv because the payload omits
+/// it (agy's). Unlike `--event`, it leaves the payload on stdin.
+fn hook_event_from_argv(args: &[String]) -> Option<String> {
+    flag_from_argv(args, "--hook-event")
+}
+
 /// The trusted CLI source, in its Windows install form: the hook command runs
 /// under `cmd.exe /C`, which has no inline `VAR=value cmd` env-prefix syntax (it
 /// would try to exec a program literally named `PIXTUOID_SOURCE=codex`), so the
@@ -192,27 +197,31 @@ fn source_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--source")
 }
 
-/// Stamp the shim timestamp and, when a source is resolved, the trusted CLI
-/// source under the PRIVATE `_pixtuoid_source` key.
+/// Stamp the shim timestamp and, when resolved, the trusted CLI source and the
+/// argv-named event under the PRIVATE `_pixtuoid_source`/`_pixtuoid_event` keys.
 ///
 /// We deliberately do NOT write the public `source` field: CC's SessionStart
 /// payload already uses `source` for the start *reason* (startup/resume/clear/
 /// compact), and reading that as the CLI source namespaced the agent under
-/// "startup" — an un-reapable ghost. The private key is shim-OWNED, so any
-/// inbound `_pixtuoid_source` (spoofed or replayed) is stripped unconditionally
-/// before stamping.
+/// "startup" — an un-reapable ghost. The private keys are shim-OWNED, so an
+/// inbound one (spoofed or replayed) is stripped unconditionally before stamping.
 fn enrich_payload(
     map: &mut serde_json::Map<String, Value>,
     source: Option<String>,
+    hook_event: Option<String>,
     ts_ms: u64,
     resolve_pid: impl FnOnce() -> Option<u32>,
 ) {
     map.remove("_pixtuoid_source");
+    map.remove("_pixtuoid_event");
     map.insert("_shim_ts_ms".into(), Value::from(ts_ms));
     if let Some(src) = source
         && !src.is_empty()
     {
         map.insert("_pixtuoid_source".into(), Value::from(src));
+    }
+    if let Some(event) = hook_event {
+        map.insert("_pixtuoid_event".into(), Value::from(event));
     }
     // The opencode/OpenClaw plugins stamp `process.pid` from inside the CLI —
     // keep theirs, and stay LAZY so they never pay for the Windows snapshot.

@@ -1,0 +1,22 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You are Antigravity", "turnIndex": 0},
+      "response": {"toolCalls": [
+        {"name": "view_file", "arguments": {"AbsolutePath": "{workspace}/NOTE.txt", "toolSummary": "Read the note", "toolAction": "Reading NOTE.txt"}},
+        {"name": "view_file", "arguments": {"AbsolutePath": "{workspace}/NOTE.txt", "toolSummary": "Read the note again", "toolAction": "Reading NOTE.txt"}}
+      ]},
+      "latency": 300
+    },
+    {
+      "match": {"systemMessage": "You are Antigravity"},
+      "response": {"content": "pong"},
+      "latency": 300
+    },
+    {
+      "match": {},
+      "response": {"content": "Hermetic"},
+      "latency": 300
+    }
+  ]
+}

@@ -26,8 +26,8 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
-    /// A `not_yet` hook fired or a `not_yet_fields` field was carried: good
-    /// news, the list shrinks.
+    /// An owed gap closed (`not_yet`, `not_yet_fields`, `result_unseen`): good
+    /// news, the profile shrinks.
     Stale,
     /// The CLI could not run (install, network, a login wall): not judged.
     Blocked,
@@ -351,6 +351,14 @@ fn judge(
             ),
         ));
         return Ok(());
+    }
+    if p.result_unseen && manifest.results_seen > 0 {
+        findings.push((
+            Label::Stale,
+            "aimock saw a tool result: the profile leaves result_unseen, and its reply \
+             waits on the note"
+                .into(),
+        ));
     }
 
     let payloads = hook_lines(dir)?;
@@ -769,6 +777,7 @@ mod tests {
             aimock: "test".into(),
             requests: 2,
             unmatched: 0,
+            results_seen: 1,
         };
         edit(&mut m);
         std::fs::write(dir.join(MANIFEST), serde_json::to_string(&m).expect("json"))
@@ -840,6 +849,8 @@ mod tests {
     const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
                                      reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
     const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
+    const AG_SCENE: &str =
+        "agents=[ag\u{b7}proj@0:active(view_file: NOTE.txt)]\nagents=[] daemons=[]\n";
     const GK_DELEGATE_SCENE: &str = "agents=[gk\u{b7}proj@0:active(Delegating), \
                                      Read the note@1:active(read_file)]\nagents=[] daemons=[]\n";
     const RX_DELEGATE_SCENE: &str = "agents=[rx\u{b7}proj@0:active(Delegating), \
@@ -1428,6 +1439,17 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_result_aimock_sees_for_a_profile_owing_one_is_stale() {
+        let d = run_from("antigravity", "tool-run-hermetic", AG_SCENE);
+        write_manifest(d.path(), "antigravity", |m| m.results_seen = 0);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        write_manifest(d.path(), "antigravity", |m| m.results_seen = 1);
+        let v = verify(d.path()).expect("verify");
+        assert!(has(&v, Label::Stale, "result_unseen"), "{:?}", v.findings());
     }
 
     #[test]

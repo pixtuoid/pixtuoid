@@ -1,0 +1,5 @@
+{}
+{"step_index":1,"source":"","type":"PLANNER_RESPONSE","status":"","created_at":"","tool_calls":[{"name":"view_file","args":{"AbsolutePath":"\"/private/tmp/pixtuoid-capture/proj/NOTE.txt\"","toolAction":"","toolSummary":""}},{"name":"view_file","args":{"AbsolutePath":"\"/private/tmp/pixtuoid-capture/proj/NOTE.txt\"","toolAction":"","toolSummary":""}}]}
+{"step_index":2,"source":"","type":"","status":"","created_at":"","content":""}
+{"step_index":3,"source":"","type":"","status":"","created_at":"","content":""}
+{}

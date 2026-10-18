@@ -200,8 +200,8 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "antigravity",
             source: "antigravity",
-            fixture: "fixtures/antigravity/tool-run-recorded/transcript.jsonl",
-            wire: Wire::Transcript { seeded: true },
+            fixture: "fixtures/antigravity/tool-run-hermetic/hook-payloads.jsonl",
+            wire: Wire::Hooks,
             must_reach: &[Reach::Active],
         },
         WireCase {
@@ -393,7 +393,7 @@ fn codex_transcript_line_renders_a_painted_sprite() {
 }
 
 #[test]
-fn antigravity_transcript_line_renders_a_painted_sprite() {
+fn antigravity_hook_envelope_renders_a_painted_sprite() {
     assert_renders_a_sprite(&agent_case("antigravity"));
 }
 

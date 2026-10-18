@@ -578,9 +578,47 @@ pub(crate) const OMP: Target = Target {
     },
 };
 
+pub(crate) const ANTIGRAVITY: Target = Target {
+    name: "antigravity",
+    core_source: pixtuoid_core::source::antigravity::SOURCE_NAME,
+    display_name: "Antigravity CLI",
+    default_config_path: crate::install::antigravity::default_config_path,
+    hook_command: crate::install::antigravity::hook_command,
+    primary: Primary::Config {
+        merge_install: crate::install::antigravity::merge_install,
+        merge_uninstall: crate::install::antigravity::merge_uninstall,
+        verify_schema: crate::install::antigravity::verify_schema,
+        beside: None,
+    },
+    binary_strategy: BinaryStrategy::EmbedAbsolute,
+    presence_probe: crate::install::antigravity::detect_installed,
+    post_install_hint: None,
+    host: None,
+    #[cfg(feature = "upstream")]
+    upstream: crate::install::antigravity::UPSTREAM,
+    #[cfg(test)]
+    registers: || {
+        crate::install::antigravity::AG_EVENTS
+            .iter()
+            .map(|&(name, _)| name)
+            .collect()
+    },
+};
+
 pub(crate) const TARGETS: &[&Target] = &[
-    &CLAUDE, &CODEX, &REASONIX, &CODEWHALE, &OPENCODE, &CURSOR, &HERMES, &OPENCLAW, &GROK, &KIMI,
-    &OMP, &DSH,
+    &CLAUDE,
+    &CODEX,
+    &REASONIX,
+    &CODEWHALE,
+    &OPENCODE,
+    &CURSOR,
+    &HERMES,
+    &OPENCLAW,
+    &GROK,
+    &KIMI,
+    &OMP,
+    &DSH,
+    &ANTIGRAVITY,
 ];
 
 // No prod caller: prod joins on the source id via `by_source`. Kept for the

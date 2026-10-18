@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(resolve_pid(&s, &no_paths(), &empty_table()), None);
         let r = slot("some-remote", "ses_c", None);
         assert_eq!(resolve_pid(&r, &no_paths(), &empty_table()), None);
-        let a = slot("antigravity", "ses_d", None);
+        let a = slot("copilot", "ses_d", None);
         assert_eq!(resolve_pid(&a, &no_paths(), &empty_table()), None);
     }
 

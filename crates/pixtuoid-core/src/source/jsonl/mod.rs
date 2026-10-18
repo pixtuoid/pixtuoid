@@ -325,8 +325,7 @@ impl JsonlWatcher {
     /// The watcher becomes the CONSUMER: on each pass it drains the handle's
     /// ids that match its own claimed transcripts and ends those claims
     /// ([`Sight::Ended`]).
-    #[doc(hidden)]
-    pub fn with_child_end_unclaims(mut self, unclaims: ChildEndUnclaims) -> Self {
+    pub(crate) fn with_child_end_unclaims(mut self, unclaims: ChildEndUnclaims) -> Self {
         self.child_end_unclaims = Some(unclaims);
         self
     }

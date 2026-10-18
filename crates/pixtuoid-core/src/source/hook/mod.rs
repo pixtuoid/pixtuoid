@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn patch_identity_pids_stamps_only_a_focus_target() {
-        for source in ["claude-code", "codex", "antigravity", "copilot", "opencode"] {
+        for source in ["claude-code", "codex", "copilot", "opencode"] {
             let mut evs = vec![AgentEvent::Identity {
                 agent_id: AgentId::from_parts(source, "ses_t"),
                 source: source.into(),
@@ -409,7 +409,14 @@ mod tests {
                 "{source} Identity must stay pid: None"
             );
         }
-        for source in ["cursor", "codewhale", "hermes", "reasonix", "omp"] {
+        for source in [
+            "antigravity",
+            "cursor",
+            "codewhale",
+            "hermes",
+            "reasonix",
+            "omp",
+        ] {
             let mut evs = vec![AgentEvent::Identity {
                 agent_id: AgentId::from_parts(source, "ses_t"),
                 source: source.into(),

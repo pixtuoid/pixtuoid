@@ -15,9 +15,9 @@
   },
   {
     "id": "antigravity",
-    "display_name": "Antigravity",
+    "display_name": "Antigravity CLI",
     "connected": false,
-    "cli_present": true,
+    "cli_present": false,
     "health": null
   },
   {
