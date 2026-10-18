@@ -170,10 +170,6 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
     handle.abort();
 }
 
-/// The parent transcript has > MAX_PENDING_BYTES pending at attach, so the
-/// backlog is skipped to EOF instead of replayed and the in-flight Agent
-/// dispatch must be recovered by the TASK_SCAN_BYTES tail scan (#222), while
-/// the parent still registers via the bounded head read (#204).
 /// The session has > MAX_PENDING_BYTES pending at attach, so the backlog is
 /// skipped to EOF instead of replayed and the in-flight Task dispatch must be
 /// recovered by the TASK_SCAN_BYTES tail scan (#222), while the session still

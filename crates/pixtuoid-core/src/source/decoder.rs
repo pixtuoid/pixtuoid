@@ -1610,10 +1610,12 @@ mod tests {
             (
                 claude_code::SOURCE_NAME,
                 Box::new(|| {
-                    decode_hook_payload(json!({
-                        "hook_event_name":"PreToolUse","session_id":"s","cwd":"/r",
-                        "tool_name":name,"tool_input":{"file_path":tgt},"tool_use_id":"t1",
-                        "_pixtuoid_source":"claude-code"}))
+                    claude_code::decode_cc_line(
+                        "/p/ses-a.jsonl",
+                        "claude-code",
+                        json!({"type":"assistant","message":{"content":[
+                            {"type":"tool_use","id":"t1","name":name,"input":{"file_path":tgt}}]}}),
+                    )
                     .expect("cc decodes")
                 }),
             ),

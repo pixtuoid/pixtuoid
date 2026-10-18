@@ -37,39 +37,37 @@ async fn watcher_emits_session_start_then_activity_for_tool_use() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut start_id = None;
-    let mut activity_id = None;
-    let mut start_transport = Transport::Hook;
-    let mut activity_transport = Transport::Hook;
+    let mut starts = Vec::new();
+    let mut activity = None;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
             Ok(Some((t, AgentEvent::SessionStart { agent_id, .. }))) => {
-                start_id = Some(agent_id);
-                start_transport = t;
+                starts.push((t, agent_id));
             }
             Ok(Some((t, AgentEvent::ActivityStart { agent_id, .. }))) => {
-                activity_id = Some(agent_id);
-                activity_transport = t;
+                activity = Some((t, agent_id));
+                break;
             }
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => {}
         }
-        if start_id.is_some() && activity_id.is_some() {
-            break;
-        }
     }
-    let start_id = start_id.expect("expected SessionStart from JSONL watcher");
-    let activity_id = activity_id.expect("expected ActivityStart from JSONL watcher");
+    let activity = activity.expect("expected ActivityStart from JSONL watcher");
+    assert!(
+        !starts.is_empty(),
+        "expected SessionStart from JSONL watcher"
+    );
     // The SessionStart key (id_derive) and the per-line decode key
     // (transcript_path_str) are computed at two different walk_jsonl sites —
     // they diverged on the windows runner.
-    assert_eq!(
-        start_id, activity_id,
-        "SessionStart and per-line events must share one AgentId"
+    assert!(
+        starts
+            .iter()
+            .all(|start| *start == (Transport::Jsonl, activity.1)),
+        "SessionStart and per-line events must share one AgentId: {starts:?} vs {activity:?}"
     );
-    assert_eq!(start_transport, Transport::Jsonl);
-    assert_eq!(activity_transport, Transport::Jsonl);
+    assert_eq!(activity.0, Transport::Jsonl);
     handle.abort();
 }
 

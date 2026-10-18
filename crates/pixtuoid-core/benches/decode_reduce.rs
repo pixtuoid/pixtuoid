@@ -9,8 +9,8 @@
 //! on a timer). Read the memory mode's movement as directional, not absolute.
 //!
 //! Both transports are measured because their costs are structurally different:
-//! the JSONL arm parses the fatter envelope, the hook arm carries the
-//! `recent_hook_tool_uses` dedup bookkeeping.
+//! the JSONL arm runs a transcript line decoder, the hook arm a hook decoder
+//! plus the `recent_hook_tool_uses` dedup bookkeeping.
 //!
 //! Lines are synthesized rather than read from `tests/sources/fixtures/`, which
 //! is the conformance harness's scanned population — one transcript per scenario
