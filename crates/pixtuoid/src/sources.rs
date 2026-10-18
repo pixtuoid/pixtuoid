@@ -393,8 +393,8 @@ pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
 
 /// Rewrite `[sources]` whole, as the flags [`is_on`] reads once `sid`'s `change`
 /// applies, so a key no reader looks at never outlives a change.
-/// Runs before any hook write: a config `update_config` refuses stops the op
-/// with nothing to undo.
+/// A `change` goes in before any hook write, so a config `update_config` refuses
+/// stops the op with nothing to undo; [`settle_flag`]'s write after one is best-effort.
 fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
     let keep: Vec<&str> = registry::registered_source_names()
         .filter(|s| by_source(s).is_none() || ONCE_FLAG_ONLY.contains(s))
@@ -1184,16 +1184,25 @@ mod tests {
 
     #[test]
     fn a_reconcile_settles_a_pending_flag_whichever_way_it_goes() {
-        let app = flags(&[("antigravity", true)]);
-        let none_hooked = |sid: &str| (sid != "copilot").then_some(false);
-        for (desired, action) in [
-            (set(&["antigravity"]), Action::Connect),
-            (HashSet::new(), Action::Disconnect),
+        let app = flags(&[("antigravity", true), ("copilot", true)]);
+        let hooked = |sid: &str| match sid {
+            "copilot" => None,
+            "claude-code" => Some(true),
+            _ => Some(false),
+        };
+        let all = set(&["antigravity", "claude-code", "copilot"]);
+        for (desired, [pending, hooked_in, flagged]) in [
+            (all.clone(), [Action::Connect, Action::NoOp, Action::NoOp]),
+            (HashSet::new(), [Action::Disconnect; 3]),
         ] {
-            let current = planned_current(&app, &desired, none_hooked);
+            let current = planned_current(&app, &desired, hooked);
             let plan: std::collections::HashMap<_, _> =
                 plan_reconcile(&current, &desired).into_iter().collect();
-            assert_eq!(plan["antigravity"], action, "{desired:?}");
+            assert_eq!(
+                [plan["antigravity"], plan["claude-code"], plan["copilot"]],
+                [pending, hooked_in, flagged],
+                "{desired:?}"
+            );
         }
     }
 
