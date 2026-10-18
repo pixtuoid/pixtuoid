@@ -55,9 +55,16 @@ mod recorder {
     /// and named, for one that did not, since only the recorder knows which.
     const SCRATCH_ENV: &str = "PIXTUOID_CAPTURE_SCRATCH";
 
-    /// Keep `scratch` for the diagnosis of a capture that did not work.
-    fn keep_scratch(scratch: tempfile::TempDir) {
-        eprintln!("the driver's logs stay in {}", scratch.keep().display());
+    /// Keep `scratch` for the diagnosis of a capture that did not work, when a
+    /// driver left anything in it beside the recorder's own endpoint and CLI name.
+    fn keep_scratch(scratch: tempfile::TempDir, endpoint: &Endpoint) {
+        let own = [endpoint.path().to_path_buf(), named_cli(scratch.path())];
+        let left = std::fs::read_dir(scratch.path())
+            .map(|d| d.flatten().any(|e| !own.contains(&e.path())))
+            .unwrap_or(false);
+        if left {
+            eprintln!("the driver's logs stay in {}", scratch.keep().display());
+        }
     }
 
     /// A hermetic run's overrides: where the capture goes, and what the harvest
@@ -292,7 +299,7 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if options.out.is_none() => {
-                keep_scratch(sandbox);
+                keep_scratch(sandbox, &endpoint);
                 return Err(e);
             }
             kept => kept,
@@ -336,6 +343,9 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
+            if incomplete.is_some() || !status.success() {
+                keep_scratch(sandbox, &endpoint);
+            }
             return incomplete.map_or(Ok(()), Err);
         }
         if wrote.is_empty() {
@@ -344,7 +354,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox);
+            keep_scratch(sandbox, &endpoint);
             std::process::exit(1);
         }
 
@@ -369,6 +379,7 @@ mod recorder {
         refuse_on_pii(&wrote, &identity_needles(git_config))?;
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
+            keep_scratch(sandbox, &endpoint);
         }
         println!("next: just test conformance   then   cargo insta review");
         Ok(())
@@ -1680,10 +1691,31 @@ mod recorder {
             );
         }
 
-        /// The recorder's env name crosses into every driver, each a copy a rename
-        /// would strand: its capture would then record version "unknown".
         #[test]
-        fn every_driver_names_its_cli_where_the_recorder_reads_it() {
+        fn a_failed_capture_keeps_only_a_scratch_a_driver_wrote_in() {
+            let bare = tempfile::tempdir().expect("scratch");
+            let endpoint = Endpoint::in_dir(bare.path(), "capture");
+            std::fs::write(named_cli(bare.path()), "openclaw\n").expect("cli");
+            let at = bare.path().to_path_buf();
+            keep_scratch(bare, &endpoint);
+            assert!(!at.exists(), "the recorder's own entries alone go");
+
+            let used = tempfile::tempdir().expect("scratch");
+            let endpoint = Endpoint::in_dir(used.path(), "capture");
+            std::fs::write(used.path().join("openclaw-agent.log"), "refused").expect("log");
+            let at = used.path().to_path_buf();
+            keep_scratch(used, &endpoint);
+            assert!(
+                at.join("openclaw-agent.log").is_file(),
+                "a driver's log stays"
+            );
+            std::fs::remove_dir_all(&at).expect("cleanup");
+        }
+
+        /// The recorder's env names cross into every driver, each a copy a rename
+        /// would strand: every driver names its CLI, and reads only what is set.
+        #[test]
+        fn every_driver_reads_only_env_the_recorder_sets() {
             let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/lib");
             let mut drivers = 0;
             for entry in std::fs::read_dir(&lib).expect("scripts/lib") {

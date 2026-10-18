@@ -96,6 +96,7 @@ sleep 3
 
 # OC_MODEL picks the turn's model; opencode's default can be a retired free one.
 oc run --server "$BASE" --auto ${OC_MODEL:+--model "$OC_MODEL"} "$1"
+rc=$?
 
 sid="$(oc session list --server "$BASE" --format json --max-count 1 |
     python3 -c 'import json, sys; s = json.load(sys.stdin); print(s[0]["id"] if s else "")')"
@@ -104,4 +105,4 @@ if [[ -n $sid ]]; then
     oc session delete --server "$BASE" "$sid"
 fi
 sleep 3
-exit 0
+exit "$rc"
