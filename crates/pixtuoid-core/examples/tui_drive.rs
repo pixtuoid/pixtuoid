@@ -151,7 +151,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
                 )?;
             }
         }
-        let shown = screen.screen().contents();
+        let shown = shown(screen.screen());
         let action = driver.step(&shown, Instant::now());
         if action != Action::Wait {
             note(&mut log, &format!("screen:\n{shown}"));
@@ -176,6 +176,13 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
     }
 }
 
+/// The screen row by row: `contents()` joins a row the CLI let wrap onto the
+/// next, as ConPTY's repaint of a full-width rule does.
+fn shown(screen: &vt100::Screen) -> String {
+    let rows: Vec<String> = screen.rows(0, SIZE.cols).collect();
+    rows.join("\n").trim_end().to_owned()
+}
+
 /// Kill the CLI, logging why and the screen it stood at.
 fn give_up(
     log: &mut std::fs::File,
@@ -185,10 +192,7 @@ fn give_up(
 ) -> std::io::Result<i32> {
     note(
         log,
-        &format!(
-            "gave up: {why}\n--- screen ---\n{}",
-            screen.screen().contents()
-        ),
+        &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
     child.kill()?;
     Ok(GAVE_UP)
@@ -213,6 +217,20 @@ fn note(log: &mut std::fs::File, line: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_composer_under_a_rule_the_cli_let_wrap_takes_the_prompt() {
+        let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
+        let rule = "─".repeat(usize::from(SIZE.cols));
+        screen.process(format!("{rule}❯ ").as_bytes());
+        let tui = tui_of("claude-code", "permission").expect("a TUI row");
+        let now = Instant::now();
+        let mut driver = Driver::new(tui, "hi".to_owned(), now);
+        assert_eq!(
+            driver.step(&shown(screen.screen()), now),
+            Action::Type("hi".to_owned())
+        );
+    }
 
     #[test]
     fn the_cli_gets_exactly_the_drivers_environment() {
