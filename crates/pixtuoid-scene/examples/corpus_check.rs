@@ -310,9 +310,8 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
-    /// EVERY row, byte for byte. The arity loop this replaces could not fail from
-    /// any data change — `roster_row`'s `\t` is in its format literal — and
-    /// the single-row pin it replaces left every other row unpinned.
+    /// EVERY row, byte for byte: a column-count check could not fail from any
+    /// data change, since `roster`'s `\t` is in its own format literal.
     fn the_whole_roster_is_pinned_row_by_row() {
         assert_eq!(
             roster(),
