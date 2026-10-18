@@ -242,6 +242,9 @@ pub struct Manifest {
 pub enum Absence {
     /// Its model endpoint cannot be redirected, so no scripted turn can run.
     NoModelEndpoint,
+    /// Its headless run fires no session lifecycle, so no shape can pass, and
+    /// the tier drives no TUI.
+    NoHeadlessLifecycle,
     /// A profile is owed. Shrink-only.
     AwaitingProfile,
 }
@@ -1028,7 +1031,9 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     // Owner, 2026-10-13: no custom model endpoint, so no upstream detection.
     ("cursor", Absence::NoModelEndpoint),
     ("antigravity", Absence::AwaitingProfile),
-    ("codewhale", Absence::AwaitingProfile),
+    // Owner, 2026-10-18: `exec --hooks` fires only `tool_call_before` and
+    // `shell_env` (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1).
+    ("codewhale", Absence::NoHeadlessLifecycle),
     ("openclaw", Absence::AwaitingProfile),
     ("hermes", Absence::AwaitingProfile),
 ];
