@@ -32,10 +32,11 @@ mod run {
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::pin;
+    use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
         self, DUMMY_KEY, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
-        Profile, SCENE_LOG, Scenario, USER_PLACEHOLDER,
+        Profile, SCENE_LOG, Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -511,6 +512,8 @@ mod run {
         pixtuoid: PathBuf,
         shim: PathBuf,
         recorder: PathBuf,
+        /// What runs a [`Surface::Tui`] scenario's CLI under a pty.
+        driver: PathBuf,
     }
 
     impl Built {
@@ -525,8 +528,9 @@ mod run {
                 pixtuoid: profile_dir.join(exe("pixtuoid")),
                 shim: profile_dir.join(exe("pixtuoid-hook")),
                 recorder: me.with_file_name(exe("capture_fixture")),
+                driver: me.with_file_name(exe("tui_drive")),
             };
-            for p in [&found.pixtuoid, &found.shim, &found.recorder] {
+            for p in [&found.pixtuoid, &found.shim, &found.recorder, &found.driver] {
                 if !p.is_file() {
                     return Err(std::io::Error::other(format!(
                         "{} is not built — `just hermetic` builds it",
@@ -1199,7 +1203,13 @@ mod run {
     ];
 
     impl Sandbox {
-        fn new(p: &Profile, shim_dir: &Path, cli_bin: &Path, port: u16) -> std::io::Result<Self> {
+        fn new(
+            p: &Profile,
+            shim_dir: &Path,
+            cli_bin: &Path,
+            port: u16,
+            workspace: &Path,
+        ) -> std::io::Result<Self> {
             let dir = tempfile::tempdir()?;
             let at = |rel: &str| -> std::io::Result<PathBuf> {
                 let d = dir.path().join(rel);
@@ -1224,10 +1234,7 @@ mod run {
             for var in p.home_vars() {
                 env.push((var.into(), at(&format!("homes/{var}"))?.into()));
             }
-            let expand = |t: &str| {
-                t.replace("{port}", &port.to_string())
-                    .replace("{key}", DUMMY_KEY)
-            };
+            let expand = |t: &str| expanded(t, port);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
             for (k, v) in p.env {
@@ -1249,7 +1256,10 @@ mod run {
                 if let Some(parent) = file.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::write(&file, expand(c.template))?;
+                std::fs::write(
+                    &file,
+                    config_text(c.template, port, &reported_cwd(workspace)),
+                )?;
             }
             Ok(sandbox)
         }
@@ -1337,7 +1347,7 @@ mod run {
         }
         let cli = install_cli(tier, p, version)?;
         let port = free_port()?;
-        let sandbox = Sandbox::new(p, shim_dir, &cli.bin, port)?;
+        let sandbox = Sandbox::new(p, shim_dir, &cli.bin, port, &workspace)?;
 
         let connect = sandbox
             .command(&built.pixtuoid)
@@ -1414,6 +1424,7 @@ mod run {
                     cli_env: &sandbox.cli_env(p, &cli.launch),
                     cli_version: &cli_version(&sandbox, p, &cli.launch)?,
                     launch: &cli.launch,
+                    driver: &built.driver,
                 },
                 p,
                 scenario,
@@ -1550,6 +1561,8 @@ mod run {
         cli_env: &'a [String],
         cli_version: &'a str,
         launch: &'a Launch,
+        /// [`Built::driver`].
+        driver: &'a Path,
     }
 
     /// The recorder's command line for one run: its options, then the source,
@@ -1571,8 +1584,31 @@ mod run {
             args.extend([recorder_flag::ENV.into(), kv.into()]);
         }
         args.extend([p.source, scenario.shape.name()].map(OsString::from));
-        args.extend(run.launch.argv());
-        args.extend(p.invocation[1..].iter().map(OsString::from));
+        match scenario.surface {
+            Surface::Headless => {
+                args.extend(run.launch.argv());
+                args.extend(p.invocation[1..].iter().map(OsString::from));
+            }
+            Surface::Tui(tui) => {
+                args.push(run.driver.into());
+                args.extend(
+                    tui::CommandLine {
+                        source: p.source.to_owned(),
+                        scenario: scenario.shape.name().to_owned(),
+                        log: run.out.join(TUI_LOG),
+                        // The recorder expands it, as in a headless invocation.
+                        prompt: "{prompt}".to_owned(),
+                        program: run
+                            .launch
+                            .argv()
+                            .into_iter()
+                            .chain(tui.args().iter().map(OsString::from))
+                            .collect(),
+                    }
+                    .to_args(),
+                );
+            }
+        }
         args
     }
 
@@ -1619,14 +1655,43 @@ mod run {
         Ok(out)
     }
 
+    /// A [`ConfigFile`](pixtuoid_core::harness::hermetic::ConfigFile)'s text,
+    /// its workspace with `/` separators: how Claude Code keys its projects on
+    /// Windows (`Xz` in the 2.1.302 bundle), and a JSON or TOML string holds it
+    /// unescaped.
+    fn config_text(template: &str, port: u16, workspace: &str) -> String {
+        expanded(template, port).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
+    }
+
+    /// A profile string with the scripted model's port and key in it.
+    fn expanded(template: &str, port: u16) -> String {
+        template
+            .replace("{port}", &port.to_string())
+            .replace("{key}", DUMMY_KEY)
+    }
+
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
     /// `/tmp` is `/private/tmp`); Windows' cwd reads back as it was set, and
-    /// canonicalizing would resolve a junction it never sees.
+    /// canonicalizing would resolve a junction it never sees. The workspace may
+    /// not exist yet (a config seeded before the recorder makes it), so its
+    /// nearest existing ancestor is the part resolved.
     fn reported_cwd(workspace: &Path) -> String {
         let workspace = if cfg!(windows) {
             workspace.to_path_buf()
         } else {
-            std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf())
+            workspace
+                .ancestors()
+                .find_map(|have| {
+                    let real = std::fs::canonicalize(have).ok()?;
+                    let tail = workspace.strip_prefix(have).ok()?;
+                    // `join("")` would end the path in a separator.
+                    Some(if tail.as_os_str().is_empty() {
+                        real
+                    } else {
+                        real.join(tail)
+                    })
+                })
+                .unwrap_or_else(|| workspace.to_path_buf())
         };
         workspace.to_string_lossy().into_owned()
     }
@@ -1866,6 +1931,7 @@ mod run {
                     cli_env: &["A=b".to_string()],
                     cli_version: "1.2.3",
                     launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
                 },
                 p,
                 &p.scenarios[0],
@@ -1896,6 +1962,83 @@ mod run {
         }
 
         #[test]
+        fn a_tui_scenario_hands_the_recorder_the_driver_and_the_clis_interactive_launch() {
+            let p = hermetic::profile("claude-code").expect("profile");
+            let (scenario, tui) = p
+                .scenarios
+                .iter()
+                .find_map(|s| match s.surface {
+                    Surface::Tui(tui) => Some((s, tui)),
+                    Surface::Headless => None,
+                })
+                .expect("a TUI scenario");
+            let launch = Launch {
+                program: PathBuf::from("/cli/node"),
+                args: vec!["/cli/claude.js".into()],
+                env: Vec::new(),
+            };
+            let args = recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                },
+                p,
+                scenario,
+            );
+            let driver = args
+                .iter()
+                .position(|a| a == "/build/tui_drive")
+                .expect("the driver runs as the command");
+            let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
+            assert_eq!(line.scenario, scenario.shape.name());
+            assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
+            assert_eq!(line.prompt, "{prompt}");
+            let program: Vec<OsString> = launch
+                .argv()
+                .into_iter()
+                .chain(tui.args().iter().map(OsString::from))
+                .collect();
+            assert_eq!(line.program, program);
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_workspace_reports_its_real_path_made_or_not() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let real = d.path().join("real");
+            std::fs::create_dir(&real).expect("real");
+            std::os::unix::fs::symlink(&real, d.path().join("alias")).expect("alias");
+            let real = std::fs::canonicalize(&real).expect("real");
+            // A string, not a `PathBuf`: Claude Code matches the trust key's text,
+            // and a `PathBuf` compare ignores a trailing separator.
+            let want = |tail: &str| format!("{}{tail}", real.display());
+            assert_eq!(
+                reported_cwd(&d.path().join("alias/capture/proj")),
+                want("/capture/proj")
+            );
+            assert_eq!(reported_cwd(&d.path().join("alias")), want(""));
+        }
+
+        #[test]
+        fn a_windows_workspace_keys_claude_codes_trust_seed_as_it_looks_it_up() {
+            let workspace = r"C:\ProgramData\pixtuoid-capture\proj";
+            let seed = hermetic::profile("claude-code").expect("profile").config[0].template;
+            let parsed: serde_json::Value =
+                serde_json::from_str(&config_text(seed, 4321, workspace)).expect("valid JSON");
+            assert!(
+                parsed["projects"]["C:/ProgramData/pixtuoid-capture/proj"]["hasTrustDialogAccepted"]
+                    == true,
+                "{parsed}"
+            );
+        }
+
+        #[test]
         fn a_sources_runs_are_judged_together_only_when_every_scenario_was() {
             let one = [PathBuf::from("/runs/x")];
             assert!(judges_source(&one, 1));
@@ -1916,6 +2059,7 @@ mod run {
                     Path::new("/nowhere/shims"),
                     Path::new("/nowhere/bin"),
                     4321,
+                    Path::new("/nowhere/ws"),
                 )
                 .expect("sandbox");
                 let cli_env = sandbox.cli_env(p, &launch);

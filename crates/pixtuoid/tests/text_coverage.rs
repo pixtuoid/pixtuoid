@@ -1,7 +1,8 @@
 //! Every character the office can write is one the window's faces draw: the
 //! screen face all of it, the world face what the office's own signs and
 //! names write. Read from the literals of everything that renders text,
-//! parsed so a comment, a doc, a pattern or a test never counts.
+//! parsed so a comment, a doc, a pattern, a test or the dev-only `harness`
+//! never counts.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -38,12 +39,13 @@ const TERMINAL_ONLY: &str = "../pixtuoid-scene/src/display/icon.rs";
 /// only a label longer than a badge keeps (`badge.rs` asserts it).
 const PAST_A_BADGE: [char; 1] = [pixtuoid_core::source::decoder::ELLIPSIS];
 
-/// The characters of a file's string and char literals outside tests,
-/// attributes and patterns, and the test modules it declares out of line.
+/// The characters of a file's string and char literals outside tests, the
+/// `harness`, attributes and patterns, and the off-screen modules it declares
+/// out of line.
 #[derive(Default)]
 struct Written {
     chars: Vec<char>,
-    test_mods: Vec<String>,
+    off_screen_mods: Vec<String>,
 }
 
 impl Written {
@@ -75,24 +77,29 @@ impl Written {
     }
 }
 
-/// Whether an item compiles only under test: `#[test]`, or a `cfg` that holds
-/// only when `test` does (`test`, or `all(…)` naming it).
-fn is_test(attrs: &[syn::Attribute]) -> bool {
-    fn needs_test(meta: &syn::Meta) -> bool {
+/// Whether an item compiles only for tests or for core's dev-only `harness`,
+/// which no painter links: `#[test]`, or a `cfg` that holds only when one of
+/// them does (`test`, `feature = "harness"`, or `all(…)` naming one).
+fn off_screen(attrs: &[syn::Attribute]) -> bool {
+    fn only_under(meta: &syn::Meta) -> bool {
         match meta {
             syn::Meta::Path(p) => p.is_ident("test"),
+            syn::Meta::NameValue(nv) if nv.path.is_ident("feature") => matches!(
+                &nv.value,
+                syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) if s.value() == "harness"
+            ),
             syn::Meta::List(l) if l.path.is_ident("all") => l
                 .parse_args_with(
                     syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
                 )
-                .is_ok_and(|all| all.iter().any(needs_test)),
+                .is_ok_and(|all| all.iter().any(only_under)),
             _ => false,
         }
     }
     attrs.iter().any(|a| {
         a.path().is_ident("test")
             || (a.path().is_ident("cfg")
-                && a.parse_args::<syn::Meta>().is_ok_and(|m| needs_test(&m)))
+                && a.parse_args::<syn::Meta>().is_ok_and(|m| only_under(&m)))
     })
 }
 
@@ -100,23 +107,23 @@ impl<'ast> Visit<'ast> for Written {
     fn visit_attribute(&mut self, _: &'ast syn::Attribute) {}
 
     fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
-        if !is_test(&m.attrs) {
+        if !off_screen(&m.attrs) {
             syn::visit::visit_item_mod(self, m);
         } else if m.content.is_none() {
-            self.test_mods.push(m.ident.to_string());
+            self.off_screen_mods.push(m.ident.to_string());
         }
     }
 
     fn visit_pat(&mut self, _: &'ast syn::Pat) {}
 
     fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
-        if !is_test(&f.attrs) {
+        if !off_screen(&f.attrs) {
             syn::visit::visit_item_fn(self, f);
         }
     }
 
     fn visit_item_impl(&mut self, i: &'ast syn::ItemImpl) {
-        if !is_test(&i.attrs) {
+        if !off_screen(&i.attrs) {
             syn::visit::visit_item_impl(self, i);
         }
     }
@@ -173,8 +180,8 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Each source file under [`RENDERERS`] outside its crate's tests, with the
-/// characters its literals write.
+/// Each source file under [`RENDERERS`] outside its crate's tests and
+/// `harness`, with the characters its literals write.
 fn written() -> Vec<(PathBuf, Vec<char>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
@@ -190,17 +197,17 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
             (file, found)
         })
         .collect();
-    let tests: Vec<PathBuf> = parsed
+    let skipped_dirs: Vec<PathBuf> = parsed
         .iter()
         .flat_map(|(file, found)| {
             let dir = module_dir(file);
-            found.test_mods.iter().map(move |name| dir.join(name))
+            found.off_screen_mods.iter().map(move |name| dir.join(name))
         })
         .collect();
     parsed
         .into_iter()
         .filter(|(file, _)| {
-            !tests
+            !skipped_dirs
                 .iter()
                 .any(|t| file.with_extension("") == *t || file.starts_with(t))
         })

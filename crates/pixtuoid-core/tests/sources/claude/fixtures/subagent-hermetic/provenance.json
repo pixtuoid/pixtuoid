@@ -8,6 +8,6 @@
     "method": "decoder-allowlist",
     "blanked": 515
   },
-  "aimock": "1.44.0",
+  "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/subagent.json"
 }

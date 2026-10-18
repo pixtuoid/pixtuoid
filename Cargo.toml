@@ -160,6 +160,10 @@ tempfile           = "3"
 # Dev-only: every test that sets or unsets an env var goes through it, behind
 # one process-wide lock.
 temp-env           = "0.3"
+# Dev-only: the hermetic tier's `tui_drive` runs a CLI's TUI under a pty
+# (ConPTY on Windows) and reads the screen it renders.
+portable-pty       = "0.9"
+vt100              = "0.17"
 # The drift watch's patterns and its release-tarball check (pixtuoid's
 # `upstream` feature). regex is already built through criterion, sha2 is new to
 # the build; a platform hasher would need a seam of its own to keep the sums
