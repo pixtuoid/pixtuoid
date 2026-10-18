@@ -102,6 +102,26 @@ pub(crate) const UPSTREAM: &[Watch] = &[
         siblings: None,
     },
     Watch {
+        id: "claude_code.subagent_turns",
+        ours: || {
+            vec![
+                "that identify the subagent",
+                "resumes a subagent",
+                "async_launched",
+            ]
+        },
+        docs: &[HOOKS_PAGE],
+        read: Read::Each {
+            pattern: r"\b{name}\b",
+        },
+        when: When::Vanishes,
+        finding: Finding::Review(
+            "a subagent's hooks may no longer name it in `agent_id`, or a resume no longer \
+             fires SubagentStart: re-verify the subject swap and `ChildEndInference::None`",
+        ),
+        siblings: None,
+    },
+    Watch {
         id: "claude_code.effort_attachments",
         ours: || DECODED_EFFORT_ATTACHMENTS.to_vec(),
         docs: &[HOOKS_PAGE],
@@ -127,11 +147,14 @@ pub fn cc_id_from_path(path: &Path) -> String {
         .to_string()
 }
 
-/// CC's source-specific hook arms — `SubagentStart`/`SubagentStop`, which change
-/// the event's SUBJECT to the child's AgentId; the shared session-keyed arms cannot,
-/// and every other CC hook event falls through (`Ok(None)`). Needed despite JSONL
-/// registration: a Workflow-tool fleet's subagents carry no `Agent` tool_use and no
-/// end marker, so without `SubagentStop` they hold desks until the stale sweep.
+/// CC's source-specific hook arms, which change the event's SUBJECT to a
+/// subagent's AgentId where the shared session-keyed arms cannot:
+/// `SubagentStart`/`SubagentStop`, and any other event a subagent fires, which
+/// names it in `agent_id` beside the ROOT's `session_id` (hooks.md: the
+/// `agent_id` and `agent_type` "that identify the subagent"). A main-thread event
+/// falls through (`Ok(None)`). Needed despite JSONL registration: a
+/// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
+/// so without `SubagentStop` they hold desks until the stale sweep.
 pub(crate) fn decode_cc_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>> {
     let Some(obj) = v.as_object() else {
         return Ok(None); // shared path reports the malformed payload
@@ -141,7 +164,7 @@ pub(crate) fn decode_cc_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>
         .and_then(|s| s.as_str())
         .unwrap_or("");
     if event != "SubagentStart" && event != "SubagentStop" {
-        return Ok(None);
+        return subagent_fired(obj);
     }
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
@@ -155,13 +178,7 @@ pub(crate) fn decode_cc_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "agent_id"))?;
-    // The wire's `agent_id` is BARE hex while the watcher's id space is
-    // `agent-<id>`; the CC docs' example shows one already prefixed.
-    let prefixed = if wire_agent_id.starts_with("agent-") {
-        wire_agent_id.to_string()
-    } else {
-        format!("agent-{wire_agent_id}")
-    };
+    let prefixed = subagent_session(wire_agent_id);
     if event == "SubagentStart" {
         let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
         Ok(Some(vec![AgentEvent::SessionStart {
@@ -197,6 +214,36 @@ pub(crate) fn decode_cc_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>
             as_child: true,
         }]))
     }
+}
+
+/// A subagent's session id from the wire's `agent_id`: BARE hex, while the
+/// watcher's id space is `agent-<id>`; the CC docs' example shows one already
+/// prefixed.
+fn subagent_session(wire_agent_id: &str) -> String {
+    if wire_agent_id.starts_with("agent-") {
+        wire_agent_id.to_string()
+    } else {
+        format!("agent-{wire_agent_id}")
+    }
+}
+
+/// An event a subagent fired, decoded as its own session's.
+fn subagent_fired(obj: &serde_json::Map<String, Value>) -> Result<Option<Vec<AgentEvent>>> {
+    let Some(agent) = obj
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let mut own = obj.clone();
+    own.insert("session_id".into(), Value::from(subagent_session(agent)));
+    crate::source::decoder::shared_hook_arms(
+        &own,
+        SOURCE_NAME,
+        crate::source::registry::descriptor_for(SOURCE_NAME),
+    )
+    .map(Some)
 }
 
 /// Resolve `CLAUDE_CONFIG_DIR`. Upstream (read out of the 2.1.226 binary) is
@@ -529,6 +576,51 @@ pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A subagent's tool hook names it in `agent_id` (hooks.md;
+    /// `claude/fixtures/subagent-hermetic`): every event it decodes to lands on
+    /// the subagent, Identity's session too, whatever `session_id` says.
+    #[test]
+    fn a_subagents_tool_hook_lands_on_the_subagent() {
+        let sid = "5717f13f-3c42-4a73-bfa5-3cd14932f155";
+        let child = AgentId::from_parts(SOURCE_NAME, "agent-a234ddfa51533488f");
+        let root = AgentId::from_parts(SOURCE_NAME, sid);
+        for event in [
+            "PreToolUse",
+            "PostToolUse",
+            "Notification",
+            "PermissionRequest",
+        ] {
+            let payload = |agent_id: Option<&str>| {
+                let mut v = json!({
+                    "hook_event_name": event, "session_id": sid, "cwd": "/repo",
+                    "transcript_path": format!("/h/.claude/projects/-repo/{sid}.jsonl"),
+                    "agent_type": "general-purpose", "tool_name": "Read", "tool_use_id": "toolu_1",
+                    "tool_input": {"file_path": "/repo/NOTE.txt"}, "message": "m",
+                    "_pixtuoid_source": SOURCE_NAME,
+                });
+                if let Some(a) = agent_id {
+                    v["agent_id"] = json!(a);
+                }
+                crate::source::decoder::decode_hook_payload(v).expect("decodes")
+            };
+            let evs = payload(Some("a234ddfa51533488f"));
+            assert!(!evs.is_empty(), "{event}");
+            assert!(
+                evs.iter().all(|e| e.agent_id() == child),
+                "{event}: {evs:?}"
+            );
+            assert!(
+                evs.iter()
+                    .any(|e| matches!(e, AgentEvent::Identity { session_id, .. }
+                    if session_id == "agent-a234ddfa51533488f")),
+                "{event}: the Identity must name the subagent's session: {evs:?}"
+            );
+            for main_thread in [payload(None), payload(Some(""))] {
+                assert!(main_thread.iter().all(|e| e.agent_id() == root), "{event}");
+            }
+        }
+    }
 
     /// The half that still has to alarm: a RENAMED turn type. It is recognised
     /// by the payload we decode, not by absence from a list, so nothing has to

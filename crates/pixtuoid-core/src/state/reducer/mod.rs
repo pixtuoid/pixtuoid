@@ -4,10 +4,9 @@ use std::time::{Duration, SystemTime};
 
 use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
+use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, Transport};
-use crate::state::correlation::{
-    ChildEnd, Correlation, ToolEventKind, elapsed_at_least, elapsed_past,
-};
+use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
 use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, fsm, scope};
 
 #[doc(hidden)]
@@ -50,16 +49,23 @@ pub const STALE_UNKNOWN_CWD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 #[doc(hidden)]
 pub const STALE_SHORT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// `slot`'s source's caps; `None` for an unregistered source.
+fn caps_of(slot: &AgentSlot) -> Option<SourceCaps> {
+    crate::source::registry::descriptor_for(&slot.source).map(|d| d.caps())
+}
+
+/// Which Task end arms b1 for `slot`; an unregistered source keeps the drain.
+fn child_end_inference(slot: &AgentSlot) -> ChildEndInference {
+    caps_of(slot).map_or(ChildEndInference::TaskDrain, |c| c.child_end_inference)
+}
+
 fn stale_threshold(slot: &AgentSlot) -> Duration {
-    stale_threshold_with_caps(
-        slot,
-        crate::source::registry::descriptor_for(&slot.source).map(|d| d.caps()),
-    )
+    stale_threshold_with_caps(slot, caps_of(slot))
 }
 
 /// Policy half of [`stale_threshold`], split from the registry lookup so caps
 /// combinations no registered source has YET are unit-testable with a synthetic
-/// [`SourceCaps`](crate::source::registry::SourceCaps).
+/// [`SourceCaps`].
 fn stale_threshold_with_caps(
     slot: &AgentSlot,
     caps: Option<crate::source::registry::SourceCaps>,
@@ -161,8 +167,8 @@ enum Attempt {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {
     Create,
-    /// Create under this live parent, explicit or remembered: a hook disproved
-    /// an end pixtuoid only inferred.
+    /// Create under this live parent, explicit or remembered: a hook after the
+    /// child's end starts it again.
     Readmit(AgentId),
     /// Fold into the id's slot, and resurrect it in place when `revive`.
     Enrich {
@@ -214,7 +220,8 @@ impl Refusal {
 /// re-opens the leak or the double-apply the pre-pass was added to close.
 #[must_use]
 enum Preprocessed {
-    /// Suppressed as a subagent leak, or dropped by hook-wins dedup.
+    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start
+    /// whose End already landed (#242).
     Drop,
     /// Survived the pre-pass; carries what task tracking already applied, so
     /// the general arms can skip work the tracker has done.
@@ -235,9 +242,9 @@ struct TaskTracking {
 #[derive(Debug, Default)]
 pub struct Reducer {
     corr: Correlation,
-    /// Parents whose last Task drained, or whose id-less Task ended on a
-    /// [`child_ends_unannounced`](crate::source::registry::SourceCaps::child_ends_unannounced)
-    /// source, awaiting the deferred b1 cascade
+    /// Parents whose last Task drained on a source that infers child ends from
+    /// one, or whose id-less Task ended on an [`ChildEndInference::AnyTaskEnd`]
+    /// one, awaiting the deferred b1 cascade
     /// ([`B1_CASCADE_GRACE`]) — fired only if `active_tasks` is STILL empty at
     /// fire time, which is how a Task insert inside the grace defuses it
     /// (#151).
@@ -407,8 +414,7 @@ impl Reducer {
     }
 
     /// The pre-pass every event runs before dispatch. ORDER IS LOAD-BEARING:
-    /// suppress before the dedup RECORD, else a suppressed hook eats its own
-    /// JSONL copy; dedup before task tracking (#150), else a duplicate re-fires
+    /// dedup before task tracking (#150), else a duplicate re-fires
     /// `enter_delegating` onto a Waiting parent; fire b1 cascades AFTER tracking,
     /// or a cancelling dispatch at the grace boundary evicts its own live subtree.
     fn preprocess(
@@ -438,7 +444,14 @@ impl Reducer {
             scope::refresh_lineage(scene, id, now);
         }
 
-        if from == Transport::Hook && self.suppress_subagent_leak(scene, event, id, now) {
+        if from == Transport::Hook
+            && scene
+                .agents
+                .get(&id)
+                .and_then(caps_of)
+                .is_some_and(|c| c.child_hooks_unnamed)
+            && self.suppress_subagent_leak(scene, event, id, now)
+        {
             return Preprocessed::Drop;
         }
 
@@ -639,10 +652,7 @@ impl Reducer {
                     ..
                 }
             );
-            if untracked_task
-                && crate::source::registry::descriptor_for(&slot.source)
-                    .is_some_and(|d| d.caps().child_ends_unannounced)
-            {
+            if untracked_task && child_end_inference(slot) == ChildEndInference::AnyTaskEnd {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
             if matches!(slot.state, ActivityState::Active { .. }) || resolves_wait {
@@ -840,37 +850,54 @@ impl Reducer {
         // writes its rollout at exit, after its hook end.
         let revival_owned =
             starts_fresh && from != Transport::Hook && corr.hook_owns_revival(id, now);
+        let parent_lives =
+            |p: &AgentId| scene.agents.get(p).is_some_and(|s| s.exiting_at.is_none());
         if let Some(slot) = scene.agents.get(&id) {
-            // Only an exiting ROOT revives, so a late duplicate can't un-exit a
-            // cascaded subagent.
-            let revive = starts_fresh
-                && slot.exiting_at.is_some()
-                && slot.parent_id.is_none()
-                && !revival_owned;
+            // An exiting root revives on a fresh start, an exiting child only
+            // on a hook start while its linked parent lives: a late duplicate
+            // can't un-exit a cascaded subagent.
+            let revive = slot.exiting_at.is_some()
+                && match attempt {
+                    Attempt::Start { parent: None } => slot.parent_id.is_none() && !revival_owned,
+                    // An end that landed on the walking-out slot is a turn whose
+                    // own Start is still to come, reordered (#242).
+                    Attempt::Start { parent: Some(_) } => {
+                        from == Transport::Hook
+                            && slot.parent_id.as_ref().is_some_and(parent_lives)
+                            && slot
+                                .exiting_at
+                                .is_some_and(|exit| !corr.child_ended_since(id, exit))
+                    }
+                    Attempt::Identity | Attempt::HookActivity => false,
+                };
             return Verdict::Enrich { revive };
         }
         let refusal = match attempt {
             Attempt::Start { parent: None } if revival_owned => Some(Refusal::HookOwnsRevival),
             Attempt::Start { parent: None } => None,
             // #242: hook deliveries ride per-connection tasks, so an end can be
-            // DECODED ahead of its life's trailing events.
-            _ if corr.ended_within_straggler_window(id, now) => Some(Refusal::Straggler),
-            // #244-w2: inside the child gate a registration is the dead child's
-            // late echo; an Identity or a hook activity names no parent, so
-            // without this an omp batch whose parented Start was just refused
-            // would re-register the ended child parentless one event later.
+            // DECODED ahead of its life's trailing events. A hook start after
+            // the walkout is the child's next turn, judged below: the slot's
+            // own revive covered the window before it.
+            _ if corr.ended_within_straggler_window(id, now)
+                && !(from == Transport::Hook
+                    && matches!(attempt, Attempt::Start { parent: Some(_) })
+                    && corr.child_ended_before(id, now, EXIT_GRACE_WINDOW)) =>
+            {
+                Some(Refusal::Straggler)
+            }
+            // #244: inside the child gate a transcript registration is the dead
+            // child's late first sight.
             _ => match corr.recent_child_end(id, now) {
                 None => None,
-                // A hook after an end pixtuoid only inferred proves the child
-                // alive, under a parent that still is.
-                Some(ChildEnd::Inferred(_)) if from == Transport::Hook => {
+                // A hook is the CLI starting the child again (a CC resume),
+                // under a parent that still lives.
+                Some(_) if from == Transport::Hook => {
                     let parent = match attempt {
                         Attempt::Start { parent } => parent,
                         Attempt::Identity | Attempt::HookActivity => corr.remembered_parent(id),
                     };
-                    if let Some(p) = parent
-                        && scene.agents.get(&p).is_some_and(|s| s.exiting_at.is_none())
-                    {
+                    if let Some(p) = parent.filter(parent_lives) {
                         return Verdict::Readmit(p);
                     }
                     Some(Refusal::ChildEnded)
@@ -925,8 +952,8 @@ impl Reducer {
     /// Fold a duplicate or late `SessionStart` into an EXISTING slot. A
     /// pending parent link is applied ONCE — never re-parented — and revives its
     /// lifecycle (#244/#246). A duplicate is genuine liveness (Codex/Reasonix
-    /// re-emit one per `UserPromptSubmit`), and an exiting root resurrects when
-    /// `revive` and no parent was adopted, or a live root resets.
+    /// re-emit one per `UserPromptSubmit`), and an exiting slot resurrects when
+    /// `revive` and no parent was adopted here, or a live root resets.
     fn enrich_existing_start(
         &mut self,
         scene: &mut SceneState,
@@ -939,9 +966,8 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        if slot.parent_id.is_none()
-            && let Some(p) = parent_id
-        {
+        let was_linked = slot.parent_id.is_some();
+        if !was_linked && let Some(p) = parent_id {
             slot.parent_id = Some(p);
             self.corr.link_applied_parent(agent_id, p);
         }
@@ -963,14 +989,19 @@ impl Reducer {
             ));
         }
         slot.last_event_at = now;
-        // An adopted parent makes it a child, which rides its parent's cascade.
-        if revive && parent_id.is_none() {
+        // A root that adopts a parent here is a child, which rides its
+        // parent's cascade; a child linked only by this Start is that life's
+        // reordered Start, not a new turn's.
+        if revive && (was_linked || parent_id.is_none()) {
             // Route through fsm so an in-flight Active span folds into
             // `active_ms` — a direct `state = Idle` here silently dropped it.
             fsm::resurrect_in_place(slot, now);
             // Evict the dead life's correlation as `sweep_exited` would have;
             // `recent_proof_of_life` deliberately SURVIVES a resurrect.
             self.remove_agent_correlation(&agent_id);
+            if let Some(p) = slot.parent_id {
+                self.corr.link_applied_parent(agent_id, p);
+            }
         }
     }
 
@@ -1121,13 +1152,12 @@ impl Reducer {
         true
     }
 
-    /// Hook transport only: with any Task in flight, hook ActivityStart/End for
-    /// this AgentId is almost certainly subagent work misattributed to the
-    /// parent. Drop it and defer to JSONL, which targets the subagent's own
-    /// AgentId. Two exemptions: the Task's own PostToolUse (its tool_use_id
-    /// matches), and a GATED member's Start/End — the parent's own approval
-    /// round (#951), which eating would strand in Waiting until the parent's
-    /// next own event or the stale sweep.
+    /// Hook transport only, on a source whose child hooks arrive unnamed under
+    /// the parent's key: with any Task in flight, hook ActivityStart/End for
+    /// this AgentId is the child's work, so it is dropped. Two exemptions: the
+    /// Task's own PostToolUse (its tool_use_id matches), and a GATED member's
+    /// Start/End — the parent's own approval round (#951), which eating would
+    /// strand in Waiting until the parent's next own event or the stale sweep.
     fn suppress_subagent_leak(
         &mut self,
         scene: &mut SceneState,
@@ -1174,8 +1204,8 @@ impl Reducer {
 
     /// Tracks Task tool_use_ids from either transport, marking a parent that
     /// gains one Active("Delegating") so it doesn't look asleep while subagents
-    /// work. b1 subagent-completion inference (CC writes no completion marker):
-    /// a drained parent Task means the subtree returned — cascade EXIT to the
+    /// work. b1 subagent-completion inference, where [`ChildEndInference`] says
+    /// so: a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before [`STALE_IDLE_TIMEOUT`].
     fn track_active_tasks(
         &mut self,
@@ -1231,7 +1261,9 @@ impl Reducer {
                         // Arm the debounce only when actually Active: a
                         // Waiting parent's expiry would false-clear it.
                         if set.is_empty() {
-                            self.pending_b1_cascades.insert(*agent_id, now);
+                            if child_end_inference(slot) != ChildEndInference::None {
+                                self.pending_b1_cascades.insert(*agent_id, now);
+                            }
                             if matches!(slot.state, ActivityState::Active { .. }) {
                                 fsm::arm_pending_idle(slot, now);
                             }
@@ -1297,14 +1329,19 @@ impl Reducer {
     /// liveness signal, NOT `state_started_at`, which only tracks the current
     /// state's age.
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
-        // A node blocked under a `Waiting` ancestor (a subagent whose permission
-        // Notification was attributed to the parent) is gated, not dead.
+        // A node gated by a `Waiting` relative is blocked with it, not dead: a
+        // subagent under a waiting parent, or a parent over a waiting subagent.
+        // A waiting descendant never exempts a waiting node, so a waiting pair
+        // can't exempt each other (#238).
         let agents = &scene.agents;
         let stale: Vec<(AgentId, Duration, Duration)> = agents
             .values()
             .filter(|slot| slot.exiting_at.is_none())
             .filter_map(|slot| {
-                if scope::has_waiting_ancestor(agents, slot.agent_id) {
+                let waiting = matches!(slot.state, ActivityState::Waiting { .. });
+                if scope::has_waiting_ancestor(agents, slot.agent_id)
+                    || (!waiting && scope::has_waiting_descendant(agents, slot.agent_id))
+                {
                     return None;
                 }
                 // Probe-vouched (#220): a recent ProofOfLife means the process

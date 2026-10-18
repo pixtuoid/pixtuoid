@@ -14,12 +14,20 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
+/// The suppression tests' source: its subagents' hooks arrive under the
+/// parent's key, naming no child.
+const UNNAMED_CHILD_HOOKS: &str = "kimi";
+
 fn start(reducer: &mut Reducer, scene: &mut SceneState, id: AgentId) {
+    start_as(reducer, scene, id, "claude-code");
+}
+
+fn start_as(reducer: &mut Reducer, scene: &mut SceneState, id: AgentId, source: &str) {
     reducer.apply(
         scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "claude-code".into(),
+            source: source.into(),
             session_id: "abc".into(),
             cwd: PathBuf::from("/"),
             parent_id: None,
@@ -29,19 +37,32 @@ fn start(reducer: &mut Reducer, scene: &mut SceneState, id: AgentId) {
     );
 }
 
+/// The b1 tests' source: claude-code's caps, but a Task's drain arms b1.
+const DRAIN_INFERRED: &str = "omp";
+
 fn delegating_pair(
     r: &mut Reducer,
     scene: &mut SceneState,
     slug: &str,
     t0: SystemTime,
 ) -> (AgentId, AgentId) {
-    let parent = AgentId::from_transcript_path(&format!("/p/{slug}.jsonl"));
-    let child = AgentId::from_parts("claude-code", &format!("/p/{slug}/subagents/agent-1.jsonl"));
+    delegating_pair_on(r, scene, slug, t0, DRAIN_INFERRED)
+}
+
+fn delegating_pair_on(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+    slug: &str,
+    t0: SystemTime,
+    source: &str,
+) -> (AgentId, AgentId) {
+    let parent = AgentId::from_parts(source, &format!("/p/{slug}.jsonl"));
+    let child = AgentId::from_parts(source, &format!("/p/{slug}/subagents/agent-1.jsonl"));
     r.apply(
         scene,
         AgentEvent::SessionStart {
             agent_id: parent,
-            source: "claude-code".into(),
+            source: source.into(),
             session_id: "p".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: None,
@@ -53,7 +74,7 @@ fn delegating_pair(
         scene,
         AgentEvent::SessionStart {
             agent_id: child,
-            source: "claude-code".into(),
+            source: source.into(),
             session_id: "c".into(),
             cwd: PathBuf::from("/repo"),
             parent_id: Some(parent),

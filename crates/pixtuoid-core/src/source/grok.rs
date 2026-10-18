@@ -15,7 +15,7 @@
 //! - **Keying**: `sessionId` is consistent across every event of a session, ==
 //!   the transcript's parent-DIR name, == a subagent's `subagentId`. Hook and
 //!   watcher keys therefore coalesce, and a child's tool hooks carry the
-//!   CHILD's `sessionId`, so no CC-style `active_tasks` suppression is needed.
+//!   CHILD's `sessionId`.
 //! - **Subagents**: in-process children persisted as FLAT siblings in the
 //!   normal sessions tree. Children fire NO `session_start` hook of their own
 //!   — the `subagent_start` hook (or the parent transcript's
@@ -398,9 +398,8 @@ fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Resul
 /// alive, and the reducer's b1 drain-cascade would then `cascade_exit` the LIVE
 /// child subtree, unrecoverably. Blocking spawns are the one shape where
 /// End == completion. Skipping Task detail elsewhere loses nothing: grok
-/// children are FIRST-CLASS (child-keyed tool hooks, no misattribution to
-/// suppress) and their ends are wire-carried, so neither job `active_tasks`
-/// exists for applies.
+/// children are FIRST-CLASS (child-keyed tool hooks) and their ends are
+/// wire-carried, so b1 has no end to infer.
 fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     let is_spawn = tool == "spawn_subagent" || args.and_then(|a| a.get("subagent_type")).is_some();
     if is_spawn && spawn_is_blocking(args) {

@@ -4,7 +4,7 @@
   "version": "2.1.233 (Claude Code)",
   "captured": "2026-08-15",
   "command": "claude --permission-mode auto (interactive TUI, driven under a pty), prompted to dispatch a Task subagent",
-  "note": "The first REAL SubagentStart/SubagentStop bytes for CC — tests/sources/claude/fixtures is hand-written (no shim stamps). Ships the PARENT transcript, because that is where the dispatch lives AND what the hooks key on; the child's own transcript (where `attributionAgent` lives) is a separate scenario for the same reason. The tool is named `Agent`, not `Task` — CC renamed it undocumented in v2.1.63 — which is why detection is semantic on `subagent_type`. The recorder's own roster and instruction attachments rode fields no decoder reads and are stripped (see `deidentified`).",
+  "note": "The first REAL SubagentStart/SubagentStop bytes for CC — tests/sources/claude/fixtures/lifecycle-recorded predates the shim stamps. Ships the PARENT transcript, because that is where the dispatch lives AND what the hooks key on; the child's own transcript (where `attributionAgent` lives) is a separate scenario for the same reason. The tool is named `Agent`, not `Task` — CC renamed it undocumented in v2.1.63 — which is why detection is semantic on `subagent_type`. The recorder's own roster and instruction attachments rode fields no decoder reads and are stripped (see `deidentified`).",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 665

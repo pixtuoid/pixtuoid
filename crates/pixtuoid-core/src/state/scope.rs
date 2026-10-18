@@ -7,8 +7,8 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried UP** — [`has_waiting_ancestor`]: a node blocked under a
-//!   `Waiting` ancestor is "not ready", not dead.
+//! - **readiness, queried both ways** — [`has_waiting_ancestor`] and
+//!   [`has_waiting_descendant`]: a node gated by a `Waiting` relative is "not ready", not dead.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::SystemTime;
@@ -29,7 +29,7 @@ pub(crate) enum StampRoot {
     No,
 }
 
-/// Mark every not-yet-exiting descendant of `root` exiting, BFS over `parent_id`
+/// Mark every not-yet-exiting descendant of `root` exiting, over `parent_id`
 /// links — and, when `stamp_root` is [`StampRoot::Yes`], mark `root` itself
 /// exiting first (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
 /// Idempotent through that write-once stamp, NOT by pruning the walk: an
@@ -46,25 +46,38 @@ pub(crate) fn cascade_exit(
     {
         fsm::mark_exiting(slot, now);
     }
+    for cid in descendants(&scene.agents, root) {
+        if let Some(slot) = scene.agents.get_mut(&cid) {
+            fsm::mark_exiting(slot, now);
+        }
+    }
+}
+
+/// Every descendant of `root` over `parent_id` links; a cycle is walked once.
+fn descendants(agents: &BTreeMap<AgentId, AgentSlot>, root: AgentId) -> Vec<AgentId> {
     let mut visited: HashSet<AgentId> = HashSet::new();
     visited.insert(root);
     let mut frontier = vec![root];
+    let mut out = Vec::new();
     while let Some(parent) = frontier.pop() {
-        let children: Vec<AgentId> = scene
-            .agents
-            .values()
-            .filter(|s| s.parent_id == Some(parent))
-            .map(|s| s.agent_id)
-            .collect();
-        for cid in children {
-            if visited.insert(cid) {
-                if let Some(slot) = scene.agents.get_mut(&cid) {
-                    fsm::mark_exiting(slot, now);
-                }
-                frontier.push(cid);
+        for child in agents.values().filter(|s| s.parent_id == Some(parent)) {
+            if visited.insert(child.agent_id) {
+                out.push(child.agent_id);
+                frontier.push(child.agent_id);
             }
         }
     }
+    out
+}
+
+/// True if any descendant of `id` is in `Waiting` state: a parent whose
+/// subagent is blocked on a human gate waits with it, not dead.
+pub(crate) fn has_waiting_descendant(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
+    descendants(agents, id).into_iter().any(|d| {
+        agents
+            .get(&d)
+            .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }))
+    })
 }
 
 /// Refresh `last_event_at` for `id` and every ancestor, so a parent isn't
@@ -148,10 +161,9 @@ pub(crate) fn would_create_cycle(
 }
 
 /// True if any ancestor of `id` is in `Waiting` state. A subagent's permission
-/// `Notification` is attributed to the PARENT (the hook `transcript_path` is the
-/// parent's), so the parent goes `Waiting` while the blocked subagent stays
-/// `Active` — paused on a human gate, not dead, so `sweep_stale` exempts it from
-/// the aggressive Active timer.
+/// event that lands on an ancestor leaves the blocked subagent `Active` — paused
+/// on a human gate, not dead, so `sweep_stale` exempts it from the aggressive
+/// Active timer.
 pub(crate) fn has_waiting_ancestor(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
     has_ancestor_where(agents, id, |p| {
         matches!(p.state, ActivityState::Waiting { .. })

@@ -1,6 +1,6 @@
 //! Claude Code subagent lifecycle (parallels the sibling `codex` module).
 //!
-//! `fixtures/hook-payloads.jsonl` holds REAL SubagentStart/Stop wire payloads,
+//! `fixtures/lifecycle-recorded/` holds REAL SubagentStart/Stop wire payloads,
 //! sanitized to synthetic ids and a generic cwd;
 //! `last_assistant_message`/`background_tasks` are truncated but KEPT so the
 //! decoder's tolerance of fields we don't consume stays pinned.
@@ -49,8 +49,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
     assert!(scene.agents.contains_key(&parent_id()), "parent created");
 
     // Real CC names the dispatch tool "Agent", not "Task" — Task-detection
-    // must still fire so the reducer records an active_task and suppresses the
-    // subagent's misattributed hook events.
+    // must still fire so the reducer records an active_task.
     for ev in decode_hook_payload(json!({
         "hook_event_name": "PreToolUse",
         "session_id": "parent",
@@ -140,7 +139,8 @@ fn hook_parent_id() -> AgentId {
 /// bare shim with no env, so the decoder's claude-code default applies.
 fn captured_hook_events() -> Vec<AgentEvent> {
     super::captures::fixture_lines(
-        &super::captures::sources_root().join("claude/fixtures/hook-payloads.jsonl"),
+        &super::captures::sources_root()
+            .join("claude/fixtures/lifecycle-recorded/hook-payloads.jsonl"),
     )
     .iter()
     .flat_map(|l| {
@@ -326,5 +326,50 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
         scene.agents.get(&child).unwrap().parent_id,
         Some(hook_parent_id()),
         "parent link survives the duplicate"
+    );
+}
+
+/// The hermetic tier's recorded background delegation (`fixtures/subagent-hermetic`):
+/// the child's own Read lands on the child, never the root, and the child is
+/// the root's (#1701).
+#[test]
+fn a_recorded_background_childs_tools_land_on_the_child() {
+    let lines = super::captures::fixture_lines(
+        &super::captures::sources_root()
+            .join("claude/fixtures/subagent-hermetic/hook-payloads.jsonl"),
+    );
+    let d = pixtuoid_core::harness::Drive::hooks().lines(lines);
+    d.assert_clean("claude-code delegation hooks");
+    let (child, root) = d
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(p),
+                ..
+            } => Some((*agent_id, *p)),
+            _ => None,
+        })
+        .expect("the run spawns a child");
+    let tools_on = |id: AgentId| {
+        d.events
+            .iter()
+            .filter(|e| {
+                matches!(e, AgentEvent::ActivityStart { agent_id, detail, .. }
+                if *agent_id == id && !detail.as_ref().is_some_and(|t| t.is_task()))
+            })
+            .count()
+    };
+    assert_eq!(
+        (tools_on(root), tools_on(child)),
+        (0, 1),
+        "root's tools, then the child's"
+    );
+    assert!(
+        d.events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == root)),
+        "the root's SessionStart and SessionEnd keep the session's own id"
     );
 }

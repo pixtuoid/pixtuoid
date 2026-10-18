@@ -362,7 +362,7 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
 }
 
 #[test]
-fn resurrect_in_place_clears_stale_active_tasks_so_fresh_session_hooks_apply() {
+fn resurrect_in_place_clears_stale_active_tasks_so_the_fresh_session_is_not_delegating() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/resurr-tasks.jsonl");
@@ -423,17 +423,21 @@ fn resurrect_in_place_clears_stale_active_tasks_so_fresh_session_hooks_apply() {
         t0 + Duration::from_secs(3),
         Transport::Hook,
     );
+    act_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t-new"),
+        t0 + Duration::from_secs(4),
+        Transport::Hook,
+    );
     match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Active { detail, .. } => {
-            assert_eq!(
-                detail.as_deref(),
-                Some("Read: /x"),
-                "the fresh session's hook tool must apply, not render as Delegating"
-            );
-        }
-        other => panic!(
-            "the resurrected session's first hook tool must NOT be suppressed by the dead life's active_tasks residue — got {other:?}"
+        ActivityState::Active { detail, .. } => assert_eq!(
+            detail.as_deref(),
+            Some("Read: /x"),
+            "the dead life's Task residue put the fresh session back to Delegating"
         ),
+        other => panic!("expected the fresh tool's Active, got {other:?}"),
     }
 }
 

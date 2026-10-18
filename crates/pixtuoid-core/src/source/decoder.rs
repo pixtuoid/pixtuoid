@@ -313,7 +313,7 @@ fn decodes_to_nothing(
 
 /// A source's OWN hook arms, run before the shared field requirements so an alien
 /// envelope (Reasonix: camelCase, `event` discriminator, no `session_id` at all) or
-/// a subject-changing event (SubagentStart/Stop, whose AgentId is the CHILD's)
+/// a subject-changing event (a CC subagent's, whose AgentId is the CHILD's)
 /// decodes in its own module. An `Extend` decoder that declines (`Ok(None)`) falls
 /// through to the shared CC-shaped arms; a `ClaimsAll` decoder cannot.
 fn source_owned_arms(
@@ -455,7 +455,7 @@ pub fn decode_hook_payload(v: Value) -> DecodeResult<Vec<AgentEvent>> {
 /// Codex's tool hooks fire only for shell/apply_patch/MCP — ~25 other handlers fire
 /// nothing (openai/codex#20204) — and hook firing is version-unstable: a
 /// `matcher="*"` group is silently dropped, some builds emit none (openai/codex#21639).
-fn shared_hook_arms(
+pub(crate) fn shared_hook_arms(
     obj: &serde_json::Map<String, Value>,
     source: &str,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
@@ -609,8 +609,9 @@ pub(crate) const DECODED_DISPATCH_NAMES: &[&str] = &[DISPATCH_TOOL];
 /// The detail for one tool call. The subagent dispatch is detected SEMANTICALLY, by
 /// the PRESENCE of a `subagent_type` input field — presence, not value, so a renamed
 /// tool emitting `subagent_type: null` is still caught AND still breadcrumbs the
-/// drift. The reducer keys subagent-leak suppression (`active_tasks`) and Task-drain
-/// completion on `is_task()`, so a missed dispatch silently disables both.
+/// drift. The reducer keys Delegating and an unnamed child's suppression
+/// (`active_tasks`) and Task-drain completion on `is_task()`, so a missed dispatch
+/// silently disables them.
 pub(crate) fn make_tool_detail(source: &str, tool_name: &str, input: Option<&Value>) -> ToolDetail {
     let has_subagent_type = input.and_then(|v| v.get("subagent_type")).is_some();
     let known_name = tool_name == DISPATCH_TOOL;

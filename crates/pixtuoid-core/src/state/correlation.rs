@@ -29,12 +29,12 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 
-/// How long a child's end keeps gating a re-registration of that child
-/// (#244): a parented Start, an Identity, a hook synthesis. Sized past the
-/// watcher's poll backstop (`DEFAULT_POLL_INTERVAL`), the worst case for a late transcript
-/// first-sight; a registration inside the window is the dead child's late
-/// echo, unless [`authorizes`](crate::state::reducer::Reducer::authorizes)
-/// re-admits it.
+/// How long a child's end keeps refusing a transcript re-registration of that
+/// child (#244). Sized past the watcher's poll backstop (`DEFAULT_POLL_INTERVAL`),
+/// the worst case for a late transcript first-sight, the dead child's echo; a
+/// hook past the straggler window is a new life, which
+/// [`authorizes`](crate::state::reducer::Reducer::authorizes) readmits under a
+/// live parent.
 /// Parentless Starts are deliberately NOT gated — a Codex resurrect-on-prompt
 /// is a legitimate same-id new life and re-links to its remembered parent (#246).
 #[doc(hidden)]
@@ -136,12 +136,9 @@ pub(super) struct Correlation {
     /// One record per id, outliving its slot, read by
     /// [`Reducer::authorizes`](super::reducer::Reducer::authorizes).
     pub(super) lifecycles: HashMap<AgentId, Lifecycle>,
-    /// Per-agent set of Task tool_use_ids currently in flight. CC's hook
-    /// payload sets `transcript_path` to the PARENT'S transcript even when a
-    /// subagent is the actor, so subagent hook events hash to the parent's
-    /// AgentId. While the parent has any Task in flight, hook
-    /// ActivityStart/End events for that AgentId are dropped — JSONL has
-    /// correct attribution to the subagent's own AgentId.
+    /// Per-agent set of Task tool_use_ids currently in flight: the parent
+    /// stays Delegating while one is, an unnamed child's hook activity is
+    /// dropped, and the set's drain may arm b1.
     pub(super) active_tasks: HashMap<AgentId, HashSet<String>>,
     /// Tombstones for Task tool_use_ids whose drain already completed: a
     /// lagged JSONL pair-replay after the drain re-inserts the tuid as a
@@ -222,6 +219,22 @@ impl Correlation {
             .map(|t| Arc::<str>::from(t.as_str()))
     }
 
+    /// Whether a child end of `id` landed after `since`, however old.
+    pub(super) fn child_ended_since(&self, id: AgentId, since: SystemTime) -> bool {
+        self.lifecycles
+            .get(&id)
+            .and_then(|l| l.child_end)
+            .is_some_and(|end| end.at() > since)
+    }
+
+    /// Whether `id`'s child end is at least `age` old.
+    pub(super) fn child_ended_before(&self, id: AgentId, now: SystemTime, age: Duration) -> bool {
+        self.lifecycles
+            .get(&id)
+            .and_then(|l| l.child_end)
+            .is_some_and(|end| elapsed_at_least(now, end.at(), age))
+    }
+
     /// Whether `id` ended within [`STRAGGLER_TTL`] by a hook or by a reported
     /// child end: a reordered trailing event of that life is a straggler.
     pub(super) fn ended_within_straggler_window(&self, id: AgentId, now: SystemTime) -> bool {
@@ -276,8 +289,8 @@ impl Correlation {
     /// A session ended: a child's end from either transport, else a hook's end
     /// of a top-level life. Stamped whether or not its slot exists, which
     /// covers the Stop-before-Start reorder (#242/#244). A child's end never
-    /// stamps the hook clock: upstream sends no start for its next turn, which
-    /// its transcript alone announces (#246).
+    /// stamps the hook clock: its next turn may be announced by its transcript
+    /// alone (Codex, #246), which that clock would refuse.
     /// A child the record already knows ends by its own word even when its
     /// decoder can't tell `as_child` (opencode's `session.deleted`).
     pub(super) fn note_end(&mut self, id: AgentId, by: Transport, as_child: bool, now: SystemTime) {

@@ -232,12 +232,12 @@ fn apply_hook_payload(
     }
 }
 
-/// omp's session batches trail an Identity behind the parented Start; when
-/// the child end gate refuses that Start, the parent-less Identity one event
-/// later must not re-register the ended child as an orphan (the gate's
-/// window would otherwise be one event wide for omp).
+/// omp's bridge forwards each event live, with no buffer or replay
+/// (install/omp_extension.ts), so a hook `session_start` 30 s after the child's
+/// `session_shutdown` is omp starting it again; its transcript's first sight of
+/// the same child inside the gate is the echo.
 #[test]
-fn a_trailing_identity_cannot_revive_the_child_its_start_was_refused_for() {
+fn an_omp_child_started_again_after_shutdown_is_readmitted_but_its_transcript_echo_is_not() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     use serde_json::json;
     let mut scene = SceneState::uniform(4);
@@ -288,8 +288,27 @@ fn a_trailing_identity_cannot_revive_the_child_its_start_was_refused_for() {
     );
     assert!(!scene.agents.contains_key(&child), "child GC'd");
 
-    // Within the end gate, PAST the 5s straggler window: the batch's Start is
-    // refused, and the trailing Identity must be refused with it.
+    let late = stop + Duration::from_secs(30);
+    let root = *scene.agents.keys().next().expect("the root lives on");
+    let jsonl_start = |r: &mut Reducer, scene: &mut SceneState| {
+        r.apply(
+            scene,
+            AgentEvent::SessionStart {
+                agent_id: child,
+                source: "omp".into(),
+                session_id: "y".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: Some(root),
+            },
+            late,
+            Transport::Jsonl,
+        );
+    };
+    jsonl_start(&mut r, &mut scene);
+    assert!(
+        !scene.agents.contains_key(&child),
+        "the transcript's late first sight of the ended child registered"
+    );
     apply_hook_payload(
         &mut r,
         &mut scene,
@@ -297,11 +316,11 @@ fn a_trailing_identity_cannot_revive_the_child_its_start_was_refused_for() {
             "type": "session_start", "sessionFile": child_file,
             "sessionId": "y", "cwd": "/repo", "_pixtuoid_source": "omp",
         }),
-        stop + Duration::from_secs(30),
+        late,
     );
     assert!(
-        !scene.agents.contains_key(&child),
-        "the parent-less trailing Identity revived the gate-refused child"
+        scene.agents.get(&child).and_then(|s| s.parent_id) == Some(root),
+        "omp's live session_start was refused, or readmitted parentless"
     );
 }
 
@@ -355,44 +374,41 @@ fn ended_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentId, Sy
     (parent, child, stop)
 }
 
+/// A transcript's late first sight of a child that already ended is its echo
+/// (#244); a hook start is not (`a_resumed_subagent_past_its_exit_is_readmitted_under_its_parent`).
 #[test]
-fn late_parented_restart_of_an_ended_child_is_gated_by_the_child_end_gate() {
-    for transport in [Transport::Jsonl, Transport::Hook] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let (parent, child, stop) = ended_child(&mut r, &mut scene);
-
-        let late_start = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
-            r.apply(
-                scene,
-                AgentEvent::SessionStart {
-                    agent_id: child,
-                    source: "claude-code".into(),
-                    session_id: "agent-a0000000000000001".into(),
-                    cwd: PathBuf::from("/repo"),
-                    parent_id: Some(parent),
-                },
-                at,
-                transport,
-            );
-        };
-        late_start(&mut r, &mut scene, stop + Duration::from_secs(30));
-        assert!(
-            !scene.agents.contains_key(&child),
-            "a late parented restart of an ENDED child inside the end gate \
-             must not re-register a phantom (#244-w2, {transport:?})"
+fn a_late_transcript_restart_of_an_ended_child_is_gated_by_the_child_end_gate() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let (parent, child, stop) = ended_child(&mut r, &mut scene);
+    let late_start = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
+        r.apply(
+            scene,
+            AgentEvent::SessionStart {
+                agent_id: child,
+                source: "claude-code".into(),
+                session_id: "agent-a0000000000000001".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: Some(parent),
+            },
+            at,
+            Transport::Jsonl,
         );
-
-        late_start(
-            &mut r,
-            &mut scene,
-            stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
-        );
-        assert!(
-            scene.agents.contains_key(&child),
-            "past CHILD_END_GATE_TTL the registration resumes ({transport:?})"
-        );
-    }
+    };
+    late_start(&mut r, &mut scene, stop + Duration::from_secs(30));
+    assert!(
+        !scene.agents.contains_key(&child),
+        "a late transcript restart of an ENDED child inside the end gate must not re-register a phantom"
+    );
+    late_start(
+        &mut r,
+        &mut scene,
+        stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
+    );
+    assert!(
+        scene.agents.contains_key(&child),
+        "past CHILD_END_GATE_TTL the registration resumes"
+    );
 }
 
 /// A reasonix child its parent's Task drain walked out (b1) and the sweep
@@ -664,7 +680,8 @@ fn a_readmitted_childs_next_end_gates_from_that_end() {
 }
 
 /// A child's own SessionEnd is its CLI's word whether or not the decoder can
-/// say `as_child` (opencode's `session.deleted`): its late echo stays refused.
+/// say `as_child` (opencode's `session.deleted`): a hook activity inside its
+/// straggler window stays refused, one past it readmits under its parent.
 #[test]
 fn a_known_childs_own_end_is_reported_without_as_child() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
@@ -690,68 +707,58 @@ fn a_known_childs_own_end_is_reported_without_as_child() {
     );
     let end = t0 + Duration::from_secs(2);
     sess_end(&mut r, &mut scene, child, false, end, Transport::Hook);
-    let gone = end + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    let gone = end + EXIT_GRACE_WINDOW + Duration::from_millis(10);
     r.tick(&mut scene, gone);
-    r.apply(
-        &mut scene,
-        session_start(child, Some(parent)),
-        gone,
-        Transport::Hook,
-    );
+    assert!(gone < end + STRAGGLER_TTL);
+    let straggle = |r: &mut Reducer, scene: &mut SceneState, at| {
+        act_start(r, scene, child, None, Some("read"), at, Transport::Hook);
+    };
+    straggle(&mut r, &mut scene, gone);
     assert!(
         !scene.agents.contains_key(&child),
-        "the ended child's echo registered"
+        "a straggler of the reported end registered"
     );
-}
-
-/// The identity-less fallback is no looser than the Identity's end gate (#244-w2):
-/// a hook activity of an ended child, paired with its refused start or a bare
-/// straggler, never synthesizes it back blank and parentless.
-#[test]
-fn inside_the_end_gate_no_hook_activity_synthesizes_an_ended_child() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let (parent, child, stop) = ended_child(&mut r, &mut scene);
-    let at = stop + Duration::from_secs(30);
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id: "agent-a0000000000000001".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: Some(parent),
-        },
-        at,
-        Transport::Hook,
-    );
-    let straggle = |r: &mut Reducer, scene: &mut SceneState, at: SystemTime| {
-        act_start(
-            r,
-            scene,
-            child,
-            None,
-            Some("read_file"),
-            at,
-            Transport::Hook,
-        );
-    };
-    for after in [Duration::from_millis(1), Duration::from_secs(1)] {
-        straggle(&mut r, &mut scene, at + after);
-        assert!(
-            !scene.agents.contains_key(&child),
-            "an activity {after:?} after the refused start synthesized the ended child"
-        );
-    }
     straggle(
         &mut r,
         &mut scene,
-        stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
+        end + STRAGGLER_TTL + Duration::from_millis(1),
     );
-    assert!(
-        scene.agents.contains_key(&child),
-        "past the end gate a hook activity registers again"
+    assert_eq!(
+        scene.agents.get(&child).and_then(|s| s.parent_id),
+        Some(parent)
     );
+}
+
+/// Inside the end gate, a hook activity of an ended child readmits it under its
+/// remembered parent, never blank and parentless; with that parent gone it
+/// registers nothing.
+#[test]
+fn inside_the_end_gate_a_hook_activity_readmits_an_ended_child_only_under_its_parent() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    for parent_left in [false, true] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let (parent, child, stop) = ended_child(&mut r, &mut scene);
+        if parent_left {
+            sess_end(&mut r, &mut scene, parent, false, stop, Transport::Hook);
+            r.tick(
+                &mut scene,
+                stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+            );
+        }
+        act_start(
+            &mut r,
+            &mut scene,
+            child,
+            None,
+            Some("read_file"),
+            stop + Duration::from_secs(30),
+            Transport::Hook,
+        );
+        let readmitted = scene.agents.get(&child).map(|s| s.parent_id);
+        let want = (!parent_left).then_some(Some(parent));
+        assert_eq!(readmitted, want, "parent_left={parent_left}");
+    }
 }
 
 #[test]
@@ -1231,5 +1238,337 @@ fn reasonix_resurrect_is_unaffected_by_another_ids_lifecycle() {
         slot.parent_id, None,
         "a lifecycle record for a DIFFERENT id must never re-parent a Reasonix \
          session (its ids never get a parent link by construction)"
+    );
+}
+
+/// The hook shapes a claude-code subagent's turns arrive in
+/// (`claude/fixtures/subagent-hermetic`), around one root session.
+struct CcTurns {
+    root: AgentId,
+    child: AgentId,
+    t0: SystemTime,
+}
+
+impl CcTurns {
+    const SID: &'static str = "01000000-0000-7000-8000-0000000000cc";
+    const AGENT: &'static str = "a0000000000000001";
+
+    fn new(r: &mut Reducer, scene: &mut SceneState) -> Self {
+        let t = Self {
+            root: AgentId::from_parts("claude-code", Self::SID),
+            child: AgentId::from_parts("claude-code", &format!("agent-{}", Self::AGENT)),
+            t0: SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000),
+        };
+        t.hook(
+            r,
+            scene,
+            serde_json::json!({"hook_event_name": "SessionStart"}),
+            t.t0,
+        );
+        t
+    }
+
+    fn hook(
+        &self,
+        r: &mut Reducer,
+        scene: &mut SceneState,
+        mut v: serde_json::Value,
+        at: SystemTime,
+    ) {
+        v["session_id"] = serde_json::json!(Self::SID);
+        v["cwd"] = serde_json::json!("/repo");
+        v["_pixtuoid_source"] = serde_json::json!("claude-code");
+        apply_hook_payload(r, scene, v, at);
+    }
+
+    fn start(&self, r: &mut Reducer, scene: &mut SceneState, at: SystemTime) {
+        let v = serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": Self::AGENT,
+            "agent_type": "general-purpose"});
+        self.hook(r, scene, v, at);
+    }
+
+    fn stop(&self, r: &mut Reducer, scene: &mut SceneState, at: SystemTime) {
+        let v = serde_json::json!({"hook_event_name": "SubagentStop", "agent_id": Self::AGENT,
+            "agent_transcript_path": format!("/p/{}/subagents/agent-{}.jsonl", Self::SID, Self::AGENT)});
+        self.hook(r, scene, v, at);
+    }
+
+    fn tool(&self, r: &mut Reducer, scene: &mut SceneState, at: SystemTime) {
+        let v = serde_json::json!({"hook_event_name": "PreToolUse", "agent_id": Self::AGENT,
+            "agent_type": "general-purpose", "tool_name": "Read", "tool_use_id": "toolu_r",
+            "tool_input": {"file_path": "/repo/NOTE.txt"}});
+        self.hook(r, scene, v, at);
+    }
+
+    fn live(&self, scene: &SceneState) -> bool {
+        scene
+            .agents
+            .get(&self.child)
+            .is_some_and(|s| s.exiting_at.is_none())
+    }
+}
+
+/// #1701: CC resumes a subagent under the same `agent_id`, a SubagentStart per
+/// turn. Inside `EXIT_GRACE_WINDOW`, its exit still animating, it revives in place.
+#[test]
+fn a_resumed_subagent_revives_in_place_while_its_exit_animates() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    assert!(!cc.live(&scene), "its Stop ends the turn");
+    cc.start(&mut r, &mut scene, stop + Duration::from_millis(37));
+    assert!(cc.live(&scene), "the next turn's Start revives it");
+    assert_eq!(scene.agents[&cc.child].parent_id, Some(cc.root));
+}
+
+/// A subagent first seen by its own tool hook registers parentless; its
+/// SubagentStart reordered after its Stop is that life's, not a new turn's.
+#[test]
+fn an_identity_first_subagent_is_not_revived_by_its_delayed_start() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.tool(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    assert_eq!(scene.agents[&cc.child].parent_id, None, "Identity-first");
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.start(&mut r, &mut scene, stop + Duration::from_millis(40));
+    assert!(
+        !cc.live(&scene),
+        "a reordered Start revived a finished life"
+    );
+}
+
+/// Past its exit window and the straggler window, inside the child-end gate, a
+/// hook start is a new life under a live parent.
+#[test]
+fn a_resumed_subagent_past_its_exit_is_readmitted_under_its_parent() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    r.tick(
+        &mut scene,
+        stop + EXIT_GRACE_WINDOW + Duration::from_millis(1),
+    );
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "gone after its walkout"
+    );
+    let resume = stop + Duration::from_millis(16_874);
+    assert!(resume > stop + STRAGGLER_TTL && resume < stop + CHILD_END_GATE_TTL);
+    cc.start(&mut r, &mut scene, resume);
+    assert!(cc.live(&scene), "the resumed turn was refused");
+    assert_eq!(scene.agents[&cc.child].parent_id, Some(cc.root));
+}
+
+/// The same resume with its parent session over proves nothing to readmit under.
+#[test]
+fn a_resumed_subagent_whose_parent_left_is_refused() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.hook(
+        &mut r,
+        &mut scene,
+        serde_json::json!({"hook_event_name": "SessionEnd"}),
+        stop,
+    );
+    r.tick(
+        &mut scene,
+        stop + EXIT_GRACE_WINDOW + Duration::from_millis(1),
+    );
+    cc.start(&mut r, &mut scene, stop + Duration::from_millis(16_874));
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "readmitted under a parent that left"
+    );
+}
+
+/// A background subagent with no SubagentStop of its own leaves with its
+/// session's end.
+#[test]
+fn a_background_subagent_leaves_with_its_session() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    cc.hook(
+        &mut r,
+        &mut scene,
+        serde_json::json!({"hook_event_name": "SessionEnd", "reason": "prompt_input_exit"}),
+        cc.t0 + Duration::from_secs(9),
+    );
+    assert!(!cc.live(&scene), "the killed subagent outlived its session");
+}
+
+/// A subagent its session's end cascaded out is not revived by a Start that
+/// lands while both walk out.
+#[test]
+fn a_cascaded_subagent_is_not_revived_by_a_late_start() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let end = cc.t0 + Duration::from_secs(2);
+    cc.hook(
+        &mut r,
+        &mut scene,
+        serde_json::json!({"hook_event_name": "SessionEnd"}),
+        end,
+    );
+    cc.start(&mut r, &mut scene, end + Duration::from_millis(37));
+    assert!(
+        !cc.live(&scene),
+        "a late Start un-exited a cascaded subagent"
+    );
+}
+
+/// A revive is a live link again: the old end no longer ages its parent memory
+/// out, so a hook after a much later end still finds the parent.
+#[test]
+fn a_revived_subagent_keeps_its_parent_memory_past_the_old_ends_ttl() {
+    use pixtuoid_core::state::reducer::{CHILD_END_RELINK_TTL, EXIT_GRACE_WINDOW};
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.start(&mut r, &mut scene, stop + Duration::from_millis(37));
+    let later = stop + CHILD_END_RELINK_TTL + Duration::from_secs(1);
+    r.tick(&mut scene, later);
+    cc.stop(&mut r, &mut scene, later);
+    r.tick(
+        &mut scene,
+        later + EXIT_GRACE_WINDOW + Duration::from_millis(1),
+    );
+    cc.tool(
+        &mut r,
+        &mut scene,
+        later + STRAGGLER_TTL + Duration::from_secs(1),
+    );
+    assert_eq!(
+        scene.agents.get(&cc.child).and_then(|s| s.parent_id),
+        Some(cc.root),
+        "the revived life's parent memory aged out with its old end"
+    );
+}
+
+/// Between its walkout and the straggler window's end a resumed subagent is
+/// readmitted too: a reordered event of its last life would have landed within
+/// milliseconds of the Stop, not after the walkout.
+#[test]
+fn a_resumed_subagent_between_its_walkout_and_the_straggler_ttl_is_readmitted() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    let resume = stop + EXIT_GRACE_WINDOW + (STRAGGLER_TTL - EXIT_GRACE_WINDOW) / 2;
+    r.tick(&mut scene, resume);
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "gone after its walkout"
+    );
+    cc.start(&mut r, &mut scene, resume);
+    assert_eq!(
+        scene.agents.get(&cc.child).map(|s| s.parent_id),
+        Some(Some(cc.root)),
+        "a resume after the walkout, inside STRAGGLER_TTL, was refused"
+    );
+}
+
+/// #242: a short subagent's Stop decoded ahead of its own Start, milliseconds
+/// apart, registers nothing.
+#[test]
+fn a_subagents_start_decoded_after_its_own_stop_is_refused() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    let stop = cc.t0 + Duration::from_secs(1);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.start(&mut r, &mut scene, stop + Duration::from_millis(5));
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "a reordered Start minted a phantom"
+    );
+}
+
+/// A Stop that lands on a subagent still walking out ends a turn whose own
+/// Start comes after it, reordered (#242): that Start is no next turn.
+#[test]
+fn a_turns_start_reordered_after_its_stop_onto_a_walking_out_subagent_is_no_revive() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    let next_stop = stop + Duration::from_secs(1);
+    cc.stop(&mut r, &mut scene, next_stop);
+    cc.start(&mut r, &mut scene, next_stop + Duration::from_millis(5));
+    assert!(!cc.live(&scene), "a turn's reordered Start revived it");
+}
+
+/// The walkout bound from below: a Start just inside it, its Stop decoded
+/// first and no slot ever, is still #242's reorder.
+#[test]
+fn a_subagents_start_just_inside_the_walkout_after_its_own_stop_is_refused() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    let stop = cc.t0 + Duration::from_secs(1);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.start(
+        &mut r,
+        &mut scene,
+        stop + EXIT_GRACE_WINDOW - Duration::from_millis(1),
+    );
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "the walkout bound let a reorder in"
+    );
+}
+
+/// A subagent blocked on its own permission prompt keeps its delegating parent
+/// alive with it: no probe vouches either (Windows), and the parent's own Active
+/// window would otherwise sweep both mid-gate.
+#[test]
+fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
+    use pixtuoid_core::state::reducer::STALE_ACTIVE_TIMEOUT;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    let t1 = cc.t0 + Duration::from_secs(1);
+    let dispatch = serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+        "tool_use_id": "toolu_a", "tool_input": {"description": "d", "prompt": "p",
+        "subagent_type": "general-purpose"}});
+    cc.hook(&mut r, &mut scene, dispatch, t1);
+    cc.start(&mut r, &mut scene, t1);
+    let ask = serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": CcTurns::AGENT,
+        "agent_type": "general-purpose", "tool_name": "Bash", "tool_input": {"command": "ls"}});
+    cc.hook(&mut r, &mut scene, ask, t1 + Duration::from_secs(1));
+    r.tick(
+        &mut scene,
+        t1 + Duration::from_secs(1) + STALE_ACTIVE_TIMEOUT + Duration::from_secs(1),
+    );
+    assert!(cc.live(&scene), "the waiting subagent was swept");
+    assert!(
+        scene.agents[&cc.root].exiting_at.is_none(),
+        "the parent waiting on its subagent's prompt was swept"
     );
 }
