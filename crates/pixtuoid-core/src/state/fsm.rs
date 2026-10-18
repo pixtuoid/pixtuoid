@@ -114,8 +114,8 @@ pub(crate) fn mark_exiting(slot: &mut AgentSlot, now: SystemTime) {
 
 /// Resurrect an EXITING slot back to a live `Idle` state — a SessionStart
 /// landed on a slot mid-walkout (Reasonix `/new` fires SessionEnd+SessionStart
-/// on the same cwd-keyed id). The reducer gates this to root agents so a late
-/// duplicate can't un-exit a cascaded subagent.
+/// on the same cwd-keyed id). The reducer gates this to a root, or a child
+/// whose linked parent lives, so a late duplicate can't un-exit a cascaded one.
 pub(crate) fn resurrect_in_place(slot: &mut AgentSlot, now: SystemTime) {
     accumulate_active_ms(slot, now);
     slot.exiting_at = None;

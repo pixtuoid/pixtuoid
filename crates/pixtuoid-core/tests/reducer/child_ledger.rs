@@ -1506,3 +1506,40 @@ fn a_subagents_start_decoded_after_its_own_stop_is_refused() {
         "a reordered Start minted a phantom"
     );
 }
+
+/// A Stop that lands on a subagent still walking out ends a turn whose own
+/// Start comes after it, reordered (#242): that Start is no next turn.
+#[test]
+fn a_turns_start_reordered_after_its_stop_onto_a_walking_out_subagent_is_no_revive() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    cc.start(&mut r, &mut scene, cc.t0 + Duration::from_secs(1));
+    let stop = cc.t0 + Duration::from_secs(2);
+    cc.stop(&mut r, &mut scene, stop);
+    let next_stop = stop + Duration::from_secs(1);
+    cc.stop(&mut r, &mut scene, next_stop);
+    cc.start(&mut r, &mut scene, next_stop + Duration::from_millis(5));
+    assert!(!cc.live(&scene), "a turn's reordered Start revived it");
+}
+
+/// The walkout bound from below: a Start just inside it, its Stop decoded
+/// first and no slot ever, is still #242's reorder.
+#[test]
+fn a_subagents_start_just_inside_the_walkout_after_its_own_stop_is_refused() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let cc = CcTurns::new(&mut r, &mut scene);
+    let stop = cc.t0 + Duration::from_secs(1);
+    cc.stop(&mut r, &mut scene, stop);
+    cc.start(
+        &mut r,
+        &mut scene,
+        stop + EXIT_GRACE_WINDOW - Duration::from_millis(1),
+    );
+    assert!(
+        !scene.agents.contains_key(&cc.child),
+        "the walkout bound let a reorder in"
+    );
+}
