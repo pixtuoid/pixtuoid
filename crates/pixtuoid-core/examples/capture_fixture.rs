@@ -535,9 +535,10 @@ mod recorder {
     const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
     const RELEASE_POLL: Duration = Duration::from_millis(250);
 
-    /// Windows refuses to remove a directory another process has open, and a
-    /// CLI's run can leave one holding the workspace after it exits: codex's
-    /// did, failing the next scenario on the hermetic Windows legs.
+    /// The error std's Windows `remove_dir_all` gives up on after a few yields
+    /// (`library/std/src/sys/fs/windows/remove_dir_all.rs:152-170`, `:188-191`
+    /// at 1.98.1), while a previous run's process can hold the workspace for
+    /// seconds (codex/subagent in actions run 39128433306).
     #[cfg(windows)]
     const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32;
 
@@ -971,28 +972,59 @@ mod recorder {
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
 
-        #[test]
-        fn a_workspace_another_process_holds_is_removed_once_released_on_windows() {
+        /// Busy the way a held tree is on this platform.
+        fn busy() -> std::io::Error {
             #[cfg(windows)]
-            let busy = || std::io::Error::from_raw_os_error(SHARING_VIOLATION);
+            return std::io::Error::from_raw_os_error(SHARING_VIOLATION);
             #[cfg(not(windows))]
-            let busy = || std::io::Error::from(std::io::ErrorKind::ResourceBusy);
+            std::io::Error::from(std::io::ErrorKind::ResourceBusy)
+        }
+
+        #[test]
+        fn a_held_base_is_retried_only_on_windows() {
             let mut calls = 0;
-            let held = remove_once_released(Duration::from_secs(5), || {
+            let removed = remove_once_released(Duration::from_secs(5), || {
                 calls += 1;
                 if calls < 3 { Err(busy()) } else { Ok(()) }
             });
             if cfg!(windows) {
-                assert!(held.is_ok() && calls == 3, "{held:?} after {calls}");
+                assert!(removed.is_ok() && calls == 3, "{removed:?} after {calls}");
             } else {
-                assert!(held.is_err() && calls == 1, "{held:?} after {calls}");
+                assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
             }
+        }
+
+        #[test]
+        fn a_base_held_past_the_patience_fails() {
             let mut calls = 0;
-            let gone = remove_once_released(Duration::ZERO, || {
+            let removed = remove_once_released(Duration::ZERO, || {
+                calls += 1;
+                Err(busy())
+            });
+            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn a_base_refused_for_another_reason_fails_at_once() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::from_secs(5), || {
+                calls += 1;
+                Err(std::io::Error::from_raw_os_error(
+                    windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
+                ))
+            });
+            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+        }
+
+        #[test]
+        fn an_absent_base_counts_as_removed() {
+            let mut calls = 0;
+            let removed = remove_once_released(Duration::ZERO, || {
                 calls += 1;
                 Err(std::io::ErrorKind::NotFound.into())
             });
-            assert!(gone.is_ok() && calls == 1, "an absent workspace is removed");
+            assert!(removed.is_ok() && calls == 1, "{removed:?} after {calls}");
         }
 
         struct Promotable {
