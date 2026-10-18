@@ -834,7 +834,8 @@ mod run {
                     // A workspace's members, a Python of uv's own at the tag's pin and
                     // no operator's uv config, as hermes's installer syncs
                     // (`pm/environment.py:406-409`, `scripts/install.sh:21` at v0.22.2);
-                    // with no config uv reads no `.python-version` either.
+                    // `UV_NO_CONFIG` is `--no-config`, which disables `.python-version`
+                    // discovery too (docs.astral.sh/uv/concepts/python-versions).
                     let python = std::fs::read_to_string(src.join(".python-version"))?;
                     let mut sync = tool(UV);
                     sync.args(["sync", "--frozen", "--all-packages", "--managed-python"])
@@ -1231,7 +1232,7 @@ mod run {
             serde_json::to_string_pretty(&journal)?,
         )?;
         let entries = journal.as_array().cloned().unwrap_or_default();
-        let (requests, unmatched) = turns(&entries);
+        let (requests, unmatched) = model_requests(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
         // one means the CLI never did; it fails past one only on a capture it
@@ -1373,16 +1374,17 @@ mod run {
         args
     }
 
-    /// The model turns aimock answered, and those no script line matched. A
-    /// CLI's GET of a model catalog (hermes probes LM Studio's `/api/v1/models`,
-    /// `agent/model_metadata.py:745` at v0.22.2) is no turn.
-    fn turns(journal: &[serde_json::Value]) -> (usize, usize) {
-        let turns: Vec<_> = journal.iter().filter(|e| e["method"] != "GET").collect();
-        let unmatched = turns
+    /// The requests aimock answered and those no script line matched, every
+    /// GET aside: a GET is a model catalog's, which no script answers (hermes
+    /// probes LM Studio's `/api/v1/models`, `agent/model_metadata.py:745` at
+    /// v0.22.2).
+    fn model_requests(journal: &[serde_json::Value]) -> (usize, usize) {
+        let requests: Vec<_> = journal.iter().filter(|e| e["method"] != "GET").collect();
+        let unmatched = requests
             .iter()
             .filter(|e| e["response"]["fixture"].is_null())
             .count();
-        (turns.len(), unmatched)
+        (requests.len(), unmatched)
     }
 
     /// The scenario's script with its placeholders expanded in every string,
@@ -2064,14 +2066,14 @@ mod run {
         }
 
         #[test]
-        fn a_catalog_get_is_no_turn_and_a_websocket_turn_is_one() {
+        fn a_get_is_no_model_request_and_a_websocket_request_is_one() {
             let journal = serde_json::json!([
                 {"method": "GET", "path": "/api/v1/models", "response": {"status": 200, "fixture": null}},
                 {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 200, "fixture": {"match": {}}}},
                 {"method": "POST", "path": "/v1/chat/completions", "response": {"status": 404, "fixture": null}},
                 {"method": "WS", "path": "/v1/responses", "response": {"status": 404, "fixture": null}},
             ]);
-            assert_eq!(turns(journal.as_array().expect("entries")), (3, 2));
+            assert_eq!(model_requests(journal.as_array().expect("entries")), (3, 2));
         }
 
         #[test]

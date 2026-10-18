@@ -234,9 +234,9 @@ pub struct Manifest {
     pub capture: CaptureRecord,
     /// The aimock version that played the model.
     pub aimock: String,
-    /// Model turns aimock answered.
+    /// Requests aimock answered, every GET aside.
     pub requests: usize,
-    /// Model turns no script line matched.
+    /// Of those, the requests no script line matched.
     pub unmatched: usize,
 }
 
