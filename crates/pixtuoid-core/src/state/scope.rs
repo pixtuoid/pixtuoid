@@ -29,7 +29,7 @@ pub(crate) enum StampRoot {
     No,
 }
 
-/// Mark every not-yet-exiting descendant of `root` exiting, BFS over `parent_id`
+/// Mark every not-yet-exiting descendant of `root` exiting, over `parent_id`
 /// links — and, when `stamp_root` is [`StampRoot::Yes`], mark `root` itself
 /// exiting first (via [`fsm::mark_exiting`], so the earliest `exiting_at` wins).
 /// Idempotent through that write-once stamp, NOT by pruning the walk: an
