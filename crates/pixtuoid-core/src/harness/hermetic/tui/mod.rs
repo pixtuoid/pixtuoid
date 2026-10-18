@@ -31,8 +31,6 @@ pub enum Key {
     Enter,
     /// Dismisses a dialog.
     Esc,
-    /// Moves a dialog's highlight to the next choice.
-    Down,
     /// Literal text, a slash command for one.
     Text(&'static str),
 }
@@ -43,7 +41,6 @@ impl Key {
         match self {
             Self::Enter => b"\r",
             Self::Esc => b"\x1b",
-            Self::Down => b"\x1b[B",
             Self::Text(text) => text.as_bytes(),
         }
     }
@@ -65,11 +62,12 @@ pub(crate) struct Gate {
 pub(crate) struct Composer {
     /// What its input line starts with, at the line's first column.
     pub(crate) marker: &'static str,
-    /// The character a full-width rule directly above the input line is drawn
-    /// with, a corner closing each end when the composer is boxed: a dialog's
-    /// highlighted choice and the conversation's echo of a prompt start with
-    /// the same marker, and neither sits under the rule.
+    /// The character a rule directly above the input line is drawn with: a
+    /// dialog's highlighted choice and the conversation's echo of a prompt
+    /// start with the same marker, and neither sits under the rule.
     pub(crate) rule: char,
+    /// The corners closing that rule when the composer is boxed.
+    pub(crate) corners: Option<(char, char)>,
 }
 
 /// A CLI's interactive facts: the data the driver reads, one row per CLI.
@@ -241,13 +239,13 @@ impl<'a> Driver<'a> {
     }
 
     /// The text after the composer's marker, on the last marked line directly
-    /// under a full-width rule.
+    /// under its rule.
     fn composer(&self) -> Option<&str> {
-        let Composer { marker, rule } = self.tui.composer;
+        let composer = &self.tui.composer;
         let lines: Vec<&str> = self.screen.lines().collect();
         lines.windows(2).rev().find_map(|pair| {
-            is_rule(pair[0], rule)
-                .then(|| pair[1].strip_prefix(marker))
+            is_rule(pair[0], composer)
+                .then(|| pair[1].strip_prefix(composer.marker))
                 .flatten()
         })
     }
@@ -259,12 +257,20 @@ impl<'a> Driver<'a> {
     }
 }
 
-/// Whether `line` is drawn with `rule`, bar one corner at each end.
-fn is_rule(line: &str, rule: char) -> bool {
-    let line = line.trim();
-    let line = line.strip_prefix(|c| c != rule).unwrap_or(line);
-    let line = line.strip_suffix(|c| c != rule).unwrap_or(line);
-    !line.is_empty() && line.chars().all(|c| c == rule)
+/// Whether `line` is `composer`'s rule, between its corners when it has them.
+fn is_rule(line: &str, composer: &Composer) -> bool {
+    let mut line = line.trim_end();
+    if let Some((left, right)) = composer.corners {
+        let Some(inner) = line
+            .trim_start()
+            .strip_prefix(left)
+            .and_then(|l| l.strip_suffix(right))
+        else {
+            return false;
+        };
+        line = inner;
+    }
+    !line.is_empty() && line.chars().all(|c| c == composer.rule)
 }
 
 /// `tui_drive`'s command line, which the recorder runs in place of the CLI.
@@ -470,17 +476,26 @@ mod tests {
     }
 
     #[test]
-    fn a_rule_may_close_on_one_corner_at_each_end_and_nothing_else() {
-        assert!(is_rule("────", '─'));
-        assert!(is_rule("  ╭────╮  ", '─'));
-        assert!(!is_rule("│ ❯ 1. Allow once │", '─'));
-        assert!(!is_rule("╭─ title ─╮", '─'));
-        assert!(!is_rule("  ", '─'));
+    fn a_rule_closes_on_its_rows_corners_and_nothing_else() {
+        let bare = |corners| Composer {
+            marker: "❯",
+            rule: '─',
+            corners,
+        };
+        let (plain, boxed) = (bare(None), bare(Some(('╭', '╮'))));
+        assert!(is_rule("────", &plain));
+        assert!(!is_rule("a──b", &plain));
+        assert!(!is_rule("╭──╮", &plain));
+        assert!(is_rule("  ╭────╮  ", &boxed));
+        assert!(!is_rule("────", &boxed));
+        assert!(!is_rule("│ ❯ 1. Allow once │", &boxed));
+        assert!(!is_rule("╭─ title ─╮", &boxed));
+        assert!(!is_rule("  ", &plain));
     }
 
     #[test]
     fn each_row_takes_the_prompt_and_refuses_the_gate_its_run_recorded() {
-        for (source, boot, gate) in [
+        let recorded = [
             ("claude-code", BOOT, GATE),
             (
                 "grok",
@@ -492,7 +507,18 @@ mod tests {
                 include_str!("screens/hermes-boot.txt"),
                 include_str!("screens/hermes-gate.txt"),
             ),
-        ] {
+        ];
+        let rows: Vec<&str> = super::super::PROFILES
+            .iter()
+            .filter(|p| {
+                p.scenarios
+                    .iter()
+                    .any(|s| matches!(s.surface, Surface::Tui(_)))
+            })
+            .map(|p| p.source)
+            .collect();
+        assert_eq!(recorded.map(|(source, ..)| source).to_vec(), rows);
+        for (source, boot, gate) in recorded {
             let tui = row(source);
             let t0 = Instant::now();
             let mut d = Driver::new(tui, PROMPT.to_owned(), t0);
@@ -502,15 +528,15 @@ mod tests {
                 "{source}"
             );
             assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
-            assert_eq!(d.step(gate, t0), Action::Wait, "{source}");
             let [refused] = tui.gates else {
                 panic!("{source}: one gate per row");
             };
-            assert_eq!(
-                d.step(gate, t0 + refused.dwell),
-                Action::Keys(refused.deny),
-                "{source}"
-            );
+            let answers: Vec<Action> = [t0, t0 + refused.dwell]
+                .map(|t| d.step(gate, t))
+                .into_iter()
+                .filter(|a| *a != Action::Wait)
+                .collect();
+            assert_eq!(answers, [Action::Keys(refused.deny)], "{source}");
         }
     }
 

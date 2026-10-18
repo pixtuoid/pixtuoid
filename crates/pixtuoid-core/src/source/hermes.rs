@@ -12,10 +12,6 @@
 //! alien to the shared CC-shaped arms, so the decoder is `HookDecoding::ClaimsAll`:
 //! it claims EVERY event.
 //!
-//! A call's start, its approval wait and its end each carry `extra.tool_call_id`
-//! (`model_tools.py:691-693`, `tools/approval_context.py:67` at v0.22.2), so a
-//! wait names the call whose end clears it.
-//!
 //! `subagent_stop` is deliberately absent from `HERMES_EVENTS`: the SHELL-hook payload
 //! carries a parent id but NO child session/agent id, so a decode could only end a
 //! child that was never started. Hermes's Python PLUGIN API does define a
@@ -137,6 +133,9 @@ pub(crate) fn decode_hermes_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
             (!cwd.is_empty()).then(|| cwd.into()),
         )
     };
+    // A call's start, its approval wait and its end each carry it
+    // (`_CallIds` at `model_tools.py:643`, `tools/approval_context.py:67` at v0.22.2),
+    // so a wait names the call whose end clears it.
     let tool_use_id = || {
         obj.get("extra")
             .and_then(|e| e.get("tool_call_id"))

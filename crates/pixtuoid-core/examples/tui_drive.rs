@@ -138,15 +138,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
         let out_of_time = now.duration_since(started) >= BUDGET
             || quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE);
         if out_of_time {
-            note(
-                &mut log,
-                &format!(
-                    "out of time: killing the CLI\n--- screen ---\n{}",
-                    screen.screen().contents()
-                ),
-            );
-            child.kill()?;
-            return Ok(GAVE_UP);
+            return give_up(&mut log, &mut child, "out of time", &screen);
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -179,19 +171,27 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
                 send_keys(&mut writer, keys)?;
                 quit_at = Some(Instant::now());
             }
-            Action::Fail(why) => {
-                note(
-                    &mut log,
-                    &format!(
-                        "gave up: {why}\n--- screen ---\n{}",
-                        screen.screen().contents()
-                    ),
-                );
-                child.kill()?;
-                return Ok(GAVE_UP);
-            }
+            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen),
         }
     }
+}
+
+/// Kill the CLI, logging why and the screen it stood at.
+fn give_up(
+    log: &mut std::fs::File,
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+    why: &str,
+    screen: &vt100::Parser,
+) -> std::io::Result<i32> {
+    note(
+        log,
+        &format!(
+            "gave up: {why}\n--- screen ---\n{}",
+            screen.screen().contents()
+        ),
+    );
+    child.kill()?;
+    Ok(GAVE_UP)
 }
 
 fn send(writer: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {

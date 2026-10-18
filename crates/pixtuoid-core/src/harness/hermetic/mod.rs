@@ -346,6 +346,7 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     composer: tui::Composer {
         marker: "❯",
         rule: '─',
+        corners: None,
     },
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
@@ -364,13 +365,15 @@ const GROK_TUI: tui::Tui = tui::Tui {
     composer: tui::Composer {
         marker: "  │ ❯",
         rule: '─',
+        corners: Some(('╭', '╮')),
     },
     gates: &[tui::Gate {
         shows: "No, reject (type to add feedback)",
         deny: &[tui::Key::Text("4")],
-        dwell: std::time::Duration::from_millis(400),
+        dwell: std::time::Duration::ZERO,
     }],
-    // `/exit` is `/quit`'s alias (`docs/user-guide/04-slash-commands.md:71-73`).
+    // `/exit` is `/quit`'s alias
+    // (`crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md:71-73`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
 };
 
@@ -381,18 +384,14 @@ const HERMES_TUI: tui::Tui = tui::Tui {
     composer: tui::Composer {
         marker: "❯",
         rule: '─',
+        corners: None,
     },
     gates: &[tui::Gate {
         shows: "Dangerous Command",
-        // "4. Deny" is the dialog's last choice, reached only by arrows
-        // (`locales/en.yaml:2167`).
-        deny: &[
-            tui::Key::Down,
-            tui::Key::Down,
-            tui::Key::Down,
-            tui::Key::Enter,
-        ],
-        dwell: std::time::Duration::from_millis(400),
+        // A digit picks its choice, "4. Deny" here
+        // (`hermes_cli/cli_tui_mixin.py:1301-1307`, `:2066-2068`).
+        deny: &[tui::Key::Text("4")],
+        dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
 };
@@ -1199,8 +1198,8 @@ async:
         ancestor_config: &[],
         // `manual` approvals ask the user where the default asks an LLM guardian
         // (`tests/e2e/core/security/test_approval_boundary.py:17`), and an answered
-        // shared-metrics offer never opens before a chat
-        // (`hermes_cli/observability/shared_metrics_consent.py:3-8`, `:58-72`).
+        // shared-metrics offer, one at upstream's `OFFER_VERSION`, never opens before
+        // a chat (`hermes_cli/observability/shared_metrics_consent.py:55`, `:58-72`).
         config: &[ConfigFile {
             home: "HERMES_HOME",
             path: "config.yaml",
@@ -1214,7 +1213,6 @@ approvals:
 telemetry:
   shared_metrics:
     enabled: false
-    send: false
     offer_version: 2
 "#,
         }],
