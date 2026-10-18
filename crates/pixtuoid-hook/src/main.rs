@@ -28,8 +28,7 @@ use paths::default_socket_path;
 
 mod transport;
 
-/// What the shim adds to stdin: the `_shim_ts_ms`/`_pixtuoid_source` stamps and
-/// the trailing newline.
+/// What [`enrich_payload`] stamps, plus the trailing newline.
 const STAMP_HEADROOM: u64 = 256;
 
 /// `STDIN_CAP + STAMP_HEADROOM` is the daemon's pipe `IN_BUFFER_SIZE` (pinned by
@@ -185,7 +184,7 @@ fn event_from_argv(args: &[String]) -> Option<String> {
 }
 
 /// The event a stdin payload fires for, named in argv because the payload omits
-/// it (agy's). Unlike `--event` it never switches the payload source.
+/// it (agy's). Unlike `--event`, it leaves the payload on stdin.
 fn hook_event_from_argv(args: &[String]) -> Option<String> {
     flag_from_argv(args, "--hook-event")
 }

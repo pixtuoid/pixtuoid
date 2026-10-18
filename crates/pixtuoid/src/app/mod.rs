@@ -199,6 +199,7 @@ fn build_run_config(
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
     let graphics = config::resolve_graphics(&cfg, cli_graphics, &mut cfg_warnings);
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
+    let adopted = sources::adopt_flagged_targets(&cfg_path, &cfg);
     let connected = sources::connected(&cfg);
     let first_run = sources::is_first_run(&connected, load_degraded);
     if !headless {
@@ -207,6 +208,13 @@ fn build_run_config(
         // so re-printing there would duplicate.
         for w in &cfg_warnings {
             let _ = writeln!(std::io::stderr(), "⚠ pixtuoid: {w}");
+        }
+        for (t, installed) in &adopted {
+            let _ = writeln!(
+                std::io::stderr(),
+                "{}",
+                sources::adopted_notice(t, installed)
+            );
         }
     }
     refresh_plugins(

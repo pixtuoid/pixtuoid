@@ -72,7 +72,7 @@ fn field<'v>(obj: &'v serde_json::Map<String, Value>, key: &str) -> Option<&'v s
         .filter(|s| !s.is_empty())
 }
 
-/// Decode one plugin payload into `AgentEvent`s (`HookCustom::ClaimsAll`).
+/// Decode one plugin payload into `AgentEvent`s (`HookDecoding::ClaimsAll`).
 ///
 /// Every arm except `session_end` leads or trails an
 /// `AgentEvent::identity`: activity and telemetry arms lead (the
@@ -86,7 +86,7 @@ fn field<'v>(obj: &'v serde_json::Map<String, Value>, key: &str) -> Option<&'v s
 ///
 /// # Errors
 ///
-/// Never: the `Result` is the `HookCustom::ClaimsAll` decoder signature, and a malformed payload decodes to `vec![]`.
+/// Never: the `Result` is the `HookDecoding::ClaimsAll` decoder signature, and a malformed payload decodes to `vec![]`.
 pub fn decode_dsh_payload(v: &Value) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
     let Some(obj) = v.as_object() else {
         return Ok(vec![]);

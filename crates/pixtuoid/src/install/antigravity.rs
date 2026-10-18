@@ -1,11 +1,10 @@
 //! Antigravity CLI hook install target — the GLOBAL `~/.gemini/config/hooks.json`
-//! (`HOOKS_PAGE`, "Managing hooks in Antigravity CLI"), the file agy's own
-//! `/hooks` writes.
+//! (`HOOKS_PAGE`, "Managing hooks in Antigravity CLI").
 //!
 //! Its top-level keys are hook NAMES, so pixtuoid's whole set is the one
 //! [`HOOK_NAME`] key: an install sets it, an uninstall removes it, and no other
 //! hook is touched. agy's payload names no event, so each command bakes
-//! ` --hook-event <name>` for the shim to stamp.
+//! [`HOOK_EVENT_FLAG`] and the event for the shim to stamp.
 
 use std::path::{Path, PathBuf};
 
@@ -124,7 +123,9 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
         return SchemaParse::broken("hooks config no longer parses as JSON");
     };
     let Some(set) = doc.get(HOOK_NAME) else {
-        return assemble(&[], false, ShimRef::Unknown, vec![]);
+        return SchemaParse::broken(format!(
+            "no `{HOOK_NAME}` hook in hooks.json (hand-edited, or never installed)"
+        ));
     };
     let mut missing = Vec::new();
     let mut shim = ShimRef::Unknown;
@@ -252,7 +253,7 @@ mod tests {
         use pixtuoid_core::source::decoder::decode_hook_payload;
         for &(event, _) in AG_EVENTS {
             let payload = json!({
-                pixtuoid_core::source::antigravity::EVENT_STAMP: event,
+                pixtuoid_core::source::decoder::EVENT_STAMP: event,
                 "_pixtuoid_source": SOURCE_NAME,
                 "conversationId": "c1",
                 "workspacePaths": ["/repo"],

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::AgentId;
 use crate::source::AgentEvent;
-use crate::source::decoder::{DecodeError, first_present_str, generic_tool_display};
+use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
 #[cfg(any(test, feature = "upstream"))]
 use crate::source::upstream::{At, Doc, Finding, Read, Watch, When};
 
@@ -30,7 +30,7 @@ pub const HOOKS_PAGE: Doc = Doc {
 pub(crate) const UPSTREAM: &[Watch] = &[
     Watch {
         id: "antigravity.hook_common_fields",
-        ours: || vec!["conversationId", "workspacePaths"],
+        ours: || vec!["conversationId", "transcriptPath", "workspacePaths"],
         docs: &[HOOKS_PAGE],
         read: Read::MdTable {
             header: "Field",
@@ -54,7 +54,8 @@ pub(crate) const UPSTREAM: &[Watch] = &[
     },
 ];
 
-/// The CLI's app data dir, under [`gemini_dir`].
+/// The CLI's app data dir, under [`gemini_dir`]: NOT `antigravity`, the App's,
+/// which shares the global hooks file but is not this source.
 pub const CLI_APP_DATA_DIR: &str = "antigravity-cli";
 
 /// agy's `.gemini` dir, home-rooted on every platform (Go's `os.UserHomeDir`,
@@ -106,8 +107,8 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
     };
 
     // A present-but-non-integer OR negative `step_index` must skip the line: a
-    // negative would mint a start like `ag--5-0` that no end can ever pair,
-    // leaving the slot stuck Active until the reducer's stale-sweep.
+    // negative would mint an id no result step can end, leaving the slot stuck
+    // Active until the reducer's stale-sweep.
     let Some(step_index) = obj
         .get("step_index")
         .and_then(|v| v.as_i64())
@@ -139,15 +140,20 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
                         "?"
                     });
                 let args = tc_obj.get("args");
-                out.push(decode_ag_tool_call(agent_id, name, args, step));
+                out.push(decode_ag_tool_call(
+                    agent_id,
+                    name,
+                    args,
+                    Some(step_tool_id(step)),
+                ));
             }
         }
     } else {
-        // Antigravity is a closed Google IDE with no fetchable schema, so
-        // in-code breadcrumbs are the ONLY currency backstop. A step carrying
-        // `tool_calls` under a type that ISN'T `PLANNER_RESPONSE` is the signal
-        // that upstream RENAMED that step. Result/input steps carry no
-        // `tool_calls`, so this can't false-positive on them.
+        // Step lines have no fetchable schema, so a breadcrumb and the hermetic
+        // replay are their currency backstop. A step carrying `tool_calls` under a
+        // type that ISN'T `PLANNER_RESPONSE` is the signal that upstream RENAMED
+        // that step. Result/input steps carry no `tool_calls`, so this can't
+        // false-positive on them.
         if matches!(obj.get("tool_calls"), Some(Value::Array(a)) if !a.is_empty()) {
             crate::source::drift::unknown_event(SOURCE_NAME, step_type);
         }
@@ -162,18 +168,15 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
     Ok(out)
 }
 
-/// Decode one tool call within a `PLANNER_RESPONSE` step, which runs as `step`.
-/// A permission/question prompt becomes `Waiting`; anything else an
-/// `ActivityStart` its result step ends.
+/// Decode one tool call, from either transport: a permission/question prompt
+/// becomes `Waiting`; anything else an `ActivityStart` keyed `tool_use_id`.
 fn decode_ag_tool_call(
     agent_id: AgentId,
     name: &str,
     args: Option<&Value>,
-    step: i64,
+    tool_use_id: Option<String>,
 ) -> AgentEvent {
-    // `ask_permission`/`ask_question` are UNVERIFIED reverse-engineered tool
-    // names — no capture confirms them (the real wire only ever showed
-    // `search_web`). Kept as the best-effort Waiting trigger.
+    // The tools that wait on the human (hooks.md, "Supported tools").
     if name == "ask_permission" || name == "ask_question" {
         return AgentEvent::Waiting {
             agent_id,
@@ -184,16 +187,13 @@ fn decode_ag_tool_call(
     let target = ag_tool_target(args);
     AgentEvent::ActivityStart {
         agent_id,
-        tool_use_id: Some(step_tool_id(step)),
+        tool_use_id,
         detail: Some(generic_tool_display(name, target.as_deref())),
     }
 }
 
-/// Where the shim stamps the installed command's `--hook-event`: agy names no
-/// event in its payload.
-pub const EVENT_STAMP: &str = "_pixtuoid_event";
-
-/// Decode one agy hook payload, its event named by [`EVENT_STAMP`].
+/// Decode one agy hook payload, its event named by [`EVENT_STAMP`]: agy names
+/// none in its payload.
 ///
 /// # Errors
 ///
@@ -207,6 +207,21 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
         .get(EVENT_STAMP)
         .and_then(Value::as_str)
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, EVENT_STAMP))?;
+    // The App and IDE fire the same global hooks file under app data dirs of
+    // their own (hooks.md, `transcriptPath`).
+    if obj
+        .get("transcriptPath")
+        .and_then(Value::as_str)
+        .is_some_and(|p| {
+            !p.is_empty()
+                && !Path::new(p)
+                    .components()
+                    .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
+        })
+    {
+        tracing::trace!(event, "dropping a hook another Antigravity app fired");
+        return Ok(vec![]);
+    }
     let key = obj
         .get("conversationId")
         .and_then(Value::as_str)
@@ -257,14 +272,10 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
                     crate::source::drift::missing_field(SOURCE_NAME, event, "toolCall.name");
                     "?"
                 });
-            let target = ag_tool_target(tool.and_then(|t| t.get("args")));
+            let args = tool.and_then(|t| t.get("args"));
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityStart {
-                    agent_id,
-                    tool_use_id,
-                    detail: Some(generic_tool_display(name, target.as_deref())),
-                },
+                decode_ag_tool_call(agent_id, name, args, tool_use_id),
             ])
         }
         "PostToolUse" => Ok(vec![
@@ -274,11 +285,15 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
                 tool_use_id: call().0,
             },
         ]),
-        // Turn end: the session lives on to the next prompt.
-        "Stop" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        // Turn end: the session lives on to the next prompt. Its Identity is a
+        // tool-less session's second pid sighting, which the exit watch arms on.
+        "Stop" => Ok(vec![
+            identity(),
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            },
+        ]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))
@@ -289,9 +304,7 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
 /// The first present path/command field of an Antigravity tool call's `args`,
 /// quote-stripped — the `: target` half of the Generic display.
 fn ag_tool_target(args: Option<&Value>) -> Option<String> {
-    // Priority order. Only `query` (the `search_web` arg) is capture-confirmed
-    // against real wire; the PascalCase keys are reverse-engineered from
-    // Windsurf/Cascade and UNVERIFIED.
+    // Priority order, each an argument hooks.md documents ("Supported tools").
     const KEYS: &[&str] = &[
         "DirectoryPath",
         "AbsolutePath",
@@ -506,12 +519,57 @@ mod tests {
         assert!(
             matches!(
                 stop.as_slice(),
-                [AgentEvent::ActivityEnd {
-                    tool_use_id: None,
-                    ..
-                }]
+                [
+                    AgentEvent::Identity { .. },
+                    AgentEvent::ActivityEnd {
+                        tool_use_id: None,
+                        ..
+                    }
+                ]
             ),
-            "{stop:?}"
+            "a tool-less turn still names its pid a second time: {stop:?}"
+        );
+    }
+
+    #[test]
+    fn a_hooked_question_waits_on_the_human() {
+        let ask = serde_json::json!({
+            "stepIdx": 4,
+            "toolCall": { "name": "ask_question", "args": {} },
+        });
+        let out = decode_ag_hook_payload(&hook("PreToolUse", ask)).unwrap();
+        assert!(
+            out.iter().any(|e| matches!(e, AgentEvent::Waiting { .. })),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn only_the_clis_own_hooks_decode() {
+        let at = |app: &str| {
+            hook(
+                "SessionStart",
+                serde_json::json!({
+                    "transcriptPath":
+                        format!("/h/.gemini/{app}/brain/c1/.system_generated/logs/transcript_full.jsonl"),
+                }),
+            )
+        };
+        for app in ["antigravity", "antigravity-ide"] {
+            assert!(
+                decode_ag_hook_payload(&at(app)).unwrap().is_empty(),
+                "{app}"
+            );
+        }
+        assert!(
+            !decode_ag_hook_payload(&at(CLI_APP_DATA_DIR))
+                .unwrap()
+                .is_empty()
+        );
+        let blanked = hook("SessionStart", serde_json::json!({ "transcriptPath": "" }));
+        assert!(
+            !decode_ag_hook_payload(&blanked).unwrap().is_empty(),
+            "a recording blanks the unread path, and still decodes"
         );
     }
 

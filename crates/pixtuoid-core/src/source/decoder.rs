@@ -325,10 +325,10 @@ fn source_owned_arms(
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
     v: &Value,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    use crate::source::registry::HookCustom;
-    match desc.and_then(|d| d.hook()).and_then(|h| h.custom) {
-        Some(HookCustom::ClaimsAll(decode)) => decode(v).map(Some),
-        Some(HookCustom::Extend(decode)) => decode(v),
+    use crate::source::registry::HookDecoding;
+    match desc.and_then(|d| d.hook()) {
+        Some(HookDecoding::ClaimsAll(decode)) => decode(v).map(Some),
+        Some(HookDecoding::Shared { extend, .. }) => extend(v),
         None => Ok(None),
     }
 }
@@ -389,6 +389,10 @@ fn hook_effort(agent_id: AgentId, obj: &serde_json::Map<String, Value>) -> Optio
         })
 }
 
+/// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
+/// payload names no event.
+pub const EVENT_STAMP: &str = "_pixtuoid_event";
+
 /// Decode one hook payload into the event sequence the reducer applies.
 ///
 /// The tool/permission arms (PreToolUse / PostToolUse / Notification /
@@ -435,12 +439,11 @@ pub(crate) fn shared_hook_arms(
         })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
-    let tool_id_key = desc
-        .and_then(|d| d.hook())
-        .map_or(crate::source::registry::ToolIdKey::ToolUse, |h| {
-            h.tool_id_key
-        })
-        .wire_name();
+    let tool_id_key = match desc.and_then(|d| d.hook()) {
+        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
+        _ => crate::source::registry::ToolIdKey::ToolUse,
+    }
+    .wire_name();
 
     match event {
         "SessionStart" => {
@@ -1229,10 +1232,9 @@ mod tests {
                 "session_id": "s",
                 "agent_id": "child",
                 "cwd": "/repo",
-                // antigravity's row has no custom fn
-                "_pixtuoid_source": "antigravity"
+                "_pixtuoid_source": "some-future-cli"
             }));
-            assert!(ev.is_err(), "antigravity-attributed {event} must bail");
+            assert!(ev.is_err(), "an unregistered source's {event} must bail");
         }
     }
 

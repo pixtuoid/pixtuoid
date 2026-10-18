@@ -64,6 +64,11 @@ expression: events
 - ActivityEnd:
     agent_id: 9264318244884556681
     tool_use_id: ag-3
+- Identity:
+    agent_id: 9264318244884556681
+    source: antigravity
+    session_id: 34a55460-00a7-4df6-a40c-fea497e84d6b
+    cwd: ~
 - ActivityEnd:
     agent_id: 9264318244884556681
     tool_use_id: ~

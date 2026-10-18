@@ -17,9 +17,7 @@ pub struct AntigravitySource {
 }
 
 impl AntigravitySource {
-    /// The Antigravity **CLI** (`agy`) brain dir, home-rooted on every platform
-    /// (never under `%APPDATA%`). Note `antigravity-cli` (the CLI), NOT
-    /// `antigravity` (the IDE's brain) — don't "fix" this to the IDE path.
+    /// The Antigravity **CLI** (`agy`) brain dir.
     pub fn default_paths() -> Self {
         Self {
             brain_root: gemini_dir().join(CLI_APP_DATA_DIR).join("brain"),

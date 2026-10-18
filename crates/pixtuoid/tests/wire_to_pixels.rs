@@ -393,7 +393,7 @@ fn codex_transcript_line_renders_a_painted_sprite() {
 }
 
 #[test]
-fn antigravity_transcript_line_renders_a_painted_sprite() {
+fn antigravity_hook_envelope_renders_a_painted_sprite() {
     assert_renders_a_sprite(&agent_case("antigravity"));
 }
 

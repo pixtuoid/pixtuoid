@@ -100,7 +100,8 @@ pub enum Package {
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
-/// cannot be held to a weaker bar than another.
+/// cannot be held to a weaker bar than another, save the gap a profile's
+/// `result_unseen` owes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
     /// A turn that reads a file: the session registers in the workspace, a tool
@@ -235,22 +236,6 @@ impl Profile {
 pub const MANIFEST: &str = "run.json";
 /// The headless pixtuoid's output (scene lines and its log) for a run.
 pub const SCENE_LOG: &str = "scene.log";
-
-/// Every home a CLI or pixtuoid may resolve, each a directory of the sandbox.
-/// All are set on every platform: a variable no reader there reads is inert.
-pub const SANDBOX_HOMES: &[(&str, &str)] = &[
-    ("HOME", "home"),
-    ("USERPROFILE", "home"),
-    ("APPDATA", "home/AppData/Roaming"),
-    ("LOCALAPPDATA", "home/AppData/Local"),
-    // Each at its default under the home: reasonix refuses to link a plugin
-    // from outside it (`internal/ext/installsource/plugin_package.go:480-481`
-    // at v2.39.0).
-    ("XDG_CONFIG_HOME", "home/.config"),
-    ("XDG_DATA_HOME", "home/.local/share"),
-    ("XDG_STATE_HOME", "home/.local/state"),
-    ("XDG_CACHE_HOME", "home/.cache"),
-];
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
@@ -291,7 +276,7 @@ fn hook_event_name(v: &Value) -> Option<Cow<'_, str>> {
 }
 
 fn shim_stamped_event(v: &Value) -> Option<Cow<'_, str>> {
-    v.get(crate::source::antigravity::EVENT_STAMP)?
+    v.get(crate::source::decoder::EVENT_STAMP)?
         .as_str()
         .map(Cow::Borrowed)
 }
@@ -1305,20 +1290,6 @@ mod tests {
     }
 
     #[test]
-    fn a_config_file_lives_under_a_home_the_sandbox_owns() {
-        for p in PROFILES {
-            for c in p.config {
-                let owned = SANDBOX_HOMES
-                    .iter()
-                    .map(|(var, _)| *var)
-                    .chain(p.home_vars())
-                    .any(|h| h == c.home);
-                assert!(owned, "{}: {} is not a sandboxed home", p.source, c.home);
-            }
-        }
-    }
-
-    #[test]
     fn the_drift_watchs_npm_release_installs_the_profiles_package() {
         use crate::source::upstream::Release;
         for (source, repo) in [
@@ -1507,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_run_replies_only_to_the_note_it_read() {
+    fn a_tool_run_replies_only_to_the_note_it_read_unless_its_result_is_unseen() {
         // A reply to any tool result lets a run whose read failed pass.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun) {

@@ -343,16 +343,18 @@ pub enum Family {
     All,
 }
 
-/// `bytes`' SHA-256 as a sums file lists it: sha2's digest has no `LowerHex`.
+/// `bytes`' SHA-256 as a sums file lists it.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::Digest as _;
+    digest_hex::<sha2::Sha256>(bytes)
+}
+
+/// `bytes`' digest under `D` in lowercase hex: sha2's digest has no `LowerHex`.
+pub fn digest_hex<D: sha2::Digest>(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
-    sha2::Sha256::digest(bytes)
-        .iter()
-        .fold(String::new(), |mut hex, b| {
-            let _ = write!(hex, "{b:02x}");
-            hex
-        })
+    D::digest(bytes).iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// Whether a release's `sums` file lists `bytes`' digest for `name`.

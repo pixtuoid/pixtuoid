@@ -35,7 +35,7 @@ mod run {
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
         self, DUMMY_KEY, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
-        Profile, SANDBOX_HOMES, SCENE_LOG, Scenario, USER_PLACEHOLDER,
+        Profile, SCENE_LOG, Scenario, USER_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -323,7 +323,7 @@ mod run {
                     platforms,
                     ..
                 },
-            ) => Some(lock_of(manifest, platforms, v)?),
+            ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
         let (mut judged, mut banners, mut passed) = (Vec::new(), Vec::new(), true);
@@ -744,13 +744,32 @@ mod run {
         platforms: std::collections::BTreeMap<String, Build>,
     }
 
-    /// The lock of `version`: every platform's current manifest, each of which
-    /// must serve `version`, so the pin installs on every leg.
+    /// `p`'s committed manifest lock, if it has one.
+    fn committed_lock(p: &Profile) -> std::io::Result<Option<ManifestLock>> {
+        match p.manifest_lock().map(std::fs::read_to_string) {
+            Some(Ok(text)) => Ok(Some(serde_json::from_str(&text)?)),
+            Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(None),
+        }
+    }
+
+    /// The lock of `version`: `committed` when it pins it, since the updater
+    /// serves only its newest build, else every platform's current manifest, each
+    /// of which must serve `version`, so the pin installs on every leg.
     fn lock_of(
+        committed: Option<ManifestLock>,
         manifest: &str,
         platforms: &[(&str, &str, &'static str)],
         version: &Version,
     ) -> std::io::Result<ManifestLock> {
+        if let Some(lock) = committed.filter(|l| {
+            l.version == version.to_string()
+                && platforms
+                    .iter()
+                    .all(|(_, _, pf)| l.platforms.contains_key(*pf))
+        }) {
+            return Ok(lock);
+        }
         let mut lock = ManifestLock {
             version: version.to_string(),
             platforms: std::collections::BTreeMap::new(),
@@ -796,12 +815,7 @@ mod run {
 
     /// Whether `bytes` hash to the lowercase hex SHA-512 `want`.
     fn matches_sha512(bytes: &[u8], want: &str) -> bool {
-        use sha2::Digest as _;
-        let got: String = sha2::Sha512::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        got == want
+        upstream::digest_hex::<sha2::Sha512>(bytes) == want
     }
 
     const CURL: &str = "curl";
@@ -990,13 +1004,7 @@ mod run {
             } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |dir| {
-                    let lock = match p.manifest_lock().map(std::fs::read_to_string) {
-                        Some(Ok(text)) => Some(serde_json::from_str::<ManifestLock>(&text)?),
-                        Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => {
-                            return Err(e);
-                        }
-                        _ => None,
-                    };
+                    let lock = committed_lock(p)?;
                     let build = build_of(lock.as_ref(), manifest, asset_here(platforms)?, version)?;
                     let payload = dir.join("payload");
                     let mut fetch = tool(CURL);
@@ -1163,6 +1171,23 @@ mod run {
         /// Where the headless pixtuoid listens and the recorder tees to.
         scene: Endpoint,
     }
+
+    /// Every home a CLI or pixtuoid may resolve, each a directory of the
+    /// sandbox. All are set on every platform: a variable no reader there reads
+    /// is inert.
+    const SANDBOX_HOMES: &[(&str, &str)] = &[
+        ("HOME", "home"),
+        ("USERPROFILE", "home"),
+        ("APPDATA", "home/AppData/Roaming"),
+        ("LOCALAPPDATA", "home/AppData/Local"),
+        // Each at its default under the home: reasonix refuses to link a
+        // plugin from outside it
+        // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
+        ("XDG_CONFIG_HOME", "home/.config"),
+        ("XDG_DATA_HOME", "home/.local/share"),
+        ("XDG_STATE_HOME", "home/.local/state"),
+        ("XDG_CACHE_HOME", "home/.cache"),
+    ];
 
     impl Sandbox {
         fn new(p: &Profile, shim_dir: &Path, cli_bin: &Path, port: u16) -> std::io::Result<Self> {
@@ -1333,9 +1358,8 @@ mod run {
                 // (`CopilotKit/aimock` `CHANGELOG.md`, 1.45.0).
                 .args(["--responses-tools", "extended"])
                 // A script's `turnIndex` is a rule, not a tiebreak (aimock
-                // `README.md`, "Replay matching"): agy's tool result rides a
-                // Gemini role aimock reads as no tool result, so only the
-                // assistant count tells its turns apart.
+                // `README.md`, "Replay matching"): for a `result_unseen` CLI only
+                // the assistant count tells its turns apart.
                 .env("AIMOCK_STRICT_TURN_INDEX", "1")
                 .args(["-p", &port.to_string(), "-f"])
                 .arg(&script)
@@ -2264,6 +2288,28 @@ mod run {
                        2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f";
             assert!(matches_sha512(b"abc", abc));
             assert!(!matches_sha512(b"abd", abc));
+        }
+
+        #[test]
+        fn a_lock_pinning_the_version_records_again_without_the_updater() {
+            let build = Build {
+                version: "1.4.2".into(),
+                url: "https://example.invalid/agy.tar.gz".into(),
+                sha512: "00".into(),
+            };
+            let lock = ManifestLock {
+                version: "1.4.2".into(),
+                platforms: [("darwin_arm64".to_string(), build)].into(),
+            };
+            let platforms: &[(&str, &str, &'static str)] = &[("macos", "aarch64", "darwin_arm64")];
+            let again = lock_of(
+                Some(lock),
+                "https://example.invalid/{platform}.json",
+                platforms,
+                &Version::new(1, 4, 2),
+            )
+            .expect("the committed lock");
+            assert_eq!(again.version, "1.4.2");
         }
 
         #[test]

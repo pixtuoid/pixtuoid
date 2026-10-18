@@ -970,21 +970,8 @@ fn the_date_helpers_handle_the_cases_that_break_naive_ones() {
 /// Reading the wrong `tool_id_key` is SILENT — every kimi tool call decoded to
 /// `None` for the source's whole life, because a NEW source's conformance
 /// snapshot is generated from whatever key its author copied. Whatever key a real
-/// payload carries its tool id under IS that source's key; exemption is by NAME
-/// only, never by an inferred property (`custom` claiming all is intent, not state).
-const TOOL_ID_KEY_UNPROVEN: &[&str] = &[
-    // `inert: custom claims all` in their registry row — the shared arms never run.
-    "codewhale",
-    "dsh",
-    "hermes",
-    "omp",
-    "opencode",
-    "reasonix",
-    // LIVE (`custom: None`), just unexercised: a hook spec with no install target,
-    // so nothing can send us one — the only entry here a capture would remove.
-    "antigravity",
-];
-
+/// payload carries its tool id under IS that source's key, so every shared-arm
+/// row's key is proven by real bytes.
 #[test]
 fn each_sources_tool_id_key_is_the_one_its_captures_carry() {
     const KEYS: &[&str] = &["tool_use_id", "tool_call_id"];
@@ -996,9 +983,10 @@ fn each_sources_tool_id_key_is_the_one_its_captures_carry() {
         let Some(d) = registry::descriptor_for(&c.source) else {
             continue;
         };
-        let Some(want) = d.hook().map(|h| h.tool_id_key.wire_name()) else {
+        let Some(registry::HookDecoding::Shared { tool_id_key, .. }) = d.hook() else {
             continue;
         };
+        let want = tool_id_key.wire_name();
         for line in fixture_lines(&hooks) {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue;
@@ -1023,19 +1011,14 @@ fn each_sources_tool_id_key_is_the_one_its_captures_carry() {
         let Some(d) = registry::descriptor_for(name) else {
             continue;
         };
-        if d.hook().is_none() {
-            continue;
-        }
-        match (proven.contains(name), TOOL_ID_KEY_UNPROVEN.contains(&name)) {
-            (false, false) => wrong.push(format!("{name}: add a capture or roster it")),
-            (true, true) => wrong.push(format!("{name}: proven — drop it from the roster")),
-            _ => {}
+        if matches!(d.hook(), Some(registry::HookDecoding::Shared { .. })) && !proven.contains(name)
+        {
+            wrong.push(format!("{name}: no capture carries its tool id"));
         }
     }
     assert!(
         wrong.is_empty(),
-        "a hook row's tool_id_key is proven by real bytes or it names why it cannot \
-         be, never both and never neither:\n  {}",
+        "a shared-arm row's tool_id_key is proven by real bytes:\n  {}",
         wrong.join("\n  ")
     );
 }

@@ -1529,7 +1529,7 @@ mod recorder {
             );
             let cc = Path::new("/sb/.claude/projects/-w/5f2c.jsonl");
             assert_eq!(placement("claude-code", cc, dest), dest.join("5f2c.jsonl"));
-            // agy keys its session on the conversation dir three levels up.
+            // agy keys its session on the conversation dir `ag_id_from_path` names.
             let ag =
                 Path::new("/sb/.gemini/antigravity-cli/brain/9/.system_generated/logs/t.jsonl");
             assert_eq!(

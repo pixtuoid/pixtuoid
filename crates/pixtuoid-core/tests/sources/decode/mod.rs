@@ -1149,27 +1149,38 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     use std::path::{Path, PathBuf};
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures");
-    let cases: [(&str, &str, Option<&str>); 3] = [
+    // A hermetic recording names its session dir after the conversation, which
+    // every re-record changes.
+    let agy = pixtuoid_core::harness::transcripts_under(
+        "antigravity",
+        &fixtures.join("antigravity/tool-run-hermetic"),
+    );
+    let cases: [(&str, PathBuf, Option<&str>); 4] = [
         (
             "claude-code",
-            "claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl",
+            fixtures.join("claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
             "codex",
-            "codex/permission-recorded/rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl",
+            fixtures.join("codex/permission-recorded/rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
             "copilot",
-            "copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl",
+            fixtures.join("copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl"),
             Some(r"d:\contentforge-fullstack (1)"),
         ),
+        (
+            "antigravity",
+            agy.first().expect("antigravity's recorded transcript").clone(),
+            None,
+        ),
     ];
-    for (source, rel, expected) in cases {
+    for (source, path, expected) in cases {
         let extract = pixtuoid_core::source::registry::cwd_extractor_for(source);
-        let content = std::fs::read_to_string(fixtures.join(rel))
-            .unwrap_or_else(|e| panic!("read fixture {rel}: {e}"));
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
         let got = content.lines().find_map(|l| {
             serde_json::from_str::<serde_json::Value>(l)
                 .ok()

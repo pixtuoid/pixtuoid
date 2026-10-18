@@ -305,6 +305,76 @@ pub(crate) fn is_first_run(connected: &HashSet<String>, load_degraded: bool) -> 
     !load_degraded && connected.is_empty()
 }
 
+/// Install the hooks of each source an older pixtuoid connected by its
+/// `[sources]` flag and that has since gained an install target (antigravity,
+/// flag-only through v0.19.0): the flag was the user's consent to connect it.
+/// A flag goes only once its hooks are in, so a failed install retries at the
+/// next launch.
+pub(crate) fn adopt_flagged_targets(
+    cfg: &Path,
+    app: &config::AppConfig,
+) -> Vec<(&'static Target, Result<()>)> {
+    adopt_flagged_with(
+        cfg,
+        app,
+        by_source,
+        |t| install::has_hooks(t, None),
+        |t| install::install_target(t, None).map(drop),
+    )
+}
+
+/// [`adopt_flagged_targets`] with the target lookup, the hook read and the install
+/// injected.
+fn adopt_flagged_with(
+    cfg: &Path,
+    app: &config::AppConfig,
+    target_of: impl Fn(&str) -> Option<&'static Target>,
+    hooked: impl Fn(&'static Target) -> bool,
+    install: impl Fn(&'static Target) -> Result<()>,
+) -> Vec<(&'static Target, Result<()>)> {
+    let mut adopted = Vec::new();
+    let mut failed = Vec::new();
+    let mut flagged = false;
+    for sid in registry::registered_source_names() {
+        let Some(t) = target_of(sid).filter(|_| app.sources.get(sid) == Some(&true)) else {
+            continue;
+        };
+        flagged = true;
+        if hooked(t) {
+            continue;
+        }
+        let installed = install(t);
+        if let Err(e) = &installed {
+            tracing::warn!(source = sid, error = ?e, "could not install an adopted source's hooks");
+            failed.push(sid);
+        }
+        adopted.push((t, installed));
+    }
+    if flagged {
+        let keep: Vec<&str> = registry::registered_source_names()
+            .filter(|sid| target_of(sid).is_none() || failed.contains(sid))
+            .collect();
+        if let Err(e) = config::save_flag_sources(cfg, &keep, None) {
+            tracing::warn!(error = ?e, "could not drop the flags of adopted sources");
+        }
+    }
+    adopted
+}
+
+/// The line a launch prints for one source [`adopt_flagged_targets`] adopted.
+pub(crate) fn adopted_notice(t: &Target, installed: &Result<()>) -> String {
+    match installed {
+        Ok(()) => format!(
+            "pixtuoid: {} now connects through its own hooks — installed them",
+            t.display_name
+        ),
+        Err(e) => format!(
+            "⚠ pixtuoid: could not install {}'s hooks ({e:#}); retrying at the next launch",
+            t.display_name
+        ),
+    }
+}
+
 /// [`connected`] for one source, as the live gate re-reads it after a change.
 pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
     is_on(&config::load(cfg, &mut Vec::new()), sid, installed_hooks)
@@ -954,9 +1024,76 @@ mod tests {
         assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
     }
 
+    /// How v0.19.0 wrote a connection to antigravity, then flag-only.
+    const V0_19_SOURCES: &str = "[sources]\nantigravity = true\ncopilot = true\n";
+
+    fn adopt_under(
+        seeded: &str,
+        hooked: bool,
+        install: impl Fn(&'static Target) -> Result<()>,
+    ) -> (
+        Vec<(&'static Target, Result<()>)>,
+        config::AppConfig,
+        String,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, seeded).unwrap();
+        let app = config::load(&cfg, &mut Vec::new());
+        let adopted = adopt_flagged_with(
+            &cfg,
+            &app,
+            |sid| (sid == "antigravity").then_some(&FAIL_TARGET),
+            |_| hooked,
+            install,
+        );
+        let raw = std::fs::read_to_string(&cfg).unwrap();
+        (adopted, config::load(&cfg, &mut Vec::new()), raw)
+    }
+
+    #[test]
+    fn a_flag_an_older_release_wrote_installs_the_hooks_it_now_has_then_goes() {
+        let installs = std::cell::Cell::new(0);
+        let (adopted, after, _) = adopt_under(V0_19_SOURCES, false, |_| {
+            installs.set(installs.get() + 1);
+            Ok(())
+        });
+        assert_eq!(installs.get(), 1);
+        assert!(matches!(adopted.as_slice(), [(_, Ok(()))]), "{adopted:?}");
+        assert_eq!(after.sources, flags(&[("copilot", true)]).sources);
+    }
+
+    #[test]
+    fn a_failed_adoption_keeps_the_flag_for_the_next_launch() {
+        let (adopted, after, _) =
+            adopt_under(V0_19_SOURCES, false, |_| Err(anyhow::anyhow!("refused")));
+        assert!(matches!(adopted.as_slice(), [(_, Err(_))]), "{adopted:?}");
+        assert_eq!(
+            after.sources,
+            flags(&[("antigravity", true), ("copilot", true)]).sources
+        );
+    }
+
+    #[test]
+    fn hooks_already_in_drop_the_flag_without_a_reinstall() {
+        let (adopted, after, _) = adopt_under(V0_19_SOURCES, true, |_| {
+            panic!("an installed hook is not installed again")
+        });
+        assert!(adopted.is_empty());
+        assert_eq!(after.sources, flags(&[("copilot", true)]).sources);
+    }
+
+    #[test]
+    fn a_config_with_nothing_to_adopt_is_left_byte_for_byte() {
+        let seeded = "theme = \"x\"  # mine\n[sources]\ncopilot = true\n";
+        let (adopted, _, raw) = adopt_under(seeded, false, |_| panic!("nothing to adopt"));
+        assert!(adopted.is_empty());
+        assert_eq!(raw, seeded);
+    }
+
     #[test]
     fn connect_then_disconnect_a_no_target_source_persists_the_flag() {
-        // Antigravity has no install target → a pure flag flip, so this touches no
+        // Copilot has no install target → a pure flag flip, so this touches no
         // real agent config and mutates no env.
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");

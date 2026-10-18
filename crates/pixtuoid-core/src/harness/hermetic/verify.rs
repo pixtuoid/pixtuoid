@@ -26,8 +26,8 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
-    /// A `not_yet` hook fired or a `not_yet_fields` field was carried: good
-    /// news, the list shrinks.
+    /// An owed gap closed (`not_yet`, `not_yet_fields`, `result_unseen`): good
+    /// news, the profile shrinks.
     Stale,
     /// The CLI could not run (install, network, a login wall): not judged.
     Blocked,
