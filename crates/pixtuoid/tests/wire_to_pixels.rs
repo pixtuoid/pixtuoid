@@ -129,10 +129,8 @@ fn fixture_path(case: &WireCase) -> PathBuf {
     if !path.is_dir() {
         return path;
     }
-    match pixtuoid_core::harness::transcripts_under(case.source, &path).as_slice() {
-        [one] => one.clone(),
-        found => panic!("{}: {} transcripts under {path:?}", case.name, found.len()),
-    }
+    pixtuoid_core::harness::transcript_in(case.source, &path)
+        .unwrap_or_else(|found| panic!("{}: {found:?} under {path:?}, not one", case.name))
 }
 
 fn assert_renders_a_sprite(case: &WireCase) {

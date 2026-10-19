@@ -40,6 +40,27 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The one transcript of `source`'s under a capture `dir`, found rather than
+/// named: a re-record gives it a new filename. The registry's admit rule and
+/// the recorder's own hook-envelope test decide what is a transcript.
+///
+/// # Errors
+///
+/// Every transcript found, unless that is exactly one: a stale second one
+/// beside a promoted `.new` fails here instead of being picked by directory
+/// order.
+pub fn transcript_in(source: &str, dir: &Path) -> Result<PathBuf, Vec<PathBuf>> {
+    let mut found: Vec<PathBuf> = transcripts_under(source, dir)
+        .into_iter()
+        .filter(|p| !crate::harness::reads::is_hook_envelope(p))
+        .collect();
+    if found.len() == 1 {
+        Ok(found.remove(0))
+    } else {
+        Err(found)
+    }
+}
+
 /// Where every capture's CLI runs. The path is FIXED and generic on purpose:
 /// every payload embeds its own cwd, the decoders read it, so the strip keeps it —
 /// capturing somewhere already generic is what keeps a per-run path out of the
