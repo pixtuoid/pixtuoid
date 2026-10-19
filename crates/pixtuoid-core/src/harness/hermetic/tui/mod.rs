@@ -311,7 +311,7 @@ fn is_choice(typed: &str) -> bool {
 pub struct CommandLine {
     /// The profiled source.
     pub source: String,
-    /// The scenario's shape name.
+    /// The scenario's name.
     pub scenario: String,
     /// Where the pty log goes.
     pub log: PathBuf,

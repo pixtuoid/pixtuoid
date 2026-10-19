@@ -525,7 +525,7 @@ fn judge(
             Some(settled) => judge_presence(p, scene, settled, findings),
             None => findings.push((
                 Label::Fail,
-                format!("presence cannot show a {} turn", scenario.shape.name()),
+                format!("presence cannot show a {} turn", scenario.name),
             )),
         }
         return Ok(());
@@ -954,28 +954,27 @@ mod tests {
             .join("fixtures")
             .join(source)
             .join(scenario_dir);
-        run_of(&src, source, Shape::ToolRun, scene)
+        run_of(&src, source, "tool-run", scene)
     }
 
     /// A run directory built from the recording `source`'s `shape` scenario
     /// writes, judged as that scenario's run.
     fn recorded(source: &str, shape: Shape, scene: &str) -> tempfile::TempDir {
-        let fixture = profile(source)
+        let scenario = profile(source)
             .and_then(|p| p.scenarios.iter().find(|s| s.shape == shape))
-            .map(|s| s.fixture)
             .expect("a profiled scenario");
-        let src = crate::harness::sources_root().join(fixture);
-        run_of(&src, source, shape, scene)
+        let src = crate::harness::sources_root().join(scenario.fixture);
+        run_of(&src, source, scenario.name, scene)
     }
 
-    fn run_of(src: &Path, source: &str, shape: Shape, scene: &str) -> tempfile::TempDir {
+    fn run_of(src: &Path, source: &str, scenario: &str, scene: &str) -> tempfile::TempDir {
         let d = tempfile::tempdir().expect("tempdir");
         for f in jsonl_files_under(src) {
             let to = d.path().join(f.strip_prefix(src).expect("under"));
             std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
             std::fs::copy(&f, &to).expect("copy");
         }
-        write_manifest(d.path(), source, |m| m.scenario = shape.name().into());
+        write_manifest(d.path(), source, |m| m.scenario = scenario.into());
         std::fs::write(d.path().join(SCENE_LOG), scene).expect("scene");
         d
     }
@@ -983,7 +982,7 @@ mod tests {
     fn write_manifest(dir: &Path, source: &str, edit: impl FnOnce(&mut Manifest)) {
         let mut m = Manifest {
             source: source.into(),
-            scenario: Shape::ToolRun.name().into(),
+            scenario: "tool-run".into(),
             capture: CaptureRecord {
                 workspace: PathBuf::from(RECORDED_WORKSPACE),
                 cli: "test".into(),
@@ -1616,13 +1615,7 @@ mod tests {
         ] {
             let d = recorded("grok", shape, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(
-                v.label(),
-                Label::Pass,
-                "{}: {:?}",
-                shape.name(),
-                v.findings()
-            );
+            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
     }
 
@@ -1635,13 +1628,7 @@ mod tests {
         ] {
             let d = recorded("copilot", shape, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(
-                v.label(),
-                Label::Pass,
-                "{}: {:?}",
-                shape.name(),
-                v.findings()
-            );
+            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
     }
 
@@ -1832,7 +1819,7 @@ mod tests {
         let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
-                m.scenario = Shape::Permission.name().into();
+                m.scenario = "permission".into();
                 m.capture.exit_code = Some(tui::UNREFUSED);
                 m.requests = requests;
                 m.unmatched = unmatched;
@@ -1926,7 +1913,7 @@ mod tests {
         let judged = |scene: &str| {
             let d = recorded("openclaw", Shape::ModelError, scene);
             write_manifest(d.path(), "openclaw", |m| {
-                m.scenario = Shape::ModelError.name().into();
+                m.scenario = "model-error".into();
                 m.capture.exit_code = Some(1);
             });
             verify(d.path()).expect("verify").findings().to_vec()
@@ -1954,10 +1941,10 @@ mod tests {
         let scene = "agents=[] daemons=[openclaw@55306:busy]\n\
                      agents=[] daemons=[openclaw@55306:degraded]\n\
                      agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
-        let judged = |shape: Shape, exit_code, requests| {
+        let judged = |scenario: &str, exit_code, requests| {
             let d = recorded("openclaw", Shape::ModelError, scene);
             write_manifest(d.path(), "openclaw", |m| {
-                m.scenario = shape.name().into();
+                m.scenario = scenario.into();
                 m.capture.exit_code = exit_code;
                 m.requests = requests;
             });
@@ -1967,13 +1954,13 @@ mod tests {
                 "did not complete",
             )
         };
-        assert!(!judged(Shape::ModelError, Some(1), 1));
+        assert!(!judged("model-error", Some(1), 1));
         assert!(
-            judged(Shape::ModelError, Some(1), 0),
+            judged("model-error", Some(1), 0),
             "it never reached the model"
         );
-        assert!(judged(Shape::ModelError, None, 1), "a signal ends no turn");
-        assert!(judged(Shape::ToolRun, Some(1), 1));
+        assert!(judged("model-error", None, 1), "a signal ends no turn");
+        assert!(judged("tool-run", Some(1), 1));
     }
 
     #[test]
@@ -1985,7 +1972,7 @@ mod tests {
                 "agents=[oc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
             );
             write_manifest(d.path(), "opencode", |m| {
-                m.scenario = Shape::ModelError.name().into();
+                m.scenario = "model-error".into();
                 m.capture.exit_code = Some(1);
             });
             edit(d.path());
