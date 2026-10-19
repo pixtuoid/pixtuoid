@@ -647,9 +647,13 @@ fn subagent(
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(t),
-            } if inference != ChildEndInference::None => {
+            } if inference.dispatch_end_returns_child() => {
                 *agent_id == parent && tasks.contains(&(parent, t.as_str()))
             }
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            } if inference == ChildEndInference::TurnEnd => *agent_id == child,
             _ => false,
         })
     };
@@ -693,8 +697,26 @@ fn subagent(
             "a child's tool never landed on the child".into(),
         ));
     }
-    if !reached.contains(&Reach::Delegating) {
-        findings.push((Label::Fail, "the parent never went Delegating".into()));
+    match inference {
+        ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
+            if !reached.contains(&Reach::Delegating) {
+                findings.push((Label::Fail, "the parent never went Delegating".into()));
+            }
+        }
+        ChildEndInference::TurnEnd => {
+            let dispatched = children.iter().all(|&(_, parent)| {
+                events.iter().any(|e| {
+                    matches!(e, AgentEvent::ActivityStart { agent_id, detail: Some(_), .. }
+                        if *agent_id == parent)
+                })
+            });
+            if !dispatched {
+                findings.push((
+                    Label::Fail,
+                    "the parent never showed its dispatch tool".into(),
+                ));
+            }
+        }
     }
     if !reached.contains(&Reach::Active) {
         findings.push((Label::Fail, "the child's tool never went Active".into()));
@@ -902,6 +924,9 @@ mod tests {
                             agents=[cx\u{b7}proj@0:idle]\nagents=[] daemons=[]\n";
     const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Delegating), \
                                      cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
+                                     agents=[] daemons=[]\n";
+    const OC_DISPATCH_SCENE: &str = "agents=[oc\u{b7}proj@0:active(subagent), \
+                                     oc\u{b7}proj@1:active(read)]\n\
                                      agents=[] daemons=[]\n";
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CC_WAIT_SCENE: &str =
@@ -1174,6 +1199,119 @@ mod tests {
     }
 
     #[test]
+    fn a_durable_child_is_held_to_its_turn_and_a_returning_one_to_its_session() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("opencode", "ses_parent"),
+            AgentId::from_parts("opencode", "ses_child"),
+        );
+        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some(id.into()),
+            detail: Some(detail),
+        };
+        let generic = |name: &str| ToolDetail::Generic {
+            display: name.into(),
+        };
+        let base = vec![
+            AgentEvent::SessionStart {
+                agent_id: parent,
+                source: "opencode".into(),
+                session_id: "ses_parent".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            },
+            AgentEvent::SessionStart {
+                agent_id: child,
+                source: "opencode".into(),
+                session_id: "ses_child".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: Some(parent),
+            },
+            started(child, "read", generic("read")),
+        ];
+        let judged = |events: &[AgentEvent], reached: &[Reach], inference| {
+            let mut findings = Vec::new();
+            subagent(events, reached, inference, &mut findings);
+            findings
+        };
+        let mut durable = base.clone();
+        durable.push(started(parent, "dispatch", generic("subagent")));
+        durable.push(AgentEvent::ActivityEnd {
+            agent_id: child,
+            tool_use_id: None,
+        });
+        let active = [Reach::Active];
+        assert_eq!(
+            judged(&durable, &active, ChildEndInference::TurnEnd),
+            vec![]
+        );
+        let undispatched: Vec<_> = durable
+            .iter()
+            .filter(
+                |e| !matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == parent),
+            )
+            .cloned()
+            .collect();
+        assert!(
+            judged(&undispatched, &active, ChildEndInference::TurnEnd)
+                .iter()
+                .any(|f| f.1.contains("dispatch tool")),
+            "a durable child's parent still shows its dispatch"
+        );
+        let strict = judged(&durable, &active, ChildEndInference::TaskDrain);
+        assert!(
+            strict.iter().any(|f| f.1.contains("Delegating")),
+            "{strict:?}"
+        );
+        assert!(
+            strict.iter().any(|f| f.1.contains("never ended")),
+            "{strict:?}"
+        );
+
+        let mut returning = base;
+        returning.push(started(parent, "dispatch", ToolDetail::Task));
+        // A child's own turn end, which a strict bar never takes for its end.
+        returning.push(AgentEvent::ActivityEnd {
+            agent_id: child,
+            tool_use_id: None,
+        });
+        returning.push(AgentEvent::SessionEnd {
+            agent_id: child,
+            as_child: true,
+        });
+        let delegated = [Reach::Active, Reach::Delegating];
+        for inference in [
+            ChildEndInference::None,
+            ChildEndInference::TaskDrain,
+            ChildEndInference::AnyTaskEnd,
+        ] {
+            assert_eq!(
+                judged(&returning, &delegated, inference),
+                vec![],
+                "{inference:?}"
+            );
+            assert!(
+                judged(&returning, &active, inference)
+                    .iter()
+                    .any(|f| f.1.contains("Delegating")),
+                "{inference:?}"
+            );
+            let unended: Vec<_> = returning
+                .iter()
+                .filter(|e| !matches!(e, AgentEvent::SessionEnd { .. }))
+                .cloned()
+                .collect();
+            assert!(
+                judged(&unended, &delegated, inference)
+                    .iter()
+                    .any(|f| f.1.contains("never ended")),
+                "{inference:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_recorded_dsh_subagent_run_passes() {
         let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
@@ -1251,6 +1389,13 @@ mod tests {
     #[test]
     fn a_recorded_codex_subagent_run_passes() {
         let d = recorded("codex", Shape::Subagent, CX_DELEGATE_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_opencode_subagent_run_passes() {
+        let d = recorded("opencode", Shape::Subagent, OC_DISPATCH_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }

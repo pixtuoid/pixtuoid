@@ -1,0 +1,35 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "title generator" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "userMessage": "CHILD-TASK", "toolResultContains": "{note}" },
+      "response": { "content": "{note}" },
+      "latency": 300
+    },
+    {
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read", "arguments": { "path": "NOTE.txt" } } ] },
+      "latency": 300
+    },
+    {
+      "match": { "hasToolResult": true },
+      "response": { "content": "pong" },
+      "latency": 300
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [
+          {
+            "name": "subagent",
+            "arguments": { "agent": "general", "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text." }
+          }
+        ]
+      },
+      "latency": 300
+    }
+  ]
+}

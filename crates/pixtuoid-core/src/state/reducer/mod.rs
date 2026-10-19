@@ -1262,7 +1262,7 @@ impl Reducer {
                         // Arm the debounce only when actually Active: a
                         // Waiting parent's expiry would false-clear it.
                         if set.is_empty() {
-                            if child_end_inference(slot) != ChildEndInference::None {
+                            if child_end_inference(slot).dispatch_end_returns_child() {
                                 self.pending_b1_cascades.insert(*agent_id, now);
                             }
                             if matches!(slot.state, ActivityState::Active { .. }) {

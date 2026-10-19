@@ -118,7 +118,10 @@ pub enum Shape {
     /// never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
-    /// the child registers as its child and reads, and both end.
+    /// the child registers as its child and reads, and both end. Where the child
+    /// is durable ([`TurnEnd`](crate::source::registry::ChildEndInference::TurnEnd)),
+    /// the parent shows its dispatch
+    /// tool instead, and the child's turn ends.
     Subagent,
 }
 
@@ -804,18 +807,32 @@ trust_level = "trusted"
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.tool.input.started",
-                "session.tool.success",
-                "session.execution.succeeded",
-            ],
-            fixture: "fixtures/opencode/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "opencode/fixtures/subagent-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
@@ -825,11 +842,7 @@ trust_level = "trusted"
             "permission.asked",
         ],
         event_name: type_field,
-        // A child session's (tests/sources/opencode/fixtures).
-        not_yet_fields: &[
-            ("hook:session.created", "/data/parentID"),
-            ("hook:session.execution.started", "/data/parentID"),
-        ],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,

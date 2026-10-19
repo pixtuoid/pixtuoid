@@ -12,7 +12,8 @@ const CHILD: &str = "ses_ecde1c6b5ffexy67GfWtNzu6TA";
 
 fn hooks() -> Driven {
     let d = Drive::hooks().lines(super::captures::fixture_lines(
-        &super::captures::sources_root().join("opencode/fixtures/hook-payloads.jsonl"),
+        &super::captures::sources_root()
+            .join("opencode/fixtures/delete-recorded/hook-payloads.jsonl"),
     ));
     d.assert_clean("opencode delegation hooks");
     d
