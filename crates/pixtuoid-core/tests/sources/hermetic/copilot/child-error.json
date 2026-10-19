@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "response": {"error": {"message": "hermetic model error", "type": "invalid_request_error"}, "status": 400}
+    },
+    {
+      "match": {"toolResultContains": "hermetic model error"},
+      "response": {"content": "the child failed"},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "task", "arguments": {"name": "reader", "description": "Read the note", "agent_type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
+      "latency": 300
+    }
+  ]
+}
