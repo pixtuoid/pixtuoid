@@ -3,61 +3,61 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     fresh_tokens: 19
 - ActivityStart:
-    agent_id: 1750715783355684491
-    tool_use_id: toolu_bQbg1CikSpUqdQ_O
+    agent_id: 7796055601412812190
+    tool_use_id: toolu_jIFR08M1WEttN63-
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ActivityEnd:
-    agent_id: 1750715783355684491
-    tool_use_id: toolu_bQbg1CikSpUqdQ_O
+    agent_id: 7796055601412812190
+    tool_use_id: toolu_jIFR08M1WEttN63-
 - ModelInfo:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     fresh_tokens: 19
 - SessionStart:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     source: claude-code
-    session_id: 613992aa-ca2e-415e-b208-1dd70ee5b8a1
+    session_id: 8d08d98c-63c7-4c00-95d4-68510bf1656d
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     source: claude-code
-    session_id: 613992aa-ca2e-415e-b208-1dd70ee5b8a1
+    session_id: 8d08d98c-63c7-4c00-95d4-68510bf1656d
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 1750715783355684491
-    tool_use_id: toolu_bQbg1CikSpUqdQ_O
+    agent_id: 7796055601412812190
+    tool_use_id: toolu_jIFR08M1WEttN63-
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ModelInfo:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     model: ~
     effort: medium
 - Identity:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     source: claude-code
-    session_id: 613992aa-ca2e-415e-b208-1dd70ee5b8a1
+    session_id: 8d08d98c-63c7-4c00-95d4-68510bf1656d
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 1750715783355684491
-    tool_use_id: toolu_bQbg1CikSpUqdQ_O
+    agent_id: 7796055601412812190
+    tool_use_id: toolu_jIFR08M1WEttN63-
 - ModelInfo:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     model: ~
     effort: medium
 - SessionEnd:
-    agent_id: 1750715783355684491
+    agent_id: 7796055601412812190
     as_child: false

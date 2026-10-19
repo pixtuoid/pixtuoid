@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "claude",
   "version": "2.1.302 (Claude Code)",
-  "captured": "2026-10-18",
+  "captured": "2026-10-19",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
