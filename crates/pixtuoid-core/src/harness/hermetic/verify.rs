@@ -891,6 +891,8 @@ mod tests {
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CC_WAIT_SCENE: &str =
         "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
+    const CX_WAIT_SCENE: &str =
+        "agents=[cx\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
 
     const DS_WAIT_SCENE: &str =
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
@@ -937,6 +939,13 @@ mod tests {
         );
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "agent waiting"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_codex_tui_permission_run_passes() {
+        let d = recorded("codex", Shape::Permission, CX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
@@ -1571,24 +1580,20 @@ mod tests {
 
     #[test]
     fn a_not_yet_hook_any_run_fires_is_stale() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         let mut first = true;
         edit_hooks(d.path(), |mut v| {
             if std::mem::take(&mut first) {
-                v["hook_event_name"] = "PermissionRequest".into();
+                v["hook_event_name"] = "Notification".into();
             }
             Some(v)
         });
         let v = verify_source(
-            profile("codex").expect("profile"),
+            profile("claude-code").expect("profile"),
             &[d.path().to_path_buf()],
         )
         .expect("verify");
-        assert!(
-            has(&v, Label::Stale, "PermissionRequest"),
-            "{:?}",
-            v.findings()
-        );
+        assert!(has(&v, Label::Stale, "Notification"), "{:?}", v.findings());
     }
 
     #[test]

@@ -39,6 +39,7 @@ mod run {
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE,
         Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG,
         Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -1820,12 +1821,12 @@ mod run {
         Ok(out)
     }
 
-    /// A [`ConfigFile`](pixtuoid_core::harness::hermetic::ConfigFile)'s text,
-    /// its workspace with `/` separators: how Claude Code keys its projects on
-    /// Windows (`Xz` in the 2.1.302 bundle), and a JSON or TOML string holds it
-    /// unescaped.
+    /// A [`ConfigFile`](pixtuoid_core::harness::hermetic::ConfigFile)'s text
+    /// with its placeholders expanded.
     fn config_text(template: &str, ports: Ports, workspace: &str) -> String {
-        expanded(template, ports).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
+        expanded(template, ports)
+            .replace(WORKSPACE_SLASHED_PLACEHOLDER, &workspace.replace('\\', "/"))
+            .replace(WORKSPACE_PLACEHOLDER, workspace)
     }
 
     /// A profile string with its run's ports and the dummy key in it.
@@ -2305,6 +2306,39 @@ mod run {
                     == true,
                 "{parsed}"
             );
+        }
+
+        #[test]
+        fn a_windows_workspace_keys_codexs_trust_by_its_own_spelling() {
+            let workspace = r"C:\ProgramData\pixtuoid-capture\proj";
+            let config = hermetic::profile("codex").expect("profile").config[0].template;
+            let parsed: toml::Table =
+                toml::from_str(&config_text(config, TEST_PORTS, workspace)).expect("valid TOML");
+            assert_eq!(
+                parsed["projects"][workspace]["trust_level"].as_str(),
+                Some("trusted"),
+                "{parsed}"
+            );
+        }
+
+        #[test]
+        fn every_json_or_toml_config_parses_with_a_windows_workspace() {
+            let workspace = r"C:\ProgramData\pixtuoid-capture\proj";
+            for p in PROFILES {
+                for c in p.config {
+                    let text = config_text(c.template, TEST_PORTS, workspace);
+                    let parsed = match Path::new(c.path).extension().and_then(OsStr::to_str) {
+                        Some("json" | "jsonc") => serde_json::from_str::<serde_json::Value>(&text)
+                            .map(drop)
+                            .map_err(|e| e.to_string()),
+                        Some("toml") => toml::from_str::<toml::Table>(&text)
+                            .map(drop)
+                            .map_err(|e| e.to_string()),
+                        _ => continue,
+                    };
+                    assert!(parsed.is_ok(), "{}: {}: {parsed:?}", p.source, c.path);
+                }
+            }
         }
 
         #[test]

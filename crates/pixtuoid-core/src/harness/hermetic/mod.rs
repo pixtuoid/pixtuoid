@@ -30,8 +30,12 @@ pub const USER_PLACEHOLDER: &str = "{user}";
 /// What a script spells [`CAPTURE_NOTE`](crate::harness::CAPTURE_NOTE) as.
 pub(crate) const NOTE_PLACEHOLDER: &str = "{note}";
 /// What a script or a [`ConfigFile`] spells the workspace the recorder runs the
-/// CLI in as.
+/// CLI in as, with its OS's own separators.
 pub const WORKSPACE_PLACEHOLDER: &str = "{workspace}";
+/// What a [`ConfigFile`] spells that workspace as with `/` separators, which a
+/// JSON string holds unescaped: how Claude Code keys its projects on Windows
+/// (`Xz` in the 2.1.302 bundle).
+pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = "{workspace_slashed}";
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
 pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = "{shell_tool}";
@@ -202,8 +206,8 @@ pub struct ConfigFile {
     pub home: &'static str,
     /// The file's path under that home.
     pub path: &'static str,
-    /// Its contents; `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and
-    /// [`WORKSPACE_PLACEHOLDER`] expand.
+    /// Its contents; `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`],
+    /// [`WORKSPACE_PLACEHOLDER`] and [`WORKSPACE_SLASHED_PLACEHOLDER`] expand.
     pub template: &'static str,
 }
 
@@ -391,8 +395,10 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "manual"],
     composer: tui::Composer {
         marker: "❯",
-        rule: '─',
-        corners: None,
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: None,
+        },
     },
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
@@ -411,8 +417,10 @@ const GROK_TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "default"],
     composer: tui::Composer {
         marker: "  │ ❯",
-        rule: '─',
-        corners: Some(('╭', '╮')),
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: Some(('╭', '╮')),
+        },
     },
     gates: &[tui::Gate {
         shows: "No, reject (type to add feedback)",
@@ -433,14 +441,40 @@ const HERMES_TUI: tui::Tui = tui::Tui {
     args: &["--accept-hooks", "--cli", "chat"],
     composer: tui::Composer {
         marker: "❯",
-        rule: '─',
-        corners: None,
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: None,
+        },
     },
     gates: &[tui::Gate {
         shows: "Dangerous Command",
         // A digit picks its choice, "4. Deny" here
         // (`hermes_cli/cli_tui_mixin.py:1301-1307`, `:2066-2068`).
         deny: &[tui::Key::Text("4")],
+        dwell: std::time::Duration::ZERO,
+    }],
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
+/// codex's TUI, its cites at `rust-v0.163.0`. On-request lets the model ask
+/// (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call asks
+/// to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
+const CODEX_TUI: tui::Tui = tui::Tui {
+    args: &[
+        "--dangerously-bypass-hook-trust",
+        "--ask-for-approval",
+        "on-request",
+    ],
+    composer: tui::Composer {
+        marker: "›",
+        above: tui::Above::Nothing,
+    },
+    gates: &[tui::Gate {
+        shows: "Would you like to run the following command?",
+        // "No, and tell Codex what to do differently", which aborts the turn
+        // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
+        deny: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
@@ -486,7 +520,7 @@ pub const PROFILES: &[Profile] = &[
         config: &[ConfigFile {
             home: "CLAUDE_CONFIG_DIR",
             path: ".claude.json",
-            template: r#"{"hasCompletedOnboarding":true,"projects":{"{workspace}":{"hasTrustDialogAccepted":true}}}"#,
+            template: r#"{"hasCompletedOnboarding":true,"projects":{"{workspace_slashed}":{"hasTrustDialogAccepted":true}}}"#,
         }],
         scenarios: &[
             Scenario {
@@ -572,9 +606,13 @@ pub const PROFILES: &[Profile] = &[
         config: &[ConfigFile {
             home: "CODEX_HOME",
             path: "config.toml",
-            template: r#"model = "gpt-5.5"
+            template: r#"# Cites at codex `rust-v0.163.0`.
+model = "gpt-5.5"
 model_provider = "aimock"
 model_reasoning_effort = "high"
+# A trust decision would make the sandbox workspace-write
+# (`codex-rs/config/src/config_toml.rs:855-861`).
+sandbox_mode = "read-only"
 
 [model_providers.aimock]
 name = "aimock"
@@ -584,6 +622,16 @@ wire_api = "responses"
 
 [windows]
 sandbox = "unelevated"
+
+# The TUI asks to trust a folder no entry names, matched on the cwd's own
+# text (`config/src/loader/mod.rs:1416-1437`).
+[projects.'{workspace}']
+trust_level = "trusted"
+
+# The TUI offers the catalog's upgrade from this model unless it was seen
+# (`tui/src/app/startup_prompts.rs:165-168`, `models-manager/models.json:1401`).
+[notice.model_migrations]
+"gpt-5.5" = "gpt-6-sol"
 "#,
         }],
         scenarios: &[
@@ -615,9 +663,21 @@ sandbox = "unelevated"
                 ],
                 fixture: "codex/fixtures/subagent-hermetic",
             },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&CODEX_TUI),
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PermissionRequest",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/codex/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PermissionRequest"],
+        not_yet: &[],
         event_name: hook_event_name,
         // aimock's Responses usage has no token details (`CopilotKit/aimock`
         // `src/responses.ts:266-279` at v1.43.0).
@@ -1424,7 +1484,7 @@ telemetry:
   "agents": { "defaults": {
     "model": "hermetic/hermetic",
     "utilityModel": "",
-    "workspace": "{workspace}",
+    "workspace": "{workspace_slashed}",
     "skipBootstrap": true
   } }
 }
