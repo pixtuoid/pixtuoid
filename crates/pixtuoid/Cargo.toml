@@ -51,7 +51,7 @@ toml_edit          = { workspace = true }
 # YAML parse+emit for the Hermes install target — the maintained yaml-rust
 # successor, serde_yaml and serde_yml both being abandoned. It data-preserves a
 # user's other config keys on merge but does NOT round-trip comments.
-saphyr             = "0.1.0"
+saphyr             = "0.2.1"
 anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
