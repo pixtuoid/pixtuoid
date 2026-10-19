@@ -714,6 +714,9 @@ mod tests {
 
     /// Why a tool-argument name a label shows needs no fixture.
     const LABEL_DETAIL: &str = "a label's detail: a rename shows the bare tool name";
+    /// Why a value an arm matches only to decode it to nothing needs no
+    /// fixture: a rename breadcrumbs, and no state hangs on it.
+    const IGNORE_ARM: &str = "an ignore arm: it decodes to nothing either way";
     /// Why a literal the tail scan reads needs no fixture.
     const TAIL_READ: &str = "read off the tail, outside the decode the strip probes, \
          so a fixture's line holds it blanked";
@@ -772,6 +775,9 @@ mod tests {
         item("grok.rs", "is_updates_jsonl", PATH_AXIS),
         item("grok/native.rs", "grok_probe_root_resolved", PATH_AXIS),
         item("grok.rs", "KEYS", LABEL_DETAIL),
+        literal("grok.rs", "idle_prompt", IGNORE_ARM),
+        literal("grok.rs", "agent_error", IGNORE_ARM),
+        literal("grok.rs", "task_complete", IGNORE_ARM),
         item(
             "grok.rs",
             "XAI_MODEL_AUTO_SWITCHED",
