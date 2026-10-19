@@ -106,8 +106,8 @@ pub enum Package {
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
-/// cannot be held to a weaker bar than another, save the gap a profile's
-/// `result_unseen` owes.
+/// cannot be held to a weaker bar than another, save the gaps a profile's
+/// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
     /// A turn that reads a file: the session registers in the workspace, a tool
@@ -865,18 +865,32 @@ trust_level = "trusted"
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.tool.input.started",
-                "session.tool.success",
-                "session.execution.succeeded",
-            ],
-            fixture: "fixtures/opencode/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "opencode/fixtures/subagent-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
@@ -886,11 +900,7 @@ trust_level = "trusted"
             "permission.asked",
         ],
         event_name: type_field,
-        // A child session's (tests/sources/opencode/fixtures).
-        not_yet_fields: &[
-            ("hook:session.created", "/data/parentID"),
-            ("hook:session.execution.started", "/data/parentID"),
-        ],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
