@@ -92,9 +92,9 @@ pub struct Tui {
     /// included; no prompt.
     pub(crate) args: &'static [&'static str],
     pub(crate) composer: Composer,
-    /// Every dialog the turn may raise, refused once per run: its script answers
-    /// the refusal with text (`a_permission_script_answers_its_refusal_with_text`),
-    /// so the turn raises one. One the table doesn't name stalls the run.
+    /// Every dialog the turn may raise; one per run, since its script calls no
+    /// tool after the refusal (`a_permission_script_calls_no_tool_after_its_refusal`).
+    /// One the table doesn't name stalls the run.
     pub(crate) gates: &'static [Gate],
     /// What ends the session the way a user would, so its end hook fires.
     pub(crate) quit: &'static [Key],
@@ -222,8 +222,8 @@ impl<'a> Driver<'a> {
     /// A dialog on screen: refused after it has stood its dwell, once the prompt
     /// is submitted; before that, it stalls the run like any dialog nobody
     /// planned for. Once per run ([`Tui::gates`]): a frame drawn before the
-    /// refusal landed, or one between that drops the dialog, reads as the dialog
-    /// still or again open, and a repeated key lands on the turn. While one is
+    /// refusal landed still shows the dialog, and so does one after a frame that
+    /// dropped it; a second key would land on the turn. While one is
     /// open nothing else is sent, so no Enter can land on it and pick its first
     /// choice.
     fn gate(&mut self, now: Instant) -> Option<Action> {

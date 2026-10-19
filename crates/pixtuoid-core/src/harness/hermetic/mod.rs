@@ -2119,7 +2119,7 @@ mod tests {
     }
 
     #[test]
-    fn a_permission_script_answers_its_refusal_with_text() {
+    fn a_permission_script_calls_no_tool_after_its_refusal() {
         // A retried tool raises a second dialog, which the TUI driver never refuses.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
