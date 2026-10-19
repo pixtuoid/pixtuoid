@@ -1276,12 +1276,31 @@ trust_level = "trusted"
                 expects: &["SessionStart", "UserPromptSubmit", "StopFailure"],
                 fixture: "fixtures/grok/model-error-hermetic",
             },
+            // A question headless cannot answer: the shell fires the
+            // `elicitation_dialog` notification, then headless cancels it at
+            // once (at main 2bdd1d6a: `crates/codegen/xai-grok-shell/src/session/acp_session_impl/spawn.rs:2336-2341`,
+            // `crates/codegen/xai-grok-pager/src/headless/ext_protocol.rs:27`).
+            Scenario {
+                name: "ask-user",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Notification",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/grok/ask-user-hermetic",
+            },
         ],
         script_vars: &[],
         not_yet: &[],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,

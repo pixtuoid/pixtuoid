@@ -2251,7 +2251,13 @@ mod run {
             };
             assert_eq!(
                 names(true),
-                ["tool-run", "tool-error", "subagent", "model-error"]
+                [
+                    "tool-run",
+                    "tool-error",
+                    "subagent",
+                    "model-error",
+                    "ask-user"
+                ]
             );
             assert_eq!(
                 names(false),
@@ -2260,7 +2266,8 @@ mod run {
                     "tool-error",
                     "subagent",
                     "permission",
-                    "model-error"
+                    "model-error",
+                    "ask-user"
                 ]
             );
             assert!(not_run(&every, false).is_empty());
@@ -2276,9 +2283,9 @@ mod run {
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
             let judged = |n| vec![PathBuf::new(); n];
-            assert!(judges_leg(grok, &judged(4), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(4), false));
-            assert!(judges_leg(grok, &judged(5), false));
+            assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(5), false));
+            assert!(judges_leg(grok, &judged(6), false));
         }
 
         #[test]
