@@ -15,9 +15,9 @@ self.onmessage = async function (e) {
   try {
     const mod = await import(e.data.wasmJsUrl);
     const w = await mod.default();
-    const take = new mod.SynthTake(e.data.nowMs);
+    const take = new mod.SynthTake();
     while (take.step() > 0) {
-      /* one bed per step; no main thread to yield to */
+      /* one piece per step; no main thread to yield to */
     }
     // Copy out of wasm linear memory IMMEDIATELY after each ptr read — a wasm
     // call between view and copy could memory.grow and detach the view.
@@ -43,10 +43,7 @@ self.onmessage = async function (e) {
         transfers.push(t.buffer);
       }
     }
-    self.postMessage(
-      { ok: true, night: take.night(), epoch: take.epoch(), loops: loops, oneshots: oneshots },
-      transfers
-    );
+    self.postMessage({ ok: true, loops: loops, oneshots: oneshots }, transfers);
   } catch (err) {
     try {
       self.postMessage({ ok: false });

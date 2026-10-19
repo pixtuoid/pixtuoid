@@ -86,11 +86,6 @@ debug = false
 # wider than any codegen-level float difference.
 opt-level = 2
 
-[profile.dev.package.pixtuoid-lofi]
-# The bank's synthesis tests render every music lane through it, the
-# workspace's other compute-bound tests.
-opt-level = 2
-
 # Opt-in full debuginfo for an actual debugger session:
 # `cargo build --profile debugging`.
 [profile.debugging]
@@ -122,7 +117,7 @@ thiserror          = "2"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify             = "8"
-pixtuoid-lofi      = "0.1"
+pixtuoid-lofi      = "0.2"
 ratatui            = "0.30"
 crossterm          = "0.29"
 # Terminal display-column width — the authority ratatui itself uses, so wide

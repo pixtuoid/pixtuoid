@@ -9,49 +9,15 @@ use crate::audio::StemLevels;
 /// one-shot voice (`TypingScheduler`), not a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LoopStem {
-    Pad,
-    Sparkle,
-    Keys,
-    Drums,
-    Texture,
-    Bass,
     Rain,
 }
 
 impl LoopStem {
-    /// `Rain` MUST stay last: the wasm adoption wire slots beds by
-    /// `idx < TRACK_STEMS.len()` and rain at exactly `TRACK_STEMS.len()`.
-    pub const ALL: [LoopStem; 7] = [
-        LoopStem::Pad,
-        LoopStem::Sparkle,
-        LoopStem::Keys,
-        LoopStem::Drums,
-        LoopStem::Texture,
-        LoopStem::Bass,
-        LoopStem::Rain,
-    ];
+    pub const ALL: [LoopStem; 1] = [LoopStem::Rain];
 
     fn level_of(self, s: &StemLevels) -> f32 {
         match self {
-            LoopStem::Pad => s.pad,
-            LoopStem::Sparkle => s.sparkle,
-            LoopStem::Keys => s.keys,
-            LoopStem::Drums => s.drums,
-            LoopStem::Texture => s.texture,
-            LoopStem::Bass => s.bass,
             LoopStem::Rain => s.rain,
-        }
-    }
-
-    pub(super) fn field_mut(self, s: &mut StemLevels) -> &mut f32 {
-        match self {
-            LoopStem::Pad => &mut s.pad,
-            LoopStem::Sparkle => &mut s.sparkle,
-            LoopStem::Keys => &mut s.keys,
-            LoopStem::Drums => &mut s.drums,
-            LoopStem::Texture => &mut s.texture,
-            LoopStem::Bass => &mut s.bass,
-            LoopStem::Rain => &mut s.rain,
         }
     }
 }
@@ -115,7 +81,7 @@ impl Mixer {
     /// for the sink. Never overshoots.
     pub(crate) fn step(&mut self, dt_s: f32) -> [(LoopStem, f32); LoopStem::ALL.len()] {
         let max_delta = RAMP_PER_S * dt_s;
-        let mut out = [(LoopStem::Pad, 0.0f32); LoopStem::ALL.len()];
+        let mut out = [(LoopStem::Rain, 0.0f32); LoopStem::ALL.len()];
         for (i, stem) in LoopStem::ALL.into_iter().enumerate() {
             let goal = if self.muted {
                 0.0
@@ -227,34 +193,29 @@ impl DropScheduler {
 mod tests {
     use super::*;
 
-    fn levels(pad: f32, rain: f32, typing: f32) -> StemLevels {
-        StemLevels {
-            pad,
-            rain,
-            typing,
-            ..Default::default()
-        }
+    fn levels(rain: f32, typing: f32) -> StemLevels {
+        StemLevels { rain, typing }
     }
 
     #[test]
     fn mixer_ramps_toward_targets_without_overshoot() {
         let mut m = Mixer::new(1.0);
-        m.set_target(levels(0.8, 0.0, 0.0));
+        m.set_target(levels(0.8, 0.0));
         let g1 = m.step(0.1);
-        let pad1 = g1.iter().find(|(s, _)| *s == LoopStem::Pad).unwrap().1;
-        assert!((pad1 - 0.05).abs() < 1e-6, "ramp step {pad1}");
+        let rain1 = g1.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
+        assert!((rain1 - 0.05).abs() < 1e-6, "ramp step {rain1}");
         for _ in 0..100 {
             m.step(0.1);
         }
         let g = m.step(0.1);
-        let pad = g.iter().find(|(s, _)| *s == LoopStem::Pad).unwrap().1;
-        assert_eq!(pad, 0.8 * BUS_TRIM, "converged without overshoot");
+        let rain = g.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
+        assert_eq!(rain, 0.8 * BUS_TRIM, "converged without overshoot");
     }
 
     #[test]
     fn mute_ramps_all_loops_to_zero_and_zeroes_one_shots() {
         let mut m = Mixer::new(1.0);
-        m.set_target(levels(0.8, 0.5, 0.5));
+        m.set_target(levels(0.8, 0.5));
         for _ in 0..100 {
             m.step(0.1);
         }
@@ -272,37 +233,40 @@ mod tests {
     #[test]
     fn master_volume_scales_every_loop_target() {
         let mut m = Mixer::new(0.5);
-        m.set_target(levels(0.8, 0.0, 0.0));
+        m.set_target(levels(0.8, 0.0));
         for _ in 0..200 {
             m.step(0.1);
         }
         let g = m.step(0.1);
-        let pad = g.iter().find(|(s, _)| *s == LoopStem::Pad).unwrap().1;
+        let rain = g.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
         let want = 0.8 * 0.25 * BUS_TRIM;
-        assert!((pad - want).abs() < 1e-6, "curved master: {pad} vs {want}");
+        assert!(
+            (rain - want).abs() < 1e-6,
+            "curved master: {rain} vs {want}"
+        );
     }
 
     #[test]
     fn volume_curve_makes_low_percents_near_silent() {
         let mut quiet = Mixer::new(0.05);
-        quiet.set_target(levels(1.0, 0.0, 0.0));
+        quiet.set_target(levels(1.0, 0.0));
         for _ in 0..300 {
             quiet.step(0.1);
         }
         let g = quiet.step(0.1);
-        let pad = g.iter().find(|(s, _)| *s == LoopStem::Pad).unwrap().1;
-        assert!(pad < 0.001, "5% must be near-silent, got {pad}");
+        let rain = g.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
+        assert!(rain < 0.001, "5% must be near-silent, got {rain}");
 
         let mut full = Mixer::new(1.0);
-        full.set_target(levels(1.0, 0.0, 0.0));
+        full.set_target(levels(1.0, 0.0));
         for _ in 0..300 {
             full.step(0.1);
         }
         let g = full.step(0.1);
-        let pad = g.iter().find(|(s, _)| *s == LoopStem::Pad).unwrap().1;
+        let rain = g.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
         assert!(
-            (pad - BUS_TRIM).abs() < 1e-6,
-            "100% = the trimmed bus: {pad}"
+            (rain - BUS_TRIM).abs() < 1e-6,
+            "100% = the trimmed bus: {rain}"
         );
     }
 

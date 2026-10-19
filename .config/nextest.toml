@@ -28,11 +28,6 @@ threads-required = "num-cpus"
 filter = 'test(connected_codex_rollout_becomes_a_sprite) | test(disconnected_codex_rollout_is_dropped_by_the_gate)'
 threads-required = "num-cpus"
 
-# The bank's synthesis tests deliberately have NO override. Their slowness was
-# the `test` profile inheriting `dev`'s opt-level, not irreducible work, and is
-# fixed by `[profile.dev.package.pixtuoid-lofi]` in the workspace Cargo.toml.
-# Don't re-raise their cap: headroom only hides the next regression.
-
 # A layout sweep that splits its floors across the cores, so it holds every
 # test slot while it runs.
 [[profile.default.overrides]]

@@ -637,7 +637,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     syncPauseBtn();
 
-    // The engine records per-tick gain/play/swap commands (office.audio_tick) and JS is dumb glue — the mixing decisions all live in Rust.
+    // The engine records per-tick gain/play commands (office.audio_tick) and JS is dumb glue — the mixing decisions all live in Rust.
     const audioBtn = document.getElementById('office-audio');
     const AUDIO_PREF = 'pix:audio';
     let audioCtx = null;
@@ -647,11 +647,7 @@ const officeDriverUrl = asset('office-driver.js');
     let audioBooting = false;
     let audioUnavailable = false;
     let restoreArmed = false;
-    // Stem counts mirror Rust: LoopStem::ALL.len() (0=Pad … 6=Rain) and bank::TRACK_STEMS.len().
-    const LOOP_STEM_COUNT = 7;
-    const TRACK_STEM_COUNT = 6;
     let loopGains = [];
-    let loopSources = [];
     let oneShotBufs = {};
     let audioSR = 44100;
     const ONESHOT_WIRES = [0, 1, 2, 3, 4];
@@ -670,8 +666,7 @@ const officeDriverUrl = asset('office-driver.js');
     function audioUploadBuffers() {
       audioSR = office.audio_sample_rate(); // read once, before any view is taken
       loopGains = [];
-      loopSources = [];
-      for (let i = 0; i < LOOP_STEM_COUNT; i++) {
+      for (let i = 0; i < office.audio_loop_count(); i++) {
         const g = audioCtx.createGain();
         g.gain.value = 0;
         g.connect(audioBus);
@@ -681,7 +676,6 @@ const officeDriverUrl = asset('office-driver.js');
         s.connect(g);
         s.start();
         loopGains[i] = g;
-        loopSources[i] = s;
       }
       oneShotBufs = {};
       for (const wire of ONESHOT_WIRES) {
@@ -694,22 +688,6 @@ const officeDriverUrl = asset('office-driver.js');
             audioMakeBuffer(office.audio_oneshot_ptr(wire, j), office.audio_oneshot_len(wire, j))
           );
         }
-      }
-    }
-    // A mood-track swap replaces the TRACK-stem loop buffers in place; rain (the last stem) is weather, untouched.
-    function audioSwapLoops() {
-      for (let i = 0; i < TRACK_STEM_COUNT; i++) {
-        const s = audioCtx.createBufferSource();
-        s.buffer = audioLoopBuffer(i);
-        s.loop = true;
-        s.connect(loopGains[i]);
-        s.start();
-        try {
-          loopSources[i].stop();
-        } catch (e) {
-          /* already stopped */
-        }
-        loopSources[i] = s;
       }
     }
     function audioTick(nowMs) {
@@ -731,7 +709,6 @@ const officeDriverUrl = asset('office-driver.js');
         for (let i = 0; i < cmd.gains.length; i++) {
           loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, 0.03);
         }
-        if (cmd.swapped) audioSwapLoops();
         for (const p of cmd.plays) {
           const bank = oneShotBufs[p[0]];
           const buf = bank && bank[p[1]];
@@ -818,7 +795,7 @@ const officeDriverUrl = asset('office-driver.js');
     // Copy the transferred take into the driver one piece per tick, so no single main-thread block is bigger than one buffer.
     function prewarmAdopt(data) {
       try {
-        office.audio_adopt_begin(!!data.night, data.epoch);
+        office.audio_adopt_begin();
       } catch (e) {
         prewarmSettle('failed');
         return;
@@ -893,9 +870,9 @@ const officeDriverUrl = asset('office-driver.js');
       prewarmWorker.onerror = function () {
         prewarmSettle('failed');
       };
-      prewarmWorker.postMessage({ wasmJsUrl: wasmJsUrl, nowMs: Date.now() });
+      prewarmWorker.postMessage({ wasmJsUrl: wasmJsUrl });
     }
-    // Pump the chunked synthesis off setTimeout(0), so the main thread never blocks on the multi-second bank/rain/beds build in one go.
+    // Pump the chunked synthesis off setTimeout(0), so the main thread never blocks on the bank/rain build in one go.
     function audioPumpWarmup() {
       try {
         if (office.audio_warmup_step() > 0) {
