@@ -1,6 +1,6 @@
 //! The hermetic tier's per-CLI facts: how each real CLI is installed, isolated,
-//! pointed at a scripted model (aimock) and driven, and which hook events each
-//! scenario must fire. The registry already owns the binary (`version_probe`),
+//! and driven against a scripted model (aimock) or as its live tier, and which
+//! hook events each scenario must fire. The registry already owns the binary (`version_probe`),
 //! the home variable (`home_env`) and the pinned version (`verified_version`);
 //! a profile holds only what it doesn't.
 
