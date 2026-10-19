@@ -416,9 +416,11 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
                     effort,
                 }])
             }
-            // Fires INSTEAD of `model_changed` when the persisted model is no
-            // longer available — undecoded, the flame shows the dead model
-            // until the next `_meta.modelId`-bearing update corrects it.
+            // Fires when the allowlist denies the session's model or the
+            // catalog dropped it (`xai-grok-shell/src/agent/mvp_agent/`
+            // `session_setup.rs:814,1868,1899`, `acp_agent.rs:1058,1132` at
+            // untagged main 2bdd1d6a) — undecoded, the flame shows the dead
+            // model until the next `_meta.modelId`-bearing update corrects it.
             XAI_MODEL_AUTO_SWITCHED => {
                 let model = str_field("new_model_id")
                     .filter(|s| !s.is_empty())

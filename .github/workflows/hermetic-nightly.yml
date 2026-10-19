@@ -194,7 +194,7 @@ jobs:
   file:
     name: file the hermetic report
     needs: drift
-    # A dispatch on a branch is a pre-merge proof, not the watch.
+    # A dispatch on a branch is a pre-merge proof, not the nightly's verdict.
     if: ${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

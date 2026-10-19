@@ -140,8 +140,9 @@ fn source_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/source")
 }
 
-/// Every literal the compiled modules under `src/source` read, walked from
-/// `mod.rs` through each `mod` they declare, test-only items skipped.
+/// Every literal the modules under `src/source` read, walked from `mod.rs`
+/// through each `mod` they declare, whatever its platform or feature cfg;
+/// test-only items skipped.
 ///
 /// # Errors
 ///
@@ -398,12 +399,17 @@ impl<'ast> Visit<'ast> for Collect {
                 self.add(seg.to_owned(), Match::Exact);
             }
         }
-        // `ROLES.iter().any(|r| s.ends_with(r))`: `r` stands for each member.
-        let iterated = match &*m.receiver {
-            syn::Expr::MethodCall(inner) if inner.method == "iter" => {
-                self.const_of(&inner.receiver)
-            }
-            _ => None,
+        // `ROLES.iter().any(|r| s.ends_with(r))`: `r` stands for each member,
+        // and an inline array (`["a", "b"].iter()`) is a const with no name.
+        let (iterated, inline) = match &*m.receiver {
+            syn::Expr::MethodCall(inner) if inner.method == "iter" => match &*inner.receiver {
+                syn::Expr::Array(a) => (
+                    Some(format!("[..]#{}", self.bound.len())),
+                    a.elems.iter().filter_map(Self::lit).collect(),
+                ),
+                r => (self.const_of(r), Vec::new()),
+            },
+            _ => (None, Vec::new()),
         };
         self.visit_expr(&m.receiver);
         for arg in &m.args {
@@ -419,6 +425,24 @@ impl<'ast> Visit<'ast> for Collect {
             self.visit_expr(arg);
             if pushed {
                 self.bound.pop();
+            }
+        }
+        if let Some(name) = iterated.filter(|_| !inline.is_empty()) {
+            let mut modes = Vec::new();
+            self.uses.retain(|(c, how)| {
+                let mine = *c == name;
+                if mine {
+                    modes.push(*how);
+                }
+                !mine
+            });
+            if modes.is_empty() {
+                modes.push(Match::Exact);
+            }
+            for s in inline {
+                for how in &modes {
+                    self.add(s.clone(), *how);
+                }
             }
         }
     }
@@ -753,15 +777,12 @@ mod tests {
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
     const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it; exec and the TUI write Paginated";
-    const LOSS_NO_EMITTER: &str =
-        "loss list: aimock emits no tool search, and codex gates the tool behind a feature";
-    const LOSS_CACHE_WRITE: &str = "loss list: aimock's usage carries no cache writes";
-    const LOSS_TOGGLE: &str =
-        "loss list: only a mid-session ultracode toggle sends it, which -p can't make";
-    const LOSS_INTERACTIVE: &str =
-        "loss list: only omp's interactive /new, /fork and /resume send it";
-    const LOSS_MODEL_SWITCH: &str =
-        "loss list: only a model switch or a changed model catalog sends it";
+    const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
+         call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
+         aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
+    const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage is input and output \
+         tokens alone (`src/messages.ts:413-421` at v1.45.1)";
+    const LOSS_MODEL_GONE: &str = "loss list item 3 (owner, 2026-10-13): only a denied or dropped model sends it, as its arm cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -834,11 +855,7 @@ mod tests {
         literal("grok.rs", "idle_prompt", IGNORE_ARM),
         literal("grok.rs", "agent_error", IGNORE_ARM),
         literal("grok.rs", "task_complete", IGNORE_ARM),
-        item(
-            "grok.rs",
-            "XAI_MODEL_AUTO_SWITCHED",
-            "loss list item 3 (owner, 2026-10-13): only a provider fallback sends it",
-        ),
+        item("grok.rs", "XAI_MODEL_AUTO_SWITCHED", LOSS_MODEL_GONE),
         item("hermes.rs", "KEYS", LABEL_DETAIL),
         item("omp.rs", "AGENT_SUBDIR", PATH_AXIS),
         item("omp.rs", "EXTENSIONS_SUBDIR", PATH_AXIS),
@@ -868,14 +885,9 @@ mod tests {
         literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
         literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
-        literal("claude_code.rs", "ultra_effort_exit", LOSS_TOGGLE),
-        literal("omp.rs", "previousSessionFile", LOSS_INTERACTIVE),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
-        literal("grok.rs", "model_changed", LOSS_MODEL_SWITCH),
-        literal("grok.rs", "model_id", LOSS_MODEL_SWITCH),
-        literal("grok.rs", "reasoning_effort", LOSS_MODEL_SWITCH),
-        literal("grok.rs", "new_model_id", LOSS_MODEL_SWITCH),
+        literal("grok.rs", "new_model_id", LOSS_MODEL_GONE),
     ];
 
     /// Each profile's scenario-fixture keys and values.
@@ -1075,6 +1087,8 @@ mod tests {
             let _ = s.strip_prefix("pre-");
             let _ = s.split_once(MARK);
             let _ = ROLES.iter().any(|r| s.ends_with(r));
+            let _ = ["inline_a", "inline_b"].iter().find_map(|k| v.get(k));
+            let _ = [":inline_tail"].iter().any(|r| s.ends_with(r));
             let _ = matches!(s, "m1" | "m2");
             let _ = vec![field("in_vec")];
             match s { "arm" => {}, _ => {} }
@@ -1104,12 +1118,15 @@ mod tests {
             "m1",
             "m2",
             "arm",
+            "inline_a",
+            "inline_b",
         ] {
             assert_eq!(got.get(exact), Some(&Match::Exact), "{exact}: {got:?}");
         }
         assert_eq!(got.get("pre-"), Some(&Match::Prefix));
         assert_eq!(got.get(":sub:"), Some(&Match::Within));
         assert_eq!(got.get(":planner"), Some(&Match::Suffix));
+        assert_eq!(got.get(":inline_tail"), Some(&Match::Suffix));
         for absent in ["breadcrumb", "test_only", "unix_test_only"] {
             assert!(!got.contains_key(absent), "{absent}: {got:?}");
         }

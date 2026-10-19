@@ -530,9 +530,8 @@ fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
             }
         }
         Value::Array(a) => a.iter().for_each(|x| key_chains(x, path, out)),
-        // As `string_leaves` reads one: codex's `arguments` key its call's fields.
-        Value::String(s) if s.starts_with(['{', '[']) => {
-            if let Ok(inner) = serde_json::from_str::<Value>(s) {
+        Value::String(s) => {
+            if let Some(inner) = embedded_json(s) {
                 key_chains(&inner, path, out);
             }
         }
@@ -557,15 +556,21 @@ fn string_leaves(v: &Value, at: &str, out: &mut BTreeSet<(String, String)>) {
             }
         }
         Value::String(s) if !s.is_empty() => {
-            if s.starts_with(['{', '['])
-                && let Ok(inner) = serde_json::from_str::<Value>(s)
-            {
+            if let Some(inner) = embedded_json(s) {
                 string_leaves(&inner, at, out);
             }
             out.insert((at.to_owned(), s.clone()));
         }
         _ => {}
     }
+}
+
+/// The JSON a string holds, which the censuses read on into: codex's
+/// `arguments` keys its call's fields.
+fn embedded_json(s: &str) -> Option<Value> {
+    s.starts_with(['{', '['])
+        .then(|| serde_json::from_str(s).ok())
+        .flatten()
 }
 
 /// The reads of `p`'s fixtures of `scenarios`, each a recording `--record`
@@ -2330,27 +2335,6 @@ mod tests {
         );
     }
 
-    /// `source`'s run built from its `shape` fixture with `edit` applied, read
-    /// as the census reads it: raw (`carried`) and stripped as a fixture (`kept`).
-    fn run_reads(source: &str, shape: Shape, edit: impl Fn(&Path)) -> (Fields, Fields) {
-        let p = profile(source).expect("profile");
-        let d = recorded(source, shape, "");
-        edit(d.path());
-        let (mut carried, mut kept) = (Fields::default(), Fields::default());
-        for file in jsonl_files_under(d.path()) {
-            let mut lines = json_lines(&file).expect("lines");
-            for line in &lines {
-                carried.add(p, &file, line, true);
-            }
-            if crate::harness::reads::strip_lines(source, &file, &mut lines) {
-                for line in &lines {
-                    kept.add(p, &file, line, false);
-                }
-            }
-        }
-        (carried, kept)
-    }
-
     /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`
     /// is held only blank, so no value census would see it renamed.
     #[test]
@@ -2371,31 +2355,24 @@ mod tests {
     /// would hold the profile at Stale with no way out.
     #[test]
     fn an_owed_literal_is_stale_only_where_the_strip_keeps_it() {
-        let population = literals::population().expect("the decoders parse");
-        let census = |source: &str, owed: &str, edit: &dyn Fn(&Path)| {
-            let p = profile(source).expect("profile");
-            let shape = Shape::ToolRun;
-            let committed = scenario_reads(p, p.scenarios.iter().filter(|s| s.shape == shape))
-                .expect("fixtures");
-            let (carried, kept) = run_reads(source, shape, edit);
-            let v = Verdict::new(literal_census(
-                &literals::Owing {
-                    literals: &[owed],
-                    ..literals::Owing::of(p)
-                },
-                &population,
-                &committed,
-                &carried,
-                &kept,
-            ));
+        let census = |source: &str, owed: &'static &'static str, edit: &dyn Fn(&Path)| {
+            let p = Profile {
+                not_yet_literals: std::slice::from_ref(owed),
+                live: None,
+                daemon: None,
+                ..*profile(source).expect("profile")
+            };
+            let d = recorded(source, Shape::ToolRun, "");
+            edit(d.path());
+            let v = verify_source(&p, &[d.path().to_path_buf()]).expect("verify");
             has(&v, Label::Stale, &format!("`{owed}`"))
         };
         // A codex turn end the strip keeps.
-        assert!(census("codex", "web_search_end", &|d| {
+        assert!(census("codex", &"web_search_end", &|d| {
             respell(d, "\"task_complete\"", "\"web_search_end\"");
         }));
         // An agy step whose line decodes to nothing, which the strip blanks whole.
-        assert!(!census("antigravity", "USER_INPUT", &|d| {
+        assert!(!census("antigravity", &"USER_INPUT", &|d| {
             let t = jsonl_files_under(d)
                 .into_iter()
                 .find(|f| f.ends_with("transcript.jsonl"))

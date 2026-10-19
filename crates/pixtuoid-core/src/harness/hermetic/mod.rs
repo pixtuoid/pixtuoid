@@ -266,7 +266,7 @@ pub struct Profile {
     pub(crate) not_yet_fields: &'static [(&'static str, &'static str)],
     /// Literals a decoder reads that no scenario fixture of this profile holds
     /// yet and no other owed list names ([`literals`]). Shrink-only: a fixture
-    /// or a run that holds one leaves it.
+    /// that holds one, or a run that would keep one once stripped, leaves it.
     pub(crate) not_yet_literals: &'static [&'static str],
     /// Whether a child may name no cwd of its own, running where its parent
     /// does.
@@ -697,7 +697,11 @@ pub const PROFILES: &[Profile] = &[
             // (`CopilotKit/aimock` `src/messages.ts:405-414` at v1.43.0).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
-        not_yet_literals: &["ultra_effort_enter", "ultrathink_effort"],
+        not_yet_literals: &[
+            "ultra_effort_enter",
+            "ultra_effort_exit",
+            "ultrathink_effort",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1224,7 +1228,13 @@ trust_level = "trusted"
         not_yet: &["PostToolUseFailure", "StopFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog"],
+        not_yet_literals: &[
+            "elicitation_dialog",
+            "run_in_background",
+            "model_changed",
+            "model_id",
+            "reasoning_effort",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1521,7 +1531,7 @@ async:
                 "/message/content/*/arguments/questions/*/question",
             ),
         ],
-        not_yet_literals: &["ask"],
+        not_yet_literals: &["ask", "previousSessionFile"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
