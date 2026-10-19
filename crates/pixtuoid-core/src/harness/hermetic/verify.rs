@@ -102,7 +102,8 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 ///
 /// # Errors
 ///
-/// If its record or a capture file cannot be read.
+/// If its record, its manifest or a capture file cannot be read, or the
+/// manifest names no profiled scenario.
 pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
     let records: Vec<StepRecord> =
         serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
