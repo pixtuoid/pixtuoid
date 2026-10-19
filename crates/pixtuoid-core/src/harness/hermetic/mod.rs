@@ -283,6 +283,65 @@ pub const TUI_LOG: &str = "tui.log";
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
 
+/// The name an install lifecycle run is selected and reported by.
+pub const LIFECYCLE: &str = "lifecycle";
+/// An install lifecycle's [`StepRecord`]s, beside its silent turn's capture.
+pub const LIFECYCLE_RECORD: &str = "lifecycle.json";
+
+/// One `pixtuoid <command> <source> --json` an install lifecycle runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Step {
+    /// Install the hooks, or install them again.
+    Connect,
+    /// Uninstall them.
+    Disconnect,
+}
+
+impl Step {
+    /// Its subcommand.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+        }
+    }
+
+    /// The `outcome` its row must report, a token of the `--json` contract
+    /// (`integrations/raycast/contract/outcome-row.schema.json`).
+    pub fn outcome(self) -> &'static str {
+        match self {
+            Self::Connect => "connected",
+            Self::Disconnect => "disconnected",
+        }
+    }
+}
+
+/// An install lifecycle, in order, after a scenario's own connect and turn: a
+/// repeat register (reasonix's `--replace`), an uninstall, a register over its
+/// residue, and the uninstall a last turn runs under, which must reach the tap
+/// with no hook.
+pub const STEPS: &[Step] = &[
+    Step::Connect,
+    Step::Disconnect,
+    Step::Connect,
+    Step::Disconnect,
+];
+
+/// What one [`Step`] reported, written by the orchestrator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepRecord {
+    /// The step it ran.
+    pub step: Step,
+    /// Its row's `outcome` for the source; `None` when it printed none.
+    pub outcome: Option<String>,
+    /// Its row's `message`, or its stderr when it printed no row.
+    pub message: Option<String>,
+    /// After a connect, the source's `sources --json` `health`: `None` for a
+    /// sound install.
+    pub health: Option<String>,
+}
+
 /// What one run was, written by the orchestrator beside the run's raw capture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {

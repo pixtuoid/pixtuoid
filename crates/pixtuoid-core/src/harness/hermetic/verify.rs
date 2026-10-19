@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, Surface, profile, tui};
+use super::{
+    LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
+    Surface, profile, tui,
+};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
@@ -90,6 +93,71 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
     judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
+    Ok(Verdict::new(findings))
+}
+
+/// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
+/// outcome, each connect left an install `sources --json` finds sound, and the
+/// turn after the last uninstall delivered no hook.
+///
+/// # Errors
+///
+/// If its record or a capture file cannot be read.
+pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
+    let records: Vec<StepRecord> =
+        serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
+    let mut findings = Vec::new();
+    for (i, want) in STEPS.iter().enumerate() {
+        let n = i + 1;
+        let Some(got) = records.get(i).filter(|r| r.step == *want) else {
+            findings.push((
+                Label::Fail,
+                format!("step {n} ({}) left no record", want.command()),
+            ));
+            continue;
+        };
+        if got.outcome.as_deref() != Some(want.outcome()) {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) reported {}, not {}: {}",
+                    want.command(),
+                    got.outcome.as_deref().unwrap_or("no row"),
+                    want.outcome(),
+                    got.message.as_deref().unwrap_or("no message")
+                ),
+            ));
+        }
+        if let Some(health) = &got.health {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) left the install unsound: {health}",
+                    want.command()
+                ),
+            ));
+        }
+    }
+    if !dir.join(MANIFEST).exists() {
+        findings.push((
+            Label::Blocked,
+            "the turn after the last uninstall did not run".into(),
+        ));
+        return Ok(Verdict::new(findings));
+    }
+    let mut delivered = 0;
+    for file in jsonl_files_under(dir)
+        .into_iter()
+        .filter(|f| is_hook_envelope(f))
+    {
+        delivered += json_lines(&file)?.len();
+    }
+    if delivered > 0 {
+        findings.push((
+            Label::Fail,
+            format!("{delivered} hook envelopes arrived after the last uninstall"),
+        ));
+    }
     Ok(Verdict::new(findings))
 }
 
@@ -831,6 +899,109 @@ mod tests {
 
     fn blank_transcripts(dir: &Path) {
         edit_transcripts(dir, |_| false);
+    }
+
+    /// A lifecycle run in a fresh directory: `records` as its steps reported,
+    /// its silent turn's manifest, and `envelopes` hook lines.
+    fn lifecycle_run(records: &[StepRecord], envelopes: usize) -> tempfile::TempDir {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            d.path().join(LIFECYCLE_RECORD),
+            serde_json::to_string(records).expect("records"),
+        )
+        .expect("record");
+        write_manifest(d.path(), "codex", |_| {});
+        std::fs::write(
+            d.path().join(HOOK_PAYLOADS),
+            "{\"hook_event_name\":\"Stop\"}\n".repeat(envelopes),
+        )
+        .expect("hooks");
+        d
+    }
+
+    fn sound() -> Vec<StepRecord> {
+        STEPS
+            .iter()
+            .map(|s| StepRecord {
+                step: *s,
+                outcome: Some(s.outcome().into()),
+                message: None,
+                health: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sound_lifecycle_passes() {
+        let d = lifecycle_run(&sound(), 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_hook_after_the_last_uninstall_fails() {
+        let d = lifecycle_run(&sound(), 2);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "2 hook envelopes arrived"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_failed_step_or_an_unsound_install_fails() {
+        let mut records = sound();
+        records[1].outcome = Some("failed".into());
+        records[1].message = Some("codex plugin remove: unknown command".into());
+        records[2].health = Some("install broken: the plugin is not installed".into());
+        let d = lifecycle_run(&records, 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "disconnect (step 2) reported failed"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            has(&v, Label::Fail, "connect (step 3) left the install unsound"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_step_that_left_no_record_fails() {
+        let d = lifecycle_run(&sound()[..2], 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "step 3 (connect) left no record"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// Each step's outcome is a token the published `--json` contract lists,
+    /// the copy of it this side of the crate boundary.
+    #[test]
+    fn every_step_outcome_is_a_contract_token() {
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../integrations/raycast/contract/outcome-row.schema.json"),
+            )
+            .expect("the contract reads"),
+        )
+        .expect("the contract parses");
+        let tokens = &schema["$defs"]["WireOutcome"]["enum"];
+        for s in STEPS {
+            assert!(
+                tokens
+                    .as_array()
+                    .is_some_and(|t| t.iter().any(|v| v == s.outcome())),
+                "{} is no contract token: {tokens}",
+                s.outcome()
+            );
+        }
     }
 
     fn has(v: &Verdict, label: Label, text: &str) -> bool {
