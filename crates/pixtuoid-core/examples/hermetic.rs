@@ -281,7 +281,12 @@ mod run {
             entries.extend(ran);
             moved.extend(now);
         }
-        let report = report(&args.versions, &host_tool_versions(), &entries);
+        let report = report(
+            &args.versions,
+            &host_tool_versions(),
+            &entries,
+            &not_run(cfg!(windows)),
+        );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
         println!("\n{report}");
@@ -296,11 +301,7 @@ mod run {
         p: &Profile,
         runs: &Path,
     ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
-        let selected: Vec<&Scenario> = p
-            .scenarios
-            .iter()
-            .filter(|s| args.selects(p.source, s.shape.name()))
-            .collect();
+        let selected = selected(args, p, cfg!(windows));
         let mut entries = Vec::new();
         if selected.is_empty() {
             return Ok((entries, None));
@@ -387,6 +388,28 @@ mod run {
         Ok((entries, moved))
     }
 
+    /// `p`'s scenarios `args` selects that this leg runs.
+    fn selected<'a>(args: &Args, p: &'a Profile, windows: bool) -> Vec<&'a Scenario> {
+        p.scenarios
+            .iter()
+            .filter(|s| args.selects(p.source, s.shape.name()))
+            .filter(|s| !windows || s.runs_on_windows())
+            .collect()
+    }
+
+    /// Every scenario a leg on `windows` never runs, as the report names it.
+    fn not_run(windows: bool) -> Vec<String> {
+        PROFILES
+            .iter()
+            .flat_map(|p| {
+                p.scenarios
+                    .iter()
+                    .filter(move |s| windows && !s.runs_on_windows())
+                    .map(|s| format!("{}/{}", p.source, s.shape.name()))
+            })
+            .collect()
+    }
+
     fn run_dir(runs: &Path, p: &Profile, scenario: &Scenario) -> PathBuf {
         runs.join(p.source).join(scenario.shape.name())
     }
@@ -462,7 +485,12 @@ mod run {
             .collect()
     }
 
-    fn report(versions: &Versions, host: &[String], entries: &[Entry]) -> String {
+    fn report(
+        versions: &Versions,
+        host: &[String],
+        entries: &[Entry],
+        not_run: &[String],
+    ) -> String {
         let which = match versions {
             Versions::Pinned => "verified",
             Versions::Latest => "latest",
@@ -491,6 +519,9 @@ mod run {
         out += "\nNot covered:";
         for (source, absence) in NOT_HERMETIC {
             out += &format!(" {source} ({absence:?})");
+        }
+        if !not_run.is_empty() {
+            out += &format!("\nNot run on {os}: {}", not_run.join(" "));
         }
         out + "\n"
     }
@@ -1786,6 +1817,25 @@ mod run {
         }
 
         #[test]
+        fn a_windows_leg_runs_what_renders_under_conpty_and_names_the_rest() {
+            let grok = hermetic::profile("grok").expect("grok's profile");
+            let every = parse(&args(&[])).expect("parse");
+            let names = |windows| -> Vec<&str> {
+                selected(&every, grok, windows)
+                    .iter()
+                    .map(|s| s.shape.name())
+                    .collect()
+            };
+            assert_eq!(names(true), ["tool-run", "subagent"]);
+            assert_eq!(names(false), ["tool-run", "subagent", "permission"]);
+            assert_eq!(not_run(true), ["grok/permission"]);
+            assert!(not_run(false).is_empty());
+            let r = report(&Versions::Pinned, &[], &[], &not_run(true));
+            assert!(r.ends_with(": grok/permission\n"), "{r}");
+            assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+        }
+
+        #[test]
         fn the_reports_title_is_the_worst_verdict_or_that_nothing_ran() {
             let os = std::env::consts::OS;
             let host = ["git version 2.55.0".to_string()];
@@ -1801,7 +1851,7 @@ mod run {
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
                 )
             };
-            let r = report(&Versions::Latest, &host, &[pass, blocked()]);
+            let r = report(&Versions::Latest, &host, &[pass, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Blocked").as_str())
@@ -1809,7 +1859,7 @@ mod run {
             assert!(r.contains("Host: git version 2.55.0"), "{r}");
             assert!(r.contains("## opencode/tool-run: Blocked\n- Blocked: npm view failed"));
             assert!(r.contains("## codex/tool-run (codex-cli 0.155.1): Pass"));
-            let r = report(&Versions::Pinned, &host, &[blocked()]);
+            let r = report(&Versions::Pinned, &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, verified CLIs on {os}: NOTHING RAN").as_str())
@@ -1823,7 +1873,7 @@ mod run {
                     (Label::Script, "1 unmatched".into()),
                 ]),
             );
-            let r = report(&Versions::Latest, &host, &[lost, blocked()]);
+            let r = report(&Versions::Latest, &host, &[lost, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())

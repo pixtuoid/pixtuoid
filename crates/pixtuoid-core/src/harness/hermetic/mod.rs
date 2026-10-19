@@ -356,6 +356,7 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::from_millis(400),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
 };
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
@@ -375,6 +376,9 @@ const GROK_TUI: tui::Tui = tui::Tui {
     // `/exit` is `/quit`'s alias
     // (`crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md:71-73`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    // It clears the alternate screen and paints nothing more (the full tier's
+    // Windows leg, run 39177894288's `grok/permission/tui.log`).
+    renders_under_conpty: false,
 };
 
 /// hermes's classic REPL, where a dangerous terminal command waits on the
@@ -394,6 +398,7 @@ const HERMES_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
 };
 
 /// The profiled CLIs.
@@ -1338,6 +1343,12 @@ impl Profile {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
+
+    /// Whether a Windows leg runs every scenario, as its census and the release
+    /// it moved to need.
+    pub fn runs_on_windows(&self) -> bool {
+        self.scenarios.iter().all(Scenario::runs_on_windows)
+    }
 }
 
 impl Scenario {
@@ -1346,6 +1357,14 @@ impl Scenario {
         scripts_dir()
             .join(source)
             .join(format!("{}.json", self.shape.name()))
+    }
+
+    /// Whether a Windows leg runs it.
+    pub fn runs_on_windows(&self) -> bool {
+        match self.surface {
+            Surface::Headless => true,
+            Surface::Tui(tui) => tui.renders_under_conpty,
+        }
     }
 }
 

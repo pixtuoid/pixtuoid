@@ -44,8 +44,8 @@ jobs:
       full: true
       cli: latest
 
-  # A release that moved on every leg becomes a bot PR. The legs ran the CLIs,
-  # so what they report and record is untrusted; `bump` holds it to a bump.
+  # A release moved on every leg running its source in full becomes a bot PR;
+  # the legs ran the CLIs, so `bump` holds what they report and record to a bump.
   plan:
     name: plan the pin bumps
     needs: drift
@@ -189,7 +189,7 @@ jobs:
           sign-commits: true
           commit-message: ${{ matrix.title }}
           title: ${{ matrix.title }}
-          body: "${{ matrix.source }}'s latest release passed every hermetic scenario on every OS, re-recorded here (`hermetic-nightly.yml`). A session reads the whole diff, fixtures included, then queues it."
+          body: "${{ matrix.source }}'s latest release passed every hermetic scenario each OS runs, re-recorded here (`hermetic-nightly.yml`). A session reads the whole diff, fixtures included, then queues it."
 
   file:
     name: file the hermetic report
