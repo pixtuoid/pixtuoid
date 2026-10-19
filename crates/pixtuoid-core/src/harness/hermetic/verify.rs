@@ -573,24 +573,39 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
         } => Some(t),
         _ => None,
     });
-    let ended = if waited.is_empty() {
-        // A wait that names no call (claude-code's `PermissionRequest`) is held to
-        // every started tool ending.
-        let started = calls(|e| match e {
-            AgentEvent::ActivityStart {
-                tool_use_id: Some(t),
-                ..
-            } => Some(t),
-            _ => None,
-        });
-        !started.is_empty() && started.is_subset(&ended_calls)
-    } else {
+    let started = calls(|e| match e {
+        AgentEvent::ActivityStart {
+            tool_use_id: Some(t),
+            ..
+        } => Some(t),
+        _ => None,
+    });
+    let ended = if !waited.is_empty() {
         waited.iter().any(|t| ended_calls.contains(t))
+    } else if !events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::ActivityStart { .. }))
+    {
+        // Asked before the call started (reasonix): the refused call never ran,
+        // so its turn's end.
+        events.iter().any(|e| {
+            matches!(
+                e,
+                AgentEvent::ActivityEnd {
+                    tool_use_id: None,
+                    ..
+                }
+            )
+        })
+    } else {
+        // A wait that names no call (claude-code's `PermissionRequest`): every
+        // started tool ends.
+        !started.is_empty() && started.is_subset(&ended_calls)
     };
     if !ended {
         findings.push((
             Label::Fail,
-            "the tool the slot waited on never ended".into(),
+            "the call or turn the slot waited on never ended".into(),
         ));
     }
 }
@@ -893,6 +908,8 @@ mod tests {
         "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
     const CX_WAIT_SCENE: &str =
         "agents=[cx\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
+    const RX_WAIT_SCENE: &str = "agents=[rx\u{b7}proj@0:waiting(approval needed: bash rm NOTE.txt)]\n\
+                                 agents=[] daemons=[]\n";
 
     const DS_WAIT_SCENE: &str =
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
@@ -946,6 +963,32 @@ mod tests {
         let d = recorded("codex", Shape::Permission, CX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_refused_call_that_never_started_ends_with_its_turn() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        edit_hooks(d.path(), |v| (v["event"] != "Stop").then_some(v));
+        let v = verify(d.path()).expect("verify");
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        reorder_hooks(d.path(), |lines| {
+            let at = lines
+                .iter()
+                .position(|v| v["event"] == "PermissionRequest")
+                .expect("the gate's request");
+            let mut started = lines[at].clone();
+            started["event"] = "PreToolUse".into();
+            lines.insert(at, started);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "a call that started is held to its own end: {:?}",
+            v.findings()
+        );
     }
 
     #[test]
