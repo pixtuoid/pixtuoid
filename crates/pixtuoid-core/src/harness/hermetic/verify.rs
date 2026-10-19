@@ -253,9 +253,8 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
 
 /// The literal census over runs: each value a decoder's literal matches in
 /// the `committed` fixtures must arrive in some run at the same kind and
-/// pointer, and each key it names there in some run at all, unless `p`'s
-/// `not_yet_literals` names it; one of those that the runs would keep once
-/// stripped (`kept`) is Stale.
+/// pointer, and each key it names there in some run at all; a
+/// `not_yet_literals` entry the runs would keep once stripped (`kept`) is Stale.
 fn literal_census(
     p: &Profile,
     population: &BTreeSet<literals::Literal>,
@@ -268,10 +267,7 @@ fn literal_census(
     for (kind, values) in &committed.values {
         let seen = carried.values.get(kind);
         for (at, value) in values {
-            for l in mine
-                .iter()
-                .filter(|l| l.matches(value) && !p.not_yet_literals.contains(&l.text.as_str()))
-            {
+            for l in mine.iter().filter(|l| l.matches(value)) {
                 let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
                 if !arrived {
                     findings.push((
@@ -287,10 +283,7 @@ fn literal_census(
         }
     }
     for l in mine.iter().filter(|l| l.how == literals::Match::Exact) {
-        if committed.keys.contains(&l.text)
-            && !carried.keys.contains(&l.text)
-            && !p.not_yet_literals.contains(&l.text.as_str())
-        {
+        if committed.keys.contains(&l.text) && !carried.keys.contains(&l.text) {
             findings.push((
                 Label::Fail,
                 format!(
