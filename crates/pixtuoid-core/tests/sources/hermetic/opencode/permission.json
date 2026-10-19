@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "title generator" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "shell", "arguments": { "command": "rm NOTE.txt" } } ] }
+    },
+    {
+      "match": { "hasToolResult": true },
+      "response": { "content": "refused" }
+    }
+  ]
+}
