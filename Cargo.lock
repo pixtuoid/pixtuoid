@@ -3217,6 +3217,7 @@ dependencies = [
  "ratatui",
  "regex",
  "rodio",
+ "rtrb",
  "rustix 1.1.5",
  "saphyr",
  "schemars",
@@ -3864,6 +3865,12 @@ name = "roff"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189"
+
+[[package]]
+name = "rtrb"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9278fb35b3e730abe136e9b395b5b81b96d06b9f5478a50f0c8430a2237b22de"
 
 [[package]]
 name = "rustc-hash"

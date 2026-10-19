@@ -1020,17 +1020,46 @@ fn session_types_default_equals_new() {
 }
 
 #[test]
-fn audio_observer_frame_composes_stems_from_the_scene() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
+    // Noon, where a storm-dimmed light would read short of full day.
+    let now = crate::localclock::at_hour(12);
     let scene = make_scene(4, 16);
     let occupied = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
-    let frame = obs.frame(&scene, &occupied, |_| None, FloorMeta::ground(), now);
-    let precip = crate::sky::rain_at(now, crate::sky::WeatherPolicy::Clock);
+    let storm = crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Storm);
+    let floor = FloorMeta {
+        weather: storm,
+        ..FloorMeta::ground()
+    };
+    let frame = obs.frame(&scene, &occupied, |_| None, floor, now);
+    let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), storm);
+    let counts = crate::tally::per_floor_counts(&scene)[0];
     assert_eq!(
         frame.stems,
-        crate::audio::stem_levels(&crate::tally::per_floor_counts(&scene)[0], precip),
-        "stems must equal stem_levels(per_floor_counts[floor], precip)"
+        crate::audio::stem_levels(&counts, sky.rain()),
+        "stems must equal stem_levels(per_floor_counts[floor], rain)"
+    );
+    assert_eq!(
+        frame.music,
+        crate::audio::music_controls(&counts, sky.nightfall(), sky.rain()),
+        "music must ask music_controls of the same counts and sky"
+    );
+    assert_eq!(
+        frame.music.rain, 1.0,
+        "a storm passes its rain to the music"
+    );
+    let clear = crate::sky::Sky::at(
+        crate::anim::Motion::Full.timing(now),
+        crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
+    );
+    assert_eq!(
+        frame.music.daylight,
+        crate::audio::music_controls(&counts, clear.nightfall(), 0.0).daylight,
+        "the storm's daylight is a clear sky's: a storm never flips the family"
+    );
+    assert_eq!(
+        frame.music.daylight, 1.0,
+        "a stormy noon is full day to the music"
     );
 }
 

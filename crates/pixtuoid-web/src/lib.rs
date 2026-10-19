@@ -27,7 +27,8 @@ use crate::script::{
     Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
-use pixtuoid_scene::audio::OneShotPool;
+use pixtuoid_scene::audio::mixer::LoopStem;
+use pixtuoid_scene::audio::{Frame, OneShotPool, Performance};
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
@@ -416,7 +417,19 @@ impl Office {
     /// How many loop stems a tick's `gains` carry:
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)'s.
     pub fn audio_loop_count(&self) -> usize {
-        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+        LoopStem::ALL.len()
+    }
+
+    /// How far ahead the music worklet queues the worker's chunks, in seconds:
+    /// [`pixtuoid_scene::audio::MUSIC_AHEAD`].
+    pub fn audio_music_ahead_s(&self) -> f32 {
+        pixtuoid_scene::audio::MUSIC_AHEAD.as_secs_f32()
+    }
+
+    /// The time constant JS's `setTargetAtTime` smooths each tick's gains
+    /// over, in seconds: `GAIN_DEZIPPER`.
+    pub fn audio_gain_dezipper_s(&self) -> f32 {
+        GAIN_DEZIPPER.as_secs_f32()
     }
 
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
@@ -447,9 +460,11 @@ impl Office {
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
     /// same as `step`) and return the JS glue commands as JSON:
-    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…]}`, one gain per
-    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) stem — JS
-    /// ramps each GainNode to its gain and spawns the one-shots.
+    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…],"music":{"controls":[…],"gain":g}|null}`,
+    /// one gain per [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)
+    /// stem — JS ramps each GainNode to its gain, spawns the one-shots, ramps
+    /// the music's GainNode and hands its controls, unread, to the music
+    /// worker (`null` until the first frame).
     pub fn audio_tick(&mut self, now_ms: f64) -> String {
         let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
         let Some(now) = self.last_now else {
@@ -547,7 +562,7 @@ impl SynthTake {
     /// The loop-stem count — loops aren't self-terminating like the one-shot
     /// pools, so JS can't discover the copy-out bound itself.
     pub fn loop_count(&self) -> usize {
-        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+        LoopStem::ALL.len()
     }
 
     /// Zero-copy reads, same contract as the `Office::audio_*` getters — the
@@ -565,6 +580,57 @@ impl SynthTake {
     }
     pub fn oneshot_len(&self, pool: u8, idx: usize) -> usize {
         OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
+    }
+}
+
+/// The `setTargetAtTime` time constant each GainNode approaches a tick's gain
+/// with: it de-zippers the ticks' steps, well inside the mixer's own slew,
+/// which already crossfades.
+const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
+
+/// The music worker's lofi `Performance`, rendered in the chunks the worklet
+/// asks for.
+#[wasm_bindgen]
+#[derive(Debug)]
+pub struct MusicStream {
+    performance: Performance,
+    frames: Vec<Frame>,
+}
+
+#[wasm_bindgen]
+impl MusicStream {
+    /// A stream starting at `now_ms` (UNIX-epoch milliseconds, the
+    /// `Office::step` contract) under the office's first `controls`, a tick's
+    /// `music.controls` as `audio_tick` wrote them, which pick its first song.
+    ///
+    /// # Errors
+    ///
+    /// When `controls` isn't the wire's.
+    #[wasm_bindgen(constructor)]
+    pub fn new(now_ms: f64, controls: &[f32]) -> Result<MusicStream, JsError> {
+        let controls = audio::controls_from_wire(controls)
+            .ok_or_else(|| JsError::new("not the music's controls"))?;
+        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
+        Ok(MusicStream {
+            performance: Performance::new(seed, controls),
+            frames: Vec::new(),
+        })
+    }
+
+    /// The office's latest `controls`, as `audio_tick` wrote them, which the
+    /// next bar latches; `false` when they aren't the wire's.
+    pub fn set_controls(&mut self, controls: &[f32]) -> bool {
+        audio::controls_from_wire(controls)
+            .map(|c| self.performance.set_controls(c))
+            .is_some()
+    }
+
+    /// Render the next `frames` frames and return where their `2 × frames`
+    /// interleaved samples sit, valid until the next wasm call.
+    pub fn render(&mut self, frames: usize) -> *const f32 {
+        self.frames.resize(frames, Frame::default());
+        self.performance.render(&mut self.frames);
+        self.frames.as_flattened().as_ptr()
     }
 }
 
@@ -764,6 +830,7 @@ fn push_board_segments(
 mod tests {
     use super::*;
     use crate::script::cast_id;
+    use pixtuoid_scene::audio::Controls;
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
     /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
@@ -852,6 +919,49 @@ mod tests {
                 "stem {i} is deterministic"
             );
         }
+    }
+
+    /// The worker's stream plays the song its first controls pick, chunk
+    /// after chunk with no seam.
+    #[test]
+    fn a_music_stream_renders_the_performance_its_first_controls_pick() {
+        let now_ms = 1_753_000_000_000.0;
+        let night = Controls::default().with_daylight(0.0).with_intensity(1.0);
+        let tick = pixtuoid_scene::audio::TickCommands {
+            music: Some(pixtuoid_scene::audio::MusicCmd {
+                controls: night,
+                gain: 1.0,
+            }),
+            ..Default::default()
+        };
+        // The wire as the worker gets it: the tick's JSON, its controls unread.
+        let json: serde_json::Value =
+            serde_json::from_str(&audio::commands_json(&tick)).expect("valid JSON");
+        let wire: Vec<f32> =
+            serde_json::from_value(json["music"]["controls"].clone()).expect("floats");
+        let Ok(mut stream) = MusicStream::new(now_ms, &wire) else {
+            panic!("the wire's controls start a stream");
+        };
+        assert!(stream.set_controls(&wire));
+        assert!(!stream.set_controls(&wire[..1]), "a torn wire is refused");
+        let mut heard = Vec::new();
+        for n in [1000, 3000] {
+            let ptr = stream.render(n);
+            assert_eq!(ptr, stream.frames.as_flattened().as_ptr());
+            heard.extend_from_slice(&stream.frames);
+        }
+        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
+        let performed = |c| {
+            let mut want = vec![Frame::default(); heard.len()];
+            Performance::new(seed, c).render(&mut want);
+            want
+        };
+        assert_eq!(heard, performed(night));
+        assert_ne!(
+            heard,
+            performed(Controls::default()),
+            "premise: a day start differs"
+        );
     }
 
     /// Anchor sim time well past 0 so `exiting_at`-style guards never see the

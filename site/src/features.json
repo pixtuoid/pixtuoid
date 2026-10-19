@@ -115,10 +115,10 @@
   {
     "icon": "🎧",
     "name": "Lofi soundtrack",
-    "desc": "A lofi soundtrack synthesized entirely in code — no audio files shipped. Day and night tracks follow the office's clock and weather, typing sounds swell with activity, and the door chime, printer and vending machine play as coworkers come and go. `m` mutes, `+`/`-` volume",
+    "desc": "A lofi soundtrack synthesized entirely in code — no audio files shipped. An endless run of songs follows the office's clock, weather and busyness, typing sounds swell with activity, and the door chime, printer and vending machine play as coworkers come and go. `m` mutes, `+`/`-` volume",
     "pix": "note",
     "card": {
-      "blurb": "a lofi soundtrack, synthesized live in code, follows the office's clock and weather — hear it: the ♩ toggle in the corner of this page."
+      "blurb": "a lofi soundtrack, synthesized live in code, follows the office's clock, weather and busyness — hear it: the ♩ toggle in the corner of this page."
     }
   },
   {
