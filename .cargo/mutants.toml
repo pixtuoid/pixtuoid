@@ -24,9 +24,6 @@ exclude_globs = [
     "crates/pixtuoid-core/src/source/fd_probe.rs",
     # cfg(windows): never compiled on the unix hosts that run mutants.
     "crates/pixtuoid-core/src/source/hook/windows.rs",
-    # Compiled only under pixtuoid's `upstream`, which `features` can't pass:
-    # each mutant builds its own package, and cargo rejects it for core's.
-    "crates/pixtuoid/src/drift_watch/**",
 ]
 
 # Never a regex for a cfg-twin survivor (proc_start.rs `imp`, grok/native.rs

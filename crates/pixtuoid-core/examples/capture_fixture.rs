@@ -17,7 +17,7 @@ mod recorder {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, Instant, SystemTime};
+    use std::time::{Duration, SystemTime};
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
     use pixtuoid_core::source::{registry, resolved_source_root};
@@ -31,15 +31,17 @@ mod recorder {
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
 
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest};
-    use pixtuoid_core::harness::host::{create_private_dir, owned_by_us};
+    use pixtuoid_core::harness::host::{
+        RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
+    };
     use pixtuoid_core::harness::recorder_flag::{
         CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, HOOK_PAYLOADS,
-        PROVENANCE, capture_base, capture_workspace, capture_workspace_tail, jsonl_files_under,
-        required_version_probe, version_answer, wait_until,
+        PROVENANCE, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -303,10 +305,12 @@ mod recorder {
             std::process::exit(2);
         }
 
-        let workspace = prepare_workspace(match options.workspace.clone() {
+        let ws = match options.workspace.clone() {
             Some(ws) => ws,
             None => capture_workspace()?,
-        })?;
+        };
+        let _recording = record_lock(&ws, &capture_workspace()?, &capture_root()?)?;
+        let workspace = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -603,42 +607,22 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// How long a capture waits for the previous run's processes to let go of
-    /// its workspace, and how often it asks meanwhile.
-    const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
-    const RELEASE_POLL: Duration = Duration::from_millis(250);
+    /// The file, under the capture root, whose lock a capture of the canonical
+    /// workspace holds.
+    const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The error std's Windows `remove_dir_all` gives up on after a few yields
-    /// (`library/std/src/sys/fs/windows/remove_dir_all.rs:152-170`, `:188-191`
-    /// at 1.98.1), while a previous run's process can hold the workspace for
-    /// seconds (codex/subagent in actions run 39128433306).
-    #[cfg(windows)]
-    const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32;
-
-    /// `remove`, retried while another process holds what it removes, for up
-    /// to `patience`; a tree already gone counts as removed.
-    fn remove_once_released(
-        patience: Duration,
-        mut remove: impl FnMut() -> std::io::Result<()>,
-    ) -> std::io::Result<()> {
-        let deadline = Instant::now() + patience;
-        loop {
-            match remove() {
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-                Err(e) if held(&e) && Instant::now() < deadline => std::thread::sleep(RELEASE_POLL),
-                done => return done,
-            }
+    /// The lock a capture in `ws` holds until it ends: `canonical`'s, under
+    /// `root`, since every capture there clears it, so they take turns. A
+    /// workspace of a run's own takes none.
+    fn record_lock(
+        ws: &Path,
+        canonical: &Path,
+        root: &Path,
+    ) -> std::io::Result<Option<std::fs::File>> {
+        if ws != canonical {
+            return Ok(None);
         }
-    }
-
-    #[cfg(windows)]
-    fn held(e: &std::io::Error) -> bool {
-        e.raw_os_error() == Some(SHARING_VIOLATION)
-    }
-
-    #[cfg(not(windows))]
-    fn held(_: &std::io::Error) -> bool {
-        false
+        hold_lock(&root.join(RECORD_LOCK)).map(Some)
     }
 
     fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
@@ -1126,59 +1110,22 @@ mod recorder {
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
 
-        /// Busy the way a held tree is on this platform.
-        fn busy() -> std::io::Error {
-            #[cfg(windows)]
-            return std::io::Error::from_raw_os_error(SHARING_VIOLATION);
-            #[cfg(not(windows))]
-            std::io::Error::from(std::io::ErrorKind::ResourceBusy)
-        }
-
         #[test]
-        fn a_held_base_is_retried_only_on_windows() {
-            let mut calls = 0;
-            let removed = remove_once_released(Duration::from_secs(5), || {
-                calls += 1;
-                if calls < 3 { Err(busy()) } else { Ok(()) }
-            });
-            if cfg!(windows) {
-                assert!(removed.is_ok() && calls == 3, "{removed:?} after {calls}");
-            } else {
-                assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
-            }
-        }
-
-        #[test]
-        fn a_base_held_past_the_patience_fails() {
-            let mut calls = 0;
-            let removed = remove_once_released(Duration::ZERO, || {
-                calls += 1;
-                Err(busy())
-            });
-            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
-        }
-
-        #[cfg(windows)]
-        #[test]
-        fn a_base_refused_for_another_reason_fails_at_once() {
-            let mut calls = 0;
-            let removed = remove_once_released(Duration::from_secs(5), || {
-                calls += 1;
-                Err(std::io::Error::from_raw_os_error(
-                    windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
-                ))
-            });
-            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
-        }
-
-        #[test]
-        fn an_absent_base_counts_as_removed() {
-            let mut calls = 0;
-            let removed = remove_once_released(Duration::ZERO, || {
-                calls += 1;
-                Err(std::io::ErrorKind::NotFound.into())
-            });
-            assert!(removed.is_ok() && calls == 1, "{removed:?} after {calls}");
+        fn only_a_capture_of_the_canonical_workspace_takes_turns() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let canonical = d.path().join("pixtuoid-capture/proj");
+            let own = d.path().join("pixtuoid-run-1/pixtuoid-capture/proj");
+            assert!(
+                record_lock(&own, &canonical, d.path())
+                    .expect("no lock")
+                    .is_none()
+            );
+            let held = record_lock(&canonical, &canonical, d.path()).expect("the lock");
+            assert!(held.is_some());
+            let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
+            assert!(other.try_lock().is_err(), "a second capture waits");
+            drop(held);
+            assert!(other.try_lock().is_ok());
         }
 
         struct Promotable {
@@ -1917,7 +1864,7 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let started = Instant::now();
+            let started = std::time::Instant::now();
             let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
                 .map(|_| ())
                 .expect_err("it never served");

@@ -21,14 +21,8 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-#[cfg(feature = "upstream")]
-use crate::install::target::UNFIRED_HOOK;
 use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::reasonix::REPO;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Doc, Finding, Read, Watch, When};
 
 /// Events we register == events we decode, enforced by
 /// `every_registered_reasonix_event_decodes` below. PostToolUseFailure /
@@ -59,88 +53,6 @@ const YES: &str = "--yes";
 const REMOVE: &str = "remove";
 /// The file Reasonix records its installed plugins in.
 const PACKAGES: &str = "plugin-packages.json";
-
-#[cfg(feature = "upstream")]
-const PACKAGES_DOC: &[Doc] = &[REPO.doc(
-    "docs/PLUGIN_PACKAGES.md",
-    r"(?m)^## CLI Mode",
-    "the plugin-packages CLI section",
-)];
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "reasonix.hook_events",
-        ours: || REASONIX_EVENTS.to_vec(),
-        docs: &[REPO.doc(
-            "internal/ext/hook/hook.go",
-            r"type Event string\b",
-            "the `Event` type",
-        )],
-        read: Read::Matches {
-            pattern: r#"\w+\s+Event\s*=\s*"(\w+)""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(UNFIRED_HOOK),
-        siblings: None,
-    },
-    host_plugin::premise(
-        "reasonix.link_flag",
-        || vec![LINK],
-        PACKAGES_DOC,
-        "`{name}` links a local plugin directory instead of copying it",
-        "the in-place install `register` relies on, with no reload, may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.yes_flag",
-        || vec![YES],
-        PACKAGES_DOC,
-        r"`{name}` is required for any install that writes files\.",
-        "the consent flag `register` passes may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.replace_flag",
-        || vec![REPLACE],
-        PACKAGES_DOC,
-        "`{name}` allows the source to replace an installed plugin with the same",
-        "the re-link a repeat `register` relies on may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.remove_command",
-        || vec![REMOVE],
-        PACKAGES_DOC,
-        r"`{name}` also accepts `uninstall` as an alias\.",
-        "the uninstall command `unregister` runs may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.remove_consent",
-        || vec![YES],
-        PACKAGES_DOC,
-        r"as an alias\. It requires `{name}` because it",
-        "the consent flag `unregister` passes to `remove` may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.packages_file",
-        || vec![PACKAGES],
-        PACKAGES_DOC,
-        r"~/\.reasonix/{name}\b",
-        "where `is_registered` reads an install from may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.manifest",
-        || vec![MANIFEST],
-        PACKAGES_DOC,
-        "Native `{name}` manifests must declare the exact",
-        "the manifest `render_manifest` writes may have changed",
-    ),
-    host_plugin::premise(
-        "reasonix.exec_form",
-        || vec![r#"When `args` is present, including `"args": []`, the hook uses **exec form**"#],
-        PACKAGES_DOC,
-        r"{name}\.",
-        "the exec form our hooks rely on may have changed",
-    ),
-];
 
 /// Reasonix links the plugin dir in place, so a rewrite of the manifest reaches the
 /// next session.

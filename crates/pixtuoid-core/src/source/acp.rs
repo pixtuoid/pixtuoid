@@ -12,8 +12,6 @@
 use serde_json::{Map, Value};
 
 use crate::AgentId;
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{Doc, Family, Finding, Read, Release, Repo, Siblings, Watch, When};
 use crate::source::{AgentEvent, ToolDetail};
 
 const TOOL_CALL: &str = "tool_call";
@@ -22,113 +20,9 @@ const TOOL_CALL_UPDATE: &str = "tool_call_update";
 const STATUS_COMPLETED: &str = "completed";
 const STATUS_FAILED: &str = "failed";
 
-/// The `ToolCallStatus` values that END a tool call. Pinned to the arms by
-/// `tool_call_starts_and_terminal_update_ends_keyed_by_tool_call_id`.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_TERMINAL_STATUSES: &[&str] = &[STATUS_COMPLETED, STATUS_FAILED];
-
-/// The `sessionUpdate` tags this decoder turns into events. Pinned to the arms
-/// below by `the_decoded_tag_set_is_exactly_what_the_arms_match`.
-///
-/// Off shipped builds: only the drift watch and tests read it. The ARMS are what
-/// production dispatches on, and a second copy of the vocabulary must not be
-/// something the shipped crate can read and drift against.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_TAGS: &[&str] = &[TOOL_CALL, TOOL_CALL_UPDATE];
-
 /// The notification [`decode_session_update`] decodes; a source gates its
 /// call on this method.
 pub(crate) const SESSION_UPDATE_METHOD: &str = "session/update";
-
-#[cfg(any(test, feature = "upstream"))]
-const SCHEMA_TAG: &str = "v0.11.4";
-
-/// Read at the `agent-client-protocol-schema` grok-build's `Cargo.lock` pins,
-/// which grok runs.
-#[cfg(any(test, feature = "upstream"))]
-const REPO: Repo = Repo {
-    name: "agentclientprotocol/agent-client-protocol",
-    release: Release::Pinned { tag: SCHEMA_TAG },
-};
-
-/// Both schemas, each proven by the declaration a watch reads: grok pins
-/// `features = ["unstable"]`, so its ACP surface is the UNION of stable and
-/// unstable.
-#[cfg(any(test, feature = "upstream"))]
-const fn schemas(anchor: &'static str, owns: &'static str) -> [Doc; 2] {
-    [
-        REPO.doc("schema/schema.json", anchor, owns),
-        REPO.doc("schema/schema.unstable.json", anchor, owns),
-    ]
-}
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "acp.method",
-        ours: || vec![SESSION_UPDATE_METHOD],
-        docs: &schemas(r#""x-method"\s*:"#, "the schema's method declarations"),
-        read: Read::Each {
-            pattern: r#""x-method"\s*:\s*"{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "a source gates the ACP decode on this method, so every ACP-standard \
-             activity event is lost with no breadcrumb",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "acp.session_update_tags",
-        ours: || DECODED_TAGS.to_vec(),
-        docs: &schemas(r#""SessionUpdate"\s*:"#, "the `SessionUpdate` union"),
-        read: Read::JsonUnion {
-            def: "SessionUpdate",
-            prop: Some("sessionUpdate"),
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "every ACP-speaking source loses that half of its activity decode",
-        ),
-        siblings: Some(Siblings {
-            family: Family::Prefix(TOOL_CALL),
-            ignored: &[],
-        }),
-    },
-    Watch {
-        id: "acp.terminal_statuses",
-        ours: || DECODED_TERMINAL_STATUSES.to_vec(),
-        docs: &schemas(r#""ToolCallStatus"\s*:"#, "the `ToolCallStatus` union"),
-        read: Read::JsonUnion {
-            def: "ToolCallStatus",
-            prop: None,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the `tool_call_update` arm falls through to `_ => vec![]`, so every \
-             ACP tool call stays Active forever",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "acp.grok_pin",
-        ours: || vec![SCHEMA_TAG.trim_start_matches('v')],
-        docs: &[crate::source::grok::REPO.doc(
-            "Cargo.lock",
-            r#"(?m)^name = "agent-client-protocol-schema""#,
-            "grok's `agent-client-protocol-schema` lock entry",
-        )],
-        read: Read::Matches {
-            pattern: r#"(?m)^name = "agent-client-protocol-schema"\s+version = "([^"]+)""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Review(
-            "the ACP watches read a schema grok no longer runs: repin `SCHEMA_TAG` to the one \
-             it locks",
-        ),
-        siblings: None,
-    },
-];
 
 /// Decode one ACP `session/update` notification's `update` object into activity
 /// events; the caller injects `agent_id` and its own `tool_detail` (invariant #3).
@@ -200,7 +94,7 @@ mod tests {
             }
             other => panic!("expected one ActivityStart, got {other:?}"),
         }
-        for status in DECODED_TERMINAL_STATUSES {
+        for status in [STATUS_COMPLETED, STATUS_FAILED] {
             match decode(
                 json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1", "status": status}),
             )
@@ -215,14 +109,7 @@ mod tests {
                 other => panic!("expected one ActivityEnd for {status}, got {other:?}"),
             }
         }
-        // The negative half binds the export's WIDTH: an added member would have
-        // to break one of these, so the `acp.terminal_statuses` watch cannot
-        // quietly grow.
         for status in ["in_progress", "pending"] {
-            assert!(
-                !DECODED_TERMINAL_STATUSES.contains(&status),
-                "{status} must not be in the exported terminal set"
-            );
             assert!(
                 decode(json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1", "status": status})).is_empty(),
                 "{status} must not end the activity"
@@ -233,14 +120,10 @@ mod tests {
         );
     }
 
-    /// The exported set IS the arms: every member drives the decoder to a real
-    /// event and a non-member decodes to nothing. Without this the const is a
-    /// second copy of the vocabulary, free to drift off the arms it describes —
-    /// and the drift watcher reads the const, not the arms.
+    /// Each decoded tag reaches a real arm and a non-member decodes to nothing.
     #[test]
-    fn the_decoded_tag_set_is_exactly_what_the_arms_match() {
-        assert_eq!(DECODED_TAGS, ["tool_call", "tool_call_update"]);
-        for tag in DECODED_TAGS {
+    fn each_decoded_tag_reaches_an_arm() {
+        for tag in [TOOL_CALL, TOOL_CALL_UPDATE] {
             let update = json!({
                 "sessionUpdate": tag,
                 "toolCallId": "c1",

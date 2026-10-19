@@ -81,8 +81,8 @@ fn notice_rows(bounds: Rect, notices: &[String]) -> Vec<String> {
         return Vec::new();
     };
     let width = usize::from(inner.width).saturating_sub(INDENT.len());
-    // Named, not defaulted: textwrap's defaults follow its features, which a
-    // build with the `upstream` feature unifies wider (oxc's diagnostics).
+    // Named, not defaulted: textwrap's defaults follow its features, which
+    // feature unification can widen.
     let wrap = textwrap::Options::new(width)
         .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit)
         .word_separator(textwrap::WordSeparator::AsciiSpace)

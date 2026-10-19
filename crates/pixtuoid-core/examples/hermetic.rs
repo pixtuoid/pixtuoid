@@ -8,6 +8,7 @@
 //! its package's latest release, the nightly drift run; `--cli <release>`
 //! installs that release, a bump's planned one. `--record` writes a source's
 //! fixtures, and off the pin moves its pin up to the release recorded.
+//! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
 //!
 //! Exits 0 when every run passed, 1 on any other verdict (a recording refused
 //! after its runs included), and anything else when the tier itself could not
@@ -32,21 +33,22 @@ mod run {
     use std::time::Duration;
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
+    use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        Package, PerOs, Profile, SCENE_LOG, STEPS, Scenario, Step, StepRecord, Surface, TUI_LOG,
-        USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
+        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step, StepRecord, Surface,
+        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
+    use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
-        required_version_probe, version_answer, wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
+        capture_workspace_tail, recorder_flag, required_version_probe, version_answer, wait_until,
     };
-    use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
 
     /// How long one read from aimock may hang.
@@ -170,6 +172,9 @@ mod run {
     struct Args {
         versions: Versions,
         record: bool,
+        /// The [`SHARDS`] entry `--shard` names, counting from 1, and the
+        /// sources it alone runs.
+        shard: Option<(usize, &'static [&'static str])>,
         source: Option<String>,
         scenario: Option<String>,
     }
@@ -186,6 +191,9 @@ mod run {
             }
             if self.record && self.scenario.is_some() {
                 return Err("--record writes a whole source: its census judges every run".into());
+            }
+            if self.shard.is_some() && self.source.is_some() {
+                return Err("--shard selects its own sources: name none".into());
             }
             let Some(source) = self.source.as_deref() else {
                 return Ok(());
@@ -226,15 +234,25 @@ mod run {
         }
 
         fn selects(&self, source: &str, scenario: &str) -> bool {
+            self.selects_source(source) && self.scenario.as_deref().is_none_or(|s| s == scenario)
+        }
+
+        fn selects_source(&self, source: &str) -> bool {
             self.source.as_deref().is_none_or(|s| s == source)
-                && self.scenario.as_deref().is_none_or(|s| s == scenario)
+                && self
+                    .shard
+                    .is_none_or(|(_, sources)| sources.contains(&source))
         }
     }
 
     const CLI_USAGE: &str = "--cli takes pinned, latest or a release";
 
+    fn shard_usage() -> String {
+        format!("--shard takes 1 to {}", SHARDS.len())
+    }
+
     fn parse(mut rest: &[String]) -> Result<Args, String> {
-        let (mut versions, mut record) = (Versions::Pinned, false);
+        let (mut versions, mut record, mut shard) = (Versions::Pinned, false, None);
         loop {
             match rest {
                 [flag, v, tail @ ..] if flag == "--cli" => {
@@ -248,6 +266,16 @@ mod run {
                     rest = tail;
                 }
                 [flag] if flag == "--cli" => return Err(CLI_USAGE.into()),
+                [flag, n, tail @ ..] if flag == "--shard" => {
+                    shard = Some(
+                        n.parse::<usize>()
+                            .ok()
+                            .and_then(|n| Some((n, *SHARDS.get(n.checked_sub(1)?)?)))
+                            .ok_or_else(shard_usage)?,
+                    );
+                    rest = tail;
+                }
+                [flag] if flag == "--shard" => return Err(shard_usage()),
                 [flag, tail @ ..] if flag == "--record" => {
                     record = true;
                     rest = tail;
@@ -259,6 +287,7 @@ mod run {
             [] | [_] | [_, _] => Ok(Args {
                 versions,
                 record,
+                shard,
                 source: rest.first().cloned(),
                 scenario: rest.get(1).cloned(),
             }),
@@ -272,7 +301,7 @@ mod run {
             Ok(a) => a,
             Err(e) => {
                 eprintln!(
-                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [<source> [<scenario>]]"
+                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [--shard <n>] [<source> [<scenario>]]"
                 );
                 std::process::exit(2);
             }
@@ -282,6 +311,9 @@ mod run {
             std::process::exit(2);
         }
         let tier = tier_dir()?;
+        // Every invocation of this build shares the tier's runs, shim and installs.
+        std::fs::create_dir_all(&tier)?;
+        let _tier = hold_lock(&tier.join(TIER_LOCK))?;
         let runs = tier.join("runs");
         match std::fs::remove_dir_all(&runs) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -291,6 +323,7 @@ mod run {
         let built = Built::find()?;
         let ctx = Ctx {
             shim_dir: warmed_shim_dir(&tier, &built.shim)?,
+            record: args.record,
             built,
             aimock: Aimock::install(&tier)?,
             tier,
@@ -304,9 +337,10 @@ mod run {
         }
         let report = report(
             &args.versions,
+            args.shard.map(|(n, _)| n),
             &host_tool_versions(),
             &entries,
-            &not_run(cfg!(windows)),
+            &not_run(&args, cfg!(windows)),
         );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
@@ -563,10 +597,12 @@ mod run {
         scenarios.min_by_key(|s| !matches!(s.surface, Surface::Headless))
     }
 
-    /// Every run a leg on `windows` never makes, and why, as the report names it.
-    fn not_run(windows: bool) -> Vec<String> {
+    /// Every run of the sources `args` selects that a leg on `windows` never
+    /// makes, and why, as the report names it.
+    fn not_run(args: &Args, windows: bool) -> Vec<String> {
         PROFILES
             .iter()
+            .filter(|p| args.selects_source(p.source))
             .flat_map(|p| not_run_of(p, windows))
             .collect()
     }
@@ -671,6 +707,7 @@ mod run {
 
     fn report(
         versions: &Versions,
+        shard: Option<usize>,
         host: &[String],
         entries: &[Entry],
         not_run: &[String],
@@ -686,8 +723,9 @@ mod run {
             _ => "NOTHING RAN".to_owned(),
         };
         let os = std::env::consts::OS;
+        let shard = shard.map_or(String::new(), |n| format!(", shard {n}"));
         let mut out = format!(
-            "# hermetic, {which} CLIs on {os}: {title}\n\nHost: {}\n",
+            "# hermetic, {which} CLIs on {os}{shard}: {title}\n\nHost: {}\n",
             host.join(", ")
         );
         for e in entries {
@@ -933,15 +971,9 @@ mod run {
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
             (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
-                if repo.release != Release::GithubLatest {
-                    return Err(format!(
-                        "{} releases as {:?}, which `--cli latest` can't read",
-                        repo.name, repo.release
-                    ));
-                }
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-                let url = format!("https://github.com/{}/releases/latest", repo.name);
+                let url = format!("https://github.com/{repo}/releases/latest");
                 let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
                 latest_tag(&String::from_utf8_lossy(&headers))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
@@ -1054,7 +1086,7 @@ mod run {
 
     /// Whether `bytes` hash to the lowercase hex SHA-512 `want`.
     fn matches_sha512(bytes: &[u8], want: &str) -> bool {
-        upstream::digest_hex::<sha2::Sha512>(bytes) == want
+        digest::digest_hex::<sha2::Sha512>(bytes) == want
     }
 
     const CURL: &str = "curl";
@@ -1097,7 +1129,7 @@ mod run {
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         fetch(asset, to)?;
-        if !upstream::vouches(
+        if !digest::vouches(
             &std::fs::read_to_string(&listed)?,
             asset,
             &std::fs::read(to)?,
@@ -1181,7 +1213,7 @@ mod run {
             Package::GithubRelease { repo, assets, sums } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
-                    fetch_release(repo.name, version, asset_here(assets)?, sums, &program)
+                    fetch_release(repo, version, asset_here(assets)?, sums, &program)
                 })?;
                 Ok(Installed {
                     launch: Launch {
@@ -1199,7 +1231,7 @@ mod run {
                     clone
                         .args(["clone", "--quiet", "--depth", "1", "--branch"])
                         .arg(format!("v{version}"))
-                        .arg(format!("https://github.com/{}.git", repo.name))
+                        .arg(format!("https://github.com/{repo}.git"))
                         .arg(&src);
                     succeed(clone)?;
                     // A workspace's members, a Python of uv's own at the tag's pin and
@@ -1530,9 +1562,46 @@ mod run {
     struct Ctx {
         tier: PathBuf,
         built: Built,
+        /// Whether its runs record, and so run in the one canonical workspace.
+        record: bool,
         /// The directory holding the tier's one shim, on every sandbox's PATH.
         shim_dir: PathBuf,
         aimock: Aimock,
+    }
+
+    /// The file in the tier whose lock each invocation holds.
+    const TIER_LOCK: &str = "hermetic.lock";
+
+    /// A replay's own workspace root, removed when its run drops, waiting out
+    /// a process still holding it as the recorder waits for the canonical one.
+    struct ReplayRoot(PathBuf);
+
+    impl Drop for ReplayRoot {
+        fn drop(&mut self) {
+            if let Err(e) =
+                remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "hermetic: left {}: {e}",
+                    self.0.display()
+                );
+            }
+        }
+    }
+
+    /// The workspace a run's CLI works in: the canonical one when it records,
+    /// whose path the fixtures carry, else one of its own under the same root.
+    fn run_workspace(record: bool) -> std::io::Result<(Option<ReplayRoot>, PathBuf)> {
+        if record {
+            return Ok((None, capture_workspace()?));
+        }
+        let own = tempfile::Builder::new()
+            .prefix("pixtuoid-run-")
+            .tempdir_in(capture_root()?)?
+            .keep();
+        let workspace = own.join(capture_workspace_tail());
+        Ok((Some(ReplayRoot(own)), workspace))
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
@@ -1542,8 +1611,8 @@ mod run {
         p: &Profile,
         version: &Version,
         ports: Ports,
-    ) -> std::io::Result<(PathBuf, Installed, Sandbox)> {
-        let workspace = capture_workspace()?;
+    ) -> std::io::Result<((PathBuf, Option<ReplayRoot>), Installed, Sandbox)> {
+        let (own, workspace) = run_workspace(ctx.record)?;
         if let Some(found) = outside_config(
             p.system_config.here(),
             p.ancestor_config,
@@ -1557,7 +1626,7 @@ mod run {
         }
         let cli = install_cli(&ctx.tier, p, version)?;
         let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports, &workspace)?;
-        Ok((workspace, cli, sandbox))
+        Ok(((workspace, own), cli, sandbox))
     }
 
     /// `scenario`'s run in a sandbox of its own, connected first, and the
@@ -1570,7 +1639,7 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<(Manifest, Sandboxed)> {
         let (ports, _) = Ports::pick(0)?;
-        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
+        let ((workspace, workspace_root), cli, sandbox) = sandboxed(ctx, p, version, ports)?;
         let connect = sandbox
             .command(&ctx.built.pixtuoid)
             .args(["connect", p.source, "--json"])
@@ -1588,6 +1657,7 @@ mod run {
         let run = Sandboxed {
             port: ports.model,
             workspace,
+            _workspace_root: workspace_root,
             cli,
             sandbox,
         };
@@ -1599,6 +1669,7 @@ mod run {
     struct Sandboxed {
         port: u16,
         workspace: PathBuf,
+        _workspace_root: Option<ReplayRoot>,
         cli: Installed,
         sandbox: Sandbox,
     }
@@ -1666,6 +1737,7 @@ mod run {
             workspace,
             cli,
             sandbox,
+            ..
         } = run;
         let port = *port;
         let script = render_script(p, scenario, workspace, sandbox.dir.path())?;
@@ -2120,6 +2192,42 @@ mod run {
         }
 
         #[test]
+        fn a_shard_runs_its_own_sources_and_names_only_their_absences() {
+            let shard = |n: usize| parse(&args(&["--shard", &n.to_string()])).expect("parse");
+            for (i, sources) in SHARDS.iter().enumerate() {
+                let a = shard(i + 1);
+                assert_eq!(a.check(false), Ok(()));
+                assert_eq!(
+                    a.shard.map(|(n, _)| n),
+                    Some(i + 1),
+                    "--shard counts from 1"
+                );
+                for p in PROFILES {
+                    assert_eq!(
+                        a.selects(p.source, "tool-run"),
+                        sources.contains(&p.source),
+                        "{} in shard {}",
+                        p.source,
+                        i + 1
+                    );
+                }
+                let named = not_run(&a, true);
+                let every = not_run(&parse(&[]).expect("parse"), true);
+                let own: Vec<&String> = every
+                    .iter()
+                    .filter(|r| sources.iter().any(|s| r.starts_with(&format!("{s}/"))))
+                    .collect();
+                assert_eq!(named.iter().collect::<Vec<_>>(), own);
+            }
+            for bad in ["0", &(SHARDS.len() + 1).to_string(), "one"] {
+                assert_eq!(parse(&args(&["--shard", bad])), Err(shard_usage()), "{bad}");
+            }
+            assert_eq!(parse(&args(&["--shard"])), Err(shard_usage()));
+            let named = parse(&args(&["--shard", "1", "codex"])).expect("parse");
+            assert!(named.check(false).is_err(), "a shard and a source");
+        }
+
+        #[test]
         fn a_live_tier_s_exit_reads_pass_blocked_or_fail() {
             let Some(live) = &hermetic::profile("openclaw").expect("openclaw").live else {
                 panic!("openclaw runs live");
@@ -2155,8 +2263,8 @@ mod run {
                     "model-error"
                 ]
             );
-            assert!(not_run(false).is_empty());
-            let r = report(&Versions::Pinned, &[], &[], &not_run(true));
+            assert!(not_run(&every, false).is_empty());
+            let r = report(&Versions::Pinned, None, &[], &[], &not_run(&every, true));
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
@@ -2166,7 +2274,7 @@ mod run {
                 ),
                 "{r}"
             );
-            assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+            assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
             let judged = |n| vec![PathBuf::new(); n];
             assert!(judges_leg(grok, &judged(4), true), "grok moves on Windows");
             assert!(!judges_leg(grok, &judged(4), false));
@@ -2189,7 +2297,7 @@ mod run {
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
                 )
             };
-            let r = report(&Versions::Latest, &host, &[pass, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[pass, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Blocked").as_str())
@@ -2197,7 +2305,7 @@ mod run {
             assert!(r.contains("Host: git version 2.55.0"), "{r}");
             assert!(r.contains("## opencode/tool-run: Blocked\n- Blocked: npm view failed"));
             assert!(r.contains("## codex/tool-run (codex-cli 0.155.1): Pass"));
-            let r = report(&Versions::Pinned, &host, &[blocked()], &[]);
+            let r = report(&Versions::Pinned, None, &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, verified CLIs on {os}: NOTHING RAN").as_str())
@@ -2211,10 +2319,16 @@ mod run {
                     (Label::Script, "1 unmatched".into()),
                 ]),
             );
-            let r = report(&Versions::Latest, &host, &[lost, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[lost, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
+            );
+            // A shard's leg names it, so the issue tells two legs of one OS apart.
+            let r = report(&Versions::Latest, Some(2), &host, &[blocked()], &[]);
+            assert_eq!(
+                r.lines().next(),
+                Some(format!("# hermetic, latest CLIs on {os}, shard 2: NOTHING RAN").as_str())
             );
         }
 
@@ -2825,6 +2939,28 @@ mod run {
                 assert!(on(vec![(label, "judged".into())]), "{label:?}");
             }
             assert!(on(Vec::new()));
+        }
+
+        #[test]
+        fn a_replay_runs_in_a_workspace_of_its_own_and_a_recording_in_the_canonical_one() {
+            let (first, a) = run_workspace(false).expect("a replay's workspace");
+            let (second, b) = run_workspace(false).expect("another's");
+            assert_ne!(a, b, "two replays at once would share their files");
+            for ws in [&a, &b] {
+                assert!(ws.starts_with(capture_root().expect("the root")), "{ws:?}");
+                assert!(
+                    pixtuoid_core::harness::capture_base(ws).is_some(),
+                    "the recorder clears only a capture base: {ws:?}"
+                );
+            }
+            let root = second.as_ref().expect("a replay owns its root").0.clone();
+            assert!(root.is_dir());
+            drop(second);
+            assert!(!root.exists(), "a replay's root goes with it");
+            drop(first);
+            let (none, canonical) = run_workspace(true).expect("a recording's workspace");
+            assert!(none.is_none());
+            assert_eq!(canonical, capture_workspace().expect("the canonical one"));
         }
 
         #[test]

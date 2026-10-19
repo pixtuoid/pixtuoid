@@ -54,12 +54,11 @@ harness = [
     "windows-sys/Win32_System_Pipes",
     "windows-sys/Win32_System_Registry",
     "windows-sys/Win32_UI_Shell",
-    # A release-binary profile names its watched `Repo`.
-    "upstream",
+    # A release-binary profile's download is checked against its sums file.
+    "dep:sha2",
+    # The literal census parses the decoders (`hermetic::literals`).
+    "dep:syn",
 ]
-# What each source depends on upstream, for pixtuoid's drift watch and its
-# tests: no shipped build reads it.
-upstream = ["dep:sha2"]
 
 [dependencies]
 tokio       = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util"], optional = true }
@@ -77,8 +76,10 @@ enum-map    = { workspace = true }
 vec1        = { workspace = true }
 # A CLI's version and its ordering, prerelease included: `registry::parse_version`.
 semver      = { workspace = true }
-# A download's digest against its sums file or manifest: `upstream::digest_hex`.
+# A download's digest against its sums file or manifest: `hermetic::digest::digest_hex`.
 sha2        = { workspace = true, optional = true }
+# The literal census reads what the decoders compare (`hermetic::literals`).
+syn         = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

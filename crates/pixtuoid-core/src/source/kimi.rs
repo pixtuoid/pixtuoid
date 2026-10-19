@@ -35,13 +35,6 @@ use crate::source::{AgentEvent, registry};
 /// The Kimi CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "kimi";
 
-/// The repository its drift watches read.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: crate::source::upstream::Repo = crate::source::upstream::Repo {
-    name: "MoonshotAI/kimi-code",
-    release: crate::source::upstream::Release::GithubLatest,
-};
-
 /// Decode Kimi's two failure-variant hook events (no CC equivalent) and DECLINE
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to
 /// `decoder::decode_hook_payload`'s shared arms.

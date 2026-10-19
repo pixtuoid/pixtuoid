@@ -61,24 +61,32 @@ pub fn transcript_in(source: &str, dir: &Path) -> Result<PathBuf, Vec<PathBuf>> 
     }
 }
 
-/// Where every capture's CLI runs. The path is FIXED and generic on purpose:
+/// Where every recording's CLI runs. The path is FIXED and generic on purpose:
 /// every payload embeds its own cwd, the decoders read it, so the strip keeps it —
 /// capturing somewhere already generic is what keeps a per-run path out of the
 /// bytes. The recorder prepares it; a hermetic script names files under it.
 ///
-/// On Windows it sits under ProgramData, outside every user's profile: CC reads
-/// config from each ancestor of its cwd, a home's `.claude` included.
+/// # Errors
+///
+/// As [`capture_root`].
+pub fn capture_workspace() -> std::io::Result<PathBuf> {
+    Ok(capture_root()?.join(capture_workspace_tail()))
+}
+
+/// The directory capture workspaces sit under. On Windows that is ProgramData,
+/// outside every user's profile: CC reads config from each ancestor of its cwd,
+/// a home's `.claude` included.
 ///
 /// # Errors
 ///
 /// On Windows, if the shell has no ProgramData, as in an environment cleared
 /// of the host's.
-pub fn capture_workspace() -> std::io::Result<PathBuf> {
+pub fn capture_root() -> std::io::Result<PathBuf> {
     #[cfg(windows)]
     let root = crate::harness::host::known_folder(crate::harness::host::KnownFolder::ProgramData)?;
     #[cfg(not(windows))]
     let root = PathBuf::from("/tmp");
-    Ok(root.join(capture_workspace_tail()))
+    Ok(root)
 }
 
 /// The end every [`capture_workspace`] path has, whatever the host's root: the

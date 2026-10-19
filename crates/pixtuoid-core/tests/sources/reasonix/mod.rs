@@ -1,11 +1,16 @@
-//! reasonix's DELEGATING run, recorded by the hermetic tier: a foreground
-//! `task` brackets its child with `SubagentStart`/`SubagentStop`, and the
-//! child's hooks carry a session id of its own, so the run is two sprites and
-//! cannot sit under the conformance one-AgentId rule.
+//! reasonix's DELEGATING runs, recorded by the hermetic tier: a foreground
+//! `task` brackets its child with `SubagentStart`/`SubagentStop`, a skill
+//! tool (`explore`) brackets nothing, and either child's hooks carry a
+//! session id of its own, so each run is two sprites and cannot sit under the
+//! conformance one-AgentId rule.
+
+use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::Drive;
-use pixtuoid_core::source::{AgentEvent, ToolDetail};
+use pixtuoid_core::source::{AgentEvent, ToolDetail, Transport};
+use pixtuoid_core::state::SceneState;
+use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
 use serde_json::Value;
 
 fn lines() -> Vec<String> {
@@ -71,5 +76,57 @@ fn the_childs_session_registers_under_its_parent() {
     assert!(
         children.iter().all(|c| *c != parent),
         "the parent is its own child"
+    );
+}
+
+#[test]
+fn a_skill_calls_return_walks_its_child_out() {
+    let d = Drive::hooks().lines(super::captures::fixture_lines(
+        &super::captures::sources_root()
+            .join("reasonix/fixtures/explore-hermetic/hook-payloads.jsonl"),
+    ));
+    d.assert_clean("reasonix explore hooks");
+    let child = d
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(_),
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+        .expect("the recording's child session");
+    // Up to the call's return, its re-stated Task and End, before the turn's
+    // own end could end the child instead.
+    let restated = d
+        .events
+        .iter()
+        .rposition(|e| {
+            matches!(
+                e,
+                AgentEvent::ActivityStart {
+                    detail: Some(ToolDetail::Task),
+                    ..
+                }
+            )
+        })
+        .expect("the return re-states the Task");
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for ev in d.events.into_iter().take(restated + 2) {
+        r.apply(&mut scene, ev, t0, Transport::Hook);
+    }
+    r.tick(
+        &mut scene,
+        t0 + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+    );
+    assert!(
+        scene
+            .agents
+            .get(&child)
+            .is_none_or(|s| s.exiting_at.is_some()),
+        "the call returned and its child stayed"
     );
 }

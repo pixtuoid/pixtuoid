@@ -17,8 +17,6 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{Doc, Finding, Read, Release, Repo, Watch, When};
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -65,8 +63,7 @@ pub fn omp_agent_dir() -> PathBuf {
 }
 
 /// The subdirectory omp's loader scans for extension modules: upstream joins
-/// it onto each config dir, and `omp.extension_subdir` watches that join,
-/// since a rename leaves every local check green.
+/// it onto each config dir.
 pub(crate) const EXTENSIONS_SUBDIR: &str = "extensions";
 
 /// Where the bridge extension installs: [`omp_agent_dir`] +
@@ -507,25 +504,6 @@ pub(crate) fn omp_parent_key_from_path(path: &Path) -> Option<String> {
     (chain.len() > 1).then(|| chain[..chain.len() - 1].join("/"))
 }
 
-/// The session-entry `type` values this decoder maps — this module's
-/// watch below. `decode_omp_line` ends `_ => vec![]` with no breadcrumb, so this
-/// watch is the ONLY signal an entry type rename gives us.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_ENTRY_TYPES: &[&str] = &[
-    SESSION,
-    MESSAGE,
-    CUSTOM,
-    THINKING_LEVEL_CHANGE,
-    TITLE,
-    TITLE_CHANGE,
-];
-
-/// The title payload key read by both first-sight and live carriers. It happens
-/// to match the `title` entry type today; keep the authorities separate so one
-/// upstream rename cannot silently rewrite both surfaces.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_TITLE_FIELDS: &[&str] = &[TITLE_FIELD];
-
 /// The header entry (line 2; line 1 is a fixed-width `title` slot that omp
 /// rewrites IN PLACE — pwrite at offset 0, and the tail cursor sits past it, so it
 /// is never re-read; legacy files lack the slot). Fork, branch, version migration
@@ -551,16 +529,15 @@ const CUSTOM: &str = "custom";
 const THINKING_LEVEL_CHANGE: &str = "thinking_level_change";
 const TITLE: &str = "title";
 const TITLE_CHANGE: &str = "title_change";
+/// The title payload key read by both first-sight and live carriers. It happens
+/// to match the `title` entry type today; keep the authorities separate so one
+/// upstream rename cannot silently rewrite both surfaces.
 const TITLE_FIELD: &str = "title";
 
-#[cfg(any(test, feature = "upstream"))]
 /// The `customType` marking a clean teardown — the ONLY structural end omp writes.
-/// Watched because the guard below falls through to
-/// `_ => vec![]`: rename it upstream and no omp TRANSCRIPT ever ends cleanly,
-/// with no breadcrumb. Pinned by `session_exit_ends_root_not_as_child`.
-pub(crate) const DECODED_EXIT_MARKER: &str = SESSION_EXIT;
-
-/// Appended on every clean teardown, SIGINT/SIGTERM included; its reason/kind is
+/// The guard falls through to `_ => vec![]`: rename it upstream and no omp
+/// TRANSCRIPT ever ends cleanly, with no breadcrumb. Appended on every clean
+/// teardown, SIGINT/SIGTERM included; its reason/kind is
 /// ignored, because every kind ("normal"|"signal"|"fatal"|"process_exit") IS an
 /// end. Skipped when the session never produced an assistant message (the
 /// bridge's `session_shutdown` ends that one outright), and SIGKILL writes
@@ -588,14 +565,6 @@ const BLOCK_TOOL_CALL: &str = "toolCall";
 /// ActivityStart would flip the slot back to Active, drop the gate, and strand the
 /// Wait forever.
 const TOOL_ASK: &str = "ask";
-
-#[cfg(any(test, feature = "upstream"))]
-/// The message-level wire vocabulary this decoder keys on. Listed because each is
-/// an equality guard falling through to a silent path: a rename decodes the turn to
-/// nothing, or strands a Wait forever. Pinned by
-/// `the_exported_message_vocabulary_is_exactly_what_the_arms_match`.
-pub(crate) const DECODED_MESSAGE_VOCAB: &[&str] =
-    &[ROLE_ASSISTANT, ROLE_TOOL_RESULT, BLOCK_TOOL_CALL, TOOL_ASK];
 
 /// `prefix·<text>` at the label cap — the ONE place omp assembles a
 /// content-derived label, shared by the subagent-stem deriver and the session
@@ -827,199 +796,18 @@ const HOOK_SESSION_SHUTDOWN: &str = "session_shutdown";
 const HOOK_APPROVAL_REQUESTED: &str = "tool_approval_requested";
 const HOOK_APPROVAL_RESOLVED: &str = "tool_approval_resolved";
 
-/// The hook event types this decoder turns into events — this module's
-/// hook watch below, pinned to the dispatch arms by
+/// The hook event types this decoder turns into events, pinned to the dispatch arms by
 /// `every_exported_set_is_exactly_its_dispatch_arms` and to the TS
 /// extension's registration list by the install-side two-language pin.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_HOOK_EVENTS: &[&str] = &[
+#[cfg(any(test, feature = "harness"))]
+#[doc(hidden)]
+pub const DECODED_HOOK_EVENTS: &[&str] = &[
     HOOK_SESSION_START,
     HOOK_SESSION_SWITCH,
     HOOK_SESSION_BRANCH,
     HOOK_SESSION_SHUTDOWN,
     HOOK_APPROVAL_REQUESTED,
     HOOK_APPROVAL_RESOLVED,
-];
-
-/// The repository its drift watches read.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: Repo = Repo {
-    name: "can1357/oh-my-pi",
-    release: Release::GithubLatest,
-};
-
-#[cfg(any(test, feature = "upstream"))]
-const SESSION_ENTRIES: &str = "packages/coding-agent/src/session/session-entries.ts";
-
-/// A carrier of the `title` key the decoder reads. A third same-named field on
-/// `SessionHeader` would mask both carriers' renames if the whole document were
-/// read.
-#[cfg(any(test, feature = "upstream"))]
-const fn title_watch(id: &'static str, docs: &'static [Doc], carrier: &'static str) -> Watch {
-    Watch {
-        id,
-        ours: || DECODED_TITLE_FIELDS.to_vec(),
-        docs,
-        read: Read::TsFields { name: carrier },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "first sight or live updates lose the only human-readable root label and fall \
-             back to cwd",
-        ),
-        siblings: None,
-    }
-}
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "omp.entry_types",
-        ours: || DECODED_ENTRY_TYPES.to_vec(),
-        docs: &[REPO.doc(
-            SESSION_ENTRIES,
-            r"export type SessionEntry\b",
-            "the session-entry union",
-        )],
-        // Quoted: the entry types are common words that prose keeps using.
-        read: Read::Each {
-            pattern: r#""{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the transcript still flows but decodes to nothing (no sprite, no activity)",
-        ),
-        siblings: None,
-    },
-    title_watch(
-        "omp.title_fields.slot",
-        &[REPO.doc(
-            SESSION_ENTRIES,
-            r"export interface SessionTitleSlotEntry\b",
-            "`SessionTitleSlotEntry`",
-        )],
-        "SessionTitleSlotEntry",
-    ),
-    title_watch(
-        "omp.title_fields.change",
-        &[REPO.doc(
-            SESSION_ENTRIES,
-            r"export interface TitleChangeEntry\b",
-            "`TitleChangeEntry`",
-        )],
-        "TitleChangeEntry",
-    ),
-    Watch {
-        id: "omp.exit_marker",
-        ours: || vec![DECODED_EXIT_MARKER],
-        docs: &[REPO.doc(
-            "packages/coding-agent/src/session/exit-diagnostics.ts",
-            "SESSION_EXIT_CUSTOM_TYPE",
-            "`SESSION_EXIT_CUSTOM_TYPE`",
-        )],
-        read: Read::Each {
-            pattern: r#""{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "no omp session ever ends cleanly again: each lingers to a stale sweep with no \
-             breadcrumb",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "omp.message_vocab",
-        ours: || DECODED_MESSAGE_VOCAB.to_vec(),
-        // Split upstream: the roles and block type are the shared LLM types',
-        // `ask` its tool module's.
-        docs: &[
-            REPO.doc(
-                "packages/ai/src/types.ts",
-                r"(?m)^export type Message\s*=",
-                "the `Message` union",
-            ),
-            REPO.doc(
-                "packages/coding-agent/src/tools/ask.ts",
-                r"export class AskTool\b",
-                "the `AskTool` class",
-            ),
-        ],
-        read: Read::Each {
-            pattern: r#""{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the turn decodes to nothing, or an `ask` round strands its Waiting gate forever",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "omp.hook_events",
-        ours: || DECODED_HOOK_EVENTS.to_vec(),
-        docs: &[
-            REPO.doc(
-                "packages/coding-agent/src/extensibility/shared-events.ts",
-                r"SessionShutdownEvent\b",
-                "`SessionShutdownEvent`",
-            ),
-            REPO.doc(
-                "packages/coding-agent/src/extensibility/extensions/types.ts",
-                r"ToolApprovalRequestedEvent\b",
-                "`ToolApprovalRequestedEvent`",
-            ),
-        ],
-        // The declaration form: the bare quoted names also live in prose.
-        read: Read::Each {
-            pattern: r#"type: "{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the bridge subscribes to an event omp never fires: approval waits or lifecycle \
-             silently stop arriving",
-        ),
-        siblings: None,
-    },
-    // Review, not Breaking: a reformat of `getAgentDir` changes the text with
-    // no behavior change.
-    Watch {
-        id: "omp.agent_dir",
-        ours: || vec!["dirs.agentDir"],
-        docs: &[REPO.doc(
-            "packages/utils/src/dirs.ts",
-            r"export function getAgentDir\b",
-            "`getAgentDir`",
-        )],
-        read: Read::TsReturn {
-            function: "getAgentDir",
-        },
-        when: When::Vanishes,
-        finding: Finding::Review(
-            "if `getAgentDir()` gained a redirect (XDG or otherwise), `omp_agent_dir()`'s \
-             no-flatten rule is stale and the bridge installs where omp never scans; re-verify \
-             dirs.ts",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "omp.extension_subdir",
-        ours: || vec![EXTENSIONS_SUBDIR],
-        docs: &[REPO.doc(
-            "packages/coding-agent/src/discovery/builtin.ts",
-            r"(?m)^async function loadExtensionModules\b",
-            "`loadExtensionModules`",
-        )],
-        // Bound to the module discovery: `loadExtensions` joins the same
-        // subdir for another loader. Whitespace-tolerant, since a call past
-        // the formatter's width wraps.
-        read: Read::Each {
-            pattern: r#"discoverExtensionModulePaths\(\s*ctx,\s*path\.join\(\s*dir,\s*"{name}"\s*\)"#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the installer writes the bridge where omp's loader never looks: it installs \
-             cleanly and never loads",
-        ),
-        siblings: None,
-    },
 ];
 
 /// Decode one bridge-extension payload (already routed here by
@@ -1198,12 +986,10 @@ mod tests {
     const CHILD: &str = "/home/u/.omp/agent/sessions/-dev-proj/2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000001/Alpha.jsonl";
     const GRANDCHILD: &str = "/home/u/.omp/agent/sessions/-dev-proj/2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000001/Alpha/GoodWolf.jsonl";
 
-    /// Each entry type reaches a real arm. The arms dispatch on these same
-    /// consts, so a value cannot drift; what this proves is that none of them
-    /// has stopped being handled. Guarded arms get the payload each needs to
-    /// emit; a bare guarded type falls through like any unread type.
+    /// Each entry type reaches a real arm. Guarded arms get the payload each
+    /// needs to emit; a bare guarded type falls through like any unread type.
     #[test]
-    fn the_decoded_entry_type_set_is_exactly_what_the_arms_match() {
+    fn each_entry_type_reaches_an_arm() {
         let drive = |ty: &str| {
             let line = match ty {
                 CUSTOM => json!({"type": ty, "id": "x", "parentId": null,
@@ -1224,7 +1010,14 @@ mod tests {
             });
             evs > 0 || logs.contains(crate::source::drift::TARGET)
         };
-        for ty in DECODED_ENTRY_TYPES {
+        for ty in [
+            SESSION,
+            MESSAGE,
+            CUSTOM,
+            THINKING_LEVEL_CHANGE,
+            TITLE,
+            TITLE_CHANGE,
+        ] {
             assert!(drive(ty), "{ty} must reach a real arm");
         }
         assert!(!drive("checkpoint"), "an unread entry type reaches neither");
@@ -1429,7 +1222,7 @@ mod tests {
     }
 
     #[test]
-    fn the_exported_title_field_set_is_exactly_what_both_readers_use() {
+    fn both_title_readers_use_the_title_field() {
         fn title_entry(kind: &str, field: &str) -> Value {
             let mut obj = serde_json::Map::new();
             obj.insert("type".to_string(), Value::String(kind.to_string()));
@@ -1440,8 +1233,7 @@ mod tests {
             Value::Object(obj)
         }
 
-        assert_eq!(DECODED_TITLE_FIELDS.len(), 1);
-        let field = DECODED_TITLE_FIELDS[0];
+        let field = TITLE_FIELD;
         assert_eq!(
             omp_head_title(&title_entry(TITLE, field)).as_deref(),
             Some("om·Name this session")
@@ -1509,12 +1301,12 @@ mod tests {
         }
     }
 
-    /// Every exported message-level name reaches a real arm. Each is an equality
-    /// guard whose miss is SILENT — a renamed role decodes the turn to nothing, a
+    /// Every message-level name reaches a real arm. Each is an equality guard
+    /// whose miss is SILENT — a renamed role decodes the turn to nothing, a
     /// renamed block type finds no tool calls, a renamed `ask` strands the Waiting
-    /// gate — so the export is the only thing the drift watch can compare upstream.
+    /// gate.
     #[test]
-    fn the_exported_message_vocabulary_is_exactly_what_the_arms_match() {
+    fn each_message_level_name_reaches_an_arm() {
         let turn = |role: &str, block: &str, tool: &str| {
             decode_omp_line(
                 ROOT,
@@ -1526,7 +1318,7 @@ mod tests {
             .map_or(0, |e| e.len())
         };
         let good = turn(ROLE_ASSISTANT, BLOCK_TOOL_CALL, TOOL_ASK);
-        assert!(good > 0, "the exported vocabulary decodes a turn");
+        assert!(good > 0, "the message vocabulary decodes a turn");
         for (role, block, tool, what) in [
             ("pxd", BLOCK_TOOL_CALL, TOOL_ASK, "role"),
             (ROLE_ASSISTANT, "pxd", TOOL_ASK, "block type"),
@@ -1536,10 +1328,6 @@ mod tests {
                 "a renamed {what} must decode to less, not the same",
             );
         }
-        assert!(
-            DECODED_MESSAGE_VOCAB.contains(&ROLE_TOOL_RESULT),
-            "the toolResult role is exported",
-        );
 
         // The ask arm's OWN probe: an ask-named call must gate Waiting, and a
         // renamed ask must not — start-only, never the gate.
@@ -1563,10 +1351,6 @@ mod tests {
 
     #[test]
     fn session_exit_ends_root_not_as_child() {
-        assert_eq!(
-            DECODED_EXIT_MARKER, "session_exit",
-            "the exported marker IS the arm's"
-        );
         let line = r#"{"type":"custom","id":"a1b2c3d4","parentId":"e5f6a7b8","timestamp":"2026-07-09T08:10:00.000Z","customType":"session_exit","data":{"reason":"exit command","kind":"normal","recordedAt":"2026-07-09T08:10:00.000Z"}}"#;
         match &decode(line)[..] {
             [AgentEvent::SessionEnd { agent_id, as_child }] => {

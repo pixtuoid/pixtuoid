@@ -356,8 +356,6 @@ hack:
     cargo hack --feature-powerset --no-dev-deps clippy --workspace -- -D warnings
     cargo clippy -p pixtuoid-scene --no-default-features --all-targets -- -D warnings
     just test -p pixtuoid-scene --no-default-features
-    # The powerset builds no example or test, and the drift watch's compile only under `upstream`.
-    cargo clippy -p pixtuoid --no-default-features --features upstream --lib --tests --example drift_watch -- -D warnings
 
 # Same toolchain gotcha as `api-surface` and `gen-wasm`, and it bites HARDER
 # here because the compiler's own advice is wrong: a Homebrew cargo ahead of the
@@ -554,7 +552,7 @@ _doc-targets:
         grep -qx "$target" <<<"$installed" || rustup target add "$target"
     done
 
-[doc('Coverage + JUnit XML — ci-tests.yml runs it on every tier with its matrix `features` as args, the full one uploading it (needs llvm-cov + nextest)')]
+[doc('Coverage + JUnit XML — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
 [group('rust')]
 coverage *args:
     TZ={{ TEST_TZ }} cargo llvm-cov nextest --workspace --codecov --output-path codecov.json --profile ci "$@"
@@ -1094,7 +1092,7 @@ preflight mode="":
     mode="$1"
     case "$mode" in
     "") just lint && just clippy ;;
-    full) just lint && just clippy && just hack && just test --features pixtuoid/upstream ;;
+    full) just lint && just clippy && just hack && just test ;;
     *) echo "usage: just preflight [full]" >&2; exit 2 ;;
     esac
 
@@ -1192,12 +1190,6 @@ compare-selftest:
     # any python3 with Pillow answers the question this recipe asks.
     if [ -x .venv/bin/python3 ]; then py=.venv/bin/python3; else py=python3; fi
     "$py" scripts/compare-screenshots.py --selftest
-
-# Default features off: the watch plays no audio, so the runner needs no ALSA.
-[doc('Check every name the sources read and the installers register against upstream (network)')]
-[group('meta')]
-drift-watch:
-    cargo run -q -p pixtuoid --no-default-features --features upstream --example drift_watch
 
 [doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]

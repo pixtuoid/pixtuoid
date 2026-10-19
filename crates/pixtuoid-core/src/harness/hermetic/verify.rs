@@ -14,7 +14,7 @@ use serde_json::Value;
 
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
-    Surface, profile, tui,
+    Surface, literals, profile, tui,
 };
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
@@ -30,8 +30,8 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
-    /// An owed gap closed (`not_yet`, `not_yet_fields`, `result_unseen`): good
-    /// news, the profile shrinks.
+    /// An owed gap closed (`not_yet`, `not_yet_fields`, `not_yet_literals`,
+    /// `result_unseen`): good news, the profile shrinks.
     Stale,
     /// The CLI could not run (install, network, a login wall): not judged.
     Blocked,
@@ -188,25 +188,41 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
 }
 
 /// Judge `p`'s runs together, `dirs` being all of them, for what no one
-/// scenario owns: a `not_yet` hook any run fired is Stale, and the field census
+/// scenario owns: a `not_yet` hook any run fired is Stale; the field census
 /// over `p`'s committed captures, where a kind or a field upstream renamed or
-/// dropped fails though the decoder still parses the line.
+/// dropped fails though the decoder still parses the line; and the literal
+/// census (`literal_census`) over the fixtures of the scenarios that ran,
+/// where a value upstream renamed fails though every path still arrives.
 ///
 /// # Errors
 ///
-/// If a run's or a committed capture's file cannot be read.
+/// If a run's or a committed capture's file cannot be read, or the decoders
+/// cannot be parsed.
 pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> {
     let mut fired = BTreeSet::new();
     let mut carried = Fields::default();
+    // What the runs would leave once stripped as a fixture is: the at-rest
+    // census judges fixtures, so only this makes an owed literal Stale.
+    let mut kept = Fields::default();
+    let mut ran = Vec::new();
     for dir in dirs {
+        let manifest: Manifest =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
+        ran.extend(p.scenarios.iter().filter(|s| s.name == manifest.scenario));
         for file in jsonl_files_under(dir) {
-            for line in json_lines(&file)? {
+            let mut lines = json_lines(&file)?;
+            for line in &lines {
                 if is_hook_envelope(&file)
-                    && let Some(event) = (p.event_name)(&line)
+                    && let Some(event) = (p.event_name)(line)
                 {
                     fired.insert(event.into_owned());
                 }
-                carried.add(p, &file, &line, true);
+                carried.add(p, &file, line, true);
+            }
+            if crate::harness::reads::strip_lines(p.source, &file, &mut lines) {
+                for line in &lines {
+                    kept.add(p, &file, line, false);
+                }
             }
         }
     }
@@ -225,7 +241,72 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
             ));
         }
     }
+    findings.extend(literal_census(
+        p,
+        &literals::population()?,
+        &scenario_reads(p, ran.into_iter())?,
+        &carried,
+        &kept,
+    ));
     Ok(Verdict::new(findings))
+}
+
+/// The literal census over runs: each value a decoder's literal matches in
+/// the `committed` fixtures must arrive in some run at the same kind and
+/// pointer, and each key it names there in some run at all; a
+/// `not_yet_literals` entry the runs would keep once stripped (`kept`) is Stale.
+fn literal_census(
+    p: &Profile,
+    population: &BTreeSet<literals::Literal>,
+    committed: &Fields,
+    carried: &Fields,
+    kept: &Fields,
+) -> Vec<(Label, String)> {
+    let mine: Vec<&literals::Literal> = population.iter().filter(|l| l.is_of(p.source)).collect();
+    let mut findings = Vec::new();
+    for (kind, values) in &committed.values {
+        let seen = carried.values.get(kind);
+        for (at, value) in values {
+            for l in mine.iter().filter(|l| l.matches(value)) {
+                let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
+                if !arrived {
+                    findings.push((
+                        Label::Fail,
+                        format!(
+                            "{kind} {at}: `{}` ({}): a decoder reads it in a scenario fixture, \
+                             and no run of {} carried it there",
+                            l.text, l.module, p.source
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    for l in mine.iter().filter(|l| l.how == literals::Match::Exact) {
+        if committed.keys.contains(&l.text) && !carried.keys.contains(&l.text) {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "`{}` ({}): a decoder reads this key in a scenario fixture, and no run of {} \
+                     carried it",
+                    l.text, l.module, p.source
+                ),
+            ));
+        }
+    }
+    let held = kept.keys_and_values();
+    for owed in p.not_yet_literals {
+        if mine
+            .iter()
+            .any(|l| l.text == *owed && held.iter().any(|s| l.matches(s)))
+        {
+            findings.push((
+                Label::Stale,
+                format!("`{owed}` was carried: it leaves the profile's not_yet_literals"),
+            ));
+        }
+    }
+    findings
 }
 
 /// The field census proper: each kind a committed capture has must be produced
@@ -299,7 +380,7 @@ fn census(
     findings
 }
 
-/// The non-blank leaves a set of captures holds, for the census.
+/// What a set of captures holds, for the field and literal censuses.
 #[derive(Debug, Default)]
 pub(crate) struct Fields {
     /// Every leaf of each kind of line.
@@ -307,14 +388,22 @@ pub(crate) struct Fields {
     /// The leaves of each transcript line taken whole: every one of a run's,
     /// or a committed capture's untyped ones.
     lines: BTreeSet<BTreeSet<String>>,
+    /// Every string leaf of each kind of line, as `(pointer, value)`; a string
+    /// that holds JSON (codex's `arguments`) is read on, under its pointer.
+    values: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Every key any line spells, blank or not, and each `.`-joined chain of
+    /// nested ones (`location.directory`): a key the strip blanked still
+    /// arrived.
+    keys: BTreeSet<String>,
 }
 
 impl Fields {
     /// Add `line` of `file`; one with no value, as the strip leaves a line no
-    /// decoder reads, adds nothing. A committed (`run == false`) transcript
+    /// decoder reads, adds only its keys. A committed (`run == false`) transcript
     /// line the strip left untyped goes to `lines` alone, since its blank
     /// `type` is no kind a run's line could have.
     fn add(&mut self, p: &Profile, file: &Path, line: &Value, run: bool) {
+        key_chains(line, &mut Vec::new(), &mut self.keys);
         let stamped = is_hook_envelope(file);
         let leaves: BTreeSet<String> = leaves(line, stamped).into_iter().collect();
         if leaves.is_empty() {
@@ -326,8 +415,17 @@ impl Fields {
             self.lines.insert(leaves.clone());
         }
         if run || !untyped {
+            let values = self.values.entry(kind.clone()).or_default();
+            string_leaves(line, "", values);
             self.by_kind.entry(kind).or_default().extend(leaves);
         }
+    }
+
+    /// Every key it holds, and every string value.
+    pub(crate) fn keys_and_values(&self) -> BTreeSet<String> {
+        let mut out = self.keys.clone();
+        out.extend(self.values.values().flatten().map(|(_, v)| v.clone()));
+        out
     }
 
     /// Whether a line of `kind` carried `path`.
@@ -405,6 +503,85 @@ fn leaves(v: &Value, stamped: bool) -> Vec<String> {
     let mut out = Vec::new();
     walk(v, "", stamped, &mut out);
     out
+}
+
+/// Each key of `v`, and each `.`-joined chain of nested keys ending in it,
+/// `path` the keys above.
+fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                path.push(k.clone());
+                for i in 0..path.len() {
+                    out.insert(path[i..].join("."));
+                }
+                key_chains(x, path, out);
+                path.pop();
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| key_chains(x, path, out)),
+        Value::String(s) => {
+            if let Some(inner) = embedded_json(s) {
+                key_chains(&inner, path, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
+/// string that holds JSON read on under its own pointer. A shim stamp counts:
+/// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
+/// does not send it (antigravity).
+fn string_leaves(v: &Value, at: &str, out: &mut BTreeSet<(String, String)>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                string_leaves(x, &child_pointer(at, k), out);
+            }
+        }
+        Value::Array(a) => {
+            for x in a {
+                string_leaves(x, &format!("{at}/*"), out);
+            }
+        }
+        Value::String(s) if !s.is_empty() => {
+            if let Some(inner) = embedded_json(s) {
+                string_leaves(&inner, at, out);
+            }
+            out.insert((at.to_owned(), s.clone()));
+        }
+        _ => {}
+    }
+}
+
+/// The JSON a string holds, which the censuses read on into: codex's
+/// `arguments` keys its call's fields.
+fn embedded_json(s: &str) -> Option<Value> {
+    s.starts_with(['{', '['])
+        .then(|| serde_json::from_str(s).ok())
+        .flatten()
+}
+
+/// The reads of `p`'s fixtures of `scenarios`, each a recording `--record`
+/// wrote.
+///
+/// # Errors
+///
+/// If a fixture file cannot be read.
+pub(crate) fn scenario_reads<'a>(
+    p: &Profile,
+    scenarios: impl Iterator<Item = &'a Scenario>,
+) -> std::io::Result<Fields> {
+    let mut reads = Fields::default();
+    for s in scenarios {
+        for file in jsonl_files_under(&crate::harness::sources_root().join(s.fixture)) {
+            for line in json_lines(&file)? {
+                reads.add(p, &file, &line, false);
+            }
+        }
+    }
+    Ok(reads)
 }
 
 /// A file's lines that parse; the Drive reports the ones that don't.
@@ -773,23 +950,52 @@ fn subagent(
             false
         }
     };
-    let ended = |child: AgentId, parent: AgentId| {
-        events.iter().any(|e| match e {
-            AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
-            // The reducer's b1 cascade walks a drained Task's subtree out.
-            AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: Some(t),
-            } if inference.dispatch_end_ends_child(true) => {
-                *agent_id == parent && tasks.contains(&(parent, t.as_str()))
-            }
-            // No run deletes a durable child, so its turn's end is the end a run sees.
-            AgentEvent::ActivityEnd {
+    // The reducer's untracked site (`apply_activity_end`): an id-less end while
+    // an id-less Task stands.
+    let mut standing = BTreeSet::new();
+    let mut untracked_ends = BTreeSet::new();
+    for e in events {
+        match e {
+            AgentEvent::ActivityStart {
                 agent_id,
                 tool_use_id: None,
-            } if durable => *agent_id == child,
-            _ => false,
-        })
+                detail: Some(d),
+            } if d.is_task() => {
+                standing.insert(*agent_id);
+            }
+            AgentEvent::ActivityStart { agent_id, .. } => {
+                standing.remove(agent_id);
+            }
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id,
+            } => {
+                if tool_use_id.is_none() && standing.remove(agent_id) {
+                    untracked_ends.insert(*agent_id);
+                }
+                standing.remove(agent_id);
+            }
+            _ => {}
+        }
+    }
+    let ended = |child: AgentId, parent: AgentId| {
+        (inference.dispatch_end_ends_child(false) && untracked_ends.contains(&parent))
+            || events.iter().any(|e| match e {
+                AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
+                // The reducer's b1 cascade walks a drained Task's subtree out.
+                AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: Some(t),
+                } if inference.dispatch_end_ends_child(true) => {
+                    *agent_id == parent && tasks.contains(&(parent, t.as_str()))
+                }
+                // No run deletes a durable child, so its turn's end is the end a run sees.
+                AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: None,
+                } if durable => *agent_id == child,
+                _ => false,
+            })
     };
     if children.is_empty() {
         findings.push((Label::Fail, "no session started as another's child".into()));
@@ -1451,6 +1657,87 @@ mod tests {
         );
     }
 
+    /// `events` judged with each child reaching Active and each parent
+    /// Delegating.
+    fn subagent_findings(
+        events: &[AgentEvent],
+        inference: ChildEndInference,
+    ) -> Vec<(Label, String)> {
+        let reaches: Vec<(AgentId, Reach)> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::SessionStart {
+                    agent_id,
+                    parent_id: Some(parent),
+                    ..
+                } => Some([(*agent_id, Reach::Active), (*parent, Reach::Delegating)]),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let mut findings = Vec::new();
+        subagent(events, &reaches, inference, &mut findings);
+        findings
+    }
+
+    fn child_unended(events: &[AgentEvent], inference: ChildEndInference) -> bool {
+        subagent_findings(events, inference)
+            .iter()
+            .any(|f| f.1.contains("never ended"))
+    }
+
+    #[test]
+    fn an_untracked_task_end_ends_the_child_only_where_any_task_end_does() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("reasonix", "p"),
+            AgentId::from_parts("reasonix", "p:subagent:sa_1"),
+        );
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "reasonix".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let started = |agent_id, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: None,
+            detail: Some(detail),
+        };
+        let end = |agent_id| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let read = || ToolDetail::Generic {
+            display: "read_file".into(),
+        };
+        // As a reasonix skill call decodes: no call id, and its return re-states
+        // the Task its end closes.
+        let run = vec![
+            session(parent, "p", None),
+            started(parent, ToolDetail::Task),
+            session(child, "p:subagent:sa_1", Some(parent)),
+            started(child, read()),
+            end(child),
+            started(parent, ToolDetail::Task),
+            end(parent),
+        ];
+        assert_eq!(
+            subagent_findings(&run, ChildEndInference::AnyTaskEnd),
+            vec![]
+        );
+        for inference in [ChildEndInference::None, ChildEndInference::TaskDrain] {
+            assert!(child_unended(&run, inference), "{inference:?}");
+        }
+        let mut own_tool = run.clone();
+        own_tool[5] = started(parent, read());
+        assert!(
+            child_unended(&own_tool, ChildEndInference::AnyTaskEnd),
+            "the parent's own tool ending is no dispatch's"
+        );
+    }
+
     #[test]
     fn only_a_durable_child_ends_with_its_own_turn() {
         use crate::source::ToolDetail;
@@ -1487,22 +1774,7 @@ mod tests {
             ),
             turn_end(child),
         ];
-        let judged = |events: &[AgentEvent], inference| {
-            let mut findings = Vec::new();
-            subagent(
-                events,
-                &[(child, Reach::Active), (parent, Reach::Delegating)],
-                inference,
-                &mut findings,
-            );
-            findings
-        };
-        let unended = |events: &[AgentEvent], inference| -> bool {
-            judged(events, inference)
-                .iter()
-                .any(|f| f.1.contains("never ended"))
-        };
-        assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        assert_eq!(subagent_findings(&run, ChildEndInference::Durable), vec![]);
         for (reaches, missing) in [
             (
                 [(parent, Reach::Active), (parent, Reach::Delegating)],
@@ -1526,7 +1798,7 @@ mod tests {
             .chain([turn_end(parent)])
             .collect();
         assert!(
-            unended(&parent_turn, ChildEndInference::Durable),
+            child_unended(&parent_turn, ChildEndInference::Durable),
             "only the child's own turn ends it"
         );
         for inference in [
@@ -1534,13 +1806,17 @@ mod tests {
             ChildEndInference::TaskDrain,
             ChildEndInference::AnyTaskEnd,
         ] {
-            assert!(unended(&run, inference), "{inference:?}");
+            assert!(child_unended(&run, inference), "{inference:?}");
             let mut ended = run.clone();
             ended.push(AgentEvent::SessionEnd {
                 agent_id: child,
                 as_child: true,
             });
-            assert_eq!(judged(&ended, inference), vec![], "{inference:?}");
+            assert_eq!(
+                subagent_findings(&ended, inference),
+                vec![],
+                "{inference:?}"
+            );
         }
     }
 
@@ -2133,6 +2409,116 @@ mod tests {
         );
     }
 
+    /// Rewrite every `.jsonl` under `dir` with `from` spelled `to`.
+    fn respell(dir: &Path, from: &str, to: &str) {
+        for f in jsonl_files_under(dir) {
+            let text = std::fs::read_to_string(&f).expect("read");
+            std::fs::write(&f, text.replace(from, to)).expect("write");
+        }
+    }
+
+    #[test]
+    fn a_run_of_its_own_fixture_owes_no_value() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            !v.findings()
+                .iter()
+                .any(|f| f.1.contains("in a scenario fixture")),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_value_upstream_renamed_fails_though_its_path_arrives() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        respell(d.path(), "\"task_complete\"", "\"turn_complete\"");
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            has(&v, Label::Fail, "`task_complete`"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// A literal a fixture holds must arrive though an owed field path names it:
+    /// codex owes fields under `tx:event_msg`, and its kind is still read.
+    #[test]
+    fn a_held_literal_an_owed_path_names_must_still_arrive() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        respell(d.path(), "\"event_msg\"", "\"event_message\"");
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            has(&v, Label::Fail, "`event_msg` (codex.rs)"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`
+    /// is held only blank, so no value census would see it renamed.
+    #[test]
+    fn a_key_upstream_renamed_fails_though_its_value_was_blank() {
+        let d = recorded("grok", Shape::Subagent, GK_DELEGATE_SCENE);
+        respell(d.path(), "\"subagent_type\"", "\"subagent_kind\"");
+        let v = verify_source(profile("grok").expect("profile"), &[d.path().to_path_buf()])
+            .expect("verify");
+        assert!(
+            has(&v, Label::Fail, "`subagent_type`"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// An owed literal is Stale only where the runs would keep it once stripped:
+    /// the census at rest judges stripped fixtures, so a run's raw bytes alone
+    /// would hold the profile at Stale with no way out.
+    #[test]
+    fn an_owed_literal_is_stale_only_where_the_strip_keeps_it() {
+        let census = |source: &str, owed: &'static &'static str, edit: &dyn Fn(&Path)| {
+            let p = Profile {
+                not_yet_literals: std::slice::from_ref(owed),
+                live: None,
+                daemon: None,
+                ..*profile(source).expect("profile")
+            };
+            let d = recorded(source, Shape::ToolRun, "");
+            edit(d.path());
+            let v = verify_source(&p, &[d.path().to_path_buf()]).expect("verify");
+            has(&v, Label::Stale, &format!("`{owed}`"))
+        };
+        // A codex turn end the strip keeps.
+        assert!(census("codex", &"web_search_end", &|d| {
+            respell(d, "\"task_complete\"", "\"web_search_end\"");
+        }));
+        // An agy step whose line decodes to nothing, which the strip blanks whole.
+        assert!(!census("antigravity", &"USER_INPUT", &|d| {
+            let t = jsonl_files_under(d)
+                .into_iter()
+                .find(|f| f.ends_with("transcript.jsonl"))
+                .expect("a transcript");
+            let text = std::fs::read_to_string(&t).expect("read");
+            std::fs::write(
+                &t,
+                format!("{{\"step_index\":9,\"type\":\"USER_INPUT\"}}\n{text}"),
+            )
+            .expect("write");
+        }));
+    }
+
     #[test]
     fn a_not_yet_field_a_run_carries_is_stale() {
         // A billed capture's usage carries the cache tokens aimock's never does.
@@ -2173,6 +2559,8 @@ mod tests {
                 .map(|(k, p)| ((*k).to_owned(), set(p)))
                 .collect(),
             lines: lines.iter().map(|l| set(l)).collect(),
+            values: BTreeMap::new(),
+            keys: BTreeSet::new(),
         }
     }
 

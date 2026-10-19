@@ -447,10 +447,6 @@ pub mod reasonix;
 // accept descriptor/caps field changes without a breaking-version bump.
 #[doc(hidden)]
 pub mod registry;
-// `doc(hidden)` as `registry` is: read only by pixtuoid's `drift_watch`.
-#[cfg(any(test, feature = "upstream"))]
-#[doc(hidden)]
-pub mod upstream;
 
 #[cfg(all(test, unix, feature = "native"))]
 mod focus_pid_tests {

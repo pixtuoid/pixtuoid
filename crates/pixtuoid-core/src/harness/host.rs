@@ -1,8 +1,10 @@
 //! What the capture rig asks of the host: a known folder as the shell resolves
 //! it, a directory no other local user can write into, whether this process
-//! owns a path, and whether a registry key exists.
+//! owns a path, a lock on a file it owns, a removal that waits out a process
+//! holding the tree, and whether a registry key exists.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use crate::win32::nul_terminated;
@@ -137,6 +139,82 @@ pub fn owned_by_us(path: &Path) -> bool {
     }
 }
 
+/// `path`'s lock, held until the returned file drops. A fixed name in a shared
+/// directory is pre-plantable, so a link there is never followed, nothing is
+/// truncated, and a file another user owns is refused. On Unix a new one is
+/// ours alone, since whoever can open a file can lock it and stall every
+/// capture; Windows gives it the directory's inherited ACL.
+///
+/// # Errors
+///
+/// The open's or the lock's own failure, or `PermissionDenied` for a file
+/// that is not ours.
+pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NOFOLLOW).mode(0o600);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        open.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let lock = open.open(path)?;
+    if !owned_by_us(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("{} is not ours", path.display()),
+        ));
+    }
+    lock.lock()?;
+    Ok(lock)
+}
+
+/// How long a removal waits for another process to let go of its tree.
+pub const RELEASE_PATIENCE: Duration = Duration::from_secs(60);
+/// How often it asks meanwhile.
+const RELEASE_POLL: Duration = Duration::from_millis(250);
+
+/// The error std's Windows `remove_dir_all` gives up on after a few yields
+/// (`library/std/src/sys/fs/windows/remove_dir_all.rs:152-170`, `:188-191`
+/// at 1.98.1), while a previous run's process can hold the workspace for
+/// seconds (codex/subagent in actions run 39128433306).
+#[cfg(windows)]
+const SHARING_VIOLATION: i32 = windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32;
+
+/// `remove`, retried while another process holds what it removes, for up
+/// to `patience`; a tree already gone counts as removed.
+///
+/// # Errors
+///
+/// `remove`'s last failure.
+pub fn remove_once_released(
+    patience: Duration,
+    mut remove: impl FnMut() -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let deadline = Instant::now() + patience;
+    loop {
+        match remove() {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) if held(&e) && Instant::now() < deadline => std::thread::sleep(RELEASE_POLL),
+            done => return done,
+        }
+    }
+}
+
+#[cfg(windows)]
+fn held(e: &std::io::Error) -> bool {
+    e.raw_os_error() == Some(SHARING_VIOLATION)
+}
+
+#[cfg(not(windows))]
+fn held(_: &std::io::Error) -> bool {
+    false
+}
+
 /// The entry's owner against the SID this token gives each object it creates,
 /// which may be one of its groups rather than its user (learn.microsoft.com,
 /// TOKEN_OWNER).
@@ -258,6 +336,110 @@ pub fn registry_key_exists(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lock_waits_for_its_holder_and_truncates_nothing() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = d.path().join("the.lock");
+        std::fs::write(&path, "kept").expect("write");
+        let held = hold_lock(&path).expect("the lock");
+        let other = std::fs::File::open(&path).expect("the lock file");
+        assert!(other.try_lock().is_err(), "a second holder waits");
+        drop(held);
+        // Read before `other` locks: Windows refuses a read past any handle's lock.
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), "kept");
+        assert!(other.try_lock().is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_lock_is_ours_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = d.path().join("the.lock");
+        drop(hold_lock(&path).expect("the lock"));
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    /// `/dev/null` is no link and anyone may open it, so only the owner check
+    /// refuses it.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_another_user_owns_is_refused() {
+        if rustix::process::getuid().is_root() {
+            return;
+        }
+        let refused = hold_lock(Path::new("/dev/null")).expect_err("root's");
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_link_is_never_followed() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let victim = d.path().join("victim");
+        std::fs::write(&victim, "kept").expect("write");
+        let path = d.path().join("the.lock");
+        std::os::unix::fs::symlink(&victim, &path).expect("symlink");
+        assert!(hold_lock(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).expect("read"), "kept");
+    }
+
+    /// Busy the way a held tree is on this platform.
+    fn busy() -> std::io::Error {
+        #[cfg(windows)]
+        return std::io::Error::from_raw_os_error(SHARING_VIOLATION);
+        #[cfg(not(windows))]
+        std::io::Error::from(std::io::ErrorKind::ResourceBusy)
+    }
+
+    #[test]
+    fn a_held_tree_is_retried_only_on_windows() {
+        let mut calls = 0;
+        let removed = remove_once_released(Duration::from_secs(5), || {
+            calls += 1;
+            if calls < 3 { Err(busy()) } else { Ok(()) }
+        });
+        if cfg!(windows) {
+            assert!(removed.is_ok() && calls == 3, "{removed:?} after {calls}");
+        } else {
+            assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+        }
+    }
+
+    #[test]
+    fn a_tree_held_past_the_patience_fails() {
+        let mut calls = 0;
+        let removed = remove_once_released(Duration::ZERO, || {
+            calls += 1;
+            Err(busy())
+        });
+        assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_tree_refused_for_another_reason_fails_at_once() {
+        let mut calls = 0;
+        let removed = remove_once_released(Duration::from_secs(5), || {
+            calls += 1;
+            Err(std::io::Error::from_raw_os_error(
+                windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
+            ))
+        });
+        assert!(removed.is_err() && calls == 1, "{removed:?} after {calls}");
+    }
+
+    #[test]
+    fn an_absent_tree_counts_as_removed() {
+        let mut calls = 0;
+        let removed = remove_once_released(Duration::ZERO, || {
+            calls += 1;
+            Err(std::io::ErrorKind::NotFound.into())
+        });
+        assert!(removed.is_ok() && calls == 1, "{removed:?} after {calls}");
+    }
 
     #[test]
     fn a_private_dir_is_made_once_and_never_reused() {
