@@ -7,10 +7,12 @@
   // blanket knip loosening) so a genuinely dead interface elsewhere still trips.
   "ignoreExportsUsedInFile": { "interface": true },
   "ignore": [
-    // The #705 audio-prewarm module worker: loaded at runtime via
-    // `new Worker(asset('audio-worker.js'))` from OfficeBackdrop.astro's
-    // is:inline script — no static import for knip to trace.
+    // The #705 audio module worker and the music's worker and worklet: loaded
+    // at runtime via `new Worker(…)` and `audioWorklet.addModule(…)` from
+    // office-driver.js and OfficeBackdrop.astro — no static import to trace.
     "public/audio-worker.js",
+    "public/music-worker.js",
+    "public/music-worklet.js",
     // The #721 shared wasm-Office driver: dynamic-`import()`ed at runtime from
     // both live-office consumers' is:inline scripts — no static import to trace.
     "public/office-driver.js",

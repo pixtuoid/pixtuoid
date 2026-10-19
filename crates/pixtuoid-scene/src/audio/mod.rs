@@ -1,5 +1,6 @@
-//! Backend-agnostic ambient-audio MODEL: the scene emits semantic stem levels +
-//! one-shot events, and each painter's audio system renders them its own way.
+//! Backend-agnostic ambient-audio MODEL: the scene emits semantic stem levels,
+//! one-shot events and what lofi's music is asked, and each painter's audio
+//! system renders them its own way.
 //! NO audio dependencies live in this crate — the crate boundary is the
 //! compiler tooth, exactly like the terminal/window ban.
 
@@ -17,7 +18,9 @@ pub mod mixer;
 // The shared per-tick engine surface — both audio painters build on these, so
 // they can't drift.
 pub use bank::OneShotPool;
-pub use engine::{AudioEngine, MAX_DT_S, PlayCmd, TickCommands};
+pub use engine::{AudioEngine, MAX_DT_S, MusicCmd, PlayCmd, TickCommands};
+// The music, so a painter never names lofi.
+pub use pixtuoid_lofi::{Controls, Frame, Performance};
 
 use crate::tally::StateCounts;
 
@@ -51,16 +54,17 @@ pub const LIMITER_ATTACK: std::time::Duration = std::time::Duration::from_millis
 /// ducks the next.
 pub const LIMITER_RELEASE: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// Active-agent count at which the office reads BUSY (dense typing).
+/// Active-agent count at which the office reads BUSY (full band, dense typing).
 /// 1..BUSY_ACTIVE_MIN is the moderate anchor tier; 0 is empty.
 const BUSY_ACTIVE_MIN: usize = 3;
 
-/// The rain stem's gain at full precipitation — kept low enough that the
-/// broadband rain doesn't mask typing and the one-shots. The drop one-shots derive from
+/// The rain stem's gain at full precipitation — tuned well under the music,
+/// or the broadband rain masks the mix. The drop one-shots derive from
 /// this via `DROP_GAIN × wanted.rain`.
 const RAIN_GAIN: f32 = 0.30;
 
-/// How busy the office is: what picks the typing level.
+/// How busy the office is: what picks the typing level and the music's
+/// intensity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tier {
     Empty,
@@ -78,9 +82,19 @@ impl Tier {
             Tier::Busy => 0.80,
         }
     }
+
+    /// lofi's intensity at this tier: 0 is its empty room, 1 its busy one,
+    /// and its default the Moderate anchor.
+    fn intensity(self) -> f32 {
+        match self {
+            Tier::Empty => 0.0,
+            Tier::Moderate => Controls::default().intensity,
+            Tier::Busy => 1.0,
+        }
+    }
 }
 
-/// Target mix levels (0..=1) for every stem, derived once per frame. `typing`
+/// Target mix levels (0..=1) for the foley's stems, derived once per frame. `typing`
 /// is a PROCEDURAL stem: the consumer owns burst scheduling; the scene only says
 /// how much typing the office holds.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -97,11 +111,13 @@ pub enum OneShot {
     VendingDrop,
 }
 
-/// One frame of audio intent: target stem levels + the events that fired.
+/// One frame of audio intent: target stem levels, the events that fired, and
+/// what the music is asked.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudioFrame {
     pub stems: StemLevels,
     pub events: Vec<OneShot>,
+    pub music: Controls,
 }
 
 /// Cross-frame cue state: diffs identity/occupancy sets frame-to-frame and
@@ -185,6 +201,29 @@ pub fn stem_levels(counts: &StateCounts, precipitation: f32) -> StemLevels {
         rain: RAIN_GAIN * precipitation.clamp(0.0, 1.0),
         typing: t.typing_level(),
     }
+}
+
+/// How far ahead of the listener each painter renders the music: as long as
+/// its producer may go unscheduled before the music drops out. Nothing waits
+/// on it, since the gain sits after it and the controls latch at a bar.
+pub const MUSIC_AHEAD: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// What the music is asked under `counts`, the sun's `nightfall` (0 by day …
+/// 1 by night) and `rain` (0 dry … 1 storm). The sun's alone: a
+/// weather-dimmed light would flip a storm's songs to the night family.
+pub fn music_controls(counts: &StateCounts, nightfall: f32, rain: f32) -> Controls {
+    Controls::default()
+        .with_daylight(1.0 - nightfall)
+        .with_intensity(tier(counts).intensity())
+        .with_rain(rain)
+}
+
+/// The seed a music stream starting at `now` plays: whole seconds since the
+/// UNIX epoch, so each launch plays its own run of songs. Pre-epoch clocks
+/// read as 0.
+pub fn music_seed(now: std::time::SystemTime) -> u64 {
+    now.duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 #[cfg(test)]
@@ -307,6 +346,41 @@ mod tests {
             exiting: 1,
             total: 9,
         };
-        assert_eq!(stem_levels(&c, 0.0).typing, 0.0);
+        assert_eq!(music_controls(&c, 0.0, 0.0).intensity, 0.0);
+    }
+
+    #[test]
+    fn each_tier_asks_lofi_for_its_intensity_anchor() {
+        let at = |active| music_controls(&counts(active), 0.0, 0.0).intensity;
+        assert_eq!(at(0), 0.0, "an empty office is lofi's empty room");
+        assert_eq!(
+            at(1),
+            Controls::default().intensity,
+            "Moderate is lofi's anchor"
+        );
+        assert_eq!(at(BUSY_ACTIVE_MIN - 1), Controls::default().intensity);
+        assert_eq!(
+            at(BUSY_ACTIVE_MIN),
+            1.0,
+            "a busy office is lofi's busy room"
+        );
+    }
+
+    #[test]
+    fn music_controls_pass_the_sky_through() {
+        for v in [0.0, 0.25, 1.0] {
+            let c = music_controls(&counts(1), v, v);
+            assert_eq!((c.daylight, c.rain), (1.0 - v, v));
+        }
+    }
+
+    #[test]
+    fn music_seed_is_whole_seconds_since_the_epoch() {
+        use std::time::{Duration, UNIX_EPOCH};
+        assert_eq!(
+            music_seed(UNIX_EPOCH + Duration::from_millis(1_234_999)),
+            1_234
+        );
+        assert_eq!(music_seed(UNIX_EPOCH - Duration::from_secs(10)), 0);
     }
 }

@@ -1,7 +1,9 @@
 //! Ambient office audio — the only owner of any audio-device dependency, over the pure
-//! synthesis in `pixtuoid_scene::audio`; every buffer is ALL-PROCEDURAL, synthesized on
+//! synthesis in `pixtuoid_scene::audio`; every sound is ALL-PROCEDURAL, synthesized on
 //! the playback thread, which sits behind a bounded `try_send` channel.
 
+#[cfg(feature = "audio")]
+mod music;
 #[cfg(feature = "audio")]
 pub(crate) mod sink;
 
@@ -663,16 +665,21 @@ impl AudioHandle {
             let (tx, rx) = mpsc::sync_channel(64);
             let muted_for_loop = std::sync::Arc::clone(&self.muted);
             let vol_for_loop = std::sync::Arc::clone(&self.volume);
+            let seed = pixtuoid_scene::audio::music_seed(std::time::SystemTime::now());
             match std::thread::Builder::new()
                 .name("pixtuoid-audio".into())
                 .spawn(move || {
-                    // Its synthesis runs at a launch: utility work, "work
-                    // that may take some time to
+                    // It feeds the music, which drops out once a render runs
+                    // `MUSIC_AHEAD` late, while agents load the machine. Our
+                    // inference from Apple's QoS table: user-initiated, "Work
+                    // that the user has initiated and requires immediate
+                    // results", not utility, "Work that may take some time to
                     // complete and doesn't require an immediate result"
                     // (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
                     // The device plays on its output callback's own thread.
-                    demote_to_utility();
-                    run_loop(rx, Box::new(device), muted_for_loop, vol_for_loop)
+                    #[cfg(target_os = "macos")]
+                    promote_to_user_initiated();
+                    run_loop(rx, Box::new(device), muted_for_loop, vol_for_loop, seed)
                 }) {
                 Ok(join) => {
                     // Replacing the sole sender CLOSES a prior thread's channel — retire that
@@ -795,68 +802,48 @@ pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {
     handle.respawn_in_place(volume);
 }
 
-/// Lower the calling thread to its platform's utility class, below a frame's
-/// threads, as Chromium maps its `kUtility` thread type
-/// (`base/threading/platform_thread_{apple.mm,linux.cc,win.cc}`). Best
-/// effort: a refusal leaves the thread as it was.
-#[cfg(feature = "audio")]
-pub(crate) fn demote_to_utility() {
-    #[cfg(target_os = "macos")]
+/// Raise the calling thread to user-initiated QoS, Chromium's `kDefault`
+/// (`base/threading/platform_thread_apple.mm`). A new thread reads back
+/// default QoS (measured on an M1 Max), which "falls between user-initiated
+/// and utility"
+/// (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
+/// Elsewhere `kDefault` is no raise: Windows' is `THREAD_PRIORITY_NORMAL`
+/// (`platform_thread_win.cc`), which "All threads are created using"
+/// (<https://learn.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities>),
+/// and Linux's is nice 0 (`platform_thread_linux.cc`), which an unprivileged
+/// thread lowers its nice to only under a suitable `RLIMIT_NICE`
+/// (setpriority(2)). Best effort: a refusal leaves the thread as it was.
+#[cfg(target_os = "macos")]
+pub fn promote_to_user_initiated() {
     // SAFETY: sets the calling thread's own QoS class; nothing is borrowed.
     unsafe {
-        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
-    }
-    // Linux's nice value is per thread, so the thread's own id lowers this
-    // thread alone (setpriority(2), "the nice value is a per-thread
-    // attribute"); where it isn't, no process has that id and the call fails.
-    #[cfg(target_os = "linux")]
-    // SAFETY: plain syscalls on this thread's id; nothing is borrowed.
-    unsafe {
-        let tid = libc::gettid();
-        if let Ok(tid) = libc::id_t::try_from(tid) {
-            libc::setpriority(libc::PRIO_PROCESS, tid, UTILITY_NICE);
-        }
-    }
-    #[cfg(windows)]
-    // SAFETY: the pseudo-handle names the calling thread and needs no close
-    // (SetThreadPriority, GetCurrentThread).
-    unsafe {
-        use windows_sys::Win32::System::Threading::{
-            GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
-        };
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
     }
 }
 
-/// Chromium's nice value for `kUtility` (`ThreadTypeToNiceValue`,
-/// `platform_thread_linux.cc`).
-#[cfg(all(feature = "audio", target_os = "linux"))]
-const UTILITY_NICE: libc::c_int = 2;
-
-// The platforms whose class it reads back; elsewhere it yields nothing.
-#[cfg(all(
-    test,
-    feature = "audio",
-    any(target_os = "macos", target_os = "linux", windows)
-))]
-mod utility_tests {
-    /// A demoted thread reads back its platform's utility class, and the
-    /// thread that spawned it keeps its own.
+#[cfg(all(test, target_os = "macos"))]
+mod thread_class_tests {
+    /// A promoted thread reads back user-initiated, from a class below it,
+    /// and the thread that spawned it keeps its own.
     #[test]
-    fn a_demoted_thread_reads_back_the_utility_class() {
+    fn a_promoted_thread_reads_back_the_user_initiated_class() {
         let before = class_of_this_thread();
-        assert_ne!(before, utility(), "premise: the test runs above utility");
         let after = std::thread::spawn(|| {
-            super::demote_to_utility();
+            // SAFETY: sets the calling thread's own QoS class.
+            let ok = unsafe {
+                libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0)
+            };
+            assert_eq!(ok, 0);
+            assert_ne!(class_of_this_thread(), user_initiated(), "premise: lowered");
+            super::promote_to_user_initiated();
             class_of_this_thread()
         })
         .join()
         .expect("the thread ran");
-        assert_eq!(after, utility(), "the demoted thread");
+        assert_eq!(after, user_initiated(), "the promoted thread");
         assert_eq!(class_of_this_thread(), before, "only that thread");
     }
 
-    #[cfg(target_os = "macos")]
     fn class_of_this_thread() -> i64 {
         let (mut class, mut relative) = (libc::qos_class_t::QOS_CLASS_UNSPECIFIED, 0);
         // SAFETY: reads the calling thread's QoS into two locals.
@@ -866,33 +853,9 @@ mod utility_tests {
         assert_eq!(ok, 0);
         class as i64
     }
-    #[cfg(target_os = "macos")]
-    fn utility() -> i64 {
-        libc::qos_class_t::QOS_CLASS_UTILITY as i64
-    }
 
-    #[cfg(target_os = "linux")]
-    fn class_of_this_thread() -> i64 {
-        // SAFETY: plain syscalls on this thread's id.
-        unsafe {
-            let tid = libc::id_t::try_from(libc::gettid()).expect("a thread id");
-            i64::from(libc::getpriority(libc::PRIO_PROCESS, tid))
-        }
-    }
-    #[cfg(target_os = "linux")]
-    fn utility() -> i64 {
-        i64::from(super::UTILITY_NICE)
-    }
-
-    #[cfg(windows)]
-    fn class_of_this_thread() -> i64 {
-        use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadPriority};
-        // SAFETY: the pseudo-handle names the calling thread.
-        i64::from(unsafe { GetThreadPriority(GetCurrentThread()) })
-    }
-    #[cfg(windows)]
-    fn utility() -> i64 {
-        i64::from(windows_sys::Win32::System::Threading::THREAD_PRIORITY_BELOW_NORMAL)
+    fn user_initiated() -> i64 {
+        libc::qos_class_t::QOS_CLASS_USER_INITIATED as i64
     }
 }
 
@@ -908,13 +871,14 @@ fn clamped_dt(prev: Instant, now: Instant) -> f32 {
 }
 
 /// The audio thread body — the DEVICE shell over the shared [`AudioEngine`],
-/// which owns all mixing/scheduling.
+/// which owns all mixing/scheduling. `seed` picks the run of songs.
 #[cfg(feature = "audio")]
 fn run_loop(
     rx: mpsc::Receiver<AudioFrame>,
     mut device: Box<dyn AudioSink>,
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     volume: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    seed: u64,
 ) {
     use std::sync::atomic::Ordering::Relaxed;
 
@@ -922,6 +886,8 @@ fn run_loop(
     let mut synthesis = Synthesis::new();
     let bank = synthesis.assets();
     device.start_loop(LoopStem::Rain, synthesis.rain());
+    let (mut music, reader) = music::stream(seed);
+    device.start_music(reader);
     tracing::debug!(
         ms = built_at.elapsed().as_millis(),
         "audio: one-shots + rain synthesized"
@@ -945,15 +911,29 @@ fn run_loop(
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
 
-        let cmds = engine.tick(dt, frame);
-
-        for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
-            device.set_loop_gain(stem, gain);
-        }
-        for play in cmds.plays {
-            device.play_once(bank.sample(play.pool, play.index), play.gain);
+        let heard = play(engine.tick(dt, frame), &mut *device, &mut music, &bank);
+        if heard > 0 {
+            tracing::debug!(frames = heard, "audio: the music underran");
         }
     }
+}
+
+/// Flush one tick's commands to `device` and the `music`; returns the music
+/// frames the listener heard as silence since the last tick.
+#[cfg(feature = "audio")]
+fn play(
+    cmds: pixtuoid_scene::audio::TickCommands,
+    device: &mut dyn AudioSink,
+    music: &mut music::MusicProducer,
+    bank: &pixtuoid_scene::audio::bank::AssetBank,
+) -> u64 {
+    for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
+        device.set_loop_gain(stem, gain);
+    }
+    for play in cmds.plays {
+        device.play_once(bank.sample(play.pool, play.index), play.gain);
+    }
+    music.tick(cmds.music)
 }
 
 #[cfg(all(test, feature = "audio"))]
@@ -963,7 +943,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn run_loop_registers_beds_plays_events_and_exits_on_disconnect() {
+    fn run_loop_starts_rain_and_music_plays_events_and_exits_on_disconnect() {
         let (tx, rx) = mpsc::sync_channel(8);
         // A `(Mutex, Condvar)` pair so the frame-1 barrier below BLOCKS on the sink's own
         // progress: an in-test deadline is the one flakiness knob nextest cannot reach.
@@ -987,6 +967,9 @@ mod tests {
             fn start_loop(&mut self, stem: LoopStem, s: Arc<Vec<f32>>) {
                 self.record(|r| r.start_loop(stem, s));
             }
+            fn start_music(&mut self, reader: music::MusicReader) {
+                self.record(|r| r.start_music(reader));
+            }
             fn set_loop_gain(&mut self, stem: LoopStem, g: f32) {
                 self.record(|r| r.set_loop_gain(stem, g));
             }
@@ -1004,13 +987,14 @@ mod tests {
         let muted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let muted_ctl = std::sync::Arc::clone(&muted);
         let vol = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(1.0f32.to_bits()));
-        let join = std::thread::spawn(move || run_loop(rx, Box::new(probe), muted, vol));
+        let join = std::thread::spawn(move || run_loop(rx, Box::new(probe), muted, vol, 7));
 
         // Rain stays 0 so no scheduler one-shot can race the count — only the
         // two frame events are audible.
         tx.send(AudioFrame {
             stems: StemLevels::default(),
             events: vec![OneShot::DoorChime, OneShot::PrinterWhir],
+            music: Default::default(),
         })
         .unwrap();
         // Wait out frame 1 (the spawn-time bank build delays it) so the mute lands BETWEEN
@@ -1026,6 +1010,7 @@ mod tests {
         tx.send(AudioFrame {
             stems: StemLevels::default(),
             events: vec![OneShot::DoorChime, OneShot::VendingDrop],
+            music: Default::default(),
         })
         .unwrap();
         drop(tx);
@@ -1039,12 +1024,15 @@ mod tests {
         );
 
         let rec = recorder.0.lock().unwrap();
-        for stem in LoopStem::ALL {
-            assert!(
-                rec.loops_started.contains(&stem),
-                "every loop registers at spawn — missing {stem:?}"
-            );
-        }
+        assert_eq!(
+            rec.loops_started,
+            [LoopStem::Rain],
+            "rain registers at spawn"
+        );
+        assert!(
+            rec.music.as_ref().is_some_and(|m| m.queued() > 0),
+            "the music starts at spawn and renders once a frame asks for it"
+        );
         assert_eq!(
             rec.one_shots, 2,
             "the unmuted frame's 2 events played; the post-mute frame's 2 did not"
@@ -1067,24 +1055,27 @@ mod tests {
     }
 }
 
-/// The LISTEN gate: renders each busy-ness tier through the REAL
-/// mixer/schedulers/synth and the device's [`sink::limited`] output into wav files for the
-/// owner's audition.
+/// The LISTEN gate: renders the office at each busy-ness tier, across dusk and
+/// in rain, through the REAL mixer/schedulers/synth, the music's ring and the
+/// device's [`sink::limited`] output into wav files for the owner's audition.
 /// `#[ignore]` — run explicitly:
 /// `just test -p pixtuoid --lib audio::listen_gate --run-ignored only --no-capture`
 #[cfg(all(test, feature = "audio"))]
 mod listen_gate {
     use super::*;
     use pixtuoid_scene::audio::bank::AssetBank;
-    use pixtuoid_scene::audio::{SAMPLE_RATE, StemLevels};
+    use pixtuoid_scene::audio::{SAMPLE_RATE, music_controls, stem_levels};
     use std::io::Write;
     use std::sync::Arc;
 
-    /// Sample-accurate mixdown of loops and one-shots into one master buffer.
+    /// Sample-accurate mixdown of loops, one-shots and the music into one
+    /// master buffer, as a mono device hears it: the music's left channel, per
+    /// `music::tests::lofi_renders_both_channels_alike`.
     struct OfflineSink {
         master: Vec<f32>,
         loops: Vec<(Arc<Vec<f32>>, f32)>, // (samples, current gain)
         loop_ids: Vec<LoopStem>,
+        music: Option<music::MusicReader>,
         write_pos_samples: usize,
     }
 
@@ -1094,6 +1085,7 @@ mod listen_gate {
                 master: vec![0.0; (secs * SAMPLE_RATE as f32) as usize],
                 loops: Vec::new(),
                 loop_ids: Vec::new(),
+                music: None,
                 write_pos_samples: 0,
             }
         }
@@ -1107,6 +1099,9 @@ mod listen_gate {
                 for (samples, gain) in &self.loops {
                     self.master[at] += samples[at % samples.len()] * gain;
                 }
+                if let Some(music) = &mut self.music {
+                    self.master[at] += music.next_frame()[0];
+                }
             }
             self.write_pos_samples += n;
         }
@@ -1116,6 +1111,9 @@ mod listen_gate {
         fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
             self.loops.push((samples, 0.0));
             self.loop_ids.push(stem);
+        }
+        fn start_music(&mut self, reader: music::MusicReader) {
+            self.music = Some(reader);
         }
         fn set_loop_gain(&mut self, stem: LoopStem, gain: f32) {
             if let Some(i) = self.loop_ids.iter().position(|s| *s == stem) {
@@ -1156,39 +1154,60 @@ mod listen_gate {
             .unwrap();
     }
 
-    fn render_tier(
-        bank: &AssetBank,
-        rain: &Arc<Vec<f32>>,
-        stems: StemLevels,
-        events_at: &[(f32, OneShot)],
+    /// One audition: an office of `active` agents under `rain`, its sky's
+    /// nightfall at each second, its one-shots, and its length.
+    struct Row<'a> {
+        name: &'a str,
+        active: usize,
+        rain: f32,
+        nightfall: fn(f32) -> f32,
+        events_at: &'a [(f32, OneShot)],
         secs: f32,
-    ) -> Vec<f32> {
-        let mut sink = OfflineSink::new(secs);
-        sink.start_loop(LoopStem::Rain, Arc::clone(rain));
+    }
+
+    /// The seed every row plays, so the rows differ only in their office.
+    const SEED: u64 = 0;
+
+    fn render(bank: &AssetBank, rain_bed: &Arc<Vec<f32>>, row: &Row) -> Vec<f32> {
+        let counts = pixtuoid_scene::tally::StateCounts {
+            active: row.active,
+            waiting: 0,
+            idle: 0,
+            exiting: 0,
+            total: row.active,
+        };
+        let mut sink = OfflineSink::new(row.secs);
+        sink.start_loop(LoopStem::Rain, Arc::clone(rain_bed));
+        let (mut music, reader) = music::stream(SEED);
+        sink.start_music(reader);
         // Drive the SAME shared `AudioEngine` the app runs, so the audition
         // mixes exactly what ships (incl. the production bus trim).
         let mut engine = AudioEngine::new(1.0);
         let step_s = 0.05f32;
         let step_n = (step_s * SAMPLE_RATE as f32) as usize;
-        let mut fired = vec![false; events_at.len()];
-        let mut now_s = 0.0f64;
-        while now_s < f64::from(secs) {
+        let mut fired = vec![false; row.events_at.len()];
+        let mut now_s = 0.0f32;
+        while now_s < row.secs {
             let mut events = Vec::new();
-            for (i, (at, ev)) in events_at.iter().enumerate() {
-                if !fired[i] && now_s >= f64::from(*at) {
+            for (i, (at, ev)) in row.events_at.iter().enumerate() {
+                if !fired[i] && now_s >= *at {
                     fired[i] = true;
                     events.push(*ev);
                 }
             }
-            let cmds = engine.tick(step_s, Some(AudioFrame { stems, events }));
-            for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
-                sink.set_loop_gain(stem, gain);
-            }
-            for play in cmds.plays {
-                sink.play_once(bank.sample(play.pool, play.index), play.gain);
-            }
+            let frame = AudioFrame {
+                stems: stem_levels(&counts, row.rain),
+                events,
+                music: music_controls(&counts, (row.nightfall)(now_s), row.rain),
+            };
+            play(
+                engine.tick(step_s, Some(frame)),
+                &mut sink,
+                &mut music,
+                bank,
+            );
             sink.advance(step_n);
-            now_s += f64::from(step_s);
+            now_s += step_s;
         }
         sink::limited(sink::mono(&sink.master)).collect()
     }
@@ -1200,19 +1219,7 @@ mod listen_gate {
         std::fs::create_dir_all(&out).unwrap();
         let mut synthesis = Synthesis::new();
         let bank = synthesis.assets();
-        let rain = synthesis.rain();
-        // Tier levels come from the PRODUCTION mapping, not hand-rolled
-        // literals — the wavs must audition what the app will mix.
-        let counts = |active: usize| pixtuoid_scene::tally::StateCounts {
-            active,
-            waiting: 0,
-            idle: 0,
-            exiting: 0,
-            total: active,
-        };
-        let moderate = pixtuoid_scene::audio::stem_levels(&counts(1), 0.0);
-        let busy = pixtuoid_scene::audio::stem_levels(&counts(3), 0.0);
-        let rainy = pixtuoid_scene::audio::stem_levels(&counts(3), 1.0);
+        let rain_bed = synthesis.rain();
         let volley = [
             (5.0, OneShot::DoorChime),
             (10.0, OneShot::PrinterWhir),
@@ -1231,18 +1238,35 @@ mod listen_gate {
                 .map(|e| (at, e))
             })
             .collect();
-        for (name, stems, events) in [
-            ("tier_2_moderate", moderate, &[][..]),
-            ("tier_3_busy_oneshot_volley", busy, &volley[..]),
-            ("tier_4_rainy_busy", rainy, &[][..]),
-            ("tier_5_rainy_busy_pileup", rainy, &pileup[..]),
+        let day: fn(f32) -> f32 = |_| 0.0;
+        let night: fn(f32) -> f32 = |_| 1.0;
+        // Through the first minute, so the next song is the night family's.
+        let dusk: fn(f32) -> f32 = |t| (t / 60.0).min(1.0);
+        let row = |name, active, rain, nightfall, events_at, secs| Row {
+            name,
+            active,
+            rain,
+            nightfall,
+            events_at,
+            secs,
+        };
+        for row in [
+            row("tier_1_empty", 0, 0.0, day, &[][..], 60.0),
+            row("tier_2_moderate", 1, 0.0, day, &[][..], 60.0),
+            row("tier_3_busy_oneshot_volley", 3, 0.0, day, &volley[..], 60.0),
+            row("tier_4_rainy_busy", 3, 1.0, day, &[][..], 60.0),
+            row("tier_5_rainy_busy_pileup", 3, 1.0, day, &pileup[..], 60.0),
+            row("dusk_moderate", 1, 0.0, dusk, &[][..], 240.0),
+            // The rain stem over the music the rain darkens, at night.
+            row("night_rain_moderate", 1, 1.0, night, &[][..], 120.0),
         ] {
-            let buf = render_tier(&bank, &rain, stems, events, 60.0);
+            let buf = render(&bank, &rain_bed, &row);
             assert!(
                 buf.iter().any(|&s| s.abs() > 0.01),
-                "{name}: every tier is audible"
+                "{}: every row is audible",
+                row.name
             );
-            write_wav(&out.join(format!("{name}.wav")), &buf);
+            write_wav(&out.join(format!("{}.wav", row.name)), &buf);
         }
         println!("LISTEN GATE wavs at: {}", out.display());
     }

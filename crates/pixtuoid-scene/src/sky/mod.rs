@@ -475,12 +475,6 @@ pub(crate) fn weather_names() -> Vec<&'static str> {
     Weather::ALL.iter().map(|w| w.name()).collect()
 }
 
-/// How hard it is raining at `now` under `policy` (0.0 dry … 1.0 storm; snow
-/// and fog are 0.0): the audio model's weather feed.
-pub(crate) fn rain_at(now: SystemTime, policy: WeatherPolicy) -> f32 {
-    Sky::at(crate::anim::Motion::Full.timing(now), policy).rain()
-}
-
 /// What a wall clock reads at `now`, local time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ClockReading {

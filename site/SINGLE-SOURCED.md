@@ -70,12 +70,12 @@ Notes no gate carries:
   purpose: a shadow the glyph paints is decoration, not the ground WCAG
   grades against (measured worst case 5.28:1) — don't theme it.
 - **♩ audio**: muted-by-default, gesture-gated (`AudioContext` only on first
-  click); synthesis prewarms OFF-thread in `public/audio-worker.js` at idle,
-  click-time chunked warmup is the fallback; buffers COPIED out of wasm
-  memory (views dangle on `memory.grow`); sound rides the same pause-shifted
-  `nowMs` as the render. **iOS silent-switch bypass is DELIBERATE (#664)**:
-  `navigator.audioSession.type = 'playback'` before the context, else the
-  Ring/Silent switch mutes a deliberate ♩ tap.
+  click); foley prewarms OFF-thread in `public/audio-worker.js` at idle (the
+  click-time chunked warmup its fallback), music streams from `public/music-worker.js`
+  into `public/music-worklet.js`, silent where either can't run; buffers COPIED out
+  of wasm memory (views dangle on `memory.grow`); sound rides the render's
+  pause-shifted `nowMs`. **iOS silent-switch bypass is DELIBERATE (#664)**:
+  `navigator.audioSession.type = 'playback'` before the context, else the Ring/Silent switch mutes a deliberate ♩ tap.
 - **The VIBING channel is a SECOND live `Office` (#468)**: each office keeps
   its own weather, and both consumers MUST share ONE `init()` via
   `public/office-driver.js` (`sharedWasm` / `officeFrameView`, pinned by

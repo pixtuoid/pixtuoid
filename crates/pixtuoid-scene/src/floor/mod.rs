@@ -448,7 +448,8 @@ impl AudioObserver {
         // You hear the floor you're LOOKING AT — but rain stays global, since
         // it's weather, not agent activity.
         let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
-        let precipitation = crate::sky::rain_at(now, floor.weather);
+        let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), floor.weather);
+        let rain = sky.rain();
         let floor_ids = scene
             .agents
             .iter()
@@ -456,8 +457,9 @@ impl AudioObserver {
             .map(|(id, _)| id);
         let events = self.cues.observe(floor_ids, occupied, waypoint_kind);
         AudioFrame {
-            stems: crate::audio::stem_levels(&counts, precipitation),
+            stems: crate::audio::stem_levels(&counts, rain),
             events,
+            music: crate::audio::music_controls(&counts, sky.nightfall(), rain),
         }
     }
 

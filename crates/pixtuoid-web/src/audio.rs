@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use pixtuoid_scene::audio::bank::{AssetBank, DROP_POOL, KEYSTROKE_POOL, Synthesis};
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::audio::{AudioEngine, AudioFrame, MAX_DT_S, OneShotPool, TickCommands};
+use pixtuoid_scene::audio::{
+    AudioEngine, AudioFrame, Controls, MAX_DT_S, OneShotPool, TickCommands,
+};
 
 #[derive(Debug)]
 pub(crate) struct WebAudioDriver {
@@ -189,12 +191,45 @@ pub(crate) fn commands_json(cmd: &TickCommands) -> String {
             fmt_f32(p.gain)
         ));
     }
-    out.push_str("]}");
+    out.push_str("],\"music\":");
+    match cmd.music {
+        Some(m) => {
+            let [daylight, intensity, rain] = controls_wire(m.controls);
+            out.push_str(&format!(
+                "{{\"controls\":[{},{},{}],\"gain\":{}}}",
+                fmt_f32(daylight),
+                fmt_f32(intensity),
+                fmt_f32(rain),
+                fmt_f32(m.gain)
+            ));
+        }
+        None => out.push_str("null"),
+    }
+    out.push('}');
     out
 }
 
-/// Non-finite is impossible here (gains are bounded ramps) but maps to 0
-/// defensively, so a bad frame degrades to silence rather than invalid JSON.
+/// The music's controls as the wire carries them to the worker, which hands
+/// them back to [`controls_from_wire`] unread.
+fn controls_wire(c: Controls) -> [f32; 3] {
+    [c.daylight, c.intensity, c.rain]
+}
+
+/// [`controls_wire`]'s inverse; `None` for anything but its three values.
+pub(crate) fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
+    let &[daylight, intensity, rain] = wire else {
+        return None;
+    };
+    Some(
+        Controls::default()
+            .with_daylight(daylight)
+            .with_intensity(intensity)
+            .with_rain(rain),
+    )
+}
+
+/// Non-finite is impossible here (gains are bounded ramps, controls bounded
+/// levels) but maps to 0 defensively, so the JSON stays valid.
 fn fmt_f32(v: f32) -> String {
     if v.is_finite() {
         format!("{v:.5}")
@@ -230,6 +265,7 @@ mod tests {
                 0.5,
             ),
             events: Vec::new(),
+            music: Controls::default().with_daylight(0.0),
         }
     }
 
@@ -291,9 +327,28 @@ mod tests {
                     gain: 0.5,
                 },
             ],
+            music: Some(pixtuoid_scene::audio::MusicCmd {
+                controls: Controls::default()
+                    .with_daylight(0.25)
+                    .with_intensity(1.0)
+                    .with_rain(0.5),
+                gain: 0.75,
+            }),
         };
         let json = commands_json(&cmd);
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(v["music"]["gain"], 0.75);
+        let wire: Vec<f32> =
+            serde_json::from_value(v["music"]["controls"].clone()).expect("floats");
+        assert_eq!(
+            controls_from_wire(&wire),
+            cmd.music.map(|m| m.controls),
+            "the worker hands back what the wire carried"
+        );
+        assert_eq!(controls_from_wire(&wire[..2]), None);
+        let silent: serde_json::Value =
+            serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
+        assert!(silent["music"].is_null(), "no frame, no song");
         assert_eq!(v["gains"].as_array().unwrap().len(), LoopStem::ALL.len());
         assert_eq!(v["gains"][at(LoopStem::Rain)].as_f64().unwrap(), 0.35);
         assert_eq!(v["plays"][0][0], 0, "keystroke wire = 0");
@@ -344,6 +399,11 @@ mod tests {
                 .count();
         }
         assert!(last_rain > 0.0, "rain gain ramped up");
+        assert_eq!(
+            d.tick(now + 50.0, busy_rainy()).music.map(|m| m.controls),
+            Some(busy_rainy().music),
+            "the frame's music goes out with the tick"
+        );
         assert!(
             typed > 0,
             "the typing scheduler fired keystrokes for a busy office"

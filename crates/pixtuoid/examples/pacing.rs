@@ -26,8 +26,9 @@
 //! the sky's weather and strike. Its runs: the owner's 16x kitty on the real
 //! clock (`HITCH_REAL_SECS`, default 600), then per terminal a clear, an
 //! overcast and a stormy noon, dusk a second a frame, the first clock-weather
-//! transition, and a storm whose every frame paints and sends whole.
-//! `HITCH_ONLY=a|b` keeps the runs whose terminal or name holds every part;
+//! transition, and a storm whose every frame paints and sends whole, with and
+//! without lofi's music rendering beside it. `HITCH_ONLY=a|b` keeps the runs
+//! whose terminal or name holds every part;
 //! every run is paced, but back to back under `HITCH_HOT`.
 
 use std::collections::HashMap;
@@ -503,6 +504,9 @@ struct HitchRun {
     length: Duration,
     /// Paint and send every frame whole: the worst case.
     whole: bool,
+    /// Render lofi's music on a thread throughout, back to back: more than
+    /// the audio thread's render-ahead ever asks.
+    music: bool,
     /// The ambient tier: the plan puts SIXEL and iTerm2 on Calm.
     motion: Motion,
 }
@@ -548,6 +552,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
+            music: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -557,6 +562,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
+            music: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -566,6 +572,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(120),
             whole: false,
+            music: false,
             motion: Motion::Full,
         },
         // Every beat at night changes the windows' sky and a light far apart:
@@ -577,6 +584,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
+            music: false,
             motion: Motion::Calm,
         },
         HitchRun {
@@ -586,6 +594,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: Duration::from_secs(1),
             length: Duration::from_secs(3600),
             whole: false,
+            music: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -598,6 +607,7 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(120),
             whole: false,
+            music: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -607,6 +617,17 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(30),
             whole: true,
+            music: false,
+            motion: Motion::Full,
+        },
+        HitchRun {
+            name: "stress: storm, every frame whole, music rendering",
+            weather: WeatherPolicy::Forced(Weather::Storm),
+            start: Some(noon),
+            step: tick,
+            length: Duration::from_secs(30),
+            whole: true,
+            music: true,
             motion: Motion::Full,
         },
     ];
@@ -617,6 +638,7 @@ fn hitch(path: &Path) -> Result<()> {
         step: tick,
         length: Duration::from_secs(real_secs),
         whole: false,
+        music: false,
         motion: Motion::Full,
     };
     let owner = |protocol, name| Term {
@@ -676,6 +698,29 @@ fn hitch(path: &Path) -> Result<()> {
         )?;
         r.set_weather(run.weather);
         r.set_motion(run.motion);
+        let music_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let music = run.music.then(|| {
+            let stop = Arc::clone(&music_stop);
+            std::thread::spawn(move || {
+                use pixtuoid_scene::audio::{
+                    Controls, Frame, MUSIC_AHEAD, Performance, SAMPLE_RATE,
+                };
+                // As the audio thread does.
+                #[cfg(target_os = "macos")]
+                pixtuoid::dev::promote_to_user_initiated();
+                let mut performance = Performance::new(0, Controls::default());
+                // A whole render-ahead at a time.
+                let frames = MUSIC_AHEAD.as_secs_f64() * f64::from(SAMPLE_RATE);
+                let mut chunk = vec![Frame::default(); frames as usize];
+                let mut renders = Vec::new();
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let at = Instant::now();
+                    performance.render(&mut chunk);
+                    renders.push(at.elapsed());
+                }
+                renders
+            })
+        });
         let wall = Instant::now();
         let start = run.start.unwrap_or_else(SystemTime::now);
         let scene = office(start);
@@ -759,6 +804,15 @@ fn hitch(path: &Path) -> Result<()> {
             writeln!(out)?;
             totals.push(total);
             n += 1;
+        }
+        music_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(renders) = music.and_then(|h| h.join().ok()) {
+            let _ = writeln!(
+                stdout,
+                "  music alongside: {} renders of MUSIC_AHEAD, slowest {:.2} ms",
+                renders.len(),
+                ms(renders.iter().copied().max().unwrap_or_default())
+            );
         }
         let over = totals.iter().filter(|&&t| t > tick).count();
         let _ = writeln!(
