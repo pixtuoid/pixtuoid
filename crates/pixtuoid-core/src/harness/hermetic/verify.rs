@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, profile};
+use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, profile, values};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
@@ -94,9 +94,11 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 }
 
 /// Judge `p`'s runs together, `dirs` being all of them, for what no one
-/// scenario owns: a `not_yet` hook any run fired is Stale, and the field census
+/// scenario owns: a `not_yet` hook any run fired is Stale; the field census
 /// over `p`'s committed captures, where a kind or a field upstream renamed or
-/// dropped fails though the decoder still parses the line.
+/// dropped fails though the decoder still parses the line; and the value
+/// census (`values::unreached`) over the fixtures of the scenarios that ran,
+/// where a value upstream renamed fails though every path still arrives.
 ///
 /// # Errors
 ///
@@ -104,7 +106,20 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> {
     let mut fired = BTreeSet::new();
     let mut carried = Fields::default();
+    let (mut committed, mut run_tokens) = (BTreeSet::new(), BTreeSet::new());
     for dir in dirs {
+        let manifest: Manifest =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
+        if let Some(s) = p
+            .scenarios
+            .iter()
+            .find(|s| s.shape.name() == manifest.scenario)
+        {
+            values::tokens_under(
+                &crate::harness::sources_root().join(s.fixture),
+                &mut committed,
+            )?;
+        }
         for file in jsonl_files_under(dir) {
             for line in json_lines(&file)? {
                 if is_hook_envelope(&file)
@@ -113,6 +128,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
                     fired.insert(event.into_owned());
                 }
                 carried.add(p, &file, &line, true);
+                values::tokens(&line, &mut run_tokens);
             }
         }
     }
@@ -131,6 +147,9 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
             ));
         }
     }
+    let (missing, stale) = values::unreached(p, &values::population()?, &committed, &run_tokens);
+    findings.extend(missing.into_iter().map(|m| (Label::Fail, m)));
+    findings.extend(stale.into_iter().map(|m| (Label::Stale, m)));
     Ok(Verdict::new(findings))
 }
 
@@ -1490,6 +1509,61 @@ mod tests {
         .expect("verify");
         assert!(
             has(&v, Label::Fail, "hook:PreToolUse /tool_name"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// Rewrite every `.jsonl` under `dir` with `from` spelled `to`.
+    fn respell(dir: &Path, from: &str, to: &str) {
+        for f in jsonl_files_under(dir) {
+            let text = std::fs::read_to_string(&f).expect("read");
+            std::fs::write(&f, text.replace(from, to)).expect("write");
+        }
+    }
+
+    #[test]
+    fn a_run_of_its_own_fixture_owes_no_value() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            !v.findings().iter().any(|f| f.1.starts_with('`')),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_value_upstream_renamed_fails_though_its_path_arrives() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        respell(d.path(), "\"task_complete\"", "\"turn_complete\"");
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            has(&v, Label::Fail, "`task_complete`"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_not_yet_value_a_run_carries_is_stale() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        respell(d.path(), "\"task_complete\"", "\"turn_aborted\"");
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            has(&v, Label::Stale, "`turn_aborted`"),
             "{:?}",
             v.findings()
         );

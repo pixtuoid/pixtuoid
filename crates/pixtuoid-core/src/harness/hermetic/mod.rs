@@ -17,6 +17,7 @@ pub mod bump;
 pub mod digest;
 pub mod pin;
 pub mod tui;
+mod values;
 pub mod verify;
 
 /// The key a profile hands its CLI for its scripted model: aimock accepts
@@ -204,6 +205,9 @@ pub struct Profile {
     /// yet, as `(kind, path)` the field census names them. Shrink-only: a run
     /// that carries one is Stale.
     pub(crate) not_yet_fields: &'static [(&'static str, &'static str)],
+    /// Literals a decoder reads that no recorded capture of this source holds
+    /// yet ([`values`]). Shrink-only: a capture or a run that holds one leaves it.
+    pub(crate) not_yet_values: &'static [&'static str],
     /// Whether a child may name no cwd of its own, running where its parent
     /// does.
     pub(crate) children_inherit_cwd: bool,
@@ -481,6 +485,11 @@ pub const PROFILES: &[Profile] = &[
             // (`CopilotKit/aimock` `src/messages.ts:405-414` at v1.43.0).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
+        not_yet_values: &[
+            "ultra_effort_enter",
+            "ultra_effort_exit",
+            "ultrathink_effort",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -582,6 +591,20 @@ sandbox = "unelevated"
                 "/payload/info/last_token_usage/reasoning_output_tokens",
             ),
         ],
+        not_yet_values: &[
+            "custom_tool_call",
+            "custom_tool_call_output",
+            "exec_command_end",
+            "patch_apply_end",
+            "require_escalated",
+            "sandbox_permissions",
+            "tool_search_call",
+            "tool_search_output",
+            "turn_aborted",
+            "web_search_begin",
+            "web_search_call",
+            "web_search_end",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -672,6 +695,7 @@ sandbox = "unelevated"
             ("hook:session.created", "/data/parentID"),
             ("hook:session.execution.started", "/data/parentID"),
         ],
+        not_yet_values: &["action", "parentID", "source.id"],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -754,6 +778,7 @@ sandbox = "unelevated"
         not_yet: &[],
         event_name: dsh_event,
         not_yet_fields: &[],
+        not_yet_values: &["allowed-once", "subagent_fork"],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -799,6 +824,7 @@ sandbox = "unelevated"
         event_name: hook_event_name,
         // A Bash call's; the scripted turn reads a file.
         not_yet_fields: &[("hook:PreToolUse", "/tool_input/command")],
+        not_yet_values: &[],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -908,6 +934,15 @@ sandbox = "unelevated"
         not_yet: &["PostToolUseFailure", "StopFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
+        not_yet_values: &[
+            "agent_error",
+            "elicitation_dialog",
+            "idle_prompt",
+            "model_changed",
+            "post_tool_use_failure",
+            "stop_failure",
+            "task_complete",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -980,6 +1015,20 @@ model = "deepseek-v4-flash"
         event_name: event_field,
         // A bash call's; the scripted turn reads a file.
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
+        not_yet_values: &[
+            ":guardian",
+            ":planner",
+            ":subagent:",
+            "explore",
+            "locate",
+            "message",
+            "parallel_tasks",
+            "read_only_task",
+            "research",
+            "review",
+            "security_review",
+            "subject",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -1066,6 +1115,13 @@ model = "deepseek-v4-flash"
         ],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
+        not_yet_values: &[
+            "approved",
+            "session.resume",
+            "session.task_complete",
+            "subagent.failed",
+            "tokenCount",
+        ],
         children_inherit_cwd: true,
         result_unseen: false,
     },
@@ -1173,6 +1229,7 @@ async:
                 "/message/content/*/arguments/questions/*/question",
             ),
         ],
+        not_yet_values: &["ask", "previousSessionFile", "question", "questions"],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -1251,6 +1308,7 @@ telemetry:
         not_yet: &[],
         event_name: hook_event_name,
         not_yet_fields: &[],
+        not_yet_values: &[],
         children_inherit_cwd: false,
         result_unseen: false,
     },
@@ -1307,6 +1365,7 @@ telemetry:
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
+        not_yet_values: &[],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).

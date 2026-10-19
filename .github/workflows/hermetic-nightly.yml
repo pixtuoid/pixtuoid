@@ -1,8 +1,8 @@
 name: hermetic-nightly
 
 # Each profiled CLI's latest release against the scripted model, where a CLI
-# that renamed or reshaped what pixtuoid reads turns a verdict red before a
-# user upgrades into it.
+# that renamed or reshaped what pixtuoid reads in a recorded scenario turns a
+# verdict red before a user upgrades into it.
 
 on:
   schedule:
