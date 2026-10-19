@@ -110,7 +110,7 @@ echo "  headless pixtuoid up (pid $PIXPID), HookRouter owns $SOCK"
 
 FAILED=0
 # Wait until the LATEST `daemons=` line contains `want` — a substring match, so a
-# per-instance assertion does not have to name every sibling. `tries` polls 0.3 s apart.
+# per-instance assertion does not have to name every sibling. `tries` counts polls of the `sleep` below.
 expect_line() {
     local want="$1" label="$2" tries="${3:-120}" last
     for _ in $(seq 1 "$tries"); do
@@ -149,7 +149,7 @@ if [ "$FAILED" != 0 ]; then
     echo "  SKIP [2] — not every gateway announced; the instance-local assertions would be vacuous" >&2
     # The temp dir goes with the run, so the only record of why is this log.
     for port in "${PORTS[@]}"; do
-        echo "--- gateway $port (last 20 lines):" >&2
+        echo "--- gateway $port (log tail):" >&2
         tail -n 20 "$MG/gw$port.log" >&2
     done
 else
