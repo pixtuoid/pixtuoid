@@ -35,8 +35,6 @@ static FAKE: Target = Target {
     presence_probe: || false,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: &[],
     registers: Vec::new,
     consumes: &[],
 };
@@ -79,8 +77,6 @@ static FAKE2: Target = Target {
     presence_probe: || false,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: &[],
     registers: Vec::new,
     consumes: &[],
 };
@@ -112,8 +108,6 @@ static FAKE_DIR: Target = Target {
     presence_probe: || false,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: &[],
     registers: Vec::new,
     consumes: &[],
 };
@@ -145,8 +139,6 @@ static FAKE_NO_HOME: Target = Target {
     presence_probe: || false,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: &[],
     registers: Vec::new,
     consumes: &[],
 };

@@ -10,10 +10,6 @@ use crate::source::decoder::{
 
 use crate::AgentId;
 use crate::source::AgentEvent;
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::decoder::DECODED_DISPATCH_NAMES;
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{At, Doc, Finding, Read, Watch, When};
 
 #[cfg(feature = "native")]
 mod native;
@@ -34,106 +30,6 @@ pub const ULTRA_EXIT_LABEL: &str = "ultra_exit";
 const ATTACHMENT_ULTRA_ENTER: &str = "ultra_effort_enter";
 const ATTACHMENT_ULTRATHINK: &str = "ultrathink_effort";
 const ATTACHMENT_ULTRA_EXIT: &str = "ultra_effort_exit";
-
-/// The `attachment` types the effort decoder synthesizes a label for. Pinned to
-/// its arms by `every_exported_set_is_exactly_its_dispatch_arms`.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_EFFORT_ATTACHMENTS: &[&str] = &[
-    ATTACHMENT_ULTRA_ENTER,
-    ATTACHMENT_ULTRATHINK,
-    ATTACHMENT_ULTRA_EXIT,
-];
-
-/// The installer's hook-set watch reads it too.
-#[cfg(any(test, feature = "upstream"))]
-pub const HOOKS_PAGE: Doc = Doc {
-    at: At::Url("https://code.claude.com/docs/en/hooks.md"),
-    anchor: r"(?m)^# Hooks reference",
-    owns: "the hooks-reference page",
-};
-
-/// CC is a closed binary, so its documentation is the only watchable surface.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "claude_code.dispatch_names",
-        ours: || DECODED_DISPATCH_NAMES.to_vec(),
-        docs: &[Doc {
-            at: At::Url("https://code.claude.com/docs/en/tools-reference.md"),
-            anchor: r"(?m)^# Tools reference",
-            owns: "the tools-reference page",
-        }],
-        read: Read::Each {
-            pattern: "`{name}`",
-        },
-        when: When::Vanishes,
-        finding: Finding::Review(
-            "the subagent tool was renamed: dispatch is still found by `subagent_type`, but \
-             the by-name fallback is stale",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "claude_code.burn_tier_surfaces",
-        ours: || vec!["CLAUDE_EFFORT", "receive a `model` field"],
-        docs: &[HOOKS_PAGE],
-        read: Read::Each {
-            pattern: r"\b{name}\b",
-        },
-        when: When::Vanishes,
-        finding: Finding::Review(
-            "the burn-tier hook decode reads what it documents (the effort level, \
-             SessionStart's optional model): re-verify it",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "claude_code.lifecycle_surfaces",
-        // `session_end` in snake_case: the `SessionEnd` hook is all over the page.
-        ours: || vec!["session_end", ".claude/sessions/", "procStart"],
-        docs: &[HOOKS_PAGE],
-        read: Read::Each { pattern: "{name}" },
-        when: When::Appears,
-        finding: Finding::Review(
-            "a durable end record or the session registry may have landed: adopt it for \
-             the JSONL transport, and give the liveness probe's first-sight bypass an \
-             ended-check, which it skips only because none exists",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "claude_code.subagent_turns",
-        ours: || {
-            vec![
-                "that identify the subagent",
-                "resumes a subagent",
-                "async_launched",
-            ]
-        },
-        docs: &[HOOKS_PAGE],
-        read: Read::Each {
-            pattern: r"\b{name}\b",
-        },
-        when: When::Vanishes,
-        finding: Finding::Review(
-            "a subagent's hooks may no longer name it in `agent_id`, or a resume no longer \
-             fires SubagentStart: re-verify the subject swap and `ChildEndInference::None`",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "claude_code.effort_attachments",
-        ours: || DECODED_EFFORT_ATTACHMENTS.to_vec(),
-        docs: &[HOOKS_PAGE],
-        read: Read::Each { pattern: "{name}" },
-        when: When::Appears,
-        finding: Finding::Review(
-            "an attachment the decoder labels from guesswork is now documented: re-verify \
-             the label it synthesizes",
-        ),
-        siblings: None,
-    },
-];
 
 /// CC's session/agent id = the transcript filename stem, which is
 /// cwd-independent (the cwd-derived project-dir is the *parent* dir, not the
@@ -244,9 +140,9 @@ const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
 
 /// The CC transcript types whose `message` payload this module decodes. CC's
-/// TRANSCRIPT has no fetchable schema, so it gets no CI drift-watch (its hooks
-/// do) and the runtime breadcrumb is the sole defense — but only these two names
-/// can break rendering, so only they may raise one. Pinned to the decode arms
+/// TRANSCRIPT has no fetchable schema: the nightly's latest-release census and
+/// this breadcrumb guard it, but only these two names can break rendering, so
+/// only they may raise one. Pinned to the decode arms
 /// by `the_decoded_set_is_exactly_what_the_arms_match`.
 const DECODED_TYPES: &[&str] = &[ASSISTANT, USER];
 

@@ -8,6 +8,7 @@
 //! its package's latest release, the nightly drift run; `--cli <release>`
 //! installs that release, a bump's planned one. `--record` writes a source's
 //! fixtures, and off the pin moves its pin up to the release recorded.
+//! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
 //!
 //! Exits 0 when every run passed, 1 on any other verdict (a recording refused
 //! after its runs included), and anything else when the tier itself could not
@@ -32,14 +33,15 @@ mod run {
     use std::time::Duration;
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
+    use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        Package, PerOs, Profile, SCENE_LOG, STEPS, Scenario, Step, StepRecord, Surface, TUI_LOG,
-        USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
+        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step, StepRecord, Surface,
+        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
@@ -48,7 +50,6 @@ mod run {
         capture_workspace, capture_workspace_tail, recorder_flag, required_version_probe,
         version_answer, wait_until,
     };
-    use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
 
     /// How long one read from aimock may hang.
@@ -172,6 +173,9 @@ mod run {
     struct Args {
         versions: Versions,
         record: bool,
+        /// The [`SHARDS`] entry `--shard` names, counting from 1, and the
+        /// sources it alone runs.
+        shard: Option<(usize, &'static [&'static str])>,
         source: Option<String>,
         scenario: Option<String>,
     }
@@ -188,6 +192,9 @@ mod run {
             }
             if self.record && self.scenario.is_some() {
                 return Err("--record writes a whole source: its census judges every run".into());
+            }
+            if self.shard.is_some() && self.source.is_some() {
+                return Err("--shard selects its own sources: name none".into());
             }
             let Some(source) = self.source.as_deref() else {
                 return Ok(());
@@ -228,15 +235,25 @@ mod run {
         }
 
         fn selects(&self, source: &str, scenario: &str) -> bool {
+            self.selects_source(source) && self.scenario.as_deref().is_none_or(|s| s == scenario)
+        }
+
+        fn selects_source(&self, source: &str) -> bool {
             self.source.as_deref().is_none_or(|s| s == source)
-                && self.scenario.as_deref().is_none_or(|s| s == scenario)
+                && self
+                    .shard
+                    .is_none_or(|(_, sources)| sources.contains(&source))
         }
     }
 
     const CLI_USAGE: &str = "--cli takes pinned, latest or a release";
 
+    fn shard_usage() -> String {
+        format!("--shard takes 1 to {}", SHARDS.len())
+    }
+
     fn parse(mut rest: &[String]) -> Result<Args, String> {
-        let (mut versions, mut record) = (Versions::Pinned, false);
+        let (mut versions, mut record, mut shard) = (Versions::Pinned, false, None);
         loop {
             match rest {
                 [flag, v, tail @ ..] if flag == "--cli" => {
@@ -250,6 +267,16 @@ mod run {
                     rest = tail;
                 }
                 [flag] if flag == "--cli" => return Err(CLI_USAGE.into()),
+                [flag, n, tail @ ..] if flag == "--shard" => {
+                    shard = Some(
+                        n.parse::<usize>()
+                            .ok()
+                            .and_then(|n| Some((n, *SHARDS.get(n.checked_sub(1)?)?)))
+                            .ok_or_else(shard_usage)?,
+                    );
+                    rest = tail;
+                }
+                [flag] if flag == "--shard" => return Err(shard_usage()),
                 [flag, tail @ ..] if flag == "--record" => {
                     record = true;
                     rest = tail;
@@ -261,6 +288,7 @@ mod run {
             [] | [_] | [_, _] => Ok(Args {
                 versions,
                 record,
+                shard,
                 source: rest.first().cloned(),
                 scenario: rest.get(1).cloned(),
             }),
@@ -274,7 +302,7 @@ mod run {
             Ok(a) => a,
             Err(e) => {
                 eprintln!(
-                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [<source> [<scenario>]]"
+                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [--shard <n>] [<source> [<scenario>]]"
                 );
                 std::process::exit(2);
             }
@@ -310,9 +338,10 @@ mod run {
         }
         let report = report(
             &args.versions,
+            args.shard.map(|(n, _)| n),
             &host_tool_versions(),
             &entries,
-            &not_run(cfg!(windows)),
+            &not_run(&args, cfg!(windows)),
         );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
@@ -569,10 +598,12 @@ mod run {
         scenarios.min_by_key(|s| !matches!(s.surface, Surface::Headless))
     }
 
-    /// Every run a leg on `windows` never makes, and why, as the report names it.
-    fn not_run(windows: bool) -> Vec<String> {
+    /// Every run of the sources `args` selects that a leg on `windows` never
+    /// makes, and why, as the report names it.
+    fn not_run(args: &Args, windows: bool) -> Vec<String> {
         PROFILES
             .iter()
+            .filter(|p| args.selects_source(p.source))
             .flat_map(|p| not_run_of(p, windows))
             .collect()
     }
@@ -677,6 +708,7 @@ mod run {
 
     fn report(
         versions: &Versions,
+        shard: Option<usize>,
         host: &[String],
         entries: &[Entry],
         not_run: &[String],
@@ -692,8 +724,9 @@ mod run {
             _ => "NOTHING RAN".to_owned(),
         };
         let os = std::env::consts::OS;
+        let shard = shard.map_or(String::new(), |n| format!(", shard {n}"));
         let mut out = format!(
-            "# hermetic, {which} CLIs on {os}: {title}\n\nHost: {}\n",
+            "# hermetic, {which} CLIs on {os}{shard}: {title}\n\nHost: {}\n",
             host.join(", ")
         );
         for e in entries {
@@ -939,15 +972,9 @@ mod run {
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
             (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
-                if repo.release != Release::GithubLatest {
-                    return Err(format!(
-                        "{} releases as {:?}, which `--cli latest` can't read",
-                        repo.name, repo.release
-                    ));
-                }
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-                let url = format!("https://github.com/{}/releases/latest", repo.name);
+                let url = format!("https://github.com/{repo}/releases/latest");
                 let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
                 latest_tag(&String::from_utf8_lossy(&headers))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
@@ -1060,7 +1087,7 @@ mod run {
 
     /// Whether `bytes` hash to the lowercase hex SHA-512 `want`.
     fn matches_sha512(bytes: &[u8], want: &str) -> bool {
-        upstream::digest_hex::<sha2::Sha512>(bytes) == want
+        digest::digest_hex::<sha2::Sha512>(bytes) == want
     }
 
     const CURL: &str = "curl";
@@ -1103,7 +1130,7 @@ mod run {
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         fetch(asset, to)?;
-        if !upstream::vouches(
+        if !digest::vouches(
             &std::fs::read_to_string(&listed)?,
             asset,
             &std::fs::read(to)?,
@@ -1187,7 +1214,7 @@ mod run {
             Package::GithubRelease { repo, assets, sums } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
-                    fetch_release(repo.name, version, asset_here(assets)?, sums, &program)
+                    fetch_release(repo, version, asset_here(assets)?, sums, &program)
                 })?;
                 Ok(Installed {
                     launch: Launch {
@@ -1205,7 +1232,7 @@ mod run {
                     clone
                         .args(["clone", "--quiet", "--depth", "1", "--branch"])
                         .arg(format!("v{version}"))
-                        .arg(format!("https://github.com/{}.git", repo.name))
+                        .arg(format!("https://github.com/{repo}.git"))
                         .arg(&src);
                     succeed(clone)?;
                     // A workspace's members, a Python of uv's own at the tag's pin and
@@ -2178,6 +2205,42 @@ mod run {
         }
 
         #[test]
+        fn a_shard_runs_its_own_sources_and_names_only_their_absences() {
+            let shard = |n: usize| parse(&args(&["--shard", &n.to_string()])).expect("parse");
+            for (i, sources) in SHARDS.iter().enumerate() {
+                let a = shard(i + 1);
+                assert_eq!(a.check(false), Ok(()));
+                assert_eq!(
+                    a.shard.map(|(n, _)| n),
+                    Some(i + 1),
+                    "--shard counts from 1"
+                );
+                for p in PROFILES {
+                    assert_eq!(
+                        a.selects(p.source, "tool-run"),
+                        sources.contains(&p.source),
+                        "{} in shard {}",
+                        p.source,
+                        i + 1
+                    );
+                }
+                let named = not_run(&a, true);
+                let every = not_run(&parse(&[]).expect("parse"), true);
+                let own: Vec<&String> = every
+                    .iter()
+                    .filter(|r| sources.iter().any(|s| r.starts_with(&format!("{s}/"))))
+                    .collect();
+                assert_eq!(named.iter().collect::<Vec<_>>(), own);
+            }
+            for bad in ["0", &(SHARDS.len() + 1).to_string(), "one"] {
+                assert_eq!(parse(&args(&["--shard", bad])), Err(shard_usage()), "{bad}");
+            }
+            assert_eq!(parse(&args(&["--shard"])), Err(shard_usage()));
+            let named = parse(&args(&["--shard", "1", "codex"])).expect("parse");
+            assert!(named.check(false).is_err(), "a shard and a source");
+        }
+
+        #[test]
         fn a_live_tier_s_exit_reads_pass_blocked_or_fail() {
             let Some(live) = &hermetic::profile("openclaw").expect("openclaw").live else {
                 panic!("openclaw runs live");
@@ -2204,8 +2267,8 @@ mod run {
                 names(false),
                 ["tool-run", "subagent", "permission", "model-error"]
             );
-            assert!(not_run(false).is_empty());
-            let r = report(&Versions::Pinned, &[], &[], &not_run(true));
+            assert!(not_run(&every, false).is_empty());
+            let r = report(&Versions::Pinned, None, &[], &[], &not_run(&every, true));
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
@@ -2215,7 +2278,7 @@ mod run {
                 ),
                 "{r}"
             );
-            assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+            assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
             let judged = |n| vec![PathBuf::new(); n];
             assert!(judges_leg(grok, &judged(3), true), "grok moves on Windows");
             assert!(!judges_leg(grok, &judged(3), false));
@@ -2238,7 +2301,7 @@ mod run {
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
                 )
             };
-            let r = report(&Versions::Latest, &host, &[pass, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[pass, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Blocked").as_str())
@@ -2246,7 +2309,7 @@ mod run {
             assert!(r.contains("Host: git version 2.55.0"), "{r}");
             assert!(r.contains("## opencode/tool-run: Blocked\n- Blocked: npm view failed"));
             assert!(r.contains("## codex/tool-run (codex-cli 0.155.1): Pass"));
-            let r = report(&Versions::Pinned, &host, &[blocked()], &[]);
+            let r = report(&Versions::Pinned, None, &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, verified CLIs on {os}: NOTHING RAN").as_str())
@@ -2260,10 +2323,16 @@ mod run {
                     (Label::Script, "1 unmatched".into()),
                 ]),
             );
-            let r = report(&Versions::Latest, &host, &[lost, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[lost, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
+            );
+            // A shard's leg names it, so the issue tells two legs of one OS apart.
+            let r = report(&Versions::Latest, Some(2), &host, &[blocked()], &[]);
+            assert_eq!(
+                r.lines().next(),
+                Some(format!("# hermetic, latest CLIs on {os}, shard 2: NOTHING RAN").as_str())
             );
         }
 

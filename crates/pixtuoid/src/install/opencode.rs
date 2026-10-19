@@ -156,16 +156,17 @@ mod tests {
     /// The plugin forwards EXACTLY what the decoder reads. These are two lists in
     /// two languages — a TS `FORWARD` set here, `match event` arms in
     /// `pixtuoid-core` — and no compiler can see across that gap, so they are
-    /// bound through core's declared watch instead. Forward one the decoder
+    /// bound through core's `DECODED_EVENTS` instead. Forward one the decoder
     /// ignores and we spawn a shim per event for nothing; miss one it reads and
     /// that signal never arrives.
     #[test]
     fn the_plugin_forwards_exactly_what_the_decoder_reads() {
         let forwarded: std::collections::BTreeSet<&str> = plugin_events().into_iter().collect();
         let decoded: std::collections::BTreeSet<&str> =
-            pixtuoid_core::source::registry::declared_watch("opencode.hook_events")
-                .map(|w| (w.ours)().into_iter().collect())
-                .expect("core watches opencode's hook events");
+            pixtuoid_core::source::opencode::DECODED_EVENTS
+                .iter()
+                .copied()
+                .collect();
 
         assert_eq!(forwarded, decoded);
     }

@@ -14,8 +14,6 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, make_tool_detail};
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{Family, Finding, Read, Release, Repo, Siblings, Watch, When};
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -192,196 +190,32 @@ pub(crate) const TURN_CONTEXT: &str = "turn_context";
 const SANDBOX_PERMISSIONS_FIELD: &str = "sandbox_permissions";
 const REQUIRE_ESCALATED: &str = "require_escalated";
 
-/// The escalation pair this decoder keys on. Listed because the check is a
-/// BOOLEAN: a rename makes it silently `false`, and `false` is a legitimate
-/// answer, so no breadcrumb can exist here — the upstream watch is the only
-/// signal. Pinned by `escalated_function_call_is_waiting`.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_ESCALATION: &[&str] = &[REQUIRE_ESCALATED, SANDBOX_PERMISSIONS_FIELD];
-
-/// The rollout inners, grouped BY BEHAVIOUR — each group is both the matcher
-/// (the arms below guard on `contains`) and the export source, so there is one
-/// declaration per name and no second copy to drift.
-pub(crate) const EM_TURN_START: &[&str] = &["task_started"];
-/// Written only to a Legacy-history rollout, which a client that names no history
-/// mode starts; exec and the TUI write Paginated ones
-/// (`codex-rs/rollout/src/policy.rs:140-153`, `codex-rs/protocol/src/protocol.rs:880-882`,
-/// `codex-rs/exec/src/lib.rs:1462` at `rust-v0.163.0`).
-pub(crate) const EM_RESUME: &[&str] = &["patch_apply_end"];
+/// The rollout inners, grouped BY BEHAVIOUR: each group is the matcher (the
+/// arms below guard on `contains`).
+const EM_TURN_START: &[&str] = &["task_started"];
+/// Written only to a Legacy-history rollout (`codex-rs/rollout/src/policy.rs:141-155`):
+/// exec and the TUI ask for a Paginated one (`codex-rs/exec/src/lib.rs:1462`,
+/// `codex-rs/tui/src/app_server_session.rs:2175`), which a thread store without
+/// paginated lists refuses, and exec then retries with none, the Legacy default
+/// (`codex-rs/app-server/src/request_processors/thread_processor.rs:1179-1186`,
+/// `codex-rs/exec/src/lib.rs:1426-1432`, `codex-rs/protocol/src/protocol.rs:880-882`,
+/// at `rust-v0.163.0`).
+const EM_RESUME: &[&str] = &["patch_apply_end"];
 /// As [`EM_RESUME`].
-pub(crate) const EM_SEARCH: &[&str] = &["web_search_end"];
-pub(crate) const EM_TURN_END: &[&str] = &["task_complete", "turn_aborted"];
-pub(crate) const EM_TOKENS: &[&str] = &["token_count"];
+const EM_SEARCH: &[&str] = &["web_search_end"];
+const EM_TURN_END: &[&str] = &["task_complete", "turn_aborted"];
+const EM_TOKENS: &[&str] = &["token_count"];
 
-pub(crate) const RI_TOOL_START: &[&str] = &["function_call", "custom_tool_call"];
+const RI_TOOL_START: &[&str] = &["function_call", "custom_tool_call"];
 const RI_CALL_OUTPUT: &str = "function_call_output";
 const RI_CUSTOM_OUTPUT: &str = "custom_tool_call_output";
-pub(crate) const RI_RESUME: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
+const RI_RESUME: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
 /// The call an output answers. Optional on a `function_call_output`, which
 /// codex also writes for a host-delivered output that answers no call
 /// (`codex-rs/protocol/src/models.rs:1151-1153` at `rust-v0.163.0`), and
 /// required on a `custom_tool_call_output` (`:1195`).
 const CALL_ID: &str = "call_id";
-pub(crate) const RI_SEARCH: &[&str] =
-    &["web_search_call", "tool_search_call", "tool_search_output"];
-
-/// The repository its drift watches read.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: Repo = Repo {
-    name: "openai/codex",
-    release: Release::GithubLatest,
-};
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "codex.rollout_outers",
-        ours: || vec![EVENT_MSG, RESPONSE_ITEM, TURN_CONTEXT],
-        // The wire enum: `RolloutItem` serializes through it and carries no
-        // serde attributes of its own.
-        docs: &[REPO.doc(
-            "codex-rs/history/src/rollout_payload.rs",
-            r"enum RolloutItemWire\b",
-            "`RolloutItemWire`",
-        )],
-        read: Read::RustEnum {
-            name: "RolloutItemWire",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("the transcript decodes to nothing"),
-        siblings: Some(Siblings {
-            family: Family::LastWord,
-            ignored: &[
-                (
-                    "realtime_item",
-                    "a realtime VOICE sub-session's items (protocol/src/realtime.rs), keyed \
-                     by `realtime_session_id`, not the agent session's key space: \
-                     Started/Closed bracket the voice layer, speech segments are content no \
-                     decoder reads, and `BemItemPromoted` re-presents items already decoded \
-                     from `response_item` (upstream: 'sparse, model-invisible facts')",
-                ),
-                (
-                    "retained_context",
-                    "host-only, model-invisible records (history/src/retained_context.rs: \
-                     'Sparse, model-invisible updates. Only the host may produce these \
-                     records.'); the sole variant `verified_answer` is authorization \
-                     evidence, with no lifecycle, activity, model or token signal",
-                ),
-            ],
-        }),
-    },
-    Watch {
-        id: "codex.event_msg",
-        ours: || [EM_TURN_START, EM_RESUME, EM_SEARCH, EM_TURN_END, EM_TOKENS].concat(),
-        docs: &[REPO.doc(
-            "codex-rs/protocol/src/protocol.rs",
-            r"pub enum EventMsg\b",
-            "`EventMsg`",
-        )],
-        read: Read::RustEnum { name: "EventMsg" },
-        when: When::Vanishes,
-        finding: Finding::Breaking("the transcript decodes to nothing"),
-        // No sweep: its last words are lifecycle words that unrelated
-        // subsystems share, not families.
-        siblings: None,
-    },
-    Watch {
-        id: "codex.response_item",
-        ours: || [RI_TOOL_START, RI_RESUME, RI_SEARCH].concat(),
-        docs: &[REPO.doc(
-            "codex-rs/protocol/src/models.rs",
-            r"pub enum ResponseItem\b",
-            "`ResponseItem`",
-        )],
-        read: Read::RustEnum {
-            name: "ResponseItem",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("the transcript decodes to nothing"),
-        // Each `*_call` here starts an activity with no upstream `*_output`
-        // to end it, so decoding one would strand the session Active until
-        // the stale sweep.
-        siblings: Some(Siblings {
-            family: Family::LastWord,
-            ignored: &[
-                (
-                    "local_shell_call",
-                    "no `local_shell_call_output` sibling exists to end it",
-                ),
-                (
-                    "image_generation_call",
-                    "no `image_generation_call_output` sibling exists to end it",
-                ),
-            ],
-        }),
-    },
-    Watch {
-        id: "codex.escalation",
-        ours: || DECODED_ESCALATION.to_vec(),
-        // The shell tool's own schema, which the model fills in. Quoted: a doc
-        // comment naming the field would keep a renamed one alive.
-        docs: &[REPO.doc(
-            "codex-rs/core/src/tools/handlers/shell_spec.rs",
-            r"fn create_approval_parameters\b",
-            "`create_approval_parameters`",
-        )],
-        read: Read::Each {
-            pattern: r#""{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the approval gate never fires, so a codex session sits Active through every prompt",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "codex.dispatch",
-        ours: || vec![DISPATCH_TOOL],
-        docs: &[REPO.doc(
-            "codex-rs/core/src/tools/handlers/multi_agents/spawn.rs",
-            r"fn tool_name\(&self\) -> ToolName",
-            "the spawn handler's `tool_name`",
-        )],
-        read: Read::Each {
-            pattern: r#""{name}""#,
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("a codex parent never goes Delegating"),
-        siblings: None,
-    },
-    Watch {
-        id: "codex.rollout_parent",
-        ours: || vec![PARENT_THREAD_ID],
-        docs: &[REPO.doc(
-            "codex-rs/protocol/src/protocol.rs",
-            r"pub struct SessionMeta\b",
-            "`SessionMeta`",
-        )],
-        read: Read::RustStruct {
-            name: "SessionMeta",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "a child rollout first seen after its end resurrects the child as a root",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "codex.child_hook",
-        ours: || vec![crate::source::decoder::SUBAGENT_ID],
-        docs: &[REPO.doc(
-            "codex-rs/hooks/src/schema.rs",
-            r"pub\(crate\) struct PreToolUseCommandInput\b",
-            "`PreToolUseCommandInput`",
-        )],
-        read: Read::RustStruct {
-            name: "PreToolUseCommandInput",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("a codex child's tools show on its root"),
-        siblings: None,
-    },
-];
+const RI_SEARCH: &[&str] = &["web_search_call", "tool_search_call", "tool_search_output"];
 
 /// Decode one transcript line. Only an output's End carries its call's id
 /// (`tool_use_id`), so only that End meets the hook-wins dedup (#150).
@@ -613,11 +447,9 @@ mod tests {
     use serde_json::json;
 
     /// Every name in a behaviour group reaches a real arm, and one outside them
-    /// reaches none. The groups ARE the matcher — the arms guard on
-    /// `contains` — so this is not pinning a second copy; it is proving no group
-    /// member has quietly stopped being handled.
+    /// reaches none.
     #[test]
-    fn the_decoded_rollout_sets_are_exactly_what_the_arms_match() {
+    fn each_rollout_inner_reaches_an_arm() {
         let drive = |outer: &str, inner: &str| {
             let v = json!({
                 "type": outer,
@@ -990,12 +822,6 @@ mod tests {
 
     #[test]
     fn escalated_function_call_is_waiting() {
-        // Built FROM the exported pair, so the `codex.escalation` watch and the
-        // arm cannot drift apart: the check is a boolean with no breadcrumb.
-        assert_eq!(
-            DECODED_ESCALATION,
-            [REQUIRE_ESCALATED, SANDBOX_PERMISSIONS_FIELD]
-        );
         let args = format!(
             r#"{{"cmd":"date","{SANDBOX_PERMISSIONS_FIELD}":"{REQUIRE_ESCALATED}","justification":"allow?"}}"#
         );

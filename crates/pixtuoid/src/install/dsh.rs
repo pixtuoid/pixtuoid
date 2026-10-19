@@ -17,10 +17,6 @@ use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, Yam
 
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef};
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::dsh::REPO;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Finding, Read, Watch, When};
 
 /// The mount entry's `id` — uninstall and the one-entry verify key on it.
 const PLUGIN_ID: &str = "pixtuoid";
@@ -33,7 +29,7 @@ pub(crate) const PLUGIN_TEMPLATE: &str = include_str!("dsh_plugin.mjs");
 /// subscriptions and the `case "…"` labels of its session-event switch,
 /// scanned from the template so a hand-kept list can't claim coverage the code
 /// doesn't have.
-#[cfg(any(test, feature = "upstream"))]
+#[cfg(test)]
 pub(crate) fn plugin_events() -> Vec<&'static str> {
     let mut names = Vec::new();
     for marker in [r#"ctx.on(""#, r#"case ""#] {
@@ -47,70 +43,6 @@ pub(crate) fn plugin_events() -> Vec<&'static str> {
     names.dedup();
     names
 }
-
-/// What the plugin reads off a tool result's message.
-#[cfg(feature = "upstream")]
-pub(crate) const TOOL_RESULT_FIELDS: &[&str] = &["toolCallId"];
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "dsh.plugin_events",
-        ours: plugin_events,
-        // dsh declares its events as keys of the cordis `Events` and the
-        // session's `SessionEventMap`, each augmented across packages, so one
-        // key may live in any of these.
-        docs: &[
-            REPO.doc(
-                "packages/core/agent/src/runtime-types.ts",
-                r"declare module '@deepseek-ai/cordis' \{\s*interface Events \{",
-                "the cordis `Events` augmentation",
-            ),
-            REPO.doc(
-                "packages/core/session/src/types.ts",
-                r"export interface SessionEventMap\b",
-                "`SessionEventMap`",
-            ),
-            REPO.doc(
-                "packages/interaction/user-approval/src/types.ts",
-                r"declare module '@deepseek-ai/dsh-session/types' \{\s*interface SessionEventMap \{",
-                "the `SessionEventMap` augmentation",
-            ),
-            REPO.doc(
-                "packages/core/session/src/index.ts",
-                r"declare module '@deepseek-ai/cordis' \{",
-                "the cordis augmentation",
-            ),
-        ],
-        read: Read::TsMembers {
-            of: &["Events", "SessionEventMap"],
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the plugin listens to an event dsh never fires, so that slice of the office silently \
-         stops updating",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "dsh.tool_result_call_id",
-        ours: || TOOL_RESULT_FIELDS.to_vec(),
-        docs: &[REPO.doc(
-            "packages/llm/llm/src/message.ts",
-            r"(?m)^export interface ToolResultMessage\b",
-            "`ToolResultMessage`",
-        )],
-        read: Read::TsFields {
-            name: "ToolResultMessage",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "every tool result reaches the decoder without its call id: doctor reports it as \
-             drift, and its end cannot be paired with its call",
-        ),
-        siblings: None,
-    },
-];
 
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
 /// (`packages/util/home-paths/src/index.ts`, fetched 2026-09-01) resolves
@@ -537,8 +469,7 @@ mod tests {
         );
     }
 
-    /// The call id is read off the message, whose `ToolResultMessage` field
-    /// `dsh.tool_result_call_id` watches, never off a content block.
+    /// The call id is read off the message, never off a content block.
     #[test]
     fn the_plugin_reads_a_tool_results_call_id_off_its_message() {
         assert!(

@@ -96,13 +96,11 @@
   break:
     - '.jobs.publish.if = "${{ true }}"'
 
-- id: drift-watch-files-issues-from-a-job-that-runs-no-tree-code
-  file:
-    - .github/workflows/upstream-drift.yml
-    - .github/workflows/hermetic-nightly.yml
+- id: nightly-files-issues-from-a-job-that-runs-no-tree-code
+  file: .github/workflows/hermetic-nightly.yml
   why: >-
-    Each watch runs code the repo does not vet: the tree with every
-    dependency's build script, or a third-party CLI's latest release. That
+    The nightly runs code the repo does not vet: the tree with every
+    dependency's build script, and a third-party CLI's latest release. That
     job's token only reads. The token that writes issues lives in a job that
     checks nothing out and runs no build, so no code of the tree ever holds it.
   assert: |
@@ -122,7 +120,7 @@
     - '.jobs.file.permissions.contents = "read"'
     - '.jobs.other = {"permissions": {"pull-requests": "write"}}'
     - '.jobs.file.steps = [{"uses": "actions/checkout@v7"}] + .jobs.file.steps'
-    - '.jobs.file.steps += [{"run": "just drift-watch"}]'
+    - '.jobs.file.steps += [{"run": "just hermetic"}]'
 
 - id: hermetic-nightly-files-the-runs-the-tier-named
   file: .github/workflows/hermetic-nightly.yml

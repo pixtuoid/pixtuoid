@@ -22,9 +22,8 @@ The git hooks and most CI jobs call `justfile` recipes.
 just              # list recipes
 just preflight    # pre-push gate: lint → clippy; `just preflight full` adds hack → test (CI's Rust recipes)
 just fmt          # auto-format
-just test         # the suite without the `upstream` feature, under cargo-nextest (`just setup-tools`)
+just test         # the suite, under cargo-nextest (`just setup-tools`)
 just test -p <crate> <filter>   # fast loop while iterating on one crate
-just test -p pixtuoid --features upstream drift_watch   # the drift watch's tests, built only under it
 ```
 
 > **Don't expect clippy to warm `test`'s build** — its check-mode (rmeta)
@@ -257,17 +256,17 @@ before re-litigating.
 
 ## Adding a new agent CLI
 
-The registration steps (4–7, 9) and step 12's roster literals are test-forced —
+The registration steps (4–7, 9) and step 11's roster literals are test-forced —
 skipping one fails `just test`. Step 8 is forced only for hook-only sources;
-step 10 by the theme guards; steps 1–3, 11 and step 12's `#[test]` are on you.
+step 10 by the theme guards; steps 1–3 and step 11's `#[test]` are on you.
 
 1. **Verify the wire format against the CLI's actual source/releases first** —
    transcript location, line shape, hooks, session identity; pin every fact
    to an upstream file/version. **Audit its HOME RESOLVER per axis in the
    same pass** — PROBE the installed artifact rather than trusting docs; an
    unmirrored axis is fail-silent: the watcher polls a directory the CLI
-   never writes and the office stays empty (#880). Resolver axes are
-   deliberately NOT drift-watched — re-run the probe matrix when the CLI majors.
+   never writes and the office stays empty (#880). No tier checks an axis past
+   the home variable a hermetic profile sandboxes: re-probe it when the CLI majors.
    A custom root gets ONE `pub fn <cli>_home()`, called by both the watcher's
    `default_paths()` and the installer's `default_config_path()` so they
    can't disagree.
@@ -303,18 +302,7 @@ step 10 by the theme guards; steps 1–3, 11 and step 12's `#[test]` are on you.
 10. **Add the per-source badge hue** — a `SourceColors` field + value in EVERY
     theme file + `badge_color` in the manifest row; the coverage, legibility
     and site-bridge tests fail until it exists.
-11. **Drift-watch in the same PR**: the source module's `UPSTREAM`, named in
-    its registry row — a `Watch` beside each decoded set, unless REVIEW.md's
-    **Wire format** check settles it with a breadcrumb or an adjudicated
-    `EXEMPT` row — and the installer's, named in its `Target` row, a `Watch`
-    over each hook set it registers and each name a shipped template reads
-    (`each_template_read_is_watched` holds the two together, both ways where
-    the template is scanned). A source whose dependence lives wholly in its installer is
-    `Upstream::Installer`. The types are in `source/upstream.rs`, and
-    `just drift-watch` runs them. A value our shipped artifacts bake in is a
-    `Watch` too, its `ours` read off the artifact rather than copied
-    (OpenClaw's `default_gateway_port`).
-12. **Two roster literals in two test binaries** (a scoped run misses them):
+11. **Two roster literals in two test binaries** (a scoped run misses them):
     the row-by-row byte pin in `corpus_check.rs`; a case row + `#[test]` in
     `crates/pixtuoid/tests/wire_to_pixels.rs`.
 

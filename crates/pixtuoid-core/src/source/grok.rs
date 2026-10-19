@@ -28,8 +28,6 @@
 //!   handle, unlike Codex's for-lifetime rollout fd.
 
 use crate::source::decoder::{DecodeError, DecodeResult as Result};
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{Family, Finding, Read, Release, Repo, Siblings, Watch, When};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -57,96 +55,6 @@ const XAI_MODEL_CHANGED: &str = "model_changed";
 const XAI_MODEL_AUTO_SWITCHED: &str = "model_auto_switched";
 const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
-
-/// The xAI extension tags this decoder turns into events. Listed for the
-/// drift watch: the arm below ends `_ => Ok(vec![])`, so a renamed tag decodes
-/// to nothing with no breadcrumb to say so, and the upstream watch is the only
-/// signal. Pinned to the arms by
-/// `the_exported_xai_tag_set_is_exactly_what_the_arms_match`.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_XAI_TAGS: &[&str] = &[
-    XAI_SUBAGENT_SPAWNED,
-    XAI_SUBAGENT_FINISHED,
-    XAI_MODEL_CHANGED,
-    XAI_MODEL_AUTO_SWITCHED,
-    XAI_TURN_COMPLETED,
-    XAI_HOOK_EXECUTION,
-];
-
-/// grok-build publishes no release.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: Repo = Repo {
-    name: "xai-org/grok-build",
-    release: Release::Branch,
-};
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "grok.xai_method",
-        ours: || vec![XAI_SESSION_UPDATE_METHOD],
-        // The module that WRITES the method into updates.jsonl owns it; the
-        // notification module only mentions it in a `///`.
-        docs: &[REPO.doc(
-            "crates/codegen/xai-grok-shell/src/session/storage/mod.rs",
-            r"const XAI_SESSION_UPDATE_METHOD\s*:",
-            "`XAI_SESSION_UPDATE_METHOD`",
-        )],
-        read: Read::RustStr {
-            item: "XAI_SESSION_UPDATE_METHOD",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the whole xAI block is gated on it, so every subagent link, model change and \
-             end marker is lost",
-        ),
-        siblings: None,
-    },
-    Watch {
-        id: "grok.xai_tags",
-        ours: || DECODED_XAI_TAGS.to_vec(),
-        docs: &[REPO.doc(
-            "crates/codegen/xai-grok-shell/src/extensions/notification.rs",
-            r"pub enum SessionUpdate\b",
-            "the xAI `SessionUpdate`",
-        )],
-        read: Read::RustEnum {
-            name: "SessionUpdate",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the line decodes to nothing: no subagent link, no model info, no end marker",
-        ),
-        siblings: Some(Siblings {
-            family: Family::FirstWord,
-            ignored: &[
-                (
-                    "hook_annotation",
-                    "TUI scrollback text; carries no state we render",
-                ),
-                (
-                    "subagent_progress",
-                    "cumulative per-child totals (turns, tool calls): summing a running \
-                     total into the delta-accumulating reducer double-counts (codex's \
-                     `token_count_emits_fresh_usage_from_last_reading` is the precedent)",
-                ),
-                (
-                    "turn_usage",
-                    "declared but nothing constructs it, so it never reaches \
-                     updates.jsonl; a prompt's usage rides `turn_completed.usage`",
-                ),
-                (
-                    "hook_run_started",
-                    "never in the transcript: upstream emits it through \
-                     `send_xai_notification_transient` \
-                     (session/acp_session_impl/hook_dispatch.rs), which only forwards to \
-                     the live client; a pager spinner phase whose end `hook_execution` \
-                     decodes to nothing but session_end",
-                ),
-            ],
-        }),
-    },
-];
 
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
@@ -508,9 +416,11 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
                     effort,
                 }])
             }
-            // Fires INSTEAD of `model_changed` when the persisted model is no
-            // longer available — undecoded, the flame shows the dead model
-            // until the next `_meta.modelId`-bearing update corrects it.
+            // Fires when the allowlist denies the session's model or the
+            // catalog dropped it (`xai-grok-shell/src/agent/mvp_agent/`
+            // `session_setup.rs:814,1868,1899`, `acp_agent.rs:1058,1132` at
+            // untagged main 2bdd1d6a) — undecoded, the flame shows the dead
+            // model until the next `_meta.modelId`-bearing update corrects it.
             XAI_MODEL_AUTO_SWITCHED => {
                 let model = str_field("new_model_id")
                     .filter(|s| !s.is_empty())
@@ -1358,14 +1268,10 @@ mod tests {
         );
     }
 
-    /// The exported tag set is exactly what the arms match.
-    ///
-    /// Two copies otherwise: a tag added to an arm but not the export leaves it
-    /// unwatched, and one dropped from an arm but not the export watches a name
-    /// we no longer read. The bare-word probe is a control — an unread tag must
-    /// reach neither arm.
+    /// Each xAI tag reaches a real arm. The bare-word probe is a control — an
+    /// unread tag must reach neither arm.
     #[test]
-    fn the_exported_xai_tag_set_is_exactly_what_the_arms_match() {
+    fn each_xai_tag_reaches_an_arm() {
         let reaches = |tag: &str| {
             let mut evs = 0;
             let logs = crate::test_capture::capture_logs(|| {
@@ -1379,7 +1285,14 @@ mod tests {
             });
             evs > 0 || logs.contains(crate::source::drift::TARGET)
         };
-        for tag in DECODED_XAI_TAGS {
+        for tag in [
+            XAI_SUBAGENT_SPAWNED,
+            XAI_SUBAGENT_FINISHED,
+            XAI_MODEL_CHANGED,
+            XAI_MODEL_AUTO_SWITCHED,
+            XAI_TURN_COMPLETED,
+            XAI_HOOK_EXECUTION,
+        ] {
             assert!(reaches(tag), "{tag} must reach a real arm");
         }
         assert!(
@@ -1581,7 +1494,7 @@ mod tests {
 
     /// Nothing on grok's TRANSCRIPT axis breadcrumbs — not a new method, not a
     /// new ACP tag, not a per-token chunk. A name we never read is noise on both
-    /// sides; the ones we DO read are drift-watched (`just drift-watch`).
+    /// sides.
     #[test]
     fn no_transcript_line_breadcrumbs_however_new_its_method_or_tag() {
         for v in [

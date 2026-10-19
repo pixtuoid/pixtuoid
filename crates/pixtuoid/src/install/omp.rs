@@ -19,10 +19,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 
 use crate::install::target::MergeOutcome;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::omp::REPO;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Doc, Finding, Read, Watch, When};
 
 /// Marks the extension as ours — absent from the removed-stub, so an uninstall
 /// of a foreign/removed file is a clean no-op.
@@ -31,147 +27,6 @@ const SENTINEL: &str = "@pixtuoid-omp-extension";
 const HOOK_PLACEHOLDER: &str = "\"{{HOOK_PATH_JSON}}\"";
 
 pub(crate) const EXTENSION_TEMPLATE: &str = include_str!("omp_extension.ts");
-
-/// The upstream extension-API names the bridge reads: each event field
-/// (`ev?.…`), context member (`ctx?.…`) and session-manager getter.
-#[cfg(all(test, feature = "upstream"))]
-pub(crate) fn extension_reads() -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = ["ev?.", "ctx?.", "sessionManager?."]
-        .into_iter()
-        .flat_map(|marker| EXTENSION_TEMPLATE.match_indices(marker))
-        .map(|(i, m)| {
-            let rest = &EXTENSION_TEMPLATE[i + m.len()..];
-            let end = rest
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(rest.len());
-            &rest[..end]
-        })
-        .collect();
-    names.sort_unstable();
-    names.dedup();
-    names
-}
-
-#[cfg(feature = "upstream")]
-const READ_GONE: &str = "the installed bridge forwards an undefined value, so that signal quietly \
-                         dies (approval waits, lifecycle, or identity)";
-
-#[cfg(feature = "upstream")]
-const EXTENSION_TYPES_TS: &str = "packages/coding-agent/src/extensibility/extensions/types.ts";
-#[cfg(feature = "upstream")]
-const SHARED_EVENTS_TS: &str = "packages/coding-agent/src/extensibility/shared-events.ts";
-
-/// The fields of the ONE type `name` that the bridge forwards.
-#[cfg(feature = "upstream")]
-const fn forwarded(
-    id: &'static str,
-    ours: fn() -> Vec<&'static str>,
-    docs: &'static [Doc],
-    name: &'static str,
-) -> Watch {
-    Watch {
-        id,
-        ours,
-        docs,
-        read: Read::TsFields { name },
-        when: When::Vanishes,
-        finding: Finding::Breaking(READ_GONE),
-        siblings: None,
-    }
-}
-
-/// Split by declaring type, so a field moving between the approval events
-/// can't read as present off their union (`ToolApprovalResolvedEvent` has two,
-/// split by verdict). `each_template_read_is_watched` holds `extension_reads`
-/// to the union of every watch's bare names.
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    forwarded(
-        "omp.approval_requested",
-        || vec!["toolCallId", "toolName", "reason"],
-        &[REPO.doc(
-            EXTENSION_TYPES_TS,
-            r"(?m)^export interface ToolApprovalRequestedEvent\b",
-            "`ToolApprovalRequestedEvent`",
-        )],
-        "ToolApprovalRequestedEvent",
-    ),
-    forwarded(
-        "omp.approval_resolved",
-        // No `reason`: the decoder reads it off the requested event alone.
-        || vec!["toolCallId", "toolName", "approved"],
-        &[REPO.doc(
-            EXTENSION_TYPES_TS,
-            r"(?m)^export interface ToolApprovalResolvedEvent\b",
-            "`ToolApprovalResolvedEvent`",
-        )],
-        "ToolApprovalResolvedEvent",
-    ),
-    Watch {
-        id: "omp.approved_required",
-        ours: || vec!["approved?"],
-        docs: &[REPO.doc(
-            EXTENSION_TYPES_TS,
-            r"(?m)^export interface ToolApprovalResolvedEvent\b",
-            "`ToolApprovalResolvedEvent`",
-        )],
-        read: Read::TsFields {
-            name: "ToolApprovalResolvedEvent",
-        },
-        when: When::Appears,
-        finding: Finding::Breaking(
-            "the decoder reads an absent `approved` as a DENIAL, so every approval would drop \
-             the sprite to idle mid-run with no breadcrumb; decide an explicit missing-field \
-             policy first",
-        ),
-        siblings: None,
-    },
-    forwarded(
-        "omp.extension_context",
-        || vec!["cwd", "sessionManager"],
-        &[REPO.doc(
-            EXTENSION_TYPES_TS,
-            r"(?m)^export interface ExtensionContext\b",
-            "`ExtensionContext`",
-        )],
-        "ExtensionContext",
-    ),
-    forwarded(
-        "omp.session_switch",
-        || vec!["previousSessionFile"],
-        &[REPO.doc(
-            SHARED_EVENTS_TS,
-            r"(?m)^export interface SessionSwitchEvent\b",
-            "`SessionSwitchEvent`",
-        )],
-        "SessionSwitchEvent",
-    ),
-    forwarded(
-        "omp.session_branch",
-        || vec!["previousSessionFile"],
-        &[REPO.doc(
-            SHARED_EVENTS_TS,
-            r"(?m)^export interface SessionBranchEvent\b",
-            "`SessionBranchEvent`",
-        )],
-        "SessionBranchEvent",
-    ),
-    Watch {
-        id: "omp.session_getters",
-        ours: || vec!["getSessionFile", "getSessionId"],
-        docs: &[REPO.doc(
-            "packages/coding-agent/src/session/session-manager.ts",
-            r"(?m)^export class SessionManager\b",
-            "`SessionManager`",
-        )],
-        read: Read::TsMembers {
-            of: &["SessionManager"],
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(READ_GONE),
-        siblings: None,
-    },
-];
 
 /// A valid empty ES module WITHOUT the sentinel, so a re-uninstall is a no-op.
 const REMOVED_STUB: &str = "// pixtuoid omp extension removed by disconnecting omp in pixtuoid's Sources panel (press s).\nexport default function () {}\n";
@@ -264,15 +119,16 @@ mod tests {
     /// The extension registers EXACTLY what the decoder reads. Two lists in
     /// two languages — a TS `FORWARD` set here, `match ty` arms in
     /// `pixtuoid-core` — and no compiler can see across that gap, so they are
-    /// bound through core's declared watch instead. Register one the decoder
+    /// bound through core's `DECODED_HOOK_EVENTS` instead. Register one the decoder
     /// ignores and we spawn a shim per event for nothing; miss one it reads and
     /// that signal never arrives.
     #[test]
     fn the_extension_forwards_exactly_what_the_decoder_reads() {
         let decoded: std::collections::BTreeSet<&str> =
-            pixtuoid_core::source::registry::declared_watch("omp.hook_events")
-                .map(|w| (w.ours)().into_iter().collect())
-                .expect("core watches omp's hook events");
+            pixtuoid_core::source::omp::DECODED_HOOK_EVENTS
+                .iter()
+                .copied()
+                .collect();
 
         assert_eq!(extension_forward_set(), decoded);
     }
@@ -464,8 +320,7 @@ mod tests {
         assert!(!uninstall("").unwrap().changed);
     }
 
-    /// The one string deciding whether omp ever LOADS what install writes;
-    /// its upstream twin rides the drift watch (`omp.extension_subdir`).
+    /// The one string deciding whether omp ever LOADS what install writes.
     #[test]
     fn default_path_is_the_extension_under_the_agent_dirs_extensions() {
         let p = default_config_path().expect("resolvable in a dev environment");

@@ -18,13 +18,7 @@ use serde_json::{Value, json};
 
 use crate::install::io;
 use crate::install::target::MergeOutcome;
-#[cfg(feature = "upstream")]
-use crate::install::target::UNFIRED_HOOK;
 use crate::install::verify::{SchemaParse, ShimRef};
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::grok::REPO;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Finding, Read, Watch, When};
 
 /// The KEY is the detection signal; the value is only a human note for anyone
 /// who opens the file.
@@ -57,23 +51,6 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "SubagentStop",
     "SessionEnd",
 ];
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[Watch {
-    id: "grok.hook_events",
-    ours: || GROK_EVENTS.to_vec(),
-    docs: &[REPO.doc(
-        "crates/codegen/xai-grok-hooks/src/event.rs",
-        r"pub enum HookEventName\b",
-        "`HookEventName`",
-    )],
-    read: Read::RustMacroRows {
-        name: "hook_events",
-    },
-    when: When::Vanishes,
-    finding: Finding::Breaking(UNFIRED_HOOK),
-    siblings: None,
-}];
 
 /// `{grok_home}/hooks/pixtuoid.json`, via the SAME `grok_home()` resolution the
 /// watcher's sessions root and the liveness probe ride, so the three can never
