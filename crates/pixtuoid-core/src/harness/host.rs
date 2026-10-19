@@ -141,8 +141,9 @@ pub fn owned_by_us(path: &Path) -> bool {
 
 /// `path`'s lock, held until the returned file drops. A fixed name in a shared
 /// directory is pre-plantable, so a link there is never followed, nothing is
-/// truncated, and a file another user owns is refused. A new one is ours
-/// alone: whoever can open a file can lock it and stall every capture.
+/// truncated, and a file another user owns is refused. On Unix a new one is
+/// ours alone, since whoever can open a file can lock it and stall every
+/// capture; Windows gives it the directory's inherited ACL.
 ///
 /// # Errors
 ///
@@ -345,8 +346,9 @@ mod tests {
         let other = std::fs::File::open(&path).expect("the lock file");
         assert!(other.try_lock().is_err(), "a second holder waits");
         drop(held);
-        assert!(other.try_lock().is_ok());
+        // Read before `other` locks: Windows refuses a read past any handle's lock.
         assert_eq!(std::fs::read_to_string(&path).expect("read"), "kept");
+        assert!(other.try_lock().is_ok());
     }
 
     #[cfg(unix)]
