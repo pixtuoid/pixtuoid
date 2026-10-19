@@ -206,9 +206,8 @@ fn is_test(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// The literals `file`, the module `module`, reads: each const's and inline
-/// array's string members in each non-Exact mode a method reads them in, else
-/// [`Match::Exact`].
+/// The literals `file`, the module `module`, reads, each in the mode
+/// [`Collect::resolve`] gives it.
 pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     let mut c = Collect {
         module: module.to_owned(),
@@ -238,8 +237,9 @@ struct Collect {
 }
 
 impl Collect {
-    /// Every literal, each const's and inline array's string members in each
-    /// mode `uses` holds for it, or [`Match::Exact`] where it holds none.
+    /// Each const's and inline array's string members in every mode `uses`
+    /// holds for them, else [`Match::Exact`]; every other literal as the walk
+    /// added it.
     fn resolve(mut self) -> BTreeSet<Literal> {
         let modes = |uses: &BTreeSet<(String, Match)>, of: &str| {
             let m: Vec<Match> = uses
