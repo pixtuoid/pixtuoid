@@ -187,8 +187,10 @@ fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
 }
 
 fn emit_rows(rows: &[YamlOwned]) -> Result<String> {
+    // dsh reads an empty file as no array and refuses to boot; only a missing
+    // one is "no patches" (`@deepseek-ai/dsh-app-boot` `parsePatchList`, dsh-v0.2.0-rc.2).
     if rows.is_empty() {
-        return Ok(String::new());
+        return Ok("[]\n".into());
     }
     let doc = YamlOwned::Sequence(rows.to_vec());
     let borrowed = Yaml::from(&doc);
@@ -560,6 +562,24 @@ mod tests {
             PLUGIN_TEMPLATE.contains(r#"header.origin === "subagent" && header.parentSession"#),
             "base() lost the subagent-discriminator gate on parentSession"
         );
+    }
+
+    #[test]
+    fn uninstalling_the_only_row_leaves_an_empty_list() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let merged = merge_install("", "/unused").unwrap();
+            let removed = merge_uninstall(&merged.content).unwrap();
+            assert!(removed.changed);
+            assert_eq!(removed.content, "[]\n");
+            assert!(parse_rows(&removed.content).unwrap().is_empty());
+            assert!(
+                !merge_install(&removed.content, "/unused")
+                    .unwrap()
+                    .content
+                    .is_empty()
+            );
+        });
     }
 
     #[test]
