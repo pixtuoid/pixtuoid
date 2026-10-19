@@ -8,7 +8,7 @@ use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::audio::{CEILING_DBFS, LIMITER_ATTACK, LIMITER_RELEASE, ceiling_amplitude};
 use rodio::source::{LimitSettings, Source};
 
-use super::music::MusicReader;
+use super::music::{self, MusicReader};
 
 pub(crate) trait AudioSink: Send {
     /// Start `stem` looping `samples` (mono f32 at [`pixtuoid_scene::audio::SAMPLE_RATE`]) at gain 0.
@@ -55,19 +55,26 @@ pub(crate) fn mono(samples: &[f32]) -> rodio::buffer::SamplesBuffer {
     rodio::buffer::SamplesBuffer::new(channels, rate, samples)
 }
 
-/// The music as a rodio source: interleaved stereo at
-/// [`pixtuoid_scene::audio::SAMPLE_RATE`], endless, so the bus's converter is
-/// built once (`rodio::source::UniformSourceIterator` rebuilds it per span).
+/// The music as a rodio source at [`pixtuoid_scene::audio::SAMPLE_RATE`],
+/// endless, so the bus's converter is built once
+/// (`rodio::source::UniformSourceIterator` rebuilds it per span).
 pub(crate) struct MusicSource {
     reader: MusicReader,
+    /// Whether the bus has one channel, where rodio would keep only each
+    /// frame's left sample (<https://docs.rs/rodio/0.23.0/src/rodio/conversions/channels.rs.html#59-80>),
+    /// so the source folds the frame itself.
+    mono: bool,
     /// The right sample of the frame whose left one went out last.
     right: Option<f32>,
 }
 
 impl MusicSource {
-    pub(crate) fn new(reader: MusicReader) -> Self {
+    /// The music for a bus of `channels`: folded to mono on a 1-channel bus,
+    /// interleaved stereo on any other.
+    pub(crate) fn new(reader: MusicReader, channels: rodio::ChannelCount) -> Self {
         Self {
             reader,
+            mono: channels.get() == 1,
             right: None,
         }
     }
@@ -77,6 +84,9 @@ impl Iterator for MusicSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
+        if self.mono {
+            return Some(music::fold(self.reader.next_frame()));
+        }
         if let Some(right) = self.right.take() {
             return Some(right);
         }
@@ -91,7 +101,7 @@ impl Source for MusicSource {
         None
     }
     fn channels(&self) -> rodio::ChannelCount {
-        std::num::NonZero::new(2).expect("2 != 0")
+        std::num::NonZero::new(if self.mono { 1 } else { 2 }).expect("1, 2 != 0")
     }
     fn sample_rate(&self) -> rodio::SampleRate {
         std::num::NonZero::new(pixtuoid_scene::audio::SAMPLE_RATE).expect("SAMPLE_RATE != 0")
@@ -140,6 +150,7 @@ pub(crate) mod rodio_sink {
         // field order = drop order: players release before the device sink
         loops: HashMap<LoopStem, rodio::Player>,
         bus: rodio::mixer::Mixer,
+        channels: rodio::ChannelCount,
         _stream: rodio::MixerDeviceSink,
     }
 
@@ -167,6 +178,7 @@ pub(crate) mod rodio_sink {
                     Some(Self {
                         loops: HashMap::new(),
                         bus,
+                        channels: config.channel_count(),
                         _stream: stream,
                     })
                 }
@@ -213,7 +225,7 @@ pub(crate) mod rodio_sink {
         fn start_music(&mut self, reader: MusicReader) {
             // Straight onto the bus: a `Player` locks its controls on the
             // device callback every 5 ms (`rodio::Player::append`).
-            self.bus.add(MusicSource::new(reader));
+            self.bus.add(MusicSource::new(reader, self.channels));
         }
 
         fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
@@ -245,6 +257,29 @@ pub(crate) mod rodio_sink {
 mod tests {
     use super::*;
     use pixtuoid_scene::audio::SAMPLE_RATE;
+
+    /// Frames whose channels differ, as a stereo song's do.
+    const WIDE: [pixtuoid_scene::audio::Frame; 2] = [[1.0, 0.0], [0.2, 0.6]];
+
+    fn heard(channels: u16) -> (u16, Vec<f32>) {
+        let channels = std::num::NonZero::new(channels).expect("a channel");
+        let mut source = MusicSource::new(super::super::music::reader_of(&WIDE), channels);
+        let per_frame = source.channels().get();
+        let samples = (0..WIDE.len() * usize::from(per_frame))
+            .map(|_| source.next().expect("endless"))
+            .collect();
+        (per_frame, samples)
+    }
+
+    #[test]
+    fn a_mono_device_hears_the_music_folded_to_the_mean() {
+        assert_eq!(heard(1), (1, vec![0.5, 0.4]));
+    }
+
+    #[test]
+    fn a_stereo_device_hears_both_channels_as_rendered() {
+        assert_eq!(heard(2), (2, vec![1.0, 0.0, 0.2, 0.6]));
+    }
 
     fn tone(amplitude: f32, hz: f32, secs: f32) -> Vec<f32> {
         let n = (secs * SAMPLE_RATE as f32) as usize;

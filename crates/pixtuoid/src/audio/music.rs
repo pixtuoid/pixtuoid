@@ -92,6 +92,26 @@ impl MusicProducer {
     }
 }
 
+/// `frame` folded to mono: the mean of its channels, as lofi's judge hears it
+/// (`mono()`, <https://github.com/pixtuoid/lofi/blob/e4ec70ac0953fc48eab5911bdb941a65b2df12bf/.claude/skills/procedural-lofi/scripts/ab_judge.py#L180-L182>).
+pub(crate) fn fold([left, right]: Frame) -> f32 {
+    f32::midpoint(left, right)
+}
+
+/// A reader that plays `frames` at unity gain, then silence.
+#[cfg(test)]
+pub(crate) fn reader_of(frames: &[Frame]) -> MusicReader {
+    let (mut producer, ring) = rtrb::RingBuffer::new(frames.len());
+    for &frame in frames {
+        producer.push(frame).expect("the ring holds them all");
+    }
+    MusicReader {
+        frames: ring,
+        gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        underruns: Arc::new(AtomicU64::new(0)),
+    }
+}
+
 /// The device's end: one frame per call, wait-free and allocation-free.
 pub(crate) struct MusicReader {
     frames: rtrb::Consumer<Frame>,
@@ -227,18 +247,5 @@ mod tests {
         assert_eq!(reader.next_frame(), Frame::default());
         assert_eq!(reader.next_frame(), Frame::default());
         assert_eq!(reader.underruns.load(Relaxed), 2);
-    }
-
-    /// rodio keeps each frame's first sample on a mono device and discards the
-    /// rest (<https://docs.rs/rodio/0.23.0/src/rodio/conversions/channels.rs.html#59-80>),
-    /// so the music folds to mono losslessly only while lofi renders L == R.
-    #[test]
-    fn lofi_renders_both_channels_alike() {
-        let frames = performed(Controls::default(), SAMPLE_RATE as usize);
-        assert!(
-            frames.iter().any(|f| f[0] != 0.0),
-            "premise: the song sounds"
-        );
-        assert!(frames.iter().all(|[l, r]| l == r));
     }
 }

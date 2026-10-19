@@ -1069,8 +1069,8 @@ mod listen_gate {
     use std::sync::Arc;
 
     /// Sample-accurate mixdown of loops, one-shots and the music into one
-    /// master buffer, as a mono device hears it: the music's left channel, per
-    /// `music::tests::lofi_renders_both_channels_alike`.
+    /// master buffer, as a mono device hears it: the music folded as
+    /// `MusicSource` folds it on a 1-channel bus.
     struct OfflineSink {
         master: Vec<f32>,
         loops: Vec<(Arc<Vec<f32>>, f32)>, // (samples, current gain)
@@ -1100,7 +1100,7 @@ mod listen_gate {
                     self.master[at] += samples[at % samples.len()] * gain;
                 }
                 if let Some(music) = &mut self.music {
-                    self.master[at] += music.next_frame()[0];
+                    self.master[at] += music::fold(music.next_frame());
                 }
             }
             self.write_pos_samples += n;
