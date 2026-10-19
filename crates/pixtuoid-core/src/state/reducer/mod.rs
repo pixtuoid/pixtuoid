@@ -605,8 +605,8 @@ impl Reducer {
     /// A matching tool_use_id means the *gated* tool finished, so a parallel
     /// tool's end can't false-clear a pending permission. A None-id end ON THE
     /// HOOK transport is a turn-end (Codex/Reasonix `Stop`) and a pending
-    /// approval BLOCKS those CLIs' turns, so the Wait is stale — the Hook gate is
-    /// load-bearing: Codex's JSONL emits a None-id end per tool.
+    /// approval BLOCKS those CLIs' turns, so the Wait is stale. A JSONL None-id end
+    /// may race the prompt, so only the Hook's resolves it (`jsonl_none_id_end_while_waiting_keeps_waiting`).
     fn wait_resolved_by(
         &self,
         scene: &SceneState,
