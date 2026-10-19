@@ -1143,8 +1143,8 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // grok's cites, save one naming its own ref, are `xai-org/grok-build` at
-    // `37949780c1`, the monorepo sync nearest 1.0.25: the repo tags no release.
+    // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
+    // nearest 1.0.25 (the repo tags no release), unless a cite names its own ref.
     Profile {
         source: "grok",
         package: Package::Npm("@xai-official/grok"),
@@ -1216,10 +1216,10 @@ trust_level = "trusted"
                 fixture: "fixtures/grok/tool-run-hermetic",
             },
             // A tool that fails to dispatch fires PostToolUseFailure, a built-in's
-            // logical error PostToolUse (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:94-95`):
-            // `use_tool` on a tool no server holds errs (`xai-grok-tools/src/registry/types.rs:1611-1615`,
-            // `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs:1064-1074`, `:1148-1152`,
-            // at main 2bdd1d6a).
+            // logical error PostToolUse, and `use_tool` on a tool no server holds
+            // errs (at main 2bdd1d6a: `crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:94-95`,
+            // `xai-grok-tools/src/registry/types.rs:1611-1615`,
+            // `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs:1064-1074`, `:1148-1152`).
             Scenario {
                 name: "tool-error",
                 shape: Shape::ToolRun,
