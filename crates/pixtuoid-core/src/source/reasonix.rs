@@ -34,19 +34,6 @@ use crate::source::{AgentEvent, ToolDetail};
 /// The Reasonix CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "reasonix";
 
-/// Each version publishes a "Reasonix CLI" and a "Reasonix Studio" release
-/// (`studio-v…`, github.com/esengine/DeepSeek-Reasonix/releases), so
-/// `releases/latest` may name the app; the CLI is the npm package's `latest`
-/// (registry.npmjs.org/reasonix).
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: crate::source::upstream::Repo = crate::source::upstream::Repo {
-    name: "esengine/DeepSeek-Reasonix",
-    release: crate::source::upstream::Release::Npm {
-        package: "reasonix",
-        tag_prefix: "v",
-    },
-};
-
 /// Reasonix tools that spawn a subagent, so the slot reads "Delegating" while
 /// it works (`internal/ext/hook/hook_claude_agent.go:7-10`). `task` is not
 /// here: `SubagentStart` marks a foreground one with its call id, and a
@@ -84,87 +71,6 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
         .unwrap_or(id);
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
-
-/// Read outside the field census, so a rename goes unbreadcrumbed; each
-/// watch's `finding` names what it breaks.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[crate::source::upstream::Watch] = {
-    use crate::source::upstream::{Finding, Read, Watch, When};
-    &[
-        Watch {
-            id: "reasonix.subagent_role",
-            ours: || vec![SUBAGENT_ROLE.trim_start_matches(':')],
-            docs: &[REPO.doc(
-                "internal/runtime/delegation/task.go",
-                r"func subagentRecoveryTaskID\b",
-                "`subagentRecoveryTaskID`",
-            )],
-            read: Read::Each {
-                pattern: r#""{name}" \+"#,
-            },
-            when: When::Vanishes,
-            finding: Finding::Breaking(
-                "every subagent becomes a root sprite that no drain walks out",
-            ),
-            siblings: None,
-        },
-        // A skill tool's child names its role on its own path.
-        Watch {
-            id: "reasonix.skill_subagent_role",
-            ours: || vec![SUBAGENT_ROLE.trim_start_matches(':')],
-            docs: &[REPO.doc(
-                "internal/assembly/boot/delegation.go",
-                r"func skillSubagentRole\b",
-                "`skillSubagentRole`",
-            )],
-            read: Read::Each {
-                pattern: r#""{name}" \+"#,
-            },
-            when: When::Vanishes,
-            finding: Finding::Breaking(
-                "a skill tool's subagent becomes a root sprite that its parent's end leaves behind",
-            ),
-            siblings: None,
-        },
-        Watch {
-            id: "reasonix.turn_roles",
-            ours: || {
-                TURN_ROLES
-                    .iter()
-                    .map(|role| role.trim_start_matches(':'))
-                    .collect()
-            },
-            docs: &[REPO.doc(
-                "internal/assembly/boot/roles.go",
-                r"ForRole\(",
-                "the role runners",
-            )],
-            read: Read::Each {
-                pattern: r#"ForRole\("{name}"\)"#,
-            },
-            when: When::Vanishes,
-            finding: Finding::Breaking("the planner or guardian becomes a sprite of its own"),
-            siblings: None,
-        },
-        Watch {
-            id: "reasonix.spawning_tools",
-            ours: || SUBAGENT_TOOLS.to_vec(),
-            docs: &[REPO.doc(
-                "internal/ext/hook/hook_claude_agent.go",
-                r"var claudeAgentSpawningTools\b",
-                "`claudeAgentSpawningTools`",
-            )],
-            read: Read::Each {
-                pattern: r#""{name}""#,
-            },
-            when: When::Vanishes,
-            finding: Finding::Review(
-                "a parent spawning through it may no longer read Delegating, nor its child walk out",
-            ),
-            siblings: None,
-        },
-    ]
-};
 
 /// Decode one Reasonix hook payload (already identified by
 /// `_pixtuoid_source == "reasonix"`). Envelope verified against

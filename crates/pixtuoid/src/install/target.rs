@@ -102,11 +102,7 @@ pub struct Target {
     /// primary is then the plugin file that carries them (a hooks file, or a
     /// manifest with the hooks inside), which this registers with the CLI.
     pub host: Option<&'static HostRegistration>,
-    /// The upstream declarations the artifacts this target installs depend on.
-    #[cfg(feature = "upstream")]
-    pub upstream: &'static [pixtuoid_core::source::upstream::Watch],
-    /// The hook names the installed artifact subscribes to: a vanish watch
-    /// carries each (`every_registered_hook_is_watched`), and a profiled CLI's
+    /// The hook names the installed artifact subscribes to: a profiled CLI's
     /// hermetic scenarios fire or owe each (`every_hook_a_profiled_cli_registers_is_fired_or_owed`).
     #[cfg(test)]
     pub(crate) registers: fn() -> Vec<&'static str>,
@@ -250,14 +246,6 @@ pub enum Unregistered {
     Unreachable,
 }
 
-#[cfg(feature = "upstream")]
-pub(crate) const UNFIRED_HOOK: &str =
-    "we register a hook it never fires, so the decoder is never reached (no sprite)";
-
-/// A docs page can lag the CLI, so its vanish is a likely rename, not a proven one.
-#[cfg(feature = "upstream")]
-pub(crate) const UNDOCUMENTED_HOOK: &str = "likely renamed: we register a hook it no longer fires, so the decoder is never reached (no sprite)";
-
 pub(crate) const CLAUDE: Target = Target {
     name: "claude",
     core_source: pixtuoid_core::source::claude_code::SOURCE_NAME,
@@ -282,8 +270,6 @@ pub(crate) const CLAUDE: Target = Target {
     presence_probe: crate::install::claude::detect_installed,
     post_install_hint: None,
     host: Some(&crate::install::claude::HOST),
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::claude::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::claude::EVENTS.to_vec(),
 };
@@ -310,8 +296,6 @@ pub(crate) const CODEX: Target = Target {
         "restart Codex and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
     ),
     host: Some(&crate::install::codex::HOST),
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::codex::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::codex::CODEX_EVENTS.to_vec(),
 };
@@ -334,8 +318,6 @@ pub(crate) const REASONIX: Target = Target {
     presence_probe: crate::install::reasonix::detect_installed,
     post_install_hint: None,
     host: Some(&crate::install::reasonix::HOST),
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::reasonix::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::reasonix::REASONIX_EVENTS.to_vec(),
 };
@@ -356,8 +338,6 @@ pub(crate) const CODEWHALE: Target = Target {
     presence_probe: crate::install::codewhale::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::codewhale::UPSTREAM,
     #[cfg(test)]
     registers: || {
         crate::install::codewhale::CODEWHALE_EVENTS
@@ -391,8 +371,6 @@ pub(crate) const OPENCODE: Target = Target {
     presence_probe: crate::install::opencode::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: &[],
     #[cfg(test)]
     registers: crate::install::opencode::plugin_events,
 };
@@ -413,8 +391,6 @@ pub(crate) const GROK: Target = Target {
     presence_probe: crate::install::grok::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::grok::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::grok::GROK_EVENTS.to_vec(),
 };
@@ -435,8 +411,6 @@ pub(crate) const CURSOR: Target = Target {
     presence_probe: crate::install::cursor::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::cursor::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::cursor::CURSOR_EVENTS.to_vec(),
 };
@@ -458,8 +432,6 @@ pub(crate) const HERMES: Target = Target {
     presence_probe: crate::install::hermes::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::hermes::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::hermes::HERMES_EVENTS.to_vec(),
 };
@@ -484,8 +456,6 @@ pub(crate) const OPENCLAW: Target = Target {
     // hot-load the plugin — the lobster appears on its next restart.
     post_install_hint: Some("restart the gateway to load it (openclaw gateway restart)"),
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::openclaw::UPSTREAM,
     #[cfg(test)]
     registers: || {
         [
@@ -514,8 +484,6 @@ pub(crate) const KIMI: Target = Target {
     presence_probe: crate::install::kimi::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::kimi::UPSTREAM,
     #[cfg(test)]
     registers: || crate::install::kimi::KIMI_EVENTS.to_vec(),
 };
@@ -541,8 +509,6 @@ pub(crate) const DSH: Target = Target {
         "running dsh sessions (except the web profile) must restart to load the plugin",
     ),
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::dsh::UPSTREAM,
     #[cfg(test)]
     registers: crate::install::dsh::plugin_events,
 };
@@ -568,8 +534,6 @@ pub(crate) const OMP: Target = Target {
     // Extensions load once at startup (`discoverAndLoadExtensions`).
     post_install_hint: Some("already-running omp sessions must restart to load the bridge"),
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::omp::UPSTREAM,
     #[cfg(test)]
     registers: || {
         crate::install::forward_set(crate::install::omp::EXTENSION_TEMPLATE)
@@ -594,8 +558,6 @@ pub(crate) const ANTIGRAVITY: Target = Target {
     presence_probe: crate::install::antigravity::detect_installed,
     post_install_hint: None,
     host: None,
-    #[cfg(feature = "upstream")]
-    upstream: crate::install::antigravity::UPSTREAM,
     #[cfg(test)]
     registers: || {
         crate::install::antigravity::AG_EVENTS

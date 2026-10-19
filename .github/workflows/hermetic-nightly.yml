@@ -1,8 +1,8 @@
 name: hermetic-nightly
 
-# The drift watch: each profiled CLI's latest release against the scripted
-# model, where a CLI that renamed or reshaped what pixtuoid reads turns a
-# verdict red before a user upgrades into it.
+# Each profiled CLI's latest release against the scripted model, where a CLI
+# that renamed or reshaped what pixtuoid reads turns a verdict red before a
+# user upgrades into it.
 
 on:
   schedule:

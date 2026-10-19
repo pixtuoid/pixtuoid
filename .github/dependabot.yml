@@ -10,13 +10,6 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # Ahead of rust-deps, since a crate joins the first group it matches. The
-      # drift readers' parsers are 0.y, where each y bump may break
-      # (https://doc.rust-lang.org/cargo/reference/semver.html), and inside
-      # rust-deps one break would hold every other bump until the readers are
-      # fixed.
-      drift-readers:
-        patterns: ["oxc*", "pulldown-cmark"]
       # Its own PR, so a red bump elsewhere in rust-deps never holds a lofi patch.
       lofi:
         patterns: ["pixtuoid-lofi"]

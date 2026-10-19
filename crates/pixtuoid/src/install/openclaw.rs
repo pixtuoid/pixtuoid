@@ -18,10 +18,6 @@ use serde_json::{Value, json};
 use crate::install::io;
 use crate::install::merge::{prune_empty, prune_empty_root};
 use crate::install::target::MergeOutcome;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::openclaw::REPO;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{At, Doc, Finding, Read, Watch, When};
 
 const PLUGIN_ID: &str = "pixtuoid";
 
@@ -36,11 +32,10 @@ const HOOK_PLACEHOLDER: &str = "\"{{HOOK_PATH_JSON}}\"";
 pub(crate) const PLUGIN_TEMPLATE: &str = include_str!("openclaw_plugin.js");
 
 /// The OpenClaw gateway hook events the plugin FORWARDS, pinned to its `HOOKS`
-/// array and `decode_openclaw_hook_payload`'s arms by the consistency test below,
-/// and watched by [`UPSTREAM`] (which is why a const with no prod caller is gated
-/// rather than deleted). A rename upstream makes that hook silently stop firing,
-/// since the plugin registers by name.
-#[cfg(any(test, feature = "upstream"))]
+/// array and `decode_openclaw_hook_payload`'s arms by the consistency test below.
+/// A rename upstream makes that hook silently stop firing, since the plugin
+/// registers by name.
+#[cfg(test)]
 pub(crate) const OPENCLAW_EVENTS: &[&str] = &[
     "gateway_start",
     "gateway_stop",
@@ -51,183 +46,9 @@ pub(crate) const OPENCLAW_EVENTS: &[&str] = &[
 ];
 
 /// The hooks the plugin registers only to stamp `agent_end`'s verdict, pinned to its
-/// `VERDICT_HOOKS` and watched beside [`OPENCLAW_EVENTS`].
-#[cfg(any(test, feature = "upstream"))]
+/// `VERDICT_HOOKS`.
+#[cfg(test)]
 pub(crate) const OPENCLAW_VERDICT_EVENTS: &[&str] = &["model_call_ended"];
-
-/// What the plugin stamps `errored` from, per upstream type: each field it
-/// reads and each literal it compares one against. `each_template_read_is_watched`
-/// pins them to the template.
-#[cfg(feature = "upstream")]
-pub(crate) const AGENT_END_FIELDS: &[&str] = &["runId", "success", "error"];
-#[cfg(feature = "upstream")]
-pub(crate) const MODEL_CALL_BASE_FIELDS: &[&str] = &["runId"];
-#[cfg(feature = "upstream")]
-pub(crate) const MODEL_CALL_ENDED_FACTS: &[&str] =
-    &["outcome:\"error\"", "failureKind:\"aborted\""];
-
-/// What `notePort` reads off an event and its context.
-#[cfg(feature = "upstream")]
-pub(crate) const PORT_FIELDS: &[&str] = &["port"];
-/// What `forward` copies from a hook's context (`ALLOW`).
-#[cfg(feature = "upstream")]
-pub(crate) const RUN_KEY_FIELDS: &[&str] = &["runId", "sessionId"];
-
-/// The fallback port the plugin template ships, read off its one
-/// `DEFAULT_GATEWAY_PORT` rather than copied; `None` for a shape it cannot read.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) fn default_gateway_port() -> Option<&'static str> {
-    let after = PLUGIN_TEMPLATE
-        .split_once("const DEFAULT_GATEWAY_PORT")?
-        .1
-        .split_once('=')?
-        .1;
-    let digits = after.trim_start();
-    let end = digits.find(|c: char| !c.is_ascii_digit())?;
-    (end > 0).then(|| &digits[..end])
-}
-
-#[cfg(feature = "upstream")]
-const HOOK_TYPES: At = At::Path {
-    repo: &REPO,
-    path: "src/plugins/hook-types.ts",
-};
-#[cfg(feature = "upstream")]
-const GATEWAY_TYPES: At = At::Path {
-    repo: &REPO,
-    path: "src/plugins/hook-gateway.types.ts",
-};
-
-#[cfg(feature = "upstream")]
-const DEGRADED: &str =
-    "openclaw_plugin.js stamps `errored` from it, so the Degraded verdict misreads a run";
-#[cfg(feature = "upstream")]
-const IDENTITY: &str = "the plugin keys each gateway's mascot on the port it reads, so a `--port` \
-                        gateway falls back to the default and two live gateways collapse onto one";
-
-/// The fields of the ONE type `name` that the plugin reads.
-#[cfg(feature = "upstream")]
-const fn reads(
-    id: &'static str,
-    ours: fn() -> Vec<&'static str>,
-    docs: &'static [Doc],
-    name: &'static str,
-    says: &'static str,
-) -> Watch {
-    Watch {
-        id,
-        ours,
-        docs,
-        read: Read::TsFields { name },
-        when: When::Vanishes,
-        finding: Finding::Breaking(says),
-        siblings: None,
-    }
-}
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "openclaw.hook_events",
-        ours: || [OPENCLAW_EVENTS, OPENCLAW_VERDICT_EVENTS].concat(),
-        docs: &[Doc {
-            at: HOOK_TYPES,
-            anchor: r"const PLUGIN_HOOK_NAMES\s*=",
-            owns: "`PLUGIN_HOOK_NAMES`",
-        }],
-        read: Read::TsConstArray {
-            name: "PLUGIN_HOOK_NAMES",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("the plugin registers a hook OpenClaw never fires"),
-        siblings: None,
-    },
-    reads(
-        "openclaw.agent_end_fields",
-        || AGENT_END_FIELDS.to_vec(),
-        &[Doc {
-            at: HOOK_TYPES,
-            anchor: r"(?m)^(?:export type|type) PluginHookAgentEndEvent\b",
-            owns: "`PluginHookAgentEndEvent`",
-        }],
-        "PluginHookAgentEndEvent",
-        DEGRADED,
-    ),
-    reads(
-        "openclaw.model_call_base_fields",
-        || MODEL_CALL_BASE_FIELDS.to_vec(),
-        &[Doc {
-            at: HOOK_TYPES,
-            anchor: r"(?m)^(?:export type|type) PluginHookModelCallBaseEvent\b",
-            owns: "`PluginHookModelCallBaseEvent`",
-        }],
-        "PluginHookModelCallBaseEvent",
-        DEGRADED,
-    ),
-    reads(
-        "openclaw.model_call_ended_fields",
-        || MODEL_CALL_ENDED_FACTS.to_vec(),
-        &[Doc {
-            at: HOOK_TYPES,
-            anchor: r"(?m)^(?:export type|type) PluginHookModelCallEndedEvent\b",
-            owns: "`PluginHookModelCallEndedEvent`",
-        }],
-        "PluginHookModelCallEndedEvent",
-        DEGRADED,
-    ),
-    reads(
-        "openclaw.gateway_start_port",
-        || PORT_FIELDS.to_vec(),
-        &[Doc {
-            at: GATEWAY_TYPES,
-            anchor: r"(?m)^export type PluginHookGatewayStartEvent\b",
-            owns: "`PluginHookGatewayStartEvent`",
-        }],
-        "PluginHookGatewayStartEvent",
-        IDENTITY,
-    ),
-    reads(
-        "openclaw.gateway_context_port",
-        || PORT_FIELDS.to_vec(),
-        &[Doc {
-            at: GATEWAY_TYPES,
-            anchor: r"(?m)^export type PluginHookGatewayContext\b",
-            owns: "`PluginHookGatewayContext`",
-        }],
-        "PluginHookGatewayContext",
-        IDENTITY,
-    ),
-    reads(
-        "openclaw.agent_context_ids",
-        || RUN_KEY_FIELDS.to_vec(),
-        &[REPO.doc(
-            "src/plugins/hook-agent-context.types.ts",
-            r"(?m)^export type PluginHookAgentContext\b",
-            "`PluginHookAgentContext`",
-        )],
-        "PluginHookAgentContext",
-        "the decoder pairs a run's start and end by these ids, so concurrent runs share one key \
-         and the first to end shows the gateway idle while the rest still run",
-    ),
-    Watch {
-        id: "openclaw.default_gateway_port",
-        ours: || default_gateway_port().into_iter().collect(),
-        docs: &[REPO.doc(
-            "src/config/paths.ts",
-            r"(?m)^export const DEFAULT_GATEWAY_PORT\b",
-            "`DEFAULT_GATEWAY_PORT`",
-        )],
-        read: Read::TsConst {
-            name: "DEFAULT_GATEWAY_PORT",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "a gateway on OpenClaw's new default is stamped with the plugin's stale fallback \
-             port, so two live gateways collapse onto one mascot until a TTL sweeps it",
-        ),
-        siblings: None,
-    },
-];
 
 const MANIFEST: &str = r#"{
   "id": "pixtuoid",
@@ -704,18 +525,6 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The port reader finds the shipped literal, and refuses a shape it cannot
-    /// read rather than answering a plausible wrong one.
-    #[test]
-    fn the_gateway_port_is_read_from_the_template_not_copied() {
-        let got = default_gateway_port().expect("the template declares it");
-        assert!(
-            PLUGIN_TEMPLATE.contains(&format!("const DEFAULT_GATEWAY_PORT = {got};")),
-            "the read port {got} is not the literal the template ships",
-        );
-        assert!(got.chars().all(|c| c.is_ascii_digit()) && !got.is_empty());
-    }
 
     #[test]
     fn openclaw_state_dir_override_wins_outright() {

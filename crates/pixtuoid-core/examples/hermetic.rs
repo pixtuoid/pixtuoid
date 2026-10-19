@@ -31,6 +31,7 @@ mod run {
     use std::time::{Duration, Instant};
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
+    use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
@@ -43,7 +44,6 @@ mod run {
         CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
         required_version_probe, version_answer,
     };
-    use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
 
     /// How long a server gets to come up before the run gives up.
@@ -718,15 +718,9 @@ mod run {
                 npm_release(&spec, out.status, &out.stdout, &out.stderr)
             }
             (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
-                if repo.release != Release::GithubLatest {
-                    return Err(format!(
-                        "{} releases as {:?}, which `--cli latest` can't read",
-                        repo.name, repo.release
-                    ));
-                }
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-                let url = format!("https://github.com/{}/releases/latest", repo.name);
+                let url = format!("https://github.com/{repo}/releases/latest");
                 let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
                 latest_tag(&String::from_utf8_lossy(&headers))
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
@@ -839,7 +833,7 @@ mod run {
 
     /// Whether `bytes` hash to the lowercase hex SHA-512 `want`.
     fn matches_sha512(bytes: &[u8], want: &str) -> bool {
-        upstream::digest_hex::<sha2::Sha512>(bytes) == want
+        digest::digest_hex::<sha2::Sha512>(bytes) == want
     }
 
     const CURL: &str = "curl";
@@ -882,7 +876,7 @@ mod run {
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         fetch(asset, to)?;
-        if !upstream::vouches(
+        if !digest::vouches(
             &std::fs::read_to_string(&listed)?,
             asset,
             &std::fs::read(to)?,
@@ -966,7 +960,7 @@ mod run {
             Package::GithubRelease { repo, assets, sums } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
-                    fetch_release(repo.name, version, asset_here(assets)?, sums, &program)
+                    fetch_release(repo, version, asset_here(assets)?, sums, &program)
                 })?;
                 Ok(Installed {
                     launch: Launch {
@@ -984,7 +978,7 @@ mod run {
                     clone
                         .args(["clone", "--quiet", "--depth", "1", "--branch"])
                         .arg(format!("v{version}"))
-                        .arg(format!("https://github.com/{}.git", repo.name))
+                        .arg(format!("https://github.com/{repo}.git"))
                         .arg(&src);
                     succeed(clone)?;
                     // A workspace's members, a Python of uv's own at the tag's pin and

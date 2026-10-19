@@ -14,6 +14,7 @@ use crate::harness::CaptureRecord;
 use crate::source::registry;
 
 pub mod bump;
+pub mod digest;
 pub mod pin;
 pub mod tui;
 pub mod verify;
@@ -75,18 +76,21 @@ pub enum Package {
     Npm(&'static str),
     /// A prebuilt binary attached to a `v<version>` GitHub release.
     GithubRelease {
-        /// The source's drift-watched repository.
-        repo: &'static crate::source::upstream::Repo,
+        /// Its repository's `owner/name` as GitHub spells it now: an old name
+        /// redirects only until it is reused
+        /// (docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository).
+        repo: &'static str,
         /// Each platform's binary, as `(OS, ARCH, asset)` in
         /// [`std::env::consts`]' spelling.
         assets: &'static [(&'static str, &'static str, &'static str)],
         /// The release's file that must vouch for the download
-        /// ([`crate::source::upstream::vouches`]).
+        /// ([`digest::vouches`]).
         sums: &'static str,
     },
-    /// The `v<version>` tag of a source's drift-watched repository, synced from
-    /// its committed `uv.lock`.
-    UvLocked(&'static crate::source::upstream::Repo),
+    /// The `v<version>` tag of the repository it names (spelled as
+    /// [`GithubRelease`](Self::GithubRelease)'s `repo`), synced from its
+    /// committed `uv.lock`.
+    UvLocked(&'static str),
     /// The build an updater's per-platform manifest (`{"version", "url",
     /// "sha512"}`) names: the current one live, a pinned one from the lock
     /// `--record` writes ([`Profile::manifest_lock`]).
@@ -1073,7 +1077,7 @@ model = "deepseek-v4-flash"
         // `engines`), and `scripts/install.sh` fetches from build.stencil.so
         // and runs `omp --version` under the operator's home (`:21`, `:331`).
         package: Package::GithubRelease {
-            repo: &crate::source::omp::REPO,
+            repo: "can1357/oh-my-pi",
             // `scripts/ci-build-upload.ts:39-48`, glibc's on Linux.
             assets: &[
                 ("macos", "aarch64", "omp-darwin-arm64"),
@@ -1180,7 +1184,7 @@ async:
         // (`website/docs/getting-started/updating.md:33-36`). Its installer
         // would rewrite the operator's shell rc files and run `sudo -n -v`
         // (`scripts/install.sh:851-853`, `:882-908`).
-        package: Package::UvLocked(&crate::source::hermes::REPO),
+        package: Package::UvLocked("NousResearch/hermes-agent"),
         // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
         // and a hook runs only once accepted.
         invocation: &["hermes", "--accept-hooks", "-z", "{prompt}"],
@@ -1435,22 +1439,6 @@ mod tests {
                 "{}: the invocation runs a binary the registry does not name",
                 p.source
             );
-        }
-    }
-
-    #[test]
-    fn the_drift_watchs_npm_release_installs_the_profiles_package() {
-        use crate::source::upstream::Release;
-        for (source, repo) in [
-            ("opencode", crate::source::opencode::REPO),
-            ("dsh", crate::source::dsh::REPO),
-            ("reasonix", crate::source::reasonix::REPO),
-        ] {
-            let Release::Npm { package, .. } = repo.release else {
-                panic!("{source}'s watch reads its npm release");
-            };
-            let p = profile(source).expect("profiled");
-            assert_eq!(p.package, Package::Npm(package), "{source}");
         }
     }
 

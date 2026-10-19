@@ -28,13 +28,6 @@ use crate::state::DaemonInstanceId;
 /// The OpenClaw daemon source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "openclaw";
 
-/// The repository its drift watches read.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: crate::source::upstream::Repo = crate::source::upstream::Repo {
-    name: "openclaw/openclaw",
-    release: crate::source::upstream::Release::GithubLatest,
-};
-
 /// The wire field carrying the gateway's RESOLVED listening port — the "which
 /// gateway" key: unique among *live* gateways (two can't bind one port) and STABLE
 /// across a restart of the same one, so the mascot persists rather than churning.

@@ -30,13 +30,6 @@ use crate::source::{AgentEvent, ToolDetail};
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "hermes";
 
-/// The repository its drift watches read.
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: crate::source::upstream::Repo = crate::source::upstream::Repo {
-    name: "NousResearch/hermes-agent",
-    release: crate::source::upstream::Release::GithubLatest,
-};
-
 /// The Hermes home dir (`config.yaml` lives directly in it), mirroring hermes's
 /// own `hermes_constants._hermes_home_from_env` (2026.8.3): `HERMES_HOME`
 /// STRIPPED and taken verbatim when what's left is non-empty — even for a dir

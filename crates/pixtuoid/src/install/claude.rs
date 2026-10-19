@@ -7,14 +7,8 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-#[cfg(feature = "upstream")]
-use crate::install::target::UNDOCUMENTED_HOOK;
 use crate::install::target::{HostRegistration, LegacyConfig, Unregistered};
 use crate::install::verify::ShimRef;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::claude_code::HOOKS_PAGE;
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{At, Doc, Finding, Read, Watch, When};
 
 pub(crate) const EVENTS: &[&str] = &[
     "SessionStart",
@@ -37,86 +31,6 @@ pub(crate) const EVENTS: &[&str] = &[
 const ENABLED_PLUGINS: &str = "enabledPlugins";
 /// The `claude plugin` subcommand that installs one.
 const INSTALL: &str = "install";
-
-#[cfg(feature = "upstream")]
-const fn page(page: &'static str, anchor: &'static str, owns: &'static str) -> Doc {
-    Doc {
-        at: At::Url(page),
-        anchor,
-        owns,
-    }
-}
-
-#[cfg(feature = "upstream")]
-const INSTALL_PAGE: &[Doc] = &[page(
-    "https://code.claude.com/docs/en/plugins/install.md",
-    r"(?m)^# Install and manage plugins",
-    "the plugin-install page",
-)];
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "claude.hook_events",
-        ours: || EVENTS.to_vec(),
-        docs: &[HOOKS_PAGE],
-        read: Read::MdTable {
-            header: "Event",
-            under: "Hook lifecycle",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(UNDOCUMENTED_HOOK),
-        siblings: None,
-    },
-    host_plugin::premise(
-        "claude.plugin_hooks_shape",
-        || vec!["same shape as the `hooks` object in `settings.json`"],
-        &[page(
-            "https://code.claude.com/docs/en/plugins/components.md",
-            r"(?m)^# Add components to a plugin",
-            "the plugin-components page",
-        )],
-        r"{name}\.",
-        "the shape `register` writes `hooks/hooks.json` in may have changed",
-    ),
-    host_plugin::premise(
-        "claude.plugin_enabled_key",
-        || vec![ENABLED_PLUGINS],
-        INSTALL_PAGE,
-        r"The entry goes in `{name}` in `~/\.claude/settings\.json`\.",
-        "where `is_registered` reads a user-scope install may have changed",
-    ),
-    host_plugin::premise(
-        "claude.plugin_install_command",
-        || vec![INSTALL],
-        INSTALL_PAGE,
-        "Run `claude plugin {name}` in your shell to install a plugin without starting a Claude Code \
-         session",
-        "the shell install command `register` runs may have changed",
-    ),
-    host_plugin::premise(
-        "claude.marketplace_removal",
-        || {
-            vec![
-                "When you remove a marketplace, Claude Code uninstalls every plugin you installed from it",
-            ]
-        },
-        INSTALL_PAGE,
-        r"{name}\b",
-        "whether removing the marketplace still uninstalls the plugin `unregister` relies on may have changed",
-    ),
-    host_plugin::premise(
-        "claude.plugin_in_place_load",
-        || vec!["the plugin loads in place from its path inside the marketplace folder"],
-        &[page(
-            "https://code.claude.com/docs/en/plugins/loading.md",
-            r"(?m)^# Plugin loading reference",
-            "the plugin-loading page",
-        )],
-        r"{name}\b",
-        "whether a local-path marketplace loads in place, so a rewrite needs no reinstall, may have changed",
-    ),
-];
 
 /// Claude Code loads the hooks through its plugin system
 /// (code.claude.com/docs/en/plugins): a local marketplace whose one plugin loads

@@ -21,17 +21,6 @@ use crate::source::{AgentEvent, ToolDetail};
 /// Stable source id; MUST equal the registry row's `name`.
 pub const SOURCE_NAME: &str = "dsh";
 
-/// It has no stable release (`releases/latest` answers 404); users run npm's
-/// (`README.md:24`, dsh-v0.2.0-rc.2).
-#[cfg(any(test, feature = "upstream"))]
-pub const REPO: crate::source::upstream::Repo = crate::source::upstream::Repo {
-    name: "deepseek-ai/deepseek-harness",
-    release: crate::source::upstream::Release::Npm {
-        package: "@deepseek-ai/dsh",
-        tag_prefix: "dsh-v",
-    },
-};
-
 /// The payload types the plugin sends — one per subscribed upstream event.
 /// The plugin owns the upstream-name → wire-name mapping; the decoder owns
 /// nothing upstream-shaped, so an upstream rename lands in ONE file.
