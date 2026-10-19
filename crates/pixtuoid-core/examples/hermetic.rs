@@ -171,8 +171,9 @@ mod run {
     struct Args {
         versions: Versions,
         record: bool,
-        /// The [`SHARDS`] entry `--shard` names, whose sources alone run.
-        shard: Option<&'static [&'static str]>,
+        /// The [`SHARDS`] entry `--shard` names, counting from 1, and the
+        /// sources it alone runs.
+        shard: Option<(usize, &'static [&'static str])>,
         source: Option<String>,
         scenario: Option<String>,
     }
@@ -237,7 +238,9 @@ mod run {
 
         fn selects_source(&self, source: &str) -> bool {
             self.source.as_deref().is_none_or(|s| s == source)
-                && self.shard.is_none_or(|sources| sources.contains(&source))
+                && self
+                    .shard
+                    .is_none_or(|(_, sources)| sources.contains(&source))
         }
     }
 
@@ -266,7 +269,7 @@ mod run {
                     shard = Some(
                         n.parse::<usize>()
                             .ok()
-                            .and_then(|n| SHARDS.get(n.checked_sub(1)?).copied())
+                            .and_then(|n| Some((n, *SHARDS.get(n.checked_sub(1)?)?)))
                             .ok_or_else(shard_usage)?,
                     );
                     rest = tail;
@@ -329,6 +332,7 @@ mod run {
         }
         let report = report(
             &args.versions,
+            args.shard.map(|(n, _)| n),
             &host_tool_versions(),
             &entries,
             &not_run(&args, cfg!(windows)),
@@ -698,6 +702,7 @@ mod run {
 
     fn report(
         versions: &Versions,
+        shard: Option<usize>,
         host: &[String],
         entries: &[Entry],
         not_run: &[String],
@@ -713,8 +718,9 @@ mod run {
             _ => "NOTHING RAN".to_owned(),
         };
         let os = std::env::consts::OS;
+        let shard = shard.map_or(String::new(), |n| format!(", shard {n}"));
         let mut out = format!(
-            "# hermetic, {which} CLIs on {os}: {title}\n\nHost: {}\n",
+            "# hermetic, {which} CLIs on {os}{shard}: {title}\n\nHost: {}\n",
             host.join(", ")
         );
         for e in entries {
@@ -2205,7 +2211,7 @@ mod run {
                 ["tool-run", "subagent", "permission", "model-error"]
             );
             assert!(not_run(&every, false).is_empty());
-            let r = report(&Versions::Pinned, &[], &[], &not_run(&every, true));
+            let r = report(&Versions::Pinned, None, &[], &[], &not_run(&every, true));
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
@@ -2215,7 +2221,7 @@ mod run {
                 ),
                 "{r}"
             );
-            assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+            assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
             let judged = |n| vec![PathBuf::new(); n];
             assert!(judges_leg(grok, &judged(3), true), "grok moves on Windows");
             assert!(!judges_leg(grok, &judged(3), false));
@@ -2238,7 +2244,7 @@ mod run {
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
                 )
             };
-            let r = report(&Versions::Latest, &host, &[pass, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[pass, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Blocked").as_str())
@@ -2246,7 +2252,7 @@ mod run {
             assert!(r.contains("Host: git version 2.55.0"), "{r}");
             assert!(r.contains("## opencode/tool-run: Blocked\n- Blocked: npm view failed"));
             assert!(r.contains("## codex/tool-run (codex-cli 0.155.1): Pass"));
-            let r = report(&Versions::Pinned, &host, &[blocked()], &[]);
+            let r = report(&Versions::Pinned, None, &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, verified CLIs on {os}: NOTHING RAN").as_str())
@@ -2260,10 +2266,16 @@ mod run {
                     (Label::Script, "1 unmatched".into()),
                 ]),
             );
-            let r = report(&Versions::Latest, &host, &[lost, blocked()], &[]);
+            let r = report(&Versions::Latest, None, &host, &[lost, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
+            );
+            // A shard's leg names it, so the issue tells two legs of one OS apart.
+            let r = report(&Versions::Latest, Some(2), &host, &[blocked()], &[]);
+            assert_eq!(
+                r.lines().next(),
+                Some(format!("# hermetic, latest CLIs on {os}, shard 2: NOTHING RAN").as_str())
             );
         }
 

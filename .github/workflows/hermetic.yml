@@ -22,13 +22,13 @@ on:
         description: 'The macOS shard 1 leg''s `bump::MOVED` rows: each source whose latest passed above its pin'
         value: ${{ jobs.run.outputs.moved_macos_1 }}
       moved_macos_2:
-        description: 'The macOS shard 2 leg''s'
+        description: 'The macOS shard 2 leg''s `bump::MOVED` rows'
         value: ${{ jobs.run.outputs.moved_macos_2 }}
       moved_windows_1:
-        description: 'The Windows shard 1 leg''s'
+        description: 'The Windows shard 1 leg''s `bump::MOVED` rows'
         value: ${{ jobs.run.outputs.moved_windows_1 }}
       moved_windows_2:
-        description: 'The Windows shard 2 leg''s'
+        description: 'The Windows shard 2 leg''s `bump::MOVED` rows'
         value: ${{ jobs.run.outputs.moved_windows_2 }}
 
 # `run` executes third-party CLIs, so no job here saves a cache
