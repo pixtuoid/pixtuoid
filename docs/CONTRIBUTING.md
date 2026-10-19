@@ -265,8 +265,8 @@ step 10 by the theme guards; steps 1–3 and step 11's `#[test]` are on you.
    to an upstream file/version. **Audit its HOME RESOLVER per axis in the
    same pass** — PROBE the installed artifact rather than trusting docs; an
    unmirrored axis is fail-silent: the watcher polls a directory the CLI
-   never writes and the office stays empty (#880). Resolver axes are
-   checked by no tier — re-run the probe matrix when the CLI majors.
+   never writes and the office stays empty (#880). Resolver axes past the
+   home variable a hermetic profile sandboxes are checked by no tier.
    A custom root gets ONE `pub fn <cli>_home()`, called by both the watcher's
    `default_paths()` and the installer's `default_config_path()` so they
    can't disagree.

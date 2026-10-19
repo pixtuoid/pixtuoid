@@ -140,9 +140,9 @@ const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
 
 /// The CC transcript types whose `message` payload this module decodes. CC's
-/// TRANSCRIPT has no fetchable schema, so the runtime breadcrumb is the sole
-/// defense — but only these two names can break rendering, so only they may
-/// raise one. Pinned to the decode arms
+/// TRANSCRIPT has no fetchable schema: the nightly's latest-release census and
+/// this breadcrumb guard it, but only these two names can break rendering, so
+/// only they may raise one. Pinned to the decode arms
 /// by `the_decoded_set_is_exactly_what_the_arms_match`.
 const DECODED_TYPES: &[&str] = &[ASSISTANT, USER];
 

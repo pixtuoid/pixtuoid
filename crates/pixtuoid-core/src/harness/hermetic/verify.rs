@@ -201,19 +201,28 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
 pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> {
     let mut fired = BTreeSet::new();
     let mut carried = Fields::default();
+    // What the runs would leave once stripped as a fixture is: the at-rest
+    // census judges fixtures, so only this makes an owed literal Stale.
+    let mut kept = Fields::default();
     let mut ran = Vec::new();
     for dir in dirs {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
         ran.extend(p.scenarios.iter().filter(|s| s.name == manifest.scenario));
         for file in jsonl_files_under(dir) {
-            for line in json_lines(&file)? {
+            let mut lines = json_lines(&file)?;
+            for line in &lines {
                 if is_hook_envelope(&file)
-                    && let Some(event) = (p.event_name)(&line)
+                    && let Some(event) = (p.event_name)(line)
                 {
                     fired.insert(event.into_owned());
                 }
-                carried.add(p, &file, &line, true);
+                carried.add(p, &file, line, true);
+            }
+            if crate::harness::reads::strip_lines(p.source, &file, &mut lines) {
+                for line in &lines {
+                    kept.add(p, &file, line, false);
+                }
             }
         }
     }
@@ -238,20 +247,23 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
         &literals::population()?,
         &scenario_reads(p, ran.into_iter())?,
         &carried,
+        &kept,
     ));
     Ok(Verdict::new(findings))
 }
 
 /// The literal census over runs: each value a decoder's literal matches in
 /// the `committed` fixtures must arrive in some run at the same kind and
-/// pointer, unless `owed` or another of `p`'s owed lists names it; one of
-/// `owed` any run holds is Stale.
+/// pointer, and each key it names there in some run at all, unless `owed` or
+/// another of `p`'s owed lists names it; one of `owed` that the runs would
+/// keep once stripped (`kept`) is Stale.
 fn literal_census(
     p: &Profile,
     owed: &[&str],
     population: &BTreeSet<literals::Literal>,
     committed: &Fields,
     carried: &Fields,
+    kept: &Fields,
 ) -> Vec<(Label, String)> {
     let mine: Vec<&literals::Literal> = population.iter().filter(|l| l.is_of(p.source)).collect();
     let mut findings = Vec::new();
@@ -277,7 +289,22 @@ fn literal_census(
             }
         }
     }
-    let held = carried.keys_and_values();
+    let owes = |text: &str| {
+        owed.contains(&text) || literals::owed_elsewhere(p.not_yet, p.not_yet_fields, text)
+    };
+    for l in mine.iter().filter(|l| l.how == literals::Match::Exact) {
+        if committed.keys.contains(&l.text) && !carried.keys.contains(&l.text) && !owes(&l.text) {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "`{}` ({}): a decoder reads this key in a scenario fixture, and no run of {} \
+                     carried it",
+                    l.text, l.module, p.source
+                ),
+            ));
+        }
+    }
+    let held = kept.keys_and_values();
     for owed in owed {
         if mine
             .iter()
@@ -363,7 +390,7 @@ fn census(
     findings
 }
 
-/// The non-blank leaves a set of captures holds, for the census.
+/// What a set of captures holds, for the field and literal censuses.
 #[derive(Debug, Default)]
 pub(crate) struct Fields {
     /// Every leaf of each kind of line.
@@ -382,7 +409,7 @@ pub(crate) struct Fields {
 
 impl Fields {
     /// Add `line` of `file`; one with no value, as the strip leaves a line no
-    /// decoder reads, adds nothing. A committed (`run == false`) transcript
+    /// decoder reads, adds only its keys. A committed (`run == false`) transcript
     /// line the strip left untyped goes to `lines` alone, since its blank
     /// `type` is no kind a run's line could have.
     fn add(&mut self, p: &Profile, file: &Path, line: &Value, run: bool) {
@@ -2303,27 +2330,81 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_not_yet_value_a_run_carries_is_stale() {
-        let p = profile("codex").expect("profile");
-        let tool_run = p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun);
-        let committed = scenario_reads(p, tool_run).expect("fixtures");
-        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
-        respell(d.path(), "\"task_complete\"", "\"web_search_end\"");
-        let mut carried = Fields::default();
+    /// `source`'s run built from its `shape` fixture with `edit` applied, read
+    /// as the census reads it: raw (`carried`) and stripped as a fixture (`kept`).
+    fn run_reads(source: &str, shape: Shape, edit: impl Fn(&Path)) -> (Fields, Fields) {
+        let p = profile(source).expect("profile");
+        let d = recorded(source, shape, "");
+        edit(d.path());
+        let (mut carried, mut kept) = (Fields::default(), Fields::default());
         for file in jsonl_files_under(d.path()) {
-            for line in json_lines(&file).expect("lines") {
-                carried.add(p, &file, &line, true);
+            let mut lines = json_lines(&file).expect("lines");
+            for line in &lines {
+                carried.add(p, &file, line, true);
+            }
+            if crate::harness::reads::strip_lines(source, &file, &mut lines) {
+                for line in &lines {
+                    kept.add(p, &file, line, false);
+                }
             }
         }
-        let population = literals::population().expect("the decoders parse");
-        let findings = literal_census(p, &["web_search_end"], &population, &committed, &carried);
-        let v = Verdict::new(findings);
+        (carried, kept)
+    }
+
+    /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`
+    /// is held only blank, so no value census would see it renamed.
+    #[test]
+    fn a_key_upstream_renamed_fails_though_its_value_was_blank() {
+        let d = recorded("grok", Shape::Subagent, GK_DELEGATE_SCENE);
+        respell(d.path(), "\"subagent_type\"", "\"subagent_kind\"");
+        let v = verify_source(profile("grok").expect("profile"), &[d.path().to_path_buf()])
+            .expect("verify");
         assert!(
-            has(&v, Label::Stale, "`web_search_end`"),
+            has(&v, Label::Fail, "`subagent_type`"),
             "{:?}",
             v.findings()
         );
+    }
+
+    /// An owed literal is Stale only where the runs would keep it once stripped:
+    /// the census at rest judges stripped fixtures, so a run's raw bytes alone
+    /// would hold the profile at Stale with no way out.
+    #[test]
+    fn an_owed_literal_is_stale_only_where_the_strip_keeps_it() {
+        let population = literals::population().expect("the decoders parse");
+        let census = |source: &str, owed: &str, edit: &dyn Fn(&Path)| {
+            let p = profile(source).expect("profile");
+            let shape = Shape::ToolRun;
+            let committed = scenario_reads(p, p.scenarios.iter().filter(|s| s.shape == shape))
+                .expect("fixtures");
+            let (carried, kept) = run_reads(source, shape, edit);
+            let v = Verdict::new(literal_census(
+                p,
+                &[owed],
+                &population,
+                &committed,
+                &carried,
+                &kept,
+            ));
+            has(&v, Label::Stale, &format!("`{owed}`"))
+        };
+        // A codex turn end the strip keeps.
+        assert!(census("codex", "web_search_end", &|d| {
+            respell(d, "\"task_complete\"", "\"web_search_end\"");
+        }));
+        // An agy step whose line decodes to nothing, which the strip blanks whole.
+        assert!(!census("antigravity", "USER_INPUT", &|d| {
+            let t = jsonl_files_under(d)
+                .into_iter()
+                .find(|f| f.ends_with("transcript.jsonl"))
+                .expect("a transcript");
+            let text = std::fs::read_to_string(&t).expect("read");
+            std::fs::write(
+                &t,
+                format!("{{\"step_index\":9,\"type\":\"USER_INPUT\"}}\n{text}"),
+            )
+            .expect("write");
+        }));
     }
 
     #[test]

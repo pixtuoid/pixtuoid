@@ -82,10 +82,8 @@ impl Literal {
 /// Whose wire a module's literals are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Owner {
-    /// The source the module is named for.
+    /// The source whose wire it is.
     Source(&'static str),
-    /// These sources'.
-    Of(&'static [&'static str]),
     /// Every source's: a helper each decoder calls.
     Every,
     /// No CLI's, and why.
@@ -99,7 +97,6 @@ impl Owner {
     pub(crate) fn sources(self) -> Option<Vec<&'static str>> {
         match self {
             Self::Source(s) => Some(vec![s]),
-            Self::Of(s) => Some(s.to_vec()),
             Self::Every => Some(crate::source::registry::registered_source_names().collect()),
             Self::Nobody(_) | Self::Unowned => None,
         }
@@ -109,8 +106,8 @@ impl Owner {
 /// Each module not named for its source, by its path under `src/source`.
 const OWNERS: &[(&str, Owner)] = &[
     // The ACP standard, which grok speaks (`acp.rs`'s header).
-    ("acp.rs", Owner::Of(&["grok"])),
-    ("cc_probe.rs", Owner::Of(&["claude-code"])),
+    ("acp.rs", Owner::Source("grok")),
+    ("cc_probe.rs", Owner::Source("claude-code")),
     ("decoder.rs", Owner::Every),
     ("mod.rs", Owner::Every),
     ("admit.rs", Owner::Nobody(PATH_AXIS)),
@@ -731,10 +728,11 @@ mod tests {
         "loss list: only a mid-session ultracode toggle sends it, which -p can't make";
     const LOSS_INTERACTIVE: &str =
         "loss list: only omp's interactive /new, /fork and /resume send it";
-    const LOSS_UNKNOWN: &str =
-        "loss list: no recorded agy transcript carries it, and its origin is unknown";
     const LOSS_MODEL_SWITCH: &str =
         "loss list: only a model switch or a changed model catalog sends it";
+    /// Why agy's input steps need none: their line decodes to nothing, so the
+    /// strip blanks it whole, and renamed, one only ends a call no step began.
+    const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
     /// Why a literal the tail scan reads needs no fixture.
     const TAIL_READ: &str = "read off the tail, outside the decode the strip probes, \
          so a fixture's line holds it blanked";
@@ -832,7 +830,8 @@ mod tests {
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
         literal("claude_code.rs", "ultra_effort_exit", LOSS_TOGGLE),
         literal("omp.rs", "previousSessionFile", LOSS_INTERACTIVE),
-        literal("antigravity.rs", "CONVERSATION_HISTORY", LOSS_UNKNOWN),
+        literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
+        literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
         literal("grok.rs", "model_changed", LOSS_MODEL_SWITCH),
         literal("grok.rs", "model_id", LOSS_MODEL_SWITCH),
         literal("grok.rs", "reasoning_effort", LOSS_MODEL_SWITCH),
@@ -951,6 +950,41 @@ mod tests {
         assert!(
             found.iter().any(|f| f.contains("excuses no literal")),
             "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_literal_owed_twice_is_refused_and_one_owed_elsewhere_is_owed() {
+        let owing = |literals: &'static [&'static str]| Owing {
+            source: "codex",
+            literals,
+            hooks: &["StopFailure"],
+            fields: &[("tx:event_msg", "/payload/turn_renamed")],
+        };
+        let held = BTreeMap::from([("codex", BTreeSet::new())]);
+        let run = |o: Owing<'_>, population: &[Literal]| {
+            problems(
+                &population.iter().cloned().collect(),
+                &held,
+                &[o],
+                &[],
+                &BTreeSet::new(),
+            )
+        };
+        let twice = run(
+            owing(&["stop_failure"]),
+            &[lit("codex.rs", "decode", "stop_failure")],
+        );
+        assert!(
+            twice
+                .iter()
+                .any(|f| f.contains("which another owed list owes")),
+            "{twice:?}"
+        );
+        let once = run(owing(&[]), &[lit("codex.rs", "decode", "turn_renamed")]);
+        assert!(
+            once.is_empty(),
+            "a field owed elsewhere owes its literal: {once:?}"
         );
     }
 

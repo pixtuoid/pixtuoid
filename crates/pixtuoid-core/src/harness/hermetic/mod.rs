@@ -1664,7 +1664,7 @@ telemetry:
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
-        not_yet_literals: &["USER_INPUT", "ask_question"],
+        not_yet_literals: &["ask_question"],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).

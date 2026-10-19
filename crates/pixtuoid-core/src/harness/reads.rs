@@ -80,11 +80,9 @@ pub fn strip_unread(source: &str, files: &[PathBuf]) -> std::io::Result<Strip> {
                 continue;
             }
         };
-        let base = events_of(source, &drive, &lines);
-        let stamped = is_hook_envelope(file);
+        let per_line = strip_with(source, &drive, file, &mut lines);
         let mut out = String::new();
-        for i in 0..lines.len() {
-            let here = probe(source, &drive, &mut lines, &base, i, "", stamped);
+        for (i, here) in per_line.into_iter().enumerate() {
             strip.blanked += here;
             if here == 0 {
                 out.push_str(&raw[i]);
@@ -96,6 +94,25 @@ pub fn strip_unread(source: &str, files: &[PathBuf]) -> std::io::Result<Strip> {
         replace_atomically(file, out.as_bytes())?;
     }
     Ok(strip)
+}
+
+/// `file`'s `lines` blanked as [`strip_unread`] blanks them; `false` when no
+/// decoder reads `file`, which a strip leaves as it is.
+pub(crate) fn strip_lines(source: &str, file: &Path, lines: &mut [Value]) -> bool {
+    let Some(drive) = drive_for(source, file) else {
+        return false;
+    };
+    strip_with(source, &drive, file, lines);
+    true
+}
+
+/// Each line's count of subtrees blanked, `lines` rewritten in place.
+fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> Vec<usize> {
+    let base = events_of(source, drive, lines);
+    let stamped = is_hook_envelope(file);
+    (0..lines.len())
+        .map(|i| probe(source, drive, lines, &base, i, "", stamped))
+        .collect()
 }
 
 /// Write `bytes` over `file` through a sibling and a rename, so a reader never
