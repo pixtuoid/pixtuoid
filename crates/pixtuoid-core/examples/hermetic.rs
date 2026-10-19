@@ -2571,6 +2571,14 @@ mod run {
             assert!(on(false).is_ok());
             let refused = on(true).expect_err("grok's TUI under ConPTY");
             assert!(refused.contains("ConPTY"), "{refused}");
+            assert!(
+                check(&["openclaw", "tool-run"]).is_err(),
+                "a live profile's scenario"
+            );
+            assert!(
+                check(&["codex", LIVE]).is_err(),
+                "a scenario profile's live run"
+            );
             for named in [&["openclaw"][..], &["openclaw", LIVE]] {
                 let check = |windows| parse(&args(named)).expect("parse").check(windows);
                 assert!(check(false).is_ok(), "{named:?}");
