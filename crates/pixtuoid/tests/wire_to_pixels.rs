@@ -230,7 +230,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "grok",
             source: "grok",
-            fixture: "fixtures/grok/permission-hermetic/01a15125-ebfb-7e31-9f94-7368637d0570/updates.jsonl",
+            fixture: "fixtures/grok/permission-hermetic/01a154c8-667d-7351-b13e-eea1a65f4eaf/updates.jsonl",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Active],
         },
