@@ -535,7 +535,9 @@ const CODEX_TUI: tui::Tui = tui::Tui {
         // "No, and tell Codex what to do differently", which aborts the turn
         // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
         deny: &[tui::Key::Esc],
-        dwell: std::time::Duration::ZERO,
+        // It loses a key sent the moment it shows (measured; the cause in
+        // codex is unverified).
+        dwell: std::time::Duration::from_millis(500),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,

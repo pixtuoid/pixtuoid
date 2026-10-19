@@ -11,9 +11,6 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// How long an answered dialog may stay on screen before its keys are sent
-/// again: a key can be dropped.
-const GATE_RETRY: Duration = Duration::from_secs(1);
 /// How long the composer may still hold the prompt after an Enter before it is
 /// sent again: an Enter during startup is swallowed.
 const ENTER_RETRY: Duration = Duration::from_secs(1);
@@ -134,13 +131,13 @@ enum Phase {
     Quit,
 }
 
-/// A dialog on screen: its row in the gate table, when it appeared, and when it
-/// was last answered.
+/// A dialog on screen: its row in the gate table, when it appeared, and whether
+/// it was answered.
 #[derive(Debug, Clone, Copy)]
 struct Open {
     gate: usize,
     since: Instant,
-    answered: Option<Instant>,
+    answered: bool,
 }
 
 /// The state machine one `Permission` run steps through: the turn's dialog is
@@ -223,11 +220,12 @@ impl<'a> Driver<'a> {
         }
     }
 
-    /// A dialog on screen: refused after it has stood its dwell, and again each
-    /// [`GATE_RETRY`] it outlives the refusal, once the prompt is submitted;
-    /// before that, it stalls the run like any dialog nobody planned for. While
-    /// one is open nothing else is sent, so no Enter can land on it and pick
-    /// its first choice.
+    /// A dialog on screen: refused once, after it has stood its dwell, once the
+    /// prompt is submitted; before that, it stalls the run like any dialog
+    /// nobody planned for. Once only, since a frame drawn before the refusal
+    /// landed reads as the dialog still open, and a repeated key lands on the
+    /// turn. While one is open nothing else is sent, so no Enter can land on it
+    /// and pick its first choice.
     fn gate(&mut self, now: Instant) -> Option<Action> {
         let Some(index) = self
             .tui
@@ -247,16 +245,11 @@ impl<'a> Driver<'a> {
             _ => Open {
                 gate: index,
                 since: now,
-                answered: None,
+                answered: false,
             },
         };
-        let due = match open.answered {
-            Some(at) => now.duration_since(at) >= GATE_RETRY,
-            None => now.duration_since(open.since) >= gate.dwell,
-        };
-        if due {
-            open.answered = Some(now);
-        }
+        let due = !open.answered && now.duration_since(open.since) >= gate.dwell;
+        open.answered |= due;
         self.open = Some(open);
         if !due {
             return Some(Action::Wait);
@@ -444,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn the_turns_dialog_is_refused_after_its_dwell_and_again_while_it_stands() {
+    fn the_turns_dialog_is_refused_once_after_its_dwell_and_each_reopening_again() {
         let t0 = Instant::now();
         let mut d = driver(t0);
         submitted(&mut d, t0);
@@ -457,14 +450,17 @@ mod tests {
         let answered = t1 + dwell();
         assert_eq!(d.step(GATE, answered), Action::Keys(&[Key::Esc]));
         assert_eq!(
-            d.step(GATE, answered + GATE_RETRY / 2),
+            d.step(GATE, answered + SETTLE),
             Action::Wait,
-            "the answer is given time to land"
+            "a frame drawn before the refusal landed"
         );
+        let closed = answered + SETTLE;
+        assert_eq!(d.step(DONE, closed), Action::Wait);
+        assert_eq!(d.step(GATE, closed), Action::Wait);
         assert_eq!(
-            d.step(GATE, answered + GATE_RETRY),
+            d.step(GATE, closed + dwell()),
             Action::Keys(&[Key::Esc]),
-            "a dropped key is sent again"
+            "the turn's next dialog"
         );
     }
 
@@ -630,6 +626,11 @@ mod tests {
                 .filter(|a| *a != Action::Wait)
                 .collect();
             assert_eq!(answers, [Action::Keys(refused.deny)], "{source}");
+            assert_eq!(
+                d.step(gate, t0 + refused.dwell + SETTLE),
+                Action::Wait,
+                "{source}: a repeat would land on the turn"
+            );
         }
     }
 
