@@ -104,7 +104,7 @@ clap_mangen = "0.3.0"
 # headers on Linux. `tracing` routes rodio's OWN diagnostics
 # to `tracing::error!/debug!` instead of its default `eprintln!` — a raw stderr
 # write mid-altscreen corrupts the TUI.
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "tracing"], optional = true }
+rodio = { version = "0.23.0", default-features = false, features = ["playback", "tracing"], optional = true }
 # The music ring between the audio thread and the device callback: documented
 # wait-free and allocation-free after construction, which `std::sync::mpsc`
 # doesn't promise, with chunks written in place.
