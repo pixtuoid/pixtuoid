@@ -525,9 +525,9 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     );
 }
 
-// Codex's JSONL emits None-id ActivityEnds per tool (it opts out of dedup), and
-// one can race in just after a fresh PermissionRequest — so only the HOOK-side
-// turn-end signal may resolve a Waiting.
+// Codex's JSONL turn end is a None-id ActivityEnd (its output Ends carry the call
+// id), and one can race in just after a fresh PermissionRequest — so only the
+// HOOK-side turn-end signal may resolve a Waiting.
 #[test]
 fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;

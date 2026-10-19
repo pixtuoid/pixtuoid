@@ -378,7 +378,7 @@ pub(crate) const UPSTREAM: &[Watch] = &[
     },
 ];
 
-/// Decode one transcript line. Only a call's output names its call
+/// Decode one transcript line. Only an output's End carries its call's id
 /// (`tool_use_id`), so only that End meets the hook-wins dedup (#150).
 ///
 /// # Errors
@@ -931,6 +931,22 @@ mod tests {
             !logs.contains("missing_field"),
             "an output that answers no call is codex's own shape, got:\n{logs}"
         );
+        for call in [json!(null), json!("")] {
+            let logs = crate::test_capture::capture_logs(|| {
+                let mut line = json!({"type":"response_item","payload":{"type":"custom_tool_call_output","output":"ok"}});
+                if !call.is_null() {
+                    line["payload"]["call_id"] = call.clone();
+                }
+                assert!(matches!(
+                    ev(line).as_slice(),
+                    [AgentEvent::ActivityStart { .. }]
+                ));
+            });
+            assert!(
+                logs.contains("missing_field") && logs.contains("call_id"),
+                "a custom output owes its call, {call}: {logs}"
+            );
+        }
     }
 
     #[test]
