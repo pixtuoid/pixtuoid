@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "explore", "arguments": { "task": "CHILD-TASK: read NOTE.txt and report its text." } } ] }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "pong" }
+    }
+  ]
+}

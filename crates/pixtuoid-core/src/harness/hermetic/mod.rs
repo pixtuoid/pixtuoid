@@ -110,8 +110,8 @@ pub enum Package {
 /// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
-    /// A turn that reads a file: the session registers in the workspace, a tool
-    /// starts with a detail naming it, and it ends.
+    /// A turn that runs one tool: the session registers in the workspace, a
+    /// tool starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
     /// waits on it, then the refused call ends, or its turn where the call
@@ -779,6 +779,21 @@ trust_level = "trusted"
                 fixture: "fixtures/codex/tool-run-hermetic",
             },
             Scenario {
+                name: "custom-tool",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                // The read-only sandbox rejects the patch, so no PostToolUse
+                // fires and the transcript's `custom_tool_call_output` ends it.
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/codex/custom-tool-hermetic",
+            },
+            Scenario {
                 name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
@@ -876,6 +891,9 @@ trust_level = "trusted"
             "opencode.jsonc",
             "opencode.json",
         ],
+        // A shell command asks, which `opencode run` rejects
+        // (`services/www/src/docs/content/permissions.mdx:9-20`,
+        // `packages/cli/src/run/noninteractive.ts:158-181`): the permission turn.
         config: &[ConfigFile {
             home: "OPENCODE_CONFIG_DIR",
             path: "opencode.jsonc",
@@ -885,7 +903,8 @@ trust_level = "trusted"
       "settings": { "baseURL": "http://127.0.0.1:{port}/v1", "apiKey": "{key}" },
       "models": { "gpt-5.2": {} }
     }
-  }
+  },
+  "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }]
 }
 "#,
         }],
@@ -927,14 +946,23 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/opencode/model-error-hermetic",
             },
+            Scenario {
+                name: "permission",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "permission.asked",
+                    "session.tool.failed",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &[
-            "session.deleted",
-            "session.execution.interrupted",
-            "session.tool.failed",
-            "permission.asked",
-        ],
+        not_yet: &["session.deleted", "session.execution.interrupted"],
         event_name: type_field,
         not_yet_fields: &[],
         children_inherit_cwd: false,
@@ -1204,9 +1232,16 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/grok/permission-hermetic",
             },
+            Scenario {
+                name: "model-error",
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "UserPromptSubmit", "StopFailure"],
+                fixture: "fixtures/grok/model-error-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PostToolUseFailure", "StopFailure"],
+        not_yet: &["PostToolUseFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
         children_inherit_cwd: false,
@@ -1218,9 +1253,15 @@ trust_level = "trusted"
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
-        // A non-read-only tool is denied headless; this allows the one a
-        // blocking spawn needs (`docs/CLI.md:502-503`, `:517-519`).
-        invocation: &["reasonix", "--allowed-tools", "task", "-p", "{prompt}"],
+        // A non-read-only tool is denied headless; this allows the ones the
+        // spawns need (`docs/CLI.md:502-503`, `:517-519`).
+        invocation: &[
+            "reasonix",
+            "--allowed-tools",
+            "task,explore",
+            "-p",
+            "{prompt}",
+        ],
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
@@ -1279,6 +1320,35 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
+            // A skill tool's child fires no SubagentStart or SubagentStop.
+            Scenario {
+                name: "explore",
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "reasonix/fixtures/explore-hermetic",
+            },
+            Scenario {
+                name: "bash-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/bash-run-hermetic",
+            },
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
@@ -1297,9 +1367,7 @@ model = "deepseek-v4-flash"
         script_vars: &[],
         not_yet: &[],
         event_name: event_field,
-        // A bash call's; the tool-run reads a file, and the permission turn's call
-        // is refused before it starts.
-        not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -2136,8 +2204,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_run_replies_only_to_the_note_it_read_unless_its_result_is_unseen() {
-        // A reply to any tool result lets a run whose read failed pass.
+    fn no_tool_run_replies_to_any_result_and_tool_run_waits_on_its_note_unless_unseen() {
+        // A reply to any tool result lets a run whose tool failed pass.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun) {
                 let script: serde_json::Value = serde_json::from_str(
@@ -2150,7 +2218,8 @@ mod tests {
                     .any(|f| f["match"]["toolResultContains"] == NOTE_PLACEHOLDER);
                 if p.result_unseen {
                     assert!(!waits, "{}: a wait on a result aimock never sees", p.source);
-                } else {
+                } else if s.name == "tool-run" {
+                    // Only the note-reading scenario has a note to wait on.
                     assert!(waits, "{}: no reply waits for {NOTE_PLACEHOLDER}", p.source);
                 }
                 assert!(

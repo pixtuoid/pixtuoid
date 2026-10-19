@@ -396,24 +396,13 @@ mod tests {
         std::fs::write(file, out.join("\n") + "\n").expect("write");
     }
 
-    /// The scenario's one transcript, found rather than named: a re-record
-    /// gives it a new filename. The registry's admit rule and the recorder's
-    /// own hook-envelope test decide what is a transcript, and a stale second
-    /// one beside a promoted `.new` fails here instead of being picked by
-    /// directory order.
     fn transcript_in(source: &str, scenario: &Path) -> PathBuf {
-        let mut found: Vec<PathBuf> = crate::harness::transcripts_under(source, scenario)
-            .into_iter()
-            .filter(|p| !is_hook_envelope(p))
-            .collect();
-        assert_eq!(
-            found.len(),
-            1,
-            "{}: one transcript per scenario, found {:?}",
-            scenario.display(),
-            found
-        );
-        found.remove(0)
+        crate::harness::transcript_in(source, scenario).unwrap_or_else(|found| {
+            panic!(
+                "{}: one transcript per scenario, found {found:?}",
+                scenario.display()
+            )
+        })
     }
 
     fn stripped_copy_of(src: &Path) -> (tempfile::TempDir, PathBuf) {
