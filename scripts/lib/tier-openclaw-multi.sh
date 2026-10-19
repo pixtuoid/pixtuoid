@@ -146,6 +146,11 @@ expect_line "daemons=[$want]" "${#PORTS[@]} gateways render ${#PORTS[@]} indepen
 # would satisfy "sibling $port is untouched" on its FIRST-EVER announce, after the kill.
 if [ "$FAILED" != 0 ]; then
     echo "  SKIP [2] — not every gateway announced; the instance-local assertions would be vacuous" >&2
+    # The temp dir goes with the run, so the only record of why is this log.
+    for port in "${PORTS[@]}"; do
+        echo "--- gateway $port (last 20 lines):" >&2
+        tail -n 20 "$MG/gw$port.log" >&2
+    done
 else
     echo "[2] kill the FIRST gateway (${PORTS[0]}) — only its own mascot walks out"
     # `$!` holds the port and stamps `_pid` into every envelope, so this exercises the
