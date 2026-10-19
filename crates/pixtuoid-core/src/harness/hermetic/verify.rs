@@ -640,7 +640,6 @@ fn subagent(
             _ => None,
         })
         .collect();
-    // No run deletes a durable child, so its turn's end is the end a run sees.
     let durable = match inference {
         ChildEndInference::Durable => true,
         ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
@@ -657,6 +656,7 @@ fn subagent(
             } if inference.dispatch_end_ends_child(true) => {
                 *agent_id == parent && tasks.contains(&(parent, t.as_str()))
             }
+            // No run deletes a durable child, so its turn's end is the end a run sees.
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: None,
@@ -1188,7 +1188,7 @@ mod tests {
     }
 
     #[test]
-    fn a_durable_child_is_held_to_its_turn_and_any_other_to_its_session() {
+    fn only_a_durable_child_ends_with_its_own_turn() {
         use crate::source::ToolDetail;
         let (parent, child) = (
             AgentId::from_parts("opencode", "ses_parent"),
