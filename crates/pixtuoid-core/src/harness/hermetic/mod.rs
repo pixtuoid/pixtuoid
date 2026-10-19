@@ -120,6 +120,9 @@ pub enum Shape {
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
+    /// A turn the model answers with an error a CLI does not retry (a 400): the
+    /// session registers, and its turn ends failed.
+    ModelError,
 }
 
 impl Shape {
@@ -129,6 +132,20 @@ impl Shape {
             Self::ToolRun => "tool-run",
             Self::Permission => "permission",
             Self::Subagent => "subagent",
+            Self::ModelError => "model-error",
+        }
+    }
+
+    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
+    /// one scripted to fail may exit non-zero, but a signal ends no turn.
+    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+        match code {
+            Some(0) => true,
+            Some(_) => match self {
+                Self::ModelError => true,
+                Self::ToolRun | Self::Permission | Self::Subagent => false,
+            },
+            None => false,
         }
     }
 }
@@ -270,6 +287,11 @@ impl Profile {
     /// If the profile names an unregistered source, which the roster test refuses.
     pub fn descriptor(&self) -> &'static registry::SourceDescriptor {
         registry::descriptor_for(self.source).expect("a profile names a registered source")
+    }
+
+    /// Its scenario named `name`, a [`Shape::name`].
+    pub fn scenario(&self, name: &str) -> Option<&'static Scenario> {
+        self.scenarios.iter().find(|s| s.shape.name() == name)
     }
 
     /// Every home variable the CLI reads that the tier points into its own
@@ -865,22 +887,33 @@ trust_level = "trusted"
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.tool.input.started",
-                "session.tool.success",
-                "session.execution.succeeded",
-            ],
-            fixture: "fixtures/opencode/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.execution.failed",
+                ],
+                fixture: "fixtures/opencode/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
-            "session.execution.failed",
             "session.execution.interrupted",
             "session.tool.failed",
             "permission.asked",
@@ -1627,24 +1660,38 @@ telemetry:
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "gateway_start",
-                "session_start",
-                "before_agent_run",
-                "agent_end",
-                "gateway_stop",
-                "session_end",
-            ],
-            fixture: "fixtures/openclaw/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: type_field,
-        // A failed model call's, which the plugin stamps from `model_call_ended`.
-        not_yet_fields: &[("hook:agent_end", "/errored")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: Some(Live {
@@ -1786,8 +1833,10 @@ mod tests {
             );
             assert!(
                 !p.descriptor().is_daemon()
-                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
-                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
+                    || p.scenarios
+                        .iter()
+                        .all(|s| verify::settled(s.shape).is_some()),
+                "{}: a daemon's turn is judged on its presence, which shows only some shapes",
                 p.source
             );
         }
@@ -2063,6 +2112,35 @@ mod tests {
                 assert!(
                     !replies.iter().any(|f| f["match"]["hasToolResult"] == true),
                     "{}: a reply takes any tool result",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_model_error_script_errs_and_calls_no_tool() {
+        // A reply that answers the turn lets a sound run pass as a failed one.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::ModelError) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert!(
+                    replies.iter().any(|f| f["response"]["status"]
+                        .as_u64()
+                        .is_some_and(|status| status >= 400)
+                        && f["response"]["error"].is_object()),
+                    "{}: no reply is an error",
+                    p.source
+                );
+                assert!(
+                    !replies
+                        .iter()
+                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    "{}: a reply calls a tool",
                     p.source
                 );
             }

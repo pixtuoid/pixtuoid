@@ -88,9 +88,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let p = profile(&manifest.source)
         .ok_or_else(|| invalid(format!("{}: not a profiled source", manifest.source)))?;
     let scenario = p
-        .scenarios
-        .iter()
-        .find(|s| s.shape.name() == manifest.scenario)
+        .scenario(&manifest.scenario)
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
@@ -104,7 +102,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 ///
 /// # Errors
 ///
-/// If its record or a capture file cannot be read.
+/// If its record is missing, a present file can't be read, or its scenario is unprofiled.
 pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
     let records: Vec<StepRecord> =
         serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
@@ -151,9 +149,18 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
         }
         Err(e) => return Err(e),
     };
+    let shape = profile(&manifest.source)
+        .and_then(|p| p.scenario(&manifest.scenario))
+        .ok_or_else(|| {
+            invalid(format!(
+                "{}: no scenario {}",
+                manifest.source, manifest.scenario
+            ))
+        })?
+        .shape;
     // The scenario's own turn just completed in this sandbox, so one that
     // cannot now is the uninstall's doing; with no turn, no hook proves nothing.
-    if !completed_turn(&manifest, &mut findings) {
+    if !completed_turn(&manifest, shape, &mut findings) {
         findings.push((
             Label::Fail,
             format!(
@@ -408,9 +415,9 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
         .collect())
 }
 
-/// Whether `manifest`'s CLI completed a turn against the scripted model; a
-/// request no script line matched is Script either way.
-fn completed_turn(manifest: &Manifest, findings: &mut Vec<(Label, String)>) -> bool {
+/// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
+/// as scripted; a request no script line matched is Script either way.
+fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
             Label::Script,
@@ -420,7 +427,7 @@ fn completed_turn(manifest: &Manifest, findings: &mut Vec<(Label, String)>) -> b
             ),
         ));
     }
-    manifest.capture.exit_code == Some(0) && manifest.requests > 0
+    shape.exits_as_scripted(manifest.capture.exit_code) && manifest.requests > 0
 }
 
 fn judge(
@@ -432,7 +439,7 @@ fn judge(
     findings: &mut Vec<(Label, String)>,
 ) -> std::io::Result<()> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
-    let completed = completed_turn(manifest, findings);
+    let completed = completed_turn(manifest, scenario.shape, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
@@ -514,11 +521,17 @@ fn judge(
 
     // A daemon renders presence, not a desk sprite, so its turn is judged there.
     if p.descriptor().is_daemon() {
-        judge_presence(p, scene, findings);
+        match settled(scenario.shape) {
+            Some(settled) => judge_presence(p, scene, settled, findings),
+            None => findings.push((
+                Label::Fail,
+                format!("presence cannot show a {} turn", scenario.shape.name()),
+            )),
+        }
         return Ok(());
     }
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission => 1,
+        Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
         Shape::Subagent => 2,
     };
     started_in(
@@ -537,10 +550,12 @@ fn judge(
             p.descriptor().caps().child_end_inference,
             findings,
         ),
+        Shape::ModelError => model_error(&events, findings),
     }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent => "active",
         Shape::Permission => "waiting",
+        Shape::ModelError => "idle",
     };
     judge_scene(p, scene, shown, findings);
     Ok(())
@@ -704,6 +719,23 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     }
 }
 
+/// The failed turn ends. Its script answers the turn only with an error
+/// (`a_model_error_script_errs_and_calls_no_tool`), so a run that reached the
+/// model failed.
+fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+    if !events.iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::ActivityEnd {
+                tool_use_id: None,
+                ..
+            }
+        )
+    }) {
+        findings.push((Label::Fail, "the failed turn never ended".into()));
+    }
+}
+
 fn subagent(
     events: &[AgentEvent],
     reached: &[Reach],
@@ -819,9 +851,20 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
     breadcrumbs(scene, findings);
 }
 
-/// A daemon's turn on the scene: its mascot busy, then idle once the turn
-/// settled, and down or gone once the daemon stopped.
-fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>) {
+/// The presence a daemon's turn of `shape` settles to, where presence can show
+/// one.
+pub(super) fn settled(shape: Shape) -> Option<&'static str> {
+    match shape {
+        Shape::ToolRun => Some("idle"),
+        // `RunFailed` latches it (`crate::source::daemon`).
+        Shape::ModelError => Some("degraded"),
+        Shape::Permission | Shape::Subagent => None,
+    }
+}
+
+/// A daemon's turn on the scene: its mascot busy, then `settled` once the turn
+/// ended, and down or gone once the daemon stopped.
+fn judge_presence(p: &Profile, scene: &str, settled: &str, findings: &mut Vec<(Label, String)>) {
     let mascot = format!("{}@", p.source);
     let frames = rosters(scene, "daemons");
     match frames.iter().position(|f| holds(f, &mascot, "busy")) {
@@ -829,9 +872,9 @@ fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>)
             Label::Fail,
             format!("the scene never showed a {mascot} daemon busy"),
         )),
-        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, "idle")) => findings.push((
+        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, settled)) => findings.push((
             Label::Fail,
-            format!("the {mascot} daemon never settled idle after its turn"),
+            format!("the {mascot} daemon never settled {settled} after its turn"),
         )),
         Some(_) => {}
     }
@@ -1779,6 +1822,113 @@ mod tests {
         assert!(judged(&idle_only_before)[0].1.contains("idle"));
         let lingering = [frame("busy"), frame("idle")].concat();
         assert!(judged(&lingering)[0].1.contains("still up"));
+    }
+
+    #[test]
+    fn a_daemon_s_failed_turn_settles_degraded() {
+        let judged = |scene: &str| {
+            let d = recorded("openclaw", Shape::ModelError, scene);
+            write_manifest(d.path(), "openclaw", |m| {
+                m.scenario = Shape::ModelError.name().into();
+                m.capture.exit_code = Some(1);
+            });
+            verify(d.path()).expect("verify").findings().to_vec()
+        };
+        let frame = |state: &str| format!("agents=[] daemons=[openclaw@55306:{state}]\n");
+        let gone = "agents=[] daemons=[]\n";
+        let failed = [
+            frame("idle"),
+            frame("busy"),
+            frame("degraded"),
+            frame("down"),
+        ]
+        .concat();
+        assert_eq!(judged(&(failed + gone)), vec![]);
+        let sound = [frame("busy"), frame("idle"), frame("down")].concat() + gone;
+        assert!(
+            judged(&sound)[0].1.contains("degraded"),
+            "{:?}",
+            judged(&sound)
+        );
+    }
+
+    #[test]
+    fn only_a_turn_scripted_to_fail_may_exit_non_zero() {
+        let scene = "agents=[] daemons=[openclaw@55306:busy]\n\
+                     agents=[] daemons=[openclaw@55306:degraded]\n\
+                     agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
+        let judged = |shape: Shape, exit_code, requests| {
+            let d = recorded("openclaw", Shape::ModelError, scene);
+            write_manifest(d.path(), "openclaw", |m| {
+                m.scenario = shape.name().into();
+                m.capture.exit_code = exit_code;
+                m.requests = requests;
+            });
+            has(
+                &verify(d.path()).expect("verify"),
+                Label::Blocked,
+                "did not complete",
+            )
+        };
+        assert!(!judged(Shape::ModelError, Some(1), 1));
+        assert!(
+            judged(Shape::ModelError, Some(1), 0),
+            "it never reached the model"
+        );
+        assert!(judged(Shape::ModelError, None, 1), "a signal ends no turn");
+        assert!(judged(Shape::ToolRun, Some(1), 1));
+    }
+
+    #[test]
+    fn a_recorded_agent_model_error_run_passes_on_its_failure_hook() {
+        let run = |edit: fn(&Path)| {
+            let d = recorded(
+                "opencode",
+                Shape::ModelError,
+                "agents=[oc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
+            );
+            write_manifest(d.path(), "opencode", |m| {
+                m.scenario = Shape::ModelError.name().into();
+                m.capture.exit_code = Some(1);
+            });
+            edit(d.path());
+            verify(d.path()).expect("verify")
+        };
+        let v = run(|_| {});
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = run(|d| {
+            edit_hooks(d, |v| {
+                (v["type"] != "session.execution.failed").then_some(v)
+            })
+        });
+        assert!(
+            has(&v, Label::Fail, "session.execution.failed"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_failed_turn_is_held_to_its_end() {
+        let agent_id = AgentId::from_parts("kimi", "session");
+        let judged = |tool_use_id: Option<&str>| {
+            let mut findings = Vec::new();
+            model_error(
+                &[AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: tool_use_id.map(str::to_owned),
+                }],
+                &mut findings,
+            );
+            findings
+        };
+        assert_eq!(judged(None), vec![]);
+        assert!(
+            judged(Some("call"))
+                .iter()
+                .any(|f| f.1.contains("never ended"))
+        );
     }
 
     #[test]

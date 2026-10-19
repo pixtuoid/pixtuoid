@@ -217,9 +217,7 @@ mod run {
                 };
             }
             let s = p
-                .scenarios
-                .iter()
-                .find(|s| s.shape.name() == sc)
+                .scenario(sc)
                 .ok_or_else(|| format!("{source} has no scenario {sc}"))?;
             match p.not_run_on(s, windows) {
                 Some(why) => Err(format!("{source}/{sc} doesn't run here: {why}")),
@@ -2152,6 +2150,7 @@ mod run {
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
                      openclaw/tool-run (the recorder stops its daemon by a Unix signal) \
+                     openclaw/model-error (the recorder stops its daemon by a Unix signal) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"

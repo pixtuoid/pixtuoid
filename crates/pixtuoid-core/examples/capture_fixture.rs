@@ -61,6 +61,13 @@ mod recorder {
         scratch.join("driver")
     }
 
+    /// [`hermetic::Shape::exits_as_scripted`] for `source`'s profiled `scenario`.
+    fn exited_as_scripted(source: &str, scenario: &str, code: Option<i32>) -> bool {
+        hermetic::profile(source)
+            .and_then(|p| p.scenario(scenario))
+            .map_or(code == Some(0), |s| s.shape.exits_as_scripted(code))
+    }
+
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
     /// driver left anything in [`driver_dir`].
     fn keep_scratch(scratch: tempfile::TempDir) {
@@ -387,7 +394,7 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some() || !status.success() {
+            if incomplete.is_some() || !exited_as_scripted(&source, &scenario, status.code()) {
                 keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
@@ -452,11 +459,7 @@ mod recorder {
             serde_json::from_str(&std::fs::read_to_string(run.join(MANIFEST))?)?;
         let named = format!("{}/{}", manifest.source, manifest.scenario);
         let scenario = hermetic::profile(&manifest.source)
-            .and_then(|p| {
-                p.scenarios
-                    .iter()
-                    .find(|s| s.shape.name() == manifest.scenario)
-            })
+            .and_then(|p| p.scenario(&manifest.scenario))
             .ok_or_else(|| std::io::Error::other(format!("{named}: no profiled scenario")))?;
         let dest = root.join(scenario.fixture);
         let exempt = reads::exemption(&dest.join(PROVENANCE));
@@ -1196,7 +1199,7 @@ mod recorder {
             let d = tempfile::tempdir().expect("tempdir");
             let (run, root) = (d.path().join("run"), d.path().join("sources"));
             let fixture = hermetic::profile("dsh")
-                .and_then(|p| p.scenarios.iter().find(|s| s.shape.name() == "tool-run"))
+                .and_then(|p| p.scenario("tool-run"))
                 .map(|s| s.fixture)
                 .expect("dsh's tool-run");
             let committed =
@@ -1923,6 +1926,14 @@ mod recorder {
                 started.elapsed() < DAEMON_PROBE_BUDGET * 2,
                 "the probe ran out"
             );
+        }
+
+        #[test]
+        fn only_a_profiled_failing_turn_may_exit_non_zero() {
+            assert!(exited_as_scripted("openclaw", "model-error", Some(1)));
+            assert!(!exited_as_scripted("openclaw", "tool-run", Some(1)));
+            assert!(!exited_as_scripted("unprofiled", "model-error", Some(1)));
+            assert!(exited_as_scripted("unprofiled", "model-error", Some(0)));
         }
 
         #[test]

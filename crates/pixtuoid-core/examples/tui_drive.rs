@@ -65,11 +65,10 @@ fn main() {
 fn tui_of(source: &str, scenario: &str) -> std::io::Result<&'static Tui> {
     hermetic::profile(source)
         .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
-        .scenarios
-        .iter()
-        .find_map(|s| match s.surface {
-            Surface::Tui(tui) if s.shape.name() == scenario => Some(tui),
-            _ => None,
+        .scenario(scenario)
+        .and_then(|s| match s.surface {
+            Surface::Tui(tui) => Some(tui),
+            Surface::Headless => None,
         })
         .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))
 }
