@@ -319,9 +319,6 @@ pub(crate) fn decode_rx_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
         // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
         // subject, and ALONGSIDE `Notification` for the same approval — both →
         // Waiting is idempotent (the gated tool's PostToolUse/Stop resolves it).
-        // Capture-verified at v1.25.2: `fixtures/reasonix/permission-flow`. It was
-        // decoded from upstream source and annotated "not live-capturable" until a
-        // seeded ask rule made the gate fire.
         "PermissionRequest" => {
             let tool = obj
                 .get("toolName")

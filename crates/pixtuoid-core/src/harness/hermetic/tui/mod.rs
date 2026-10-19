@@ -591,6 +591,11 @@ mod tests {
                 include_str!("screens/grok-gate.txt"),
             ),
             (
+                "reasonix",
+                include_str!("screens/reasonix-boot.txt"),
+                include_str!("screens/reasonix-gate.txt"),
+            ),
+            (
                 "hermes",
                 include_str!("screens/hermes-boot.txt"),
                 include_str!("screens/hermes-gate.txt"),
