@@ -1,5 +1,5 @@
 //! The NAME-KEYED delegation family: sources whose subagent dispatch is a
-//! tool literally called `task` — `subagent` for dsh. They claim the Task detail by tool NAME and
+//! tool literally called `task` — `subagent` for dsh and opencode. They claim the Task detail by tool NAME and
 //! deliberately NOT by the presence of a `subagent_type` key, so a
 //! model-authored argument on an ordinary tool cannot spoof a delegation, seed
 //! `active_tasks`, and cascade a real child out on drain.
@@ -59,6 +59,20 @@ fn dsh_events() -> Vec<AgentEvent> {
     d.events
 }
 
+/// Its hermetic profile records it under opencode's own module.
+fn opencode_lines() -> Vec<String> {
+    super::captures::fixture_lines(
+        &super::captures::sources_root()
+            .join("opencode/fixtures/subagent-hermetic/hook-payloads.jsonl"),
+    )
+}
+
+fn opencode_events() -> Vec<AgentEvent> {
+    let d = Drive::hooks().lines(opencode_lines());
+    d.assert_clean("opencode delegation hooks");
+    d.events
+}
+
 fn tasks(evs: &[AgentEvent]) -> usize {
     evs.iter()
         .filter(|e| {
@@ -79,6 +93,7 @@ fn every_name_keyed_source_mints_exactly_one_task_from_its_capture() {
         ("copilot", copilot_events()),
         ("omp", omp_events()),
         ("dsh", dsh_events()),
+        ("opencode", opencode_events()),
     ] {
         assert_eq!(
             tasks(&evs),
@@ -98,6 +113,7 @@ fn the_child_is_in_band_for_some_of_them_and_a_separate_file_for_others() {
         ("copilot", copilot_events(), true),
         ("omp", omp_events(), false),
         ("dsh", dsh_events(), true),
+        ("opencode", opencode_events(), true),
     ] {
         let ids: std::collections::BTreeSet<_> = evs.iter().map(AgentEvent::agent_id).collect();
         assert_eq!(
@@ -164,6 +180,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
             lines("dsh", "hook-payloads.jsonl"),
             "subagent",
         ),
+        ("opencode", opencode_events(), opencode_lines(), "subagent"),
     ] {
         let dispatch = task_call_ids(&raw, name);
         assert!(

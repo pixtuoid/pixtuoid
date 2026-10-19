@@ -106,8 +106,8 @@ pub enum Package {
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
-/// cannot be held to a weaker bar than another, save the gap a profile's
-/// `result_unseen` owes.
+/// cannot be held to a weaker bar than another, save the gaps a profile's
+/// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
     /// A turn that reads a file: the session registers in the workspace, a tool
@@ -118,10 +118,7 @@ pub enum Shape {
     /// never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
-    /// the child registers as its child and reads, and both end. Where the child
-    /// is durable ([`TurnEnd`](crate::source::registry::ChildEndInference::TurnEnd)),
-    /// the parent shows its dispatch
-    /// tool instead, and the child's turn ends.
+    /// the child registers as its child and reads, and both end.
     Subagent,
 }
 

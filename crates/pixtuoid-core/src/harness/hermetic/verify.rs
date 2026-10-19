@@ -640,6 +640,13 @@ fn subagent(
             _ => None,
         })
         .collect();
+    // No run deletes a durable child, so its turn's end is the end a run sees.
+    let durable = match inference {
+        ChildEndInference::Durable => true,
+        ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
+            false
+        }
+    };
     let ended = |child: AgentId, parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
@@ -647,13 +654,13 @@ fn subagent(
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(t),
-            } if inference.dispatch_end_returns_child() => {
+            } if inference.dispatch_end_ends_child(true) => {
                 *agent_id == parent && tasks.contains(&(parent, t.as_str()))
             }
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: None,
-            } if inference == ChildEndInference::TurnEnd => *agent_id == child,
+            } if durable => *agent_id == child,
             _ => false,
         })
     };
@@ -697,26 +704,8 @@ fn subagent(
             "a child's tool never landed on the child".into(),
         ));
     }
-    match inference {
-        ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
-            if !reached.contains(&Reach::Delegating) {
-                findings.push((Label::Fail, "the parent never went Delegating".into()));
-            }
-        }
-        ChildEndInference::TurnEnd => {
-            let dispatched = children.iter().all(|&(_, parent)| {
-                events.iter().any(|e| {
-                    matches!(e, AgentEvent::ActivityStart { agent_id, detail: Some(_), .. }
-                        if *agent_id == parent)
-                })
-            });
-            if !dispatched {
-                findings.push((
-                    Label::Fail,
-                    "the parent never showed its dispatch tool".into(),
-                ));
-            }
-        }
+    if !reached.contains(&Reach::Delegating) {
+        findings.push((Label::Fail, "the parent never went Delegating".into()));
     }
     if !reached.contains(&Reach::Active) {
         findings.push((Label::Fail, "the child's tool never went Active".into()));
@@ -925,7 +914,7 @@ mod tests {
     const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Delegating), \
                                      cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
                                      agents=[] daemons=[]\n";
-    const OC_DISPATCH_SCENE: &str = "agents=[oc\u{b7}proj@0:active(subagent), \
+    const OC_DELEGATE_SCENE: &str = "agents=[oc\u{b7}proj@0:active(Delegating), \
                                      oc\u{b7}proj@1:active(read)]\n\
                                      agents=[] daemons=[]\n";
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
@@ -1199,7 +1188,7 @@ mod tests {
     }
 
     #[test]
-    fn a_durable_child_is_held_to_its_turn_and_a_returning_one_to_its_session() {
+    fn a_durable_child_is_held_to_its_turn_and_any_other_to_its_session() {
         use crate::source::ToolDetail;
         let (parent, child) = (
             AgentId::from_parts("opencode", "ses_parent"),
@@ -1210,104 +1199,67 @@ mod tests {
             tool_use_id: Some(id.into()),
             detail: Some(detail),
         };
-        let generic = |name: &str| ToolDetail::Generic {
-            display: name.into(),
+        let turn_end = |agent_id| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
         };
-        let base = vec![
-            AgentEvent::SessionStart {
-                agent_id: parent,
-                source: "opencode".into(),
-                session_id: "ses_parent".into(),
-                cwd: PathBuf::from("/proj"),
-                parent_id: None,
-            },
-            AgentEvent::SessionStart {
-                agent_id: child,
-                source: "opencode".into(),
-                session_id: "ses_child".into(),
-                cwd: PathBuf::from("/proj"),
-                parent_id: Some(parent),
-            },
-            started(child, "read", generic("read")),
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "opencode".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let run = vec![
+            session(parent, "ses_parent", None),
+            started(parent, "dispatch", ToolDetail::Task),
+            session(child, "ses_child", Some(parent)),
+            started(
+                child,
+                "read",
+                ToolDetail::Generic {
+                    display: "read".into(),
+                },
+            ),
+            turn_end(child),
         ];
-        let judged = |events: &[AgentEvent], reached: &[Reach], inference| {
+        let judged = |events: &[AgentEvent], inference| {
             let mut findings = Vec::new();
-            subagent(events, reached, inference, &mut findings);
+            subagent(
+                events,
+                &[Reach::Active, Reach::Delegating],
+                inference,
+                &mut findings,
+            );
             findings
         };
-        let mut durable = base.clone();
-        durable.push(started(parent, "dispatch", generic("subagent")));
-        durable.push(AgentEvent::ActivityEnd {
-            agent_id: child,
-            tool_use_id: None,
-        });
-        let active = [Reach::Active];
-        assert_eq!(
-            judged(&durable, &active, ChildEndInference::TurnEnd),
-            vec![]
-        );
-        let undispatched: Vec<_> = durable
+        let unended = |events: &[AgentEvent], inference| -> bool {
+            judged(events, inference)
+                .iter()
+                .any(|f| f.1.contains("never ended"))
+        };
+        assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        let parent_turn: Vec<_> = run[..run.len() - 1]
             .iter()
-            .filter(
-                |e| !matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == parent),
-            )
             .cloned()
+            .chain([turn_end(parent)])
             .collect();
         assert!(
-            judged(&undispatched, &active, ChildEndInference::TurnEnd)
-                .iter()
-                .any(|f| f.1.contains("dispatch tool")),
-            "a durable child's parent still shows its dispatch"
+            unended(&parent_turn, ChildEndInference::Durable),
+            "only the child's own turn ends it"
         );
-        let strict = judged(&durable, &active, ChildEndInference::TaskDrain);
-        assert!(
-            strict.iter().any(|f| f.1.contains("Delegating")),
-            "{strict:?}"
-        );
-        assert!(
-            strict.iter().any(|f| f.1.contains("never ended")),
-            "{strict:?}"
-        );
-
-        let mut returning = base;
-        returning.push(started(parent, "dispatch", ToolDetail::Task));
-        // A child's own turn end, which a strict bar never takes for its end.
-        returning.push(AgentEvent::ActivityEnd {
-            agent_id: child,
-            tool_use_id: None,
-        });
-        returning.push(AgentEvent::SessionEnd {
-            agent_id: child,
-            as_child: true,
-        });
-        let delegated = [Reach::Active, Reach::Delegating];
         for inference in [
             ChildEndInference::None,
             ChildEndInference::TaskDrain,
             ChildEndInference::AnyTaskEnd,
         ] {
-            assert_eq!(
-                judged(&returning, &delegated, inference),
-                vec![],
-                "{inference:?}"
-            );
-            assert!(
-                judged(&returning, &active, inference)
-                    .iter()
-                    .any(|f| f.1.contains("Delegating")),
-                "{inference:?}"
-            );
-            let unended: Vec<_> = returning
-                .iter()
-                .filter(|e| !matches!(e, AgentEvent::SessionEnd { .. }))
-                .cloned()
-                .collect();
-            assert!(
-                judged(&unended, &delegated, inference)
-                    .iter()
-                    .any(|f| f.1.contains("never ended")),
-                "{inference:?}"
-            );
+            assert!(unended(&run, inference), "{inference:?}");
+            let mut ended = run.clone();
+            ended.push(AgentEvent::SessionEnd {
+                agent_id: child,
+                as_child: true,
+            });
+            assert_eq!(judged(&ended, inference), vec![], "{inference:?}");
         }
     }
 
@@ -1395,7 +1347,7 @@ mod tests {
 
     #[test]
     fn a_recorded_opencode_subagent_run_passes() {
-        let d = recorded("opencode", Shape::Subagent, OC_DISPATCH_SCENE);
+        let d = recorded("opencode", Shape::Subagent, OC_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }

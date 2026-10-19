@@ -25,12 +25,12 @@ use std::path::PathBuf;
 use serde_json::{Map, Value};
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
 #[cfg(any(test, feature = "upstream"))]
 use crate::source::upstream::{Doc, Finding, Read, Release, Repo, Watch, When};
+use crate::source::{AgentEvent, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
@@ -45,6 +45,10 @@ const TOOL_STARTED: &str = "session.tool.input.started";
 const TOOL_SUCCESS: &str = "session.tool.success";
 const TOOL_FAILED: &str = "session.tool.failed";
 const PERMISSION_ASKED: &str = "permission.asked";
+
+/// The subagent dispatch tool (`packages/core/src/tool/plugin/subagent.ts:17`
+/// at v2.0.32).
+const DISPATCH_TOOL: &str = "subagent";
 
 /// The event types this decoder turns into events. Pinned to the arms below
 /// by `every_exported_set_is_exactly_its_dispatch_arms`, and to the plugin's
@@ -250,7 +254,7 @@ fn ended(
 }
 
 /// The tool's `id` is the call id its `success`/`failed` pair on. The input
-/// rides a later event, so the detail is the tool's name alone.
+/// rides a later event, so the detail is the tool's name alone, or a Task.
 fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
     let (agent_id, session_id) = session(data, TOOL_STARTED)?;
     let name = field(data, "name").unwrap_or_else(|| {
@@ -262,13 +266,11 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
         AgentEvent::ActivityStart {
             agent_id,
             tool_use_id: field(data, "id").map(str::to_owned),
-            // Even `subagent` is no `Task`: `background: true`, or the user's
-            // ctrl+b mid-run, returns the call while the child still runs
-            // (`packages/core/src/tool/plugin/subagent.ts:229-243`,
-            // `packages/core/src/session.ts:442-455`), and a Task's end would
-            // walk the live child out. The child is its own session, parented
-            // by `parentID`.
-            detail: Some(generic_tool_display(name, None)),
+            detail: Some(if name == DISPATCH_TOOL {
+                ToolDetail::Task
+            } else {
+                generic_tool_display(name, None)
+            }),
         },
     ])
 }
@@ -296,7 +298,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::ToolDetail;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
         decode_oc_hook_payload(&v).expect("decodes")
