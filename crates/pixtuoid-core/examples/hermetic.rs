@@ -362,7 +362,7 @@ mod run {
         for scenario in scenarios {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
-            let key = format!("{}/{}", p.source, scenario.shape.name());
+            let key = format!("{}/{}", p.source, scenario.name);
             println!("== {key}");
             let ran = match &installed {
                 Ok(v) => run_one(ctx, p, scenario, v, &dir),
@@ -405,7 +405,7 @@ mod run {
                 },
                 None => Verdict::new(vec![(
                     Label::Blocked,
-                    format!("its {} run was not judged", scenario.shape.name()),
+                    format!("its {} run was not judged", scenario.name),
                 )]),
             };
             entries.push(Entry::new(key, None, verdict));
@@ -531,7 +531,7 @@ mod run {
     fn selected<'a>(args: &Args, p: &'a Profile, windows: bool) -> Vec<&'a Scenario> {
         p.scenarios
             .iter()
-            .filter(|s| args.selects(p.source, s.shape.name()))
+            .filter(|s| args.selects(p.source, s.name))
             .filter(|s| p.not_run_on(s, windows).is_none())
             .collect()
     }
@@ -575,7 +575,7 @@ mod run {
     fn not_run_of(p: &Profile, windows: bool) -> Vec<String> {
         let scenarios = p.scenarios.iter().filter_map(|s| {
             let why = p.not_run_on(s, windows)?;
-            Some(format!("{}/{} ({why})", p.source, s.shape.name()))
+            Some(format!("{}/{} ({why})", p.source, s.name))
         });
         let live = p.live.as_ref().and_then(|l| {
             let why = l.not_run_on(windows)?;
@@ -585,7 +585,7 @@ mod run {
     }
 
     fn run_dir(runs: &Path, p: &Profile, scenario: &Scenario) -> PathBuf {
-        runs.join(p.source).join(scenario.shape.name())
+        runs.join(p.source).join(scenario.name)
     }
 
     /// Each of `p`'s runs under `runs`, written into its scenario's fixture by
@@ -599,8 +599,7 @@ mod run {
             if !status.success() {
                 return Err(std::io::Error::other(format!(
                     "recording {}/{} exited {status}",
-                    p.source,
-                    scenario.shape.name()
+                    p.source, scenario.name
                 )));
             }
         }
@@ -1770,7 +1769,7 @@ mod run {
         };
         let manifest = Manifest {
             source: p.source.into(),
-            scenario: scenario.shape.name().into(),
+            scenario: scenario.name.into(),
             capture,
             aimock: aimock.version.clone(),
             requests,
@@ -1898,7 +1897,7 @@ mod run {
                 }
             }
         }
-        args.extend([p.source, scenario.shape.name()].map(OsString::from));
+        args.extend([p.source, scenario.name].map(OsString::from));
         match scenario.surface {
             Surface::Headless => {
                 args.extend(run.launch.argv());
@@ -1909,7 +1908,7 @@ mod run {
                 args.extend(
                     tui::CommandLine {
                         source: p.source.to_owned(),
-                        scenario: scenario.shape.name().to_owned(),
+                        scenario: scenario.name.to_owned(),
                         log: run.out.join(TUI_LOG),
                         // The recorder expands it, as in a headless invocation.
                         prompt: "{prompt}".to_owned(),
@@ -2139,7 +2138,7 @@ mod run {
             let names = |windows| -> Vec<&str> {
                 selected(&every, grok, windows)
                     .iter()
-                    .map(|s| s.shape.name())
+                    .map(|s| s.name)
                     .collect()
             };
             assert_eq!(names(true), ["tool-run", "subagent"]);
@@ -2329,7 +2328,7 @@ mod run {
                     .all(|kv| kv[0].to_str().is_some_and(|f| f.starts_with("--"))),
                 "{args:?}"
             );
-            let positionals: Vec<OsString> = [p.source, p.scenarios[0].shape.name()]
+            let positionals: Vec<OsString> = [p.source, p.scenarios[0].name]
                 .into_iter()
                 .map(OsString::from)
                 .chain(launch.argv())
@@ -2415,7 +2414,7 @@ mod run {
                 .position(|a| a == "/build/tui_drive")
                 .expect("the driver runs as the command");
             let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
-            assert_eq!(line.scenario, scenario.shape.name());
+            assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
             assert_eq!(line.prompt, "{prompt}");
             let program: Vec<OsString> = launch
@@ -2824,6 +2823,7 @@ mod run {
                 .find(|s| matches!(s.surface, Surface::Tui(_)))
                 .expect("a TUI scenario");
             let scenario = |surface, fixture| Scenario {
+                name: tui.name,
                 shape: tui.shape,
                 surface,
                 expects: &[],
