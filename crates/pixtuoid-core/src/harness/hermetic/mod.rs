@@ -1484,7 +1484,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.resume", "session.task_complete", "subagent.failed"],
+        not_yet_literals: &["session.resume", "session.task_complete"],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
