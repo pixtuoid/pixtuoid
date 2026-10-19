@@ -12,7 +12,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{PROFILES, Profile, pin};
+use super::{PROFILES, Profile, SHARDS, pin};
 use crate::harness::sources_root;
 
 /// The leg [`Profile::runs_on`] asks about as `windows`.
@@ -24,9 +24,10 @@ const OSES: &[&str] = &["macos", WINDOWS];
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
 
-/// The `hermetic.yml` output a drift leg on `os` reports its [`MOVED`] rows as.
-fn moved_output(os: &str) -> String {
-    format!("moved_{os}")
+/// The `hermetic.yml` output the drift leg on `os` running [`SHARDS`]' `shard`th
+/// reports its [`MOVED`] rows as, counting from 1 as `--shard` does.
+fn moved_output(os: &str, shard: usize) -> String {
+    format!("moved_{os}_{shard}")
 }
 
 /// The file a bump leg writes its patch for `source` to, and check reads it from.
@@ -85,10 +86,16 @@ impl Proposal {
 pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal>, String> {
     let mut moved = Vec::new();
     for os in OSES {
-        let rows: Vec<Moved> = match drift.get(&moved_output(os)).and_then(Value::as_str) {
-            None | Some("") => Vec::new(),
-            Some(json) => serde_json::from_str(json).map_err(|e| format!("{os}: {e}"))?,
-        };
+        let mut rows: Vec<Moved> = Vec::new();
+        for shard in 1..=SHARDS.len() {
+            match drift.get(&moved_output(os, shard)).and_then(Value::as_str) {
+                None | Some("") => {}
+                Some(json) => rows.extend(
+                    serde_json::from_str::<Vec<Moved>>(json)
+                        .map_err(|e| format!("{os} {shard}: {e}"))?,
+                ),
+            }
+        }
         moved.push(rows);
     }
     let mut proposals = Vec::new();
@@ -215,20 +222,32 @@ mod tests {
         Version::new(pin.major, pin.minor, pin.patch + 1)
     }
 
-    /// The drift job's outputs, each leg's rows as `hermetic.yml` reports them.
+    /// The shard `source` runs in, or the first for one no profile names.
+    fn shard_of(source: &str) -> usize {
+        SHARDS
+            .iter()
+            .position(|s| s.contains(&source))
+            .map_or(1, |i| i + 1)
+    }
+
+    /// The drift job's outputs, each OS's rows as `hermetic.yml` reports them:
+    /// from the leg running each row's shard.
     fn drift(legs: &[(&str, &[(&str, &str)])]) -> Map<String, Value> {
         let mut out = Map::new();
         out.insert("runs-stem".into(), Value::from("hermetic-runs-1-1-"));
         for (os, rows) in legs {
-            let rows: Vec<Moved> = rows
-                .iter()
-                .map(|(source, version)| Moved {
-                    source: (*source).to_string(),
-                    version: (*version).to_string(),
-                })
-                .collect();
-            let json = serde_json::to_string(&rows).expect("rows");
-            out.insert(moved_output(os), Value::from(json));
+            for shard in 1..=SHARDS.len() {
+                let rows: Vec<Moved> = rows
+                    .iter()
+                    .filter(|(source, _)| shard_of(source) == shard)
+                    .map(|(source, version)| Moved {
+                        source: (*source).to_string(),
+                        version: (*version).to_string(),
+                    })
+                    .collect();
+                let json = serde_json::to_string(&rows).expect("rows");
+                out.insert(moved_output(os, shard), Value::from(json));
+            }
         }
         out
     }
@@ -265,12 +284,28 @@ mod tests {
     }
 
     #[test]
+    fn each_shards_rows_count_toward_its_os() {
+        let hermes = profile("hermes").expect("hermes's profile");
+        assert_ne!(shard_of(codex().source), shard_of(hermes.source));
+        let (codex_up, hermes_up) = (above(codex()).to_string(), above(hermes).to_string());
+        let rows: &[(&str, &str)] = &[("codex", &codex_up), ("hermes", &hermes_up)];
+        let both = drift(&[("macos", rows), ("windows", rows)]);
+        assert_eq!(
+            plan(&both, &[]),
+            Ok(vec![
+                Proposal::new("codex", &v(&codex_up)),
+                Proposal::new("hermes", &v(&hermes_up)),
+            ])
+        );
+    }
+
+    #[test]
     fn a_release_moved_on_one_os_or_at_two_versions_is_not() {
         let up = above(codex());
         let next = Version::new(up.major, up.minor, up.patch + 1).to_string();
         let up = up.to_string();
         let mut silent = drift(&[("macos", &[("codex", &up)]), ("windows", &[])]);
-        silent.insert(moved_output("windows"), Value::from(""));
+        silent.insert(moved_output("windows", shard_of("codex")), Value::from(""));
         for legs in [
             drift(&[("macos", &[("codex", &up)]), ("windows", &[])]),
             drift(&[("macos", &[("codex", &up)])]),
@@ -297,7 +332,7 @@ mod tests {
         .to_string();
         let mut garbled = drift(&[("macos", &[]), ("windows", &[])]);
         garbled.insert(
-            moved_output("macos"),
+            moved_output("macos", shard_of("codex")),
             Value::from("[{\"source\":\"codex\"}]"),
         );
         for legs in [
@@ -326,15 +361,23 @@ mod tests {
         assert_eq!(
             yml.matches("- { os: ").count(),
             OSES.len(),
-            "one leg per OS"
+            "one runner per OS"
+        );
+        let shards: Vec<String> = (1..=SHARDS.len()).map(|n| n.to_string()).collect();
+        assert!(
+            yml.contains(&format!("shard: [{}]", shards.join(", "))),
+            "one leg per shard"
         );
         for os in OSES {
-            assert!(yml.contains(&format!("- {{ os: {os}, ")), "{os}'s leg");
-            assert_eq!(
-                yml.matches(&format!("{}:", moved_output(os))).count(),
-                2,
-                "{os}'s rows, as the job's output and the workflow's"
-            );
+            assert!(yml.contains(&format!("- {{ os: {os}, ")), "{os}'s runner");
+            for shard in 1..=SHARDS.len() {
+                assert_eq!(
+                    yml.matches(&format!("{}:", moved_output(os, shard)))
+                        .count(),
+                    2,
+                    "{os} {shard}'s rows, as the job's output and the workflow's"
+                );
+            }
         }
     }
 
