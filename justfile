@@ -610,7 +610,6 @@ mutants *args:
 # re-recorded yet were composed by hand. One BILLED model turn per run.
 # `{prompt}` expands to the shared scenario prompt; a custom one is a quoted arg.
 #   just capture-fixture cursor tool-run cursor-agent -p --trust '{prompt}'
-#   just capture-fixture kimi permission-flow "$SHELL"   # drive the TUI yourself
 [doc('Record a conformance fixture from a real CLI run (BILLED — one model turn)')]
 [group('rust')]
 capture-fixture source scenario *cmd:

@@ -68,7 +68,7 @@ pub(crate) struct Gate {
 pub(crate) struct Composer {
     /// What its input line starts with, at the line's first column. A
     /// dialog's highlighted choice and the conversation's echo of a prompt
-    /// start with it too.
+    /// can start with it too.
     pub(crate) marker: &'static str,
     pub(crate) above: Above,
 }
@@ -581,9 +581,19 @@ mod tests {
             ("claude-code", BOOT, GATE),
             ("codex", CODEX_BOOT, CODEX_GATE),
             (
+                "kimi",
+                include_str!("screens/kimi-boot.txt"),
+                include_str!("screens/kimi-gate.txt"),
+            ),
+            (
                 "grok",
                 include_str!("screens/grok-boot.txt"),
                 include_str!("screens/grok-gate.txt"),
+            ),
+            (
+                "reasonix",
+                include_str!("screens/reasonix-boot.txt"),
+                include_str!("screens/reasonix-gate.txt"),
             ),
             (
                 "hermes",

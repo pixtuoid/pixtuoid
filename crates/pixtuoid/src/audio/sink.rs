@@ -153,7 +153,10 @@ pub(crate) mod rodio_sink {
             // that `.or_else` and go silent on hardware the fallback recovers.
             // rodio's `tracing` feature routes a MID-SESSION stream error to
             // `tracing::error!` instead of an `eprintln!` that would corrupt the TUI
-            // mid-altscreen.
+            // mid-altscreen. The device's own rate stays, though our sounds are
+            // `SAMPLE_RATE`: on macOS, opening at another rate reclocks the shared
+            // hardware for every app on it
+            // (<https://github.com/RustAudio/cpal/blob/v0.18.2/src/host/coreaudio/macos/device.rs#L837-L849>).
             let opened = with_stderr_silenced(rodio::DeviceSinkBuilder::open_default_sink);
             match opened {
                 Ok(mut stream) => {

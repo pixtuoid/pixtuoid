@@ -114,7 +114,8 @@ pub enum Shape {
     /// starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
-    /// waits on it, then the refused tool ends.
+    /// waits on it, then the refused call ends, or its turn where the call
+    /// never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
@@ -540,6 +541,52 @@ const CODEX_TUI: tui::Tui = tui::Tui {
     renders_under_conpty: true,
 };
 
+/// kimi's TUI, its cites at `@moonshot-ai/kimi-code@2.2.0`. Always Ask, its
+/// default mode, asks before a command (`docs/en/guides/interaction.md:67`);
+/// `-p` never asks (`docs/en/reference/kimi-command.md:43`).
+const KIMI_TUI: tui::Tui = tui::Tui {
+    args: &[],
+    composer: tui::Composer {
+        marker: " │ >",
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: Some(('╭', '╮')),
+        },
+    },
+    gates: &[tui::Gate {
+        shows: "Run this command?",
+        // Esc rejects the call outright
+        // (`apps/kimi-code/src/tui/components/dialogs/approval-panel.ts:262-268`).
+        deny: &[tui::Key::Esc],
+        dwell: std::time::Duration::ZERO,
+    }],
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
+/// reasonix's TUI, its cites at `v2.44.0`. A named mode skips the folder-trust
+/// question, whose yes would run commands unasked
+/// (`internal/frontend/cli/tui_posture.go:32-42`, `:69`).
+const REASONIX_TUI: tui::Tui = tui::Tui {
+    args: &["--permission-mode", "ask"],
+    composer: tui::Composer {
+        marker: " ❯",
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: None,
+        },
+    },
+    gates: &[tui::Gate {
+        shows: "Permission required",
+        // "n/Esc deny" (`internal/base/i18n/messages_en.go:164`).
+        deny: &[tui::Key::Esc],
+        dwell: std::time::Duration::ZERO,
+    }],
+    // `/exit` is its alias (`internal/frontend/cli/slash_registry.go:69`).
+    quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
 /// The profiled CLIs.
 pub const PROFILES: &[Profile] = &[
     Profile {
@@ -931,20 +978,22 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.0.1`.
+    // kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`.
     Profile {
         source: "kimi",
         package: Package::Npm("@moonshot-ai/kimi-code"),
         invocation: &["kimi", "-p", "{prompt}"],
         // `KIMI_MODEL_NAME` builds a provider from the environment
         // (`docs/en/configuration/env-vars.md:106-124`); the telemetry and
-        // update-check switches (`:27`, `:183`).
+        // update-check switches (`:27`, `:185`).
         env: &[
             ("KIMI_MODEL_NAME", "kimi-k2"),
             ("KIMI_MODEL_BASE_URL", AIMOCK_V1),
             ("KIMI_MODEL_API_KEY", "{key}"),
             ("KIMI_DISABLE_TELEMETRY", "1"),
             ("KIMI_CODE_NO_AUTO_UPDATE", "1"),
+            // The TUI otherwise asks to trust the folder at boot (`:168`).
+            ("KIMI_CODE_TRUST_WORKSPACE", "1"),
         ],
         homes: &[],
         system_config: PerOs {
@@ -957,22 +1006,35 @@ trust_level = "trusted"
         // which the recorder's `git init` makes the workspace.
         ancestor_config: &[],
         config: &[],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "fixtures/kimi/tool-run-hermetic",
-        }],
-        script_vars: &[],
-        not_yet: &[
-            "PostToolUseFailure",
-            "PermissionRequest",
-            "StopFailure",
-            "SessionEnd",
+        // A reply waits `latency`: a turn's end kills a still-running
+        // fire-and-forget `PostToolUse`/`PostToolUseFailure` hook
+        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:318-333`,
+        // `human/agent/machine.ts:757-760`, `features/externalHooks/internal/runHook.ts:120-123`).
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/kimi/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&KIMI_TUI),
+                expects: &[
+                    "SessionStart",
+                    "PreToolUse",
+                    "PermissionRequest",
+                    "PostToolUseFailure",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/kimi/permission-hermetic",
+            },
         ],
+        script_vars: &[],
+        not_yet: &["StopFailure"],
         event_name: hook_event_name,
-        // A Bash call's; the scripted turn reads a file.
-        not_yet_fields: &[("hook:PreToolUse", "/tool_input/command")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1089,7 +1151,7 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
+    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
@@ -1152,11 +1214,25 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&REASONIX_TUI),
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PermissionRequest",
+                    "Notification",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PermissionRequest", "Notification"],
+        not_yet: &[],
         event_name: event_field,
-        // A bash call's; the scripted turn reads a file.
+        // A bash call's; the tool-run reads a file, and the permission turn's call
+        // is refused before it starts.
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
         children_inherit_cwd: false,
         result_unseen: false,

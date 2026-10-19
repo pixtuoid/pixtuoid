@@ -230,7 +230,7 @@ mod tests {
     }
 
     /// rodio keeps each frame's first sample on a mono device and discards the
-    /// rest (<https://docs.rs/rodio/0.22.2/src/rodio/conversions/channels.rs.html#59-80>),
+    /// rest (<https://docs.rs/rodio/0.23.0/src/rodio/conversions/channels.rs.html#59-80>),
     /// so the music folds to mono losslessly only while lofi renders L == R.
     #[test]
     fn lofi_renders_both_channels_alike() {
