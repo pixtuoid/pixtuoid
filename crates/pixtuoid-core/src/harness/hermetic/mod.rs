@@ -1,6 +1,6 @@
 //! The hermetic tier's per-CLI facts: how each real CLI is installed, isolated,
-//! pointed at a scripted model (aimock) and driven, and which hook events each
-//! scenario must fire. The registry already owns the binary (`version_probe`),
+//! and driven against a scripted model (aimock) or as its live tier, and which
+//! hook events each scenario must fire. The registry already owns the binary (`version_probe`),
 //! the home variable (`home_env`) and the pinned version (`verified_version`);
 //! a profile holds only what it doesn't.
 
@@ -151,6 +151,31 @@ pub struct Scenario {
     pub fixture: &'static str,
 }
 
+/// A daemon's run: its own live tier, driven against this build in place of
+/// scripted turns, since no turn shows a daemon's presence.
+#[derive(Debug)]
+pub struct Live {
+    /// The tier, from the repository root. It takes its ports as arguments,
+    /// and exits [`LIVE_PREREQUISITE`] when something it needs is missing.
+    pub script: &'static str,
+    /// How many free ports the orchestrator passes it.
+    pub ports: usize,
+}
+
+impl Live {
+    /// Why a leg on `windows` doesn't run it, if it doesn't.
+    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
+        windows.then_some("its tier waits on a Unix socket")
+    }
+}
+
+/// A live tier's exit when a prerequisite is missing, which no run of the build
+/// under test caused.
+pub const LIVE_PREREQUISITE: i32 = 2;
+
+/// What a live tier reads as the build under test.
+pub const LIVE_PIXTUOID_ENV: &str = "PIXTUOID_BIN";
+
 /// A config file the tier writes into a sandbox home BEFORE `pixtuoid connect`,
 /// which may merge its own into the same file (codex's `config.toml`).
 #[derive(Debug)]
@@ -207,6 +232,8 @@ pub struct Profile {
     /// waits on the turn rather than the note. Shrink-only: a run in which
     /// aimock saw one is Stale.
     pub(crate) result_unseen: bool,
+    /// Its live tier, run in place of `scenarios`, which it has none of.
+    pub live: Option<Live>,
 }
 
 impl Profile {
@@ -283,8 +310,6 @@ pub enum Absence {
     /// Its headless run fires no session lifecycle, so no headless shape can
     /// pass.
     NoHeadlessLifecycle,
-    /// A profile is owed. Shrink-only.
-    AwaitingProfile,
 }
 
 fn hook_event_name(v: &Value) -> Option<Cow<'_, str>> {
@@ -484,6 +509,7 @@ pub const PROFILES: &[Profile] = &[
         ],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     Profile {
         source: "codex",
@@ -585,6 +611,7 @@ sandbox = "unelevated"
         ],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // opencode's cites are at v2.0.28, the release that added the system
     // config below.
@@ -675,6 +702,7 @@ sandbox = "unelevated"
         ],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
     Profile {
@@ -757,6 +785,7 @@ sandbox = "unelevated"
         not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.0.1`.
     Profile {
@@ -802,6 +831,7 @@ sandbox = "unelevated"
         not_yet_fields: &[("hook:PreToolUse", "/tool_input/command")],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
     // nearest 1.0.25: the repo tags no release.
@@ -911,6 +941,7 @@ sandbox = "unelevated"
         not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
     Profile {
@@ -983,6 +1014,7 @@ model = "deepseek-v4-flash"
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // copilot is closed source: its cites are docs.github.com,
     // `github/copilot-cli` and the `@github/copilot-<platform>@1.0.98` binaries.
@@ -1069,6 +1101,7 @@ model = "deepseek-v4-flash"
         // and no event of it names a cwd.
         children_inherit_cwd: true,
         result_unseen: false,
+        live: None,
     },
     // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, `src/` its
     // `packages/coding-agent/src/`.
@@ -1176,6 +1209,7 @@ async:
         ],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // hermes's cites are `NousResearch/hermes-agent` at `v0.22.2`.
     Profile {
@@ -1254,6 +1288,7 @@ telemetry:
         not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
+        live: None,
     },
     // agy is closed source: its cites are its installer,
     // antigravity.google/cli/install.sh, and the agy 1.4.2 binary.
@@ -1312,6 +1347,46 @@ telemetry:
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
         result_unseen: true,
+        live: None,
+    },
+    // openclaw's cites are `openclaw/openclaw` at `v2026.10.1`.
+    Profile {
+        source: "openclaw",
+        package: Package::Npm("openclaw"),
+        invocation: &["openclaw"],
+        // Its automatic update checks, and the daily request each sends
+        // (`docs/install/updating/automatic-updates.md:160-162`,
+        // `docs/gateway/telemetry.md:11`).
+        env: &[("OPENCLAW_NO_AUTO_UPDATE", "1")],
+        homes: &[],
+        system_config: PerOs {
+            unix: &[],
+            windows: &[],
+        },
+        ancestor_config: &[],
+        config: &[],
+        scenarios: &[],
+        script_vars: &[],
+        // Owed to a gateway-backed `openclaw agent` turn: the live tier reads
+        // presence off the scene and captures no hook.
+        not_yet: &[
+            "gateway_start",
+            "gateway_stop",
+            "session_start",
+            "before_agent_run",
+            "model_call_ended",
+            "agent_end",
+            "session_end",
+        ],
+        event_name: |_| None,
+        not_yet_fields: &[],
+        children_inherit_cwd: false,
+        result_unseen: false,
+        live: Some(Live {
+            script: "scripts/lib/tier-openclaw-multi.sh",
+            // The script's own default count.
+            ports: 4,
+        }),
     },
 ];
 
@@ -1322,7 +1397,6 @@ pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     // Owner, 2026-10-18: `exec --hooks` fires only `tool_call_before` and
     // `shell_env` (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1).
     ("codewhale", Absence::NoHeadlessLifecycle),
-    ("openclaw", Absence::AwaitingProfile),
 ];
 
 /// The profile for `source`, if it has one.
@@ -1342,6 +1416,17 @@ impl Profile {
     pub fn manifest_lock(&self) -> Option<PathBuf> {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
+    }
+
+    /// Whether a leg on `windows` runs any of it, and so reports it.
+    pub fn runs_on(&self, windows: bool) -> bool {
+        self.scenarios
+            .iter()
+            .any(|s| s.not_run_on(windows).is_none())
+            || self
+                .live
+                .as_ref()
+                .is_some_and(|l| l.not_run_on(windows).is_none())
     }
 }
 
@@ -1415,9 +1500,47 @@ mod tests {
                     p.source
                 );
             }
+            assert_eq!(
+                p.scenarios.is_empty(),
+                p.live.is_some(),
+                "{}: a profile runs scenarios or a live tier, exactly one",
+                p.source
+            );
+        }
+    }
+
+    #[test]
+    fn a_live_tier_takes_the_ports_the_build_and_the_exit_it_is_given() {
+        for p in PROFILES {
+            let Some(live) = &p.live else {
+                continue;
+            };
+            let script = std::fs::read_to_string(super::bump::repo_root().join(live.script))
+                .expect("script");
             assert!(
-                !p.scenarios.is_empty(),
-                "{}: a profile with no scenario",
+                script.contains(&format!("${{{LIVE_PIXTUOID_ENV}:-")),
+                "{}: the script ignores the build under test",
+                p.source
+            );
+            assert!(
+                script.contains(&format!("exit {LIVE_PREREQUISITE}")),
+                "{}: no prerequisite exit",
+                p.source
+            );
+            assert!(
+                p.env.iter().all(|(_, v)| !v.contains("{port}"))
+                    && p.config.iter().all(|c| !c.template.contains("{port}")),
+                "{}: no model runs, so `{{port}}` names nothing",
+                p.source
+            );
+            let default = script
+                .lines()
+                .find_map(|l| l.split_once("|| PORTS=(").map(|(_, ports)| ports))
+                .expect("a default port list");
+            assert_eq!(
+                default.trim_end_matches(')').split_whitespace().count(),
+                live.ports,
+                "{}: the orchestrator passes as many ports as the script defaults to",
                 p.source
             );
         }

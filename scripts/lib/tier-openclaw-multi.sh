@@ -8,15 +8,15 @@
 # the ONE ground floor they share — the crowding where a 4-gateway render was found
 # drawing only 3 lobsters.
 #
-# NOT a CI test (needs a real `openclaw` on PATH), but side-effect-free: every gateway
-# runs from a throwaway `OPENCLAW_HOME`.
+# `just hermetic` runs it as openclaw's live tier; by hand it needs a real `openclaw`
+# on PATH. Side-effect-free: every gateway runs from a throwaway `OPENCLAW_HOME`.
 #
 # Build first:  just build --release
 # Run:          just openclaw-multi-e2e [port ...]   (default: 4 ports)
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PIX="$REPO/target/release/pixtuoid"
+PIX="${PIXTUOID_BIN:-$REPO/target/release/pixtuoid}"
 # Four by default: two would prove the keying, four also exercises the one-floor
 # crowding the visit-spot offset logic exists for.
 PORTS=("$@")
