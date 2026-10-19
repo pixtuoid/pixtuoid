@@ -411,13 +411,7 @@ fn judge(
 
     // A daemon renders presence, not a desk sprite, so its turn is judged there.
     if p.descriptor().is_daemon() {
-        match scenario.shape {
-            Shape::ToolRun => judge_presence(p, scene, findings),
-            other => findings.push((
-                Label::Fail,
-                format!("a daemon's scene has no judge for {}", other.name()),
-            )),
-        }
+        judge_presence(p, scene, findings);
         return Ok(());
     }
     let sessions = match scenario.shape {
@@ -691,17 +685,8 @@ fn subagent(
 /// lost track of.
 fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
     let prefix = format!("{}\u{b7}", p.descriptor().label_prefix);
-    let frames: Vec<&str> = scene
-        .lines()
-        .filter_map(|l| l.split_once("agents=[").map(|(_, agents)| agents))
-        .collect();
-    let state = format!(":{shown}");
-    let shown_in = |frame: &str| {
-        frame
-            .split(", ")
-            .any(|a| a.starts_with(&prefix) && a.contains(&state))
-    };
-    if !frames.iter().any(|f| shown_in(f)) {
+    let frames = rosters(scene, "agents");
+    if !frames.iter().any(|f| holds(f, &prefix, shown)) {
         findings.push((
             Label::Fail,
             format!("the scene never showed a {prefix} agent {shown}"),
@@ -717,37 +702,46 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
 }
 
 /// A daemon's turn on the scene: its mascot busy, then idle once the turn
-/// settled, and gone once the daemon stopped.
+/// settled, and down or gone once the daemon stopped.
 fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>) {
     let mascot = format!("{}@", p.source);
-    let frames: Vec<&str> = scene
-        .lines()
-        .filter_map(|l| l.split_once("daemons=[").map(|(_, daemons)| daemons))
-        .collect();
-    let shown = |frame: &str, state: &str| {
-        let state = format!(":{state}");
-        frame
-            .split(", ")
-            .any(|d| d.starts_with(&mascot) && d.contains(&state))
-    };
-    match frames.iter().position(|f| shown(f, "busy")) {
+    let frames = rosters(scene, "daemons");
+    match frames.iter().position(|f| holds(f, &mascot, "busy")) {
         None => findings.push((
             Label::Fail,
             format!("the scene never showed a {mascot} daemon busy"),
         )),
-        Some(at) if !frames[at..].iter().any(|f| shown(f, "idle")) => findings.push((
+        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, "idle")) => findings.push((
             Label::Fail,
             format!("the {mascot} daemon never settled idle after its turn"),
         )),
         Some(_) => {}
     }
-    if frames.last().is_some_and(|last| last.contains(&mascot)) {
+    let up = |last: &&str| last.contains(&mascot) && !holds(last, &mascot, "down");
+    if frames.last().is_some_and(up) {
         findings.push((
             Label::Fail,
-            "a daemon was still in the scene after it stopped".into(),
+            "a daemon was still up in the scene after it stopped".into(),
         ));
     }
     breadcrumbs(scene, findings);
+}
+
+/// Each line's `key=[…]` roster, in the scene's order.
+fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
+    let key = format!("{key}=[");
+    scene
+        .lines()
+        .filter_map(|l| l.split_once(key.as_str()).map(|(_, roster)| roster))
+        .collect()
+}
+
+/// Whether `roster` holds an entry of `who`'s in `state`.
+fn holds(roster: &str, who: &str, state: &str) -> bool {
+    let state = format!(":{state}");
+    roster
+        .split(", ")
+        .any(|e| e.starts_with(who) && e.contains(&state))
 }
 
 /// Each drift breadcrumb pixtuoid logged while rendering the run.
@@ -1457,8 +1451,13 @@ mod tests {
         };
         let frame = |state: &str| format!("agents=[] daemons=[openclaw@59871:{state}]\n");
         let gone = "agents=[] daemons=[]\n";
-        let ran = [frame("idle"), frame("busy"), frame("idle"), frame("down")].concat() + gone;
-        assert_eq!(judged(&ran), vec![]);
+        let ran = [frame("idle"), frame("busy"), frame("idle"), frame("down")].concat();
+        assert_eq!(judged(&(ran.clone() + gone)), vec![]);
+        assert_eq!(
+            judged(&ran),
+            vec![],
+            "down is stopped, before its linger ends"
+        );
         let never_busy = [frame("idle"), frame("down")].concat() + gone;
         assert!(
             judged(&never_busy)[0].1.contains("busy"),
@@ -1467,8 +1466,10 @@ mod tests {
         );
         let never_settled = [frame("busy"), frame("down")].concat() + gone;
         assert!(judged(&never_settled)[0].1.contains("idle"));
+        let idle_only_before = [frame("idle"), frame("busy"), frame("down")].concat() + gone;
+        assert!(judged(&idle_only_before)[0].1.contains("idle"));
         let lingering = [frame("busy"), frame("idle")].concat();
-        assert!(judged(&lingering)[0].1.contains("still in the scene"));
+        assert!(judged(&lingering)[0].1.contains("still up"));
     }
 
     #[test]

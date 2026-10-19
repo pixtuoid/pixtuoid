@@ -1,8 +1,10 @@
 //! The committed capture corpus: where each capture's bytes live and which
 //! registered source owns them, read off the tree's layout; and the recorder's
-//! contract with its callers: its workspace, raw record and flag spellings.
+//! contract with its callers: its workspace, raw record, flag spellings and
+//! the wait on a server either starts.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -111,6 +113,34 @@ pub fn version_answer(out: &std::process::Output) -> Option<String> {
         .map(str::trim)
         .find(|l| !l.is_empty())
         .map(str::to_owned)
+}
+
+/// How long a server the rig starts gets to come up.
+pub const BOOT: Duration = Duration::from_secs(60);
+/// How often a server that is coming up is asked whether it serves.
+const POLL: Duration = Duration::from_millis(200);
+
+/// Waits up to `within` for `ready` to answer true; an error it returns ends
+/// the wait.
+///
+/// # Errors
+///
+/// `ready`'s, or that `what` never came up.
+pub fn wait_until(
+    what: &str,
+    within: Duration,
+    mut ready: impl FnMut() -> std::io::Result<bool>,
+) -> std::io::Result<()> {
+    let started = Instant::now();
+    loop {
+        if ready()? {
+            return Ok(());
+        }
+        if started.elapsed() >= within {
+            return Err(std::io::Error::other(format!("{what} never came up")));
+        }
+        std::thread::sleep(POLL);
+    }
 }
 
 /// The `NOTE.txt` the recorder writes into the workspace: what every scripted
@@ -283,6 +313,20 @@ pub fn captures(root: &Path) -> Vec<Capture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wait_ends_on_ready_on_its_error_or_past_its_budget() {
+        let mut asked = 0;
+        let ready = wait_until("x", BOOT, || {
+            asked += 1;
+            Ok(asked == 2)
+        });
+        assert!(ready.is_ok() && asked == 2);
+        let failed = wait_until("x", BOOT, || Err(std::io::Error::other("exited")));
+        assert_eq!(failed.expect_err("its error").to_string(), "exited");
+        let late = wait_until("x", Duration::ZERO, || Ok(false));
+        assert_eq!(late.expect_err("past").to_string(), "x never came up");
+    }
 
     #[test]
     fn only_a_capture_workspace_names_a_base_to_clear() {

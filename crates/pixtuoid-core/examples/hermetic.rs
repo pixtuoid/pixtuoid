@@ -1,5 +1,6 @@
-//! Run each profiled agent CLI for real, against a scripted model (aimock) or as
-//! its live tier, with a headless pixtuoid on the same run, and judge the result.
+//! Run each profiled agent CLI for real against a scripted model (aimock), and a
+//! daemon's live tier beside it, with a headless pixtuoid on the same run, and
+//! judge the result.
 //! Profiles, scripts and the judgement: `pixtuoid_core::harness::hermetic`.
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
@@ -28,7 +29,7 @@ mod run {
     use std::net::{TcpListener, TcpStream};
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, ExitStatus, Stdio};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::pin;
@@ -41,16 +42,12 @@ mod run {
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
-        required_version_probe, version_answer,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
+        required_version_probe, version_answer, wait_until,
     };
     use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
 
-    /// How long a server gets to come up before the run gives up.
-    const BOOT: Duration = Duration::from_secs(60);
-    /// How often a server that is coming up is asked whether it is ready.
-    const POLL: Duration = Duration::from_millis(200);
     /// How long one read from aimock may hang.
     const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
     /// How long the headless scene runs on after the recorder returns, to
@@ -201,10 +198,9 @@ mod run {
                 if p.runs_on(windows) {
                     return Ok(());
                 }
-                let why = p.live.as_ref().and_then(|l| l.not_run_on(windows));
                 return Err(format!(
                     "{source} doesn't run here: {}",
-                    why.unwrap_or("none of its scenarios does")
+                    not_run_of(p, windows).join(", ")
                 ));
             };
             if let (LIVE, Some(live)) = (sc, &p.live) {
@@ -352,7 +348,7 @@ mod run {
             ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
-        let (mut judged, mut banners, mut passed) = (Vec::new(), Vec::new(), true);
+        let (mut judged, mut banners) = (Vec::new(), Vec::new());
         for scenario in selected {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
@@ -369,7 +365,6 @@ mod run {
             if verdict.judged() {
                 judged.push(dir);
             }
-            passed &= verdict.label() == Label::Pass;
             banners.extend(banner.clone());
             entries.push(Entry::new(key, banner, verdict));
         }
@@ -380,9 +375,9 @@ mod run {
             let key = format!("{} (every scenario)", p.source);
             println!("== {key}");
             let verdict = verify::verify_source(p, &judged)?;
-            passed &= verdict.label() == Label::Pass;
             entries.push(Entry::new(key, None, verdict));
         }
+        let passed = entries.iter().all(|e| e.verdict.label() == Label::Pass);
         let mut moved = None;
         if let (Ok(installed), true) = (&installed, passed) {
             match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
@@ -474,13 +469,8 @@ mod run {
         version: &Version,
         dir: &Path,
     ) -> std::io::Result<(String, Verdict)> {
-        // One more than the tier takes: no model runs, so `{port}` names a port
-        // nothing listens on.
-        let mut ports = free_ports(live.ports + 1)?;
-        let held = Ports {
-            model: ports.pop().unwrap_or_default(),
-            daemon: None,
-        };
+        // No model runs, so `{port}` names a port nothing listens on.
+        let (held, ports) = Ports::hold(live.ports)?;
         let (_, cli, sandbox) = sandboxed(ctx, p, version, held)?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
         let status = sandbox
@@ -508,18 +498,21 @@ mod run {
     fn not_run(windows: bool) -> Vec<String> {
         PROFILES
             .iter()
-            .flat_map(|p| {
-                let scenarios = p.scenarios.iter().filter_map(move |s| {
-                    let why = p.not_run_on(s, windows)?;
-                    Some(format!("{}/{} ({why})", p.source, s.shape.name()))
-                });
-                let live = p.live.as_ref().and_then(|l| {
-                    let why = l.not_run_on(windows)?;
-                    Some(format!("{}/{LIVE} ({why})", p.source))
-                });
-                scenarios.chain(live)
-            })
+            .flat_map(|p| not_run_of(p, windows))
             .collect()
+    }
+
+    /// Each of `p`'s runs a leg on `windows` never makes, and why.
+    fn not_run_of(p: &Profile, windows: bool) -> Vec<String> {
+        let scenarios = p.scenarios.iter().filter_map(|s| {
+            let why = p.not_run_on(s, windows)?;
+            Some(format!("{}/{} ({why})", p.source, s.shape.name()))
+        });
+        let live = p.live.as_ref().and_then(|l| {
+            let why = l.not_run_on(windows)?;
+            Some(format!("{}/{LIVE} ({why})", p.source))
+        });
+        scenarios.chain(live).collect()
     }
 
     fn run_dir(runs: &Path, p: &Profile, scenario: &Scenario) -> PathBuf {
@@ -1507,11 +1500,7 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<Manifest> {
         let Ctx { built, aimock, .. } = ctx;
-        let held = free_ports(1 + usize::from(p.daemon.is_some()))?;
-        let ports = Ports {
-            model: held[0],
-            daemon: held.get(1).copied(),
-        };
+        let (ports, _) = Ports::hold(0)?;
         let port = ports.model;
         let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
 
@@ -1552,7 +1541,7 @@ mod run {
                 .stderr(log(dir, AIMOCK_LOG)?)
                 .spawn()?,
         );
-        wait_until(|| http_get(port, "/v1/models").is_ok(), "aimock")?;
+        wait_until("aimock", BOOT, || Ok(http_get(port, "/v1/models").is_ok()))?;
 
         // A root absent at boot is watched only from the next poll, so a short
         // run would reach pixtuoid by hook alone.
@@ -1574,10 +1563,9 @@ mod run {
                 .stderr(log(dir, SCENE_LOG)?)
                 .spawn()?,
         );
-        wait_until(
-            || sandbox.scene.accepting(),
-            "the headless pixtuoid's endpoint",
-        )?;
+        wait_until("the headless pixtuoid's endpoint", BOOT, || {
+            Ok(sandbox.scene.accepting())
+        })?;
 
         let recorder = sandbox
             .command(&built.recorder)
@@ -1591,7 +1579,6 @@ mod run {
                     cli_version: &cli_version(&sandbox, p, &cli.launch)?,
                     launch: &cli.launch,
                     driver: &built.driver,
-                    ports,
                 },
                 p,
                 scenario,
@@ -1730,7 +1717,6 @@ mod run {
         launch: &'a Launch,
         /// [`Built::driver`].
         driver: &'a Path,
-        ports: Ports,
     }
 
     /// The recorder's command line for one run: its options, then the source,
@@ -1756,8 +1742,8 @@ mod run {
                 (recorder_flag::DAEMON, daemon.start),
                 (recorder_flag::DAEMON_READY, daemon.ready),
             ] {
-                let expanded = words.iter().map(|w| expanded(w, run.ports).into());
-                for word in run.launch.argv().into_iter().chain(expanded) {
+                let words = words.iter().map(OsString::from);
+                for word in run.launch.argv().into_iter().chain(words) {
                     args.extend([flag.into(), word]);
                 }
             }
@@ -1842,15 +1828,12 @@ mod run {
         expanded(template, ports).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
     }
 
-    /// A profile string with the scripted model's port and key in it.
+    /// A profile string with its run's ports and the dummy key in it.
     fn expanded(template: &str, ports: Ports) -> String {
-        let text = template
+        template
             .replace("{port}", &ports.model.to_string())
-            .replace("{key}", DUMMY_KEY);
-        match ports.daemon {
-            Some(port) => text.replace(DAEMON_PORT_PLACEHOLDER, &port.to_string()),
-            None => text,
-        }
+            .replace(DAEMON_PORT_PLACEHOLDER, &ports.daemon.to_string())
+            .replace("{key}", DUMMY_KEY)
     }
 
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
@@ -1907,11 +1890,24 @@ mod run {
     }
 
     /// The ports one run holds free: the scripted model's, which `{port}` names,
-    /// and its daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
+    /// and a daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
     #[derive(Debug, Clone, Copy)]
     struct Ports {
         model: u16,
-        daemon: Option<u16>,
+        daemon: u16,
+    }
+
+    impl Ports {
+        /// A run's ports, and `extra` more, all free now.
+        fn hold(extra: usize) -> std::io::Result<(Self, Vec<u16>)> {
+            let held = free_ports(2 + extra)?;
+            let (run, rest) = held.split_at(2);
+            let ports = Self {
+                model: run[0],
+                daemon: run[1],
+            };
+            Ok((ports, rest.to_vec()))
+        }
     }
 
     /// `n` ports free now, held together while picked so no two are one.
@@ -1920,17 +1916,6 @@ mod run {
             .map(|_| TcpListener::bind("127.0.0.1:0"))
             .collect::<std::io::Result<Vec<_>>>()?;
         held.iter().map(|l| Ok(l.local_addr()?.port())).collect()
-    }
-
-    fn wait_until(mut ready: impl FnMut() -> bool, what: &str) -> std::io::Result<()> {
-        let started = Instant::now();
-        while started.elapsed() < BOOT {
-            if ready() {
-                return Ok(());
-            }
-            std::thread::sleep(POLL);
-        }
-        Err(std::io::Error::other(format!("{what} never came up")))
     }
 
     /// A bare HTTP/1.0 GET to aimock on loopback: the core crate carries no
@@ -1958,7 +1943,7 @@ mod run {
         /// What a test's run holds: its `{port}` is the 4321 the expectations spell.
         const TEST_PORTS: Ports = Ports {
             model: 4321,
-            daemon: Some(4322),
+            daemon: 4322,
         };
 
         fn args(v: &[&str]) -> Vec<String> {
@@ -2015,7 +2000,7 @@ mod run {
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
-                     openclaw/tool-run (its daemon stops cleanly only on SIGTERM) \
+                     openclaw/tool-run (the recorder stops its daemon by a Unix signal) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"
@@ -2174,7 +2159,6 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
                 },
                 p,
                 &p.scenarios[0],
@@ -2205,7 +2189,7 @@ mod run {
         }
 
         #[test]
-        fn a_daemon_profile_hands_the_recorder_its_daemon_on_its_held_port() {
+        fn a_daemon_profile_hands_the_recorder_its_daemon_and_its_config_the_held_port() {
             let p = hermetic::profile("openclaw").expect("openclaw");
             let launch = Launch {
                 program: PathBuf::from("/cli/openclaw"),
@@ -2222,7 +2206,6 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
                 },
                 p,
                 &p.scenarios[0],
@@ -2233,16 +2216,18 @@ mod run {
                     .map(|w| w[1].to_string_lossy().into_owned())
                     .collect()
             };
-            let held = TEST_PORTS.daemon.expect("a held daemon port").to_string();
-            let start = words(recorder_flag::DAEMON);
-            assert_eq!(start.first().map(String::as_str), Some("/cli/openclaw"));
-            assert!(start.contains(&held), "{start:?}");
-            assert!(words(recorder_flag::DAEMON_READY).contains(&held));
-            assert!(
-                !args
-                    .iter()
-                    .any(|a| a.to_string_lossy().contains(DAEMON_PORT_PLACEHOLDER))
+            assert_eq!(
+                words(recorder_flag::DAEMON),
+                ["/cli/openclaw", "gateway", "run"]
             );
+            assert_eq!(
+                words(recorder_flag::DAEMON_READY),
+                ["/cli/openclaw", "gateway", "health"]
+            );
+            let config: serde_json::Value =
+                serde_json::from_str(&config_text(p.config[0].template, TEST_PORTS, "/ws"))
+                    .expect("valid JSON");
+            assert_eq!(config["gateway"]["port"], TEST_PORTS.daemon);
         }
 
         #[test]
@@ -2271,7 +2256,6 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
                 },
                 p,
                 scenario,
@@ -2658,7 +2642,7 @@ mod run {
             };
             assert!(turn(false).is_ok());
             let refused = turn(true).expect_err("a daemon on Windows");
-            assert!(refused.contains("SIGTERM"), "{refused}");
+            assert!(refused.contains("Unix signal"), "{refused}");
             assert!(
                 check(&["codex", LIVE]).is_err(),
                 "a scenario profile's live run"

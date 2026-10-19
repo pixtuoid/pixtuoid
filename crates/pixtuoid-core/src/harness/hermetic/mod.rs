@@ -1,6 +1,6 @@
 //! The hermetic tier's per-CLI facts: how each real CLI is installed, isolated,
-//! and driven against a scripted model (aimock) or as its live tier, and which
-//! hook events each scenario must fire. The registry already owns the binary (`version_probe`),
+//! and driven against a scripted model (aimock), with a daemon's live tier
+//! beside it, and which hook events each scenario must fire. The registry already owns the binary (`version_probe`),
 //! the home variable (`home_env`) and the pinned version (`verified_version`);
 //! a profile holds only what it doesn't.
 
@@ -151,8 +151,7 @@ pub struct Scenario {
     pub fixture: &'static str,
 }
 
-/// A daemon's run: its own live tier, driven against this build in place of
-/// scripted turns, since no turn shows a daemon's presence.
+/// A daemon's own live tier, driven against this build.
 #[derive(Debug)]
 pub struct Live {
     /// The tier, from the repository root. It takes its ports as arguments,
@@ -169,9 +168,7 @@ impl Live {
     }
 }
 
-/// A server a profile's CLI talks to, run inside each scenario's recorded run:
-/// started before the invocation, so its own hooks reach the one tap, and
-/// stopped after it.
+/// A server a profile's CLI talks to, run inside each scenario's recorded run.
 #[derive(Debug)]
 pub struct Daemon {
     /// Its start, after the CLI's binary.
@@ -181,10 +178,9 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Why a leg on `windows` doesn't run it, if it doesn't: the recorder stops
-    /// it with SIGTERM, which Windows lacks.
-    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
-        windows.then_some("its daemon stops cleanly only on SIGTERM")
+    /// Why a leg on `windows` runs no daemon, if it runs none.
+    pub fn not_run_on(windows: bool) -> Option<&'static str> {
+        windows.then_some("the recorder stops its daemon by a Unix signal")
     }
 }
 
@@ -206,7 +202,8 @@ pub struct ConfigFile {
     pub home: &'static str,
     /// The file's path under that home.
     pub path: &'static str,
-    /// Its contents; `{port}`, `{key}` and [`WORKSPACE_PLACEHOLDER`] expand.
+    /// Its contents; `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and
+    /// [`WORKSPACE_PLACEHOLDER`] expand.
     pub template: &'static str,
 }
 
@@ -219,8 +216,8 @@ pub struct Profile {
     pub package: Package,
     /// The headless invocation; `{prompt}` expands (the recorder's own rule).
     pub invocation: &'static [&'static str],
-    /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}` and
-    /// `{key}` expand.
+    /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
+    /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
     pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
     pub(crate) homes: &'static [&'static str],
@@ -238,10 +235,10 @@ pub struct Profile {
     pub scenarios: &'static [Scenario],
     /// Placeholders the scenario scripts spell, each the platform's value.
     pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
-    /// Registered hooks no scenario expects yet. Shrink-only: a run that fires
-    /// one is Stale (`verify::verify_source`).
+    /// Hooks its install forwards that no scenario expects yet. Shrink-only: a
+    /// run that fires one is Stale (`verify::verify_source`).
     pub not_yet: &'static [&'static str],
-    /// The hook event a captured payload is, in `registers()` terms.
+    /// The hook event a captured payload is, as its install names it.
     pub(crate) event_name: fn(&Value) -> Option<Cow<'_, str>>,
     /// Fields a decoder reads in a committed capture that no scenario carries
     /// yet, as `(kind, path)` the field census names them. Shrink-only: a run
@@ -254,9 +251,9 @@ pub struct Profile {
     /// waits on the turn rather than the note. Shrink-only: a run in which
     /// aimock saw one is Stale.
     pub(crate) result_unseen: bool,
-    /// Its live tier, run beside or in place of `scenarios`.
+    /// Its live tier, run beside `scenarios`.
     pub live: Option<Live>,
-    /// The server its CLI talks to, run inside each scenario's run.
+    /// The server its CLI talks to.
     pub daemon: Option<Daemon>,
 }
 
@@ -1396,24 +1393,20 @@ telemetry:
             "-m",
             "{prompt}",
         ],
-        env: &[
-            // Its automatic update checks, and the daily request each sends
-            // (`docs/install/updating/automatic-updates.md:160-162`,
-            // `docs/gateway/telemetry.md:11`).
-            ("OPENCLAW_NO_AUTO_UPDATE", "1"),
-            // `agent` dials it over any configured `gateway.port`
-            // (`docs/help/faq/gateway-ports-and-remote-mode.md:16`).
-            ("OPENCLAW_GATEWAY_PORT", DAEMON_PORT_PLACEHOLDER),
-        ],
+        // Its automatic update checks, and the daily request each sends
+        // (`docs/install/updating/automatic-updates.md:160-162`,
+        // `docs/gateway/telemetry.md:11`).
+        env: &[("OPENCLAW_NO_AUTO_UPDATE", "1")],
         homes: &[],
         system_config: PerOs {
             unix: &[],
             windows: &[],
         },
         ancestor_config: &[],
-        // A local gateway, which `gateway run` refuses without `gateway.mode`; a
-        // provider on the scripted model (`docs/gateway/config-tools/custom-providers.md`),
-        // its model the agents' default, and no separate utility model to title
+        // A local gateway on the held port, which every command dials
+        // (`docs/help/faq/gateway-ports-and-remote-mode.md:16`) and `gateway run`
+        // refuses without `gateway.mode`; a provider on the scripted model
+        // (`docs/gateway/config-tools/custom-providers.md`), its model the agents' default, and no separate utility model to title
         // the session (`docs/gateway/config-agents/models.md:63-66`). The agent works
         // in the run's workspace, not its state dir's, and writes no bootstrap
         // files there (`docs/gateway/config-agents/workspace-and-bootstrap.md:12-22`, `:81-83`).
@@ -1421,7 +1414,7 @@ telemetry:
             home: "HOME",
             path: ".openclaw/openclaw.json",
             template: r#"{
-  "gateway": { "mode": "local", "bind": "loopback" },
+  "gateway": { "mode": "local", "bind": "loopback", "port": {daemon_port} },
   "models": { "providers": { "hermetic": {
     "baseUrl": "http://127.0.0.1:{port}/v1",
     "api": "openai-completions",
@@ -1463,15 +1456,8 @@ telemetry:
             ports: 4,
         }),
         daemon: Some(Daemon {
-            start: &[
-                "gateway",
-                "run",
-                "--port",
-                DAEMON_PORT_PLACEHOLDER,
-                "--bind",
-                "loopback",
-            ],
-            ready: &["gateway", "health", "--port", DAEMON_PORT_PLACEHOLDER],
+            start: &["gateway", "run"],
+            ready: &["gateway", "health"],
         }),
     },
 ];
@@ -1509,7 +1495,7 @@ impl Profile {
     pub fn not_run_on(&self, s: &Scenario, windows: bool) -> Option<&'static str> {
         self.daemon
             .as_ref()
-            .and_then(|d| d.not_run_on(windows))
+            .and_then(|_| Daemon::not_run_on(windows))
             .or_else(|| s.not_run_on(windows))
     }
 
@@ -1534,7 +1520,7 @@ impl Scenario {
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
-    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
+    fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
             Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
                 Some("its TUI paints nothing under ConPTY")
@@ -1597,8 +1583,14 @@ mod tests {
                 );
             }
             assert!(
-                !p.scenarios.is_empty() || p.live.is_some(),
-                "{}: a profile runs scenarios, a live tier, or both",
+                !p.scenarios.is_empty(),
+                "{}: a profile runs scenarios",
+                p.source
+            );
+            assert!(
+                !p.descriptor().is_daemon()
+                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
+                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
                 p.source
             );
         }

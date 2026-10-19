@@ -149,9 +149,10 @@ if [ "$FAILED" != 0 ]; then
 else
     echo "[2] kill the FIRST gateway (${PORTS[0]}) — only its own mascot walks out"
     # `$!` holds the port and stamps `_pid` into every envelope, so this exercises the
-    # INSTANT abrupt-down rung (ExitWatch on the gateway pid). `expect_line` gives up
-    # far sooner than the silence path, so a lost pid rung cannot pass on the timeout.
-    kill "${GW_PIDS[0]}" 2>/dev/null
+    # INSTANT abrupt-down rung (ExitWatch on the gateway pid): SIGKILL, since a SIGTERM'd
+    # gateway announces its own `gateway_stop`. `expect_line` gives up far sooner than
+    # the silence path, so a lost pid rung cannot pass on the timeout.
+    kill -KILL "${GW_PIDS[0]}" 2>/dev/null
     GW_PIDS[0]=""
     expect_line "openclaw@${PORTS[0]}:down" "the killed gateway goes down (instant pid rung)"
     for port in "${PORTS[@]:1}"; do
