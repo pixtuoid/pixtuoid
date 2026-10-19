@@ -1277,6 +1277,20 @@ model = "deepseek-v4-flash"
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
             Scenario {
+                name: "bash-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/bash-run-hermetic",
+            },
+            Scenario {
                 name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&REASONIX_TUI),
@@ -1294,9 +1308,7 @@ model = "deepseek-v4-flash"
         script_vars: &[],
         not_yet: &[],
         event_name: event_field,
-        // A bash call's; the tool-run reads a file, and the permission turn's call
-        // is refused before it starts.
-        not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
