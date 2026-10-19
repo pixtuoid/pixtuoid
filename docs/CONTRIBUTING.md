@@ -35,8 +35,8 @@ Activate the git hooks once per clone: `git config core.hooksPath .githooks`
 (`pre-commit` = `just fmt-check`; `pre-push` = `just preflight`).
 
 `just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
-scripted model (aimock), and a daemon's live tier, with a headless pixtuoid: the full tier gates on it at
-each `verified_version`, the nightly runs it at latest.
+scripted model (aimock), then its install's lifecycle, and a daemon's live tier, with a headless pixtuoid:
+the full tier gates on it at each `verified_version`, the nightly runs it at latest.
 
 ## Releasing
 

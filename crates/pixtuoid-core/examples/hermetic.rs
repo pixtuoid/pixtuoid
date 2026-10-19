@@ -1,6 +1,6 @@
-//! Run each profiled agent CLI for real against a scripted model (aimock), and a
-//! daemon's live tier beside it, with a headless pixtuoid on the same run, and
-//! judge the result.
+//! Run each profiled agent CLI for real against a scripted model (aimock), its
+//! install through its lifecycle (`<source> lifecycle`), and a daemon's live
+//! tier beside it, with a headless pixtuoid on the same run, and judge the result.
 //! Profiles, scripts and the judgement: `pixtuoid_core::harness::hermetic`.
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
@@ -36,10 +36,10 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE,
-        Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG,
-        Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
-        WORKSPACE_SLASHED_PLACEHOLDER,
+        self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
+        LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
+        Package, PerOs, Profile, SCENE_LOG, STEPS, Scenario, Step, StepRecord, Surface, TUI_LOG,
+        USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -204,6 +204,12 @@ mod run {
                     not_run_of(p, windows).join(", ")
                 ));
             };
+            if sc == LIFECYCLE {
+                return match lifecycle_turn(self, p, windows) {
+                    Some(_) => Ok(()),
+                    None => Err(format!("{source}/{LIFECYCLE} has no scenario to turn here")),
+                };
+            }
             if let (LIVE, Some(live)) = (sc, &p.live) {
                 return match live.not_run_on(windows) {
                     Some(why) => Err(format!("{source}/{LIVE} doesn't run here: {why}")),
@@ -324,7 +330,8 @@ mod run {
         };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
-        if selected.is_empty() {
+        let lifecycle = lifecycle_turn(args, p, windows);
+        if selected.is_empty() && lifecycle.is_none() {
             return Ok((entries, None));
         }
         // Once per source, so every scenario runs, and records, one release.
@@ -350,7 +357,11 @@ mod run {
             _ => None,
         };
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
-        for scenario in selected {
+        let mut scenarios = selected;
+        if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.fixture == s.fixture)) {
+            scenarios.insert(0, s);
+        }
+        for scenario in scenarios {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
             let key = format!("{}/{}", p.source, scenario.shape.name());
@@ -359,15 +370,47 @@ mod run {
                 Ok(v) => run_one(ctx, p, scenario, v, &dir),
                 Err(e) => Err(std::io::Error::other(e.clone())),
             };
-            let (banner, verdict) = match ran {
-                Ok(manifest) => (Some(manifest.capture.version), verify::verify(&dir)?),
-                Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
+            let (banner, verdict, run) = match ran {
+                Ok((manifest, run)) => {
+                    let verdict = verify::verify(&dir)?;
+                    let run = lifecycle_goes_on(&verdict, run);
+                    (Some(manifest.capture.version), verdict, run)
+                }
+                Err(e) => (
+                    None,
+                    Verdict::new(vec![(Label::Blocked, e.to_string())]),
+                    None,
+                ),
             };
             if verdict.judged() {
                 judged.push(dir);
             }
             banners.extend(banner.clone());
             entries.push(Entry::new(key, banner, verdict));
+            if lifecycle.is_none_or(|l| l.fixture != scenario.fixture) {
+                continue;
+            }
+            let dir = runs.join(p.source).join(LIFECYCLE);
+            std::fs::create_dir_all(&dir)?;
+            let key = format!("{}/{LIFECYCLE}", p.source);
+            println!("== {key}");
+            let verdict = match run {
+                Some(run) => match run_lifecycle(ctx, p, scenario, &run, &dir) {
+                    Ok(_) => verify::verify_lifecycle(&dir)?,
+                    // The steps' record is judged though the turn after them failed.
+                    Err(e) if dir.join(LIFECYCLE_RECORD).is_file() => {
+                        let mut findings = verify::verify_lifecycle(&dir)?.findings().to_vec();
+                        findings.push((Label::Blocked, e.to_string()));
+                        Verdict::new(findings)
+                    }
+                    Err(e) => Verdict::new(vec![(Label::Blocked, e.to_string())]),
+                },
+                None => Verdict::new(vec![(
+                    Label::Blocked,
+                    format!("its {} run was not judged", scenario.shape.name()),
+                )]),
+            };
+            entries.push(Entry::new(key, None, verdict));
         }
         if !judges_leg(p, &judged, windows) {
             return Ok((entries, None));
@@ -493,6 +536,33 @@ mod run {
             .filter(|s| args.selects(p.source, s.shape.name()))
             .filter(|s| p.not_run_on(s, windows).is_none())
             .collect()
+    }
+
+    /// The scenario `p`'s install lifecycle goes on from and turns under its
+    /// last uninstall, when `args` selects the lifecycle. `--record` writes
+    /// scenarios alone.
+    fn lifecycle_turn<'a>(args: &Args, p: &'a Profile, windows: bool) -> Option<&'a Scenario> {
+        if args.record || !args.selects(p.source, LIFECYCLE) {
+            return None;
+        }
+        headless_first(
+            p.scenarios
+                .iter()
+                .filter(|s| p.not_run_on(s, windows).is_none()),
+        )
+    }
+
+    /// The sandbox a lifecycle goes on in, when its scenario's `verdict` was
+    /// judged: a CLI that couldn't run its scenario says nothing of its
+    /// uninstall.
+    fn lifecycle_goes_on<T>(verdict: &Verdict, run: T) -> Option<T> {
+        verdict.judged().then_some(run)
+    }
+
+    /// The first of `scenarios`, a headless one first, since a TUI's gate waits
+    /// on a hook.
+    fn headless_first<'a>(scenarios: impl Iterator<Item = &'a Scenario>) -> Option<&'a Scenario> {
+        scenarios.min_by_key(|s| !matches!(s.surface, Surface::Headless))
     }
 
     /// Every run a leg on `windows` never makes, and why, as the report names it.
@@ -1493,34 +1563,115 @@ mod run {
         Ok((workspace, cli, sandbox))
     }
 
+    /// `scenario`'s run in a sandbox of its own, connected first, and the
+    /// sandbox, which an install lifecycle goes on in.
     fn run_one(
         ctx: &Ctx,
         p: &Profile,
         scenario: &Scenario,
         version: &Version,
         dir: &Path,
-    ) -> std::io::Result<Manifest> {
-        let Ctx { built, aimock, .. } = ctx;
+    ) -> std::io::Result<(Manifest, Sandboxed)> {
         let (ports, _) = Ports::pick(0)?;
-        let port = ports.model;
         let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
-
         let connect = sandbox
-            .command(&built.pixtuoid)
+            .command(&ctx.built.pixtuoid)
             .args(["connect", p.source, "--json"])
             .output()?;
         std::fs::write(dir.join("connect.log"), &connect.stdout)?;
         let rows: Vec<serde_json::Value> =
             serde_json::from_slice(&connect.stdout).unwrap_or_default();
-        if !rows.iter().any(|r| r["outcome"] == "connected") {
+        if !rows.iter().any(|r| r["outcome"] == Step::Connect.outcome()) {
             return Err(std::io::Error::other(format!(
                 "pixtuoid connect {} did not connect: {}",
                 p.source,
                 String::from_utf8_lossy(&connect.stderr).trim()
             )));
         }
+        let run = Sandboxed {
+            port: ports.model,
+            workspace,
+            cli,
+            sandbox,
+        };
+        Ok((turn(ctx, p, scenario, &run, dir)?, run))
+    }
 
-        let script = render_script(p, scenario, &workspace, sandbox.dir.path())?;
+    /// A sandbox `p`'s CLI is installed in, the workspace it runs in, and the
+    /// port its scripted model listens on.
+    struct Sandboxed {
+        port: u16,
+        workspace: PathBuf,
+        cli: Installed,
+        sandbox: Sandbox,
+    }
+
+    /// `p`'s install lifecycle ([`STEPS`]) in `run`, the sandbox `scenario` ran
+    /// in connected, so the CLI has run as a user's has; then `scenario`'s turn
+    /// under its last uninstall, the steps' record and the turn's capture in
+    /// `dir` (`verify::verify_lifecycle` judges them).
+    fn run_lifecycle(
+        ctx: &Ctx,
+        p: &Profile,
+        scenario: &Scenario,
+        run: &Sandboxed,
+        dir: &Path,
+    ) -> std::io::Result<Manifest> {
+        let sandbox = &run.sandbox;
+        let pixtuoid = |args: &[&str]| -> std::io::Result<(Option<serde_json::Value>, String)> {
+            let out = sandbox.command(&ctx.built.pixtuoid).args(args).output()?;
+            let rows: Vec<serde_json::Value> =
+                serde_json::from_slice(&out.stdout).unwrap_or_default();
+            let row = rows.into_iter().find(|r| r["id"] == p.source);
+            Ok((row, String::from_utf8_lossy(&out.stderr).trim().to_owned()))
+        };
+        let mut records = Vec::new();
+        for step in STEPS {
+            let (row, stderr) = pixtuoid(&[step.command(), p.source, "--json"])?;
+            let field = |r: &Option<serde_json::Value>, k: &str| {
+                r.as_ref().and_then(|r| r[k].as_str()).map(str::to_owned)
+            };
+            let health = match step {
+                Step::Disconnect => None,
+                Step::Connect => match pixtuoid(&["sources", "--json"])? {
+                    (Some(r), _) if r["connected"] == true => field(&Some(r), "health"),
+                    (Some(_), _) => Some("sources --json shows it disconnected".into()),
+                    (None, e) => Some(format!("sources --json has no row for it: {e}")),
+                },
+            };
+            records.push(StepRecord {
+                step: *step,
+                outcome: field(&row, "outcome"),
+                message: field(&row, "message").or_else(|| (!stderr.is_empty()).then_some(stderr)),
+                health,
+            });
+        }
+        std::fs::write(
+            dir.join(LIFECYCLE_RECORD),
+            serde_json::to_string_pretty(&records)?,
+        )?;
+        turn(ctx, p, scenario, run, dir)
+    }
+
+    /// `scenario`'s turn in `run`'s sandbox, connected or not: the scripted
+    /// model, a headless pixtuoid and the recorder, its capture and manifest in
+    /// `dir`.
+    fn turn(
+        ctx: &Ctx,
+        p: &Profile,
+        scenario: &Scenario,
+        run: &Sandboxed,
+        dir: &Path,
+    ) -> std::io::Result<Manifest> {
+        let Ctx { built, aimock, .. } = ctx;
+        let Sandboxed {
+            port,
+            workspace,
+            cli,
+            sandbox,
+        } = run;
+        let port = *port;
+        let script = render_script(p, scenario, workspace, sandbox.dir.path())?;
         let mut model = tool(&aimock.launch.program);
         model
             .args(&aimock.launch.args)
@@ -1575,9 +1726,9 @@ mod run {
                     out: dir,
                     scene: sandbox.scene.path(),
                     within: sandbox.dir.path(),
-                    workspace: &workspace,
+                    workspace,
                     cli_env: &sandbox.cli_env(p, &cli.launch),
-                    cli_version: &cli_version(&sandbox, p, &cli.launch)?,
+                    cli_version: &cli_version(sandbox, p, &cli.launch)?,
                     launch: &cli.launch,
                     driver: &built.driver,
                 },
@@ -2651,6 +2802,54 @@ mod run {
         }
 
         #[test]
+        fn a_lifecycle_goes_on_only_from_a_judged_scenario() {
+            let on = |findings: Vec<(Label, String)>| {
+                lifecycle_goes_on(&Verdict::new(findings), ()).is_some()
+            };
+            assert!(!on(vec![(Label::Blocked, "login wall".into())]));
+            assert!(!on(vec![
+                (Label::Blocked, "exit 1".into()),
+                (Label::Script, "unmatched".into()),
+            ]));
+            for label in [Label::Pass, Label::Stale, Label::Script, Label::Fail] {
+                assert!(on(vec![(label, "judged".into())]), "{label:?}");
+            }
+            assert!(on(Vec::new()));
+        }
+
+        #[test]
+        fn the_lifecycle_turns_a_headless_scenario_and_never_records() {
+            let tui = PROFILES
+                .iter()
+                .flat_map(|p| p.scenarios)
+                .find(|s| matches!(s.surface, Surface::Tui(_)))
+                .expect("a TUI scenario");
+            let scenario = |surface, fixture| Scenario {
+                shape: tui.shape,
+                surface,
+                expects: &[],
+                fixture,
+            };
+            let tui_first = [
+                scenario(tui.surface, "tui"),
+                scenario(Surface::Headless, "headless"),
+            ];
+            let picked = |s: &[Scenario]| headless_first(s.iter()).map(|s| s.fixture);
+            assert_eq!(picked(&tui_first), Some("headless"));
+            assert_eq!(picked(&tui_first[..1]), Some("tui"));
+            let codex = hermetic::profile("codex").expect("profiled");
+            let record = parse(&args(&["--record", "codex"])).expect("parse");
+            assert!(lifecycle_turn(&record, codex, false).is_none());
+            let all = parse(&args(&[])).expect("parse");
+            assert!(lifecycle_turn(&all, codex, false).is_some());
+            let other = parse(&args(&["codex", "tool-run"])).expect("parse");
+            assert!(
+                lifecycle_turn(&other, codex, false).is_none(),
+                "not selected"
+            );
+        }
+
+        #[test]
         fn a_selection_naming_nothing_runnable_is_refused() {
             let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["codex"]).is_ok());
@@ -2679,6 +2878,17 @@ mod run {
             assert!(
                 check(&["codex", LIVE]).is_err(),
                 "a scenario profile's live run"
+            );
+            assert!(check(&["codex", LIFECYCLE]).is_ok());
+            let lifecycle = |windows| {
+                parse(&args(&["openclaw", LIFECYCLE]))
+                    .expect("parse")
+                    .check(windows)
+            };
+            assert!(lifecycle(false).is_ok());
+            assert!(
+                lifecycle(true).is_err(),
+                "its one scenario runs on no Windows leg"
             );
             for named in [&["openclaw"][..], &["openclaw", LIVE]] {
                 let check = |windows| parse(&args(named)).expect("parse").check(windows);
