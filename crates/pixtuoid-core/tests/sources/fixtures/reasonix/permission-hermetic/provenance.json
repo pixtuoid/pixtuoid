@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "reasonix",
+  "version": "reasonix v2.44.0",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record reasonix",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 8
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/reasonix/permission.json"
+}

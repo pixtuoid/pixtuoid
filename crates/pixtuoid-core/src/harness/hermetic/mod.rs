@@ -114,7 +114,8 @@ pub enum Shape {
     /// starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
-    /// waits on it, then the refused tool ends.
+    /// waits on it, then the refused call ends, or its turn where the call
+    /// never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
@@ -330,6 +331,65 @@ pub const TUI_LOG: &str = "tui.log";
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
 
+/// The name an install lifecycle run is selected and reported by.
+pub const LIFECYCLE: &str = "lifecycle";
+/// An install lifecycle's [`StepRecord`]s, beside its silent turn's capture.
+pub const LIFECYCLE_RECORD: &str = "lifecycle.json";
+
+/// One `pixtuoid <command> <source> --json` an install lifecycle runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Step {
+    /// Install the hooks, or install them again.
+    Connect,
+    /// Uninstall them.
+    Disconnect,
+}
+
+impl Step {
+    /// Its subcommand.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+        }
+    }
+
+    /// The `outcome` its row must report, a token of the `--json` contract
+    /// (`integrations/raycast/contract/outcome-row.schema.json`).
+    pub fn outcome(self) -> &'static str {
+        match self {
+            Self::Connect => "connected",
+            Self::Disconnect => "disconnected",
+        }
+    }
+}
+
+/// An install lifecycle, in order, after a scenario's own connect and turn: a
+/// repeat connect (reasonix's `--replace`), a disconnect, a connect over its
+/// residue, and the disconnect a last turn runs under, which must reach the tap
+/// with no hook.
+pub const STEPS: &[Step] = &[
+    Step::Connect,
+    Step::Disconnect,
+    Step::Connect,
+    Step::Disconnect,
+];
+
+/// What one [`Step`] reported, written by the orchestrator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepRecord {
+    /// The step it ran.
+    pub step: Step,
+    /// Its row's `outcome` for the source; `None` when it printed none.
+    pub outcome: Option<String>,
+    /// Its row's `message`, else its stderr.
+    pub message: Option<String>,
+    /// After a connect, what `sources --json` finds wrong with the install:
+    /// its `health`, or no connected row; `None` for a sound one.
+    pub health: Option<String>,
+}
+
 /// What one run was, written by the orchestrator beside the run's raw capture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
@@ -523,6 +583,29 @@ const KIMI_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
+/// reasonix's TUI, its cites at `v2.44.0`. A named mode skips the folder-trust
+/// question, whose yes would run commands unasked
+/// (`internal/frontend/cli/tui_posture.go:32-42`, `:69`).
+const REASONIX_TUI: tui::Tui = tui::Tui {
+    args: &["--permission-mode", "ask"],
+    composer: tui::Composer {
+        marker: " ❯",
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: None,
+        },
+    },
+    gates: &[tui::Gate {
+        shows: "Permission required",
+        // "n/Esc deny" (`internal/base/i18n/messages_en.go:164`).
+        deny: &[tui::Key::Esc],
+        dwell: std::time::Duration::ZERO,
+    }],
+    // `/exit` is its alias (`internal/frontend/cli/slash_registry.go:69`).
+    quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
     renders_under_conpty: true,
 };
 
@@ -1101,7 +1184,7 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
+    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
@@ -1164,11 +1247,25 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
+            Scenario {
+                shape: Shape::Permission,
+                surface: Surface::Tui(&REASONIX_TUI),
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PermissionRequest",
+                    "Notification",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PermissionRequest", "Notification"],
+        not_yet: &[],
         event_name: event_field,
-        // A bash call's; the scripted turn reads a file.
+        // A bash call's; the tool-run reads a file, and the permission turn's call
+        // is refused before it starts.
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
         children_inherit_cwd: false,
         result_unseen: false,
