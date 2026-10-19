@@ -156,7 +156,7 @@ pub(crate) mod rodio_sink {
             // mid-altscreen. The device's own rate stays, though our sounds are
             // `SAMPLE_RATE`: on macOS, opening at another rate reclocks the shared
             // hardware for every app on it
-            // (<https://github.com/RustAudio/cpal/blob/v0.18.2/src/host/coreaudio/macos/device.rs#L712-L725>).
+            // (<https://github.com/RustAudio/cpal/blob/v0.18.2/src/host/coreaudio/macos/device.rs#L837-L849>).
             let opened = with_stderr_silenced(rodio::DeviceSinkBuilder::open_default_sink);
             match opened {
                 Ok(mut stream) => {
