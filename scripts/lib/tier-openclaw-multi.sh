@@ -65,10 +65,11 @@ cleanup() {
 trap cleanup EXIT
 
 # An isolated pixtuoid config; each gateway's own `connect` below installs the
-# plugin, which is what connects OpenClaw. Both unset vars outrank OPENCLAW_HOME
+# plugin, which is what connects OpenClaw. The first two outrank OPENCLAW_HOME
 # (install/openclaw.rs), so one exported in the dev's shell would send those
-# connects to their real config.
-unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH
+# connects to their real config; the port var outranks each `gateway.port`
+# (`docs/help/faq/gateway-ports-and-remote-mode.md:16` at v2026.10.1).
+unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH OPENCLAW_GATEWAY_PORT
 mkdir -p "$MG/claude" "$MG/cfg/pixtuoid"
 
 # One throwaway state dir per gateway. `gateway.mode` is REQUIRED — `gateway run`
@@ -148,9 +149,10 @@ if [ "$FAILED" != 0 ]; then
 else
     echo "[2] kill the FIRST gateway (${PORTS[0]}) — only its own mascot walks out"
     # `$!` holds the port and stamps `_pid` into every envelope, so this exercises the
-    # INSTANT abrupt-down rung (ExitWatch on the gateway pid). `expect_line` gives up
-    # far sooner than the silence path, so a lost pid rung cannot pass on the timeout.
-    kill "${GW_PIDS[0]}" 2>/dev/null
+    # INSTANT abrupt-down rung (ExitWatch on the gateway pid): SIGKILL, since a SIGTERM'd
+    # gateway announces its own `gateway_stop`. `expect_line` gives up far sooner than
+    # the silence path, so a lost pid rung cannot pass on the timeout.
+    kill -KILL "${GW_PIDS[0]}" 2>/dev/null
     GW_PIDS[0]=""
     expect_line "openclaw@${PORTS[0]}:down" "the killed gateway goes down (instant pid rung)"
     for port in "${PORTS[@]:1}"; do

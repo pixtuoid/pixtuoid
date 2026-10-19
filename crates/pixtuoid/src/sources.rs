@@ -1271,6 +1271,7 @@ mod tests {
         #[cfg(feature = "upstream")]
         upstream: &[],
         registers: Vec::new,
+        consumes: &[],
     };
 
     // A fn-pointer `default_config_path` can't capture a TempDir; the PID suffix
