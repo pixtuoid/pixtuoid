@@ -760,12 +760,16 @@ mod recorder {
     }
 
     /// How long a daemon may take to exit after SIGTERM before it is killed.
+    #[cfg(unix)]
     const DAEMON_STOP_GRACE: Duration = Duration::from_secs(30);
+    /// How long one readiness probe may take before it is killed and read as
+    /// a no: a probe that blocked would hold the wait past [`BOOT`].
+    const DAEMON_PROBE_BUDGET: Duration = Duration::from_secs(5);
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
     /// tap, and stopped when dropped: by SIGTERM, which stops it cleanly
     /// (openclaw `docs/cli/gateway/running.md:32` at v2026.10.1) so its
-    /// shutdown hooks fire, then by a kill past [`DAEMON_STOP_GRACE`].
+    /// shutdown hooks fire, then by a kill past `DAEMON_STOP_GRACE`.
     struct RunningDaemon(std::process::Child);
 
     impl RunningDaemon {
@@ -791,16 +795,24 @@ mod recorder {
                     .spawn()?,
             );
             wait_until("the daemon", BOOT, || {
-                let probe = wired(&daemon.ready, ws, wiring, verified, env)?
+                let mut probe = wired(&daemon.ready, ws, wiring, verified, env)?
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
-                    .status()?;
+                    .spawn()?;
+                if wait_until("its probe", DAEMON_PROBE_BUDGET, || {
+                    Ok(probe.try_wait()?.is_some())
+                })
+                .is_err()
+                {
+                    let _ = probe.kill();
+                }
+                let served = probe.wait()?.success();
                 match running.0.try_wait()? {
-                    Some(exit) if !probe.success() => Err(std::io::Error::other(format!(
+                    Some(exit) if !served => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
                     ))),
-                    _ => Ok(probe.success()),
+                    _ => Ok(served),
                 }
             })?;
             Ok(Some(running))
@@ -1885,6 +1897,31 @@ mod recorder {
                 .map(|_| ())
                 .expect_err("it never served");
             assert!(why.to_string().contains("exited"), "{why}");
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_probe_that_blocks_is_killed_and_read_as_a_no() {
+            let sandbox = tempfile::tempdir().expect("sandbox");
+            let ws = tempfile::tempdir().expect("workspace");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+            let daemon = DaemonCmd {
+                start: ["sh", "-c", "exit 3"].map(String::from).to_vec(),
+                ready: ["sleep", "60"].map(String::from).to_vec(),
+            };
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            };
+            let started = Instant::now();
+            let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
+                .map(|_| ())
+                .expect_err("it never served");
+            assert!(why.to_string().contains("exited"), "{why}");
+            assert!(
+                started.elapsed() < DAEMON_PROBE_BUDGET * 2,
+                "the probe ran out"
+            );
         }
 
         #[test]

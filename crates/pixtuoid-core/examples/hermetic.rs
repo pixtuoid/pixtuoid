@@ -470,13 +470,13 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<(String, Verdict)> {
         // No model runs, so `{port}` names a port nothing listens on.
-        let (held, ports) = Ports::hold(live.ports)?;
-        let (_, cli, sandbox) = sandboxed(ctx, p, version, held)?;
+        let (ports, extra) = Ports::pick(live.ports)?;
+        let (_, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
         let status = sandbox
             .command("bash")
             .arg(bump::repo_root().join(live.script))
-            .args(ports.iter().map(u16::to_string))
+            .args(extra.iter().map(u16::to_string))
             .env(LIVE_PIXTUOID_ENV, &ctx.built.pixtuoid)
             .current_dir(sandbox.dir.path())
             .stdout(log(dir, LIVE_LOG)?)
@@ -1500,7 +1500,7 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<Manifest> {
         let Ctx { built, aimock, .. } = ctx;
-        let (ports, _) = Ports::hold(0)?;
+        let (ports, _) = Ports::pick(0)?;
         let port = ports.model;
         let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
 
@@ -1889,8 +1889,8 @@ mod run {
             .open(dir.join(name))
     }
 
-    /// The ports one run holds free: the scripted model's, which `{port}` names,
-    /// and a daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
+    /// The ports one run uses, each free when picked: the scripted model's, which
+    /// `{port}` names, and a daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
     #[derive(Debug, Clone, Copy)]
     struct Ports {
         model: u16,
@@ -1899,7 +1899,7 @@ mod run {
 
     impl Ports {
         /// A run's ports, and `extra` more, all free now.
-        fn hold(extra: usize) -> std::io::Result<(Self, Vec<u16>)> {
+        fn pick(extra: usize) -> std::io::Result<(Self, Vec<u16>)> {
             let held = free_ports(2 + extra)?;
             let (run, rest) = held.split_at(2);
             let ports = Self {
@@ -1940,7 +1940,6 @@ mod run {
     mod tests {
         use super::*;
 
-        /// What a test's run holds: its `{port}` is the 4321 the expectations spell.
         const TEST_PORTS: Ports = Ports {
             model: 4321,
             daemon: 4322,
@@ -2346,8 +2345,8 @@ mod run {
                 );
                 for (k, v) in p.env {
                     let want = v
-                        .replace("{port}", "4321")
-                        .replace(DAEMON_PORT_PLACEHOLDER, "4322")
+                        .replace("{port}", &TEST_PORTS.model.to_string())
+                        .replace(DAEMON_PORT_PLACEHOLDER, &TEST_PORTS.daemon.to_string())
                         .replace("{key}", DUMMY_KEY);
                     assert_eq!(
                         sandbox.var_os(k),

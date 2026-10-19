@@ -173,9 +173,9 @@ pub mod recorder_flag {
     pub const WORKSPACE: &str = "--workspace";
     /// `Options::prepare_root`.
     pub const PREPARE_ROOT: &str = "--prepare-root";
-    /// One word of `Options::daemon`.
+    /// One word of `Options::daemon`'s start.
     pub const DAEMON: &str = "--daemon";
-    /// One word of `Options::daemon_ready`.
+    /// One word of `Options::daemon`'s readiness probe.
     pub const DAEMON_READY: &str = "--daemon-ready";
 }
 

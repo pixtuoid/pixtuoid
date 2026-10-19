@@ -184,7 +184,7 @@ impl Daemon {
     }
 }
 
-/// The port a [`Daemon`] listens on, held free by the orchestrator.
+/// The port a [`Daemon`] listens on, picked free by the orchestrator.
 pub const DAEMON_PORT_PLACEHOLDER: &str = "{daemon_port}";
 
 /// A live tier's exit when a prerequisite is missing, which no run of the build
@@ -1403,7 +1403,7 @@ telemetry:
             windows: &[],
         },
         ancestor_config: &[],
-        // A local gateway on the held port, which every command dials
+        // A local gateway on the run's daemon port, which every command dials
         // (`docs/help/faq/gateway-ports-and-remote-mode.md:16`) and `gateway run`
         // refuses without `gateway.mode`; a provider on the scripted model
         // (`docs/gateway/config-tools/custom-providers.md`), its model the agents' default, and no separate utility model to title
