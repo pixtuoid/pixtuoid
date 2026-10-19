@@ -120,6 +120,9 @@ pub enum Shape {
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
+    /// A turn the model answers with an error a CLI does not retry (a 400): the
+    /// session registers, and its turn ends failed.
+    ModelError,
 }
 
 impl Shape {
@@ -129,6 +132,20 @@ impl Shape {
             Self::ToolRun => "tool-run",
             Self::Permission => "permission",
             Self::Subagent => "subagent",
+            Self::ModelError => "model-error",
+        }
+    }
+
+    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
+    /// one scripted to fail may exit non-zero, but a signal ends no turn.
+    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+        match code {
+            Some(0) => true,
+            Some(_) => match self {
+                Self::ModelError => true,
+                Self::ToolRun | Self::Permission | Self::Subagent => false,
+            },
+            None => false,
         }
     }
 }
@@ -272,6 +289,11 @@ impl Profile {
         registry::descriptor_for(self.source).expect("a profile names a registered source")
     }
 
+    /// Its scenario named `name`, a [`Shape::name`].
+    pub fn scenario(&self, name: &str) -> Option<&'static Scenario> {
+        self.scenarios.iter().find(|s| s.shape.name() == name)
+    }
+
     /// Every home variable the CLI reads that the tier points into its own
     /// directories: the registry row's and the profile's.
     pub fn home_vars(&self) -> impl Iterator<Item = &'static str> {
@@ -308,6 +330,65 @@ pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
+
+/// The name an install lifecycle run is selected and reported by.
+pub const LIFECYCLE: &str = "lifecycle";
+/// An install lifecycle's [`StepRecord`]s, beside its silent turn's capture.
+pub const LIFECYCLE_RECORD: &str = "lifecycle.json";
+
+/// One `pixtuoid <command> <source> --json` an install lifecycle runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Step {
+    /// Install the hooks, or install them again.
+    Connect,
+    /// Uninstall them.
+    Disconnect,
+}
+
+impl Step {
+    /// Its subcommand.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+        }
+    }
+
+    /// The `outcome` its row must report, a token of the `--json` contract
+    /// (`integrations/raycast/contract/outcome-row.schema.json`).
+    pub fn outcome(self) -> &'static str {
+        match self {
+            Self::Connect => "connected",
+            Self::Disconnect => "disconnected",
+        }
+    }
+}
+
+/// An install lifecycle, in order, after a scenario's own connect and turn: a
+/// repeat connect (reasonix's `--replace`), a disconnect, a connect over its
+/// residue, and the disconnect a last turn runs under, which must reach the tap
+/// with no hook.
+pub const STEPS: &[Step] = &[
+    Step::Connect,
+    Step::Disconnect,
+    Step::Connect,
+    Step::Disconnect,
+];
+
+/// What one [`Step`] reported, written by the orchestrator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepRecord {
+    /// The step it ran.
+    pub step: Step,
+    /// Its row's `outcome` for the source; `None` when it printed none.
+    pub outcome: Option<String>,
+    /// Its row's `message`, else its stderr.
+    pub message: Option<String>,
+    /// After a connect, what `sources --json` finds wrong with the install:
+    /// its `health`, or no connected row; `None` for a sound one.
+    pub health: Option<String>,
+}
 
 /// What one run was, written by the orchestrator beside the run's raw capture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -476,7 +557,9 @@ const CODEX_TUI: tui::Tui = tui::Tui {
         // "No, and tell Codex what to do differently", which aborts the turn
         // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
         deny: &[tui::Key::Esc],
-        dwell: std::time::Duration::ZERO,
+        // It loses a key sent the moment it shows (measured; the cause in
+        // codex is unverified).
+        dwell: std::time::Duration::from_millis(500),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
@@ -829,11 +912,20 @@ trust_level = "trusted"
                 ],
                 fixture: "opencode/fixtures/subagent-hermetic",
             },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.execution.failed",
+                ],
+                fixture: "fixtures/opencode/model-error-hermetic",
+            },
         ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
-            "session.execution.failed",
             "session.execution.interrupted",
             "session.tool.failed",
             "permission.asked",
@@ -1576,24 +1668,38 @@ telemetry:
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "gateway_start",
-                "session_start",
-                "before_agent_run",
-                "agent_end",
-                "gateway_stop",
-                "session_end",
-            ],
-            fixture: "fixtures/openclaw/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: type_field,
-        // A failed model call's, which the plugin stamps from `model_call_ended`.
-        not_yet_fields: &[("hook:agent_end", "/errored")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: Some(Live {
@@ -1735,8 +1841,10 @@ mod tests {
             );
             assert!(
                 !p.descriptor().is_daemon()
-                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
-                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
+                    || p.scenarios
+                        .iter()
+                        .all(|s| verify::settled(s.shape).is_some()),
+                "{}: a daemon's turn is judged on its presence, which shows only some shapes",
                 p.source
             );
         }
@@ -2012,6 +2120,35 @@ mod tests {
                 assert!(
                     !replies.iter().any(|f| f["match"]["hasToolResult"] == true),
                     "{}: a reply takes any tool result",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_model_error_script_errs_and_calls_no_tool() {
+        // A reply that answers the turn lets a sound run pass as a failed one.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::ModelError) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert!(
+                    replies.iter().any(|f| f["response"]["status"]
+                        .as_u64()
+                        .is_some_and(|status| status >= 400)
+                        && f["response"]["error"].is_object()),
+                    "{}: no reply is an error",
+                    p.source
+                );
+                assert!(
+                    !replies
+                        .iter()
+                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    "{}: a reply calls a tool",
                     p.source
                 );
             }

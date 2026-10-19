@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::{Drive, Driven};
-use pixtuoid_core::source::Transport;
+use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
 
@@ -46,7 +46,18 @@ fn the_dispatch_end_leaves_its_child_standing() {
             .join("opencode/fixtures/subagent-hermetic/hook-payloads.jsonl"),
     ));
     d.assert_clean("opencode subagent hooks");
-    let child = AgentId::from_parts("opencode", "ses_eacef7525ffeTzEVVg5aoGKbv7");
+    let child = d
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(_),
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+        .expect("the recording's child session");
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for ev in d.events {

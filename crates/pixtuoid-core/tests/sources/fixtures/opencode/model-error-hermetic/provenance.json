@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "opencode",
+  "version": "opencode v2.0.32",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record opencode",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 2
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/opencode/model-error.json"
+}
