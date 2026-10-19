@@ -206,8 +206,8 @@ fn is_test(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// The literals `file`, the module `module`, reads: each const's members in the
-/// mode the module uses that const.
+/// The literals `file`, the module `module`, reads: each const's and inline
+/// array's members in every mode the module reads them in.
 pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     let mut c = Collect {
         module: module.to_owned(),
@@ -215,34 +215,65 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
         out: BTreeSet::new(),
         uses: BTreeSet::new(),
         bound: Vec::new(),
+        inline: Vec::new(),
     };
     c.visit_file(file);
-    let Collect { mut out, uses, .. } = c;
-    for (name, how) in uses {
-        let held: Vec<Literal> = out
-            .iter()
-            .filter(|l| l.item == name && l.how == Match::Exact)
-            .cloned()
-            .collect();
-        for l in held {
-            out.remove(&l);
-            out.insert(Literal { how, ..l });
-        }
-    }
-    out
+    c.resolve()
 }
 
 struct Collect {
     module: String,
     item: String,
     out: BTreeSet<Literal>,
-    /// Each const a method reads in a mode other than [`Match::Exact`].
+    /// Each const or inline array a method reads in a mode other than
+    /// [`Match::Exact`].
     uses: BTreeSet<(String, Match)>,
-    /// Closure parameters bound to the const whose members they iterate.
+    /// Closure parameters bound to the const or inline array whose members
+    /// they iterate.
     bound: Vec<(String, String)>,
+    /// Each inline array a closure iterates, as its `[..]#n` name, the item it
+    /// sits in and its string members.
+    inline: Vec<(String, String, Vec<String>)>,
 }
 
 impl Collect {
+    /// Every literal, each const's and inline array's members in each mode
+    /// `uses` holds for it, or [`Match::Exact`] where it holds none.
+    fn resolve(mut self) -> BTreeSet<Literal> {
+        let modes = |uses: &BTreeSet<(String, Match)>, of: &str| {
+            let m: Vec<Match> = uses
+                .iter()
+                .filter(|(t, _)| t == of)
+                .map(|(_, how)| *how)
+                .collect();
+            if m.is_empty() { vec![Match::Exact] } else { m }
+        };
+        let consts: BTreeSet<String> = self.uses.iter().map(|(t, _)| t.clone()).collect();
+        for name in consts {
+            let members: Vec<Literal> = self
+                .out
+                .iter()
+                .filter(|l| l.item == name && l.how == Match::Exact)
+                .cloned()
+                .collect();
+            for l in members {
+                self.out.remove(&l);
+                for how in modes(&self.uses, &name) {
+                    self.out.insert(Literal { how, ..l.clone() });
+                }
+            }
+        }
+        for (name, item, texts) in std::mem::take(&mut self.inline) {
+            self.item = item;
+            for how in modes(&self.uses, &name) {
+                for text in &texts {
+                    self.add(text.clone(), how);
+                }
+            }
+        }
+        self.out
+    }
+
     fn add(&mut self, text: String, how: Match) {
         // A source's own id is ours, stamped by our shim: no upstream renames it.
         if !text.is_empty()
@@ -400,16 +431,18 @@ impl<'ast> Visit<'ast> for Collect {
             }
         }
         // `ROLES.iter().any(|r| s.ends_with(r))`: `r` stands for each member,
-        // and an inline array (`["a", "b"].iter()`) is a const with no name.
-        let (iterated, inline) = match &*m.receiver {
+        // and so it does for an inline array's (`["a", "b"].iter()`).
+        let iterated = match &*m.receiver {
             syn::Expr::MethodCall(inner) if inner.method == "iter" => match &*inner.receiver {
-                syn::Expr::Array(a) => (
-                    Some(format!("[..]#{}", self.bound.len())),
-                    Some(a.elems.iter().filter_map(Self::lit).collect::<Vec<_>>()),
-                ),
-                r => (self.const_of(r), None),
+                syn::Expr::Array(a) => {
+                    let name = format!("[..]#{}", self.inline.len());
+                    let texts = a.elems.iter().filter_map(Self::lit).collect();
+                    self.inline.push((name.clone(), self.item.clone(), texts));
+                    Some(name)
+                }
+                r => self.const_of(r),
             },
-            _ => (None, None),
+            _ => None,
         };
         self.visit_expr(&m.receiver);
         for arg in &m.args {
@@ -425,24 +458,6 @@ impl<'ast> Visit<'ast> for Collect {
             self.visit_expr(arg);
             if pushed {
                 self.bound.pop();
-            }
-        }
-        if let (Some(name), Some(inline)) = (iterated, inline) {
-            let mut modes = Vec::new();
-            self.uses.retain(|(c, how)| {
-                let mine = *c == name;
-                if mine {
-                    modes.push(*how);
-                }
-                !mine
-            });
-            if modes.is_empty() {
-                modes.push(Match::Exact);
-            }
-            for s in inline {
-                for how in &modes {
-                    self.add(s.clone(), *how);
-                }
             }
         }
     }
@@ -776,13 +791,13 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
-    const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it; exec and the TUI write Paginated";
+    const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
+         which exec and the TUI never write, as `EM_RESUME` cites";
     const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
          call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
          aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
     const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage is input and output \
          tokens alone (`src/messages.ts:413-421` at v1.45.1)";
-    const LOSS_MODEL_GONE: &str = "loss list item 3 (owner, 2026-10-13): only a denied or dropped model sends it, as its arm cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -854,7 +869,6 @@ mod tests {
         item("grok.rs", "KEYS", LABEL_DETAIL),
         literal("grok.rs", "idle_prompt", IGNORE_ARM),
         literal("grok.rs", "task_complete", IGNORE_ARM),
-        item("grok.rs", "XAI_MODEL_AUTO_SWITCHED", LOSS_MODEL_GONE),
         item("hermes.rs", "KEYS", LABEL_DETAIL),
         item("omp.rs", "AGENT_SUBDIR", PATH_AXIS),
         item("omp.rs", "EXTENSIONS_SUBDIR", PATH_AXIS),
@@ -886,7 +900,6 @@ mod tests {
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
-        literal("grok.rs", "new_model_id", LOSS_MODEL_GONE),
     ];
 
     /// Each profile's scenario-fixture keys and values.
@@ -1078,6 +1091,7 @@ mod tests {
         const KIND: &str = "kind_const";
         const ROLES: &[&str] = &[":planner"];
         const MARK: &str = ":sub:";
+        const BOTH: &str = "both_ends";
         fn decode(v: &Value, s: &str, field: impl Fn(&str) -> Option<&str>) {
             let _ = v["indexed"] == *"compared" || s == "rhs" || Some("some") == v.as_str();
             let _ = v.get("got").and_then(|x| x.pointer("/a/b"));
@@ -1090,6 +1104,7 @@ mod tests {
             let _ = [":inline_tail"].iter().any(|r| s.ends_with(r));
             let _ = [TAIL].iter().any(|r| s.ends_with(r));
             let _ = ["after_bare"].iter().find_map(|k| v.get(k));
+            let _ = s.starts_with(BOTH) || s.ends_with(BOTH);
             let _ = matches!(s, "m1" | "m2");
             let _ = vec![field("in_vec")];
             match s { "arm" => {}, _ => {} }
@@ -1101,10 +1116,14 @@ mod tests {
 "#,
         )
         .expect("parses");
-        let got: BTreeMap<String, Match> = collect("x.rs", &file)
-            .into_iter()
-            .map(|l| (l.text, l.how))
+        let all = collect("x.rs", &file);
+        let both: BTreeSet<Match> = all
+            .iter()
+            .filter(|l| l.text == "both_ends")
+            .map(|l| l.how)
             .collect();
+        assert_eq!(both, BTreeSet::from([Match::Prefix, Match::Suffix]));
+        let got: BTreeMap<String, Match> = all.into_iter().map(|l| (l.text, l.how)).collect();
         for exact in [
             "kind_const",
             "indexed",

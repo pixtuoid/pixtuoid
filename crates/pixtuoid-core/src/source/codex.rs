@@ -195,8 +195,9 @@ const REQUIRE_ESCALATED: &str = "require_escalated";
 const EM_TURN_START: &[&str] = &["task_started"];
 /// Written only to a Legacy-history rollout, which a client that names no history
 /// mode starts; exec and the TUI write Paginated ones
-/// (`codex-rs/rollout/src/policy.rs:140-153`, `codex-rs/protocol/src/protocol.rs:880-882`,
-/// `codex-rs/exec/src/lib.rs:1462` at `rust-v0.163.0`).
+/// (`codex-rs/rollout/src/policy.rs:141-155`, `codex-rs/protocol/src/protocol.rs:880-882`,
+/// `codex-rs/exec/src/lib.rs:1462`, `codex-rs/tui/src/app_server_session.rs:2175` at
+/// `rust-v0.163.0`).
 const EM_RESUME: &[&str] = &["patch_apply_end"];
 /// As [`EM_RESUME`].
 const EM_SEARCH: &[&str] = &["web_search_end"];

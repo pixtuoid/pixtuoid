@@ -694,7 +694,7 @@ pub const PROFILES: &[Profile] = &[
         event_name: hook_event_name,
         not_yet_fields: &[
             // aimock's Messages usage is input and output tokens alone
-            // (`CopilotKit/aimock` `src/messages.ts:405-414` at v1.43.0).
+            // (`CopilotKit/aimock` `src/messages.ts:413-421` at v1.45.1).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
         not_yet_literals: &[
@@ -1265,6 +1265,8 @@ trust_level = "trusted"
             "model_changed",
             "model_id",
             "reasoning_effort",
+            "model_auto_switched",
+            "new_model_id",
         ],
         children_inherit_cwd: false,
         result_unseen: false,
