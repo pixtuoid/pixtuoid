@@ -1,0 +1,12 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "title generator" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "error": { "message": "hermetic model error", "type": "invalid_request_error" }, "status": 400 }
+    }
+  ]
+}

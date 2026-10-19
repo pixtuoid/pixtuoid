@@ -61,12 +61,11 @@ mod recorder {
         scratch.join("driver")
     }
 
-    /// Whether `source`'s profiled `scenario` scripts a turn that fails, which
-    /// its CLI may exit non-zero on.
-    fn scripted_to_fail(source: &str, scenario: &str) -> bool {
+    /// [`hermetic::Shape::exits_as_scripted`] for `source`'s profiled `scenario`.
+    fn exited_as_scripted(source: &str, scenario: &str, code: Option<i32>) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .is_some_and(|s| s.shape.fails())
+            .map_or(code == Some(0), |s| s.shape.exits_as_scripted(code))
     }
 
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
@@ -339,7 +338,6 @@ mod recorder {
             &options.env,
         )?
         .status()?;
-        let exited = status.success() || scripted_to_fail(&source, &scenario);
         drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
@@ -396,7 +394,7 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some() || !exited {
+            if incomplete.is_some() || !exited_as_scripted(&source, &scenario, status.code()) {
                 keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
@@ -430,7 +428,7 @@ mod recorder {
             Deidentified::Exempt(why) => println!("not stripped, as the record declares: {why}"),
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
-        if !exited {
+        if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
             keep_scratch(sandbox);
         }
@@ -1931,10 +1929,11 @@ mod recorder {
         }
 
         #[test]
-        fn only_a_profiled_failing_turn_exits_as_scripted() {
-            assert!(scripted_to_fail("openclaw", "model-error"));
-            assert!(!scripted_to_fail("openclaw", "tool-run"));
-            assert!(!scripted_to_fail("unprofiled", "model-error"));
+        fn only_a_profiled_failing_turn_may_exit_non_zero() {
+            assert!(exited_as_scripted("openclaw", "model-error", Some(1)));
+            assert!(!exited_as_scripted("openclaw", "tool-run", Some(1)));
+            assert!(!exited_as_scripted("unprofiled", "model-error", Some(1)));
+            assert!(exited_as_scripted("unprofiled", "model-error", Some(0)));
         }
 
         #[test]

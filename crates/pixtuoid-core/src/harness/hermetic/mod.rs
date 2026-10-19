@@ -135,11 +135,16 @@ impl Shape {
         }
     }
 
-    /// Whether its scripted turn fails, so its CLI may exit non-zero.
-    pub const fn fails(self) -> bool {
-        match self {
-            Self::ModelError => true,
-            Self::ToolRun | Self::Permission | Self::Subagent => false,
+    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
+    /// one scripted to fail may exit non-zero, but a signal ends no turn.
+    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+        match code {
+            Some(0) => true,
+            Some(_) => match self {
+                Self::ModelError => true,
+                Self::ToolRun | Self::Permission | Self::Subagent => false,
+            },
+            None => false,
         }
     }
 }
@@ -797,22 +802,33 @@ trust_level = "trusted"
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.tool.input.started",
-                "session.tool.success",
-                "session.execution.succeeded",
-            ],
-            fixture: "fixtures/opencode/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.execution.failed",
+                ],
+                fixture: "fixtures/opencode/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
-            "session.execution.failed",
             "session.execution.interrupted",
             "session.tool.failed",
             "permission.asked",
@@ -1720,8 +1736,8 @@ mod tests {
                 !p.descriptor().is_daemon()
                     || p.scenarios
                         .iter()
-                        .all(|s| matches!(s.shape, Shape::ToolRun | Shape::ModelError)),
-                "{}: a daemon's turn is judged on its presence, which shows only whether it ran or failed",
+                        .all(|s| verify::settled(s.shape).is_some()),
+                "{}: a daemon's turn is judged on its presence, which shows only some shapes",
                 p.source
             );
         }
@@ -1997,6 +2013,35 @@ mod tests {
                 assert!(
                     !replies.iter().any(|f| f["match"]["hasToolResult"] == true),
                     "{}: a reply takes any tool result",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_model_error_script_errs_and_calls_no_tool() {
+        // A reply that answers the turn lets a sound run pass as a failed one.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::ModelError) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert!(
+                    replies.iter().any(|f| f["response"]["status"]
+                        .as_u64()
+                        .is_some_and(|status| status >= 400)
+                        && f["response"]["error"].is_object()),
+                    "{}: no reply is an error",
+                    p.source
+                );
+                assert!(
+                    !replies
+                        .iter()
+                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    "{}: a reply calls a tool",
                     p.source
                 );
             }
