@@ -1,0 +1,21 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You are Antigravity", "turnIndex": 0},
+      "response": {"toolCalls": [
+        {"name": "ask_question", "arguments": {"questions": [{"question": "Which file should I read?", "options": ["NOTE.txt", "README.md"], "is_multi_select": false}], "toolSummary": "File choice", "toolAction": "Asking which file"}}
+      ]},
+      "latency": 300
+    },
+    {
+      "match": {"systemMessage": "You are Antigravity"},
+      "response": {"content": "pong"},
+      "latency": 300
+    },
+    {
+      "match": {},
+      "response": {"content": "Hermetic"},
+      "latency": 300
+    }
+  ]
+}

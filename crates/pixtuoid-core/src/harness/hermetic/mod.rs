@@ -1750,18 +1750,29 @@ telemetry:
             path: ".gemini/antigravity-cli/settings.json",
             template: "{\"modelProvider\": \"gemini\"}\n",
         }],
-        scenarios: &[Scenario {
-            name: "tool-run",
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "fixtures/antigravity/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/tool-run-hermetic",
+            },
+            // `-p` answers the question itself: "Auto-answering ask_question at
+            // step %d with skipped=true" (`ask_question_manager.go:30`).
+            Scenario {
+                name: "ask-question",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/ask-question-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
-        not_yet_literals: &["ask_question"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
