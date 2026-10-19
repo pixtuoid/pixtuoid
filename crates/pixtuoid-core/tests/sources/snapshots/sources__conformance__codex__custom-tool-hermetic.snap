@@ -1,0 +1,71 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- ActivityStart:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+    detail: ~
+- ModelInfo:
+    agent_id: 5936904989468411694
+    model: gpt-5.5
+    effort: high
+- ActivityStart:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+    detail:
+      Generic:
+        display: apply_patch
+- ActivityEnd:
+    agent_id: 5936904989468411694
+    tool_use_id: call_oJsi48CEn-Koi8cW
+- ActivityStart:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 5936904989468411694
+    fresh_tokens: 19
+- ActivityStart:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 5936904989468411694
+    fresh_tokens: 19
+- ActivityEnd:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+- SessionStart:
+    agent_id: 5936904989468411694
+    source: codex
+    session_id: 01a154ca-a53e-7fe1-ad15-76966c375d18
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 5936904989468411694
+    model: gpt-5.5
+    effort: ~
+- SessionStart:
+    agent_id: 5936904989468411694
+    source: codex
+    session_id: 01a154ca-a53e-7fe1-ad15-76966c375d18
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 5936904989468411694
+    source: codex
+    session_id: 01a154ca-a53e-7fe1-ad15-76966c375d18
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 5936904989468411694
+    tool_use_id: call_oJsi48CEn-Koi8cW
+    detail:
+      Generic:
+        display: apply_patch
+- ActivityEnd:
+    agent_id: 5936904989468411694
+    tool_use_id: ~
+- SessionEnd:
+    agent_id: 5936904989468411694
+    as_child: false

@@ -40,6 +40,27 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The one transcript of `source`'s under a capture `dir`, found rather than
+/// named: a re-record gives it a new filename. The registry's admit rule and
+/// the recorder's own hook-envelope test decide what is a transcript.
+///
+/// # Errors
+///
+/// Every transcript found, unless that is exactly one: a stale second one
+/// beside a promoted `.new` fails here instead of being picked by directory
+/// order.
+pub fn transcript_in(source: &str, dir: &Path) -> Result<PathBuf, Vec<PathBuf>> {
+    let mut found: Vec<PathBuf> = transcripts_under(source, dir)
+        .into_iter()
+        .filter(|p| !crate::harness::reads::is_hook_envelope(p))
+        .collect();
+    if found.len() == 1 {
+        Ok(found.remove(0))
+    } else {
+        Err(found)
+    }
+}
+
 /// Where every capture's CLI runs. The path is FIXED and generic on purpose:
 /// every payload embeds its own cwd, the decoders read it, so the strip keeps it —
 /// capturing somewhere already generic is what keeps a per-run path out of the
@@ -421,5 +442,20 @@ mod tests {
         let got = transcripts_under("grok", d.path());
         assert_eq!(got.len(), 1, "only the transcript is admitted, got {got:?}");
         assert!(got[0].ends_with("updates.jsonl"));
+    }
+
+    #[test]
+    fn a_capture_has_one_transcript_or_says_what_it_found() {
+        // codex admits every path, so only the envelope rule keeps its hooks out.
+        let d = tempfile::tempdir().expect("tempdir");
+        assert_eq!(transcript_in("codex", d.path()), Err(vec![]));
+        let rollout = d.path().join("rollout.jsonl");
+        std::fs::write(&rollout, "{}").expect("write");
+        std::fs::write(d.path().join(HOOK_PAYLOADS), "{}").expect("write");
+        assert_eq!(transcript_in("codex", d.path()), Ok(rollout.clone()));
+        std::fs::write(d.path().join("rollout-stale.jsonl"), "{}").expect("write");
+        let stale = transcript_in("codex", d.path()).expect_err("two transcripts");
+        assert_eq!(stale.len(), 2, "{stale:?}");
+        assert!(stale.contains(&rollout));
     }
 }
