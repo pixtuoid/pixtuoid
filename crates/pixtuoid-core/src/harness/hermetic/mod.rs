@@ -115,8 +115,8 @@ pub enum Package {
 /// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
-    /// A turn that reads a file: the session registers in the workspace, a tool
-    /// starts with a detail naming it, and it ends.
+    /// A turn that runs one tool: the session registers in the workspace, a
+    /// tool starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
     /// waits on it, then the refused call ends, or its turn where the call
@@ -790,6 +790,21 @@ trust_level = "trusted"
                 fixture: "fixtures/codex/tool-run-hermetic",
             },
             Scenario {
+                name: "custom-tool",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                // The read-only sandbox rejects the patch, so no PostToolUse
+                // fires and the transcript's `custom_tool_call_output` ends it.
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/codex/custom-tool-hermetic",
+            },
+            Scenario {
                 name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
@@ -892,6 +907,9 @@ trust_level = "trusted"
             "opencode.jsonc",
             "opencode.json",
         ],
+        // A shell command asks, which `opencode run` rejects
+        // (`services/www/src/docs/content/permissions.mdx:9-20`,
+        // `packages/cli/src/run/noninteractive.ts:158-181`): the permission turn.
         config: &[ConfigFile {
             home: "OPENCODE_CONFIG_DIR",
             path: "opencode.jsonc",
@@ -901,7 +919,8 @@ trust_level = "trusted"
       "settings": { "baseURL": "http://127.0.0.1:{port}/v1", "apiKey": "{key}" },
       "models": { "gpt-5.2": {} }
     }
-  }
+  },
+  "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }]
 }
 "#,
         }],
@@ -943,14 +962,23 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/opencode/model-error-hermetic",
             },
+            Scenario {
+                name: "permission",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "permission.asked",
+                    "session.tool.failed",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &[
-            "session.deleted",
-            "session.execution.interrupted",
-            "session.tool.failed",
-            "permission.asked",
-        ],
+        not_yet: &["session.deleted", "session.execution.interrupted"],
         event_name: type_field,
         not_yet_fields: &[],
         not_yet_literals: &["action", "source.id"],
@@ -1223,9 +1251,16 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/grok/permission-hermetic",
             },
+            Scenario {
+                name: "model-error",
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "UserPromptSubmit", "StopFailure"],
+                fixture: "fixtures/grok/model-error-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PostToolUseFailure", "StopFailure"],
+        not_yet: &["PostToolUseFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
         not_yet_literals: &[
@@ -2145,8 +2180,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_run_replies_only_to_the_note_it_read_unless_its_result_is_unseen() {
-        // A reply to any tool result lets a run whose read failed pass.
+    fn no_tool_run_replies_to_any_result_and_tool_run_waits_on_its_note_unless_unseen() {
+        // A reply to any tool result lets a run whose tool failed pass.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun) {
                 let script: serde_json::Value = serde_json::from_str(
@@ -2159,7 +2194,8 @@ mod tests {
                     .any(|f| f["match"]["toolResultContains"] == NOTE_PLACEHOLDER);
                 if p.result_unseen {
                     assert!(!waits, "{}: a wait on a result aimock never sees", p.source);
-                } else {
+                } else if s.name == "tool-run" {
+                    // Only the note-reading scenario has a note to wait on.
                     assert!(waits, "{}: no reply waits for {NOTE_PLACEHOLDER}", p.source);
                 }
                 assert!(
