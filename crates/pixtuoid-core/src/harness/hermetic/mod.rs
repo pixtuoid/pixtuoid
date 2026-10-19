@@ -111,28 +111,36 @@ pub enum Package {
 }
 
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
-/// cannot be held to a weaker bar than another, save the gap a profile's
-/// `result_unseen` owes.
+/// cannot be held to a weaker bar than another, save the gaps a profile's
+/// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
     /// A turn that reads a file: the session registers in the workspace, a tool
     /// starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
-    /// waits on it, then the refused tool ends.
+    /// waits on it, then the refused call ends, or its turn where the call
+    /// never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
+    /// A turn the model answers with an error a CLI does not retry (a 400): the
+    /// session registers, and its turn ends failed.
+    ModelError,
 }
 
 impl Shape {
-    /// The scenario's name: its script's file stem and its run directory.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::ToolRun => "tool-run",
-            Self::Permission => "permission",
-            Self::Subagent => "subagent",
+    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
+    /// one scripted to fail may exit non-zero, but a signal ends no turn.
+    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+        match code {
+            Some(0) => true,
+            Some(_) => match self {
+                Self::ModelError => true,
+                Self::ToolRun | Self::Permission | Self::Subagent => false,
+            },
+            None => false,
         }
     }
 }
@@ -149,6 +157,9 @@ pub enum Surface {
 /// One scripted turn of a CLI.
 #[derive(Debug)]
 pub struct Scenario {
+    /// Its name, unique in its profile: its script's file stem, its run
+    /// directory, and what `just hermetic <source> <name>` selects.
+    pub name: &'static str,
     /// What the run must look like.
     pub shape: Shape,
     /// The surface the turn is driven through.
@@ -280,6 +291,11 @@ impl Profile {
         registry::descriptor_for(self.source).expect("a profile names a registered source")
     }
 
+    /// Its scenario named `name`.
+    pub fn scenario(&self, name: &str) -> Option<&'static Scenario> {
+        self.scenarios.iter().find(|s| s.name == name)
+    }
+
     /// Every home variable the CLI reads that the tier points into its own
     /// directories: the registry row's and the profile's.
     pub fn home_vars(&self) -> impl Iterator<Item = &'static str> {
@@ -317,12 +333,71 @@ pub const TUI_LOG: &str = "tui.log";
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
 
+/// The name an install lifecycle run is selected and reported by.
+pub const LIFECYCLE: &str = "lifecycle";
+/// An install lifecycle's [`StepRecord`]s, beside its silent turn's capture.
+pub const LIFECYCLE_RECORD: &str = "lifecycle.json";
+
+/// One `pixtuoid <command> <source> --json` an install lifecycle runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Step {
+    /// Install the hooks, or install them again.
+    Connect,
+    /// Uninstall them.
+    Disconnect,
+}
+
+impl Step {
+    /// Its subcommand.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+        }
+    }
+
+    /// The `outcome` its row must report, a token of the `--json` contract
+    /// (`integrations/raycast/contract/outcome-row.schema.json`).
+    pub fn outcome(self) -> &'static str {
+        match self {
+            Self::Connect => "connected",
+            Self::Disconnect => "disconnected",
+        }
+    }
+}
+
+/// An install lifecycle, in order, after a scenario's own connect and turn: a
+/// repeat connect (reasonix's `--replace`), a disconnect, a connect over its
+/// residue, and the disconnect a last turn runs under, which must reach the tap
+/// with no hook.
+pub const STEPS: &[Step] = &[
+    Step::Connect,
+    Step::Disconnect,
+    Step::Connect,
+    Step::Disconnect,
+];
+
+/// What one [`Step`] reported, written by the orchestrator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepRecord {
+    /// The step it ran.
+    pub step: Step,
+    /// Its row's `outcome` for the source; `None` when it printed none.
+    pub outcome: Option<String>,
+    /// Its row's `message`, else its stderr.
+    pub message: Option<String>,
+    /// After a connect, what `sources --json` finds wrong with the install:
+    /// its `health`, or no connected row; `None` for a sound one.
+    pub health: Option<String>,
+}
+
 /// What one run was, written by the orchestrator beside the run's raw capture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     /// The registered source id.
     pub source: String,
-    /// The scenario's shape name.
+    /// The scenario's name.
     pub scenario: String,
     /// The recorder's record of the CLI's run.
     pub capture: CaptureRecord,
@@ -484,7 +559,9 @@ const CODEX_TUI: tui::Tui = tui::Tui {
         // "No, and tell Codex what to do differently", which aborts the turn
         // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
         deny: &[tui::Key::Esc],
-        dwell: std::time::Duration::ZERO,
+        // It loses a key sent the moment it shows (measured; the cause in
+        // codex is unverified).
+        dwell: std::time::Duration::from_millis(500),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
@@ -510,6 +587,29 @@ const KIMI_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
+/// reasonix's TUI, its cites at `v2.44.0`. A named mode skips the folder-trust
+/// question, whose yes would run commands unasked
+/// (`internal/frontend/cli/tui_posture.go:32-42`, `:69`).
+const REASONIX_TUI: tui::Tui = tui::Tui {
+    args: &["--permission-mode", "ask"],
+    composer: tui::Composer {
+        marker: " ❯",
+        above: tui::Above::Rule {
+            glyph: '─',
+            corners: None,
+        },
+    },
+    gates: &[tui::Gate {
+        shows: "Permission required",
+        // "n/Esc deny" (`internal/base/i18n/messages_en.go:164`).
+        deny: &[tui::Key::Esc],
+        dwell: std::time::Duration::ZERO,
+    }],
+    // `/exit` is its alias (`internal/frontend/cli/slash_registry.go:69`).
+    quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
     renders_under_conpty: true,
 };
 
@@ -556,12 +656,14 @@ pub const PROFILES: &[Profile] = &[
         }],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
                 fixture: "fixtures/claude-code/tool-run-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[
@@ -575,6 +677,7 @@ pub const PROFILES: &[Profile] = &[
                 fixture: "claude/fixtures/subagent-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&CLAUDE_CODE_TUI),
                 expects: &[
@@ -673,6 +776,7 @@ trust_level = "trusted"
         }],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[
@@ -686,6 +790,7 @@ trust_level = "trusted"
                 fixture: "fixtures/codex/tool-run-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[
@@ -701,6 +806,7 @@ trust_level = "trusted"
                 fixture: "codex/fixtures/subagent-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&CODEX_TUI),
                 expects: &[
@@ -731,12 +837,9 @@ trust_level = "trusted"
         not_yet_literals: &[
             "custom_tool_call",
             "custom_tool_call_output",
-            "exec_command_end",
             "patch_apply_end",
-            "sandbox_permissions",
             "tool_search_call",
             "tool_search_output",
-            "web_search_begin",
             "web_search_call",
             "web_search_end",
         ],
@@ -806,32 +909,54 @@ trust_level = "trusted"
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.tool.input.started",
-                "session.tool.success",
-                "session.execution.succeeded",
-            ],
-            fixture: "fixtures/opencode/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/tool-run-hermetic",
+            },
+            Scenario {
+                name: "subagent",
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                ],
+                fixture: "opencode/fixtures/subagent-hermetic",
+            },
+            Scenario {
+                name: "model-error",
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.execution.failed",
+                ],
+                fixture: "fixtures/opencode/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[
             "session.deleted",
-            "session.execution.failed",
             "session.execution.interrupted",
             "session.tool.failed",
             "permission.asked",
         ],
         event_name: type_field,
-        // A child session's (tests/sources/opencode/fixtures).
-        not_yet_fields: &[
-            ("hook:session.created", "/data/parentID"),
-            ("hook:session.execution.started", "/data/parentID"),
-        ],
+        not_yet_fields: &[],
         not_yet_literals: &["action", "source.id"],
         children_inherit_cwd: false,
         result_unseen: false,
@@ -864,6 +989,7 @@ trust_level = "trusted"
         config: &[],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[
@@ -877,6 +1003,7 @@ trust_level = "trusted"
                 fixture: "fixtures/dsh/tool-run-recorded",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Headless,
                 expects: &[
@@ -892,6 +1019,7 @@ trust_level = "trusted"
                 fixture: "fixtures/dsh/permission-recorded",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[
@@ -957,12 +1085,14 @@ trust_level = "trusted"
         // `human/agent/machine.ts:757-760`, `features/externalHooks/internal/runHook.ts:120-123`).
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
                 fixture: "fixtures/kimi/tool-run-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&KIMI_TUI),
                 expects: &[
@@ -975,9 +1105,16 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/kimi/permission-hermetic",
             },
+            Scenario {
+                name: "model-error",
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "StopFailure"],
+                fixture: "fixtures/kimi/model-error-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["StopFailure"],
+        not_yet: &[],
         event_name: hook_event_name,
         not_yet_fields: &[],
         not_yet_literals: &[],
@@ -1045,6 +1182,7 @@ trust_level = "trusted"
         config: &[],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[
@@ -1058,6 +1196,7 @@ trust_level = "trusted"
                 fixture: "fixtures/grok/tool-run-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[
@@ -1073,6 +1212,7 @@ trust_level = "trusted"
                 fixture: "grok/fixtures/subagent-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&GROK_TUI),
                 expects: &[
@@ -1104,7 +1244,7 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
+    // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
@@ -1140,6 +1280,7 @@ model = "deepseek-v4-flash"
         }],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[
@@ -1153,6 +1294,7 @@ model = "deepseek-v4-flash"
                 fixture: "fixtures/reasonix/tool-run-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[
@@ -1167,24 +1309,37 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
+            Scenario {
+                name: "permission",
+                shape: Shape::Permission,
+                surface: Surface::Tui(&REASONIX_TUI),
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PermissionRequest",
+                    "Notification",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &["PermissionRequest", "Notification"],
+        not_yet: &[],
         event_name: event_field,
-        // A bash call's; the scripted turn reads a file.
+        // A bash call's; the tool-run reads a file, and the permission turn's call
+        // is refused before it starts.
         not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
         not_yet_literals: &[
             ":guardian",
             ":planner",
             "explore",
             "locate",
-            "message",
             "parallel_tasks",
             "read_only_task",
             "research",
             "review",
             "security_review",
-            "subject",
         ],
         children_inherit_cwd: false,
         result_unseen: false,
@@ -1229,18 +1384,21 @@ model = "deepseek-v4-flash"
         config: &[],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/tool-run-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/permission-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &[],
@@ -1350,12 +1508,14 @@ async:
         ],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
                 fixture: "omp/fixtures/tool-run-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Headless,
                 expects: &[
@@ -1367,6 +1527,7 @@ async:
                 fixture: "omp/fixtures/permission-hermetic",
             },
             Scenario {
+                name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
@@ -1441,6 +1602,7 @@ telemetry:
         }],
         scenarios: &[
             Scenario {
+                name: "tool-run",
                 shape: Shape::ToolRun,
                 surface: Surface::Headless,
                 expects: &[
@@ -1453,6 +1615,7 @@ telemetry:
                 fixture: "fixtures/hermes/tool-run-hermetic",
             },
             Scenario {
+                name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Tui(&HERMES_TUI),
                 expects: &[
@@ -1520,6 +1683,7 @@ telemetry:
             template: "{\"modelProvider\": \"gemini\"}\n",
         }],
         scenarios: &[Scenario {
+            name: "tool-run",
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
@@ -1591,24 +1755,40 @@ telemetry:
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "gateway_start",
-                "session_start",
-                "before_agent_run",
-                "agent_end",
-                "gateway_stop",
-                "session_end",
-            ],
-            fixture: "fixtures/openclaw/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/tool-run-hermetic",
+            },
+            Scenario {
+                name: "model-error",
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: type_field,
-        // A failed model call's, which the plugin stamps from `model_call_ended`.
-        not_yet_fields: &[("hook:agent_end", "/errored")],
+        not_yet_fields: &[],
         not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
@@ -1638,7 +1818,7 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
 }
 
-/// Where each profile's scenario scripts live, as `<source>/<shape>.json`, and
+/// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
 /// the scripted model's npm lockfile, under `aimock/`.
 pub fn scripts_dir() -> PathBuf {
     crate::harness::sources_root().join("hermetic")
@@ -1678,7 +1858,7 @@ impl Scenario {
     pub fn script(&self, source: &str) -> PathBuf {
         scripts_dir()
             .join(source)
-            .join(format!("{}.json", self.shape.name()))
+            .join(format!("{}.json", self.name))
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
@@ -1719,16 +1899,11 @@ mod tests {
     }
 
     #[test]
-    fn every_scenario_has_its_script_and_one_scenario_per_shape() {
+    fn every_scenario_has_its_script_and_a_name_no_other_in_its_profile_has() {
         for p in PROFILES {
-            let mut shapes = BTreeSet::new();
+            let mut names = BTreeSet::new();
             for s in p.scenarios {
-                assert!(
-                    shapes.insert(s.shape.name()),
-                    "{}: {} twice",
-                    p.source,
-                    s.shape.name()
-                );
+                assert!(names.insert(s.name), "{}: {} twice", p.source, s.name);
                 let script = s.script(p.source);
                 assert!(
                     script.is_file(),
@@ -1751,8 +1926,10 @@ mod tests {
             );
             assert!(
                 !p.descriptor().is_daemon()
-                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
-                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
+                    || p.scenarios
+                        .iter()
+                        .all(|s| verify::settled(s.shape).is_some()),
+                "{}: a daemon's turn is judged on its presence, which shows only some shapes",
                 p.source
             );
         }
@@ -1797,7 +1974,7 @@ mod tests {
                     matches!(s.surface, Surface::Headless) || s.shape == Shape::Permission,
                     "{}/{}: the TUI driver refuses its dialog, which only a Permission turn wants",
                     p.source,
-                    s.shape.name()
+                    s.name
                 );
             }
         }
@@ -2012,6 +2189,57 @@ mod tests {
                 assert!(
                     !replies.iter().any(|f| f["match"]["hasToolResult"] == true),
                     "{}: a reply takes any tool result",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_permission_script_calls_no_tool_after_its_refusal() {
+        // A retried tool raises a second dialog, which the TUI driver never refuses.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                for reply in script["fixtures"].as_array().expect("fixtures") {
+                    let after_a_result = reply["match"]["hasToolResult"] == true
+                        || reply["match"]["toolResultContains"].is_string();
+                    assert!(
+                        !(after_a_result && reply["response"]["toolCalls"].is_array()),
+                        "{}: a reply to the refused call calls a tool again",
+                        p.source
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_model_error_script_errs_and_calls_no_tool() {
+        // A reply that answers the turn lets a sound run pass as a failed one.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::ModelError) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert!(
+                    replies.iter().any(|f| f["response"]["status"]
+                        .as_u64()
+                        .is_some_and(|status| status >= 400)
+                        && f["response"]["error"].is_object()),
+                    "{}: no reply is an error",
+                    p.source
+                );
+                assert!(
+                    !replies
+                        .iter()
+                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    "{}: a reply calls a tool",
                     p.source
                 );
             }

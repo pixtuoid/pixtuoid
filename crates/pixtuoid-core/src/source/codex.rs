@@ -193,8 +193,13 @@ const REQUIRE_ESCALATED: &str = "require_escalated";
 /// The rollout inners, grouped BY BEHAVIOUR: each group is the matcher (the
 /// arms below guard on `contains`).
 const EM_TURN_START: &[&str] = &["task_started"];
-const EM_RESUME: &[&str] = &["exec_command_end", "patch_apply_end"];
-const EM_SEARCH: &[&str] = &["web_search_begin", "web_search_end"];
+/// Written only to a Legacy-history rollout, which a client that names no history
+/// mode starts; exec and the TUI write Paginated ones
+/// (`codex-rs/rollout/src/policy.rs:140-153`, `codex-rs/protocol/src/protocol.rs:880-882`,
+/// `codex-rs/exec/src/lib.rs:1462` at `rust-v0.163.0`).
+const EM_RESUME: &[&str] = &["patch_apply_end"];
+/// As [`EM_RESUME`].
+const EM_SEARCH: &[&str] = &["web_search_end"];
 const EM_TURN_END: &[&str] = &["task_complete", "turn_aborted"];
 const EM_TOKENS: &[&str] = &["token_count"];
 
@@ -274,9 +279,8 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Resul
         }
         (EVENT_MSG, i) if EM_RESUME.contains(&i) => vec![start()],
         // Web/tool search are turn-INTERNAL work pulses that keep the agent
-        // Active; only task_complete / turn_aborted end the turn. Both the
-        // EventMsg and the raw-Responses-item forms appear in real rollouts.
-        // Searching is never permission-prompted — no Waiting branch.
+        // Active; only task_complete / turn_aborted end the turn. Searching is
+        // never permission-prompted — no Waiting branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![end()],
@@ -801,7 +805,6 @@ mod tests {
     fn web_and_tool_search_keep_the_agent_active() {
         for line in [
             json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{}}}),
-            json!({"type":"event_msg","payload":{"type":"web_search_begin","call_id":"c"}}),
             json!({"type":"event_msg","payload":{"type":"web_search_end","call_id":"c","query":"q","action":{}}}),
             json!({"type":"response_item","payload":{"type":"tool_search_call","call_id":"c","status":"in_progress","arguments":"{}"}}),
             json!({"type":"response_item","payload":{"type":"tool_search_output","call_id":"c","status":"completed","tools":[]}}),

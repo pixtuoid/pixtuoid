@@ -282,7 +282,7 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
 /// (startup/resume/clear/compact), so reading it would namespace the agent under
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
-fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
+pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
     obj.get("_pixtuoid_source")
         .and_then(|s| s.as_str())
         .unwrap_or(crate::source::claude_code::SOURCE_NAME)

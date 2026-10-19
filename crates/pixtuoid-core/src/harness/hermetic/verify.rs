@@ -1,5 +1,6 @@
-//! Judging hermetic runs: each scenario's run alone ([`verify`]), and each
-//! source's runs together ([`verify_source`]). A run's bytes ride the one
+//! Judging hermetic runs: each scenario's run alone ([`verify`]), each
+//! source's runs together ([`verify_source`]), and an install's lifecycle
+//! ([`verify_lifecycle`]). A run's bytes ride the one
 //! pipeline (`Drive`), and the scene a headless pixtuoid painted from the same
 //! run is read as text. Ids, timestamps and model text change every run, so
 //! nothing here compares bytes or goldens: only shapes, events and the fields
@@ -12,7 +13,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::{
-    MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, Surface, literals, profile, tui,
+    LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
+    Surface, literals, profile, tui,
 };
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
@@ -36,7 +38,8 @@ pub enum Label {
     /// The CLI asked the model something no script line answers: its request
     /// flow changed upstream.
     Script,
-    /// pixtuoid read the run wrong, or upstream stopped sending what it reads.
+    /// pixtuoid read the run wrong, upstream stopped sending what it reads, or
+    /// its install no longer connects and disconnects as pixtuoid drives it.
     Fail,
 }
 
@@ -85,13 +88,102 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let p = profile(&manifest.source)
         .ok_or_else(|| invalid(format!("{}: not a profiled source", manifest.source)))?;
     let scenario = p
-        .scenarios
-        .iter()
-        .find(|s| s.shape.name() == manifest.scenario)
+        .scenario(&manifest.scenario)
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
     judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
+    Ok(Verdict::new(findings))
+}
+
+/// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
+/// outcome, each connect left an install `sources --json` finds sound, and the
+/// turn after the last uninstall delivered no hook.
+///
+/// # Errors
+///
+/// If its record is missing, a present file can't be read, or its scenario is unprofiled.
+pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
+    let records: Vec<StepRecord> =
+        serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
+    let mut findings = Vec::new();
+    for (i, want) in STEPS.iter().enumerate() {
+        let n = i + 1;
+        let Some(got) = records.get(i).filter(|r| r.step == *want) else {
+            findings.push((
+                Label::Fail,
+                format!("step {n} ({}) left no record", want.command()),
+            ));
+            continue;
+        };
+        if got.outcome.as_deref() != Some(want.outcome()) {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) reported {}, not {}: {}",
+                    want.command(),
+                    got.outcome.as_deref().unwrap_or("no row"),
+                    want.outcome(),
+                    got.message.as_deref().unwrap_or("no message")
+                ),
+            ));
+        }
+        if let Some(health) = &got.health {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) left the install unsound: {health}",
+                    want.command()
+                ),
+            ));
+        }
+    }
+    let manifest: Manifest = match std::fs::read_to_string(dir.join(MANIFEST)) {
+        Ok(text) => serde_json::from_str(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            findings.push((
+                Label::Blocked,
+                "the turn after the last uninstall did not run".into(),
+            ));
+            return Ok(Verdict::new(findings));
+        }
+        Err(e) => return Err(e),
+    };
+    let shape = profile(&manifest.source)
+        .and_then(|p| p.scenario(&manifest.scenario))
+        .ok_or_else(|| {
+            invalid(format!(
+                "{}: no scenario {}",
+                manifest.source, manifest.scenario
+            ))
+        })?
+        .shape;
+    // The scenario's own turn just completed in this sandbox, so one that
+    // cannot now is the uninstall's doing; with no turn, no hook proves nothing.
+    if !completed_turn(&manifest, shape, &mut findings) {
+        findings.push((
+            Label::Fail,
+            format!(
+                "the turn after the last uninstall did not complete (exit {:?}, {} model \
+                 requests): the uninstall left the CLI unable to run",
+                manifest.capture.exit_code, manifest.requests
+            ),
+        ));
+        return Ok(Verdict::new(findings));
+    }
+    let mut delivered = 0;
+    for file in jsonl_files_under(dir)
+        .into_iter()
+        .filter(|f| is_hook_envelope(f))
+    {
+        delivered += json_lines(&file)?.len();
+    }
+    if delivered > 0 {
+        findings.push((
+            Label::Fail,
+            format!("{delivered} hook envelopes arrived after the last uninstall"),
+        ));
+    }
     Ok(Verdict::new(findings))
 }
 
@@ -113,11 +205,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
     for dir in dirs {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
-        ran.extend(
-            p.scenarios
-                .iter()
-                .filter(|s| s.shape.name() == manifest.scenario),
-        );
+        ran.extend(p.scenarios.iter().filter(|s| s.name == manifest.scenario));
         for file in jsonl_files_under(dir) {
             for line in json_lines(&file)? {
                 if is_hook_envelope(&file)
@@ -415,6 +503,12 @@ fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
             }
         }
         Value::Array(a) => a.iter().for_each(|x| key_chains(x, path, out)),
+        // As `string_leaves` reads one: codex's `arguments` key its call's fields.
+        Value::String(s) if s.starts_with(['{', '[']) => {
+            if let Ok(inner) = serde_json::from_str::<Value>(s) {
+                key_chains(&inner, path, out);
+            }
+        }
         _ => {}
     }
 }
@@ -476,15 +570,9 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
         .collect())
 }
 
-fn judge(
-    p: &Profile,
-    scenario: &Scenario,
-    manifest: &Manifest,
-    dir: &Path,
-    scene: &str,
-    findings: &mut Vec<(Label, String)>,
-) -> std::io::Result<()> {
-    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+/// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
+/// as scripted; a request no script line matched is Script either way.
+fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
             Label::Script,
@@ -494,6 +582,19 @@ fn judge(
             ),
         ));
     }
+    shape.exits_as_scripted(manifest.capture.exit_code) && manifest.requests > 0
+}
+
+fn judge(
+    p: &Profile,
+    scenario: &Scenario,
+    manifest: &Manifest,
+    dir: &Path,
+    scene: &str,
+    findings: &mut Vec<(Label, String)>,
+) -> std::io::Result<()> {
+    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+    let completed = completed_turn(manifest, scenario.shape, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
@@ -504,7 +605,7 @@ fn judge(
         return Ok(());
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
-    if manifest.capture.exit_code != Some(0) || manifest.requests == 0 {
+    if !completed {
         findings.push((
             Label::Blocked,
             format!(
@@ -575,11 +676,17 @@ fn judge(
 
     // A daemon renders presence, not a desk sprite, so its turn is judged there.
     if p.descriptor().is_daemon() {
-        judge_presence(p, scene, findings);
+        match settled(scenario.shape) {
+            Some(settled) => judge_presence(p, scene, settled, findings),
+            None => findings.push((
+                Label::Fail,
+                format!("presence cannot show a {} turn", scenario.name),
+            )),
+        }
         return Ok(());
     }
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission => 1,
+        Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
         Shape::Subagent => 2,
     };
     started_in(
@@ -598,10 +705,12 @@ fn judge(
             p.descriptor().caps().child_end_inference,
             findings,
         ),
+        Shape::ModelError => model_error(&events, findings),
     }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent => "active",
         Shape::Permission => "waiting",
+        Shape::ModelError => "idle",
     };
     judge_scene(p, scene, shown, findings);
     Ok(())
@@ -728,25 +837,57 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
         } => Some(t),
         _ => None,
     });
-    let ended = if waited.is_empty() {
-        // A wait that names no call (claude-code's `PermissionRequest`) is held to
-        // every started tool ending.
-        let started = calls(|e| match e {
-            AgentEvent::ActivityStart {
-                tool_use_id: Some(t),
-                ..
-            } => Some(t),
-            _ => None,
-        });
-        !started.is_empty() && started.is_subset(&ended_calls)
-    } else {
+    let started = calls(|e| match e {
+        AgentEvent::ActivityStart {
+            tool_use_id: Some(t),
+            ..
+        } => Some(t),
+        _ => None,
+    });
+    let ended = if !waited.is_empty() {
         waited.iter().any(|t| ended_calls.contains(t))
+    } else if !events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::ActivityStart { .. }))
+    {
+        // Asked before the call started (reasonix): the refused call never ran,
+        // so its turn's end.
+        events.iter().any(|e| {
+            matches!(
+                e,
+                AgentEvent::ActivityEnd {
+                    tool_use_id: None,
+                    ..
+                }
+            )
+        })
+    } else {
+        // A wait that names no call (claude-code's `PermissionRequest`): every
+        // started tool ends.
+        !started.is_empty() && started.is_subset(&ended_calls)
     };
     if !ended {
         findings.push((
             Label::Fail,
-            "the tool the slot waited on never ended".into(),
+            "the call or turn the slot waited on never ended".into(),
         ));
+    }
+}
+
+/// The failed turn ends. Its script answers the turn only with an error
+/// (`a_model_error_script_errs_and_calls_no_tool`), so a run that reached the
+/// model failed.
+fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+    if !events.iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::ActivityEnd {
+                tool_use_id: None,
+                ..
+            }
+        )
+    }) {
+        findings.push((Label::Fail, "the failed turn never ended".into()));
     }
 }
 
@@ -780,6 +921,12 @@ fn subagent(
             _ => None,
         })
         .collect();
+    let durable = match inference {
+        ChildEndInference::Durable => true,
+        ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
+            false
+        }
+    };
     let ended = |child: AgentId, parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
@@ -787,9 +934,14 @@ fn subagent(
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(t),
-            } if inference != ChildEndInference::None => {
+            } if inference.dispatch_end_ends_child(true) => {
                 *agent_id == parent && tasks.contains(&(parent, t.as_str()))
             }
+            // No run deletes a durable child, so its turn's end is the end a run sees.
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            } if durable => *agent_id == child,
             _ => false,
         })
     };
@@ -865,9 +1017,20 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
     breadcrumbs(scene, findings);
 }
 
-/// A daemon's turn on the scene: its mascot busy, then idle once the turn
-/// settled, and down or gone once the daemon stopped.
-fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>) {
+/// The presence a daemon's turn of `shape` settles to, where presence can show
+/// one.
+pub(super) fn settled(shape: Shape) -> Option<&'static str> {
+    match shape {
+        Shape::ToolRun => Some("idle"),
+        // `RunFailed` latches it (`crate::source::daemon`).
+        Shape::ModelError => Some("degraded"),
+        Shape::Permission | Shape::Subagent => None,
+    }
+}
+
+/// A daemon's turn on the scene: its mascot busy, then `settled` once the turn
+/// ended, and down or gone once the daemon stopped.
+fn judge_presence(p: &Profile, scene: &str, settled: &str, findings: &mut Vec<(Label, String)>) {
     let mascot = format!("{}@", p.source);
     let frames = rosters(scene, "daemons");
     match frames.iter().position(|f| holds(f, &mascot, "busy")) {
@@ -875,9 +1038,9 @@ fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>)
             Label::Fail,
             format!("the scene never showed a {mascot} daemon busy"),
         )),
-        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, "idle")) => findings.push((
+        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, settled)) => findings.push((
             Label::Fail,
-            format!("the {mascot} daemon never settled idle after its turn"),
+            format!("the {mascot} daemon never settled {settled} after its turn"),
         )),
         Some(_) => {}
     }
@@ -946,28 +1109,27 @@ mod tests {
             .join("fixtures")
             .join(source)
             .join(scenario_dir);
-        run_of(&src, source, Shape::ToolRun, scene)
+        run_of(&src, source, "tool-run", scene)
     }
 
     /// A run directory built from the recording `source`'s `shape` scenario
     /// writes, judged as that scenario's run.
     fn recorded(source: &str, shape: Shape, scene: &str) -> tempfile::TempDir {
-        let fixture = profile(source)
+        let scenario = profile(source)
             .and_then(|p| p.scenarios.iter().find(|s| s.shape == shape))
-            .map(|s| s.fixture)
             .expect("a profiled scenario");
-        let src = crate::harness::sources_root().join(fixture);
-        run_of(&src, source, shape, scene)
+        let src = crate::harness::sources_root().join(scenario.fixture);
+        run_of(&src, source, scenario.name, scene)
     }
 
-    fn run_of(src: &Path, source: &str, shape: Shape, scene: &str) -> tempfile::TempDir {
+    fn run_of(src: &Path, source: &str, scenario: &str, scene: &str) -> tempfile::TempDir {
         let d = tempfile::tempdir().expect("tempdir");
         for f in jsonl_files_under(src) {
             let to = d.path().join(f.strip_prefix(src).expect("under"));
             std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
             std::fs::copy(&f, &to).expect("copy");
         }
-        write_manifest(d.path(), source, |m| m.scenario = shape.name().into());
+        write_manifest(d.path(), source, |m| m.scenario = scenario.into());
         std::fs::write(d.path().join(SCENE_LOG), scene).expect("scene");
         d
     }
@@ -975,7 +1137,7 @@ mod tests {
     fn write_manifest(dir: &Path, source: &str, edit: impl FnOnce(&mut Manifest)) {
         let mut m = Manifest {
             source: source.into(),
-            scenario: Shape::ToolRun.name().into(),
+            scenario: "tool-run".into(),
             capture: CaptureRecord {
                 workspace: PathBuf::from(RECORDED_WORKSPACE),
                 cli: "test".into(),
@@ -1032,6 +1194,125 @@ mod tests {
         edit_transcripts(dir, |_| false);
     }
 
+    /// A lifecycle run in a fresh directory: `records` as its steps reported,
+    /// its silent turn's manifest, and `envelopes` hook lines.
+    fn lifecycle_run(records: &[StepRecord], envelopes: usize) -> tempfile::TempDir {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            d.path().join(LIFECYCLE_RECORD),
+            serde_json::to_string(records).expect("records"),
+        )
+        .expect("record");
+        write_manifest(d.path(), "codex", |_| {});
+        std::fs::write(
+            d.path().join(HOOK_PAYLOADS),
+            "{\"hook_event_name\":\"Stop\"}\n".repeat(envelopes),
+        )
+        .expect("hooks");
+        d
+    }
+
+    fn sound() -> Vec<StepRecord> {
+        STEPS
+            .iter()
+            .map(|s| StepRecord {
+                step: *s,
+                outcome: Some(s.outcome().into()),
+                message: None,
+                health: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sound_lifecycle_passes() {
+        let d = lifecycle_run(&sound(), 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_hook_after_the_last_uninstall_fails() {
+        let d = lifecycle_run(&sound(), 2);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "2 hook envelopes arrived"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_failed_step_or_an_unsound_install_fails() {
+        let mut records = sound();
+        records[1].outcome = Some("failed".into());
+        records[1].message = Some("codex plugin remove: unknown command".into());
+        records[2].health = Some("install broken: the plugin is not installed".into());
+        let d = lifecycle_run(&records, 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "disconnect (step 2) reported failed"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            has(&v, Label::Fail, "connect (step 3) left the install unsound"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_turn_that_never_ran_or_could_not_complete_proves_no_silence() {
+        let d = lifecycle_run(&sound(), 0);
+        std::fs::remove_file(d.path().join(MANIFEST)).expect("rm");
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(has(&v, Label::Blocked, "did not run"), "{:?}", v.findings());
+        let d = lifecycle_run(&sound(), 0);
+        write_manifest(d.path(), "codex", |m| m.capture.exit_code = Some(1));
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "did not complete"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_step_that_left_no_record_fails() {
+        let d = lifecycle_run(&sound()[..2], 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "step 3 (connect) left no record"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// Each step's outcome is a token the published `--json` contract lists,
+    /// the copy of it this side of the crate boundary.
+    #[test]
+    fn every_step_outcome_is_a_contract_token() {
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../integrations/raycast/contract/outcome-row.schema.json"),
+            )
+            .expect("the contract reads"),
+        )
+        .expect("the contract parses");
+        let tokens = &schema["$defs"]["WireOutcome"]["enum"];
+        for s in STEPS {
+            assert!(
+                tokens
+                    .as_array()
+                    .is_some_and(|t| t.iter().any(|v| v == s.outcome())),
+                "{} is no contract token: {tokens}",
+                s.outcome()
+            );
+        }
+    }
+
     fn has(v: &Verdict, label: Label, text: &str) -> bool {
         v.findings()
             .iter()
@@ -1043,11 +1324,16 @@ mod tests {
     const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Delegating), \
                                      cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
                                      agents=[] daemons=[]\n";
+    const OC_DELEGATE_SCENE: &str = "agents=[oc\u{b7}proj@0:active(Delegating), \
+                                     oc\u{b7}proj@1:active(read)]\n\
+                                     agents=[] daemons=[]\n";
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CC_WAIT_SCENE: &str =
         "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
     const CX_WAIT_SCENE: &str =
         "agents=[cx\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
+    const RX_WAIT_SCENE: &str = "agents=[rx\u{b7}proj@0:waiting(approval needed: bash rm NOTE.txt)]\n\
+                                 agents=[] daemons=[]\n";
 
     const DS_WAIT_SCENE: &str =
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
@@ -1101,6 +1387,32 @@ mod tests {
         let d = recorded("codex", Shape::Permission, CX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_refused_call_that_never_started_ends_with_its_turn() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        edit_hooks(d.path(), |v| (v["event"] != "Stop").then_some(v));
+        let v = verify(d.path()).expect("verify");
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        reorder_hooks(d.path(), |lines| {
+            let at = lines
+                .iter()
+                .position(|v| v["event"] == "PermissionRequest")
+                .expect("the gate's request");
+            let mut started = lines[at].clone();
+            started["event"] = "PreToolUse".into();
+            lines.insert(at, started);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "a call that started is held to its own end: {:?}",
+            v.findings()
+        );
     }
 
     #[test]
@@ -1286,6 +1598,82 @@ mod tests {
     }
 
     #[test]
+    fn only_a_durable_child_ends_with_its_own_turn() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("opencode", "ses_parent"),
+            AgentId::from_parts("opencode", "ses_child"),
+        );
+        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some(id.into()),
+            detail: Some(detail),
+        };
+        let turn_end = |agent_id| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "opencode".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let run = vec![
+            session(parent, "ses_parent", None),
+            started(parent, "dispatch", ToolDetail::Task),
+            session(child, "ses_child", Some(parent)),
+            started(
+                child,
+                "read",
+                ToolDetail::Generic {
+                    display: "read".into(),
+                },
+            ),
+            turn_end(child),
+        ];
+        let judged = |events: &[AgentEvent], inference| {
+            let mut findings = Vec::new();
+            subagent(
+                events,
+                &[Reach::Active, Reach::Delegating],
+                inference,
+                &mut findings,
+            );
+            findings
+        };
+        let unended = |events: &[AgentEvent], inference| -> bool {
+            judged(events, inference)
+                .iter()
+                .any(|f| f.1.contains("never ended"))
+        };
+        assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        let parent_turn: Vec<_> = run[..run.len() - 1]
+            .iter()
+            .cloned()
+            .chain([turn_end(parent)])
+            .collect();
+        assert!(
+            unended(&parent_turn, ChildEndInference::Durable),
+            "only the child's own turn ends it"
+        );
+        for inference in [
+            ChildEndInference::None,
+            ChildEndInference::TaskDrain,
+            ChildEndInference::AnyTaskEnd,
+        ] {
+            assert!(unended(&run, inference), "{inference:?}");
+            let mut ended = run.clone();
+            ended.push(AgentEvent::SessionEnd {
+                agent_id: child,
+                as_child: true,
+            });
+            assert_eq!(judged(&ended, inference), vec![], "{inference:?}");
+        }
+    }
+
+    #[test]
     fn a_recorded_dsh_subagent_run_passes() {
         let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
@@ -1368,6 +1756,13 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_opencode_subagent_run_passes() {
+        let d = recorded("opencode", Shape::Subagent, OC_DELEGATE_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
     fn a_recorded_grok_run_passes_each_scenario() {
         for (shape, scene) in [
             (Shape::ToolRun, GK_SCENE),
@@ -1375,13 +1770,7 @@ mod tests {
         ] {
             let d = recorded("grok", shape, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(
-                v.label(),
-                Label::Pass,
-                "{}: {:?}",
-                shape.name(),
-                v.findings()
-            );
+            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
     }
 
@@ -1394,13 +1783,7 @@ mod tests {
         ] {
             let d = recorded("copilot", shape, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(
-                v.label(),
-                Label::Pass,
-                "{}: {:?}",
-                shape.name(),
-                v.findings()
-            );
+            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
     }
 
@@ -1591,7 +1974,7 @@ mod tests {
         let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
-                m.scenario = Shape::Permission.name().into();
+                m.scenario = "permission".into();
                 m.capture.exit_code = Some(tui::UNREFUSED);
                 m.requests = requests;
                 m.unmatched = unmatched;
@@ -1678,6 +2061,113 @@ mod tests {
         assert!(judged(&idle_only_before)[0].1.contains("idle"));
         let lingering = [frame("busy"), frame("idle")].concat();
         assert!(judged(&lingering)[0].1.contains("still up"));
+    }
+
+    #[test]
+    fn a_daemon_s_failed_turn_settles_degraded() {
+        let judged = |scene: &str| {
+            let d = recorded("openclaw", Shape::ModelError, scene);
+            write_manifest(d.path(), "openclaw", |m| {
+                m.scenario = "model-error".into();
+                m.capture.exit_code = Some(1);
+            });
+            verify(d.path()).expect("verify").findings().to_vec()
+        };
+        let frame = |state: &str| format!("agents=[] daemons=[openclaw@55306:{state}]\n");
+        let gone = "agents=[] daemons=[]\n";
+        let failed = [
+            frame("idle"),
+            frame("busy"),
+            frame("degraded"),
+            frame("down"),
+        ]
+        .concat();
+        assert_eq!(judged(&(failed + gone)), vec![]);
+        let sound = [frame("busy"), frame("idle"), frame("down")].concat() + gone;
+        assert!(
+            judged(&sound)[0].1.contains("degraded"),
+            "{:?}",
+            judged(&sound)
+        );
+    }
+
+    #[test]
+    fn only_a_turn_scripted_to_fail_may_exit_non_zero() {
+        let scene = "agents=[] daemons=[openclaw@55306:busy]\n\
+                     agents=[] daemons=[openclaw@55306:degraded]\n\
+                     agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
+        let judged = |scenario: &str, exit_code, requests| {
+            let d = recorded("openclaw", Shape::ModelError, scene);
+            write_manifest(d.path(), "openclaw", |m| {
+                m.scenario = scenario.into();
+                m.capture.exit_code = exit_code;
+                m.requests = requests;
+            });
+            has(
+                &verify(d.path()).expect("verify"),
+                Label::Blocked,
+                "did not complete",
+            )
+        };
+        assert!(!judged("model-error", Some(1), 1));
+        assert!(
+            judged("model-error", Some(1), 0),
+            "it never reached the model"
+        );
+        assert!(judged("model-error", None, 1), "a signal ends no turn");
+        assert!(judged("tool-run", Some(1), 1));
+    }
+
+    #[test]
+    fn a_recorded_agent_model_error_run_passes_on_its_failure_hook() {
+        let run = |edit: fn(&Path)| {
+            let d = recorded(
+                "opencode",
+                Shape::ModelError,
+                "agents=[oc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
+            );
+            write_manifest(d.path(), "opencode", |m| {
+                m.scenario = "model-error".into();
+                m.capture.exit_code = Some(1);
+            });
+            edit(d.path());
+            verify(d.path()).expect("verify")
+        };
+        let v = run(|_| {});
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = run(|d| {
+            edit_hooks(d, |v| {
+                (v["type"] != "session.execution.failed").then_some(v)
+            })
+        });
+        assert!(
+            has(&v, Label::Fail, "session.execution.failed"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_failed_turn_is_held_to_its_end() {
+        let agent_id = AgentId::from_parts("kimi", "session");
+        let judged = |tool_use_id: Option<&str>| {
+            let mut findings = Vec::new();
+            model_error(
+                &[AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: tool_use_id.map(str::to_owned),
+                }],
+                &mut findings,
+            );
+            findings
+        };
+        assert_eq!(judged(None), vec![]);
+        assert!(
+            judged(Some("call"))
+                .iter()
+                .any(|f| f.1.contains("never ended"))
+        );
     }
 
     #[test]
@@ -1819,7 +2309,7 @@ mod tests {
         let tool_run = p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun);
         let committed = scenario_reads(p, tool_run).expect("fixtures");
         let d = recorded("codex", Shape::ToolRun, CX_SCENE);
-        respell(d.path(), "\"task_complete\"", "\"web_search_begin\"");
+        respell(d.path(), "\"task_complete\"", "\"web_search_end\"");
         let mut carried = Fields::default();
         for file in jsonl_files_under(d.path()) {
             for line in json_lines(&file).expect("lines") {
@@ -1827,10 +2317,10 @@ mod tests {
             }
         }
         let population = literals::population().expect("the decoders parse");
-        let findings = literal_census(p, &["web_search_begin"], &population, &committed, &carried);
+        let findings = literal_census(p, &["web_search_end"], &population, &committed, &carried);
         let v = Verdict::new(findings);
         assert!(
-            has(&v, Label::Stale, "`web_search_begin`"),
+            has(&v, Label::Stale, "`web_search_end`"),
             "{:?}",
             v.findings()
         );

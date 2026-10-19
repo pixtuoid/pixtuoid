@@ -110,10 +110,10 @@ echo "  headless pixtuoid up (pid $PIXPID), HookRouter owns $SOCK"
 
 FAILED=0
 # Wait until the LATEST `daemons=` line contains `want` — a substring match, so a
-# per-instance assertion does not have to name every sibling.
+# per-instance assertion does not have to name every sibling. `tries` counts polls of the `sleep` below.
 expect_line() {
-    local want="$1" label="$2" last
-    for _ in $(seq 1 120); do
+    local want="$1" label="$2" tries="${3:-120}" last
+    for _ in $(seq 1 "$tries"); do
         last="$(grep 'daemons=' "$OUT" | tail -1)"
         case "$last" in
         *"$want"*)
@@ -140,12 +140,18 @@ want=""
 while read -r port; do
     want="$want${want:+, }openclaw@$port:idle"
 done < <(printf '%s\n' "${PORTS[@]}" | LC_ALL=C sort)
-expect_line "daemons=[$want]" "${#PORTS[@]} gateways render ${#PORTS[@]} independent mascots"
+# Every gateway boots at once, each loading its plugins: a boot, not one reaction.
+expect_line "daemons=[$want]" "${#PORTS[@]} gateways render ${#PORTS[@]} independent mascots" 400
 
 # Step [1] is a hard PRECONDITION for step [2]: a gateway that has not announced yet
 # would satisfy "sibling $port is untouched" on its FIRST-EVER announce, after the kill.
 if [ "$FAILED" != 0 ]; then
     echo "  SKIP [2] — not every gateway announced; the instance-local assertions would be vacuous" >&2
+    # The temp dir goes with the run, so the only record of why is this log.
+    for port in "${PORTS[@]}"; do
+        echo "--- gateway $port (log tail):" >&2
+        tail -n 20 "$MG/gw$port.log" >&2
+    done
 else
     echo "[2] kill the FIRST gateway (${PORTS[0]}) — only its own mascot walks out"
     # `$!` holds the port and stamps `_pid` into every envelope, so this exercises the
