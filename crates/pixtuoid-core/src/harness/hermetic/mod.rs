@@ -110,8 +110,8 @@ pub enum Package {
 /// `result_unseen` and its source's `ChildEndInference` owe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
-    /// A turn that reads a file: the session registers in the workspace, a tool
-    /// starts with a detail naming it, and it ends.
+    /// A turn that runs one tool: the session registers in the workspace, a
+    /// tool starts with a detail naming it, and it ends.
     ToolRun,
     /// A turn whose tool call needs an approval the run cannot give: the slot
     /// waits on it, then the refused call ends, or its turn where the call
@@ -2141,8 +2141,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_run_replies_only_to_the_note_it_read_unless_its_result_is_unseen() {
-        // A reply to any tool result lets a run whose read failed pass.
+    fn no_tool_run_replies_to_any_result_and_the_note_run_waits_on_its_note() {
+        // A reply to any tool result lets a run whose tool failed pass.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun) {
                 let script: serde_json::Value = serde_json::from_str(
