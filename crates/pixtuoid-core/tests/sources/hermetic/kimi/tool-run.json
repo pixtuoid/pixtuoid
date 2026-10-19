@@ -6,7 +6,8 @@
     },
     {
       "match": { "toolResultContains": "{note}" },
-      "response": { "content": "pong" }
+      "response": { "content": "pong" },
+      "latency": 300
     }
   ]
 }

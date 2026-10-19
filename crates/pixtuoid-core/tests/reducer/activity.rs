@@ -525,6 +525,52 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     );
 }
 
+// kimi kills a still-running PostToolUse(Failure) hook when its turn ends, so a
+// call may never get its own End; the turn's Stop must still settle the slot.
+#[test]
+fn a_turn_end_settles_a_call_whose_own_end_never_came() {
+    use crate::waiting_for;
+    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for gated in [false, true] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts("kimi", "session_abc");
+        start_as(&mut r, &mut scene, id, "kimi");
+        act_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some("call_1"),
+            None,
+            t0,
+            Transport::Hook,
+        );
+        if gated {
+            waiting_for(
+                &mut r,
+                &mut scene,
+                id,
+                "permission",
+                Some("call_1"),
+                t0,
+                Transport::Hook,
+            );
+        }
+        let stop = t0 + Duration::from_millis(800);
+        act_end(&mut r, &mut scene, id, None, stop, Transport::Hook);
+        r.tick(
+            &mut scene,
+            stop + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
+        );
+        assert_eq!(
+            scene.agents.get(&id).unwrap().state,
+            ActivityState::Idle,
+            "gated: {gated}"
+        );
+    }
+}
+
 // Codex's JSONL turn end is a None-id ActivityEnd (its output Ends carry the call
 // id), and one can race in just after a fresh PermissionRequest — so only the
 // HOOK-side turn-end signal may resolve a Waiting.
