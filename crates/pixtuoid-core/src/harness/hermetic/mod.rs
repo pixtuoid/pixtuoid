@@ -873,6 +873,9 @@ trust_level = "trusted"
             "opencode.jsonc",
             "opencode.json",
         ],
+        // A shell command asks, which `opencode run` rejects
+        // (`services/www/src/docs/content/permissions.mdx:9-20`,
+        // `packages/cli/src/run/noninteractive.ts:158-181`): the permission turn.
         config: &[ConfigFile {
             home: "OPENCODE_CONFIG_DIR",
             path: "opencode.jsonc",
@@ -882,7 +885,8 @@ trust_level = "trusted"
       "settings": { "baseURL": "http://127.0.0.1:{port}/v1", "apiKey": "{key}" },
       "models": { "gpt-5.2": {} }
     }
-  }
+  },
+  "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }]
 }
 "#,
         }],
@@ -924,14 +928,23 @@ trust_level = "trusted"
                 ],
                 fixture: "fixtures/opencode/model-error-hermetic",
             },
+            Scenario {
+                name: "permission",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "permission.asked",
+                    "session.tool.failed",
+                    "session.execution.succeeded",
+                ],
+                fixture: "fixtures/opencode/permission-hermetic",
+            },
         ],
         script_vars: &[],
-        not_yet: &[
-            "session.deleted",
-            "session.execution.interrupted",
-            "session.tool.failed",
-            "permission.asked",
-        ],
+        not_yet: &["session.deleted", "session.execution.interrupted"],
         event_name: type_field,
         not_yet_fields: &[],
         children_inherit_cwd: false,
