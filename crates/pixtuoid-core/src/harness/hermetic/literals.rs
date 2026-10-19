@@ -207,7 +207,8 @@ fn is_test(attrs: &[syn::Attribute]) -> bool {
 }
 
 /// The literals `file`, the module `module`, reads: each const's and inline
-/// array's members in every mode the module reads them in.
+/// array's string members in each non-Exact mode a method reads them in, else
+/// [`Match::Exact`].
 pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     let mut c = Collect {
         module: module.to_owned(),
@@ -231,14 +232,14 @@ struct Collect {
     /// Closure parameters bound to the const or inline array whose members
     /// they iterate.
     bound: Vec<(String, String)>,
-    /// Each inline array a closure iterates, as its `[..]#n` name, the item it
-    /// sits in and its string members.
+    /// Each inline array a method chain iterates (`[..].iter()`), as its
+    /// `[..]#n` name, the item it sits in and its string members.
     inline: Vec<(String, String, Vec<String>)>,
 }
 
 impl Collect {
-    /// Every literal, each const's and inline array's members in each mode
-    /// `uses` holds for it, or [`Match::Exact`] where it holds none.
+    /// Every literal, each const's and inline array's string members in each
+    /// mode `uses` holds for it, or [`Match::Exact`] where it holds none.
     fn resolve(mut self) -> BTreeSet<Literal> {
         let modes = |uses: &BTreeSet<(String, Match)>, of: &str| {
             let m: Vec<Match> = uses
@@ -248,8 +249,8 @@ impl Collect {
                 .collect();
             if m.is_empty() { vec![Match::Exact] } else { m }
         };
-        let consts: BTreeSet<String> = self.uses.iter().map(|(t, _)| t.clone()).collect();
-        for name in consts {
+        let targets: BTreeSet<String> = self.uses.iter().map(|(t, _)| t.clone()).collect();
+        for name in targets {
             let members: Vec<Literal> = self
                 .out
                 .iter()
@@ -447,8 +448,8 @@ impl<'ast> Visit<'ast> for Collect {
         self.visit_expr(&m.receiver);
         for arg in &m.args {
             let param = match (arg, &iterated) {
-                (syn::Expr::Closure(c), Some(konst)) => match c.inputs.first() {
-                    Some(syn::Pat::Ident(p)) => Some((p.ident.to_string(), konst.clone())),
+                (syn::Expr::Closure(c), Some(target)) => match c.inputs.first() {
+                    Some(syn::Pat::Ident(p)) => Some((p.ident.to_string(), target.clone())),
                     _ => None,
                 },
                 _ => None,
@@ -791,13 +792,18 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
+    const LOSS_UNPERSISTED: &str = "loss list: grok only broadcasts it to ACP clients \
+         (`agent/mvp_agent/agent_ops.rs:2011-2035`, `agent/handlers/model_switch.rs:349-372`) \
+         and never writes it to updates.jsonl, which only `PersistenceMsg::Update` does \
+         (`session/acp_session_impl/updates.rs:1040-1055`), at untagged main 2bdd1d6a";
     const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
-         which exec and the TUI never write, as `EM_RESUME` cites";
+         which only a thread store without paginated lists gets, as `EM_RESUME` cites; \
+         the tier's rollouts are Paginated";
     const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
          call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
          aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
-    const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage is input and output \
-         tokens alone (`src/messages.ts:413-421` at v1.45.1)";
+    const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage carries no cache \
+         writes, as claude-code's `cache_creation_input_tokens` row cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -898,6 +904,11 @@ mod tests {
         literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
         literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
+        literal("grok.rs", "model_changed", LOSS_UNPERSISTED),
+        literal("grok.rs", "model_id", LOSS_UNPERSISTED),
+        literal("grok.rs", "reasoning_effort", LOSS_UNPERSISTED),
+        literal("grok.rs", "model_auto_switched", LOSS_UNPERSISTED),
+        literal("grok.rs", "new_model_id", LOSS_UNPERSISTED),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];
@@ -1117,6 +1128,11 @@ mod tests {
         )
         .expect("parses");
         let all = collect("x.rs", &file);
+        assert!(
+            all.iter()
+                .any(|l| l.text == "inline_a" && l.item == "decode"),
+            "an inline array's literal sits in its item: {all:?}"
+        );
         let both: BTreeSet<Match> = all
             .iter()
             .filter(|l| l.text == "both_ends")

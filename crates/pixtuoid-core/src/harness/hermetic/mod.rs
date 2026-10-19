@@ -838,7 +838,7 @@ trust_level = "trusted"
         not_yet: &[],
         event_name: hook_event_name,
         // aimock's Responses usage has no token details (`CopilotKit/aimock`
-        // `src/responses.ts:266-279` at v1.43.0).
+        // `src/responses.ts:543-556` at v1.45.1).
         not_yet_fields: &[
             (
                 "tx:event_msg",
@@ -1259,15 +1259,7 @@ trust_level = "trusted"
         not_yet: &["PostToolUseFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &[
-            "elicitation_dialog",
-            "run_in_background",
-            "model_changed",
-            "model_id",
-            "reasoning_effort",
-            "model_auto_switched",
-            "new_model_id",
-        ],
+        not_yet_literals: &["elicitation_dialog", "run_in_background"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,

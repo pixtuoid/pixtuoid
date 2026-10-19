@@ -193,11 +193,13 @@ const REQUIRE_ESCALATED: &str = "require_escalated";
 /// The rollout inners, grouped BY BEHAVIOUR: each group is the matcher (the
 /// arms below guard on `contains`).
 const EM_TURN_START: &[&str] = &["task_started"];
-/// Written only to a Legacy-history rollout, which a client that names no history
-/// mode starts; exec and the TUI write Paginated ones
-/// (`codex-rs/rollout/src/policy.rs:141-155`, `codex-rs/protocol/src/protocol.rs:880-882`,
-/// `codex-rs/exec/src/lib.rs:1462`, `codex-rs/tui/src/app_server_session.rs:2175` at
-/// `rust-v0.163.0`).
+/// Written only to a Legacy-history rollout (`codex-rs/rollout/src/policy.rs:141-155`):
+/// exec and the TUI ask for a Paginated one (`codex-rs/exec/src/lib.rs:1462`,
+/// `codex-rs/tui/src/app_server_session.rs:2175`), which a thread store without
+/// paginated lists refuses, and exec then retries with none, the Legacy default
+/// (`codex-rs/app-server/src/request_processors/thread_processor.rs:1179-1186`,
+/// `codex-rs/exec/src/lib.rs:1426-1432`, `codex-rs/protocol/src/protocol.rs:880-882`,
+/// at `rust-v0.163.0`).
 const EM_RESUME: &[&str] = &["patch_apply_end"];
 /// As [`EM_RESUME`].
 const EM_SEARCH: &[&str] = &["web_search_end"];
