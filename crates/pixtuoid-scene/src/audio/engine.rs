@@ -27,6 +27,14 @@ pub struct PlayCmd {
     pub gain: f32,
 }
 
+/// The music this tick: what lofi is asked, and the mixer's ramped gain to
+/// play it at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MusicCmd {
+    pub controls: Controls,
+    pub gain: f32,
+}
+
 /// What one [`AudioEngine::tick`] produces — the backend-agnostic result each
 /// shell flushes its own way.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -35,9 +43,9 @@ pub struct TickCommands {
     pub gains: [f32; LoopStem::ALL.len()],
     /// One-shots to fire this tick.
     pub plays: Vec<PlayCmd>,
-    /// What the music is asked, `None` until the first frame: a stream that
-    /// starts sooner plays a day song at night.
-    pub music: Option<Controls>,
+    /// The music, `None` until the first frame: a stream that starts sooner
+    /// plays a day song at night.
+    pub music: Option<MusicCmd>,
 }
 
 /// The per-tick audio state both backends share. Constructed once, then `tick`
@@ -96,7 +104,7 @@ impl AudioEngine {
         };
 
         self.mixer.set_target(self.wanted);
-        let gain_pairs = self.mixer.step(dt);
+        let (gain_pairs, music_gain) = self.mixer.step(dt);
 
         let mut gains = [0.0f32; LoopStem::ALL.len()];
         for (i, (_, g)) in gain_pairs.iter().enumerate() {
@@ -134,7 +142,10 @@ impl AudioEngine {
         TickCommands {
             gains,
             plays,
-            music: self.music,
+            music: self.music.map(|controls| MusicCmd {
+                controls,
+                gain: music_gain,
+            }),
         }
     }
 }
@@ -190,13 +201,14 @@ mod tests {
     }
 
     #[test]
-    fn mute_zeroes_every_loop_gain_and_one_shot() {
+    fn mute_zeroes_every_loop_gain_the_music_and_one_shot() {
         let mut e = AudioEngine::new(1.0);
         settle(&mut e, 200);
         e.set_muted(true);
         settle(&mut e, 200);
         let cmd = e.tick(0.05, Some(busy_frame()));
         assert!(cmd.gains.iter().all(|g| *g == 0.0), "muted loops fall to 0");
+        assert_eq!(cmd.music.map(|m| m.gain), Some(0.0), "the music falls to 0");
         assert!(
             cmd.plays.iter().all(|p| p.gain == 0.0),
             "muted one-shots ride at gain 0 (sink drops them)"
@@ -242,9 +254,14 @@ mod tests {
         let night = Controls::default().with_daylight(0.0);
         let mut frame = busy_frame();
         frame.music = night;
-        assert_eq!(e.tick(0.05, Some(frame)).music, Some(night));
+        let first = e
+            .tick(0.05, Some(frame))
+            .music
+            .expect("a frame starts the song");
+        assert_eq!(first.controls, night);
+        assert!(first.gain > 0.0, "the music ramps in with the first tick");
         assert_eq!(
-            e.tick(0.05, None).music,
+            e.tick(0.05, None).music.map(|m| m.controls),
             Some(night),
             "a timeout tick holds the last frame's music"
         );

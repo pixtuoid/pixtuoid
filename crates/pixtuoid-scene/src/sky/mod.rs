@@ -543,11 +543,6 @@ pub fn nightfall_on(day: SystemTime) -> Option<SystemTime> {
     crate::localclock::on_date_of(day, minutes / 60, minutes % 60)
 }
 
-/// The daylight a sky `nightfall` into the night shows the music.
-fn daylight(nightfall: f32) -> f32 {
-    1.0 - nightfall
-}
-
 /// How far into the night hour `h` is, 0..=1: zero by day, rising over
 /// [`NIGHTFALL_H`] after dusk and falling over it before dawn.
 fn nightfall(h: f32) -> f32 {
@@ -881,12 +876,6 @@ impl Sky {
     /// [`nightfall`] at this instant.
     pub(crate) fn nightfall(&self) -> f32 {
         self.nightfall
-    }
-
-    /// The music's daylight at this instant: the sun's alone, since a
-    /// weather-dimmed light would flip a storm's songs to the night family.
-    pub(crate) fn daylight(&self) -> f32 {
-        daylight(self.nightfall)
     }
 
     /// The lightning envelope at this instant: its strike's level, or 0.

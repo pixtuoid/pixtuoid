@@ -702,12 +702,15 @@ fn hitch(path: &Path) -> Result<()> {
         let music = run.music.then(|| {
             let stop = Arc::clone(&music_stop);
             std::thread::spawn(move || {
-                use pixtuoid_scene::audio::{Controls, Frame, Performance, SAMPLE_RATE};
+                use pixtuoid_scene::audio::{
+                    Controls, Frame, MUSIC_AHEAD, Performance, SAMPLE_RATE,
+                };
                 // As the audio thread does.
                 pixtuoid::dev::demote_to_utility();
                 let mut performance = Performance::new(0, Controls::default());
-                // Half a second a render: lofi_bench's chunk.
-                let mut chunk = vec![Frame::default(); SAMPLE_RATE as usize / 2];
+                // A whole render-ahead at a time.
+                let frames = MUSIC_AHEAD.as_secs_f64() * f64::from(SAMPLE_RATE);
+                let mut chunk = vec![Frame::default(); frames as usize];
                 let mut renders = Vec::new();
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let at = Instant::now();
@@ -805,7 +808,7 @@ fn hitch(path: &Path) -> Result<()> {
         if let Some(renders) = music.and_then(|h| h.join().ok()) {
             let _ = writeln!(
                 stdout,
-                "  music alongside: {} half-second renders, slowest {:.2} ms",
+                "  music alongside: {} renders of MUSIC_AHEAD, slowest {:.2} ms",
                 renders.len(),
                 ms(renders.iter().copied().max().unwrap_or_default())
             );

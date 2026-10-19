@@ -1031,7 +1031,9 @@ fn rain_maps_audible_rain_under_its_policy() {
 fn the_musics_night_family_starts_at_the_nightfalls_midpoint() {
     const MINUTE_H: f32 = 1.0 / 60.0;
     let dusk = pixtuoid_lofi::Controls::DUSK;
-    let at = |h: f32| daylight(nightfall(h.rem_euclid(24.0)));
+    let office = crate::tally::StateCounts::default();
+    let at =
+        |h: f32| crate::audio::music_controls(&office, nightfall(h.rem_euclid(24.0)), 0.0).daylight;
     for mid in [
         SUN_SET_H + NIGHTFALL_H / 2.0,
         SUN_RISE_H - NIGHTFALL_H / 2.0,

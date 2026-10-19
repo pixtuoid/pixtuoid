@@ -669,9 +669,10 @@ impl AudioHandle {
             match std::thread::Builder::new()
                 .name("pixtuoid-audio".into())
                 .spawn(move || {
-                    // Its synthesis at a launch and its music rendered ahead
-                    // are utility work, "work that may take some time to
-                    // complete and doesn't require an immediate result"
+                    // Its synthesis at a launch and its music, rendered
+                    // `MUSIC_AHEAD` before it plays, are utility work, "work
+                    // that may take some time to complete and doesn't require
+                    // an immediate result"
                     // (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
                     // The device plays on its output callback's own thread.
                     demote_to_utility();
@@ -802,7 +803,6 @@ pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {
 /// threads, as Chromium maps its `kUtility` thread type
 /// (`base/threading/platform_thread_{apple.mm,linux.cc,win.cc}`). Best
 /// effort: a refusal leaves the thread as it was.
-#[cfg(feature = "audio")]
 pub fn demote_to_utility() {
     #[cfg(target_os = "macos")]
     // SAFETY: sets the calling thread's own QoS class; nothing is borrowed.
@@ -833,15 +833,11 @@ pub fn demote_to_utility() {
 
 /// Chromium's nice value for `kUtility` (`ThreadTypeToNiceValue`,
 /// `platform_thread_linux.cc`).
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 const UTILITY_NICE: libc::c_int = 2;
 
 // The platforms whose class it reads back; elsewhere it yields nothing.
-#[cfg(all(
-    test,
-    feature = "audio",
-    any(target_os = "macos", target_os = "linux", windows)
-))]
+#[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
 mod utility_tests {
     /// A demoted thread reads back its platform's utility class, and the
     /// thread that spawned it keeps its own.
@@ -951,18 +947,29 @@ fn run_loop(
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
 
-        let cmds = engine.tick(dt, frame);
-
-        for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
-            match stem {
-                LoopStem::Music => music.tick(cmds.music, gain),
-                LoopStem::Rain => device.set_loop_gain(stem, gain),
-            }
-        }
-        for play in cmds.plays {
-            device.play_once(bank.sample(play.pool, play.index), play.gain);
+        let heard = play(engine.tick(dt, frame), &mut *device, &mut music, &bank);
+        if heard > 0 {
+            tracing::debug!(frames = heard, "audio: the music underran");
         }
     }
+}
+
+/// Flush one tick's commands to `device` and the `music`; returns the music
+/// frames the listener heard as silence since the last tick.
+#[cfg(feature = "audio")]
+fn play(
+    cmds: pixtuoid_scene::audio::TickCommands,
+    device: &mut dyn AudioSink,
+    music: &mut music::MusicProducer,
+    bank: &pixtuoid_scene::audio::bank::AssetBank,
+) -> u64 {
+    for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
+        device.set_loop_gain(stem, gain);
+    }
+    for play in cmds.plays {
+        device.play_once(bank.sample(play.pool, play.index), play.gain);
+    }
+    music.tick(cmds.music)
 }
 
 #[cfg(all(test, feature = "audio"))]
@@ -1183,13 +1190,13 @@ mod listen_gate {
             .unwrap();
     }
 
-    /// One audition: an office of `active` agents under `rain`, its daylight
-    /// at each second, its one-shots, and its length.
+    /// One audition: an office of `active` agents under `rain`, its sky's
+    /// nightfall at each second, its one-shots, and its length.
     struct Row<'a> {
         name: &'a str,
         active: usize,
         rain: f32,
-        daylight: fn(f32) -> f32,
+        nightfall: fn(f32) -> f32,
         events_at: &'a [(f32, OneShot)],
         secs: f32,
     }
@@ -1227,18 +1234,14 @@ mod listen_gate {
             let frame = AudioFrame {
                 stems: stem_levels(&counts, row.rain),
                 events,
-                music: music_controls(&counts, (row.daylight)(now_s), row.rain),
+                music: music_controls(&counts, (row.nightfall)(now_s), row.rain),
             };
-            let cmds = engine.tick(step_s, Some(frame));
-            for (stem, gain) in LoopStem::ALL.into_iter().zip(cmds.gains) {
-                match stem {
-                    LoopStem::Music => music.tick(cmds.music, gain),
-                    LoopStem::Rain => sink.set_loop_gain(stem, gain),
-                }
-            }
-            for play in cmds.plays {
-                sink.play_once(bank.sample(play.pool, play.index), play.gain);
-            }
+            play(
+                engine.tick(step_s, Some(frame)),
+                &mut sink,
+                &mut music,
+                bank,
+            );
             sink.advance(step_n);
             now_s += step_s;
         }
@@ -1271,15 +1274,15 @@ mod listen_gate {
                 .map(|e| (at, e))
             })
             .collect();
-        let day: fn(f32) -> f32 = |_| 1.0;
-        let night: fn(f32) -> f32 = |_| 0.0;
+        let day: fn(f32) -> f32 = |_| 0.0;
+        let night: fn(f32) -> f32 = |_| 1.0;
         // Through the first minute, so the next song is the night family's.
-        let dusk: fn(f32) -> f32 = |t| (1.0 - t / 60.0).max(0.0);
-        let row = |name, active, rain, daylight, events_at, secs| Row {
+        let dusk: fn(f32) -> f32 = |t| (t / 60.0).min(1.0);
+        let row = |name, active, rain, nightfall, events_at, secs| Row {
             name,
             active,
             rain,
-            daylight,
+            nightfall,
             events_at,
             secs,
         };

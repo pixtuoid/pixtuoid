@@ -1,4 +1,4 @@
-// The ♩ music's audio-thread end: plays the chunks of interleaved stereo frames the audio worker renders, and asks it
+// The ♩ music's audio-thread end: plays the chunks of interleaved stereo frames the music worker renders, and asks it
 // for the next as the queue drains, over their own MessageChannel. No timer is on this path, so a background tab's
 // throttling never reaches it.
 'use strict';
@@ -6,16 +6,17 @@
 // Frames per chunk: few enough messages that the worklet's garbage stays small (Chrome's "Audio worklet design
 // pattern" names MessagePort's "repetitive memory allocation" as its cost).
 const CHUNK_FRAMES = 4096;
-// How far ahead the queue holds music: a worker stalled this long still plays through.
-const AHEAD_S = 1;
 
 class MusicPlayer extends AudioWorkletProcessor {
-  constructor() {
+  // `processorOptions.aheadS`: how far ahead the queue holds music (`MUSIC_AHEAD`), so a worker stalled that long
+  // still plays through.
+  constructor(options) {
     super();
+    this.aheadFrames = options.processorOptions.aheadS * sampleRate;
     this.chunks = [];
     this.at = 0;
     this.queued = 0;
-    this.asked = 0;
+    this.requested = 0;
     this.source = null;
     this.port.onmessage = (e) => {
       this.source = e.data.source;
@@ -28,7 +29,7 @@ class MusicPlayer extends AudioWorkletProcessor {
     const frames = chunk.length / 2;
     this.chunks.push(chunk);
     this.queued += frames;
-    this.asked -= frames;
+    this.requested -= frames;
     if (!this.primed) {
       this.primed = true;
       this.port.postMessage({ primed: true });
@@ -37,9 +38,9 @@ class MusicPlayer extends AudioWorkletProcessor {
 
   ask() {
     if (!this.source) return;
-    while (this.queued + this.asked + CHUNK_FRAMES <= AHEAD_S * sampleRate) {
+    while (this.queued + this.requested + CHUNK_FRAMES <= this.aheadFrames) {
       this.source.postMessage({ need: CHUNK_FRAMES });
-      this.asked += CHUNK_FRAMES;
+      this.requested += CHUNK_FRAMES;
     }
   }
 

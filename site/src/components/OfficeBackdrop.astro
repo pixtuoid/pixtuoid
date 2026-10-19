@@ -3,6 +3,7 @@ import { asset, DIM_RESTING } from '../consts';
 
 const wasmJsUrl = asset('wasm/pixtuoid_web.js');
 const audioWorkerUrl = asset('audio-worker.js');
+const musicWorkerUrl = asset('music-worker.js');
 const musicWorkletUrl = asset('music-worklet.js');
 const officeDriverUrl = asset('office-driver.js');
 ---
@@ -312,14 +313,17 @@ const officeDriverUrl = asset('office-driver.js');
   is:inline
   data-wasm-js-url={wasmJsUrl}
   data-audio-worker-url={audioWorkerUrl}
+  data-music-worker-url={musicWorkerUrl}
   data-music-worklet-url={musicWorkletUrl}
   data-office-driver-url={officeDriverUrl}
 >
   (function () {
     const script = document.currentScript;
     if (!(script instanceof HTMLScriptElement)) return;
-    const { wasmJsUrl, audioWorkerUrl, musicWorkletUrl, officeDriverUrl } = script.dataset;
-    if (!wasmJsUrl || !audioWorkerUrl || !musicWorkletUrl || !officeDriverUrl) return;
+    const { wasmJsUrl, audioWorkerUrl, musicWorkerUrl, musicWorkletUrl, officeDriverUrl } =
+      script.dataset;
+    if (!wasmJsUrl || !audioWorkerUrl || !musicWorkerUrl || !musicWorkletUrl || !officeDriverUrl)
+      return;
 
     const wrap = document.querySelector('.backdrop');
     const canvas = document.getElementById('office-live');
@@ -672,16 +676,17 @@ const officeDriverUrl = asset('office-driver.js');
         const g = audioCtx.createGain();
         g.gain.value = 0;
         g.connect(audioBus);
-        loopGains[i] = g;
-        // The music has no bed: its worklet plays into its gain (musicTick).
-        const buf = audioLoopBuffer(i);
-        if (!buf) continue;
         const s = audioCtx.createBufferSource();
-        s.buffer = buf;
+        s.buffer = audioLoopBuffer(i);
         s.loop = true;
         s.connect(g);
         s.start();
+        loopGains[i] = g;
       }
+      // The music's worklet plays into it once it starts (musicTick).
+      musicGain = audioCtx.createGain();
+      musicGain.gain.value = 0;
+      musicGain.connect(audioBus);
       oneShotBufs = {};
       for (const wire of ONESHOT_WIRES) {
         oneShotBufs[wire] = [];
@@ -697,6 +702,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     // The ♩ music (officeDriver.startMusic): the startMusic handle once it runs, else 'starting' or 'silent'.
     let music = null;
+    let musicGain = null;
     let musicAsked = '';
     window.__pixMusic = 'idle'; // e2e observability: idle → starting → playing, or silent
     function musicStop(state) {
@@ -711,15 +717,15 @@ const officeDriverUrl = asset('office-driver.js');
       if (music === null) {
         music = 'starting';
         window.__pixMusic = 'starting';
-        const urls = { worklet: musicWorkletUrl, worker: audioWorkerUrl, wasm: wasmJsUrl };
+        const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
         officeDriver
-          .startMusic(audioCtx, urls, Date.now(), controls)
+          .startMusic(audioCtx, urls, office.audio_music_ahead_s(), Date.now(), controls)
           .then(function (m) {
             if (music !== 'starting') {
               m.stop(); // audio went away while the worklet loaded
               return;
             }
-            m.node.connect(loopGains[office.audio_music_stem()]);
+            m.node.connect(musicGain);
             music = m;
             musicAsked = String(controls);
             m.primed.then(function () {
@@ -748,7 +754,7 @@ const officeDriverUrl = asset('office-driver.js');
       } catch (e) {
         return; // a bad frame degrades to holding the last gains, never a throw
       }
-      musicTick(cmd.music);
+      if (cmd.music) musicTick(cmd.music.controls);
       // Muted = a suspended AudioContext: nodes queued against one all fire at once on resume, so schedule nothing.
       if (!audioPlaying) return;
       // A node op can still throw if the context died mid-session — degrade rather than spam the console every frame.
@@ -759,6 +765,7 @@ const officeDriverUrl = asset('office-driver.js');
         for (let i = 0; i < cmd.gains.length; i++) {
           loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, 0.03);
         }
+        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, 0.03);
         for (const p of cmd.plays) {
           const bank = oneShotBufs[p[0]];
           const buf = bank && bank[p[1]];
@@ -805,6 +812,7 @@ const officeDriverUrl = asset('office-driver.js');
         }
         audioCtx = null;
         audioBus = null;
+        musicGain = null;
       }
       if (audioBtn) {
         audioBtn.setAttribute('aria-pressed', 'false');

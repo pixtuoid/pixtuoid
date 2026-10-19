@@ -459,7 +459,7 @@ impl AudioObserver {
         AudioFrame {
             stems: crate::audio::stem_levels(&counts, rain),
             events,
-            music: crate::audio::music_controls(&counts, sky.daylight(), rain),
+            music: crate::audio::music_controls(&counts, sky.nightfall(), rain),
         }
     }
 

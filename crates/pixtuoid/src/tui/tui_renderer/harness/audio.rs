@@ -15,9 +15,9 @@ fn active_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
 }
 
 #[test]
-fn audio_stems_count_only_the_viewed_floor() {
-    // 1 active on floor 0 vs 3 on floor 1: the typing tiers differ exactly there,
-    // so a global count (4) reads BUSY where the viewed floor reads MODERATE.
+fn audio_stems_and_music_count_only_the_viewed_floor() {
+    // 1 active on floor 0 vs 3 on floor 1: the tiers differ exactly there, so a
+    // global count (4) reads BUSY where the viewed floor reads MODERATE.
     let cap = 16;
     let scene = scene_with(
         vec![
@@ -35,20 +35,23 @@ fn audio_stems_count_only_the_viewed_floor() {
     r.render(&scene, pack, t0()).expect("render");
     let frames = drain_frames(&rx);
     assert!(!frames.is_empty(), "an enabled handle receives frames");
-    let stems = frames.last().unwrap().stems;
-    let moderate = pixtuoid_scene::audio::stem_levels(
-        &pixtuoid_scene::tally::StateCounts {
-            active: 1,
-            waiting: 0,
-            idle: 0,
-            exiting: 0,
-            total: 1,
-        },
-        0.0,
+    let frame = frames.last().unwrap();
+    let viewed = pixtuoid_scene::tally::StateCounts {
+        active: 1,
+        waiting: 0,
+        idle: 0,
+        exiting: 0,
+        total: 1,
+    };
+    let moderate = pixtuoid_scene::audio::stem_levels(&viewed, 0.0);
+    assert_eq!(
+        frame.stems.typing, moderate.typing,
+        "typing level must reflect the VIEWED floor's 1 active, not all 4"
     );
     assert_eq!(
-        stems.typing, moderate.typing,
-        "typing level must reflect the VIEWED floor's 1 active, not all 4"
+        frame.music.intensity,
+        pixtuoid_scene::audio::music_controls(&viewed, 0.0, 0.0).intensity,
+        "the music's intensity must reflect the VIEWED floor's 1 active, not all 4"
     );
 }
 
@@ -217,7 +220,7 @@ fn footer_note_glyph_tracks_effective_audibility() {
 }
 
 /// A forced weather reaches every consumer the renderer feeds: the viewed
-/// frame, both halves of a floor slide, and the audio frame's rain.
+/// frame, both halves of a floor slide, and the audio frame's rain and music.
 #[test]
 fn a_forced_weather_reaches_the_frame_both_slide_halves_and_the_rain() {
     use pixtuoid_scene::sky::{Weather, WeatherPolicy};
@@ -235,7 +238,8 @@ fn a_forced_weather_reaches_the_frame_both_slide_halves_and_the_rain() {
         r.set_audio(handle);
         r.set_weather(WeatherPolicy::Forced(w));
         r.render(&scene, pack(), t0()).expect("render");
-        let rain = drain_frames(&rx).last().expect("a frame").stems.rain;
+        let audio = drain_frames(&rx).pop().expect("a frame");
+        let rain = (audio.stems.rain, audio.music.rain);
         let still = r.buf().expect("a frame").as_slice().to_vec();
         r.navigate_floor(1, t0());
         r.render(&scene, pack(), t0() + Duration::from_millis(PAINT_FRAME_MS))
@@ -255,10 +259,16 @@ fn a_forced_weather_reaches_the_frame_both_slide_halves_and_the_rain() {
     };
     let (storm, clear) = (under(Weather::Storm), under(Weather::Clear));
     assert!(
-        storm.0 > 0.0 && clear.0 == 0.0,
+        storm.0.0 > 0.0 && clear.0.0 == 0.0,
         "the rain follows the weather: {} vs {}",
-        storm.0,
-        clear.0
+        storm.0.0,
+        clear.0.0
+    );
+    assert!(
+        storm.0.1 > 0.0 && clear.0.1 == 0.0,
+        "the music hears the weather's rain: {} vs {}",
+        storm.0.1,
+        clear.0.1
     );
     assert!(storm.1 != clear.1, "the viewed frame follows the weather");
     for f in 0..2 {

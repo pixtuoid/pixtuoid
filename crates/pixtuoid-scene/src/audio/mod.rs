@@ -18,7 +18,7 @@ pub mod mixer;
 // The shared per-tick engine surface — both audio painters build on these, so
 // they can't drift.
 pub use bank::OneShotPool;
-pub use engine::{AudioEngine, MAX_DT_S, PlayCmd, TickCommands};
+pub use engine::{AudioEngine, MAX_DT_S, MusicCmd, PlayCmd, TickCommands};
 // The music, so a painter never names lofi.
 pub use pixtuoid_lofi::{Controls, Frame, Performance};
 
@@ -111,7 +111,7 @@ impl TierGain {
 /// The typing stem's gain per tier, `[empty, moderate, busy]`.
 const TYPING_GAIN: TierGain = TierGain::new([0.0, 0.50, 0.80]);
 
-/// Target mix levels (0..=1) for every stem, derived once per frame. `typing`
+/// Target mix levels (0..=1) for the foley's stems, derived once per frame. `typing`
 /// is a PROCEDURAL stem: the consumer owns burst scheduling; the scene only says
 /// how much typing the office holds.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -220,11 +220,17 @@ pub fn stem_levels(counts: &StateCounts, precipitation: f32) -> StemLevels {
     }
 }
 
-/// What the music is asked under `counts`, the sun's `daylight` and `rain`
-/// (each 0..=1).
-pub fn music_controls(counts: &StateCounts, daylight: f32, rain: f32) -> Controls {
+/// How far ahead of the listener each painter renders the music: as long as
+/// its producer may go unscheduled before the music drops out. Nothing waits
+/// on it, since the gain sits after it and the controls latch at a bar.
+pub const MUSIC_AHEAD: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// What the music is asked under `counts`, the sun's `nightfall` (0 by day …
+/// 1 by night) and `rain` (0 dry … 1 storm). The sun's alone: a
+/// weather-dimmed light would flip a storm's songs to the night family.
+pub fn music_controls(counts: &StateCounts, nightfall: f32, rain: f32) -> Controls {
     Controls::default()
-        .with_daylight(daylight)
+        .with_daylight(1.0 - nightfall)
         .with_intensity(tier(counts).intensity())
         .with_rain(rain)
 }
@@ -354,12 +360,12 @@ mod tests {
             exiting: 1,
             total: 9,
         };
-        assert_eq!(music_controls(&c, 1.0, 0.0).intensity, 0.0);
+        assert_eq!(music_controls(&c, 0.0, 0.0).intensity, 0.0);
     }
 
     #[test]
     fn each_tier_asks_lofi_for_its_intensity_anchor() {
-        let at = |active| music_controls(&counts(active), 1.0, 0.0).intensity;
+        let at = |active| music_controls(&counts(active), 0.0, 0.0).intensity;
         assert_eq!(at(0), 0.0, "an empty office is lofi's empty room");
         assert_eq!(
             at(1),
@@ -377,8 +383,8 @@ mod tests {
     #[test]
     fn music_controls_pass_the_sky_through() {
         for v in [0.0, 0.25, 1.0] {
-            let c = music_controls(&counts(1), v, 1.0 - v);
-            assert_eq!((c.daylight, c.rain), (v, 1.0 - v));
+            let c = music_controls(&counts(1), v, v);
+            assert_eq!((c.daylight, c.rain), (1.0 - v, v));
         }
     }
 

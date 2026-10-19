@@ -1040,12 +1040,21 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
     );
     assert_eq!(
         frame.music,
-        crate::audio::music_controls(&counts, sky.daylight(), sky.rain()),
+        crate::audio::music_controls(&counts, sky.nightfall(), sky.rain()),
         "music must ask music_controls of the same counts and sky"
     );
     assert_eq!(
         frame.music.rain, 1.0,
         "a storm passes its rain to the music"
+    );
+    let clear = crate::sky::Sky::at(
+        crate::anim::Motion::Full.timing(now),
+        crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear),
+    );
+    assert_eq!(
+        frame.music.daylight,
+        crate::audio::music_controls(&counts, clear.nightfall(), 0.0).daylight,
+        "the storm's daylight is a clear sky's: a storm never flips the family"
     );
 }
 

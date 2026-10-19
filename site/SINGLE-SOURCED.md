@@ -71,8 +71,8 @@ Notes no gate carries:
   grades against (measured worst case 5.28:1) — don't theme it.
 - **♩ audio**: muted-by-default, gesture-gated (`AudioContext` only on first
   click); foley prewarms OFF-thread in `public/audio-worker.js` at idle (the
-  click-time chunked warmup its fallback), music streams from it into
-  `public/music-worklet.js`, silent where either can't run; buffers COPIED out
+  click-time chunked warmup its fallback), music streams from `public/music-worker.js`
+  into `public/music-worklet.js`, silent where either can't run; buffers COPIED out
   of wasm memory (views dangle on `memory.grow`); sound rides the render's
   pause-shifted `nowMs`. **iOS silent-switch bypass is DELIBERATE (#664)**:
   `navigator.audioSession.type = 'playback'` before the context, else the Ring/Silent switch mutes a deliberate ♩ tap.

@@ -28,7 +28,7 @@ use crate::script::{
 };
 
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::audio::{Controls, Frame, OneShotPool, Performance};
+use pixtuoid_scene::audio::{Frame, OneShotPool, Performance};
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
@@ -414,24 +414,21 @@ impl Office {
         pixtuoid_scene::audio::LIMITER_RELEASE.as_secs_f32()
     }
 
-    /// How many stems a tick's `gains` carry:
+    /// How many loop stems a tick's `gains` carry:
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)'s.
     pub fn audio_loop_count(&self) -> usize {
         LoopStem::ALL.len()
     }
 
-    /// The music's index in a tick's `gains`, the GainNode the worklet plays
-    /// into.
-    pub fn audio_music_stem(&self) -> usize {
-        LoopStem::ALL
-            .iter()
-            .position(|s| *s == LoopStem::Music)
-            .unwrap_or_default()
+    /// How far ahead the music worklet queues the worker's chunks, in seconds:
+    /// [`pixtuoid_scene::audio::MUSIC_AHEAD`].
+    pub fn audio_music_ahead_s(&self) -> f32 {
+        pixtuoid_scene::audio::MUSIC_AHEAD.as_secs_f32()
     }
 
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
-    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order;
-    /// empty for the music, which streams. RE-READ after warmup completes.
+    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order.
+    /// RE-READ after warmup completes.
     pub fn audio_loop_ptr(&self, idx: usize) -> *const f32 {
         self.audio
             .as_ref()
@@ -457,10 +454,11 @@ impl Office {
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
     /// same as `step`) and return the JS glue commands as JSON:
-    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…],"music":[daylight,intensity,rain]|null}`,
+    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…],"music":{"controls":[…],"gain":g}|null}`,
     /// one gain per [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)
-    /// stem — JS ramps each GainNode to its gain, spawns the one-shots and
-    /// hands the music's controls to its worker (`null` until the first frame).
+    /// stem — JS ramps each GainNode to its gain, spawns the one-shots, ramps
+    /// the music's GainNode and hands its controls, unread, to the music
+    /// worker (`null` until the first frame).
     pub fn audio_tick(&mut self, now_ms: f64) -> String {
         let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
         let Some(now) = self.last_now else {
@@ -579,8 +577,8 @@ impl SynthTake {
     }
 }
 
-/// The music's producer for the audio worker: one lofi `Performance`,
-/// rendered in chunks the worker copies out to the worklet.
+/// The music worker's lofi `Performance`, rendered in the chunks the worklet
+/// asks for.
 #[wasm_bindgen]
 #[derive(Debug)]
 pub struct MusicStream {
@@ -588,32 +586,32 @@ pub struct MusicStream {
     frames: Vec<Frame>,
 }
 
-/// The controls JS hands over as `[daylight, intensity, rain]`.
-fn controls(daylight: f32, intensity: f32, rain: f32) -> Controls {
-    Controls::default()
-        .with_daylight(daylight)
-        .with_intensity(intensity)
-        .with_rain(rain)
-}
-
 #[wasm_bindgen]
 impl MusicStream {
     /// A stream starting at `now_ms` (UNIX-epoch milliseconds, the
-    /// `Office::step` contract) under the office's first controls, which pick
-    /// its first song.
+    /// `Office::step` contract) under the office's first `controls`, a tick's
+    /// `music.controls` as `audio_tick` wrote them, which pick its first song.
+    ///
+    /// # Errors
+    ///
+    /// When `controls` isn't the wire's.
     #[wasm_bindgen(constructor)]
-    pub fn new(now_ms: f64, daylight: f32, intensity: f32, rain: f32) -> MusicStream {
+    pub fn new(now_ms: f64, controls: &[f32]) -> Result<MusicStream, JsError> {
+        let controls = audio::controls_from_wire(controls)
+            .ok_or_else(|| JsError::new("not the music's controls"))?;
         let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
-        MusicStream {
-            performance: Performance::new(seed, controls(daylight, intensity, rain)),
+        Ok(MusicStream {
+            performance: Performance::new(seed, controls),
             frames: Vec::new(),
-        }
+        })
     }
 
-    /// The office's latest controls, which the next bar latches.
-    pub fn set_controls(&mut self, daylight: f32, intensity: f32, rain: f32) {
-        self.performance
-            .set_controls(controls(daylight, intensity, rain));
+    /// The office's latest `controls`, as `audio_tick` wrote them, which the
+    /// next bar latches; `false` when they aren't the wire's.
+    pub fn set_controls(&mut self, controls: &[f32]) -> bool {
+        audio::controls_from_wire(controls)
+            .map(|c| self.performance.set_controls(c))
+            .is_some()
     }
 
     /// Render the next `frames` frames and return where their `2 × frames`
@@ -821,6 +819,7 @@ fn push_board_segments(
 mod tests {
     use super::*;
     use crate::script::cast_id;
+    use pixtuoid_scene::audio::Controls;
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
     /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
@@ -916,8 +915,24 @@ mod tests {
     #[test]
     fn a_music_stream_renders_the_performance_its_first_controls_pick() {
         let now_ms = 1_753_000_000_000.0;
-        let night = controls(0.0, 1.0, 0.0);
-        let mut stream = MusicStream::new(now_ms, night.daylight, night.intensity, night.rain);
+        let night = Controls::default().with_daylight(0.0).with_intensity(1.0);
+        let tick = pixtuoid_scene::audio::TickCommands {
+            music: Some(pixtuoid_scene::audio::MusicCmd {
+                controls: night,
+                gain: 1.0,
+            }),
+            ..Default::default()
+        };
+        // The wire as the worker gets it: the tick's JSON, its controls unread.
+        let json: serde_json::Value =
+            serde_json::from_str(&audio::commands_json(&tick)).expect("valid JSON");
+        let wire: Vec<f32> =
+            serde_json::from_value(json["music"]["controls"].clone()).expect("floats");
+        let Ok(mut stream) = MusicStream::new(now_ms, &wire) else {
+            panic!("the wire's controls start a stream");
+        };
+        assert!(stream.set_controls(&wire));
+        assert!(!stream.set_controls(&wire[..1]), "a torn wire is refused");
         let mut heard = Vec::new();
         for n in [1000, 3000] {
             let ptr = stream.render(n);
