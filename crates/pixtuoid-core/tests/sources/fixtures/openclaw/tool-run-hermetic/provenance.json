@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "openclaw",
+  "version": "OpenClaw 2026.10.1 (e178c39)",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record openclaw",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 4
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/openclaw/tool-run.json"
+}

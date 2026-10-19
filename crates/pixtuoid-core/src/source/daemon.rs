@@ -139,8 +139,8 @@ pub struct PresenceTtl {
     /// Grace before busy → idle when no `before_agent_run`/`agent_end` arrives
     /// (a dropped `agent_end` must self-heal, never strand perpetual busy).
     pub(crate) busy_decay_ms: u64,
-    /// With no activity for this long the daemon is presumed DOWN (covers
-    /// SIGTERM, where neither `session_end` nor `gateway_stop` fires).
+    /// With no activity for this long the daemon is presumed DOWN (covers a
+    /// killed gateway, which fires neither `session_end` nor `gateway_stop`).
     pub(crate) presence_ttl_ms: u64,
     /// How long a `Down` presence lingers (drawn walking out) before it is
     /// REMOVED — generously past the renderer's elevator walk-out, so the leave
@@ -313,7 +313,7 @@ pub fn apply_presence(
 /// gateway A can never renew gateway B. Per instance: each in-flight RUN expires
 /// `ttl.busy_decay_ms` after ITS OWN last observation (so a dropped `agent_end`
 /// self-heals even while the gateway keeps serving other runs — never a latch),
-/// any live state → DOWN after `ttl.presence_ttl_ms` of total silence (SIGTERM),
+/// any live state → DOWN after `ttl.presence_ttl_ms` of total silence (a kill),
 /// and a `Down` entry is REMOVED after `ttl.down_remove_ms`. Expiring a run lease
 /// never clears `degraded` — a separate axis only a real
 /// `RunEnded`/`RunStarted`/`GatewayUp` heals.
@@ -941,7 +941,7 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Down,
-                "silence past the TTL ⇒ down (covers SIGTERM)"
+                "silence past the TTL ⇒ down (covers a kill)"
             );
             assert_eq!(sessions(&s, src), 0);
             assert_eq!(

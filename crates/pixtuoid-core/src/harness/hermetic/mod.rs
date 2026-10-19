@@ -1,6 +1,6 @@
 //! The hermetic tier's per-CLI facts: how each real CLI is installed, isolated,
-//! and driven against a scripted model (aimock) or as its live tier, and which
-//! hook events each scenario must fire. The registry already owns the binary (`version_probe`),
+//! and driven against a scripted model (aimock), with a daemon's live tier
+//! beside it, and which hook events each scenario must fire. The registry already owns the binary (`version_probe`),
 //! the home variable (`home_env`) and the pinned version (`verified_version`);
 //! a profile holds only what it doesn't.
 
@@ -151,8 +151,7 @@ pub struct Scenario {
     pub fixture: &'static str,
 }
 
-/// A daemon's run: its own live tier, driven against this build in place of
-/// scripted turns, since no turn shows a daemon's presence.
+/// A daemon's own live tier, driven against this build.
 #[derive(Debug)]
 pub struct Live {
     /// The tier, from the repository root. It takes its ports as arguments,
@@ -169,6 +168,25 @@ impl Live {
     }
 }
 
+/// A server a profile's CLI talks to, run inside each scenario's recorded run.
+#[derive(Debug)]
+pub struct Daemon {
+    /// Its start, after the CLI's binary.
+    pub start: &'static [&'static str],
+    /// What exits 0 once it serves, after the CLI's binary.
+    pub ready: &'static [&'static str],
+}
+
+impl Daemon {
+    /// Why a leg on `windows` runs no daemon, if it runs none.
+    pub fn not_run_on(windows: bool) -> Option<&'static str> {
+        windows.then_some("the recorder stops its daemon by a Unix signal")
+    }
+}
+
+/// The port a [`Daemon`] listens on, picked free by the orchestrator.
+pub const DAEMON_PORT_PLACEHOLDER: &str = "{daemon_port}";
+
 /// A live tier's exit when a prerequisite is missing, which no run of the build
 /// under test caused.
 pub const LIVE_PREREQUISITE: i32 = 2;
@@ -184,7 +202,8 @@ pub struct ConfigFile {
     pub home: &'static str,
     /// The file's path under that home.
     pub path: &'static str,
-    /// Its contents; `{port}`, `{key}` and [`WORKSPACE_PLACEHOLDER`] expand.
+    /// Its contents; `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and
+    /// [`WORKSPACE_PLACEHOLDER`] expand.
     pub template: &'static str,
 }
 
@@ -197,8 +216,8 @@ pub struct Profile {
     pub package: Package,
     /// The headless invocation; `{prompt}` expands (the recorder's own rule).
     pub invocation: &'static [&'static str],
-    /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}` and
-    /// `{key}` expand.
+    /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
+    /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
     pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
     pub(crate) homes: &'static [&'static str],
@@ -216,10 +235,10 @@ pub struct Profile {
     pub scenarios: &'static [Scenario],
     /// Placeholders the scenario scripts spell, each the platform's value.
     pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
-    /// Registered hooks no scenario expects yet. Shrink-only: a run that fires
-    /// one is Stale (`verify::verify_source`).
+    /// Hooks its install forwards that no scenario expects yet. Shrink-only: a
+    /// run that fires one is Stale (`verify::verify_source`).
     pub not_yet: &'static [&'static str],
-    /// The hook event a captured payload is, in `registers()` terms.
+    /// The hook event a captured payload is, as its install names it.
     pub(crate) event_name: fn(&Value) -> Option<Cow<'_, str>>,
     /// Fields a decoder reads in a committed capture that no scenario carries
     /// yet, as `(kind, path)` the field census names them. Shrink-only: a run
@@ -232,8 +251,10 @@ pub struct Profile {
     /// waits on the turn rather than the note. Shrink-only: a run in which
     /// aimock saw one is Stale.
     pub(crate) result_unseen: bool,
-    /// Its live tier, run in place of `scenarios`, which it has none of.
+    /// Its live tier, run beside `scenarios`.
     pub live: Option<Live>,
+    /// The server its CLI talks to.
+    pub daemon: Option<Daemon>,
 }
 
 impl Profile {
@@ -510,6 +531,7 @@ pub const PROFILES: &[Profile] = &[
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     Profile {
         source: "codex",
@@ -612,6 +634,7 @@ sandbox = "unelevated"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // opencode's cites are at v2.0.28, the release that added the system
     // config below.
@@ -703,6 +726,7 @@ sandbox = "unelevated"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
     Profile {
@@ -786,6 +810,7 @@ sandbox = "unelevated"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.0.1`.
     Profile {
@@ -832,6 +857,7 @@ sandbox = "unelevated"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
     // nearest 1.0.25: the repo tags no release.
@@ -942,6 +968,7 @@ sandbox = "unelevated"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.39.0`.
     Profile {
@@ -1015,6 +1042,7 @@ model = "deepseek-v4-flash"
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // copilot is closed source: its cites are docs.github.com,
     // `github/copilot-cli` and the `@github/copilot-<platform>@1.0.98` binaries.
@@ -1102,6 +1130,7 @@ model = "deepseek-v4-flash"
         children_inherit_cwd: true,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // omp's cites are `can1357/oh-my-pi` at `v18.12.1`, `src/` its
     // `packages/coding-agent/src/`.
@@ -1210,6 +1239,7 @@ async:
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // hermes's cites are `NousResearch/hermes-agent` at `v0.22.2`.
     Profile {
@@ -1289,6 +1319,7 @@ telemetry:
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
+        daemon: None,
     },
     // agy is closed source: its cites are its installer,
     // antigravity.google/cli/install.sh, and the agy 1.4.2 binary.
@@ -1348,12 +1379,20 @@ telemetry:
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
         result_unseen: true,
         live: None,
+        daemon: None,
     },
     // openclaw's cites are `openclaw/openclaw` at `v2026.10.1`.
     Profile {
         source: "openclaw",
         package: Package::Npm("openclaw"),
-        invocation: &["openclaw"],
+        invocation: &[
+            "openclaw",
+            "agent",
+            "--session-id",
+            "hermetic",
+            "-m",
+            "{prompt}",
+        ],
         // Its automatic update checks, and the daily request each sends
         // (`docs/install/updating/automatic-updates.md:160-162`,
         // `docs/gateway/telemetry.md:11`).
@@ -1364,28 +1403,61 @@ telemetry:
             windows: &[],
         },
         ancestor_config: &[],
-        config: &[],
-        scenarios: &[],
+        // A local gateway on the run's daemon port, which every command dials
+        // (`docs/help/faq/gateway-ports-and-remote-mode.md:16`) and `gateway run`
+        // refuses without `gateway.mode`; a provider on the scripted model
+        // (`docs/gateway/config-tools/custom-providers.md`), its model the agents' default, and no separate utility model to title
+        // the session (`docs/gateway/config-agents/models.md:63-66`). The agent works
+        // in the run's workspace, not its state dir's, and writes no bootstrap
+        // files there (`docs/gateway/config-agents/workspace-and-bootstrap.md:12-22`, `:81-83`).
+        config: &[ConfigFile {
+            home: "HOME",
+            path: ".openclaw/openclaw.json",
+            template: r#"{
+  "gateway": { "mode": "local", "bind": "loopback", "port": {daemon_port} },
+  "models": { "providers": { "hermetic": {
+    "baseUrl": "http://127.0.0.1:{port}/v1",
+    "api": "openai-completions",
+    "apiKey": "{key}",
+    "models": [{ "id": "hermetic", "name": "hermetic" }]
+  } } },
+  "agents": { "defaults": {
+    "model": "hermetic/hermetic",
+    "utilityModel": "",
+    "workspace": "{workspace}",
+    "skipBootstrap": true
+  } }
+}
+"#,
+        }],
+        scenarios: &[Scenario {
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "gateway_start",
+                "session_start",
+                "before_agent_run",
+                "agent_end",
+                "gateway_stop",
+                "session_end",
+            ],
+            fixture: "fixtures/openclaw/tool-run-hermetic",
+        }],
         script_vars: &[],
-        // Owed to a gateway-backed `openclaw agent` turn: the live tier reads
-        // presence off the scene and captures no hook.
-        not_yet: &[
-            "gateway_start",
-            "gateway_stop",
-            "session_start",
-            "before_agent_run",
-            "model_call_ended",
-            "agent_end",
-            "session_end",
-        ],
-        event_name: |_| None,
-        not_yet_fields: &[],
+        not_yet: &[],
+        event_name: type_field,
+        // A failed model call's, which the plugin stamps from `model_call_ended`.
+        not_yet_fields: &[("hook:agent_end", "/errored")],
         children_inherit_cwd: false,
         result_unseen: false,
         live: Some(Live {
             script: "scripts/lib/tier-openclaw-multi.sh",
             // The script's own default count.
             ports: 4,
+        }),
+        daemon: Some(Daemon {
+            start: &["gateway", "run"],
+            ready: &["gateway", "health"],
         }),
     },
 ];
@@ -1418,11 +1490,20 @@ impl Profile {
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
 
+    /// Why a leg on `windows` doesn't run `s`, one of this profile's
+    /// scenarios, if it doesn't.
+    pub fn not_run_on(&self, s: &Scenario, windows: bool) -> Option<&'static str> {
+        self.daemon
+            .as_ref()
+            .and_then(|_| Daemon::not_run_on(windows))
+            .or_else(|| s.not_run_on(windows))
+    }
+
     /// Whether a leg on `windows` runs any of it, and so reports it.
     pub fn runs_on(&self, windows: bool) -> bool {
         self.scenarios
             .iter()
-            .any(|s| s.not_run_on(windows).is_none())
+            .any(|s| self.not_run_on(s, windows).is_none())
             || self
                 .live
                 .as_ref()
@@ -1439,7 +1520,7 @@ impl Scenario {
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
-    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
+    fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
             Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
                 Some("its TUI paints nothing under ConPTY")
@@ -1493,17 +1574,23 @@ mod tests {
                     p.source,
                     script.display()
                 );
+                let heard = p.descriptor().hook().is_some() || p.descriptor().is_daemon();
                 assert_eq!(
                     s.expects.is_empty(),
-                    p.descriptor().hook().is_none(),
+                    !heard,
                     "{}: a scenario expects hooks if and only if pixtuoid hears the CLI's",
                     p.source
                 );
             }
-            assert_eq!(
-                p.scenarios.is_empty(),
-                p.live.is_some(),
-                "{}: a profile runs scenarios or a live tier, exactly one",
+            assert!(
+                !p.scenarios.is_empty(),
+                "{}: a profile runs scenarios",
+                p.source
+            );
+            assert!(
+                !p.descriptor().is_daemon()
+                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
+                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
                 p.source
             );
         }
@@ -1525,12 +1612,6 @@ mod tests {
             assert!(
                 script.contains(&format!("exit {LIVE_PREREQUISITE}")),
                 "{}: no prerequisite exit",
-                p.source
-            );
-            assert!(
-                p.env.iter().all(|(_, v)| !v.contains("{port}"))
-                    && p.config.iter().all(|c| !c.template.contains("{port}")),
-                "{}: no model runs, so `{{port}}` names nothing",
                 p.source
             );
             let default = script
