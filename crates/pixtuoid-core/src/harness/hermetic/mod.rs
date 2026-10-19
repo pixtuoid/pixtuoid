@@ -754,11 +754,7 @@ pub const PROFILES: &[Profile] = &[
             // (`CopilotKit/aimock` `src/messages.ts:413-421` at v1.45.1).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
-        not_yet_literals: &[
-            "ultra_effort_enter",
-            "ultra_effort_exit",
-            "ultrathink_effort",
-        ],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1580,7 +1576,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.resume", "session.task_complete", "subagent.failed"],
+        not_yet_literals: &["session.task_complete", "subagent.failed"],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
