@@ -24,6 +24,12 @@ const SETTLE: Duration = Duration::from_secs(3);
 /// given up: an unrecognised dialog stalls a run, and its key is never guessed.
 const STALL: Duration = Duration::from_secs(20);
 
+/// `tui_drive`'s exit when it gave up on a run it could not finish.
+pub const GAVE_UP: i32 = 3;
+/// `tui_drive`'s exit when it gave up on a submitted turn that raised no gate
+/// it knows to refuse: a verdict on the CLI, not a run that could not happen.
+pub(crate) const UNREFUSED: i32 = 4;
+
 /// A key the driver writes to the pty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -194,6 +200,14 @@ impl<'a> Driver<'a> {
                 Action::Quit(self.tui.quit)
             }
             _ => Action::Wait,
+        }
+    }
+
+    /// What `tui_drive` exits with if it gives up now.
+    pub fn gave_up(&self) -> i32 {
+        match self.phase {
+            Phase::Submitted { .. } if !self.refused => UNREFUSED,
+            _ => GAVE_UP,
         }
     }
 
@@ -474,6 +488,25 @@ mod tests {
                 Action::Fail("the screen stood still with the turn unfinished")
             );
         }
+    }
+
+    #[test]
+    fn a_give_up_after_the_prompt_with_no_gate_refused_is_unrefused() {
+        let t0 = Instant::now();
+        let mut d = driver(t0);
+        assert_eq!(d.gave_up(), GAVE_UP, "the CLI never booted");
+        submitted(&mut d, t0);
+        d.step(DONE, t0);
+        assert_eq!(
+            d.step(DONE, t0 + STALL),
+            Action::Fail("the screen stood still with the turn unfinished")
+        );
+        assert_eq!(d.gave_up(), UNREFUSED, "the turn ran with no gate");
+        let mut d = driver(t0);
+        submitted(&mut d, t0);
+        d.step(GATE, t0);
+        assert_eq!(d.step(GATE, t0 + dwell()), Action::Keys(&[Key::Esc]));
+        assert_eq!(d.gave_up(), GAVE_UP, "its gate was refused");
     }
 
     #[test]
