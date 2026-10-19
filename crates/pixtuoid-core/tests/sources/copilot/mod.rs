@@ -3,6 +3,7 @@
 //! end for the call. Each is one call, and each resolves its wait.
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
+use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::ActivityState;
 
 fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
@@ -62,8 +63,8 @@ fn an_esc_at_the_prompt_resolves_its_wait() {
     assert_the_refusal_resolves_its_wait("Esc cancel", &d);
 }
 
-/// A child whose request errs, recorded: `subagent.failed` walks it out, and
-/// its parent's failed dispatch ends Delegating.
+/// A child whose request errs, recorded: `subagent.failed` ends it before its
+/// parent's failed dispatch could drain it, and the parent stops delegating.
 #[test]
 fn a_failed_child_leaves_and_its_parent_stops_delegating() {
     let t = super::captures::transcript_in(
@@ -82,7 +83,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
         .events
         .iter()
         .find_map(|e| match e {
-            pixtuoid_core::source::AgentEvent::SessionStart {
+            AgentEvent::SessionStart {
                 agent_id,
                 parent_id: Some(parent),
                 ..
@@ -91,6 +92,16 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
         })
         .expect("the recording's child");
     assert!(d.reaches.contains(&(child.1, Reach::Delegating)));
+    let at = |end: &dyn Fn(&AgentEvent) -> bool| d.events.iter().position(end);
+    let failed =
+        at(&|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child.0));
+    let drained = at(
+        &|e| matches!(e, AgentEvent::ActivityEnd { agent_id, tool_use_id: Some(_) } if *agent_id == child.1),
+    );
+    assert!(
+        failed.is_some_and(|f| drained.is_none_or(|d| f < d)),
+        "the child's own failure never ended it"
+    );
     assert!(
         d.scene
             .agents
