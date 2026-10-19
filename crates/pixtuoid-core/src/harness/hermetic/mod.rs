@@ -159,19 +159,6 @@ impl Shape {
         }
     }
 
-    /// Whether its turn ends only once the TUI driver refused its dialog;
-    /// another's ends once the screen settles.
-    pub(crate) const fn refuses_a_gate(self) -> bool {
-        match self {
-            Self::Permission => true,
-            Self::ToolRun
-            | Self::Subagent
-            | Self::ModelError
-            | Self::ChildError
-            | Self::Succession => false,
-        }
-    }
-
     /// Whether its turn asks the scripted model anything: a succession's
     /// command runs in the CLI alone.
     pub(crate) const fn asks_the_model(self) -> bool {
@@ -225,6 +212,8 @@ pub struct Turn {
     /// The prompt of a second headless turn, resuming this one's session in
     /// the same sandbox and workspace once its CLI exited.
     pub resume: Option<&'static str>,
+    /// How a TUI run answers its dialog.
+    pub answer: tui::Answer,
 }
 
 impl Turn {
@@ -233,6 +222,7 @@ impl Turn {
         args: &[],
         prompt: None,
         resume: None,
+        answer: tui::Answer::Deny,
     };
 }
 
@@ -768,6 +758,7 @@ pub const PROFILES: &[Profile] = &[
                     args: &["--effort", "ultracode"],
                     prompt: Some("ultrathink: read NOTE.txt."),
                     resume: Some("Say done."),
+                    ..Turn::PROFILE
                 },
             },
             Scenario {
@@ -1606,9 +1597,8 @@ model = "deepseek-v4-flash"
                 expects: &[],
                 fixture: "fixtures/copilot/resume-hermetic",
                 turn: Turn {
-                    args: &[],
-                    prompt: None,
                     resume: Some("Say done."),
+                    ..Turn::PROFILE
                 },
             },
             Scenario {
@@ -1779,9 +1769,9 @@ startup:
                 expects: &["session_start", "session_switch", "session_shutdown"],
                 fixture: "omp/fixtures/new-session-hermetic",
                 turn: Turn {
-                    args: &[],
                     prompt: Some("/new"),
-                    resume: None,
+                    answer: tui::Answer::Settle,
+                    ..Turn::PROFILE
                 },
             },
         ],
