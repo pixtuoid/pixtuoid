@@ -1,5 +1,5 @@
 //! Antigravity CLI hook install target — the GLOBAL `~/.gemini/config/hooks.json`
-//! (`HOOKS_PAGE`, "Managing hooks in Antigravity CLI").
+//! (antigravity.google/docs/hooks.md, "Managing hooks in Antigravity CLI").
 //!
 //! Its top-level keys are hook NAMES, so pixtuoid's whole set is the one
 //! [`HOOK_NAME`] key: an install sets it, an uninstall removes it, and no other
@@ -15,12 +15,8 @@ use crate::install::hook_cmd::HOOK_EVENT_FLAG;
 use crate::install::io;
 use crate::install::merge;
 use crate::install::target::MergeOutcome;
-#[cfg(feature = "upstream")]
-use crate::install::target::UNDOCUMENTED_HOOK;
 use crate::install::verify::{SchemaParse, ShimRef, assemble, shell_shim_ref};
 use pixtuoid_core::source::antigravity::{CLI_APP_DATA_DIR, SOURCE_NAME, gemini_dir};
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Finding, Read, Watch, When};
 
 /// The hook name pixtuoid's set lives under.
 pub(crate) const HOOK_NAME: &str = "pixtuoid";
@@ -34,20 +30,6 @@ pub(crate) const AG_EVENTS: &[(&str, bool)] = &[
     ("PostToolUse", true),
     ("Stop", false),
 ];
-
-#[cfg(feature = "upstream")]
-pub(crate) const UPSTREAM: &[Watch] = &[Watch {
-    id: "antigravity.hook_events",
-    ours: || AG_EVENTS.iter().map(|&(name, _)| name).collect(),
-    docs: &[pixtuoid_core::source::antigravity::HOOKS_PAGE],
-    read: Read::MdTable {
-        header: "Event",
-        under: "Supported events",
-    },
-    when: When::Vanishes,
-    finding: Finding::Breaking(UNDOCUMENTED_HOOK),
-    siblings: None,
-}];
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     if pixtuoid_core::platform::user_home_opt().is_none() {
@@ -154,8 +136,8 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
             mislabelled.join(", ")
         ));
     }
-    // agy skips a hook switched off by `"enabled": false` (`HOOKS_PAGE`, "Hook
-    // definition fields").
+    // agy skips a hook switched off by `"enabled": false` (antigravity.google/docs/hooks.md,
+    // "Hook definition fields").
     if set.get("enabled") == Some(&Value::Bool(false)) {
         extra.push(format!(
             "the `{HOOK_NAME}` hook is disabled (`\"enabled\": false`)"

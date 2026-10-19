@@ -45,10 +45,9 @@ examples).
   timing-dependent (boot-then-write vs write-then-boot); each is guarded,
   guarded elsewhere, or exempt with its reason (`emit_first_sight`'s second
   caller left the first-sight gate dead).
-- **Wire format** — a decoder or drift watch vs the recorded upstream
-  shape; every name a decoder reads owes a drift watch, a breadcrumb, or an
-  adjudicated `EXEMPT` row (`drift_watch`'s census); `just drift-watch`
-  runs the watches.
+- **Wire format** — a decoder vs the recorded upstream shape; every literal a
+  decoder reads is in a scenario's fixture, owed by its profile (`not_yet*`)
+  or exempt with its reason (`hermetic::literals`'s census).
 - **Manifest bridge** — `site/src/*.json` and generated schemas vs their Rust
   source of truth.
 - **Unwired additions** — every new field/flag/parameter/asset/gate has a live

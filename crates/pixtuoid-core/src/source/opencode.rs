@@ -28,8 +28,6 @@ use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{Doc, Finding, Read, Release, Repo, Watch, When};
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
@@ -53,8 +51,9 @@ const DISPATCH_TOOL: &str = "subagent";
 /// The event types this decoder turns into events. Pinned to the arms below
 /// by `every_exported_set_is_exactly_its_dispatch_arms`, and to the plugin's
 /// `FORWARD` set by `the_plugin_forwards_exactly_what_the_decoder_reads`.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_EVENTS: &[&str] = &[
+#[cfg(any(test, feature = "harness"))]
+#[doc(hidden)]
+pub const DECODED_EVENTS: &[&str] = &[
     SESSION_CREATED,
     SESSION_DELETED,
     EXECUTION_STARTED,
@@ -71,7 +70,8 @@ pub(crate) const DECODED_EVENTS: &[&str] = &[
 /// `every_decoded_data_field_is_read`. The plugin's `allowlisted` copies these
 /// and nothing more, pinned by
 /// `the_plugin_copies_exactly_the_fields_the_decoder_reads`.
-#[cfg(any(test, feature = "upstream"))]
+#[cfg(any(test, feature = "harness"))]
+#[doc(hidden)]
 pub const DECODED_DATA_FIELDS: &[&str] = &[
     "sessionID",
     "parentID",
@@ -83,52 +83,9 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
     "source.id",
 ];
 
-/// Session events are declared in `session-event.ts`'s inventory, permission
-/// events in `permission.ts`'s, so the union is the document.
-#[cfg(any(test, feature = "upstream"))]
-const EVENT_DECLARATIONS: &[Doc] = &[
-    REPO.doc(
-        "packages/schema/src/session-event.ts",
-        r"(?m)^export const Definitions = Event\.inventory\(",
-        "the session `Definitions` inventory",
-    ),
-    REPO.doc(
-        "packages/schema/src/permission.ts",
-        r"(?m)^export const Event = \{",
-        "the permission `Event` inventory",
-    ),
-];
-
-/// Its GitHub `releases/latest` is still the v1 line; v2 installs from npm
-/// (`services/www/src/docs/content/index.mdx:16`, v2.0.27).
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const REPO: Repo = Repo {
-    name: "anomalyco/opencode",
-    release: Release::Npm {
-        package: "@opencode/cli",
-        tag_prefix: "v",
-    },
-};
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[Watch {
-    id: "opencode.hook_events",
-    ours: || DECODED_EVENTS.to_vec(),
-    docs: EVENT_DECLARATIONS,
-    // The declaration form: a bare quoted name also matches prose and tests.
-    read: Read::Each {
-        pattern: r#"type: "{name}""#,
-    },
-    when: When::Vanishes,
-    finding: Finding::Breaking(
-        "the plugin subscribes to an event opencode never fires (no sprite)",
-    ),
-    siblings: None,
-}];
-
 /// Decode one opencode plugin envelope (already identified by
 /// `_pixtuoid_source == "opencode"`). An unmapped `type` is a benign skip: the
-/// forward filter lives in the plugin, and drift is `UPSTREAM`'s to catch.
+/// forward filter lives in the plugin.
 ///
 /// # Errors
 ///

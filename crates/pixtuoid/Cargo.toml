@@ -56,17 +56,6 @@ anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 which              = "8"
-regex              = { workspace = true, optional = true }
-# `printing` for the span a reader slices an arm's source by.
-syn                = { workspace = true, optional = true, features = ["printing"] }
-# A reader slices the source a syntax node spans.
-proc-macro2        = { workspace = true, optional = true, features = ["span-locations"] }
-oxc_allocator      = { workspace = true, optional = true }
-oxc_ast            = { workspace = true, optional = true }
-oxc_ast_visit      = { workspace = true, optional = true }
-oxc_parser         = { workspace = true, optional = true }
-oxc_span           = { workspace = true, optional = true }
-pulldown-cmark     = { workspace = true, optional = true }
 # clock feature gives us Local::now() w/ system timezone for the wall clock.
 chrono             = { workspace = true, features = ["clock"] }
 open               = "5"
@@ -117,20 +106,6 @@ default = ["audio", "portable"]
 portable = []
 # Ambient sound (config-OFF at runtime regardless; this gates the DEPENDENCY).
 audio = ["dep:rodio", "dep:rtrb"]
-# The `drift_watch` example's checker, with every source's upstream
-# declarations, and its tests; no shipped build enables it.
-upstream = [
-    "pixtuoid-core/upstream",
-    "dep:regex",
-    "dep:syn",
-    "dep:proc-macro2",
-    "dep:oxc_allocator",
-    "dep:oxc_ast",
-    "dep:oxc_ast_visit",
-    "dep:oxc_parser",
-    "dep:oxc_span",
-    "dep:pulldown-cmark",
-]
 
 # termios/select for `term::query_tty` (the truecolor and graphics probes),
 # O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.
@@ -178,8 +153,7 @@ windows-sys = { workspace = true, features = [
 [dev-dependencies]
 # `tests/wire_to_pixels.rs` drives real fixture bytes through the shared
 # `pixtuoid_core::harness` pipeline, which is behind core's dev-only feature.
-# `upstream`: the installers' parity tests read a source's declared watch.
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.19.0", features = ["harness", "upstream"] }
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.19.0", features = ["harness"] }
 tempfile = { workspace = true }
 temp-env = { workspace = true }
 # tests/text_coverage.rs parses the source of everything that renders text.
@@ -206,10 +180,6 @@ criterion  = { workspace = true }
 name = "snapshot"
 path = "examples/snapshot/main.rs"
 test = true
-
-[[example]]
-name = "drift_watch"
-required-features = ["upstream"]
 
 [package.metadata.deb]
 section = "utils"

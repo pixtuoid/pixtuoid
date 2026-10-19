@@ -604,13 +604,6 @@ pub(crate) fn subagent_fired(
 /// worse desk starvation than the gap. Fleet lifecycle rides the Subagent hooks.
 const DISPATCH_TOOL: &str = "Agent";
 
-#[cfg(any(test, feature = "upstream"))]
-/// The subagent-dispatch tool NAME we still recognise, which CC's docs watch
-/// reads. A FALLBACK, not the detector: dispatch is found semantically by
-/// `subagent_type` presence, so a rename degrades to a breadcrumb rather than a
-/// miss.
-pub(crate) const DECODED_DISPATCH_NAMES: &[&str] = &[DISPATCH_TOOL];
-
 /// The detail for one tool call. The subagent dispatch is detected SEMANTICALLY, by
 /// the PRESENCE of a `subagent_type` input field — presence, not value, so a renamed
 /// tool emitting `subagent_type: null` is still caught AND still breadcrumbs the
@@ -901,17 +894,15 @@ mod tests {
     }
     use serde_json::json;
 
-    /// The exported name IS the one the fallback matches, and it is only a
-    /// FALLBACK: `subagent_type` presence detects the dispatch on its own, so a
-    /// tool outside the set still becomes a Task when it carries the field.
+    /// The dispatch name is only a FALLBACK: `subagent_type` presence detects the
+    /// dispatch on its own, so a tool outside the name still becomes a Task when
+    /// it carries the field.
     #[test]
-    fn the_dispatch_name_set_is_exactly_what_the_fallback_matches() {
-        for name in DECODED_DISPATCH_NAMES {
-            assert!(matches!(
-                make_tool_detail("claude-code", name, None),
-                ToolDetail::Task
-            ));
-        }
+    fn the_dispatch_name_is_a_fallback_to_subagent_type_presence() {
+        assert!(matches!(
+            make_tool_detail("claude-code", DISPATCH_TOOL, None),
+            ToolDetail::Task
+        ));
         assert!(!matches!(
             make_tool_detail("claude-code", "Bash", None),
             ToolDetail::Task

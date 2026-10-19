@@ -5,8 +5,6 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::AgentEvent;
 use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{At, Doc, Finding, Read, Watch, When};
 
 #[cfg(feature = "native")]
 mod native;
@@ -15,44 +13,6 @@ pub use native::AntigravitySource;
 
 /// The Antigravity CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "antigravity";
-
-/// The installer's hook-set watch reads it too.
-#[cfg(any(test, feature = "upstream"))]
-pub const HOOKS_PAGE: Doc = Doc {
-    at: At::Url("https://antigravity.google/docs/hooks.md"),
-    anchor: r"(?m)^# Hooks",
-    owns: "the hooks page",
-};
-
-/// The hook payload fields the decoder reads. Its step lines have no fetchable
-/// schema: a renamed step breadcrumbs instead.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "antigravity.hook_common_fields",
-        ours: || vec!["conversationId", "transcriptPath", "workspacePaths"],
-        docs: &[HOOKS_PAGE],
-        read: Read::MdTable {
-            header: "Field",
-            under: "Common input fields",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("every agy hook decodes to an error or no cwd"),
-        siblings: None,
-    },
-    Watch {
-        id: "antigravity.hook_tool_fields",
-        ours: || vec!["stepIdx", "toolCall.args", "toolCall.name"],
-        docs: &[HOOKS_PAGE],
-        read: Read::MdTable {
-            header: "Field",
-            under: "PreToolUse",
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking("a tool call shows no name or never ends"),
-        siblings: None,
-    },
-];
 
 /// The CLI's app data dir, under [`gemini_dir`]: NOT `antigravity`, the App's,
 /// which shares the global hooks file but is not this source.

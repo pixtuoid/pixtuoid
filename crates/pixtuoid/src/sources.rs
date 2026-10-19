@@ -1268,8 +1268,6 @@ mod tests {
         presence_probe: || false,
         post_install_hint: None,
         host: None,
-        #[cfg(feature = "upstream")]
-        upstream: &[],
         registers: Vec::new,
         consumes: &[],
     };

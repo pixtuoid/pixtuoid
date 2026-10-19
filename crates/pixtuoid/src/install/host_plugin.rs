@@ -10,30 +10,6 @@ use serde_json::{Value, json};
 use crate::install::io;
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, assemble};
-#[cfg(feature = "upstream")]
-use pixtuoid_core::source::upstream::{Doc, Finding, Read, Watch, When};
-
-/// A premise of a host's plugin contract its installer relies on, each of
-/// `ours` in `pattern`'s `{name}`. Upstream rewording one is a reshape for a
-/// maintainer to re-verify, never a known break.
-#[cfg(feature = "upstream")]
-pub(crate) const fn premise(
-    id: &'static str,
-    ours: fn() -> Vec<&'static str>,
-    docs: &'static [Doc],
-    pattern: &'static str,
-    says: &'static str,
-) -> Watch {
-    Watch {
-        id,
-        ours,
-        docs,
-        read: Read::Each { pattern },
-        when: When::Vanishes,
-        finding: Finding::Review(says),
-        siblings: None,
-    }
-}
 
 /// The marketplace and the plugin share one name, so the plugin id is
 /// `pixtuoid@pixtuoid`.

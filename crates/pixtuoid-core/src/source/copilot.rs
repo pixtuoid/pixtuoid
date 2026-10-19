@@ -23,8 +23,6 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-#[cfg(any(test, feature = "upstream"))]
-use crate::source::upstream::{At, Doc, Finding, Read, Release, Repo, Watch, When};
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -111,109 +109,6 @@ const SUBAGENT_COMPLETED: &str = "subagent.completed";
 const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
-
-/// The `kind` values this decoder turns into events. Pinned to the arms by
-/// `the_decoded_kind_set_is_exactly_what_the_arms_match`.
-///
-/// Off shipped builds: only the drift watch and tests read it. The ARMS are what
-/// production dispatches on, and a second copy of the vocabulary must not be
-/// something the shipped crate can read and drift against.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_KINDS: &[&str] = &[
-    SESSION_START,
-    SESSION_RESUME,
-    TOOL_EXECUTION_START,
-    TOOL_EXECUTION_COMPLETE,
-    PERMISSION_REQUESTED,
-    PERMISSION_COMPLETED,
-    SUBAGENT_STARTED,
-    SUBAGENT_COMPLETED,
-    SUBAGENT_FAILED,
-    SESSION_TASK_COMPLETE,
-    SESSION_SHUTDOWN,
-];
-
-/// The payload fields `decode_copilot_line` / `extract_copilot_cwd` read.
-///
-/// `type` is excluded: it is the discriminator, watched as `DECODED_KINDS`.
-/// Pinned to the decoder's ACTUAL reads by
-/// `the_field_set_is_exactly_what_the_decoder_reads`, because a field the
-/// decoder starts reading without being added here is a dependency nothing
-/// watches — which is how `tokenCount` and `tokenDetails` came to be read and
-/// unwatched.
-///
-/// Off shipped builds: only the drift watch and tests read it.
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const DECODED_FIELDS: &[&str] = &[
-    "agentDisplayName",
-    "agentId",
-    "arguments",
-    "context",
-    "cwd",
-    "data",
-    "kind",
-    "model",
-    "permissionRequest",
-    "result",
-    "sessionId",
-    "tokenCount",
-    "tokenDetails",
-    "toolCallId",
-    "toolName",
-];
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const REPO: Repo = Repo {
-    name: "github/copilot-cli",
-    release: Release::GithubLatest,
-};
-
-/// Since 1.0.85 the npm packages carry no schema; the release's platform
-/// tarball does, which is where github/copilot-sdk's codegen reads it
-/// (`java/scripts/codegen/fetch-schemas.mjs`).
-#[cfg(any(test, feature = "upstream"))]
-const SESSION_EVENTS_SCHEMA: &[Doc] = &[Doc {
-    at: At::ReleaseAsset {
-        repo: &REPO,
-        asset: "github-copilot-{version}-linux-x64.tgz",
-        member: "package/schemas/session-events.schema.json",
-        sums: "SHA256SUMS.txt",
-    },
-    anchor: r#""SessionEvent"\s*:"#,
-    owns: "the `SessionEvent` union",
-}];
-
-#[cfg(any(test, feature = "upstream"))]
-pub(crate) const UPSTREAM: &[Watch] = &[
-    Watch {
-        id: "copilot.kinds",
-        ours: || DECODED_KINDS.to_vec(),
-        docs: SESSION_EVENTS_SCHEMA,
-        read: Read::JsonUnion {
-            def: "SessionEvent",
-            prop: Some("type"),
-        },
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the transcript still carries it, but the decoder maps it to nothing \
-             (no sprite, no activity)",
-        ),
-        // `session.*` is a product-wide bus a sibling ledger would just mirror.
-        siblings: None,
-    },
-    Watch {
-        id: "copilot.payload_fields",
-        ours: || DECODED_FIELDS.to_vec(),
-        docs: SESSION_EVENTS_SCHEMA,
-        read: Read::JsonKeys,
-        when: When::Vanishes,
-        finding: Finding::Breaking(
-            "the decoder reads None: a wrong register, no parent link, no tool \
-             label, or a permission that never gates",
-        ),
-        siblings: None,
-    },
-];
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
 /// ephemeral, or malformed shapes return `vec![]` and never panic — real files
@@ -439,14 +334,12 @@ fn copilot_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 mod tests {
     use super::*;
 
-    /// The exported set IS the arms. The arms dispatch on the SAME consts, so a
-    /// value cannot drift; this catches a member dropped from the set, or kept
-    /// after its arm went away. The discriminator is REACHING an arm, not
+    /// Each kind reaches an arm. The discriminator is REACHING an arm, not
     /// emitting an event — several arms legitimately decode a well-formed line
-    /// to nothing — so each kind is fed an EMPTY `data`, where every real arm
-    /// breadcrumbs a missing field and the catch-all stays silent.
+    /// to nothing — so a real arm breadcrumbs a missing field and the catch-all
+    /// stays silent.
     #[test]
-    fn the_decoded_kind_set_is_exactly_what_the_arms_match() {
+    fn each_kind_reaches_an_arm() {
         let path = "/p/11111111-2222-3333-4444-555555555555/events.jsonl";
         let drive = |kind: &str| {
             let line = serde_json::json!({
@@ -459,7 +352,19 @@ mod tests {
             });
             evs > 0 || logs.contains(crate::source::drift::TARGET)
         };
-        for kind in DECODED_KINDS {
+        for kind in [
+            SESSION_START,
+            SESSION_RESUME,
+            TOOL_EXECUTION_START,
+            TOOL_EXECUTION_COMPLETE,
+            PERMISSION_REQUESTED,
+            PERMISSION_COMPLETED,
+            SUBAGENT_STARTED,
+            SUBAGENT_COMPLETED,
+            SUBAGENT_FAILED,
+            SESSION_TASK_COMPLETE,
+            SESSION_SHUTDOWN,
+        ] {
             assert!(drive(kind), "{kind} must reach a real arm");
         }
         assert!(
@@ -1167,41 +1072,5 @@ mod tests {
                 "unset COPILOT_HOME → ~/.copilot fallback"
             );
         });
-    }
-
-    /// Every field the decoder reads by a LITERAL key is declared here — reads
-    /// through a variable (the `bucket()` totals: `input`, `cache_write`,
-    /// `output`) are outside the scan entirely. A literal read added without a
-    /// declaration fails this test; a helper-routed one does not.
-    #[test]
-    fn the_field_set_is_exactly_what_the_decoder_reads() {
-        let src = include_str!("copilot.rs");
-        let mut read: Vec<&str> = Vec::new();
-        for m in src.match_indices("str_at(") {
-            let rest = &src[m.0..];
-            if let Some(q) = rest.find('"')
-                && let Some(end) = rest[q + 1..].find('"')
-            {
-                read.push(&rest[q + 1..q + 1 + end]);
-            }
-        }
-        for pat in ["\t.get(\"", ".get(\""] {
-            for m in src.match_indices(pat) {
-                let rest = &src[m.0 + pat.len()..];
-                if let Some(end) = rest.find('"') {
-                    read.push(&rest[..end]);
-                }
-            }
-        }
-        // `type` is watched as DECODED_KINDS; a `/` marks a JSON pointer; the
-        // alphanumeric clause drops the scanner's own non-key artifacts.
-        read.retain(|f| {
-            *f != "type" && !f.contains('/') && f.chars().all(|c| c.is_ascii_alphanumeric())
-        });
-        read.sort_unstable();
-        read.dedup();
-        let mut declared = DECODED_FIELDS.to_vec();
-        declared.sort_unstable();
-        assert_eq!(read, declared, "decoder reads vs DECODED_FIELDS");
     }
 }
