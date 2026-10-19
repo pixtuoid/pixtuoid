@@ -3,54 +3,54 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     fresh_tokens: 19
 - ActivityStart:
-    agent_id: 9787675681600088739
-    tool_use_id: toolu_uW2zZnV8-ySh1Bv5
+    agent_id: 5550579193715776680
+    tool_use_id: toolu_N1lvdUR5EwfkRTE_
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ActivityEnd:
-    agent_id: 9787675681600088739
-    tool_use_id: toolu_uW2zZnV8-ySh1Bv5
+    agent_id: 5550579193715776680
+    tool_use_id: toolu_N1lvdUR5EwfkRTE_
 - SessionStart:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     source: claude-code
-    session_id: 34aa718b-edc4-4b21-8d19-a156c2550a11
+    session_id: 6a504bb0-ec1c-4a3d-82ff-7345321642f7
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     model: claude-opus-5-5
     effort: ~
 - Identity:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     source: claude-code
-    session_id: 34aa718b-edc4-4b21-8d19-a156c2550a11
+    session_id: 6a504bb0-ec1c-4a3d-82ff-7345321642f7
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 9787675681600088739
-    tool_use_id: toolu_uW2zZnV8-ySh1Bv5
+    agent_id: 5550579193715776680
+    tool_use_id: toolu_N1lvdUR5EwfkRTE_
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ModelInfo:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     model: ~
     effort: medium
 - Identity:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     source: claude-code
-    session_id: 34aa718b-edc4-4b21-8d19-a156c2550a11
+    session_id: 6a504bb0-ec1c-4a3d-82ff-7345321642f7
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     reason: permission
 - SessionEnd:
-    agent_id: 9787675681600088739
+    agent_id: 5550579193715776680
     as_child: false

@@ -462,6 +462,27 @@ fn judge(
         ));
         return Ok(());
     }
+    // A resumed turn completes as the first does. One that never ran had no
+    // session the first turn's wire named, which is pixtuoid's to name.
+    if scenario.run.resume.is_some() {
+        match &manifest.capture.resumed {
+            None => {
+                findings.push((
+                    Label::Fail,
+                    "the first turn's wire named no session to resume".into(),
+                ));
+                return Ok(());
+            }
+            Some(r) if r.exit_code != Some(0) => {
+                findings.push((
+                    Label::Blocked,
+                    format!("the turn resuming {} exited {:?}", r.session, r.exit_code),
+                ));
+                return Ok(());
+            }
+            Some(_) => {}
+        }
+    }
     if p.result_unseen && manifest.results_seen > 0 {
         findings.push((
             Label::Stale,
@@ -1026,6 +1047,7 @@ mod tests {
                 cli: "test".into(),
                 version: "test".into(),
                 exit_code: Some(0),
+                resumed: None,
             },
             aimock: "test".into(),
             requests: 2,

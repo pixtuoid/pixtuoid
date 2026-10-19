@@ -206,7 +206,13 @@ pub mod recorder_flag {
     pub const DAEMON: &str = "--daemon";
     /// One word of `Options::daemon`'s readiness probe.
     pub const DAEMON_READY: &str = "--daemon-ready";
+    /// One word of `Options::resume`, the invocation a second turn runs.
+    pub const RESUME: &str = "--resume";
 }
+
+/// The environment variable a recorder run takes its prompt from, in place of
+/// the shared one.
+pub const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 
 /// What only the recorder knows about a raw (`--out`) capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,6 +223,18 @@ pub struct CaptureRecord {
     pub cli: String,
     /// Its `--version`.
     pub version: String,
+    /// Its exit code; `None` when a signal ended it.
+    pub exit_code: Option<i32>,
+    /// The turn that resumed its session, for a run that had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed: Option<Resumed>,
+}
+
+/// A second turn, as the recorder ran it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resumed {
+    /// The session it resumed, as the first turn's own wire named it.
+    pub session: String,
     /// Its exit code; `None` when a signal ended it.
     pub exit_code: Option<i32>,
 }

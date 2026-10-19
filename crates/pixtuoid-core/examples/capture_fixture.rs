@@ -20,7 +20,7 @@ mod recorder {
     use std::time::{Duration, SystemTime};
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
-    use pixtuoid_core::source::{registry, resolved_source_root};
+    use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
     /// One prompt for every source, so captures stay comparable: reading the SAME
     /// file twice around a list forces both shapes the composed fixtures got wrong —
@@ -30,18 +30,20 @@ mod recorder {
     const DEFAULT_PROMPT: &str =
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest};
+    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, SESSION_PLACEHOLDER};
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
     use pixtuoid_core::harness::recorder_flag::{
-        CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
+        CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, RESUME, TEE, WITHIN,
+        WORKSPACE,
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, HOOK_PAYLOADS,
-        PROVENANCE, capture_base, capture_root, capture_workspace, capture_workspace_tail,
-        jsonl_files_under, required_version_probe, version_answer, wait_until,
+        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
+        PROMPT_ENV, PROVENANCE, Resumed, capture_base, capture_root, capture_workspace,
+        capture_workspace_tail, jsonl_files_under, required_version_probe, version_answer,
+        wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -114,6 +116,9 @@ mod recorder {
         prepare_root: Option<String>,
         /// A server the CLI talks to, run around the CLI's run.
         daemon: Option<DaemonCmd>,
+        /// A second turn's words, run once the first's CLI exited:
+        /// [`SESSION_PLACEHOLDER`] names the session the first turn's wire did.
+        resume: Vec<String>,
     }
 
     /// A [`DAEMON`]'s words, and its [`DAEMON_READY`] probe's: what exits 0
@@ -182,6 +187,7 @@ mod recorder {
                 }
                 DAEMON => daemon.start.push(take(&mut args, DAEMON)?),
                 DAEMON_READY => daemon.ready.push(take(&mut args, DAEMON_READY)?),
+                RESUME => options.resume.push(take(&mut args, RESUME)?),
                 ENV => {
                     let value = take(&mut args, ENV)?;
                     let (k, v) = value
@@ -279,7 +285,7 @@ mod recorder {
         let (source, scenario) = (args[0].clone(), args[1].clone());
         // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
         // `{prompt}` to nothing and record `"prompt": ""` as if it were a choice.
-        let prompt = nonempty_env("CAPTURE_PROMPT").unwrap_or_else(|| DEFAULT_PROMPT.to_string());
+        let prompt = nonempty_env(PROMPT_ENV).unwrap_or_else(|| DEFAULT_PROMPT.to_string());
         let cmd: Vec<String> = args[2..]
             .iter()
             .map(|a| a.replace("{prompt}", &prompt))
@@ -342,6 +348,44 @@ mod recorder {
             &options.env,
         )?
         .status()?;
+        let resumed = if options.resume.is_empty() {
+            None
+        } else {
+            tap.settle();
+            let born = root.as_deref().map_or_else(Vec::new, |r| {
+                born_after(
+                    &pixtuoid_core::harness::transcripts_under(&source, r),
+                    started,
+                )
+            });
+            match first_session(&source, &tap.payloads(), &born) {
+                Some(session) => {
+                    let turn: Vec<String> = options
+                        .resume
+                        .iter()
+                        .map(|w| w.replace(SESSION_PLACEHOLDER, &session))
+                        .collect();
+                    let exit = wired(
+                        &turn,
+                        &workspace,
+                        &wiring,
+                        descriptor.verified_version,
+                        &options.env,
+                    )?
+                    .status()?;
+                    Some(Resumed {
+                        session,
+                        exit_code: exit.code(),
+                    })
+                }
+                None => {
+                    eprintln!("the first turn's wire named no session to resume");
+                    None
+                }
+            }
+        };
+        let resume_failed =
+            !options.resume.is_empty() && resumed.as_ref().is_none_or(|r| r.exit_code != Some(0));
         drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
@@ -390,6 +434,7 @@ mod recorder {
                 cli,
                 version,
                 exit_code: status.code(),
+                resumed,
             };
             std::fs::write(
                 dest.join(CAPTURE_RECORD),
@@ -398,7 +443,10 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some() || !exited_as_scripted(&source, &scenario, status.code()) {
+            if incomplete.is_some()
+                || resume_failed
+                || !exited_as_scripted(&source, &scenario, status.code())
+            {
                 keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
@@ -420,7 +468,7 @@ mod recorder {
             &args[2..],
             &deidentified,
             &[
-                ("prompt", nonempty_env("CAPTURE_PROMPT")),
+                ("prompt", nonempty_env(PROMPT_ENV)),
                 ("seed", nonempty_env("CAPTURE_SEED")),
             ],
         )?;
@@ -549,6 +597,29 @@ mod recorder {
     /// What the harvest keeps of the transcripts `born` during the run, oldest
     /// first: every one in a sandbox, and only the newest in the operator's own
     /// root, where another session may be born during the run.
+    /// The root session the first turn's own wire names: the first its hook
+    /// payloads decode to, else the one its source derives from its first
+    /// transcript's path, as the watcher keys it.
+    fn first_session(source: &str, payloads: &[String], transcripts: &[PathBuf]) -> Option<String> {
+        Drive::hooks()
+            .lines(payloads)
+            .events
+            .into_iter()
+            .find_map(|e| match e {
+                AgentEvent::SessionStart {
+                    session_id,
+                    parent_id: None,
+                    ..
+                } => Some(session_id),
+                _ => None,
+            })
+            .or_else(|| {
+                transcripts
+                    .first()
+                    .map(|t| registry::id_deriver_for(source)(t))
+            })
+    }
+
     fn harvested(mut born: Vec<PathBuf>, sandboxed: bool) -> Vec<PathBuf> {
         if !sandboxed {
             born = born.split_off(born.len().saturating_sub(1));
@@ -1169,6 +1240,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
+                    resumed: None,
                 },
                 aimock: "1.43.0".into(),
                 requests: 3,

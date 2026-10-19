@@ -44,8 +44,9 @@ mod run {
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
-        capture_workspace_tail, recorder_flag, required_version_probe, version_answer, wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, PROMPT_ENV, capture_root,
+        capture_workspace, capture_workspace_tail, recorder_flag, required_version_probe,
+        version_answer, wait_until,
     };
     use pixtuoid_core::source::upstream::{self, Release};
     use semver::Version;
@@ -1761,8 +1762,11 @@ mod run {
             Ok(sandbox.scene.accepting())
         })?;
 
-        let recorder = sandbox
-            .command(&built.recorder)
+        let mut recorder = sandbox.command(&built.recorder);
+        if let Some(prompt) = scenario.run.prompt {
+            recorder.env(PROMPT_ENV, prompt);
+        }
+        let recorder = recorder
             .args(recorder_args(
                 &RecorderRun {
                     out: dir,
@@ -1942,11 +1946,20 @@ mod run {
                 }
             }
         }
+        if let (Some(turn), Some(resume)) = (&scenario.run.resume, p.resume) {
+            let words = resume[1..]
+                .iter()
+                .map(|w| w.replace("{prompt}", turn.prompt).into());
+            for word in run.launch.argv().into_iter().chain(words) {
+                args.extend([recorder_flag::RESUME.into(), word]);
+            }
+        }
         args.extend([p.source, scenario.name].map(OsString::from));
         match scenario.surface {
             Surface::Headless => {
                 args.extend(run.launch.argv());
                 args.extend(p.invocation[1..].iter().map(OsString::from));
+                args.extend(scenario.run.args.iter().map(OsString::from));
             }
             Surface::Tui(tui) => {
                 args.push(run.driver.into());
@@ -2898,6 +2911,7 @@ mod run {
                 surface,
                 expects: &[],
                 fixture,
+                run: hermetic::Run::PROFILE,
             };
             let tui_first = [
                 scenario(tui.surface, "tui"),
