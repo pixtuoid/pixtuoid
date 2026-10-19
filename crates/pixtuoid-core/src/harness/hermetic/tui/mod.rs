@@ -70,7 +70,7 @@ pub(crate) struct Composer {
     pub(crate) corners: Option<(char, char)>,
 }
 
-/// A CLI's interactive facts: the data the driver reads, one row per CLI.
+/// A CLI's interactive facts, one row per CLI.
 #[derive(Debug)]
 pub struct Tui {
     /// The interactive launch's arguments after the CLI's binary, mode flags
@@ -82,6 +82,7 @@ pub struct Tui {
     pub(crate) gates: &'static [Gate],
     /// What ends the session the way a user would, so its end hook fires.
     pub(crate) quit: &'static [Key],
+    pub(crate) renders_under_conpty: bool,
 }
 
 impl Tui {

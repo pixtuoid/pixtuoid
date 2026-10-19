@@ -189,7 +189,7 @@ jobs:
           sign-commits: true
           commit-message: ${{ matrix.title }}
           title: ${{ matrix.title }}
-          body: "${{ matrix.source }}'s latest release passed every hermetic scenario on every OS, re-recorded here (`hermetic-nightly.yml`). A session reads the whole diff, fixtures included, then queues it."
+          body: "${{ matrix.source }}'s latest release passed every hermetic scenario each OS runs, re-recorded here (`hermetic-nightly.yml`). A session reads the whole diff, fixtures included, then queues it."
 
   file:
     name: file the hermetic report

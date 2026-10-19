@@ -356,6 +356,7 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::from_millis(400),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
 };
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
@@ -375,6 +376,9 @@ const GROK_TUI: tui::Tui = tui::Tui {
     // `/exit` is `/quit`'s alias
     // (`crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md:71-73`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    // It clears the alternate screen and paints nothing more (`hermetic.yml`'s
+    // Windows leg, run 39177894288's `grok/permission/tui.log`).
+    renders_under_conpty: false,
 };
 
 /// hermes's classic REPL, where a dangerous terminal command waits on the
@@ -394,6 +398,7 @@ const HERMES_TUI: tui::Tui = tui::Tui {
         dwell: std::time::Duration::ZERO,
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
 };
 
 /// The profiled CLIs.
@@ -1346,6 +1351,16 @@ impl Scenario {
         scripts_dir()
             .join(source)
             .join(format!("{}.json", self.shape.name()))
+    }
+
+    /// Why a leg on `windows` doesn't run it, if it doesn't.
+    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
+        match self.surface {
+            Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
+                Some("its TUI paints nothing under ConPTY")
+            }
+            _ => None,
+        }
     }
 }
 
