@@ -69,8 +69,9 @@ enum Tier {
 }
 
 impl Tier {
-    /// The typing stem's gain at this tier.
-    const fn typing_gain(self) -> f32 {
+    /// How much typing this tier holds: the scale on
+    /// [`mixer::TypingScheduler`]'s burst rate.
+    const fn typing_level(self) -> f32 {
         match self {
             Tier::Empty => 0.0,
             Tier::Moderate => 0.50,
@@ -182,7 +183,7 @@ pub fn stem_levels(counts: &StateCounts, precipitation: f32) -> StemLevels {
     let t = tier(counts);
     StemLevels {
         rain: RAIN_GAIN * precipitation.clamp(0.0, 1.0),
-        typing: t.typing_gain(),
+        typing: t.typing_level(),
     }
 }
 
@@ -205,15 +206,15 @@ mod tests {
         assert_eq!(stem_levels(&counts(0), 0.0).typing, 0.0);
         assert_eq!(
             stem_levels(&counts(1), 0.0).typing,
-            Tier::Moderate.typing_gain()
+            Tier::Moderate.typing_level()
         );
         assert_eq!(
             stem_levels(&counts(BUSY_ACTIVE_MIN - 1), 0.0).typing,
-            Tier::Moderate.typing_gain()
+            Tier::Moderate.typing_level()
         );
         assert_eq!(
             stem_levels(&counts(BUSY_ACTIVE_MIN), 0.0).typing,
-            Tier::Busy.typing_gain()
+            Tier::Busy.typing_level()
         );
     }
 
