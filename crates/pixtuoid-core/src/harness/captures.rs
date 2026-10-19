@@ -207,7 +207,7 @@ pub mod recorder_flag {
     /// One word of `Options::daemon`'s readiness probe.
     pub const DAEMON_READY: &str = "--daemon-ready";
     /// One word of `Options::resume`, the invocation a second turn runs.
-    pub const RESUME: &str = "--resume";
+    pub const RESUME: &str = "--resume-word";
 }
 
 /// What only the recorder knows about a raw (`--out`) capture.
@@ -241,8 +241,6 @@ impl CaptureRecord {
 /// A second turn, as the recorder ran it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Resumed {
-    /// The session it resumed, as the first turn's own wire named it.
-    pub session: String,
     /// Its exit code; `None` when a signal ended it.
     pub exit_code: Option<i32>,
 }

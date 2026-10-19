@@ -30,6 +30,7 @@ mod recorder {
     const DEFAULT_PROMPT: &str =
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
     const PROMPT_ENV: &str = "CAPTURE_PROMPT";
+    const SEED_ENV: &str = "CAPTURE_SEED";
 
     use pixtuoid_core::harness::hermetic::{
         self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
@@ -363,13 +364,7 @@ mod recorder {
         } else {
             tap.settle();
             let born = root.as_deref().map_or_else(Vec::new, |r| {
-                harvested(
-                    born_after(
-                        &pixtuoid_core::harness::transcripts_under(&source, r),
-                        started,
-                    ),
-                    options.within.is_some(),
-                )
+                born_transcripts(&source, r, started, options.within.is_some())
             });
             match first_session(&source, &tap.payloads(), &born) {
                 Some(session) => {
@@ -387,7 +382,6 @@ mod recorder {
                     )?
                     .status()?;
                     Some(Resumed {
-                        session,
                         exit_code: exit.code(),
                     })
                 }
@@ -421,9 +415,7 @@ mod recorder {
         // A source can be BOTH: CC's tool run is in the transcript while its
         // permission gate is a hook event, so the two are harvested together.
         if let Some(root) = root.as_deref() {
-            let candidates = pixtuoid_core::harness::transcripts_under(&source, root);
-            let born = born_after(&candidates, started);
-            for fresh in harvested(born, options.within.is_some()) {
+            for fresh in born_transcripts(&source, root, started, options.within.is_some()) {
                 wrote.push(place_transcript(&source, &fresh, &dest)?);
             }
         }
@@ -479,7 +471,7 @@ mod recorder {
             &deidentified,
             &[
                 ("prompt", nonempty_env(PROMPT_ENV)),
-                ("seed", nonempty_env("CAPTURE_SEED")),
+                ("seed", nonempty_env(SEED_ENV)),
             ],
         )?;
         for p in &wrote {
@@ -614,6 +606,23 @@ mod recorder {
         born
     }
 
+    /// What the harvest keeps of `source`'s transcripts under `root` born since
+    /// `started`.
+    fn born_transcripts(
+        source: &str,
+        root: &Path,
+        started: SystemTime,
+        sandboxed: bool,
+    ) -> Vec<PathBuf> {
+        harvested(
+            born_after(
+                &pixtuoid_core::harness::transcripts_under(source, root),
+                started,
+            ),
+            sandboxed,
+        )
+    }
+
     /// The root session the first turn's own wire names: the first its hook
     /// payloads decode to, else the one its source derives from its first
     /// transcript's path, as the watcher keys it.
@@ -729,7 +738,7 @@ mod recorder {
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
         std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n"))?;
-        if let Some(seed) = std::env::var_os("CAPTURE_SEED") {
+        if let Some(seed) = std::env::var_os(SEED_ENV) {
             copy_tree(Path::new(&seed), &ws)?;
         }
         init_repo(&ws)?;
@@ -1517,11 +1526,11 @@ mod recorder {
             let (o, _) = parse_options(args(&[
                 "--out",
                 "/o",
-                "--resume",
+                RESUME,
                 "claude",
+                RESUME,
                 "--resume",
-                "--resume",
-                "--resume",
+                RESUME,
                 "{session}",
                 "claude-code",
             ]))
@@ -1532,7 +1541,7 @@ mod recorder {
                 "a second turn's words, in order, a flag of the CLI's among them"
             );
             assert!(
-                parse_options(args(&["--resume", "claude", "claude-code"])).is_err(),
+                parse_options(args(&[RESUME, "claude", "claude-code"])).is_err(),
                 "a resumed turn outside a raw capture"
             );
             assert!(
@@ -2018,7 +2027,6 @@ mod recorder {
                 version: "1".into(),
                 exit_code,
                 resumed: resumed.map(|code| Resumed {
-                    session: "s".into(),
                     exit_code: Some(code),
                 }),
             };

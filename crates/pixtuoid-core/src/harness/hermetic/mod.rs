@@ -2157,8 +2157,6 @@ mod tests {
                     p.source,
                     s.name
                 );
-                // Only a headless invocation takes a scenario's args, and only
-                // a headless turn resumes.
                 assert!(
                     matches!(s.surface, Surface::Headless)
                         || (s.turn.args.is_empty() && s.turn.resume.is_none()),

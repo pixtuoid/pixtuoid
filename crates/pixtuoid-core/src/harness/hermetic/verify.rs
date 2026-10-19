@@ -2078,32 +2078,35 @@ mod tests {
     #[test]
     fn a_resumed_turn_passes_only_once_it_ran_and_exited_clean() {
         let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
-        let judged = |resumed: Option<crate::harness::Resumed>| {
+        let judged = |exit_code, resumed: Option<crate::harness::Resumed>| {
             let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "ultra-effort".into();
+                m.capture.exit_code = exit_code;
                 m.capture.resumed = resumed;
             });
             verify(d.path()).expect("verify")
         };
-        let resumed = |exit_code| {
-            Some(crate::harness::Resumed {
-                session: "s".into(),
-                exit_code,
-            })
-        };
-        let v = judged(resumed(Some(0)));
+        let resumed = |exit_code| Some(crate::harness::Resumed { exit_code });
+        let v = judged(Some(0), resumed(Some(0)));
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         assert!(has(
-            &judged(None),
+            &judged(Some(0), None),
             Label::Fail,
             "named no session to resume"
         ));
         assert!(has(
-            &judged(resumed(Some(1))),
+            &judged(Some(0), resumed(Some(1))),
             Label::Blocked,
             "resumed exit Some(1)"
         ));
+        let v = judged(Some(1), None);
+        assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
+        assert!(
+            !has(&v, Label::Fail, "named no session"),
+            "a first turn that never ran is the CLI's, not pixtuoid's: {:?}",
+            v.findings()
+        );
     }
 
     #[test]
