@@ -971,7 +971,6 @@ mod tests {
         assert!(matches!(ev, AgentEvent::ActivityStart { .. }), "got {ev:?}");
     }
 
-    /// A session that never calls a tool still names its focus pid.
     #[tokio::test]
     async fn handle_conn_stamps_a_tool_less_antigravity_session_s_pid() {
         use crate::source::decoder::EVENT_STAMP;
