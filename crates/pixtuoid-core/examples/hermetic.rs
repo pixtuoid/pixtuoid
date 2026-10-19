@@ -283,7 +283,7 @@ mod run {
             std::process::exit(2);
         }
         let tier = tier_dir()?;
-        // Every run of this build shares the tier's runs, shim and installs.
+        // Every invocation of this build shares the tier's runs, shim and installs.
         std::fs::create_dir_all(&tier)?;
         let _tier = hold_lock(&tier.join(TIER_LOCK))?;
         let runs = tier.join("runs");
@@ -1542,7 +1542,7 @@ mod run {
         aimock: Aimock,
     }
 
-    /// The file in the tier whose lock each run of the tier holds.
+    /// The file in the tier whose lock each invocation holds.
     const TIER_LOCK: &str = "hermetic.lock";
 
     /// A replay's own workspace root, removed when its run drops, waiting out

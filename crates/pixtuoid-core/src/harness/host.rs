@@ -141,7 +141,8 @@ pub fn owned_by_us(path: &Path) -> bool {
 
 /// `path`'s lock, held until the returned file drops. A fixed name in a shared
 /// directory is pre-plantable, so a link there is never followed, nothing is
-/// truncated, and a file another user owns is refused.
+/// truncated, and a file another user owns is refused. A new one is ours
+/// alone: whoever can open a file can lock it and stall every capture.
 ///
 /// # Errors
 ///
@@ -153,7 +154,7 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        open.custom_flags(libc::O_NOFOLLOW);
+        open.custom_flags(libc::O_NOFOLLOW).mode(0o600);
     }
     #[cfg(windows)]
     {
@@ -343,9 +344,32 @@ mod tests {
         let held = hold_lock(&path).expect("the lock");
         let other = std::fs::File::open(&path).expect("the lock file");
         assert!(other.try_lock().is_err(), "a second holder waits");
-        assert_eq!(std::fs::read_to_string(&path).expect("read"), "kept");
         drop(held);
         assert!(other.try_lock().is_ok());
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), "kept");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_lock_is_ours_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = d.path().join("the.lock");
+        drop(hold_lock(&path).expect("the lock"));
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    /// `/dev/null` is no link and anyone may open it, so only the owner check
+    /// refuses it.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_another_user_owns_is_refused() {
+        if rustix::process::getuid().is_root() {
+            return;
+        }
+        let refused = hold_lock(Path::new("/dev/null")).expect_err("root's");
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
     #[cfg(unix)]
