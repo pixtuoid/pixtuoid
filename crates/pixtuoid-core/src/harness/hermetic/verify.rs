@@ -1957,6 +1957,37 @@ mod tests {
     }
 
     #[test]
+    fn a_resumed_turn_passes_only_once_it_ran_and_exited_clean() {
+        let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+        let judged = |resumed: Option<crate::harness::Resumed>| {
+            let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
+            write_manifest(d.path(), "claude-code", |m| {
+                m.scenario = "ultra-effort".into();
+                m.capture.resumed = resumed;
+            });
+            verify(d.path()).expect("verify")
+        };
+        let resumed = |exit_code| {
+            Some(crate::harness::Resumed {
+                session: "s".into(),
+                exit_code,
+            })
+        };
+        let v = judged(resumed(Some(0)));
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        assert!(has(
+            &judged(None),
+            Label::Fail,
+            "named no session to resume"
+        ));
+        assert!(has(
+            &judged(resumed(Some(1))),
+            Label::Blocked,
+            "exited Some(1)"
+        ));
+    }
+
+    #[test]
     fn a_recorded_claude_code_tool_run_passes() {
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         let v = verify(d.path()).expect("verify");

@@ -2143,6 +2143,18 @@ mod tests {
     }
 
     #[test]
+    fn a_resumed_scenarios_profile_names_how_its_session_resumes() {
+        for p in PROFILES {
+            let resumes = p.scenarios.iter().any(|s| s.run.resume.is_some());
+            if let Some(words) = p.resume {
+                assert!(words.contains(&SESSION_PLACEHOLDER), "{}", p.source);
+                assert!(words.contains(&"{prompt}"), "{}", p.source);
+            }
+            assert!(!resumes || p.resume.is_some(), "{}: no resume", p.source);
+        }
+    }
+
+    #[test]
     fn every_profile_runs_its_registered_binary() {
         for p in PROFILES {
             let probe = p

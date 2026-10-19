@@ -2468,6 +2468,52 @@ mod run {
         }
 
         #[test]
+        fn a_resumed_scenario_hands_the_recorder_its_args_and_its_second_turn() {
+            let p = hermetic::profile("claude-code").expect("claude-code");
+            let scenario = p.scenario("ultra-effort").expect("the row");
+            let launch = Launch {
+                program: PathBuf::from("/cli/claude"),
+                args: Vec::new(),
+                env: Vec::new(),
+            };
+            let args = recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                },
+                p,
+                scenario,
+            );
+            let source = args.iter().position(|a| a == p.source).expect("the source");
+            let resumed: Vec<String> = args[..source]
+                .chunks(2)
+                .filter(|kv| kv[0] == recorder_flag::RESUME)
+                .map(|kv| kv[1].to_string_lossy().into_owned())
+                .collect();
+            let turn = scenario.run.resume.as_ref().expect("a second turn");
+            let want: Vec<String> = std::iter::once("/cli/claude".to_owned())
+                .chain(
+                    p.resume.expect("claude-code resumes")[1..]
+                        .iter()
+                        .map(|w| w.replace("{prompt}", turn.prompt)),
+                )
+                .collect();
+            assert_eq!(resumed, want);
+            assert!(resumed.iter().any(|w| w == hermetic::SESSION_PLACEHOLDER));
+            let first = &args[args.len() - scenario.run.args.len()..];
+            assert_eq!(
+                first, scenario.run.args,
+                "the first turn's args follow its invocation"
+            );
+        }
+
+        #[test]
         fn a_daemon_profile_hands_the_recorder_its_daemon_and_its_config_the_held_port() {
             let p = hermetic::profile("openclaw").expect("openclaw");
             let launch = Launch {

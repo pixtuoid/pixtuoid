@@ -1444,6 +1444,38 @@ mod recorder {
         }
 
         #[test]
+        fn the_resumed_session_is_the_one_the_first_turns_wire_names() {
+            let cc = sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+            let payloads: Vec<String> = std::fs::read_to_string(cc.join(HOOK_PAYLOADS))
+                .expect("payloads")
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            let transcript = pixtuoid_core::harness::transcript_in("claude-code", &cc)
+                .expect("the one transcript");
+            let named = first_session("claude-code", &payloads, &[]).expect("a hook-named session");
+            assert_eq!(
+                transcript.file_stem().and_then(|s| s.to_str()),
+                Some(named.as_str()),
+                "claude-code's hooks name the session its transcript keys"
+            );
+            // copilot fires no hooks; its session rides its transcript's path.
+            let cp = sources_root().join("fixtures/copilot/resume-hermetic");
+            let events =
+                pixtuoid_core::harness::transcript_in("copilot", &cp).expect("the one transcript");
+            let dir = events
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|n| n.to_str())
+                .expect("the session dir");
+            assert_eq!(
+                first_session("copilot", &[], std::slice::from_ref(&events)).as_deref(),
+                Some(dir)
+            );
+            assert_eq!(first_session("copilot", &[], &[]), None);
+        }
+
+        #[test]
         fn leading_option_pairs_are_options_and_the_rest_is_positional() {
             let args = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
             let ws = capture_workspace().expect("the workspace");
@@ -1472,6 +1504,21 @@ mod recorder {
             assert_eq!(o.within, Some(PathBuf::from("/w")));
             assert_eq!(o.env, [("A".to_string(), "b=c".to_string())]);
             assert_eq!(rest, args(&["codex", "tool-run", "codex"]));
+            let (o, _) = parse_options(args(&[
+                "--resume",
+                "claude",
+                "--resume",
+                "--resume",
+                "--resume",
+                "{session}",
+                "claude-code",
+            ]))
+            .expect("parse");
+            assert_eq!(
+                o.resume,
+                args(&["claude", "--resume", "{session}"]),
+                "a second turn's words, in order, a flag of the CLI's among them"
+            );
             assert!(
                 parse_options(args(&["--env", "NOEQUALS", "codex"])).is_err(),
                 "an env pair without its value"
