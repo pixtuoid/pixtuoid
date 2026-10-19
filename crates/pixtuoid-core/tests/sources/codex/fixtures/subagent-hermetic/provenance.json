@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "codex",
   "version": "codex-cli 0.163.0",
-  "captured": "2026-10-18",
+  "captured": "2026-10-19",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 251
+    "blanked": 247
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codex/subagent.json"
