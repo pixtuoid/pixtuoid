@@ -717,6 +717,24 @@ mod tests {
     /// Why a value an arm matches only to decode it to nothing needs no
     /// fixture: a rename breadcrumbs, and no state hangs on it.
     const IGNORE_ARM: &str = "an ignore arm: it decodes to nothing either way";
+    // The loss list the owner signed on 2026-10-19 ("全部签字"): a literal no
+    // scenario can reach, each for the reason its const names. A scenario that
+    // does reach one makes its row excuse nothing, which the census refuses.
+    const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
+    const LOSS_SIBLING: &str =
+        "loss list: a sibling of a name its scenario reaches on the same arm";
+    const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it; exec and the TUI write Paginated";
+    const LOSS_NO_EMITTER: &str =
+        "loss list: aimock emits no tool search, and codex gates the tool behind a feature";
+    const LOSS_CACHE_WRITE: &str = "loss list: aimock's usage carries no cache writes";
+    const LOSS_TOGGLE: &str =
+        "loss list: only a mid-session ultracode toggle sends it, which -p can't make";
+    const LOSS_INTERACTIVE: &str =
+        "loss list: only omp's interactive /new, /fork and /resume send it";
+    const LOSS_UNKNOWN: &str =
+        "loss list: no recorded agy transcript carries it, and its origin is unknown";
+    const LOSS_MODEL_SWITCH: &str =
+        "loss list: only a model switch or a changed model catalog sends it";
     /// Why a literal the tail scan reads needs no fixture.
     const TAIL_READ: &str = "read off the tail, outside the decode the strip probes, \
          so a fixture's line holds it blanked";
@@ -797,6 +815,28 @@ mod tests {
         item("omp/native.rs", "omp_recognize", PATH_AXIS),
         item("omp.rs", "KEYS", LABEL_DETAIL),
         item("reasonix.rs", "KEYS", LABEL_DETAIL),
+        literal("copilot.rs", "approved", LOSS_APPROVE),
+        literal("dsh.rs", "allowed-once", LOSS_APPROVE),
+        literal("dsh.rs", "subagent_fork", LOSS_SIBLING),
+        literal("reasonix.rs", "read_only_task", LOSS_SIBLING),
+        literal("reasonix.rs", "parallel_tasks", LOSS_SIBLING),
+        literal("reasonix.rs", "locate", LOSS_SIBLING),
+        literal("reasonix.rs", "research", LOSS_SIBLING),
+        literal("reasonix.rs", "review", LOSS_SIBLING),
+        literal("reasonix.rs", "security_review", LOSS_SIBLING),
+        literal("antigravity.rs", "ask_permission", LOSS_SIBLING),
+        literal("codex.rs", "patch_apply_end", LOSS_LEGACY),
+        literal("codex.rs", "web_search_end", LOSS_LEGACY),
+        literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
+        literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
+        literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
+        literal("claude_code.rs", "ultra_effort_exit", LOSS_TOGGLE),
+        literal("omp.rs", "previousSessionFile", LOSS_INTERACTIVE),
+        literal("antigravity.rs", "CONVERSATION_HISTORY", LOSS_UNKNOWN),
+        literal("grok.rs", "model_changed", LOSS_MODEL_SWITCH),
+        literal("grok.rs", "model_id", LOSS_MODEL_SWITCH),
+        literal("grok.rs", "reasoning_effort", LOSS_MODEL_SWITCH),
+        literal("grok.rs", "new_model_id", LOSS_MODEL_SWITCH),
     ];
 
     /// Each profile's scenario-fixture keys and values.
