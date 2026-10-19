@@ -2133,6 +2133,28 @@ mod tests {
     }
 
     #[test]
+    fn a_permission_script_calls_no_tool_after_its_refusal() {
+        // A retried tool raises a second dialog, which the TUI driver never refuses.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                for reply in script["fixtures"].as_array().expect("fixtures") {
+                    let after_a_result = reply["match"]["hasToolResult"] == true
+                        || reply["match"]["toolResultContains"].is_string();
+                    assert!(
+                        !(after_a_result && reply["response"]["toolCalls"].is_array()),
+                        "{}: a reply to the refused call calls a tool again",
+                        p.source
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_model_error_script_errs_and_calls_no_tool() {
         // A reply that answers the turn lets a sound run pass as a failed one.
         for p in PROFILES {
