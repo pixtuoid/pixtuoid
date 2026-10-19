@@ -305,7 +305,7 @@ impl Fields {
         }
         if run || !untyped {
             let values = self.values.entry(kind.clone()).or_default();
-            string_leaves(line, "", stamped, values);
+            string_leaves(line, "", values);
             self.by_kind.entry(kind).or_default().extend(leaves);
         }
     }
@@ -414,27 +414,26 @@ fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
 }
 
 /// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
-/// string that holds JSON read on under its own pointer, and a `stamped` hook
-/// envelope's shim stamps skipped.
-fn string_leaves(v: &Value, at: &str, stamped: bool, out: &mut BTreeSet<(String, String)>) {
+/// string that holds JSON read on under its own pointer. A shim stamp counts:
+/// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
+/// does not send it (antigravity).
+fn string_leaves(v: &Value, at: &str, out: &mut BTreeSet<(String, String)>) {
     match v {
         Value::Object(m) => {
             for (k, x) in m {
-                if !(stamped && is_shim_stamp(at, k)) {
-                    string_leaves(x, &child_pointer(at, k), stamped, out);
-                }
+                string_leaves(x, &child_pointer(at, k), out);
             }
         }
         Value::Array(a) => {
             for x in a {
-                string_leaves(x, &format!("{at}/*"), stamped, out);
+                string_leaves(x, &format!("{at}/*"), out);
             }
         }
         Value::String(s) if !s.is_empty() => {
             if s.starts_with(['{', '['])
                 && let Ok(inner) = serde_json::from_str::<Value>(s)
             {
-                string_leaves(&inner, at, false, out);
+                string_leaves(&inner, at, out);
             }
             out.insert((at.to_owned(), s.clone()));
         }

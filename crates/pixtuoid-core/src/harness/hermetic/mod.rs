@@ -1367,10 +1367,6 @@ telemetry:
         not_yet_fields: &[],
         not_yet_literals: &[
             "CONVERSATION_HISTORY",
-            "PostToolUse",
-            "PreToolUse",
-            "SessionStart",
-            "Stop",
             "USER_INPUT",
             "ask_permission",
             "ask_question",
