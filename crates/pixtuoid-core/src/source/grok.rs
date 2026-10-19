@@ -512,16 +512,19 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
             // longer available — undecoded, the flame shows the dead model
             // until the next `_meta.modelId`-bearing update corrects it.
             XAI_MODEL_AUTO_SWITCHED => {
-                let model = str_field("new_model_id")
-                    .filter(|s| !s.is_empty())
-                    .map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-                let Some(model) = model else {
+                let Some(model) = str_field("new_model_id") else {
                     crate::source::drift::missing_field(SOURCE_NAME, tag, "new_model_id");
                     return Ok(vec![]);
                 };
+                // Empty names no replacement, which upstream sends by design
+                // (`mvp_agent/session_setup.rs:1898-1899`, `acp_agent.rs:1058-1061`,
+                // `:1132-1135`, at main 2bdd1d6a).
+                if model.is_empty() {
+                    return Ok(vec![]);
+                }
                 Ok(vec![AgentEvent::ModelInfo {
                     agent_id,
-                    model: Some(model),
+                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
                     effort: None,
                 }])
             }
@@ -1397,6 +1400,23 @@ mod tests {
         assert!(
             only("model_id").is_empty(),
             "model_id alone must NOT satisfy the auto-switch arm"
+        );
+    }
+
+    #[test]
+    fn an_auto_switch_naming_no_replacement_is_silent_and_one_without_the_key_breadcrumbs() {
+        let decoded = |update: Value| {
+            let mut evs = Vec::new();
+            let logs = crate::test_capture::capture_logs(|| evs = decode_line(xai_line(update)));
+            (evs.is_empty(), logs.contains(crate::source::drift::TARGET))
+        };
+        assert_eq!(
+            decoded(json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED, "new_model_id": ""})),
+            (true, false)
+        );
+        assert_eq!(
+            decoded(json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED})),
+            (true, true)
         );
     }
 
