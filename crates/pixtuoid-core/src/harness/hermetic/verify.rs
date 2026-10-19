@@ -242,8 +242,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
         }
     }
     findings.extend(literal_census(
-        p,
-        p.not_yet_literals,
+        &literals::Owing::of(p),
         &literals::population()?,
         &scenario_reads(p, ran.into_iter())?,
         &carried,
@@ -254,27 +253,28 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
 
 /// The literal census over runs: each value a decoder's literal matches in
 /// the `committed` fixtures must arrive in some run at the same kind and
-/// pointer, and each key it names there in some run at all, unless `owed` or
-/// another of `p`'s owed lists names it; one of `owed` that the runs would
-/// keep once stripped (`kept`) is Stale.
+/// pointer, and each key it names there in some run at all, unless `owing`
+/// owes it; one of its `not_yet_literals` that the runs would keep once
+/// stripped (`kept`) is Stale.
 fn literal_census(
-    p: &Profile,
-    owed: &[&str],
+    owing: &literals::Owing<'_>,
     population: &BTreeSet<literals::Literal>,
     committed: &Fields,
     carried: &Fields,
     kept: &Fields,
 ) -> Vec<(Label, String)> {
-    let mine: Vec<&literals::Literal> = population.iter().filter(|l| l.is_of(p.source)).collect();
+    let mine: Vec<&literals::Literal> = population
+        .iter()
+        .filter(|l| l.is_of(owing.source))
+        .collect();
     let mut findings = Vec::new();
     for (kind, values) in &committed.values {
         let seen = carried.values.get(kind);
         for (at, value) in values {
-            for l in mine.iter().filter(|l| {
-                l.matches(value)
-                    && !owed.contains(&l.text.as_str())
-                    && !literals::owed_elsewhere(p.not_yet, p.not_yet_fields, &l.text)
-            }) {
+            for l in mine
+                .iter()
+                .filter(|l| l.matches(value) && !owing.owes(&l.text))
+            {
                 let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
                 if !arrived {
                     findings.push((
@@ -282,30 +282,30 @@ fn literal_census(
                         format!(
                             "{kind} {at}: `{}` ({}): a decoder reads it in a scenario fixture, \
                              and no run of {} carried it there",
-                            l.text, l.module, p.source
+                            l.text, l.module, owing.source
                         ),
                     ));
                 }
             }
         }
     }
-    let owes = |text: &str| {
-        owed.contains(&text) || literals::owed_elsewhere(p.not_yet, p.not_yet_fields, text)
-    };
     for l in mine.iter().filter(|l| l.how == literals::Match::Exact) {
-        if committed.keys.contains(&l.text) && !carried.keys.contains(&l.text) && !owes(&l.text) {
+        if committed.keys.contains(&l.text)
+            && !carried.keys.contains(&l.text)
+            && !owing.owes(&l.text)
+        {
             findings.push((
                 Label::Fail,
                 format!(
                     "`{}` ({}): a decoder reads this key in a scenario fixture, and no run of {} \
                      carried it",
-                    l.text, l.module, p.source
+                    l.text, l.module, owing.source
                 ),
             ));
         }
     }
     let held = kept.keys_and_values();
-    for owed in owed {
+    for owed in owing.literals {
         if mine
             .iter()
             .any(|l| l.text == *owed && held.iter().any(|s| l.matches(s)))
@@ -2379,8 +2379,10 @@ mod tests {
                 .expect("fixtures");
             let (carried, kept) = run_reads(source, shape, edit);
             let v = Verdict::new(literal_census(
-                p,
-                &[owed],
+                &literals::Owing {
+                    literals: &[owed],
+                    ..literals::Owing::of(p)
+                },
                 &population,
                 &committed,
                 &carried,

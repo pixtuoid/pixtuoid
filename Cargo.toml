@@ -125,7 +125,7 @@ crossterm          = "0.29"
 unicode-width      = "0.2"
 # Grapheme clusters, the unit ratatui's buffer writes a cell for.
 unicode-segmentation = "1"
-# Tests parse the source, so comments and strings never count.
+# Tests and the hermetic tier's literal census parse the source, so comments and strings never count.
 syn                = { version = "3", default-features = false, features = ["full", "parsing", "visit"] }
 proc-macro2        = { version = "1", default-features = false }
 clap               = { version = "4", features = ["derive"] }

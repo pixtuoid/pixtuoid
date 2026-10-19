@@ -1,9 +1,9 @@
 //! The literal census: every string a decoder compares, indexes, matches or
 //! holds in a const is one its source's scenario fixtures hold, one its profile
 //! owes (`not_yet_literals`, or its `not_yet` / `not_yet_fields`), or an
-//! exemption with its reason. `verify::verify_source` then needs each one a
-//! fixture holds to arrive in a run where the fixture had it, so a CLI that
-//! renamed a value fails though every field path still arrives.
+//! exemption with its reason. `verify::verify_source` then needs each value a
+//! fixture holds to arrive at its kind and pointer, and each `Exact` key in
+//! some run, so a CLI that renamed either fails though every path arrives.
 
 #[cfg(test)]
 use std::collections::BTreeMap;
@@ -11,6 +11,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
+
+use super::Profile;
 
 /// How a decoder matches a literal against what it reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -293,9 +295,7 @@ impl Collect {
         if let Some((_, c)) = self.bound.iter().rev().find(|(param, _)| *param == name) {
             return Some(c.clone());
         }
-        name.chars()
-            .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
-            .then_some(name)
+        is_const_ident(&name).then_some(name)
     }
 
     /// Every string literal `e` holds, for a const's value.
@@ -467,18 +467,38 @@ impl<'ast> Visit<'ast> for Collect {
     }
 }
 
-/// Whether a profile's `not_yet` or `not_yet_fields` owes `text`, each
-/// census of which shrinks its own list.
-pub(crate) fn owed_elsewhere(
-    not_yet: &[&str],
-    not_yet_fields: &[(&str, &str)],
-    text: &str,
-) -> bool {
-    not_yet.iter().any(|h| one_hook(h, text))
-        || not_yet_fields.iter().any(|(kind, path)| {
-            kind.split_once(':').is_some_and(|(_, k)| k == text)
-                || path.split('/').any(|s| s == text)
-        })
+/// What one source owes, as its profile's three lists say.
+pub(crate) struct Owing<'a> {
+    pub(crate) source: &'a str,
+    pub(crate) literals: &'a [&'a str],
+    pub(crate) hooks: &'a [&'a str],
+    pub(crate) fields: &'a [(&'a str, &'a str)],
+}
+
+impl<'a> Owing<'a> {
+    pub(crate) fn of(p: &'a Profile) -> Self {
+        Self {
+            source: p.source,
+            literals: p.not_yet_literals,
+            hooks: p.not_yet,
+            fields: p.not_yet_fields,
+        }
+    }
+
+    /// Whether any of the three lists owes `text`.
+    pub(crate) fn owes(&self, text: &str) -> bool {
+        self.literals.contains(&text) || self.elsewhere(text)
+    }
+
+    /// Whether `not_yet` or `not_yet_fields` owes `text`, each census of which
+    /// shrinks its own list.
+    fn elsewhere(&self, text: &str) -> bool {
+        self.hooks.iter().any(|h| one_hook(h, text))
+            || self.fields.iter().any(|(kind, path)| {
+                kind.split_once(':').is_some_and(|(_, k)| k == text)
+                    || path.split('/').any(|s| s == text)
+            })
+    }
 }
 
 /// Whether `a` and `b` name one hook in two spellings: `not_yet`'s
@@ -491,6 +511,12 @@ fn one_hook(a: &str, b: &str) -> bool {
             .collect()
     };
     spelled(a) == spelled(b)
+}
+
+/// Whether `s` is spelled as a const is (`SCREAMING_SNAKE`).
+fn is_const_ident(s: &str) -> bool {
+    s.chars()
+        .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
 }
 
 /// What a `syn::File`'s `fn name` dispatches on in its first `match on`: the
@@ -544,8 +570,7 @@ fn dispatch_arms(file: &syn::File, name: &str, on: &str) -> (BTreeSet<String>, V
         found: false,
     };
     arms.visit_block(&f.block);
-    arms.consts
-        .retain(|c| c.chars().all(|ch| ch.is_ascii_uppercase() || ch == '_'));
+    arms.consts.retain(|c| is_const_ident(c));
     (arms.consts, arms.bare)
 }
 
@@ -587,30 +612,21 @@ pub(crate) struct Exempt {
 enum Key {
     /// One literal.
     Literal(&'static str),
+    /// One literal on the item and arm of `of`, which a fixture must hold or
+    /// a list owe.
+    Sibling {
+        text: &'static str,
+        of: &'static str,
+    },
     /// Every literal an item holds that no fixture does.
     Item(&'static str),
-}
-
-/// What one source owes, as its profile's three lists say.
-#[cfg(test)]
-struct Owing<'a> {
-    source: &'a str,
-    literals: &'a [&'a str],
-    hooks: &'a [&'a str],
-    fields: &'a [(&'a str, &'a str)],
-}
-
-#[cfg(test)]
-impl Owing<'_> {
-    fn elsewhere(&self, text: &str) -> bool {
-        owed_elsewhere(self.hooks, self.fields, text)
-    }
 }
 
 /// Every problem with the census at rest, over `population` and each source's
 /// `held` keys and values: a literal no fixture holds, owed or exempted; a
 /// `not_yet_literals` entry a fixture holds, no decoder reads, or another list
-/// owes; an [`Exempt`] row that excuses nothing; and a module with no owner.
+/// owes; an [`Exempt`] row that excuses nothing or whose sibling nothing
+/// holds or owes; and a module with no owner.
 #[cfg(test)]
 fn problems(
     population: &BTreeSet<Literal>,
@@ -656,16 +672,32 @@ fn problems(
         let row = exempt.iter().find(|e| {
             e.module == l.module
                 && match e.key {
-                    Key::Literal(t) => t == l.text,
+                    Key::Literal(t) | Key::Sibling { text: t, .. } => t == l.text,
                     Key::Item(i) => i == l.item,
                 }
         });
         if let Some(e) = row {
             excused.insert((e.module, e.key));
         }
-        let owed = mine
-            .iter()
-            .any(|o| o.literals.contains(&l.text.as_str()) || o.elsewhere(&l.text));
+        if let Some(Key::Sibling { of, .. }) = row.map(|e| e.key) {
+            let warranted = population.iter().any(|w| {
+                w.module == l.module
+                    && w.item == l.item
+                    && w.text == of
+                    && (sources.iter().any(|s| holds(s, w)) || mine.iter().any(|o| o.owes(of)))
+            });
+            if !warranted {
+                out.push(format!(
+                    "{} {}: `{}` is exempt as a sibling of `{of}`, which no fixture of {} \
+                     holds there and no list owes",
+                    l.module,
+                    l.item,
+                    l.text,
+                    sources.join("/")
+                ));
+            }
+        }
+        let owed = mine.iter().any(|o| o.owes(&l.text));
         if !owed && row.is_none() && !sources.iter().all(|s| absent.contains(s)) {
             out.push(format!(
                 "{} {}: `{}` ({:?}) is in no fixture of {}: record a scenario that \
@@ -719,7 +751,7 @@ mod tests {
     // does reach one makes its row excuse nothing, which the census refuses.
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
-        "loss list: a sibling of a name its scenario reaches on the same arm";
+        "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
     const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it; exec and the TUI write Paginated";
     const LOSS_NO_EMITTER: &str =
         "loss list: aimock emits no tool search, and codex gates the tool behind a feature";
@@ -750,6 +782,14 @@ mod tests {
             module,
             key: Key::Literal(text),
             why,
+        }
+    }
+
+    const fn sibling(module: &'static str, text: &'static str, of: &'static str) -> Exempt {
+        Exempt {
+            module,
+            key: Key::Sibling { text, of },
+            why: LOSS_SIBLING,
         }
     }
 
@@ -815,14 +855,14 @@ mod tests {
         item("reasonix.rs", "KEYS", LABEL_DETAIL),
         literal("copilot.rs", "approved", LOSS_APPROVE),
         literal("dsh.rs", "allowed-once", LOSS_APPROVE),
-        literal("dsh.rs", "subagent_fork", LOSS_SIBLING),
-        literal("reasonix.rs", "read_only_task", LOSS_SIBLING),
-        literal("reasonix.rs", "parallel_tasks", LOSS_SIBLING),
-        literal("reasonix.rs", "locate", LOSS_SIBLING),
-        literal("reasonix.rs", "research", LOSS_SIBLING),
-        literal("reasonix.rs", "review", LOSS_SIBLING),
-        literal("reasonix.rs", "security_review", LOSS_SIBLING),
-        literal("antigravity.rs", "ask_permission", LOSS_SIBLING),
+        sibling("dsh.rs", "subagent_fork", "subagent"),
+        sibling("reasonix.rs", "read_only_task", "explore"),
+        sibling("reasonix.rs", "parallel_tasks", "explore"),
+        sibling("reasonix.rs", "locate", "explore"),
+        sibling("reasonix.rs", "research", "explore"),
+        sibling("reasonix.rs", "review", "explore"),
+        sibling("reasonix.rs", "security_review", "explore"),
+        sibling("antigravity.rs", "ask_permission", "ask_question"),
         literal("codex.rs", "patch_apply_end", LOSS_LEGACY),
         literal("codex.rs", "web_search_end", LOSS_LEGACY),
         literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
@@ -853,15 +893,7 @@ mod tests {
     #[test]
     fn every_literal_a_decoder_reads_is_recorded_owed_or_exempt() {
         let absent = NOT_HERMETIC.iter().map(|(s, _)| *s).collect();
-        let owing: Vec<Owing<'_>> = PROFILES
-            .iter()
-            .map(|p| Owing {
-                source: p.source,
-                literals: p.not_yet_literals,
-                hooks: p.not_yet,
-                fields: p.not_yet_fields,
-            })
-            .collect();
+        let owing: Vec<Owing<'_>> = PROFILES.iter().map(Owing::of).collect();
         let found = problems(
             &population().expect("the decoders parse"),
             &held(),
@@ -985,6 +1017,27 @@ mod tests {
         assert!(
             once.is_empty(),
             "a field owed elsewhere owes its literal: {once:?}"
+        );
+    }
+
+    #[test]
+    fn a_sibling_exemption_needs_its_arm_held_or_owed() {
+        let row = [sibling("codex.rs", "a_sibling", "the_arm")];
+        let refused = |held: &[&str], owed: &[&str], arm_item: &str| {
+            let population = [
+                lit("codex.rs", "decode", "a_sibling"),
+                lit("codex.rs", arm_item, "the_arm"),
+            ];
+            census(&population, held, owed, &row)
+                .iter()
+                .any(|f| f.contains("exempt as a sibling of `the_arm`"))
+        };
+        assert!(refused(&[], &[], "decode"));
+        assert!(!refused(&["the_arm"], &[], "decode"));
+        assert!(!refused(&[], &["the_arm"], "decode"));
+        assert!(
+            refused(&["the_arm"], &[], "elsewhere"),
+            "another item's arm"
         );
     }
 
