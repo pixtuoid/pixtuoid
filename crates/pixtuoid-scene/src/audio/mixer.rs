@@ -27,8 +27,8 @@ impl LoopStem {
 /// than stepping.
 pub const RAMP_PER_S: f32 = 0.5;
 
-/// How long the music's gain takes to travel its whole level, so a mute fades
-/// it without a click.
+/// How long the music's gain takes to travel full scale (0..1), so a mute
+/// fades it without a click.
 const MUSIC_FADE_S: f32 = 0.5;
 
 /// The foley's trim under the volume curve: the office's sounds sit UNDER the

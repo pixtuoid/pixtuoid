@@ -228,8 +228,8 @@ pub(crate) fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
     )
 }
 
-/// Non-finite is impossible here (gains are bounded ramps) but maps to 0
-/// defensively, so a bad frame degrades to silence rather than invalid JSON.
+/// Non-finite is impossible here (gains are bounded ramps, controls the sky's
+/// bounded levels) but maps to 0 defensively, so the JSON stays valid.
 fn fmt_f32(v: f32) -> String {
     if v.is_finite() {
         format!("{v:.5}")

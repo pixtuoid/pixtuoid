@@ -38,7 +38,7 @@ class MusicPlayer extends AudioWorkletProcessor {
 
   ask() {
     if (!this.source) return;
-    while (this.queued + this.requested + CHUNK_FRAMES <= this.aheadFrames) {
+    while (this.queued + this.requested < this.aheadFrames) {
       this.source.postMessage({ need: CHUNK_FRAMES });
       this.requested += CHUNK_FRAMES;
     }

@@ -426,6 +426,12 @@ impl Office {
         pixtuoid_scene::audio::MUSIC_AHEAD.as_secs_f32()
     }
 
+    /// The time constant JS's `setTargetAtTime` smooths each tick's gains
+    /// over, in seconds: [`GAIN_DEZIPPER`].
+    pub fn audio_gain_dezipper_s(&self) -> f32 {
+        GAIN_DEZIPPER.as_secs_f32()
+    }
+
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order.
     /// RE-READ after warmup completes.
@@ -576,6 +582,10 @@ impl SynthTake {
         OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
     }
 }
+
+/// How long each GainNode takes to follow a tick's gain: it de-zippers the
+/// ticks' steps, well inside the mixer's own slew, which already crossfades.
+const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 /// The music worker's lofi `Performance`, rendered in the chunks the worklet
 /// asks for.

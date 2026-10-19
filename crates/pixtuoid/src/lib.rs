@@ -38,6 +38,7 @@ pub(crate) mod version;
 /// reports. Not an API: it moves with them.
 #[doc(hidden)]
 pub mod dev {
+    #[cfg(target_os = "macos")]
     pub use crate::audio::promote_to_user_initiated;
     pub use crate::config::{FLOATING_DEFAULT_H, FLOATING_DEFAULT_W};
     pub use crate::doctor::footer_warning;

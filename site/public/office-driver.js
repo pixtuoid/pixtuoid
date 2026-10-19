@@ -87,9 +87,9 @@ export function audioBus(ctx, office) {
 
 // The ♩ music: the office's lofi stream, rendered in the music worker (`urls.worker`, loading `urls.wasm`) and played
 // by the worklet (`urls.worklet`) `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays
-// off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves to the node to connect once
-// the worklet loads; rejects where there is no AudioWorklet. `primed` resolves on the worklet's first chunk, and
-// `failed` on the worker's death.
+// off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
+// `{ node, primed, failed, setControls, stop }`: `node` to connect, `primed` on the worklet's first chunk, `failed` on
+// the worker's death; rejects where there is no AudioWorklet.
 export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
   await ctx.audioWorklet.addModule(urls.worklet);
   const node = new AudioWorkletNode(ctx, 'pix-music', {

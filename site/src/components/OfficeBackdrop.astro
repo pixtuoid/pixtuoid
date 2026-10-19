@@ -656,6 +656,7 @@ const officeDriverUrl = asset('office-driver.js');
     let loopGains = [];
     let oneShotBufs = {};
     let audioSR = 44100;
+    let gainDezipperS = 0;
     const ONESHOT_WIRES = [0, 1, 2, 3, 4];
 
     // Copy OUT of wasm memory before the next memory.grow detaches the view — audioSR is a param so no wasm call splits the view from the copy.
@@ -671,6 +672,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     function audioUploadBuffers() {
       audioSR = office.audio_sample_rate(); // read once, before any view is taken
+      gainDezipperS = office.audio_gain_dezipper_s();
       loopGains = [];
       for (let i = 0; i < office.audio_loop_count(); i++) {
         const g = audioCtx.createGain();
@@ -700,21 +702,21 @@ const officeDriverUrl = asset('office-driver.js');
         }
       }
     }
-    // The ♩ music (officeDriver.startMusic): the startMusic handle once it runs, else 'starting' or 'silent'.
-    let music = null;
+    // The ♩ music (officeDriver.startMusic): 'idle', 'starting', the startMusic handle once it runs, or 'silent'.
+    let music = 'idle';
     let musicGain = null;
     let musicAsked = '';
-    window.__pixMusic = 'idle'; // e2e observability: idle → starting → playing, or silent
-    function musicStop(state) {
-      if (music && typeof music === 'object') music.stop();
-      music = state;
-      window.__pixMusic = state;
+    window.__pixMusic = music; // e2e observability: idle → starting → playing, or silent
+    function musicSilence() {
+      if (typeof music === 'object') music.stop();
+      music = 'silent';
+      window.__pixMusic = music;
     }
     // Started on the first tick that carries the office's controls, since they pick the first song; no AudioWorklet
     // or a dead worker leaves the music silent and the foley playing.
     function musicTick(controls) {
       if (!controls || music === 'silent') return;
-      if (music === null) {
+      if (music === 'idle') {
         music = 'starting';
         window.__pixMusic = 'starting';
         const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
@@ -732,11 +734,11 @@ const officeDriverUrl = asset('office-driver.js');
               if (music === m) window.__pixMusic = 'playing';
             });
             m.failed.then(function () {
-              if (music === m) musicStop('silent');
+              if (music === m) musicSilence();
             });
           })
           .catch(function () {
-            if (music === 'starting') musicStop('silent');
+            if (music === 'starting') musicSilence();
           });
         return;
       }
@@ -760,12 +762,11 @@ const officeDriverUrl = asset('office-driver.js');
       // A node op can still throw if the context died mid-session — degrade rather than spam the console every frame.
       try {
         const now = audioCtx.currentTime;
-        // The mixer already crossfades, so a short setTargetAtTime just de-zippers the ~30fps steps.
         // The wire itself is the width authority here.
         for (let i = 0; i < cmd.gains.length; i++) {
-          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, 0.03);
+          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, gainDezipperS);
         }
-        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, 0.03);
+        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, gainDezipperS);
         for (const p of cmd.plays) {
           const bank = oneShotBufs[p[0]];
           const buf = bank && bank[p[1]];
@@ -803,7 +804,7 @@ const officeDriverUrl = asset('office-driver.js');
         prewarm = 'failed';
         window.__pixAudioPrewarm = 'failed';
       }
-      musicStop('silent');
+      musicSilence();
       if (audioCtx) {
         try {
           audioCtx.close();

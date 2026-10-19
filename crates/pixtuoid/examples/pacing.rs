@@ -706,6 +706,7 @@ fn hitch(path: &Path) -> Result<()> {
                     Controls, Frame, MUSIC_AHEAD, Performance, SAMPLE_RATE,
                 };
                 // As the audio thread does.
+                #[cfg(target_os = "macos")]
                 pixtuoid::dev::promote_to_user_initiated();
                 let mut performance = Performance::new(0, Controls::default());
                 // A whole render-ahead at a time.

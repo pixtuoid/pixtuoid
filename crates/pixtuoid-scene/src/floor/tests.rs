@@ -1021,7 +1021,8 @@ fn session_types_default_equals_new() {
 
 #[test]
 fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    // Noon, where a storm-dimmed light would read short of full day.
+    let now = crate::localclock::at_hour(12);
     let scene = make_scene(4, 16);
     let occupied = std::collections::HashSet::new();
     let mut obs = AudioObserver::default();
@@ -1055,6 +1056,10 @@ fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
         frame.music.daylight,
         crate::audio::music_controls(&counts, clear.nightfall(), 0.0).daylight,
         "the storm's daylight is a clear sky's: a storm never flips the family"
+    );
+    assert_eq!(
+        frame.music.daylight, 1.0,
+        "a stormy noon is full day to the music"
     );
 }
 

@@ -677,6 +677,7 @@ impl AudioHandle {
                     // complete and doesn't require an immediate result"
                     // (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
                     // The device plays on its output callback's own thread.
+                    #[cfg(target_os = "macos")]
                     promote_to_user_initiated();
                     run_loop(rx, Box::new(device), muted_for_loop, vol_for_loop, seed)
                 }) {
@@ -801,54 +802,35 @@ pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {
     handle.respawn_in_place(volume);
 }
 
-/// Put the calling thread at its platform's user-initiated class, as Chromium
-/// maps its `kDefault` thread type
-/// (`base/threading/platform_thread_{apple.mm,linux.cc,win.cc}`): Apple's
-/// user-initiated QoS, and the normal priority elsewhere. Best effort: a
-/// refusal leaves the thread as it was.
+/// Raise the calling thread from the default QoS a new macOS thread starts at
+/// to user-initiated, Chromium's `kDefault` (`base/threading/platform_thread_apple.mm`).
+/// Elsewhere a new thread already starts at what Chromium maps `kDefault` to:
+/// Windows creates "All threads … using THREAD_PRIORITY_NORMAL"
+/// (<https://learn.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities>),
+/// and a Linux thread takes its creator's nice. Best effort: a refusal leaves
+/// the thread as it was.
+#[cfg(target_os = "macos")]
 pub fn promote_to_user_initiated() {
-    #[cfg(target_os = "macos")]
     // SAFETY: sets the calling thread's own QoS class; nothing is borrowed.
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
     }
-    // Linux's nice value is per thread, so the thread's own id sets this
-    // thread alone (setpriority(2), "the nice value is a per-thread
-    // attribute"); where it isn't, no process has that id and the call fails.
-    #[cfg(target_os = "linux")]
-    // SAFETY: plain syscalls on this thread's id; nothing is borrowed.
-    unsafe {
-        let tid = libc::gettid();
-        if let Ok(tid) = libc::id_t::try_from(tid) {
-            libc::setpriority(libc::PRIO_PROCESS, tid, USER_INITIATED_NICE);
-        }
-    }
-    #[cfg(windows)]
-    // SAFETY: the pseudo-handle names the calling thread and needs no close
-    // (SetThreadPriority, GetCurrentThread).
-    unsafe {
-        use windows_sys::Win32::System::Threading::{
-            GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_NORMAL,
-        };
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
-    }
 }
 
-/// Chromium's nice value for `kDefault` (`kThreadTypeToNiceValueMapForTest`,
-/// `platform_thread_linux.cc`).
-#[cfg(target_os = "linux")]
-const USER_INITIATED_NICE: libc::c_int = 0;
-
-// The platforms whose class it reads back; elsewhere it yields nothing.
-#[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
+#[cfg(all(test, target_os = "macos"))]
 mod thread_class_tests {
-    /// A promoted thread reads back its platform's user-initiated class, and
-    /// the thread that spawned it keeps its own.
+    /// A promoted thread reads back user-initiated, from a class below it,
+    /// and the thread that spawned it keeps its own.
     #[test]
     fn a_promoted_thread_reads_back_the_user_initiated_class() {
         let before = class_of_this_thread();
         let after = std::thread::spawn(|| {
-            lower_this_thread();
+            // SAFETY: sets the calling thread's own QoS class.
+            let ok = unsafe {
+                libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0)
+            };
+            assert_eq!(ok, 0);
+            assert_ne!(class_of_this_thread(), user_initiated(), "premise: lowered");
             super::promote_to_user_initiated();
             class_of_this_thread()
         })
@@ -858,17 +840,6 @@ mod thread_class_tests {
         assert_eq!(class_of_this_thread(), before, "only that thread");
     }
 
-    /// Lowers the calling thread below user-initiated, so the promotion has
-    /// a class to move it from.
-    #[cfg(target_os = "macos")]
-    fn lower_this_thread() {
-        // SAFETY: sets the calling thread's own QoS class.
-        let ok =
-            unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0) };
-        assert_eq!(ok, 0);
-        assert_ne!(class_of_this_thread(), user_initiated(), "premise: lowered");
-    }
-    #[cfg(target_os = "macos")]
     fn class_of_this_thread() -> i64 {
         let (mut class, mut relative) = (libc::qos_class_t::QOS_CLASS_UNSPECIFIED, 0);
         // SAFETY: reads the calling thread's QoS into two locals.
@@ -878,46 +849,9 @@ mod thread_class_tests {
         assert_eq!(ok, 0);
         class as i64
     }
-    #[cfg(target_os = "macos")]
+
     fn user_initiated() -> i64 {
         libc::qos_class_t::QOS_CLASS_USER_INITIATED as i64
-    }
-
-    /// An unprivileged thread can't raise its priority back once lowered
-    /// (setpriority(2), EACCES without CAP_SYS_NICE), so it stays as spawned.
-    #[cfg(target_os = "linux")]
-    fn lower_this_thread() {}
-    #[cfg(target_os = "linux")]
-    fn class_of_this_thread() -> i64 {
-        // SAFETY: plain syscalls on this thread's id.
-        unsafe {
-            let tid = libc::id_t::try_from(libc::gettid()).expect("a thread id");
-            i64::from(libc::getpriority(libc::PRIO_PROCESS, tid))
-        }
-    }
-    #[cfg(target_os = "linux")]
-    fn user_initiated() -> i64 {
-        i64::from(super::USER_INITIATED_NICE)
-    }
-
-    #[cfg(windows)]
-    fn lower_this_thread() {
-        use windows_sys::Win32::System::Threading::{
-            GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
-        };
-        // SAFETY: the pseudo-handle names the calling thread.
-        unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL) };
-        assert_ne!(class_of_this_thread(), user_initiated(), "premise: lowered");
-    }
-    #[cfg(windows)]
-    fn class_of_this_thread() -> i64 {
-        use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadPriority};
-        // SAFETY: the pseudo-handle names the calling thread.
-        i64::from(unsafe { GetThreadPriority(GetCurrentThread()) })
-    }
-    #[cfg(windows)]
-    fn user_initiated() -> i64 {
-        i64::from(windows_sys::Win32::System::Threading::THREAD_PRIORITY_NORMAL)
     }
 }
 
