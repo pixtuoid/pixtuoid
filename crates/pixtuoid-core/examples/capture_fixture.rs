@@ -809,10 +809,11 @@ mod recorder {
                 }
                 let served = probe.wait()?.success();
                 match running.0.try_wait()? {
-                    Some(exit) if !served => Err(std::io::Error::other(format!(
+                    // A probe answered by whatever else holds the port.
+                    Some(exit) => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
                     ))),
-                    _ => Ok(served),
+                    None => Ok(served),
                 }
             })?;
             Ok(Some(running))
@@ -1896,6 +1897,26 @@ mod recorder {
             let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
                 .map(|_| ())
                 .expect_err("it never served");
+            assert!(why.to_string().contains("exited"), "{why}");
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_daemon_that_exited_is_refused_though_its_probe_answers() {
+            let sandbox = tempfile::tempdir().expect("sandbox");
+            let ws = tempfile::tempdir().expect("workspace");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+            let daemon = DaemonCmd {
+                start: ["sh", "-c", "exit 3"].map(String::from).to_vec(),
+                ready: ["sh", "-c", "sleep 1"].map(String::from).to_vec(),
+            };
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            };
+            let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
+                .map(|_| ())
+                .expect_err("its probe answered for someone else");
             assert!(why.to_string().contains("exited"), "{why}");
         }
 
