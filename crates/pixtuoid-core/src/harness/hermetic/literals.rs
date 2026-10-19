@@ -853,7 +853,6 @@ mod tests {
         item("grok/native.rs", "grok_probe_root_resolved", PATH_AXIS),
         item("grok.rs", "KEYS", LABEL_DETAIL),
         literal("grok.rs", "idle_prompt", IGNORE_ARM),
-        literal("grok.rs", "agent_error", IGNORE_ARM),
         literal("grok.rs", "task_complete", IGNORE_ARM),
         item("grok.rs", "XAI_MODEL_AUTO_SWITCHED", LOSS_MODEL_GONE),
         item("hermes.rs", "KEYS", LABEL_DETAIL),
