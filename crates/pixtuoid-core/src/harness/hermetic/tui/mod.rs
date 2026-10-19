@@ -24,6 +24,12 @@ const SETTLE: Duration = Duration::from_secs(3);
 /// given up: an unrecognised dialog stalls a run, and its key is never guessed.
 const STALL: Duration = Duration::from_secs(20);
 
+/// `tui_drive`'s exit when it gave up on a run it could not finish.
+pub const GAVE_UP: i32 = 3;
+/// `tui_drive`'s exit when it gave up on a submitted turn that raised no gate
+/// it knows to refuse: a verdict on the CLI, not a run that could not happen.
+pub(crate) const UNREFUSED: i32 = 4;
+
 /// A key the driver writes to the pty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -60,14 +66,26 @@ pub(crate) struct Gate {
 /// Where a CLI's composer is on screen.
 #[derive(Debug)]
 pub(crate) struct Composer {
-    /// What its input line starts with, at the line's first column.
-    pub(crate) marker: &'static str,
-    /// The character a rule directly above the input line is drawn with: a
+    /// What its input line starts with, at the line's first column. A
     /// dialog's highlighted choice and the conversation's echo of a prompt
-    /// start with the same marker, and neither sits under the rule.
-    pub(crate) rule: char,
-    /// The corners closing that rule when the composer is boxed.
-    pub(crate) corners: Option<(char, char)>,
+    /// start with it too.
+    pub(crate) marker: &'static str,
+    pub(crate) above: Above,
+}
+
+/// What a composer draws directly above its input line, which tells the
+/// input line from the other marked lines.
+#[derive(Debug)]
+pub(crate) enum Above {
+    /// A rule of `glyph`, between `corners` when the composer is boxed; no
+    /// other marked line sits under it.
+    Rule {
+        glyph: char,
+        corners: Option<(char, char)>,
+    },
+    /// Nothing: the input line is the screen's last marked line, which only a
+    /// dialog drawn below it displaces, its numbered choice then the last.
+    Nothing,
 }
 
 /// A CLI's interactive facts, one row per CLI.
@@ -197,6 +215,14 @@ impl<'a> Driver<'a> {
         }
     }
 
+    /// What `tui_drive` exits with if it gives up now.
+    pub fn gave_up(&self) -> i32 {
+        match self.phase {
+            Phase::Submitted { .. } if !self.refused => UNREFUSED,
+            _ => GAVE_UP,
+        }
+    }
+
     /// A dialog on screen: refused after it has stood its dwell, and again each
     /// [`GATE_RETRY`] it outlives the refusal, once the prompt is submitted;
     /// before that, it stalls the run like any dialog nobody planned for. While
@@ -239,16 +265,24 @@ impl<'a> Driver<'a> {
         Some(Action::Keys(gate.deny))
     }
 
-    /// The text after the composer's marker, on the last marked line directly
-    /// under its rule.
+    /// The text after the composer's marker on its input line.
     fn composer(&self) -> Option<&str> {
         let composer = &self.tui.composer;
         let lines: Vec<&str> = self.screen.lines().collect();
-        lines.windows(2).rev().find_map(|pair| {
-            is_rule(pair[0], composer)
-                .then(|| pair[1].strip_prefix(composer.marker))
-                .flatten()
-        })
+        match composer.above {
+            Above::Rule { glyph, corners } => lines.windows(2).rev().find_map(|pair| {
+                is_rule(pair[0], glyph, corners)
+                    .then(|| pair[1].strip_prefix(composer.marker))
+                    .flatten()
+            }),
+            Above::Nothing => {
+                let typed = lines
+                    .iter()
+                    .rev()
+                    .find_map(|l| l.strip_prefix(composer.marker))?;
+                (!is_choice(typed)).then_some(typed)
+            }
+        }
     }
 
     fn composer_holds_prompt(&self) -> bool {
@@ -258,10 +292,10 @@ impl<'a> Driver<'a> {
     }
 }
 
-/// Whether `line` is `composer`'s rule, between its corners when it has them.
-fn is_rule(line: &str, composer: &Composer) -> bool {
+/// Whether `line` is a rule of `glyph`, between `corners` when it has them.
+fn is_rule(line: &str, glyph: char, corners: Option<(char, char)>) -> bool {
     let mut line = line.trim_end();
-    if let Some((left, right)) = composer.corners {
+    if let Some((left, right)) = corners {
         let Some(inner) = line
             .trim_start()
             .strip_prefix(left)
@@ -271,7 +305,15 @@ fn is_rule(line: &str, composer: &Composer) -> bool {
         };
         line = inner;
     }
-    !line.is_empty() && line.chars().all(|c| c == composer.rule)
+    !line.is_empty() && line.chars().all(|c| c == glyph)
+}
+
+/// Whether the text after a marker is a dialog's numbered choice (`1. Yes`).
+fn is_choice(typed: &str) -> bool {
+    typed
+        .trim_start()
+        .split_once(". ")
+        .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// `tui_drive`'s command line, which the recorder runs in place of the CLI.
@@ -334,6 +376,8 @@ mod tests {
     const GATE: &str = include_str!("screens/claude-code-gate.txt");
     const DONE: &str = include_str!("screens/claude-code-done.txt");
     const PROMPT: &str = "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
+    const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
+    const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
 
     fn row(source: &str) -> &'static Tui {
         profile(source)
@@ -477,27 +521,65 @@ mod tests {
     }
 
     #[test]
+    fn a_give_up_after_the_prompt_with_no_gate_refused_is_unrefused() {
+        let t0 = Instant::now();
+        let mut d = driver(t0);
+        assert_eq!(d.gave_up(), GAVE_UP, "the CLI never booted");
+        submitted(&mut d, t0);
+        d.step(DONE, t0);
+        assert_eq!(
+            d.step(DONE, t0 + STALL),
+            Action::Fail("the screen stood still with the turn unfinished")
+        );
+        assert_eq!(d.gave_up(), UNREFUSED, "the turn ran with no gate");
+        let mut d = driver(t0);
+        submitted(&mut d, t0);
+        d.step(GATE, t0);
+        assert_eq!(d.step(GATE, t0 + dwell()), Action::Keys(&[Key::Esc]));
+        assert_eq!(d.gave_up(), GAVE_UP, "its gate was refused");
+    }
+
+    #[test]
+    fn an_unlisted_dialog_never_reads_as_a_composer_with_nothing_above() {
+        let unlisted = CODEX_GATE.replace(
+            "Would you like to run the following command?",
+            "Allow this tool?",
+        );
+        let t0 = Instant::now();
+        let mut d = Driver::new(row("codex"), PROMPT.to_owned(), t0);
+        assert_eq!(
+            d.step(&unlisted, t0),
+            Action::Wait,
+            "a numbered choice is no composer to type into"
+        );
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(&unlisted, t0 + ENTER_RETRY),
+            Action::Wait,
+            "an Enter here would pick the dialog's first choice, Yes"
+        );
+    }
+
+    #[test]
     fn a_rule_closes_on_its_rows_corners_and_nothing_else() {
-        let bare = |corners| Composer {
-            marker: "❯",
-            rule: '─',
-            corners,
-        };
-        let (plain, boxed) = (bare(None), bare(Some(('╭', '╮'))));
-        assert!(is_rule("────", &plain));
-        assert!(!is_rule("a──b", &plain));
-        assert!(!is_rule("╭──╮", &plain));
-        assert!(is_rule("  ╭────╮  ", &boxed));
-        assert!(!is_rule("────", &boxed));
-        assert!(!is_rule("│ ❯ 1. Allow once │", &boxed));
-        assert!(!is_rule("╭─ title ─╮", &boxed));
-        assert!(!is_rule("  ", &plain));
+        let plain = |l| is_rule(l, '─', None);
+        let boxed = |l| is_rule(l, '─', Some(('╭', '╮')));
+        assert!(plain("────"));
+        assert!(!plain("a──b"));
+        assert!(!plain("╭──╮"));
+        assert!(boxed("  ╭────╮  "));
+        assert!(!boxed("────"));
+        assert!(!boxed("│ ❯ 1. Allow once │"));
+        assert!(!boxed("╭─ title ─╮"));
+        assert!(!plain("  "));
     }
 
     #[test]
     fn each_row_takes_the_prompt_and_refuses_the_gate_its_run_recorded() {
         let recorded = [
             ("claude-code", BOOT, GATE),
+            ("codex", CODEX_BOOT, CODEX_GATE),
             (
                 "grok",
                 include_str!("screens/grok-boot.txt"),

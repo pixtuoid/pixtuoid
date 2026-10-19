@@ -435,11 +435,7 @@ mod tests {
 
     #[test]
     fn a_daemon_capture_keeps_what_its_presence_decoder_reads() {
-        let (_d, hooks) = stripped_copy(
-            "openclaw",
-            "gateway-lifecycle-recorded",
-            "hook-payloads.jsonl",
-        );
+        let (_d, hooks) = stripped_copy("openclaw", "tool-run-hermetic", "hook-payloads.jsonl");
         let files = vec![hooks.clone()];
         let before = scenario_events("openclaw", &files);
         let wire = std::fs::read_to_string(&hooks).expect("read");

@@ -209,7 +209,14 @@ pub(crate) const EM_TURN_END: &[&str] = &["task_complete", "turn_aborted"];
 pub(crate) const EM_TOKENS: &[&str] = &["token_count"];
 
 pub(crate) const RI_TOOL_START: &[&str] = &["function_call", "custom_tool_call"];
-pub(crate) const RI_RESUME: &[&str] = &["function_call_output", "custom_tool_call_output"];
+const RI_CALL_OUTPUT: &str = "function_call_output";
+const RI_CUSTOM_OUTPUT: &str = "custom_tool_call_output";
+pub(crate) const RI_RESUME: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
+/// The call an output answers. Optional on a `function_call_output`, which
+/// codex also writes for a host-delivered output that answers no call
+/// (`codex-rs/protocol/src/models.rs:1151-1153` at `rust-v0.163.0`), and
+/// required on a `custom_tool_call_output` (`:1195`).
+const CALL_ID: &str = "call_id";
 pub(crate) const RI_SEARCH: &[&str] =
     &["web_search_call", "tool_search_call", "tool_search_output"];
 
@@ -371,8 +378,8 @@ pub(crate) const UPSTREAM: &[Watch] = &[
     },
 ];
 
-/// Decode one transcript line. `tool_use_id` is always `None` so these events
-/// are never suppressed by the hook-wins dedup (which keys on `tool_use_id`).
+/// Decode one transcript line. Only an output's End carries its call's id
+/// (`tool_use_id`), so only that End meets the hook-wins dedup (#150).
 ///
 /// # Errors
 ///
@@ -414,10 +421,26 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Resul
                 vec![codex_tool_start(agent_id, payload)]
             }
         }
-        // Resume signals: a command/patch finished running after (auto-)approval.
-        // Each is an ActivityStart so the reducer clears any Waiting set by the
-        // permission gate.
-        (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => vec![start()],
+        // Resume signals: a command/patch finished, or a call was refused. Each
+        // is an ActivityStart so the reducer clears any Waiting set by the
+        // permission gate. A call's output also ENDS that call: a refused call
+        // gets no `PostToolUse`, so this is its only end.
+        (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
+            let call = payload
+                .and_then(|p| p.get(CALL_ID))
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty());
+            if call.is_none() && i == RI_CUSTOM_OUTPUT {
+                crate::source::drift::missing_field(SOURCE_NAME, i, CALL_ID);
+            }
+            call.map(|c| AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: Some(c.to_owned()),
+            })
+            .into_iter()
+            .chain([start()])
+            .collect()
+        }
         (EVENT_MSG, i) if EM_RESUME.contains(&i) => vec![start()],
         // Web/tool search are turn-INTERNAL work pulses that keep the agent
         // Active; only task_complete / turn_aborted end the turn. Both the
@@ -878,17 +901,64 @@ mod tests {
         let resumed = ev(json!({"type":"response_item","payload":{
             "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
         assert!(
-            matches!(resumed.as_slice(), [AgentEvent::ActivityStart { .. }]),
-            "its output must resume work like function_call_output does"
+            matches!(resumed.as_slice(), [
+                AgentEvent::ActivityEnd { tool_use_id: Some(c), .. },
+                AgentEvent::ActivityStart { .. },
+            ] if c == "call_x"),
+            "its output must end its call and resume work like function_call_output does"
         );
     }
 
     #[test]
-    fn function_call_output_resumes_work() {
+    fn function_call_output_ends_its_call_and_resumes_work() {
         let out = ev(
             json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"c","output":"ok"}}),
         );
-        assert!(matches!(out.as_slice(), [AgentEvent::ActivityStart { .. }]));
+        assert!(matches!(out.as_slice(), [
+            AgentEvent::ActivityEnd { tool_use_id: Some(c), .. },
+            AgentEvent::ActivityStart { .. },
+        ] if c == "c"));
+        let logs = crate::test_capture::capture_logs(|| {
+            let unpaired = ev(
+                json!({"type":"response_item","payload":{"type":"function_call_output","output":"ok"}}),
+            );
+            assert!(matches!(
+                unpaired.as_slice(),
+                [AgentEvent::ActivityStart { .. }]
+            ));
+        });
+        assert!(
+            !logs.contains("missing_field"),
+            "an output that answers no call is codex's own shape, got:\n{logs}"
+        );
+        for call in [json!(null), json!("")] {
+            let logs = crate::test_capture::capture_logs(|| {
+                let mut line = json!({"type":"response_item","payload":{"type":"custom_tool_call_output","output":"ok"}});
+                if !call.is_null() {
+                    line["payload"]["call_id"] = call.clone();
+                }
+                assert!(matches!(
+                    ev(line).as_slice(),
+                    [AgentEvent::ActivityStart { .. }]
+                ));
+            });
+            assert!(
+                logs.contains("missing_field") && logs.contains("call_id"),
+                "a custom output owes its call, {call}: {logs}"
+            );
+        }
+        let logs = crate::test_capture::capture_logs(|| {
+            let keyed = ev(json!({"type":"response_item","payload":{
+                "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
+            assert!(matches!(keyed.as_slice(), [
+                AgentEvent::ActivityEnd { tool_use_id: Some(c), .. },
+                AgentEvent::ActivityStart { .. },
+            ] if c == "call_x"));
+        });
+        assert!(
+            !logs.contains("missing_field"),
+            "a keyed custom output owes nothing: {logs}"
+        );
     }
 
     #[test]

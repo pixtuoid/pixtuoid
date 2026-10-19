@@ -687,7 +687,7 @@ async fn omp_oversized_first_sight_uses_the_head_title_through_source_wiring() {
 }
 
 #[tokio::test]
-async fn codex_permission_flow_fixture_drives_the_reducer_through_waiting() {
+async fn codex_permission_hermetic_fixture_drives_the_reducer_through_waiting() {
     use pixtuoid_core::state::ActivityState;
     use pixtuoid_core::{Reducer, SceneState};
 
@@ -697,10 +697,19 @@ async fn codex_permission_flow_fixture_drives_the_reducer_through_waiting() {
 
     // `codex_id_from_path` keys on the filename's trailing UUID, so the replay
     // name (not the fixture's own) is what identifies the session.
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/sources/fixtures/codex/permission-flow")
-        .join("rollout-2026-01-01T00-00-00-01000000-0000-7000-8000-000000000001.jsonl");
-    let body = std::fs::read_to_string(&fixture).expect("committed permission-flow fixture");
+    let recorded = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/sources/fixtures/codex/permission-hermetic");
+    let rollouts: Vec<_> = pixtuoid_core::harness::jsonl_files_under(&recorded)
+        .into_iter()
+        .filter(|f| {
+            f.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("rollout-"))
+        })
+        .collect();
+    let [fixture] = &rollouts[..] else {
+        panic!("one recorded rollout under {}", recorded.display());
+    };
+    let body = std::fs::read_to_string(fixture).expect("committed permission-hermetic fixture");
     let transcript = sessions_root
         .join("rollout-2026-01-01T00-00-00-0a0a0a0a-0b0b-0c0c-0d0d-0e0e0e0e0e0e.jsonl");
 
@@ -753,7 +762,7 @@ async fn codex_permission_flow_fixture_drives_the_reducer_through_waiting() {
     assert_eq!(scene.agents.len(), 1, "one rollout is one agent");
     assert_eq!(
         &*slot.label.text(),
-        "cx·demo-project",
+        "cx·proj",
         "label derives from the session_meta cwd basename"
     );
 
@@ -776,7 +785,7 @@ async fn codex_permission_flow_fixture_drives_the_reducer_through_waiting() {
     );
     assert!(
         first_active.is_some(),
-        "the fixture's function_call must drive Active, got {states:?}"
+        "task_started must drive Active, got {states:?}"
     );
     assert!(
         first_waiting.is_some(),
@@ -784,10 +793,10 @@ async fn codex_permission_flow_fixture_drives_the_reducer_through_waiting() {
     );
     assert!(
         first_active < first_waiting,
-        "Active must precede Waiting — the tool runs, THEN the gate parks it: {states:?}"
+        "Active must precede Waiting — the gate parks the turn after it starts: {states:?}"
     );
     assert!(
         !matches!(states.last(), Some(ActivityState::Waiting { .. })),
-        "the agent must not still be Waiting after task_complete, got {states:?}"
+        "the agent must not still be Waiting after its turn ended, got {states:?}"
     );
 }

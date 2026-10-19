@@ -7,15 +7,16 @@
 //! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; `GAVE_UP` when the driver gave up or the
-//! `BUDGET` ran out, and `USAGE_ERROR` on a bad command line.
+//! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
+//! out, with what [`Driver::gave_up`] says; and `USAGE_ERROR` on a bad command
+//! line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use pixtuoid_core::harness::hermetic::tui::{Action, CommandLine, Driver, Key, Tui};
+use pixtuoid_core::harness::hermetic::tui::{Action, CommandLine, Driver, GAVE_UP, Key, Tui};
 use pixtuoid_core::harness::hermetic::{self, Surface};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -45,7 +46,6 @@ const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 /// whatever the host's own is.
 const TERM: &str = "xterm-256color";
 
-const GAVE_UP: i32 = 3;
 const USAGE_ERROR: i32 = 2;
 const USAGE: &str = "usage: tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]";
 
@@ -138,7 +138,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
         let out_of_time = now.duration_since(started) >= BUDGET
             || quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE);
         if out_of_time {
-            return give_up(&mut log, &mut child, "out of time", &screen);
+            return give_up(&mut log, &mut child, "out of time", &screen, &driver);
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -171,7 +171,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
                 send_keys(&mut writer, keys)?;
                 quit_at = Some(Instant::now());
             }
-            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen),
+            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen, &driver),
         }
     }
 }
@@ -191,13 +191,14 @@ fn give_up(
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     why: &str,
     screen: &vt100::Parser,
+    driver: &Driver<'_>,
 ) -> std::io::Result<i32> {
     note(
         log,
         &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
     child.kill()?;
-    Ok(GAVE_UP)
+    Ok(driver.gave_up())
 }
 
 fn send(writer: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {

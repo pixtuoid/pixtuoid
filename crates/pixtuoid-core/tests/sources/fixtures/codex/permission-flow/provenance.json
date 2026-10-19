@@ -1,4 +1,0 @@
-{
-  "origin": "composed",
-  "note": "Pins the escalation shape `function_call_needs_approval` reads: a `function_call` whose `arguments` carry \"sandbox_permissions\": \"require_escalated\". codex has TWO tool surfaces and only this one marks escalation in the rollout; on a `custom_tool_call` the marker is absent entirely and the gate exists only on the hook wire. The local corpus splits by DATE — 47 real escalated function_calls through 2026-07-25, then every August session (including one not ours) is custom_tool_call — while codex 0.147.0's own system prompt STILL instructs the model to send this parameter, so the capability is live and the model simply prefers the other surface. Composed because it cannot be reproduced on demand here: `-c tool_mode=direct` is accepted but does not switch surfaces (verified, one turn, 15 custom_tool_calls and zero require_escalated). Do not re-spend a turn on that flag."
-}

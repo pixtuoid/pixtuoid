@@ -547,8 +547,8 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
-    let hooks = core_fixtures_root()
-        .join("fixtures/openclaw/gateway-lifecycle-recorded/hook-payloads.jsonl");
+    let hooks =
+        core_fixtures_root().join("fixtures/openclaw/tool-run-hermetic/hook-payloads.jsonl");
 
     let lines = read_nonblank_lines(&hooks);
     let mut scene = SceneState::uniform(16);
