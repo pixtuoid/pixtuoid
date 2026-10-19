@@ -11,6 +11,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use super::Shape;
+
 /// How long the composer may still hold the prompt after an Enter before it is
 /// sent again: an Enter during startup is swallowed.
 const ENTER_RETRY: Duration = Duration::from_secs(1);
@@ -139,11 +141,12 @@ struct Open {
     since: Instant,
 }
 
-/// The state machine one `Permission` run steps through: the turn's dialog is
-/// refused, and the turn is over once it was.
+/// The state machine one run steps through: a turn its shape gates is over once
+/// its dialog was refused, another once its screen settled.
 #[derive(Debug)]
 pub struct Driver<'a> {
     tui: &'a Tui,
+    gated: bool,
     prompt: String,
     phase: Phase,
     screen: String,
@@ -157,10 +160,11 @@ pub struct Driver<'a> {
 const PROMPT_HEAD: usize = 16;
 
 impl<'a> Driver<'a> {
-    /// A run through `tui`, typing `prompt`.
-    pub fn new(tui: &'a Tui, prompt: String, now: Instant) -> Self {
+    /// A run of a `shape` turn through `tui`, typing `prompt`.
+    pub fn new(tui: &'a Tui, shape: Shape, prompt: String, now: Instant) -> Self {
         Self {
             tui,
+            gated: shape.refuses_a_gate(),
             prompt,
             phase: Phase::Boot,
             screen: String::new(),
@@ -202,7 +206,8 @@ impl<'a> Driver<'a> {
                 Action::Keys(&[Key::Enter])
             }
             Phase::Submitted { .. }
-                if self.refused && now.duration_since(self.changed_at) >= SETTLE =>
+                if (self.refused || !self.gated)
+                    && now.duration_since(self.changed_at) >= SETTLE =>
             {
                 self.phase = Phase::Quit;
                 Action::Quit(self.tui.quit)
@@ -214,7 +219,7 @@ impl<'a> Driver<'a> {
     /// What `tui_drive` exits with if it gives up now.
     pub fn gave_up(&self) -> i32 {
         match self.phase {
-            Phase::Submitted { .. } if !self.refused => UNREFUSED,
+            Phase::Submitted { .. } if self.gated && !self.refused => UNREFUSED,
             _ => GAVE_UP,
         }
     }
@@ -368,17 +373,24 @@ mod tests {
     const PROMPT: &str = "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
     const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
+    const OMP_BOOT: &str = include_str!("screens/omp-boot.txt");
+    const OMP_NEW: &str = include_str!("screens/omp-new.txt");
 
-    fn row(source: &str) -> &'static Tui {
+    /// `source`'s TUI scenario: its row, and its shape.
+    fn tui_scenario(source: &str) -> (&'static Tui, Shape) {
         profile(source)
             .expect("profiled")
             .scenarios
             .iter()
             .find_map(|s| match s.surface {
-                Surface::Tui(tui) => Some(tui),
+                Surface::Tui(tui) => Some((tui, s.shape)),
                 Surface::Headless => None,
             })
             .expect("drives a TUI scenario")
+    }
+
+    fn row(source: &str) -> &'static Tui {
+        tui_scenario(source).0
     }
 
     fn claude_code() -> &'static Tui {
@@ -397,8 +409,16 @@ mod tests {
         screen
     }
 
+    /// omp's boot screen with `text` in its composer.
+    fn omp_typed(text: &str) -> String {
+        let screen = OMP_BOOT.replacen("\n╰─\n", &format!("\n╰─ {text}\n"), 1);
+        assert_ne!(screen, OMP_BOOT, "the boot screen's composer line moved");
+        screen
+    }
+
     fn driver(t0: Instant) -> Driver<'static> {
-        Driver::new(claude_code(), PROMPT.to_owned(), t0)
+        let (tui, shape) = tui_scenario("claude-code");
+        Driver::new(tui, shape, PROMPT.to_owned(), t0)
     }
 
     /// Steps a booted driver to a submitted prompt.
@@ -496,6 +516,49 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_its_shape_never_gates_quits_once_the_screen_settles_after_its_prompt() {
+        let (tui, shape) = tui_scenario("omp");
+        assert!(!shape.refuses_a_gate());
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, shape, PROMPT.to_owned(), t0);
+        assert_eq!(d.step("", t0), Action::Wait);
+        assert_eq!(
+            d.step("", t0 + SETTLE),
+            Action::Wait,
+            "a settled screen before the prompt is no turn's end"
+        );
+        let t1 = t0 + SETTLE;
+        assert_eq!(d.step(OMP_BOOT, t1), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(&omp_typed(PROMPT), t1), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(&omp_typed(PROMPT), t1 + SETTLE),
+            Action::Keys(&[Key::Enter]),
+            "a composer still holding the prompt was never submitted"
+        );
+        let t2 = t1 + SETTLE + Duration::from_millis(1);
+        assert_eq!(
+            d.step(OMP_NEW, t2),
+            Action::Wait,
+            "the turn's screen just changed"
+        );
+        assert_eq!(d.step(OMP_NEW, t2 + SETTLE), Action::Quit(tui.quit));
+    }
+
+    #[test]
+    fn a_stalled_turn_its_shape_never_gates_gives_up_as_a_run_that_could_not_happen() {
+        let (tui, shape) = tui_scenario("omp");
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, shape, PROMPT.to_owned(), t0);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(&omp_typed(PROMPT), t0), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(&omp_typed(PROMPT), t0 + STALL),
+            Action::Fail("the screen stood still with the turn unfinished")
+        );
+        assert_eq!(d.gave_up(), GAVE_UP, "no gate was owed");
+    }
+
+    #[test]
     fn a_dialog_before_the_prompt_stalls_the_run_instead_of_being_answered() {
         let t0 = Instant::now();
         let unlisted = GATE.replace("Do you want to proceed?", "Use this API key?");
@@ -540,7 +603,8 @@ mod tests {
             "Allow this tool?",
         );
         let t0 = Instant::now();
-        let mut d = Driver::new(row("codex"), PROMPT.to_owned(), t0);
+        let (tui, shape) = tui_scenario("codex");
+        let mut d = Driver::new(tui, shape, PROMPT.to_owned(), t0);
         assert_eq!(
             d.step(&unlisted, t0),
             Action::Wait,
@@ -569,8 +633,10 @@ mod tests {
         assert!(!plain("  "));
     }
 
+    /// Each row over its run's recorded boot screen and the screen its turn
+    /// ended at: the gate it refused, where its shape refuses one.
     #[test]
-    fn each_row_takes_the_prompt_and_refuses_the_gate_its_run_recorded() {
+    fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_its_shape_says() {
         let recorded = [
             ("claude-code", BOOT, GATE),
             ("codex", CODEX_BOOT, CODEX_GATE),
@@ -589,6 +655,7 @@ mod tests {
                 include_str!("screens/reasonix-boot.txt"),
                 include_str!("screens/reasonix-gate.txt"),
             ),
+            ("omp", OMP_BOOT, OMP_NEW),
             (
                 "hermes",
                 include_str!("screens/hermes-boot.txt"),
@@ -605,27 +672,33 @@ mod tests {
             .map(|p| p.source)
             .collect();
         assert_eq!(recorded.map(|(source, ..)| source).to_vec(), rows);
-        for (source, boot, gate) in recorded {
-            let tui = row(source);
+        for (source, boot, end) in recorded {
+            let (tui, shape) = tui_scenario(source);
             let t0 = Instant::now();
-            let mut d = Driver::new(tui, PROMPT.to_owned(), t0);
+            let mut d = Driver::new(tui, shape, PROMPT.to_owned(), t0);
             assert_eq!(
                 d.step(boot, t0),
                 Action::Type(PROMPT.to_owned()),
                 "{source}"
             );
             assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
+            if !shape.refuses_a_gate() {
+                assert!(tui.gates.is_empty(), "{source}: its shape refuses no gate");
+                assert_eq!(d.step(end, t0), Action::Wait, "{source}: the screen moved");
+                assert_eq!(d.step(end, t0 + SETTLE), Action::Quit(tui.quit), "{source}");
+                continue;
+            }
             let [refused] = tui.gates else {
-                panic!("{source}: one gate per row");
+                panic!("{source}: its shape refuses one gate");
             };
             let answers: Vec<Action> = [t0, t0 + refused.dwell]
-                .map(|t| d.step(gate, t))
+                .map(|t| d.step(end, t))
                 .into_iter()
                 .filter(|a| *a != Action::Wait)
                 .collect();
             assert_eq!(answers, [Action::Keys(refused.deny)], "{source}");
             assert_eq!(
-                d.step(gate, t0 + refused.dwell + SETTLE),
+                d.step(end, t0 + refused.dwell + SETTLE),
                 Action::Wait,
                 "{source}: a repeat would land on the turn"
             );

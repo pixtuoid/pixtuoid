@@ -1,0 +1,13 @@
+
+                                            ████████████    
+                                               ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                               ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                               ▒▒  ██                  █
+                                                   ██       v18.12.1
+
+                        Tip: Start your prompt with `!` to run it as bash — `!!` runs it without
+                                              adding the output to context
+
+
+
+╰─
