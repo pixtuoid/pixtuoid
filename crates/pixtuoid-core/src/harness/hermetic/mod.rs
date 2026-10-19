@@ -2141,7 +2141,7 @@ mod tests {
     }
 
     #[test]
-    fn no_tool_run_replies_to_any_result_and_the_note_run_waits_on_its_note() {
+    fn no_tool_run_replies_to_any_result_and_tool_run_waits_on_its_note_unless_unseen() {
         // A reply to any tool result lets a run whose tool failed pass.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun) {
