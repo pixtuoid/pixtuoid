@@ -776,6 +776,21 @@ trust_level = "trusted"
                 fixture: "fixtures/codex/tool-run-hermetic",
             },
             Scenario {
+                name: "custom-tool",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                // The read-only sandbox rejects the patch, so no PostToolUse
+                // fires and the transcript's `custom_tool_call_output` ends it.
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/codex/custom-tool-hermetic",
+            },
+            Scenario {
                 name: "subagent",
                 shape: Shape::Subagent,
                 surface: Surface::Headless,
@@ -2140,7 +2155,8 @@ mod tests {
                     .any(|f| f["match"]["toolResultContains"] == NOTE_PLACEHOLDER);
                 if p.result_unseen {
                     assert!(!waits, "{}: a wait on a result aimock never sees", p.source);
-                } else {
+                } else if s.name == "tool-run" {
+                    // Only the note-reading scenario has a note to wait on.
                     assert!(waits, "{}: no reply waits for {NOTE_PLACEHOLDER}", p.source);
                 }
                 assert!(
