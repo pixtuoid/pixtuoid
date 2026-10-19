@@ -108,7 +108,7 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
         return v;
     }
     v.registered = driven.registered();
-    v.drove = !driven.reached.is_empty();
+    v.drove = !driven.reaches.is_empty();
     v.panics = driven.panics.clone();
     if v.registered == 0 {
         return v;

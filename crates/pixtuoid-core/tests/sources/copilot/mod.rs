@@ -7,7 +7,10 @@ use pixtuoid_core::state::ActivityState;
 
 fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
     d.assert_clean(what);
-    assert!(d.reached.contains(&Reach::Waiting), "{what}: never waited");
+    assert!(
+        d.reached().contains(&Reach::Waiting),
+        "{what}: never waited"
+    );
     let slots: Vec<_> = d.scene.agents.values().collect();
     let [slot] = slots[..] else {
         panic!("{what}: {} slots", slots.len());
