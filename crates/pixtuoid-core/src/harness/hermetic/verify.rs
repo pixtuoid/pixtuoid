@@ -102,7 +102,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 ///
 /// # Errors
 ///
-/// If a file it reads cannot be read, or its manifest names no profiled scenario.
+/// If its record is missing, a present file can't be read, or its scenario is unprofiled.
 pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
     let records: Vec<StepRecord> =
         serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
