@@ -1,7 +1,7 @@
-//! opencode's DELEGATING run, captured live from a `subagent` call. It lives
-//! here rather than under `sources/fixtures/opencode/` because the child is its
-//! own session — two sprites, which the conformance harness's one-AgentId rule
-//! cannot hold (the same reason `grok/mod.rs` exists).
+//! opencode's DELEGATING runs from a `subagent` call, one captured live and one by the
+//! hermetic tier. They live here, not under `sources/fixtures/opencode/`, because each
+//! child is its own session: two sprites, which the conformance harness's one-AgentId
+//! rule cannot hold (the same reason `grok/mod.rs` exists).
 
 use std::time::{Duration, SystemTime};
 
