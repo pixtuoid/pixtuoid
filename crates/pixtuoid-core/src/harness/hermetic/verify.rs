@@ -1,5 +1,6 @@
-//! Judging hermetic runs: each scenario's run alone ([`verify`]), and each
-//! source's runs together ([`verify_source`]). A run's bytes ride the one
+//! Judging hermetic runs: each scenario's run alone ([`verify`]), each
+//! source's runs together ([`verify_source`]), and an install's lifecycle
+//! ([`verify_lifecycle`]). A run's bytes ride the one
 //! pipeline (`Drive`), and the scene a headless pixtuoid painted from the same
 //! run is read as text. Ids, timestamps and model text change every run, so
 //! nothing here compares bytes or goldens: only shapes, events and the fields
@@ -11,7 +12,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, Surface, profile, tui};
+use super::{
+    LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
+    Surface, profile, tui,
+};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
@@ -34,7 +38,8 @@ pub enum Label {
     /// The CLI asked the model something no script line answers: its request
     /// flow changed upstream.
     Script,
-    /// pixtuoid read the run wrong, or upstream stopped sending what it reads.
+    /// pixtuoid read the run wrong, upstream stopped sending what it reads, or
+    /// its install no longer connects and disconnects as pixtuoid drives it.
     Fail,
 }
 
@@ -90,6 +95,88 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
     judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
+    Ok(Verdict::new(findings))
+}
+
+/// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
+/// outcome, each connect left an install `sources --json` finds sound, and the
+/// turn after the last uninstall delivered no hook.
+///
+/// # Errors
+///
+/// If its record or a capture file cannot be read.
+pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
+    let records: Vec<StepRecord> =
+        serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
+    let mut findings = Vec::new();
+    for (i, want) in STEPS.iter().enumerate() {
+        let n = i + 1;
+        let Some(got) = records.get(i).filter(|r| r.step == *want) else {
+            findings.push((
+                Label::Fail,
+                format!("step {n} ({}) left no record", want.command()),
+            ));
+            continue;
+        };
+        if got.outcome.as_deref() != Some(want.outcome()) {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) reported {}, not {}: {}",
+                    want.command(),
+                    got.outcome.as_deref().unwrap_or("no row"),
+                    want.outcome(),
+                    got.message.as_deref().unwrap_or("no message")
+                ),
+            ));
+        }
+        if let Some(health) = &got.health {
+            findings.push((
+                Label::Fail,
+                format!(
+                    "{} (step {n}) left the install unsound: {health}",
+                    want.command()
+                ),
+            ));
+        }
+    }
+    let manifest: Manifest = match std::fs::read_to_string(dir.join(MANIFEST)) {
+        Ok(text) => serde_json::from_str(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            findings.push((
+                Label::Blocked,
+                "the turn after the last uninstall did not run".into(),
+            ));
+            return Ok(Verdict::new(findings));
+        }
+        Err(e) => return Err(e),
+    };
+    // The scenario's own turn just completed in this sandbox, so one that
+    // cannot now is the uninstall's doing; with no turn, no hook proves nothing.
+    if !completed_turn(&manifest, &mut findings) {
+        findings.push((
+            Label::Fail,
+            format!(
+                "the turn after the last uninstall did not complete (exit {:?}, {} model \
+                 requests): the uninstall left the CLI unable to run",
+                manifest.capture.exit_code, manifest.requests
+            ),
+        ));
+        return Ok(Verdict::new(findings));
+    }
+    let mut delivered = 0;
+    for file in jsonl_files_under(dir)
+        .into_iter()
+        .filter(|f| is_hook_envelope(f))
+    {
+        delivered += json_lines(&file)?.len();
+    }
+    if delivered > 0 {
+        findings.push((
+            Label::Fail,
+            format!("{delivered} hook envelopes arrived after the last uninstall"),
+        ));
+    }
     Ok(Verdict::new(findings))
 }
 
@@ -321,15 +408,9 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
         .collect())
 }
 
-fn judge(
-    p: &Profile,
-    scenario: &Scenario,
-    manifest: &Manifest,
-    dir: &Path,
-    scene: &str,
-    findings: &mut Vec<(Label, String)>,
-) -> std::io::Result<()> {
-    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+/// Whether `manifest`'s CLI completed a turn against the scripted model; a
+/// request no script line matched is Script either way.
+fn completed_turn(manifest: &Manifest, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
             Label::Script,
@@ -339,6 +420,19 @@ fn judge(
             ),
         ));
     }
+    manifest.capture.exit_code == Some(0) && manifest.requests > 0
+}
+
+fn judge(
+    p: &Profile,
+    scenario: &Scenario,
+    manifest: &Manifest,
+    dir: &Path,
+    scene: &str,
+    findings: &mut Vec<(Label, String)>,
+) -> std::io::Result<()> {
+    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+    let completed = completed_turn(manifest, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
@@ -349,7 +443,7 @@ fn judge(
         return Ok(());
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
-    if manifest.capture.exit_code != Some(0) || manifest.requests == 0 {
+    if !completed {
         findings.push((
             Label::Blocked,
             format!(
@@ -890,6 +984,125 @@ mod tests {
 
     fn blank_transcripts(dir: &Path) {
         edit_transcripts(dir, |_| false);
+    }
+
+    /// A lifecycle run in a fresh directory: `records` as its steps reported,
+    /// its silent turn's manifest, and `envelopes` hook lines.
+    fn lifecycle_run(records: &[StepRecord], envelopes: usize) -> tempfile::TempDir {
+        let d = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            d.path().join(LIFECYCLE_RECORD),
+            serde_json::to_string(records).expect("records"),
+        )
+        .expect("record");
+        write_manifest(d.path(), "codex", |_| {});
+        std::fs::write(
+            d.path().join(HOOK_PAYLOADS),
+            "{\"hook_event_name\":\"Stop\"}\n".repeat(envelopes),
+        )
+        .expect("hooks");
+        d
+    }
+
+    fn sound() -> Vec<StepRecord> {
+        STEPS
+            .iter()
+            .map(|s| StepRecord {
+                step: *s,
+                outcome: Some(s.outcome().into()),
+                message: None,
+                health: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sound_lifecycle_passes() {
+        let d = lifecycle_run(&sound(), 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_hook_after_the_last_uninstall_fails() {
+        let d = lifecycle_run(&sound(), 2);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "2 hook envelopes arrived"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_failed_step_or_an_unsound_install_fails() {
+        let mut records = sound();
+        records[1].outcome = Some("failed".into());
+        records[1].message = Some("codex plugin remove: unknown command".into());
+        records[2].health = Some("install broken: the plugin is not installed".into());
+        let d = lifecycle_run(&records, 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "disconnect (step 2) reported failed"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            has(&v, Label::Fail, "connect (step 3) left the install unsound"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_turn_that_never_ran_or_could_not_complete_proves_no_silence() {
+        let d = lifecycle_run(&sound(), 0);
+        std::fs::remove_file(d.path().join(MANIFEST)).expect("rm");
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(has(&v, Label::Blocked, "did not run"), "{:?}", v.findings());
+        let d = lifecycle_run(&sound(), 0);
+        write_manifest(d.path(), "codex", |m| m.capture.exit_code = Some(1));
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "did not complete"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_step_that_left_no_record_fails() {
+        let d = lifecycle_run(&sound()[..2], 0);
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "step 3 (connect) left no record"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// Each step's outcome is a token the published `--json` contract lists,
+    /// the copy of it this side of the crate boundary.
+    #[test]
+    fn every_step_outcome_is_a_contract_token() {
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../integrations/raycast/contract/outcome-row.schema.json"),
+            )
+            .expect("the contract reads"),
+        )
+        .expect("the contract parses");
+        let tokens = &schema["$defs"]["WireOutcome"]["enum"];
+        for s in STEPS {
+            assert!(
+                tokens
+                    .as_array()
+                    .is_some_and(|t| t.iter().any(|v| v == s.outcome())),
+                "{} is no contract token: {tokens}",
+                s.outcome()
+            );
+        }
     }
 
     fn has(v: &Verdict, label: Label, text: &str) -> bool {
