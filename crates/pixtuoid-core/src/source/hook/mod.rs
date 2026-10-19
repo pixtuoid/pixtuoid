@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{checked_pid, decode_hook_payload};
+use crate::source::decoder::{checked_pid, decode_hook_payload, hook_source};
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -192,11 +192,13 @@ impl Drop for UndeliveredEvents {
     }
 }
 
-/// The agent a decoded event should bind to the connection's `_pid` (for the
-/// abrupt-exit watch). BOTH `SessionStart` and `Identity` register-or-back-fill
-/// a slot, and `Identity` is the only carrier for a session attached mid-turn
-/// until its next `SessionStart`. Activity/Waiting/End never register a new
-/// slot.
+/// Every agent a payload of `source`'s names, each bound once to the
+/// connection's `_pid` for the abrupt-exit watch. The payload is a sighting of
+/// that pid whatever it decodes to: registering a slot is the reducer's
+/// business, and an end still says which process sent it. Binding an agent with
+/// no slot, or an ended one, is harmless, since its exit `SessionEnd` is a
+/// reducer no-op. At most one target per agent: a payload must not corroborate
+/// its own pid, and omp pairs `SessionStart` + `Identity` in one batch.
 ///
 /// Dispatches on the same `FocusChannel` as [`patch_identity_pids`], which
 /// reads a narrower fact off it: a `ServerStamp` pid ends sessions but is no
@@ -205,36 +207,19 @@ impl Drop for UndeliveredEvents {
 /// its own exit watch, so binding here would only offer a second, weaker
 /// answer. omp carries BOTH reapers and no precedence is enforced: on an abrupt
 /// kill this watch usually ends the slot first, and the jsonl exit path's
-/// trailing rows then land on an exiting slot as no-ops — accepted, a duplicate
-/// `SessionEnd` is a documented reducer no-op.
-fn pid_bind_target(ev: &AgentEvent) -> Option<(AgentId, bool)> {
+/// trailing rows then land on an exiting slot as no-ops.
+fn bind_targets(source: &str, evs: &[AgentEvent]) -> std::collections::BTreeMap<AgentId, bool> {
     use crate::source::registry::FocusChannel;
-    let (agent_id, source) = match ev {
-        AgentEvent::SessionStart {
-            agent_id, source, ..
-        }
-        | AgentEvent::Identity {
-            agent_id, source, ..
-        } => (agent_id, source),
-        _ => return None,
-    };
-    match crate::source::registry::descriptor_for(source).map(SourceDescriptor::focus_channel) {
+    let corroborate = match crate::source::registry::descriptor_for(source)
+        .map(SourceDescriptor::focus_channel)
+    {
         // The shim GUESSED which ancestor is the CLI — corroborate it.
-        Some(FocusChannel::ShimStamp) => Some((*agent_id, true)),
-        // The source stamped its own `process.pid`; a session that never calls a
-        // tool reports it once.
-        Some(FocusChannel::PluginStamp | FocusChannel::ServerStamp) => Some((*agent_id, false)),
-        _ => None,
-    }
-}
-
-/// The batch's bind targets, at most one per agent: a payload must not
-/// corroborate its own pid. omp pairs `SessionStart` + `Identity` in its
-/// session batches (activity events are not bind targets), so the collapse is
-/// load-bearing — pinned by `a_batch_yields_one_bind_target_per_agent` and
-/// `an_omp_session_batch_pairs_start_and_identity_and_binds_once_trusted`.
-fn bind_targets(evs: &[AgentEvent]) -> std::collections::BTreeMap<AgentId, bool> {
-    evs.iter().filter_map(pid_bind_target).collect()
+        Some(FocusChannel::ShimStamp) => true,
+        // The source stamped its own `process.pid`, a fact (`Bindings::sight`).
+        Some(FocusChannel::PluginStamp | FocusChannel::ServerStamp) => false,
+        _ => return std::collections::BTreeMap::new(),
+    };
+    evs.iter().map(|e| (e.agent_id(), corroborate)).collect()
 }
 
 /// Stamp the connection's peeked `_pid` onto every `Identity` event of a decoded
@@ -324,13 +309,16 @@ pub(crate) async fn handle_conn(
                     .get("_pid")
                     .and_then(serde_json::Value::as_i64)
                     .and_then(checked_pid);
+                let source = v.as_object().map(|o| hook_source(o).to_owned());
                 match decode_hook_payload(v) {
                     // One payload can decode to multiple events (#221) — sent in
                     // order on the same channel, so the reducer registers with
                     // real identity before the activity event applies.
                     Ok(evs) => {
-                        if let (Some(pid), Some(watch)) = (pid, pid_watch.as_ref()) {
-                            for (agent_id, corroborate) in bind_targets(&evs) {
+                        if let (Some(pid), Some(source), Some(watch)) =
+                            (pid, source.as_deref(), pid_watch.as_ref())
+                        {
+                            for (agent_id, corroborate) in bind_targets(source, &evs) {
                                 watch.note(pid, agent_id, corroborate);
                             }
                         }
@@ -456,12 +444,12 @@ mod tests {
             },
         ];
         assert_eq!(
-            bind_targets(&batch).len(),
+            bind_targets("cursor", &batch).len(),
             1,
-            "two bind-target events for one agent must collapse to one sighting"
+            "two events for one agent must collapse to one sighting"
         );
         assert_eq!(
-            bind_targets(&batch).get(&id),
+            bind_targets("cursor", &batch).get(&id),
             Some(&true),
             "cursor is ShimStamp — its pid is a guess and needs corroborating"
         );
@@ -486,7 +474,7 @@ mod tests {
             ),
             "the pair this test exists for: {evs:?}"
         );
-        let targets = bind_targets(&evs);
+        let targets = bind_targets("omp", &evs);
         assert_eq!(targets.len(), 1, "the pair must collapse to one sighting");
         assert_eq!(
             targets.values().next(),
@@ -494,8 +482,8 @@ mod tests {
             "a PluginStamp pid is the CLI's own — no corroboration"
         );
 
-        // The switch batch: End(prev) is no bind target, and the current id's
-        // Start+Identity pair still collapses to one trusted sighting.
+        // The switch batch: the current id's Start+Identity pair still collapses
+        // to one trusted sighting, and the ended id binds a no-op beside it.
         let evs = crate::source::omp::decode_omp_hook_payload(&serde_json::json!({
             "type": "session_switch",
             "sessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000002.jsonl",
@@ -509,16 +497,16 @@ mod tests {
             3,
             "End(prev) + Start(cur) + Identity(cur): {evs:?}"
         );
-        let targets = bind_targets(&evs);
+        let targets = bind_targets("omp", &evs);
         assert_eq!(
-            (targets.len(), targets.values().next()),
-            (1, Some(&false)),
-            "one trusted sighting for the current id, none for the ended one"
+            targets.into_values().collect::<Vec<_>>(),
+            [false, false],
+            "one trusted sighting per id, the ended one's included"
         );
     }
 
     #[test]
-    fn pid_bind_target_skips_a_source_whose_stamp_is_untrusted() {
+    fn a_source_whose_stamp_is_untrusted_binds_nothing() {
         for source in ["claude-code", "codex"] {
             let id = AgentId::from_parts(source, "s");
             let ev = AgentEvent::SessionStart {
@@ -528,16 +516,15 @@ mod tests {
                 cwd: "/r".into(),
                 parent_id: None,
             };
-            assert_eq!(
-                pid_bind_target(&ev),
-                None,
+            assert!(
+                bind_targets(source, &[ev]).is_empty(),
                 "{source} declares its shim stamp untrusted; it must not bind"
             );
         }
     }
 
     #[test]
-    fn pid_bind_target_covers_both_registration_carriers() {
+    fn every_event_binds_its_agent() {
         let id = AgentId::from_parts("opencode", "ses_x");
         for ev in [
             AgentEvent::SessionStart {
@@ -554,14 +541,6 @@ mod tests {
                 cwd: None,
                 pid: None,
             },
-        ] {
-            assert_eq!(
-                pid_bind_target(&ev),
-                Some((id, false)),
-                "{ev:?} must bind the pid; opencode's server stamps its own, so no corroboration"
-            );
-        }
-        for ev in [
             AgentEvent::ActivityStart {
                 agent_id: id,
                 tool_use_id: None,
@@ -581,7 +560,13 @@ mod tests {
                 as_child: false,
             },
         ] {
-            assert_eq!(pid_bind_target(&ev), None, "{ev:?} must not bind the pid");
+            assert_eq!(
+                bind_targets("opencode", std::slice::from_ref(&ev))
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                [(id, false)],
+                "{ev:?} must bind the pid; opencode's server stamps its own, so no corroboration"
+            );
         }
     }
 
@@ -865,6 +850,53 @@ mod tests {
         );
     }
 
+    /// A turn that ends without a tool, failed or not, still corroborates its
+    /// session's pid: kimi `-p` fires `SessionStart` and then only its turn's end.
+    #[tokio::test]
+    async fn a_session_whose_only_other_payload_is_its_turn_end_ends_with_its_pid() {
+        for end in ["Stop", "StopFailure"] {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
+            let Some(watch) = HookPidWatch::spawn(tx.clone()) else {
+                return; // no exit-watch backend on this platform — nothing to assert
+            };
+            let mut child = crate::test_child::sleeper();
+            let pid = child.id();
+            let (mut client, server) = tokio::io::duplex(4096);
+            let task = tokio::spawn(handle_conn(
+                server.take(MAX_CONN_BYTES),
+                tx,
+                Some(watch),
+                None,
+            ));
+            let line = format!(
+                "{{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
+                 \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
+                 {{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"{end}\",\
+                 \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
+            );
+            client.write_all(line.as_bytes()).await.unwrap();
+            drop(client);
+            task.await.unwrap();
+
+            child.kill().expect("kill the watched child");
+            let _ = child.wait();
+            let ended = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    match rx.recv().await {
+                        Some((_, AgentEvent::SessionEnd { agent_id, .. })) => {
+                            return Some(agent_id);
+                        }
+                        Some(_) => continue,
+                        None => return None,
+                    }
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("{end}: a SessionEnd within 5s of the watched pid dying"));
+            assert_eq!(ended, Some(AgentId::from_parts("kimi", "s")), "{end}");
+        }
+    }
+
     /// The #896 shape at this seam: ONE payload carrying a `_pid`, then that pid
     /// dies. A single sighting of a shim-guessed pid must end nothing. (The
     /// batch-dedupe guard itself is pinned by `a_batch_yields_one_bind_target_per_agent`
@@ -937,6 +969,39 @@ mod tests {
         );
         let (_, ev) = rx.recv().await.expect("the paired ActivityStart");
         assert!(matches!(ev, AgentEvent::ActivityStart { .. }), "got {ev:?}");
+    }
+
+    #[tokio::test]
+    async fn handle_conn_stamps_a_tool_less_antigravity_session_s_pid() {
+        use crate::source::decoder::EVENT_STAMP;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
+        let (mut client, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(handle_conn(server.take(MAX_CONN_BYTES), tx, None, None));
+        for event in ["SessionStart", "Stop"] {
+            let line = serde_json::json!({
+                "_pixtuoid_source": "antigravity",
+                EVENT_STAMP: event,
+                "conversationId": "c1",
+                "workspacePaths": ["/repo"],
+                "_pid": i32::MAX,
+            });
+            client
+                .write_all(format!("{line}\n").as_bytes())
+                .await
+                .unwrap();
+        }
+        drop(client);
+        task.await.unwrap();
+
+        let mut events = Vec::new();
+        while let Ok((_, ev)) = rx.try_recv() {
+            events.push(ev);
+        }
+        assert!(
+            events.iter().any(|ev| matches!(ev,
+                AgentEvent::Identity { pid: Some(p), .. } if p.pid == i32::MAX)),
+            "{events:?}"
+        );
     }
 
     #[tokio::test]

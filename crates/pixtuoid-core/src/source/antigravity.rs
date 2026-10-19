@@ -256,13 +256,18 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
         (step.map(step_tool_id), obj.get("toolCall"))
     };
     match event {
-        "SessionStart" => Ok(vec![AgentEvent::SessionStart {
-            agent_id,
-            source: SOURCE_NAME.to_string(),
-            session_id: key.to_string(),
-            cwd: cwd.into(),
-            parent_id: None,
-        }]),
+        // The focus pid rides an `Identity`, so a session that never calls a
+        // tool still names it.
+        "SessionStart" => Ok(vec![
+            AgentEvent::SessionStart {
+                agent_id,
+                source: SOURCE_NAME.to_string(),
+                session_id: key.to_string(),
+                cwd: cwd.into(),
+                parent_id: None,
+            },
+            identity(),
+        ]),
         "PreToolUse" => {
             let (tool_use_id, tool) = call();
             let name = tool
@@ -285,15 +290,11 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
                 tool_use_id: call().0,
             },
         ]),
-        // Turn end: the session lives on to the next prompt. Its Identity is a
-        // tool-less session's second pid sighting, which the exit watch arms on.
-        "Stop" => Ok(vec![
-            identity(),
-            AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: None,
-            },
-        ]),
+        // Turn end: the session lives on to the next prompt.
+        "Stop" => Ok(vec![AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        }]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))
@@ -487,12 +488,13 @@ mod tests {
                     cwd,
                     ..
                 },
+                AgentEvent::Identity { .. },
             ] => {
                 assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, &key));
                 assert_eq!(*session_id, key);
                 assert_eq!(cwd, Path::new("/repo"));
             }
-            other => panic!("expected one SessionStart, got {other:?}"),
+            other => panic!("expected a SessionStart and its Identity, got {other:?}"),
         }
     }
 
@@ -519,15 +521,12 @@ mod tests {
         assert!(
             matches!(
                 stop.as_slice(),
-                [
-                    AgentEvent::Identity { .. },
-                    AgentEvent::ActivityEnd {
-                        tool_use_id: None,
-                        ..
-                    }
-                ]
+                [AgentEvent::ActivityEnd {
+                    tool_use_id: None,
+                    ..
+                }]
             ),
-            "a tool-less turn still names its pid a second time: {stop:?}"
+            "{stop:?}"
         );
     }
 
