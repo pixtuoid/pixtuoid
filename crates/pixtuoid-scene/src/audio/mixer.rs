@@ -32,9 +32,8 @@ pub const RAMP_PER_S: f32 = 0.5;
 const MUSIC_FADE_S: f32 = 0.5;
 
 /// The foley's trim under the volume curve: the office's sounds sit UNDER the
-/// user's real work audio, level with lofi's music
-/// (`the_foley_trim_is_lofis_master_gain`).
-const BUS_TRIM: f32 = 0.35;
+/// user's real work audio, staged alike with lofi's music.
+const BUS_TRIM: f32 = pixtuoid_lofi::Performance::MASTER_GAIN as f32;
 
 /// Per-stem gain ramps chasing the scene's target levels, and the music's
 /// gain. Mute ramps to silence through the same slew (no click).
@@ -239,13 +238,6 @@ mod tests {
         assert_eq!(music, curve, "lofi masters the music");
         assert!((loops[0].1 - curve * BUS_TRIM).abs() < 1e-6);
         assert!((m.one_shot_gain() - curve * BUS_TRIM).abs() < 1e-6);
-    }
-
-    /// lofi masters its stream at the trim the office's lanes played under,
-    /// so music and foley stay level only while the two agree.
-    #[test]
-    fn the_foley_trim_is_lofis_master_gain() {
-        assert_eq!(BUS_TRIM, pixtuoid_lofi::audition::MASTER_GAIN as f32);
     }
 
     /// The loudest lane the stream replaced, Moderate's texture at 0.84 of
