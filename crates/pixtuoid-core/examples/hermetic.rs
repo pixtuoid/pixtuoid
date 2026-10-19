@@ -2158,6 +2158,11 @@ mod run {
             for (i, sources) in SHARDS.iter().enumerate() {
                 let a = shard(i + 1);
                 assert_eq!(a.check(false), Ok(()));
+                assert_eq!(
+                    a.shard.map(|(n, _)| n),
+                    Some(i + 1),
+                    "--shard counts from 1"
+                );
                 for p in PROFILES {
                     assert_eq!(
                         a.selects(p.source, "tool-run"),
