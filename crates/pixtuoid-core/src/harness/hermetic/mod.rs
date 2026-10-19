@@ -1143,8 +1143,8 @@ trust_level = "trusted"
         live: None,
         daemon: None,
     },
-    // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
-    // nearest 1.0.25: the repo tags no release.
+    // grok's cites, save one naming its own ref, are `xai-org/grok-build` at
+    // `37949780c1`, the monorepo sync nearest 1.0.25: the repo tags no release.
     Profile {
         source: "grok",
         package: Package::Npm("@xai-official/grok"),
@@ -1219,7 +1219,7 @@ trust_level = "trusted"
             // logical error PostToolUse (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:94-95`):
             // `use_tool` on a tool no server holds errs (`xai-grok-tools/src/registry/types.rs:1611-1615`,
             // `xai-grok-shell/src/session/acp_session_impl/tool_calls.rs:1064-1074`, `:1148-1152`,
-            // at main 2bdd1d6a; grok-build publishes no release).
+            // at main 2bdd1d6a).
             Scenario {
                 name: "tool-error",
                 shape: Shape::ToolRun,

@@ -835,9 +835,9 @@ mod tests {
         assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
         assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
         // The struct's spelling rides no line either transport reads.
-        let canonical = json!({"subagent_type": "explore", "run_in_background": false});
-        assert!(!grok_tool_detail("spawn_subagent", Some(&canonical)).is_task());
-        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&canonical)).is_task());
+        let structs_spelling = json!({"subagent_type": "explore", "run_in_background": false});
+        assert!(!grok_tool_detail("spawn_subagent", Some(&structs_spelling)).is_task());
+        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&structs_spelling)).is_task());
         // A model-emitted STRING "false" (upstream parses leniently).
         let lenient = json!({"subagent_type": "explore", "background": "false"});
         assert!(!grok_tool_detail("spawn_subagent", Some(&lenient)).is_task());
@@ -1186,7 +1186,7 @@ mod tests {
     #[test]
     fn transcript_blocking_spawn_is_task_background_is_not() {
         // In a live capture the transcript's rawInput carried the CLIENT-form
-        // `background` key, not the canonical `run_in_background`.
+        // `background` key, not the struct's `run_in_background`.
         let blocking = decode_line(acp_line(json!({
             "sessionUpdate": "tool_call", "toolCallId": "call-0b8fe95b-2070-4e76-a5c7-036d4ad88f12-0",
             "title": "spawn_subagent",
