@@ -321,7 +321,7 @@ fn dsh_event(v: &Value) -> Option<Cow<'_, str>> {
 }
 
 /// The registration a grok envelope's `hookEventName` answers to: the wire
-/// spells each key in snake_case, `SubagentEnd`'s as `SubagentStop`'s
+/// spells each key in snake_case
 /// (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`).
 fn grok_event(v: &Value) -> Option<Cow<'_, str>> {
     let wire = v.get("hookEventName")?.as_str()?;
@@ -901,7 +901,7 @@ sandbox = "unelevated"
             },
         ],
         script_vars: &[],
-        not_yet: &["PostToolUseFailure", "StopFailure", "SubagentEnd"],
+        not_yet: &["PostToolUseFailure", "StopFailure"],
         event_name: grok_event,
         not_yet_fields: &[],
         children_inherit_cwd: false,

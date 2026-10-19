@@ -10,11 +10,6 @@
 //! "grok"`), NOT a command argument: grok's runner injects handler env into the
 //! hook process on every platform, and an argument-less absolute path is
 //! DIRECT-exec'd, avoiding grok's shell heuristic entirely.
-//!
-//! Both `SubagentStop` AND `SubagentEnd` are registered: the docs name
-//! `SubagentStop`, but upstream's subagent-finish file-hook dispatch keys the
-//! `SubagentEnd` alias by exact-key lookup, so registering only the documented
-//! spelling would never fire.
 
 use std::path::{Path, PathBuf};
 
@@ -60,7 +55,6 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "StopCancelled",
     "SubagentStart",
     "SubagentStop",
-    "SubagentEnd",
     "SessionEnd",
 ];
 
@@ -412,9 +406,9 @@ mod tests {
         );
 
         let mut doc: Value = serde_json::from_str(&installed.content).unwrap();
-        doc["hooks"].as_object_mut().unwrap().remove("SubagentEnd");
+        doc["hooks"].as_object_mut().unwrap().remove("SubagentStop");
         let half_dead = verify_schema(&doc.to_string());
-        assert!(half_dead.issues.iter().any(|i| i.contains("SubagentEnd")));
+        assert!(half_dead.issues.iter().any(|i| i.contains("SubagentStop")));
 
         let mut doc: Value = serde_json::from_str(&installed.content).unwrap();
         doc["hooks"]["Stop"][0]["hooks"][0]["env"] = json!({});
@@ -470,7 +464,7 @@ mod tests {
                 "Notification" => {
                     payload["notificationType"] = serde_json::json!("permission_prompt");
                 }
-                "SubagentStart" | "SubagentStop" | "SubagentEnd" => {
+                "SubagentStart" | "SubagentStop" => {
                     payload["subagentId"] = serde_json::json!("0197fa31-child");
                     payload["subagentType"] = serde_json::json!("explore");
                 }
@@ -502,7 +496,6 @@ mod tests {
                 "StopFailure",
                 "SubagentStart",
                 "SubagentStop",
-                "SubagentEnd",
                 "SessionEnd",
             ],
         );

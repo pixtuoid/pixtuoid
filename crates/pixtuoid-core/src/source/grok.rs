@@ -342,7 +342,7 @@ pub(crate) fn decode_grok_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
             }
             Ok(evs)
         }
-        "subagent_stop" | "subagent_end" => Ok(vec![AgentEvent::SessionEnd {
+        "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
             agent_id: subagent_child_id(obj, event)?,
             as_child: true,
         }]),
@@ -1116,27 +1116,23 @@ mod tests {
     }
 
     #[test]
-    fn both_subagent_stop_spellings_end_the_child_as_child() {
-        // grok's docs name SubagentStop, but upstream's finish site fires
-        // SubagentEnd — whichever spelling a build emits must decode.
-        for event in ["subagent_stop", "subagent_end"] {
-            let mut v = envelope(event);
-            v["subagentId"] = json!("0197fa31-child");
-            v["subagentType"] = json!("explore");
-            v["exitCode"] = json!(0);
-            let evs = decode_all(v);
-            assert_eq!(evs.len(), 1);
-            assert!(
-                matches!(&evs[0], AgentEvent::SessionEnd { agent_id, as_child: true }
-                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child")),
-                "{event} must end the CHILD with the as_child stamp"
-            );
-        }
+    fn subagent_stop_ends_the_child_as_child() {
+        let mut v = envelope("subagent_stop");
+        v["subagentId"] = json!("0197fa31-child");
+        v["subagentType"] = json!("explore");
+        v["exitCode"] = json!(0);
+        let evs = decode_all(v);
+        assert_eq!(evs.len(), 1);
+        assert!(
+            matches!(&evs[0], AgentEvent::SessionEnd { agent_id, as_child: true }
+                if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child")),
+            "subagent_stop must end the CHILD with the as_child stamp"
+        );
     }
 
     #[test]
     fn subagent_events_without_subagent_id_are_malformed() {
-        for event in ["subagent_start", "subagent_stop", "subagent_end"] {
+        for event in ["subagent_start", "subagent_stop"] {
             assert!(
                 decode_grok_hook_payload(&envelope(event)).is_err(),
                 "{event} without subagentId must bail"
