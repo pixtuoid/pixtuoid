@@ -443,4 +443,19 @@ mod tests {
         assert_eq!(got.len(), 1, "only the transcript is admitted, got {got:?}");
         assert!(got[0].ends_with("updates.jsonl"));
     }
+
+    #[test]
+    fn a_capture_has_one_transcript_or_says_what_it_found() {
+        // codex admits every path, so only the envelope rule keeps its hooks out.
+        let d = tempfile::tempdir().expect("tempdir");
+        assert_eq!(transcript_in("codex", d.path()), Err(vec![]));
+        let rollout = d.path().join("rollout.jsonl");
+        std::fs::write(&rollout, "{}").expect("write");
+        std::fs::write(d.path().join(HOOK_PAYLOADS), "{}").expect("write");
+        assert_eq!(transcript_in("codex", d.path()), Ok(rollout.clone()));
+        std::fs::write(d.path().join("rollout-stale.jsonl"), "{}").expect("write");
+        let stale = transcript_in("codex", d.path()).expect_err("two transcripts");
+        assert_eq!(stale.len(), 2, "{stale:?}");
+        assert!(stale.contains(&rollout));
+    }
 }
