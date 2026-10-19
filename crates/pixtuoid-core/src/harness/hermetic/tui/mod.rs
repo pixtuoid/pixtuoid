@@ -82,7 +82,6 @@ pub struct Tui {
     pub(crate) gates: &'static [Gate],
     /// What ends the session the way a user would, so its end hook fires.
     pub(crate) quit: &'static [Key],
-    /// Whether it renders under ConPTY.
     pub(crate) renders_under_conpty: bool,
 }
 
