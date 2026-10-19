@@ -706,7 +706,7 @@ fn hitch(path: &Path) -> Result<()> {
                     Controls, Frame, MUSIC_AHEAD, Performance, SAMPLE_RATE,
                 };
                 // As the audio thread does.
-                pixtuoid::dev::demote_to_utility();
+                pixtuoid::dev::promote_to_user_initiated();
                 let mut performance = Performance::new(0, Controls::default());
                 // A whole render-ahead at a time.
                 let frames = MUSIC_AHEAD.as_secs_f64() * f64::from(SAMPLE_RATE);
