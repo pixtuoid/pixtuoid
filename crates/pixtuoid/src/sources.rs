@@ -1269,6 +1269,7 @@ mod tests {
         post_install_hint: None,
         host: None,
         registers: Vec::new,
+        consumes: &[],
     };
 
     // A fn-pointer `default_config_path` can't capture a TempDir; the PID suffix

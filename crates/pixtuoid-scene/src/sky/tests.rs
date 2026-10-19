@@ -1003,9 +1003,9 @@ fn the_weather_keeps_real_time_on_every_tier() {
 }
 
 #[test]
-fn rain_at_maps_audible_rain_under_its_policy() {
+fn rain_maps_audible_rain_under_its_policy() {
     let t = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(10_000);
-    let level = |w| rain_at(t, WeatherPolicy::Forced(w));
+    let level = |w| Sky::at_with(t, w).rain();
     assert_eq!(level(Weather::Storm), 1.0, "storm is full rain");
     let rain = level(Weather::Rain);
     assert!(
@@ -1021,6 +1021,31 @@ fn rain_at_maps_audible_rain_under_its_policy() {
         Weather::Smog,
     ] {
         assert_eq!(level(quiet), 0.0, "{quiet:?} must be silent");
+    }
+}
+
+/// The music changes family where the visual night is half in: the moon,
+/// city glow and stars ride `nightfall`, and lofi composes for the night
+/// below [`Controls::DUSK`](pixtuoid_lofi::Controls::DUSK).
+#[test]
+fn the_musics_night_family_starts_at_the_nightfalls_midpoint() {
+    const MINUTE_H: f32 = 1.0 / 60.0;
+    let dusk = pixtuoid_lofi::Controls::DUSK;
+    let office = crate::tally::StateCounts::default();
+    let at =
+        |h: f32| crate::audio::music_controls(&office, nightfall(h.rem_euclid(24.0)), 0.0).daylight;
+    for mid in [
+        SUN_SET_H + NIGHTFALL_H / 2.0,
+        SUN_RISE_H - NIGHTFALL_H / 2.0,
+    ] {
+        let (before, after) = (at(mid - MINUTE_H), at(mid + MINUTE_H));
+        let (day_side, night_side) = if mid > SUN_SET_H {
+            (before, after)
+        } else {
+            (after, before)
+        };
+        assert!(day_side >= dusk, "{mid}h's day side reads {day_side}");
+        assert!(night_side < dusk, "{mid}h's night side reads {night_side}");
     }
 }
 

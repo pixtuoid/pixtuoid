@@ -440,6 +440,57 @@ test('the ♩ bus holds an over-full sum under the native ceiling and passes a q
   expect(errors()).toEqual([]);
 });
 
+test('♩ music: the music worker streams lofi into the worklet, which plays it', async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  await gotoLive(page);
+  const { peak, stereoIsMono } = await page.evaluate(async () => {
+    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWorkletUrl } = (
+      document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
+    ).dataset;
+    const drv = await import(officeDriverUrl!);
+    const office = new (await drv.sharedWasm(wasmJsUrl!)).Office(0);
+    // The controls as a tick hands them over.
+    office.step(Date.now(), 64, 64);
+    office.audio_begin();
+    while (office.audio_warmup_step() > 0) {
+      /* the bank, then the rain */
+    }
+    const { controls } = JSON.parse(office.audio_tick(0)).music;
+    const rate = office.audio_sample_rate();
+    const ctx = new OfflineAudioContext(2, rate, rate);
+    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
+    const ahead = office.audio_music_ahead_s();
+    const music = await drv.startMusic(ctx, urls, ahead, Date.now(), controls);
+    music.node.connect(ctx.destination);
+    // The first chunk crossed worklet → worker ("need") → worklet before a quantum renders.
+    await music.primed;
+    const out = await ctx.startRendering();
+    music.stop();
+    const [left, right] = [out.getChannelData(0), out.getChannelData(1)];
+    return {
+      peak: left.reduce((a, v) => Math.max(a, Math.abs(v)), 0),
+      stereoIsMono: left.every((v, i) => v === right[i]),
+    };
+  });
+  expect(peak, 'the worklet played no music').toBeGreaterThan(0.001);
+  expect(stereoIsMono, 'lofi renders L == R, and the worklet keeps both').toBe(true);
+  expect(errors()).toEqual([]);
+});
+
+test('the ♩ click starts the music from the office it hears', async ({ page }) => {
+  const errors = watchErrors(page);
+  await gotoLive(page);
+  await page.locator('#office-audio').click();
+  await page.waitForFunction(
+    () => (window as unknown as { __pixMusic?: string }).__pixMusic === 'playing',
+    undefined,
+    { timeout: 60_000 }
+  );
+  expect(errors()).toEqual([]);
+});
+
 test('every ♩ lane and one-shot reaches the speakers only through the limiter bus', async ({
   page,
 }) => {
@@ -517,7 +568,7 @@ test('background playback: a hidden tab keeps ticking, reduced-motion stops it c
   expect(errors()).toEqual([]);
 });
 
-test('audio prewarm: the idle worker hands the take over and the ♩ click is upload-only', async ({
+test('audio prewarm: the idle worker hands the take over and the ♩ click plays it', async ({
   page,
 }) => {
   const errors = watchErrors(page);
@@ -528,27 +579,21 @@ test('audio prewarm: the idle worker hands the take over and the ♩ click is up
     undefined,
     { timeout: 60_000 }
   );
-  const t0 = await page.evaluate(() => performance.now());
   await page.locator('#office-audio').click();
   await page.waitForFunction(
     () => (window as unknown as { __pixAudioReadyAt?: number }).__pixAudioReadyAt !== undefined,
     undefined,
     { timeout: 10_000 }
   );
-  const readyAt = await page.evaluate(
-    () => (window as unknown as { __pixAudioReadyAt: number }).__pixAudioReadyAt
-  );
-  // upload-only is tens-to-hundreds of ms; the synthesis path it replaces
-  // measures SECONDS.
-  expect(readyAt - t0).toBeLessThan(2_500);
   expect(errors()).toEqual([]);
 });
 
-test('audio prewarm fallback: a dead worker leaves the click-time chunked warmup intact', async ({
+test('dead audio workers leave the music silent and the foley on the click-time chunked warmup', async ({
   page,
 }) => {
   const errors = watchErrors(page);
   await page.route('**/audio-worker.js', (route) => route.abort());
+  await page.route('**/music-worker.js', (route) => route.abort());
   await gotoLive(page);
   await page.waitForFunction(
     () => (window as unknown as { __pixAudioPrewarm?: string }).__pixAudioPrewarm === 'failed',
@@ -561,6 +606,12 @@ test('audio prewarm fallback: a dead worker leaves the click-time chunked warmup
     undefined,
     { timeout: 60_000 }
   );
+  await page.waitForFunction(
+    () => (window as unknown as { __pixMusic?: string }).__pixMusic === 'silent',
+    undefined,
+    { timeout: 30_000 }
+  );
+  await expect(page.locator('#office-audio'), 'the ♩ stays: the foley still plays').toBeVisible();
   expect(errors()).toEqual([]);
 });
 

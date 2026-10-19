@@ -23,11 +23,6 @@
 //! **Subagents** (Kimi's "agent swarm") are deliberately NOT modeled: the
 //! `SubagentStart`/`SubagentStop` payload shape is uncaptured, so sessions render
 //! FLAT until a byte-real capture can add nesting.
-//!
-//! **`PermissionRequest` needs a HUMAN to capture.** `kimi -p` auto-approves
-//! every tool — `rm -rf` included — so a headless run emits only SessionStart /
-//! PreToolUse / PostToolUse / Stop. The permission fixture came from an
-//! interactive TUI turn; re-record it the same way rather than composing one.
 
 use std::path::PathBuf;
 

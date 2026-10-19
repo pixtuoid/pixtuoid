@@ -94,6 +94,10 @@ clap_mangen = "0.3.0"
 # to `tracing::error!/debug!` instead of its default `eprintln!` — a raw stderr
 # write mid-altscreen corrupts the TUI.
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "tracing"], optional = true }
+# The music ring between the audio thread and the device callback: documented
+# wait-free and allocation-free after construction, which `std::sync::mpsc`
+# doesn't promise, with chunks written in place.
+rtrb = { version = "0.4.0", optional = true }
 
 [features]
 # `build-target` builds the Linux release artifacts with `portable` alone, so a
@@ -101,7 +105,7 @@ rodio = { version = "0.22.2", default-features = false, features = ["playback", 
 default = ["audio", "portable"]
 portable = []
 # Ambient sound (config-OFF at runtime regardless; this gates the DEPENDENCY).
-audio = ["dep:rodio"]
+audio = ["dep:rodio", "dep:rtrb"]
 
 # termios/select for `term::query_tty` (the truecolor and graphics probes),
 # O_NOFOLLOW in install/io.rs, the stderr dup in audio/sink.rs.

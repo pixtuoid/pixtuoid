@@ -12,8 +12,6 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-use super::Profile;
-
 /// How a decoder matches a literal against what it reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Match {
@@ -472,26 +470,30 @@ impl<'ast> Visit<'ast> for Collect {
     }
 }
 
-/// Whether `p` owes `text`: its `not_yet_literals`, or a hook its `not_yet`
-/// names in any spelling, or a kind or path segment its `not_yet_fields` names.
-pub(crate) fn owes(p: &Profile, text: &str) -> bool {
-    p.not_yet_literals.contains(&text) || owed_elsewhere(p, text)
+/// Whether a profile's `not_yet` or `not_yet_fields` owes `text`, each
+/// census of which shrinks its own list.
+pub(crate) fn owed_elsewhere(
+    not_yet: &[&str],
+    not_yet_fields: &[(&str, &str)],
+    text: &str,
+) -> bool {
+    not_yet.iter().any(|h| one_hook(h, text))
+        || not_yet_fields.iter().any(|(kind, path)| {
+            kind.split_once(':').is_some_and(|(_, k)| k == text)
+                || path.split('/').any(|s| s == text)
+        })
 }
 
-/// Whether `p` owes `text` through its `not_yet` or `not_yet_fields`, each
-/// census of which shrinks its own list.
-pub(crate) fn owed_elsewhere(p: &Profile, text: &str) -> bool {
+/// Whether `a` and `b` name one hook in two spellings: `not_yet`'s
+/// (`PostToolUseFailure`) and a decoder's wire one (`post_tool_use_failure`).
+fn one_hook(a: &str, b: &str) -> bool {
     let spelled = |s: &str| -> String {
         s.chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .map(|c| c.to_ascii_lowercase())
             .collect()
     };
-    p.not_yet.iter().any(|h| spelled(h) == spelled(text))
-        || p.not_yet_fields.iter().any(|(kind, path)| {
-            kind.split_once(':').is_some_and(|(_, k)| k == text)
-                || path.split('/').any(|s| s == text)
-        })
+    spelled(a) == spelled(b)
 }
 
 /// What a `syn::File`'s `fn name` dispatches on in its first `match on`: the
@@ -592,6 +594,22 @@ enum Key {
     Item(&'static str),
 }
 
+/// What one source owes, as its profile's three lists say.
+#[cfg(test)]
+struct Owing<'a> {
+    source: &'a str,
+    literals: &'a [&'a str],
+    hooks: &'a [&'a str],
+    fields: &'a [(&'a str, &'a str)],
+}
+
+#[cfg(test)]
+impl Owing<'_> {
+    fn elsewhere(&self, text: &str) -> bool {
+        owed_elsewhere(self.hooks, self.fields, text)
+    }
+}
+
 /// Every problem with the census at rest, over `population` and each source's
 /// `held` keys and values: a literal no fixture holds, owed or exempted; a
 /// `not_yet_literals` entry a fixture holds, no decoder reads, or another list
@@ -600,7 +618,7 @@ enum Key {
 fn problems(
     population: &BTreeSet<Literal>,
     held: &BTreeMap<&str, BTreeSet<String>>,
-    profiles: &[&Profile],
+    owing: &[Owing<'_>],
     exempt: &[Exempt],
     absent: &BTreeSet<&str>,
 ) -> Vec<String> {
@@ -620,17 +638,17 @@ fn problems(
         let Some(sources) = owner.sources() else {
             continue;
         };
-        let mine: Vec<&&Profile> = profiles
+        let mine: Vec<&Owing<'_>> = owing
             .iter()
-            .filter(|p| sources.contains(&p.source))
+            .filter(|o| sources.contains(&o.source))
             .collect();
-        for p in &mine {
-            if p.not_yet_literals.contains(&l.text.as_str()) {
-                read_owed.insert((p.source, l.text.clone()));
-                if holds(p.source, l) {
+        for o in &mine {
+            if o.literals.contains(&l.text.as_str()) {
+                read_owed.insert((o.source, l.text.clone()));
+                if holds(o.source, l) {
                     out.push(format!(
                         "{}: `{}` is in a fixture: it leaves not_yet_literals",
-                        p.source, l.text
+                        o.source, l.text
                     ));
                 }
             }
@@ -648,7 +666,9 @@ fn problems(
         if let Some(e) = row {
             excused.insert((e.module, e.key));
         }
-        let owed = mine.iter().any(|p| owes(p, &l.text));
+        let owed = mine
+            .iter()
+            .any(|o| o.literals.contains(&l.text.as_str()) || o.elsewhere(&l.text));
         if !owed && row.is_none() && !sources.iter().all(|s| absent.contains(s)) {
             out.push(format!(
                 "{} {}: `{}` ({:?}) is in no fixture of {}: record a scenario that \
@@ -661,17 +681,17 @@ fn problems(
             ));
         }
     }
-    for p in profiles {
-        for owed in p.not_yet_literals {
-            if owed_elsewhere(p, owed) {
+    for o in owing {
+        for owed in o.literals {
+            if o.elsewhere(owed) {
                 out.push(format!(
                     "{}: not_yet_literals names `{owed}`, which another owed list owes",
-                    p.source
+                    o.source
                 ));
-            } else if !read_owed.contains(&(p.source, (*owed).to_owned())) {
+            } else if !read_owed.contains(&(o.source, (*owed).to_owned())) {
                 out.push(format!(
                     "{}: not_yet_literals names `{owed}`, which no decoder of it reads",
-                    p.source
+                    o.source
                 ));
             }
         }
@@ -788,11 +808,19 @@ mod tests {
     #[test]
     fn every_literal_a_decoder_reads_is_recorded_owed_or_exempt() {
         let absent = NOT_HERMETIC.iter().map(|(s, _)| *s).collect();
-        let profiles: Vec<&Profile> = PROFILES.iter().collect();
+        let owing: Vec<Owing<'_>> = PROFILES
+            .iter()
+            .map(|p| Owing {
+                source: p.source,
+                literals: p.not_yet_literals,
+                hooks: p.not_yet,
+                fields: p.not_yet_fields,
+            })
+            .collect();
         let found = problems(
             &population().expect("the decoders parse"),
             &held(),
-            &profiles,
+            &owing,
             EXEMPT,
             &absent,
         );
@@ -808,34 +836,33 @@ mod tests {
         }
     }
 
+    /// The census of `population` against codex owing `owed` literals alone,
+    /// its fixtures holding `held`.
     fn census(
         population: &[Literal],
         held: &[&str],
-        p: &Profile,
+        owed: &[&str],
         exempt: &[Exempt],
     ) -> Vec<String> {
-        let held = BTreeMap::from([(p.source, held.iter().map(|s| (*s).to_owned()).collect())]);
+        let held = BTreeMap::from([("codex", held.iter().map(|s| (*s).to_owned()).collect())]);
+        let owing = Owing {
+            source: "codex",
+            literals: owed,
+            hooks: &[],
+            fields: &[],
+        };
         problems(
             &population.iter().cloned().collect(),
             &held,
-            &[p],
+            &[owing],
             exempt,
             &BTreeSet::new(),
         )
     }
 
-    fn codex() -> &'static Profile {
-        crate::harness::hermetic::profile("codex").expect("profiled")
-    }
-
     #[test]
     fn a_literal_no_fixture_holds_and_nothing_owes_is_a_problem() {
-        let found = census(
-            &[lit("codex.rs", "decode", "turn_renamed")],
-            &[],
-            codex(),
-            &[],
-        );
+        let found = census(&[lit("codex.rs", "decode", "turn_renamed")], &[], &[], &[]);
         assert!(
             found.iter().any(|f| f.contains("`turn_renamed`")),
             "{found:?}"
@@ -843,7 +870,7 @@ mod tests {
         let held = census(
             &[lit("codex.rs", "decode", "turn_renamed")],
             &["turn_renamed"],
-            codex(),
+            &[],
             &[],
         );
         assert!(
@@ -854,8 +881,8 @@ mod tests {
 
     #[test]
     fn an_owed_literal_a_fixture_holds_leaves_the_list() {
-        let owed = codex().not_yet_literals[0];
-        let found = census(&[lit("codex.rs", "decode", owed)], &[owed], codex(), &[]);
+        let owed = "turn_renamed";
+        let found = census(&[lit("codex.rs", "decode", owed)], &[owed], &[owed], &[]);
         assert!(
             found.iter().any(|f| f.contains("leaves not_yet_literals")),
             "{found:?}"
@@ -864,7 +891,7 @@ mod tests {
 
     #[test]
     fn an_owed_literal_no_decoder_reads_is_stale() {
-        let found = census(&[], &[], codex(), &[]);
+        let found = census(&[], &[], &["turn_renamed"], &[]);
         assert!(
             found.iter().any(|f| f.contains("no decoder of it reads")),
             "{found:?}"
@@ -874,7 +901,7 @@ mod tests {
     #[test]
     fn an_exemption_that_excuses_nothing_is_stale() {
         let row = [literal("codex.rs", "gone", "test")];
-        let found = census(&[], &[], codex(), &row);
+        let found = census(&[], &[], &[], &row);
         assert!(
             found.iter().any(|f| f.contains("excuses no literal")),
             "{found:?}"
@@ -883,7 +910,7 @@ mod tests {
 
     #[test]
     fn a_module_with_no_owner_is_a_problem() {
-        let found = census(&[lit("nobody_knows.rs", "f", "x")], &[], codex(), &[]);
+        let found = census(&[lit("nobody_knows.rs", "f", "x")], &[], &[], &[]);
         assert!(
             found.iter().any(|f| f.contains("a module with no owner")),
             "{found:?}"
@@ -892,18 +919,12 @@ mod tests {
 
     #[test]
     fn a_hook_owed_in_another_spelling_is_owed_once() {
-        let grok = crate::harness::hermetic::profile("grok").expect("profiled");
-        let hook = grok.not_yet.first().expect("grok owes a hook");
-        let wire: String = hook
-            .chars()
-            .enumerate()
-            .flat_map(|(i, c)| {
-                let sep = (i > 0 && c.is_ascii_uppercase()).then_some('_');
-                sep.into_iter()
-                    .chain(std::iter::once(c.to_ascii_lowercase()))
-            })
-            .collect();
-        assert!(owed_elsewhere(grok, &wire), "{wire}");
+        assert!(one_hook("PostToolUseFailure", "post_tool_use_failure"));
+        assert!(one_hook(
+            "session.execution.failed",
+            "SessionExecutionFailed"
+        ));
+        assert!(!one_hook("Stop", "StopFailure"));
     }
 
     #[test]

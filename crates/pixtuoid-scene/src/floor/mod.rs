@@ -414,21 +414,6 @@ pub(crate) fn waypoint_kind_of(
     layout.and_then(|l| l.waypoints.get(idx)).map(|w| w.kind)
 }
 
-/// The mood [`TrackId`](crate::audio::TrackId) for `now` under `weather` — the
-/// ONE place the day/precip/epoch input wiring lives. Lives here (not `audio`)
-/// because it reaches `sky::is_day_at` and `sky::rain_at`,
-/// which `audio` must not depend on.
-pub fn track_for(
-    now: std::time::SystemTime,
-    weather: crate::sky::WeatherPolicy,
-) -> crate::audio::TrackId {
-    crate::audio::select_track(
-        crate::sky::is_day_at(now),
-        crate::sky::rain_at(now, weather),
-        crate::audio::track_epoch(now),
-    )
-}
-
 /// Wraps the pure `crate::audio` model into the ONE per-frame [`AudioFrame`]
 /// composition every painter shares. Holds the [`AudioCueTracker`] plus the
 /// floor it is primed for, so a floor switch reprimes silently.
@@ -463,7 +448,8 @@ impl AudioObserver {
         // You hear the floor you're LOOKING AT — but rain stays global, since
         // it's weather, not agent activity.
         let counts = crate::tally::per_floor_counts(scene)[floor_idx.min(MAX_FLOORS - 1)];
-        let precipitation = crate::sky::rain_at(now, floor.weather);
+        let sky = crate::sky::Sky::at(crate::anim::Motion::Full.timing(now), floor.weather);
+        let rain = sky.rain();
         let floor_ids = scene
             .agents
             .iter()
@@ -471,9 +457,9 @@ impl AudioObserver {
             .map(|(id, _)| id);
         let events = self.cues.observe(floor_ids, occupied, waypoint_kind);
         AudioFrame {
-            stems: crate::audio::stem_levels(&counts, precipitation),
+            stems: crate::audio::stem_levels(&counts, rain),
             events,
-            track: track_for(now, floor.weather),
+            music: crate::audio::music_controls(&counts, sky.nightfall(), rain),
         }
     }
 

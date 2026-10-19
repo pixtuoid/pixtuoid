@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, literals, profile};
+use super::{
+    MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, Surface, literals, profile, tui,
+};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
@@ -144,6 +146,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
     }
     findings.extend(literal_census(
         p,
+        p.not_yet_literals,
         &literals::population()?,
         &scenario_reads(p, ran.into_iter())?,
         &carried,
@@ -153,9 +156,11 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
 
 /// The literal census over runs: each value a decoder's literal matches in
 /// the `committed` fixtures must arrive in some run at the same kind and
-/// pointer, unless `p` owes the literal; an owed one any run holds is Stale.
+/// pointer, unless `owed` or another of `p`'s owed lists names it; one of
+/// `owed` any run holds is Stale.
 fn literal_census(
     p: &Profile,
+    owed: &[&str],
     population: &BTreeSet<literals::Literal>,
     committed: &Fields,
     carried: &Fields,
@@ -165,10 +170,11 @@ fn literal_census(
     for (kind, values) in &committed.values {
         let seen = carried.values.get(kind);
         for (at, value) in values {
-            for l in mine
-                .iter()
-                .filter(|l| l.matches(value) && !literals::owes(p, &l.text))
-            {
+            for l in mine.iter().filter(|l| {
+                l.matches(value)
+                    && !owed.contains(&l.text.as_str())
+                    && !literals::owed_elsewhere(p.not_yet, p.not_yet_fields, &l.text)
+            }) {
                 let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
                 if !arrived {
                     findings.push((
@@ -184,7 +190,7 @@ fn literal_census(
         }
     }
     let held = carried.keys_and_values();
-    for owed in p.not_yet_literals {
+    for owed in owed {
         if mine
             .iter()
             .any(|l| l.text == *owed && held.iter().any(|s| l.matches(s)))
@@ -488,6 +494,15 @@ fn judge(
             ),
         ));
     }
+    let unrefused = matches!(scenario.surface, Surface::Tui(_))
+        && manifest.capture.exit_code == Some(tui::UNREFUSED);
+    if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
+        findings.push((
+            Label::Fail,
+            "the turn raised no gate the driver knows to refuse".into(),
+        ));
+        return Ok(());
+    }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if manifest.capture.exit_code != Some(0) || manifest.requests == 0 {
         findings.push((
@@ -558,6 +573,11 @@ fn judge(
         );
     }
 
+    // A daemon renders presence, not a desk sprite, so its turn is judged there.
+    if p.descriptor().is_daemon() {
+        judge_presence(p, scene, findings);
+        return Ok(());
+    }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission => 1,
         Shape::Subagent => 2,
@@ -829,17 +849,8 @@ fn subagent(
 /// lost track of.
 fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
     let prefix = format!("{}\u{b7}", p.descriptor().label_prefix);
-    let frames: Vec<&str> = scene
-        .lines()
-        .filter_map(|l| l.split_once("agents=[").map(|(_, agents)| agents))
-        .collect();
-    let state = format!(":{shown}");
-    let shown_in = |frame: &str| {
-        frame
-            .split(", ")
-            .any(|a| a.starts_with(&prefix) && a.contains(&state))
-    };
-    if !frames.iter().any(|f| shown_in(f)) {
+    let frames = rosters(scene, "agents");
+    if !frames.iter().any(|f| holds(f, &prefix, shown)) {
         findings.push((
             Label::Fail,
             format!("the scene never showed a {prefix} agent {shown}"),
@@ -851,6 +862,54 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
             "an agent was still in the scene after the CLI exited".into(),
         ));
     }
+    breadcrumbs(scene, findings);
+}
+
+/// A daemon's turn on the scene: its mascot busy, then idle once the turn
+/// settled, and down or gone once the daemon stopped.
+fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>) {
+    let mascot = format!("{}@", p.source);
+    let frames = rosters(scene, "daemons");
+    match frames.iter().position(|f| holds(f, &mascot, "busy")) {
+        None => findings.push((
+            Label::Fail,
+            format!("the scene never showed a {mascot} daemon busy"),
+        )),
+        Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, "idle")) => findings.push((
+            Label::Fail,
+            format!("the {mascot} daemon never settled idle after its turn"),
+        )),
+        Some(_) => {}
+    }
+    let up = |last: &&str| last.contains(&mascot) && !holds(last, &mascot, "down");
+    if frames.last().is_some_and(up) {
+        findings.push((
+            Label::Fail,
+            "a daemon was still up in the scene after it stopped".into(),
+        ));
+    }
+    breadcrumbs(scene, findings);
+}
+
+/// Each line's `key=[…]` roster, in the scene's order.
+fn rosters<'a>(scene: &'a str, key: &str) -> Vec<&'a str> {
+    let key = format!("{key}=[");
+    scene
+        .lines()
+        .filter_map(|l| l.split_once(key.as_str()).map(|(_, roster)| roster))
+        .collect()
+}
+
+/// Whether `roster` holds an entry of `who`'s in `state`.
+fn holds(roster: &str, who: &str, state: &str) -> bool {
+    let state = format!(":{state}");
+    roster
+        .split(", ")
+        .any(|e| e.starts_with(who) && e.contains(&state))
+}
+
+/// Each drift breadcrumb pixtuoid logged while rendering the run.
+fn breadcrumbs(scene: &str, findings: &mut Vec<(Label, String)>) {
     for line in scene.lines().filter(|l| l.contains(BREADCRUMB_TARGET)) {
         findings.push((Label::Fail, format!("drift breadcrumb: {}", line.trim())));
     }
@@ -987,6 +1046,8 @@ mod tests {
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CC_WAIT_SCENE: &str =
         "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
+    const CX_WAIT_SCENE: &str =
+        "agents=[cx\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
 
     const DS_WAIT_SCENE: &str =
         "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
@@ -1033,6 +1094,13 @@ mod tests {
         );
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "agent waiting"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_codex_tui_permission_run_passes() {
+        let d = recorded("codex", Shape::Permission, CX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
@@ -1519,6 +1587,41 @@ mod tests {
     }
 
     #[test]
+    fn a_tui_turn_that_raised_no_gate_to_refuse_fails() {
+        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let unrefused = |requests, unmatched| {
+            write_manifest(d.path(), "claude-code", |m| {
+                m.scenario = Shape::Permission.name().into();
+                m.capture.exit_code = Some(tui::UNREFUSED);
+                m.requests = requests;
+                m.unmatched = unmatched;
+            });
+            verify(d.path()).expect("verify")
+        };
+        let v = unrefused(2, 0);
+        assert!(has(&v, Label::Fail, "no gate"), "{:?}", v.findings());
+        assert_eq!(
+            unrefused(0, 0).label(),
+            Label::Blocked,
+            "it never reached the model"
+        );
+        assert_eq!(
+            unrefused(2, 1).label(),
+            Label::Script,
+            "a script that lost the turn never asked for the gated tool"
+        );
+        let h = run_from("codex", "tool-run-recorded", CX_SCENE);
+        write_manifest(h.path(), "codex", |m| {
+            m.capture.exit_code = Some(tui::UNREFUSED)
+        });
+        assert_eq!(
+            verify(h.path()).expect("verify").label(),
+            Label::Blocked,
+            "a headless CLI's own exit code"
+        );
+    }
+
+    #[test]
     fn a_run_the_script_lost_before_it_blocked_is_not_judged() {
         let v = Verdict::new(vec![
             (Label::Blocked, "exit 1".into()),
@@ -1546,6 +1649,35 @@ mod tests {
             Label::Script,
             "a CLI the script lost and that then exited is the script's finding"
         );
+    }
+
+    #[test]
+    fn a_daemon_s_turn_shows_busy_then_idle_then_gone() {
+        let judged = |scene: &str| {
+            let d = recorded("openclaw", Shape::ToolRun, scene);
+            verify(d.path()).expect("verify").findings().to_vec()
+        };
+        let frame = |state: &str| format!("agents=[] daemons=[openclaw@59871:{state}]\n");
+        let gone = "agents=[] daemons=[]\n";
+        let ran = [frame("idle"), frame("busy"), frame("idle"), frame("down")].concat();
+        assert_eq!(judged(&(ran.clone() + gone)), vec![]);
+        assert_eq!(
+            judged(&ran),
+            vec![],
+            "down is stopped, before its linger ends"
+        );
+        let never_busy = [frame("idle"), frame("down")].concat() + gone;
+        assert!(
+            judged(&never_busy)[0].1.contains("busy"),
+            "{:?}",
+            judged(&never_busy)
+        );
+        let never_settled = [frame("busy"), frame("down")].concat() + gone;
+        assert!(judged(&never_settled)[0].1.contains("idle"));
+        let idle_only_before = [frame("idle"), frame("busy"), frame("down")].concat() + gone;
+        assert!(judged(&idle_only_before)[0].1.contains("idle"));
+        let lingering = [frame("busy"), frame("idle")].concat();
+        assert!(judged(&lingering)[0].1.contains("still up"));
     }
 
     #[test]
@@ -1603,24 +1735,20 @@ mod tests {
 
     #[test]
     fn a_not_yet_hook_any_run_fires_is_stale() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         let mut first = true;
         edit_hooks(d.path(), |mut v| {
             if std::mem::take(&mut first) {
-                v["hook_event_name"] = "PermissionRequest".into();
+                v["hook_event_name"] = "Notification".into();
             }
             Some(v)
         });
         let v = verify_source(
-            profile("codex").expect("profile"),
+            profile("claude-code").expect("profile"),
             &[d.path().to_path_buf()],
         )
         .expect("verify");
-        assert!(
-            has(&v, Label::Stale, "PermissionRequest"),
-            "{:?}",
-            v.findings()
-        );
+        assert!(has(&v, Label::Stale, "Notification"), "{:?}", v.findings());
     }
 
     #[test]
@@ -1687,15 +1815,22 @@ mod tests {
 
     #[test]
     fn a_not_yet_value_a_run_carries_is_stale() {
+        let p = profile("codex").expect("profile");
+        let tool_run = p.scenarios.iter().filter(|s| s.shape == Shape::ToolRun);
+        let committed = scenario_reads(p, tool_run).expect("fixtures");
         let d = recorded("codex", Shape::ToolRun, CX_SCENE);
-        respell(d.path(), "\"task_complete\"", "\"turn_aborted\"");
-        let v = verify_source(
-            profile("codex").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        respell(d.path(), "\"task_complete\"", "\"web_search_begin\"");
+        let mut carried = Fields::default();
+        for file in jsonl_files_under(d.path()) {
+            for line in json_lines(&file).expect("lines") {
+                carried.add(p, &file, &line, true);
+            }
+        }
+        let population = literals::population().expect("the decoders parse");
+        let findings = literal_census(p, &["web_search_begin"], &population, &committed, &carried);
+        let v = Verdict::new(findings);
         assert!(
-            has(&v, Label::Stale, "`turn_aborted`"),
+            has(&v, Label::Stale, "`web_search_begin`"),
             "{:?}",
             v.findings()
         );

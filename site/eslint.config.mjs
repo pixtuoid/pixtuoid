@@ -30,5 +30,7 @@ export default [
       ],
     },
   },
+  // An AudioWorkletGlobalScope, not a window.
+  { files: ['public/music-worklet.js'], languageOptions: { globals: globals.audioWorklet } },
   prettier,
 ];

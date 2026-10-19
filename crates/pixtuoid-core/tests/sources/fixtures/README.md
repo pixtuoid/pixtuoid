@@ -8,7 +8,6 @@ scenarios; `just capture-fixture <source> <scenario> <cmd...>` the rest, profile
 
 ```text
 just capture-fixture kimi tool-run kimi -p '{prompt}'
-just capture-fixture openclaw lifecycle scripts/lib/capture-openclaw-lifecycle.sh '{prompt}'
 ```
 
 A hand-written fixture pins whatever its author believed the wire looked like, and that belief is what the fixture then teaches every later reader.
@@ -180,8 +179,7 @@ The harness, for each fixture dir:
 `{{TRANSCRIPT_PATH}}` in a hook payload's `transcript_path` is replaced at
 runtime with the fixture's transcript file path (for a hook-only scenario: the
 scenario dir's relative path), so a CC hook (which coalesces on
-`transcript_path`) lines up with its JSONL file. Codex carries it too — to
-prove Codex *ignores* it and still coalesces on `session_id`.
+`transcript_path`) lines up with its JSONL file.
 
 **Adding a CLI:** [the test steps](../../AGENTS.md#adding-a-new-agent-cli--the-test-steps).
 

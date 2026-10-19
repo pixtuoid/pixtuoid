@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
       # No setup-cargo-just: nothing compiles here, so the runner's preinstalled
       # cargo is enough — but cargo-deny DOES shell out to `cargo metadata`.
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-deny
       - uses: ./.github/actions/setup-just
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       # cargo-machete parses manifests and does not need a Rust toolchain.
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-machete
       - uses: ./.github/actions/setup-just
@@ -112,11 +112,11 @@ jobs:
         run: pipx install check-jsonschema==0.37.4
       # Lychee is not manifest-managed by install-action, so its documented
       # cargo-binstall fallback installs our pinned version.
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: lychee@0.24.2,zizmor@1.30.0
           fallback: cargo-binstall
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: shellcheck@0.11.0
           fallback: none
@@ -233,7 +233,7 @@ jobs:
         with:
           prefix-key: v1-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-binstall
       # The justfile's API_PUBLIC_API is the authority; api-surface-check

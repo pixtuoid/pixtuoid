@@ -3,6 +3,8 @@ import { asset, DIM_RESTING } from '../consts';
 
 const wasmJsUrl = asset('wasm/pixtuoid_web.js');
 const audioWorkerUrl = asset('audio-worker.js');
+const musicWorkerUrl = asset('music-worker.js');
+const musicWorkletUrl = asset('music-worklet.js');
 const officeDriverUrl = asset('office-driver.js');
 ---
 
@@ -311,13 +313,17 @@ const officeDriverUrl = asset('office-driver.js');
   is:inline
   data-wasm-js-url={wasmJsUrl}
   data-audio-worker-url={audioWorkerUrl}
+  data-music-worker-url={musicWorkerUrl}
+  data-music-worklet-url={musicWorkletUrl}
   data-office-driver-url={officeDriverUrl}
 >
   (function () {
     const script = document.currentScript;
     if (!(script instanceof HTMLScriptElement)) return;
-    const { wasmJsUrl, audioWorkerUrl, officeDriverUrl } = script.dataset;
-    if (!wasmJsUrl || !audioWorkerUrl || !officeDriverUrl) return;
+    const { wasmJsUrl, audioWorkerUrl, musicWorkerUrl, musicWorkletUrl, officeDriverUrl } =
+      script.dataset;
+    if (!wasmJsUrl || !audioWorkerUrl || !musicWorkerUrl || !musicWorkletUrl || !officeDriverUrl)
+      return;
 
     const wrap = document.querySelector('.backdrop');
     const canvas = document.getElementById('office-live');
@@ -637,7 +643,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     syncPauseBtn();
 
-    // The engine records per-tick gain/play/swap commands (office.audio_tick) and JS is dumb glue — the mixing decisions all live in Rust.
+    // The engine records per-tick gain/play commands (office.audio_tick) and JS is dumb glue — the mixing decisions all live in Rust.
     const audioBtn = document.getElementById('office-audio');
     const AUDIO_PREF = 'pix:audio';
     let audioCtx = null;
@@ -647,13 +653,10 @@ const officeDriverUrl = asset('office-driver.js');
     let audioBooting = false;
     let audioUnavailable = false;
     let restoreArmed = false;
-    // Stem counts mirror Rust: LoopStem::ALL.len() (0=Pad … 6=Rain) and bank::TRACK_STEMS.len().
-    const LOOP_STEM_COUNT = 7;
-    const TRACK_STEM_COUNT = 6;
     let loopGains = [];
-    let loopSources = [];
     let oneShotBufs = {};
     let audioSR = 44100;
+    let gainDezipperS = 0;
     const ONESHOT_WIRES = [0, 1, 2, 3, 4];
 
     // Copy OUT of wasm memory before the next memory.grow detaches the view — audioSR is a param so no wasm call splits the view from the copy.
@@ -669,9 +672,9 @@ const officeDriverUrl = asset('office-driver.js');
     }
     function audioUploadBuffers() {
       audioSR = office.audio_sample_rate(); // read once, before any view is taken
+      gainDezipperS = office.audio_gain_dezipper_s();
       loopGains = [];
-      loopSources = [];
-      for (let i = 0; i < LOOP_STEM_COUNT; i++) {
+      for (let i = 0; i < office.audio_loop_count(); i++) {
         const g = audioCtx.createGain();
         g.gain.value = 0;
         g.connect(audioBus);
@@ -681,8 +684,11 @@ const officeDriverUrl = asset('office-driver.js');
         s.connect(g);
         s.start();
         loopGains[i] = g;
-        loopSources[i] = s;
       }
+      // The music's worklet plays into it once it starts (musicTick).
+      musicGain = audioCtx.createGain();
+      musicGain.gain.value = 0;
+      musicGain.connect(audioBus);
       oneShotBufs = {};
       for (const wire of ONESHOT_WIRES) {
         oneShotBufs[wire] = [];
@@ -696,20 +702,49 @@ const officeDriverUrl = asset('office-driver.js');
         }
       }
     }
-    // A mood-track swap replaces the TRACK-stem loop buffers in place; rain (the last stem) is weather, untouched.
-    function audioSwapLoops() {
-      for (let i = 0; i < TRACK_STEM_COUNT; i++) {
-        const s = audioCtx.createBufferSource();
-        s.buffer = audioLoopBuffer(i);
-        s.loop = true;
-        s.connect(loopGains[i]);
-        s.start();
-        try {
-          loopSources[i].stop();
-        } catch (e) {
-          /* already stopped */
-        }
-        loopSources[i] = s;
+    // The ♩ music (officeDriver.startMusic): 'idle', 'starting', the startMusic handle once it runs, or 'silent'.
+    let music = 'idle';
+    let musicGain = null;
+    let musicAsked = '';
+    window.__pixMusic = music; // e2e observability: idle → starting → playing, or silent
+    function musicSilence() {
+      if (typeof music === 'object') music.stop();
+      music = 'silent';
+      window.__pixMusic = music;
+    }
+    // Started on the first tick that carries the office's controls, since they pick the first song; no AudioWorklet
+    // or a dead worker leaves the music silent and the foley playing.
+    function musicTick(controls) {
+      if (!controls || music === 'silent') return;
+      if (music === 'idle') {
+        music = 'starting';
+        window.__pixMusic = 'starting';
+        const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
+        officeDriver
+          .startMusic(audioCtx, urls, office.audio_music_ahead_s(), Date.now(), controls)
+          .then(function (m) {
+            if (music !== 'starting') {
+              m.stop(); // audio went away while the worklet loaded
+              return;
+            }
+            m.node.connect(musicGain);
+            music = m;
+            musicAsked = String(controls);
+            m.primed.then(function () {
+              if (music === m) window.__pixMusic = 'playing';
+            });
+            m.failed.then(function () {
+              if (music === m) musicSilence();
+            });
+          })
+          .catch(function () {
+            if (music === 'starting') musicSilence();
+          });
+        return;
+      }
+      if (typeof music === 'object' && String(controls) !== musicAsked) {
+        musicAsked = String(controls);
+        music.setControls(controls);
       }
     }
     function audioTick(nowMs) {
@@ -721,17 +756,17 @@ const officeDriverUrl = asset('office-driver.js');
       } catch (e) {
         return; // a bad frame degrades to holding the last gains, never a throw
       }
+      if (cmd.music) musicTick(cmd.music.controls);
       // Muted = a suspended AudioContext: nodes queued against one all fire at once on resume, so schedule nothing.
       if (!audioPlaying) return;
       // A node op can still throw if the context died mid-session — degrade rather than spam the console every frame.
       try {
         const now = audioCtx.currentTime;
-        // The mixer already crossfades, so a short setTargetAtTime just de-zippers the ~30fps steps.
         // The wire itself is the width authority here.
         for (let i = 0; i < cmd.gains.length; i++) {
-          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, 0.03);
+          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, gainDezipperS);
         }
-        if (cmd.swapped) audioSwapLoops();
+        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, gainDezipperS);
         for (const p of cmd.plays) {
           const bank = oneShotBufs[p[0]];
           const buf = bank && bank[p[1]];
@@ -769,6 +804,7 @@ const officeDriverUrl = asset('office-driver.js');
         prewarm = 'failed';
         window.__pixAudioPrewarm = 'failed';
       }
+      musicSilence();
       if (audioCtx) {
         try {
           audioCtx.close();
@@ -777,6 +813,7 @@ const officeDriverUrl = asset('office-driver.js');
         }
         audioCtx = null;
         audioBus = null;
+        musicGain = null;
       }
       if (audioBtn) {
         audioBtn.setAttribute('aria-pressed', 'false');
@@ -818,7 +855,7 @@ const officeDriverUrl = asset('office-driver.js');
     // Copy the transferred take into the driver one piece per tick, so no single main-thread block is bigger than one buffer.
     function prewarmAdopt(data) {
       try {
-        office.audio_adopt_begin(!!data.night, data.epoch);
+        office.audio_adopt_begin();
       } catch (e) {
         prewarmSettle('failed');
         return;
@@ -893,9 +930,9 @@ const officeDriverUrl = asset('office-driver.js');
       prewarmWorker.onerror = function () {
         prewarmSettle('failed');
       };
-      prewarmWorker.postMessage({ wasmJsUrl: wasmJsUrl, nowMs: Date.now() });
+      prewarmWorker.postMessage({ wasmJsUrl: wasmJsUrl });
     }
-    // Pump the chunked synthesis off setTimeout(0), so the main thread never blocks on the multi-second bank/rain/beds build in one go.
+    // Pump the chunked synthesis off setTimeout(0), so the main thread never blocks on the bank/rain build in one go.
     function audioPumpWarmup() {
       try {
         if (office.audio_warmup_step() > 0) {
@@ -916,7 +953,9 @@ const officeDriverUrl = asset('office-driver.js');
       try {
         // iOS mutes default WebAudio on the Ring/Silent switch; 'playback' routes to the media channel so the deliberate ♩ tap plays even on silent.
         if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
-        audioCtx = new AudioContext();
+        // At the engine's rate, so the music's worklet plays its frames unresampled; a rate the browser can't run
+        // throws here, into audioDisable.
+        audioCtx = new AudioContext({ sampleRate: office.audio_sample_rate() });
         audioBus = officeDriver.audioBus(audioCtx, office);
       } catch (e) {
         // WebAudio unavailable (Tor / hardened Firefox / enterprise lockdown): HIDE the ♩ too, not just a flag-set —
