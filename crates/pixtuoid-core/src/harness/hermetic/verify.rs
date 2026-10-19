@@ -341,7 +341,7 @@ fn judge(
     }
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
-    if unrefused && manifest.requests > 0 {
+    if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
             Label::Fail,
             "the turn raised no gate the driver knows to refuse".into(),
@@ -1381,20 +1381,26 @@ mod tests {
     #[test]
     fn a_tui_turn_that_raised_no_gate_to_refuse_fails() {
         let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
-        let unrefused = |requests| {
+        let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = Shape::Permission.name().into();
                 m.capture.exit_code = Some(tui::UNREFUSED);
                 m.requests = requests;
+                m.unmatched = unmatched;
             });
             verify(d.path()).expect("verify")
         };
-        let v = unrefused(2);
+        let v = unrefused(2, 0);
         assert!(has(&v, Label::Fail, "no gate"), "{:?}", v.findings());
         assert_eq!(
-            unrefused(0).label(),
+            unrefused(0, 0).label(),
             Label::Blocked,
             "it never reached the model"
+        );
+        assert_eq!(
+            unrefused(2, 1).label(),
+            Label::Script,
+            "a script that lost the turn never asked for the gated tool"
         );
         let h = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(h.path(), "codex", |m| {
