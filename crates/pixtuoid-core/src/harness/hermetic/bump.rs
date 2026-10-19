@@ -15,12 +15,9 @@ use serde_json::{Map, Value};
 use super::{PROFILES, Profile, pin};
 use crate::harness::sources_root;
 
-/// The leg that runs only what [`Profile::runs_on_windows`] allows.
-const WINDOWS: &str = "windows";
-
 /// The nightly's drift legs, as `hermetic.yml`'s matrix names them: a release
-/// is proposed only once it moved on every one that runs its source in full.
-const OSES: &[&str] = &["macos", WINDOWS];
+/// is proposed only once it moved on every one.
+const OSES: &[&str] = &["macos", "windows"];
 
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
@@ -75,9 +72,9 @@ impl Proposal {
 }
 
 /// The releases to propose, given the drift job's outputs: each profiled source
-/// that moved to one release on every OS in `OSES` that runs it in full, above
-/// its pin, under a title no PR has taken (an open one proposes it, a closed one
-/// declined it). A leg that reported nothing moved nothing.
+/// that moved to one release on every OS in `OSES`, above its pin, under a
+/// title no PR has taken (an open one proposes it, a closed one declined it). A
+/// leg that reported nothing moved nothing.
 ///
 /// # Errors
 ///
@@ -94,11 +91,9 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
     }
     let mut proposals = Vec::new();
     for p in PROFILES {
-        let versions: Vec<Option<&str>> = OSES
+        let versions: Vec<Option<&str>> = moved
             .iter()
-            .zip(&moved)
-            .filter(|(os, _)| **os != WINDOWS || p.runs_on_windows())
-            .map(|(_, rows)| {
+            .map(|rows| {
                 rows.iter()
                     .find(|r| r.source == p.source)
                     .map(|r| r.version.as_str())
@@ -251,21 +246,6 @@ mod tests {
         );
         let taken = [proposals[0].title.clone()];
         assert_eq!(plan(&both, &taken), Ok(vec![]), "proposed or declined");
-    }
-
-    #[test]
-    fn a_source_windows_cannot_run_in_full_moves_on_the_legs_that_do() {
-        let grok = profile("grok").expect("grok's profile");
-        assert!(!grok.runs_on_windows());
-        let up = above(grok).to_string();
-        let mac_only = drift(&[("macos", &[("grok", &up)]), ("windows", &[])]);
-        assert_eq!(
-            plan(&mac_only, &[]),
-            Ok(vec![Proposal::new("grok", &v(&up))])
-        );
-        let up = above(codex()).to_string();
-        let mac_only = drift(&[("macos", &[("codex", &up)]), ("windows", &[])]);
-        assert_eq!(plan(&mac_only, &[]), Ok(vec![]), "codex runs on Windows");
     }
 
     #[test]

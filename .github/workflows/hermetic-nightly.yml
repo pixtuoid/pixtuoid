@@ -44,8 +44,8 @@ jobs:
       full: true
       cli: latest
 
-  # A release moved on every leg running its source in full becomes a bot PR;
-  # the legs ran the CLIs, so `bump` holds what they report and record to a bump.
+  # A release that moved on every leg becomes a bot PR. The legs ran the CLIs,
+  # so what they report and record is untrusted; `bump` holds it to a bump.
   plan:
     name: plan the pin bumps
     needs: drift

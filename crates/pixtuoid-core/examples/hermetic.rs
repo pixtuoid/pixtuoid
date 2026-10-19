@@ -178,7 +178,7 @@ mod run {
     impl Args {
         /// Refuses what no run could honor: a selection that names nothing
         /// runnable is an operator's typo, not a run where everything was blocked.
-        fn check(&self) -> Result<(), String> {
+        fn check(&self, windows: bool) -> Result<(), String> {
             if let Some(why) = CORPUS_REFUSAL.filter(|_| self.record) {
                 return Err(format!("--record: {why}"));
             }
@@ -196,11 +196,17 @@ mod run {
             }
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
-            match self.scenario.as_deref() {
-                Some(sc) if !p.scenarios.iter().any(|s| s.shape.name() == sc) => {
-                    Err(format!("{source} has no scenario {sc}"))
-                }
-                _ => Ok(()),
+            let Some(sc) = self.scenario.as_deref() else {
+                return Ok(());
+            };
+            let s = p
+                .scenarios
+                .iter()
+                .find(|s| s.shape.name() == sc)
+                .ok_or_else(|| format!("{source} has no scenario {sc}"))?;
+            match s.not_run_on(windows) {
+                Some(why) => Err(format!("{source}/{sc} doesn't run here: {why}")),
+                None => Ok(()),
             }
         }
 
@@ -256,7 +262,7 @@ mod run {
                 std::process::exit(2);
             }
         };
-        if let Err(e) = args.check() {
+        if let Err(e) = args.check(cfg!(windows)) {
             eprintln!("{e}");
             std::process::exit(2);
         }
@@ -301,7 +307,8 @@ mod run {
         p: &Profile,
         runs: &Path,
     ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
-        let selected = selected(args, p, cfg!(windows));
+        let windows = cfg!(windows);
+        let selected = selected(args, p, windows);
         let mut entries = Vec::new();
         if selected.is_empty() {
             return Ok((entries, None));
@@ -349,14 +356,16 @@ mod run {
             banners.extend(banner.clone());
             entries.push(Entry::new(key, banner, verdict));
         }
-        if !judges_source(&judged, p.scenarios.len()) {
+        if !judges_leg(p, &judged, windows) {
             return Ok((entries, None));
         }
-        let key = format!("{} (every scenario)", p.source);
-        println!("== {key}");
-        let verdict = verify::verify_source(p, &judged)?;
-        passed &= verdict.label() == Label::Pass;
-        entries.push(Entry::new(key, None, verdict));
+        if judges_source(&judged, p.scenarios.len()) {
+            let key = format!("{} (every scenario)", p.source);
+            println!("== {key}");
+            let verdict = verify::verify_source(p, &judged)?;
+            passed &= verdict.label() == Label::Pass;
+            entries.push(Entry::new(key, None, verdict));
+        }
         let mut moved = None;
         if let (Ok(installed), true) = (&installed, passed) {
             match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
@@ -388,24 +397,25 @@ mod run {
         Ok((entries, moved))
     }
 
-    /// `p`'s scenarios `args` selects that this leg runs.
+    /// `p`'s scenarios `args` selects that a leg on `windows` runs.
     fn selected<'a>(args: &Args, p: &'a Profile, windows: bool) -> Vec<&'a Scenario> {
         p.scenarios
             .iter()
             .filter(|s| args.selects(p.source, s.shape.name()))
-            .filter(|s| !windows || s.runs_on_windows())
+            .filter(|s| s.not_run_on(windows).is_none())
             .collect()
     }
 
-    /// Every scenario a leg on `windows` never runs, as the report names it.
+    /// Every scenario a leg on `windows` never runs, and why, as the report
+    /// names it.
     fn not_run(windows: bool) -> Vec<String> {
         PROFILES
             .iter()
             .flat_map(|p| {
-                p.scenarios
-                    .iter()
-                    .filter(move |s| windows && !s.runs_on_windows())
-                    .map(|s| format!("{}/{}", p.source, s.shape.name()))
+                p.scenarios.iter().filter_map(move |s| {
+                    let why = s.not_run_on(windows)?;
+                    Some(format!("{}/{} ({why})", p.source, s.shape.name()))
+                })
             })
             .collect()
     }
@@ -431,6 +441,17 @@ mod run {
             }
         }
         Ok(())
+    }
+
+    /// Whether a leg on `windows` may move `p` on its `judged` runs: once they
+    /// are every scenario it runs, though only one that ran them all takes the
+    /// census ([`judges_source`]).
+    fn judges_leg(p: &Profile, judged: &[PathBuf], windows: bool) -> bool {
+        let leg = p
+            .scenarios
+            .iter()
+            .filter(|s| s.not_run_on(windows).is_none());
+        judged.len() == leg.count()
     }
 
     /// Whether `verify_source` takes a source's `judged` runs: only when they are
@@ -521,7 +542,7 @@ mod run {
             out += &format!(" {source} ({absence:?})");
         }
         if !not_run.is_empty() {
-            out += &format!("\nNot run on {os}: {}", not_run.join(" "));
+            out += &format!("\nNot run here: {}", not_run.join(" "));
         }
         out + "\n"
     }
@@ -1828,11 +1849,19 @@ mod run {
             };
             assert_eq!(names(true), ["tool-run", "subagent"]);
             assert_eq!(names(false), ["tool-run", "subagent", "permission"]);
-            assert_eq!(not_run(true), ["grok/permission"]);
             assert!(not_run(false).is_empty());
             let r = report(&Versions::Pinned, &[], &[], &not_run(true));
-            assert!(r.ends_with(": grok/permission\n"), "{r}");
+            assert!(
+                r.ends_with(
+                    "\nNot run here: grok/permission (its TUI paints nothing under ConPTY)\n"
+                ),
+                "{r}"
+            );
             assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+            let judged = |n| vec![PathBuf::new(); n];
+            assert!(judges_leg(grok, &judged(2), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(2), false));
+            assert!(judges_leg(grok, &judged(3), false));
         }
 
         #[test]
@@ -2396,19 +2425,27 @@ mod run {
 
         #[test]
         fn a_selection_naming_nothing_runnable_is_refused() {
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["codex"]).is_ok());
             assert!(check(&["codex", "tool-run"]).is_ok());
             assert!(check(&["codex", "no-such-scenario"]).is_err());
             assert!(check(&["no-such-source"]).is_err());
             let (absent, _) = NOT_HERMETIC[0];
             assert!(check(&[absent]).is_err(), "an unprofiled source says why");
+            let on = |windows| {
+                parse(&args(&["grok", "permission"]))
+                    .expect("parse")
+                    .check(windows)
+            };
+            assert!(on(false).is_ok());
+            let refused = on(true).expect_err("grok's TUI under ConPTY");
+            assert!(refused.contains("ConPTY"), "{refused}");
         }
 
         #[cfg(not(unix))]
         #[test]
         fn record_is_refused_off_unix() {
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             let refused = check(&["--record", "dsh"]).expect_err("the corpus pins Unix paths");
             assert!(refused.contains("Unix"), "{refused}");
         }
@@ -2419,7 +2456,7 @@ mod run {
             let a = parse(&args(&["--record", "--cli", "pinned", "dsh"])).expect("parse");
             assert!(a.record);
             assert_eq!(a.versions, Versions::Pinned);
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["--record"]).is_ok());
             assert!(check(&["--record", "dsh"]).is_ok());
             assert!(check(&["--cli", "latest", "--record", "dsh"]).is_ok());

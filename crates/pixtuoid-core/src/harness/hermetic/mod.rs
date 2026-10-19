@@ -376,7 +376,7 @@ const GROK_TUI: tui::Tui = tui::Tui {
     // `/exit` is `/quit`'s alias
     // (`crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md:71-73`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    // It clears the alternate screen and paints nothing more (the full tier's
+    // It clears the alternate screen and paints nothing more (`hermetic.yml`'s
     // Windows leg, run 39177894288's `grok/permission/tui.log`).
     renders_under_conpty: false,
 };
@@ -1343,12 +1343,6 @@ impl Profile {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
-
-    /// Whether a Windows leg runs every scenario, as its census and the release
-    /// it moved to need.
-    pub fn runs_on_windows(&self) -> bool {
-        self.scenarios.iter().all(Scenario::runs_on_windows)
-    }
 }
 
 impl Scenario {
@@ -1359,11 +1353,13 @@ impl Scenario {
             .join(format!("{}.json", self.shape.name()))
     }
 
-    /// Whether a Windows leg runs it.
-    pub fn runs_on_windows(&self) -> bool {
+    /// Why a leg on `windows` doesn't run it, if it doesn't.
+    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
-            Surface::Headless => true,
-            Surface::Tui(tui) => tui.renders_under_conpty,
+            Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
+                Some("its TUI paints nothing under ConPTY")
+            }
+            _ => None,
         }
     }
 }
