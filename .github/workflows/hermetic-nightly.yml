@@ -215,7 +215,7 @@ jobs:
           gh label create hermetic --color FBCA04 \
             --description "A hermetic run's verdict on an agent CLI's latest release" 2>/dev/null || true
           # The orchestrator owns the title, as each failed leg's report H1
-          # naming its OS, and they carry the disposition: retitle on the dedup
+          # naming its OS and shard, and they carry the disposition: retitle on the dedup
           # path too. A leg whose runs hold no report.md could not run: red,
           # once the others are filed.
           reports=(*/report.md)

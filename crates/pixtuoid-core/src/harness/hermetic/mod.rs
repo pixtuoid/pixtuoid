@@ -1852,6 +1852,20 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
 }
 
+/// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
+/// selects the `n`th: whole sources, split for about equal run time.
+pub const SHARDS: &[&[&str]] = &[
+    &[
+        "openclaw",
+        "codex",
+        "kimi",
+        "grok",
+        "claude-code",
+        "opencode",
+    ],
+    &["hermes", "dsh", "copilot", "omp", "reasonix", "antigravity"],
+];
+
 /// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
 /// the scripted model's npm lockfile, under `aimock/`.
 pub fn scripts_dir() -> PathBuf {
@@ -2028,6 +2042,15 @@ mod tests {
                 p.source
             );
         }
+    }
+
+    #[test]
+    fn the_shards_run_every_profile_once() {
+        let mut sharded: Vec<&str> = SHARDS.iter().flat_map(|s| s.iter().copied()).collect();
+        let mut profiled: Vec<&str> = PROFILES.iter().map(|p| p.source).collect();
+        sharded.sort_unstable();
+        profiled.sort_unstable();
+        assert_eq!(sharded, profiled);
     }
 
     #[test]
