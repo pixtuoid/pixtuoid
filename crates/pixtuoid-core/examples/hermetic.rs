@@ -373,8 +373,7 @@ mod run {
             let (banner, verdict, run) = match ran {
                 Ok((manifest, run)) => {
                     let verdict = verify::verify(&dir)?;
-                    // A CLI that couldn't run its scenario says nothing of its uninstall.
-                    let run = verdict.judged().then_some(run);
+                    let run = lifecycle_goes_on(&verdict, run);
                     (Some(manifest.capture.version), verdict, run)
                 }
                 Err(e) => (
@@ -551,6 +550,13 @@ mod run {
                 .iter()
                 .filter(|s| p.not_run_on(s, windows).is_none()),
         )
+    }
+
+    /// The sandbox a lifecycle goes on in, when its scenario's `verdict` was
+    /// judged: a CLI that couldn't run its scenario says nothing of its
+    /// uninstall.
+    fn lifecycle_goes_on<T>(verdict: &Verdict, run: T) -> Option<T> {
+        verdict.judged().then_some(run)
     }
 
     /// The first of `scenarios`, a headless one first, since a TUI's gate waits
@@ -2793,6 +2799,22 @@ mod run {
                 call["arguments"]["file_path"],
                 r"C:\ProgramData\pixtuoid-capture\proj/NOTE.txt"
             );
+        }
+
+        #[test]
+        fn a_lifecycle_goes_on_only_from_a_judged_scenario() {
+            let on = |findings: Vec<(Label, String)>| {
+                lifecycle_goes_on(&Verdict::new(findings), ()).is_some()
+            };
+            assert!(!on(vec![(Label::Blocked, "login wall".into())]));
+            assert!(!on(vec![
+                (Label::Blocked, "exit 1".into()),
+                (Label::Script, "unmatched".into()),
+            ]));
+            for label in [Label::Pass, Label::Stale, Label::Script, Label::Fail] {
+                assert!(on(vec![(label, "judged".into())]), "{label:?}");
+            }
+            assert!(on(Vec::new()));
         }
 
         #[test]
