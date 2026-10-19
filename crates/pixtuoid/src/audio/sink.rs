@@ -11,42 +11,26 @@ use rodio::source::{LimitSettings, Source};
 pub(crate) trait AudioSink: Send {
     /// Start `stem` looping `samples` (mono f32 at [`pixtuoid_scene::audio::SAMPLE_RATE`]) at gain 0.
     fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>);
-    /// Replace a looping stem's buffer — the caller guarantees the stem is at gain
-    /// 0, so the cut is inaudible.
-    fn swap_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>);
     /// Set a looping stem's gain (0..=1, already master-scaled).
     fn set_loop_gain(&mut self, stem: LoopStem, gain: f32);
     /// Fire-and-forget: the one-shot is detached, never tracked.
     fn play_once(&mut self, samples: Arc<Vec<f32>>, gain: f32);
 }
 
-/// Records calls instead of making sound — the CI/test double. Keeps the registered
-/// BUFFERS, not just the stem tags, so tests can pin that each stem got the RIGHT
-/// bed.
+/// Records calls instead of making sound — the CI/test double.
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct NullSink {
     pub(crate) loops_started: Vec<LoopStem>,
-    pub(crate) loop_samples: std::collections::HashMap<LoopStem, Arc<Vec<f32>>>,
-    /// (stem, new buffer length) per swap.
-    pub(crate) swaps: Vec<(LoopStem, usize)>,
-    pub(crate) last_gain: std::collections::HashMap<LoopStem, f32>,
     pub(crate) one_shots: usize,
 }
 
 #[cfg(test)]
 impl AudioSink for NullSink {
-    fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
+    fn start_loop(&mut self, stem: LoopStem, _samples: Arc<Vec<f32>>) {
         self.loops_started.push(stem);
-        self.loop_samples.insert(stem, samples);
     }
-    fn swap_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
-        self.swaps.push((stem, samples.len()));
-        self.loop_samples.insert(stem, samples);
-    }
-    fn set_loop_gain(&mut self, stem: LoopStem, gain: f32) {
-        self.last_gain.insert(stem, gain);
-    }
+    fn set_loop_gain(&mut self, _stem: LoopStem, _gain: f32) {}
     fn play_once(&mut self, _samples: Arc<Vec<f32>>, gain: f32) {
         if gain > 0.0 {
             self.one_shots += 1;
@@ -78,7 +62,7 @@ pub(crate) fn limited<S: Source>(source: S) -> impl Source {
     source.limit(settings).distortion(1.0, ceiling_amplitude())
 }
 
-/// The bus every lane and one-shot sums into, at the device's format, and its
+/// The bus every loop and one-shot sums into, at the device's format, and its
 /// [`limited`] output for the device's mixer.
 fn bus(
     channels: rodio::ChannelCount,
@@ -174,15 +158,6 @@ pub(crate) mod rodio_sink {
             player.set_volume(0.0);
             player.append(mono(&samples).repeat_infinite());
             self.loops.insert(stem, player);
-        }
-
-        fn swap_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
-            // the caller holds the stem at gain 0 across the swap, so nothing
-            // audible is cut
-            if let Some(old) = self.loops.remove(&stem) {
-                old.stop();
-            }
-            self.start_loop(stem, samples);
         }
 
         fn set_loop_gain(&mut self, stem: LoopStem, gain: f32) {

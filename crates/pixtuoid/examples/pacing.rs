@@ -26,10 +26,9 @@
 //! the sky's weather and strike. Its runs: the owner's 16x kitty on the real
 //! clock (`HITCH_REAL_SECS`, default 600), then per terminal a clear, an
 //! overcast and a stormy noon, dusk a second a frame, the first clock-weather
-//! transition, and a storm whose every frame paints and sends whole, with and
-//! without lofi track beds synthesizing beside it. `HITCH_ONLY=a|b` keeps the
-//! runs whose terminal or name holds every part; every run is paced, but
-//! back to back under `HITCH_HOT`.
+//! transition, and a storm whose every frame paints and sends whole.
+//! `HITCH_ONLY=a|b` keeps the runs whose terminal or name holds every part;
+//! every run is paced, but back to back under `HITCH_HOT`.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -504,9 +503,6 @@ struct HitchRun {
     length: Duration,
     /// Paint and send every frame whole: the worst case.
     whole: bool,
-    /// Synthesize lofi track beds on a thread throughout, as a track swap
-    /// does: the audio's heaviest load.
-    lofi: bool,
     /// The ambient tier: the plan puts SIXEL and iTerm2 on Calm.
     motion: Motion,
 }
@@ -552,7 +548,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
-            lofi: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -562,7 +557,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
-            lofi: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -572,7 +566,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(120),
             whole: false,
-            lofi: false,
             motion: Motion::Full,
         },
         // Every beat at night changes the windows' sky and a light far apart:
@@ -584,7 +577,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(60),
             whole: false,
-            lofi: false,
             motion: Motion::Calm,
         },
         HitchRun {
@@ -594,7 +586,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: Duration::from_secs(1),
             length: Duration::from_secs(3600),
             whole: false,
-            lofi: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -607,7 +598,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(120),
             whole: false,
-            lofi: false,
             motion: Motion::Full,
         },
         HitchRun {
@@ -617,17 +607,6 @@ fn hitch(path: &Path) -> Result<()> {
             step: tick,
             length: Duration::from_secs(30),
             whole: true,
-            lofi: false,
-            motion: Motion::Full,
-        },
-        HitchRun {
-            name: "stress: storm, every frame whole, lofi building",
-            weather: WeatherPolicy::Forced(Weather::Storm),
-            start: Some(noon),
-            step: tick,
-            length: Duration::from_secs(30),
-            whole: true,
-            lofi: true,
             motion: Motion::Full,
         },
     ];
@@ -638,7 +617,6 @@ fn hitch(path: &Path) -> Result<()> {
         step: tick,
         length: Duration::from_secs(real_secs),
         whole: false,
-        lofi: false,
         motion: Motion::Full,
     };
     let owner = |protocol, name| Term {
@@ -698,30 +676,6 @@ fn hitch(path: &Path) -> Result<()> {
         )?;
         r.set_weather(run.weather);
         r.set_motion(run.motion);
-        let lofi_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let lofi = run.lofi.then(|| {
-            let stop = Arc::clone(&lofi_stop);
-            std::thread::spawn(move || {
-                use pixtuoid_scene::audio::{TrackId, bank::Synthesis};
-                // As the audio thread does.
-                pixtuoid::dev::demote_to_utility();
-                let mut synthesis = Synthesis::new();
-                let mut builds = Vec::new();
-                let mut n = 0u64;
-                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    let track = if n.is_multiple_of(2) {
-                        TrackId::GenDay(n)
-                    } else {
-                        TrackId::GenNight(n)
-                    };
-                    let at = Instant::now();
-                    std::hint::black_box(synthesis.track(track));
-                    builds.push(at.elapsed());
-                    n += 1;
-                }
-                builds
-            })
-        });
         let wall = Instant::now();
         let start = run.start.unwrap_or_else(SystemTime::now);
         let scene = office(start);
@@ -805,18 +759,6 @@ fn hitch(path: &Path) -> Result<()> {
             writeln!(out)?;
             totals.push(total);
             n += 1;
-        }
-        lofi_stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(builds) = lofi.and_then(|h| h.join().ok()) {
-            let _ = writeln!(
-                stdout,
-                "  lofi track builds alongside: {} took {:?}",
-                builds.len(),
-                builds
-                    .iter()
-                    .map(|d| format!("{:.2}s", d.as_secs_f64()))
-                    .collect::<Vec<_>>()
-            );
         }
         let over = totals.iter().filter(|&&t| t > tick).count();
         let _ = writeln!(

@@ -470,12 +470,6 @@ pub fn hour_is_day(h: f32) -> bool {
     (SUN_RISE_H..SUN_SET_H).contains(&h)
 }
 
-/// Day/night at `now` on the LOCAL clock: the native painters' feed for the
-/// audio track selector (wasm passes its own hour to [`hour_is_day`]).
-pub(crate) fn is_day_at(now: SystemTime) -> bool {
-    hour_is_day(local_hour_frac(now))
-}
-
 /// The weather names [`WeatherPolicy::from_name`] accepts, canonical order.
 pub(crate) fn weather_names() -> Vec<&'static str> {
     Weather::ALL.iter().map(|w| w.name()).collect()

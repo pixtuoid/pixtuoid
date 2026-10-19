@@ -1,3 +1,0 @@
-{"hook_event_name":"UserPromptSubmit","session_id":"01000000-0000-7000-8000-000000000001","_pixtuoid_source":"codex","cwd":"/home/user/demo-project","transcript_path":"{{TRANSCRIPT_PATH}}"}
-{"hook_event_name":"PermissionRequest","session_id":"01000000-0000-7000-8000-000000000001","_pixtuoid_source":"codex"}
-{"hook_event_name":"Stop","session_id":"01000000-0000-7000-8000-000000000001","_pixtuoid_source":"codex"}

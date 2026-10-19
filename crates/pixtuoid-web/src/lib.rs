@@ -376,19 +376,18 @@ impl Office {
     // audio_begin → pump audio_warmup_step off setTimeout(0) → upload the
     // buffers via the ptr/len getters → audio_tick per rAF.
 
-    /// Create the audio engine for the CURRENT day/night + weather. Idempotent —
-    /// a second call is ignored. Costs nothing until `audio_warmup_step`.
+    /// Create the audio engine. Idempotent — a second call is ignored. Costs
+    /// nothing until `audio_warmup_step`.
     pub fn audio_begin(&mut self) {
         if self.audio.is_some() {
             return;
         }
-        let track = self.current_track();
-        self.audio = Some(audio::WebAudioDriver::new(track));
+        self.audio = Some(audio::WebAudioDriver::new());
     }
 
     /// Build ONE synthesis piece; returns pieces REMAINING (0 = ready to upload
-    /// buffers + tick). JS loops it off `setTimeout(0)` so the multi-second
-    /// synthesis never blocks the main thread in one shot.
+    /// buffers + tick). JS loops it off `setTimeout(0)` so the synthesis never
+    /// blocks the main thread in one shot.
     pub fn audio_warmup_step(&mut self) -> u32 {
         self.audio.as_mut().map_or(0, |a| a.warmup_step())
     }
@@ -414,9 +413,15 @@ impl Office {
         pixtuoid_scene::audio::LIMITER_RELEASE.as_secs_f32()
     }
 
+    /// How many loop stems a tick's `gains` carry:
+    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)'s.
+    pub fn audio_loop_count(&self) -> usize {
+        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+    }
+
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order.
-    /// RE-READ after warmup completes AND whenever a tick reports `swapped`.
+    /// RE-READ after warmup completes.
     pub fn audio_loop_ptr(&self, idx: usize) -> *const f32 {
         self.audio
             .as_ref()
@@ -442,17 +447,17 @@ impl Office {
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
     /// same as `step`) and return the JS glue commands as JSON:
-    /// `{"gains":[g0..g6],"plays":[[poolWire,idx,gain],…],"swapped":bool}` — JS
-    /// ramps each GainNode to its gain, spawns the one-shots, and on `swapped`
-    /// re-reads the loop buffers.
+    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…]}`, one gain per
+    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) stem — JS
+    /// ramps each GainNode to its gain and spawns the one-shots.
     pub fn audio_tick(&mut self, now_ms: f64) -> String {
-        const SILENT: &str = r#"{"gains":[0,0,0,0,0,0,0],"plays":[],"swapped":false}"#;
+        let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
         let Some(now) = self.last_now else {
-            return SILENT.to_string();
+            return silent();
         };
         let meta = self.floor_meta();
         let Some(audio) = self.audio.as_mut().filter(|a| a.is_ready()) else {
-            return SILENT.to_string();
+            return silent();
         };
         // The shared observer composes the whole AudioFrame, single-sourced with
         // the desktop painters. Single-floor hero → floor 0.
@@ -460,16 +465,9 @@ impl Office {
         audio::commands_json(&audio.tick(now_ms, frame))
     }
 
-    /// Stage a handoff for the worker's spawn-time track. A stale epoch at click
-    /// time self-heals through the normal chunked swap. Overwrites any prior stage.
-    pub fn audio_adopt_begin(&mut self, night: bool, epoch: f64) {
-        let epoch = epoch as u64;
-        let track = if night {
-            pixtuoid_scene::audio::TrackId::GenNight(epoch)
-        } else {
-            pixtuoid_scene::audio::TrackId::GenDay(epoch)
-        };
-        self.adopting = Some(audio::Adoption::new(track));
+    /// Stage a handoff of the worker's take. Overwrites any prior stage.
+    pub fn audio_adopt_begin(&mut self) {
+        self.adopting = Some(audio::Adoption::default());
     }
 
     /// Copy in one one-shot buffer (the worker's pool-discovery order).
@@ -520,8 +518,6 @@ impl Office {
 #[derive(Debug)]
 pub struct SynthTake {
     driver: audio::WebAudioDriver,
-    night: bool,
-    epoch: u64,
 }
 
 /// JS's UNIX-epoch milliseconds as a `SystemTime`. `f64 as u64` saturates
@@ -532,36 +528,20 @@ fn from_epoch_ms(ms: f64) -> SystemTime {
 
 #[wasm_bindgen]
 impl SynthTake {
-    /// `now_ms` = UNIX-epoch milliseconds (the `Office::step` contract) — selects
-    /// the same day/night + weather track the office would at that instant.
     #[wasm_bindgen(constructor)]
-    pub fn new(now_ms: f64) -> SynthTake {
-        let now = from_epoch_ms(now_ms);
-        // `floor::track_for` is the ONE track-pick authority; its TrackId payload
-        // IS the track epoch, so the adopt wire's (night, epoch) recovers from it.
-        let track = pixtuoid_scene::floor::track_for(now, WeatherPolicy::Clock);
-        let (night, epoch) = match track {
-            pixtuoid_scene::audio::TrackId::GenNight(e) => (true, e),
-            pixtuoid_scene::audio::TrackId::GenDay(e) => (false, e),
-        };
+    #[expect(
+        clippy::new_without_default,
+        reason = "a wasm-bindgen constructor is how JS builds it; JS has no Default"
+    )]
+    pub fn new() -> SynthTake {
         SynthTake {
-            driver: audio::WebAudioDriver::new(track),
-            night,
-            epoch,
+            driver: audio::WebAudioDriver::new(),
         }
     }
 
     /// Build ONE synthesis piece; pieces remaining (0 = done).
     pub fn step(&mut self) -> u32 {
         self.driver.warmup_step()
-    }
-
-    /// The selected track, split for the adopt wire (`audio_adopt_begin`).
-    pub fn night(&self) -> bool {
-        self.night
-    }
-    pub fn epoch(&self) -> f64 {
-        self.epoch as f64
     }
 
     /// The loop-stem count — loops aren't self-terminating like the one-shot
@@ -585,15 +565,6 @@ impl SynthTake {
     }
     pub fn oneshot_len(&self, pool: u8, idx: usize) -> usize {
         OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
-    }
-}
-
-impl Office {
-    fn current_track(&self) -> pixtuoid_scene::audio::TrackId {
-        match self.last_now {
-            Some(now) => pixtuoid_scene::floor::track_for(now, self.weather),
-            None => pixtuoid_scene::audio::TrackId::GenDay(0),
-        }
     }
 }
 
@@ -804,10 +775,10 @@ mod tests {
     }
 
     /// The worker→main handoff, minus the JS/postMessage hop.
-    fn adopt_take_into(o: &mut Office, now_ms: f64) -> SynthTake {
-        let mut take = SynthTake::new(now_ms);
+    fn adopt_take_into(o: &mut Office) -> SynthTake {
+        let mut take = SynthTake::new();
         while take.step() > 0 {}
-        o.audio_adopt_begin(take.night(), take.epoch());
+        o.audio_adopt_begin();
         for i in 0..take.loop_count() {
             assert!(
                 o.audio_adopt_loop(i, take.driver.loop_buffer(i)),
@@ -831,7 +802,7 @@ mod tests {
     #[test]
     fn a_worker_take_adopts_into_an_office_and_the_click_is_upload_only() {
         let mut o = office();
-        let take = adopt_take_into(&mut o, 1_753_000_000_000.0);
+        let take = adopt_take_into(&mut o);
         assert!(o.audio_adopt_finish(), "complete handoff promotes");
         o.audio_begin();
         assert_eq!(o.audio_warmup_step(), 0, "click-time synthesis skipped");
@@ -853,30 +824,32 @@ mod tests {
         let mut o = office();
         o.audio_begin();
         while o.audio_warmup_step() > 0 {}
-        let baseline = o.audio_loop_len(0);
-        adopt_take_into(&mut o, 1_753_000_600_000.0);
+        let rain = pixtuoid_scene::audio::mixer::LoopStem::ALL
+            .iter()
+            .position(|s| *s == pixtuoid_scene::audio::mixer::LoopStem::Rain)
+            .expect("rain is a loop stem");
+        let baseline = o.audio_loop_ptr(rain);
+        adopt_take_into(&mut o);
         assert!(
             !o.audio_adopt_finish(),
             "first ready wins — a late adoption must not stomp the live driver"
         );
-        assert_eq!(o.audio_loop_len(0), baseline, "live driver untouched");
+        assert_eq!(o.audio_loop_ptr(rain), baseline, "live driver untouched");
         assert!(!o.audio_adopt_loop(0, &[0.1]));
         assert!(!o.audio_adopt_oneshot(0, &[0.1]));
     }
 
     #[test]
     fn synth_take_matches_what_the_main_thread_would_have_synthesized() {
-        let mut take = SynthTake::new(1_753_000_000_000.0);
+        let mut take = SynthTake::new();
         while take.step() > 0 {}
-        let mut take2 = SynthTake::new(1_753_000_000_000.0);
+        let mut take2 = SynthTake::new();
         while take2.step() > 0 {}
-        assert_eq!(take.night(), take2.night());
-        assert_eq!(take.epoch(), take2.epoch());
         for i in 0..take.loop_count() {
             assert_eq!(
                 take.driver.loop_buffer(i),
                 take2.driver.loop_buffer(i),
-                "stem {i} is deterministic for a now_ms"
+                "stem {i} is deterministic"
             );
         }
     }

@@ -57,8 +57,8 @@ updates:
       - dependency-name: "winit"
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
-      # A lofi minor (0.y) is a breaking change, a new Mood/Lane or a changed dsp
-      # output among them (https://github.com/pixtuoid/lofi/blob/main/AGENTS.md#workflow),
+      # A lofi minor (0.y) is a breaking change
+      # (https://github.com/pixtuoid/lofi/blob/main/AGENTS.md#workflow),
       # so it needs pixtuoid code or the owner's LISTEN and a person bumps it.
       # Patches flow: lofi makes a changed dsp output a minor, so a patch is a
       # lock-only bump.

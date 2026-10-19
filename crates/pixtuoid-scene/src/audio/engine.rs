@@ -1,12 +1,7 @@
 //! The per-frame audio engine — the ONE place the office's sound is advanced
 //! each tick, so the native rodio gateway and the wasm WebAudio painter run
-//! byte-identical mixing/crossfade/scheduling logic.
-//!
-//! It owns ONLY per-tick STATE. The BUILD — synthesizing a track's beds — stays
-//! caller-side, because that is the one thing the two backends genuinely do
-//! differently (native blocks the audio thread under the crossfade silence; web
-//! chunks it across `warmup_step`). So [`AudioEngine::tick`] SIGNALS a build via
-//! [`TickCommands::swap`]; the caller builds + registers the beds.
+//! byte-identical mixing/scheduling logic. It owns ONLY per-tick STATE; the
+//! bank's build stays caller-side.
 //!
 //! Time is a PARAMETER: `tick` takes `dt` and never reads a clock.
 
@@ -14,16 +9,13 @@ use pixtuoid_lofi::dsp::NoiseStream;
 
 use super::bank::{
     DROP_GAIN, DROP_POOL, KEYSTROKE_GAIN, KEYSTROKE_POOL, ONE_SHOT_GAIN, OneShotPool,
-    track_stems_silent,
 };
 use super::mixer::{DropScheduler, LoopStem, Mixer, TypingScheduler};
-use super::{
-    AudioFrame, DROP_SEED, OneShot, PICK_SEED, StemLevels, TYPING_SEED, TrackId, TrackSwitch,
-};
+use super::{AudioFrame, DROP_SEED, OneShot, PICK_SEED, StemLevels, TYPING_SEED};
 
-/// dt ceiling (s): a bigger inter-tick gap (a native track-build stall, a
+/// dt ceiling (s): a bigger inter-tick gap (a starved native thread, a
 /// backgrounded wasm tab, a GC pause) is clamped so one tick can neither snap
-/// the crossfade nor burst-replay the schedulers. BOTH shells clamp to it.
+/// a ramp nor burst-replay the schedulers. BOTH shells clamp to it.
 pub const MAX_DT_S: f32 = 0.10;
 
 /// One one-shot to spawn this tick: a fresh source from `(pool, index)` at
@@ -43,13 +35,10 @@ pub struct TickCommands {
     pub gains: [f32; LoopStem::ALL.len()],
     /// One-shots to fire this tick.
     pub plays: Vec<PlayCmd>,
-    /// A mood-track change that just committed — the caller builds `swap`'s beds
-    /// and swaps them into the sink.
-    pub swap: Option<TrackId>,
 }
 
-/// The per-tick audio state both backends share. Constructed once; `init_track`
-/// once the caller has built the first track's beds; then `tick` per frame.
+/// The per-tick audio state both backends share. Constructed once, then `tick`
+/// per frame.
 #[derive(Debug)]
 pub struct AudioEngine {
     mixer: Mixer,
@@ -57,7 +46,6 @@ pub struct AudioEngine {
     drops: DropScheduler,
     /// One-shot variant picker — its draw order is part of the ratified sound.
     pick: NoiseStream,
-    switch: TrackSwitch,
     /// The last frame's target levels — held across a timeout tick (`None`).
     wanted: StemLevels,
     /// Monotonic scheduler clock (s), advanced by the passed (clamped) dt.
@@ -65,24 +53,16 @@ pub struct AudioEngine {
 }
 
 impl AudioEngine {
-    /// A fresh engine at `master` volume — inert until
-    /// [`AudioEngine::init_track`].
+    /// A fresh engine at `master` volume.
     pub fn new(master: f32) -> Self {
         Self {
             mixer: Mixer::new(master),
             typing: TypingScheduler::new(TYPING_SEED),
             drops: DropScheduler::new(DROP_SEED),
             pick: NoiseStream::new(PICK_SEED),
-            switch: TrackSwitch::new(),
             wanted: StemLevels::default(),
             sched_s: 0.0,
         }
-    }
-
-    /// Adopt the initial mood track — call ONCE, after the caller has built and
-    /// registered its beds. Before this, `tick` is inert (silence). Idempotent.
-    pub fn init_track(&mut self, track: TrackId) {
-        self.switch.init(track);
     }
 
     /// Live mute (native `m` key). No-op on wasm (mute = JS suspends the context).
@@ -103,26 +83,13 @@ impl AudioEngine {
 
         let events: Vec<OneShot> = if let Some(f) = frame {
             self.wanted = f.stems;
-            self.switch.request(f.track); // no-op before init / on an unchanged track
             f.events
         } else {
             Vec::new()
         };
 
-        if self.switch.current().is_none() {
-            return TickCommands::default();
-        }
-
-        // Rain/typing keep following the scene through a switch — weather and
-        // activity are track-independent.
-        let mut target = self.wanted;
-        if self.switch.is_holding() {
-            target.silence_track_stems();
-        }
-        self.mixer.set_target(target);
+        self.mixer.set_target(self.wanted);
         let gain_pairs = self.mixer.step(dt);
-
-        let swap = self.switch.try_swap(track_stems_silent(&gain_pairs));
 
         let mut gains = [0.0f32; LoopStem::ALL.len()];
         for (i, (_, g)) in gain_pairs.iter().enumerate() {
@@ -157,7 +124,7 @@ impl AudioEngine {
             });
         }
 
-        TickCommands { gains, plays, swap }
+        TickCommands { gains, plays }
     }
 }
 
@@ -165,70 +132,55 @@ impl AudioEngine {
 mod tests {
     use super::*;
 
-    fn busy_frame(track: TrackId) -> AudioFrame {
+    /// The index of `stem` in a tick's `gains`.
+    fn at(stem: LoopStem) -> usize {
+        LoopStem::ALL
+            .iter()
+            .position(|s| *s == stem)
+            .expect("every stem is in ALL")
+    }
+
+    fn busy_frame() -> AudioFrame {
         AudioFrame {
             stems: StemLevels {
-                pad: 0.8,
-                sparkle: 0.6,
-                keys: 0.5,
-                drums: 0.5,
-                texture: 0.4,
-                bass: 0.6,
-                rain: 0.0,
+                rain: 0.5,
                 typing: 0.8,
             },
             events: Vec::new(),
-            track,
         }
     }
 
-    fn settle(engine: &mut AudioEngine, track: TrackId, ticks: usize) {
+    fn settle(engine: &mut AudioEngine, ticks: usize) {
         for _ in 0..ticks {
-            engine.tick(0.05, Some(busy_frame(track)));
+            engine.tick(0.05, Some(busy_frame()));
         }
-    }
-
-    #[test]
-    fn is_inert_until_init_track() {
-        let mut e = AudioEngine::new(1.0);
-        let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
-        assert!(cmd.gains.iter().all(|g| *g == 0.0), "no gains before init");
-        assert!(cmd.plays.is_empty(), "no plays before init");
-        assert!(cmd.swap.is_none(), "no swap before init");
-        e.init_track(TrackId::GenDay(0));
-        let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
-        assert!(cmd.gains[0] > 0.0, "pad ramps once inited");
     }
 
     #[test]
     fn ramps_loop_gains_and_fires_typing_for_a_busy_office() {
         let mut e = AudioEngine::new(1.0);
-        e.init_track(TrackId::GenDay(0));
         let mut typed = 0;
-        let mut last_pad = 0.0;
+        let mut last_rain = 0.0;
         for _ in 0..200 {
-            let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
-            last_pad = cmd.gains[0];
+            let cmd = e.tick(0.05, Some(busy_frame()));
+            last_rain = cmd.gains[at(LoopStem::Rain)];
             typed += cmd
                 .plays
                 .iter()
                 .filter(|p| p.pool == OneShotPool::Keystroke)
                 .count();
         }
-        assert!(last_pad > 0.0, "pad ramped up");
+        assert!(last_rain > 0.0, "rain ramped up");
         assert!(typed > 0, "the typing scheduler fired keystrokes");
     }
 
     #[test]
     fn mute_zeroes_every_loop_gain_and_one_shot() {
         let mut e = AudioEngine::new(1.0);
-        e.init_track(TrackId::GenDay(0));
-        settle(&mut e, TrackId::GenDay(0), 200);
+        settle(&mut e, 200);
         e.set_muted(true);
-        for _ in 0..200 {
-            e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
-        }
-        let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
+        settle(&mut e, 200);
+        let cmd = e.tick(0.05, Some(busy_frame()));
         assert!(cmd.gains.iter().all(|g| *g == 0.0), "muted loops fall to 0");
         assert!(
             cmd.plays.iter().all(|p| p.gain == 0.0),
@@ -239,25 +191,21 @@ mod tests {
     #[test]
     fn master_zero_silences_the_bus_and_raising_it_ramps_back() {
         let mut e = AudioEngine::new(0.0);
-        e.init_track(TrackId::GenDay(0));
-        for _ in 0..200 {
-            e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
-        }
-        let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0))));
+        settle(&mut e, 200);
+        let cmd = e.tick(0.05, Some(busy_frame()));
         assert!(cmd.gains.iter().all(|g| *g == 0.0), "master 0 = silent");
         e.set_master(1.0);
-        let mut pad = 0.0;
+        let mut rain = 0.0;
         for _ in 0..200 {
-            pad = e.tick(0.05, Some(busy_frame(TrackId::GenDay(0)))).gains[0];
+            rain = e.tick(0.05, Some(busy_frame())).gains[at(LoopStem::Rain)];
         }
-        assert!(pad > 0.0, "master up ramps the mix back");
+        assert!(rain > 0.0, "master up ramps the mix back");
     }
 
     #[test]
     fn a_timeout_tick_advances_without_consuming_levels_or_events() {
         let mut e = AudioEngine::new(1.0);
-        e.init_track(TrackId::GenDay(0));
-        settle(&mut e, TrackId::GenDay(0), 100);
+        settle(&mut e, 100);
         let cmd = e.tick(0.05, None);
         assert!(
             cmd.plays.iter().all(|p| !matches!(
@@ -267,17 +215,16 @@ mod tests {
             "a None tick fires no scene one-shots"
         );
         assert!(
-            cmd.gains[0] > 0.0,
-            "the held pad keeps ramping on a None tick"
+            cmd.gains[at(LoopStem::Rain)] > 0.0,
+            "the held rain keeps ramping on a None tick"
         );
     }
 
     #[test]
     fn scene_events_become_one_shot_plays() {
         let mut e = AudioEngine::new(1.0);
-        e.init_track(TrackId::GenDay(0));
-        settle(&mut e, TrackId::GenDay(0), 20);
-        let mut frame = busy_frame(TrackId::GenDay(0));
+        settle(&mut e, 20);
+        let mut frame = busy_frame();
         frame.events = vec![OneShot::DoorChime, OneShot::VendingDrop];
         let cmd = e.tick(0.05, Some(frame));
         assert!(cmd.plays.iter().any(|p| p.pool == OneShotPool::DoorChime));
@@ -285,54 +232,13 @@ mod tests {
     }
 
     #[test]
-    fn a_track_change_holds_silent_then_swaps_then_ramps_back_as_a_slew() {
-        let mut e = AudioEngine::new(1.0);
-        e.init_track(TrackId::GenDay(0));
-        settle(&mut e, TrackId::GenDay(0), 80);
-        let mut swap_track = None;
-        for _ in 0..200 {
-            let cmd = e.tick(0.05, Some(busy_frame(TrackId::GenNight(0))));
-            if let Some(to) = cmd.swap {
-                swap_track = Some(to);
-                for g in &cmd.gains[0..crate::audio::bank::TRACK_STEMS.len()] {
-                    assert!(*g <= 1e-6, "track stems held silent through the swap");
-                }
-                break;
-            }
-        }
-        assert_eq!(
-            swap_track,
-            Some(TrackId::GenNight(0)),
-            "the night switch swapped"
-        );
-        let mut first_nonzero = 0.0;
-        for _ in 0..200 {
-            let g = e.tick(0.05, Some(busy_frame(TrackId::GenNight(0)))).gains[0];
-            if g > 0.0 {
-                first_nonzero = g;
-                break;
-            }
-        }
-        assert!(
-            first_nonzero > 0.0 && first_nonzero < 0.1,
-            "post-swap gain fades in (first step {first_nonzero}), not a snap"
-        );
-    }
-
-    #[test]
     fn the_dt_clamp_ceiling_stays_a_slew_while_an_unclamped_gap_would_snap() {
-        let one_tick = |dt: f32| {
-            let mut e = AudioEngine::new(1.0);
-            e.init_track(TrackId::GenDay(0));
-            e.tick(dt, Some(busy_frame(TrackId::GenDay(0)))).gains[0]
-        };
+        let one_tick =
+            |dt: f32| AudioEngine::new(1.0).tick(dt, Some(busy_frame())).gains[at(LoopStem::Rain)];
         let mut settled = AudioEngine::new(1.0);
-        settled.init_track(TrackId::GenDay(0));
         let mut full = 0.0;
         for _ in 0..500 {
-            full = settled
-                .tick(0.05, Some(busy_frame(TrackId::GenDay(0))))
-                .gains[0];
+            full = settled.tick(0.05, Some(busy_frame())).gains[at(LoopStem::Rain)];
         }
         assert!(
             one_tick(MAX_DT_S) < full * 0.5,
