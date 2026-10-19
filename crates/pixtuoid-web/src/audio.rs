@@ -480,13 +480,28 @@ mod tests {
         let mut src = WebAudioDriver::new();
         while src.warmup_step() > 0 {}
         let mut d = adopt_all_of(&src).finish().expect("handoff");
+        assert!(d.is_ready(), "an adopted driver needs no warmup");
+        // 200 ticks × 50 ms: the typing and the rain's drops schedule plays.
         let mut now = 0.0;
         let mut rain = 0.0;
-        for _ in 0..40 {
+        let mut plays = 0;
+        for _ in 0..200 {
             now += 50.0;
-            rain = d.tick(now, busy_rainy()).gains[at(LoopStem::Rain)];
+            let cmd = d.tick(now, busy_rainy());
+            rain = cmd.gains[at(LoopStem::Rain)];
+            for p in &cmd.plays {
+                assert_eq!(
+                    d.oneshot_buffer(p.pool, p.index),
+                    src.oneshot_buffer(p.pool, p.index),
+                    "{:?}[{}] plays the adopted buffer",
+                    p.pool,
+                    p.index
+                );
+                plays += 1;
+            }
         }
         assert!(rain > 0.0, "adopted mix ramps up");
+        assert!(plays > 0, "premise: the engine scheduled plays");
     }
 
     #[test]

@@ -50,8 +50,8 @@ pub fn ceiling_amplitude() -> f32 {
 /// reaches the clamp behind it, which hard-clips it.
 pub const LIMITER_ATTACK: std::time::Duration = std::time::Duration::from_millis(5);
 
-/// How fast each sink's limiter lets its gain back up: well inside one beat,
-/// so one loud hit never ducks the next.
+/// How fast each sink's limiter lets its gain back up, so one loud hit never
+/// ducks the next.
 pub const LIMITER_RELEASE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Active-agent count at which the office reads BUSY (full band, dense typing).
@@ -63,7 +63,8 @@ const BUSY_ACTIVE_MIN: usize = 3;
 /// this via `DROP_GAIN × wanted.rain`.
 const RAIN_GAIN: f32 = 0.30;
 
-/// How busy the office is: what picks each stem's [`TierGain`].
+/// How busy the office is: what picks the typing level and the music's
+/// intensity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tier {
     Empty,
@@ -71,14 +72,16 @@ enum Tier {
     Busy,
 }
 
-/// A stem's gain at each [`Tier`].
-struct TierGain {
-    empty: f32,
-    moderate: f32,
-    busy: f32,
-}
-
 impl Tier {
+    /// The typing stem's gain at this tier.
+    const fn typing_gain(self) -> f32 {
+        match self {
+            Tier::Empty => 0.0,
+            Tier::Moderate => 0.50,
+            Tier::Busy => 0.80,
+        }
+    }
+
     /// lofi's intensity at this tier: 0 is its empty room, 1 its busy one,
     /// and its default the Moderate anchor.
     fn intensity(self) -> f32 {
@@ -89,27 +92,6 @@ impl Tier {
         }
     }
 }
-
-impl TierGain {
-    const fn new([empty, moderate, busy]: [f32; 3]) -> Self {
-        Self {
-            empty,
-            moderate,
-            busy,
-        }
-    }
-
-    const fn at(&self, tier: Tier) -> f32 {
-        match tier {
-            Tier::Empty => self.empty,
-            Tier::Moderate => self.moderate,
-            Tier::Busy => self.busy,
-        }
-    }
-}
-
-/// The typing stem's gain per tier, `[empty, moderate, busy]`.
-const TYPING_GAIN: TierGain = TierGain::new([0.0, 0.50, 0.80]);
 
 /// Target mix levels (0..=1) for the foley's stems, derived once per frame. `typing`
 /// is a PROCEDURAL stem: the consumer owns burst scheduling; the scene only says
@@ -216,7 +198,7 @@ pub fn stem_levels(counts: &StateCounts, precipitation: f32) -> StemLevels {
     let t = tier(counts);
     StemLevels {
         rain: RAIN_GAIN * precipitation.clamp(0.0, 1.0),
-        typing: TYPING_GAIN.at(t),
+        typing: t.typing_gain(),
     }
 }
 
@@ -260,14 +242,17 @@ mod tests {
     #[test]
     fn stem_levels_typing_scales_with_active_agents() {
         assert_eq!(stem_levels(&counts(0), 0.0).typing, 0.0);
-        assert_eq!(stem_levels(&counts(1), 0.0).typing, TYPING_GAIN.moderate);
+        assert_eq!(
+            stem_levels(&counts(1), 0.0).typing,
+            Tier::Moderate.typing_gain()
+        );
         assert_eq!(
             stem_levels(&counts(BUSY_ACTIVE_MIN - 1), 0.0).typing,
-            TYPING_GAIN.moderate
+            Tier::Moderate.typing_gain()
         );
         assert_eq!(
             stem_levels(&counts(BUSY_ACTIVE_MIN), 0.0).typing,
-            TYPING_GAIN.busy
+            Tier::Busy.typing_gain()
         );
     }
 
