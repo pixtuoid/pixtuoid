@@ -56,7 +56,7 @@ harness = [
     "windows-sys/Win32_UI_Shell",
     # A release-binary profile's download is checked against its sums file.
     "dep:sha2",
-    # The value census parses the decoders (`hermetic::values`).
+    # The literal census parses the decoders (`hermetic::literals`).
     "dep:syn",
 ]
 
@@ -78,7 +78,7 @@ vec1        = { workspace = true }
 semver      = { workspace = true }
 # A download's digest against its sums file or manifest: `hermetic::digest::digest_hex`.
 sha2        = { workspace = true, optional = true }
-# The value census reads the literals the decoders compare (`hermetic::values`).
+# The literal census reads what the decoders compare (`hermetic::literals`).
 syn         = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]

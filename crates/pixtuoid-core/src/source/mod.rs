@@ -410,8 +410,6 @@ pub mod cursor;
 /// The shared, daemon-agnostic presence layer (state machine + lifecycle for
 /// every daemon-style source); per-daemon wire decode stays in its own module.
 pub mod daemon;
-#[cfg(test)]
-mod decoded_sets;
 pub mod decoder;
 pub mod drift;
 pub mod dsh;

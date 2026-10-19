@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, profile, values};
+use super::{MANIFEST, Manifest, Profile, SCENE_LOG, Scenario, Shape, literals, profile};
 use crate::harness::captures::jsonl_files_under;
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
@@ -26,8 +26,8 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
-    /// An owed gap closed (`not_yet`, `not_yet_fields`, `result_unseen`): good
-    /// news, the profile shrinks.
+    /// An owed gap closed (`not_yet`, `not_yet_fields`, `not_yet_literals`,
+    /// `result_unseen`): good news, the profile shrinks.
     Stale,
     /// The CLI could not run (install, network, a login wall): not judged.
     Blocked,
@@ -96,30 +96,26 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 /// Judge `p`'s runs together, `dirs` being all of them, for what no one
 /// scenario owns: a `not_yet` hook any run fired is Stale; the field census
 /// over `p`'s committed captures, where a kind or a field upstream renamed or
-/// dropped fails though the decoder still parses the line; and the value
-/// census (`values::unreached`) over the fixtures of the scenarios that ran,
+/// dropped fails though the decoder still parses the line; and the literal
+/// census (`literal_census`) over the fixtures of the scenarios that ran,
 /// where a value upstream renamed fails though every path still arrives.
 ///
 /// # Errors
 ///
-/// If a run's or a committed capture's file cannot be read.
+/// If a run's or a committed capture's file cannot be read, or the decoders
+/// cannot be parsed.
 pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> {
     let mut fired = BTreeSet::new();
     let mut carried = Fields::default();
-    let (mut committed, mut run_tokens) = (BTreeSet::new(), BTreeSet::new());
+    let mut ran = Vec::new();
     for dir in dirs {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
-        if let Some(s) = p
-            .scenarios
-            .iter()
-            .find(|s| s.shape.name() == manifest.scenario)
-        {
-            values::tokens_under(
-                &crate::harness::sources_root().join(s.fixture),
-                &mut committed,
-            )?;
-        }
+        ran.extend(
+            p.scenarios
+                .iter()
+                .filter(|s| s.shape.name() == manifest.scenario),
+        );
         for file in jsonl_files_under(dir) {
             for line in json_lines(&file)? {
                 if is_hook_envelope(&file)
@@ -128,7 +124,6 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
                     fired.insert(event.into_owned());
                 }
                 carried.add(p, &file, &line, true);
-                values::tokens(&line, &mut run_tokens);
             }
         }
     }
@@ -147,10 +142,60 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
             ));
         }
     }
-    let (missing, stale) = values::unreached(p, &values::population()?, &committed, &run_tokens);
-    findings.extend(missing.into_iter().map(|m| (Label::Fail, m)));
-    findings.extend(stale.into_iter().map(|m| (Label::Stale, m)));
+    findings.extend(literal_census(
+        p,
+        &literals::population()?,
+        &scenario_reads(p, ran.into_iter())?,
+        &carried,
+    ));
     Ok(Verdict::new(findings))
+}
+
+/// The literal census over runs: each value a decoder's literal matches in
+/// the `committed` fixtures must arrive in some run at the same kind and
+/// pointer, unless `p` owes the literal; an owed one any run holds is Stale.
+fn literal_census(
+    p: &Profile,
+    population: &BTreeSet<literals::Literal>,
+    committed: &Fields,
+    carried: &Fields,
+) -> Vec<(Label, String)> {
+    let mine: Vec<&literals::Literal> = population.iter().filter(|l| l.is_of(p.source)).collect();
+    let mut findings = Vec::new();
+    for (kind, values) in &committed.values {
+        let seen = carried.values.get(kind);
+        for (at, value) in values {
+            for l in mine
+                .iter()
+                .filter(|l| l.matches(value) && !literals::owes(p, &l.text))
+            {
+                let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
+                if !arrived {
+                    findings.push((
+                        Label::Fail,
+                        format!(
+                            "{kind} {at}: `{}` ({}): a decoder reads it in a scenario fixture, \
+                             and no run of {} carried it there",
+                            l.text, l.module, p.source
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    let held = carried.keys_and_values();
+    for owed in p.not_yet_literals {
+        if mine
+            .iter()
+            .any(|l| l.text == *owed && held.iter().any(|s| l.matches(s)))
+        {
+            findings.push((
+                Label::Stale,
+                format!("`{owed}` was carried: it leaves the profile's not_yet_literals"),
+            ));
+        }
+    }
+    findings
 }
 
 /// The field census proper: each kind a committed capture has must be produced
@@ -232,6 +277,13 @@ pub(crate) struct Fields {
     /// The leaves of each transcript line taken whole: every one of a run's,
     /// or a committed capture's untyped ones.
     lines: BTreeSet<BTreeSet<String>>,
+    /// Every string leaf of each kind of line, as `(pointer, value)`; a string
+    /// that holds JSON (codex's `arguments`) is read on, under its pointer.
+    values: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Every key any line spells, blank or not, and each `.`-joined chain of
+    /// nested ones (`location.directory`): a key the strip blanked still
+    /// arrived.
+    keys: BTreeSet<String>,
 }
 
 impl Fields {
@@ -240,6 +292,7 @@ impl Fields {
     /// line the strip left untyped goes to `lines` alone, since its blank
     /// `type` is no kind a run's line could have.
     fn add(&mut self, p: &Profile, file: &Path, line: &Value, run: bool) {
+        key_chains(line, &mut Vec::new(), &mut self.keys);
         let stamped = is_hook_envelope(file);
         let leaves: BTreeSet<String> = leaves(line, stamped).into_iter().collect();
         if leaves.is_empty() {
@@ -251,8 +304,17 @@ impl Fields {
             self.lines.insert(leaves.clone());
         }
         if run || !untyped {
+            let values = self.values.entry(kind.clone()).or_default();
+            string_leaves(line, "", stamped, values);
             self.by_kind.entry(kind).or_default().extend(leaves);
         }
+    }
+
+    /// Every key it holds, and every string value.
+    pub(crate) fn keys_and_values(&self) -> BTreeSet<String> {
+        let mut out = self.keys.clone();
+        out.extend(self.values.values().flatten().map(|(_, v)| v.clone()));
+        out
     }
 
     /// Whether a line of `kind` carried `path`.
@@ -330,6 +392,75 @@ fn leaves(v: &Value, stamped: bool) -> Vec<String> {
     let mut out = Vec::new();
     walk(v, "", stamped, &mut out);
     out
+}
+
+/// Each key of `v`, and each `.`-joined chain of nested keys ending in it,
+/// `path` the keys above.
+fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                path.push(k.clone());
+                for i in 0..path.len() {
+                    out.insert(path[i..].join("."));
+                }
+                key_chains(x, path, out);
+                path.pop();
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| key_chains(x, path, out)),
+        _ => {}
+    }
+}
+
+/// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
+/// string that holds JSON read on under its own pointer, and a `stamped` hook
+/// envelope's shim stamps skipped.
+fn string_leaves(v: &Value, at: &str, stamped: bool, out: &mut BTreeSet<(String, String)>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                if !(stamped && is_shim_stamp(at, k)) {
+                    string_leaves(x, &child_pointer(at, k), stamped, out);
+                }
+            }
+        }
+        Value::Array(a) => {
+            for x in a {
+                string_leaves(x, &format!("{at}/*"), stamped, out);
+            }
+        }
+        Value::String(s) if !s.is_empty() => {
+            if s.starts_with(['{', '['])
+                && let Ok(inner) = serde_json::from_str::<Value>(s)
+            {
+                string_leaves(&inner, at, false, out);
+            }
+            out.insert((at.to_owned(), s.clone()));
+        }
+        _ => {}
+    }
+}
+
+/// The reads of `p`'s fixtures of `scenarios`, each a recording `--record`
+/// wrote.
+///
+/// # Errors
+///
+/// If a fixture file cannot be read.
+pub(crate) fn scenario_reads<'a>(
+    p: &Profile,
+    scenarios: impl Iterator<Item = &'a Scenario>,
+) -> std::io::Result<Fields> {
+    let mut reads = Fields::default();
+    for s in scenarios {
+        for file in jsonl_files_under(&crate::harness::sources_root().join(s.fixture)) {
+            for line in json_lines(&file)? {
+                reads.add(p, &file, &line, false);
+            }
+        }
+    }
+    Ok(reads)
 }
 
 /// A file's lines that parse; the Drive reports the ones that don't.
@@ -1531,7 +1662,9 @@ mod tests {
         )
         .expect("verify");
         assert!(
-            !v.findings().iter().any(|f| f.1.starts_with('`')),
+            !v.findings()
+                .iter()
+                .any(|f| f.1.contains("in a scenario fixture")),
             "{:?}",
             v.findings()
         );
@@ -1609,6 +1742,8 @@ mod tests {
                 .map(|(k, p)| ((*k).to_owned(), set(p)))
                 .collect(),
             lines: lines.iter().map(|l| set(l)).collect(),
+            values: BTreeMap::new(),
+            keys: BTreeSet::new(),
         }
     }
 
