@@ -947,6 +947,18 @@ mod tests {
                 "a custom output owes its call, {call}: {logs}"
             );
         }
+        let logs = crate::test_capture::capture_logs(|| {
+            let keyed = ev(json!({"type":"response_item","payload":{
+                "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
+            assert!(matches!(keyed.as_slice(), [
+                AgentEvent::ActivityEnd { tool_use_id: Some(c), .. },
+                AgentEvent::ActivityStart { .. },
+            ] if c == "call_x"));
+        });
+        assert!(
+            !logs.contains("missing_field"),
+            "a keyed custom output owes nothing: {logs}"
+        );
     }
 
     #[test]
