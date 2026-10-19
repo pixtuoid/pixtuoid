@@ -42,10 +42,11 @@ mod run {
         Package, PerOs, Profile, SCENE_LOG, STEPS, Scenario, Step, StepRecord, Surface, TUI_LOG,
         USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
+    use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_workspace, recorder_flag,
-        required_version_probe, version_answer, wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
+        capture_workspace_tail, recorder_flag, required_version_probe, version_answer, wait_until,
     };
     use semver::Version;
 
@@ -282,6 +283,9 @@ mod run {
             std::process::exit(2);
         }
         let tier = tier_dir()?;
+        // Every invocation of this build shares the tier's runs, shim and installs.
+        std::fs::create_dir_all(&tier)?;
+        let _tier = hold_lock(&tier.join(TIER_LOCK))?;
         let runs = tier.join("runs");
         match std::fs::remove_dir_all(&runs) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -291,6 +295,7 @@ mod run {
         let built = Built::find()?;
         let ctx = Ctx {
             shim_dir: warmed_shim_dir(&tier, &built.shim)?,
+            record: args.record,
             built,
             aimock: Aimock::install(&tier)?,
             tier,
@@ -1524,9 +1529,46 @@ mod run {
     struct Ctx {
         tier: PathBuf,
         built: Built,
+        /// Whether its runs record, and so run in the one canonical workspace.
+        record: bool,
         /// The directory holding the tier's one shim, on every sandbox's PATH.
         shim_dir: PathBuf,
         aimock: Aimock,
+    }
+
+    /// The file in the tier whose lock each invocation holds.
+    const TIER_LOCK: &str = "hermetic.lock";
+
+    /// A replay's own workspace root, removed when its run drops, waiting out
+    /// a process still holding it as the recorder waits for the canonical one.
+    struct ReplayRoot(PathBuf);
+
+    impl Drop for ReplayRoot {
+        fn drop(&mut self) {
+            if let Err(e) =
+                remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "hermetic: left {}: {e}",
+                    self.0.display()
+                );
+            }
+        }
+    }
+
+    /// The workspace a run's CLI works in: the canonical one when it records,
+    /// whose path the fixtures carry, else one of its own under the same root.
+    fn run_workspace(record: bool) -> std::io::Result<(Option<ReplayRoot>, PathBuf)> {
+        if record {
+            return Ok((None, capture_workspace()?));
+        }
+        let own = tempfile::Builder::new()
+            .prefix("pixtuoid-run-")
+            .tempdir_in(capture_root()?)?
+            .keep();
+        let workspace = own.join(capture_workspace_tail());
+        Ok((Some(ReplayRoot(own)), workspace))
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
@@ -1536,8 +1578,8 @@ mod run {
         p: &Profile,
         version: &Version,
         ports: Ports,
-    ) -> std::io::Result<(PathBuf, Installed, Sandbox)> {
-        let workspace = capture_workspace()?;
+    ) -> std::io::Result<((PathBuf, Option<ReplayRoot>), Installed, Sandbox)> {
+        let (own, workspace) = run_workspace(ctx.record)?;
         if let Some(found) = outside_config(
             p.system_config.here(),
             p.ancestor_config,
@@ -1551,7 +1593,7 @@ mod run {
         }
         let cli = install_cli(&ctx.tier, p, version)?;
         let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports, &workspace)?;
-        Ok((workspace, cli, sandbox))
+        Ok(((workspace, own), cli, sandbox))
     }
 
     /// `scenario`'s run in a sandbox of its own, connected first, and the
@@ -1564,7 +1606,7 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<(Manifest, Sandboxed)> {
         let (ports, _) = Ports::pick(0)?;
-        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
+        let ((workspace, workspace_root), cli, sandbox) = sandboxed(ctx, p, version, ports)?;
         let connect = sandbox
             .command(&ctx.built.pixtuoid)
             .args(["connect", p.source, "--json"])
@@ -1582,6 +1624,7 @@ mod run {
         let run = Sandboxed {
             port: ports.model,
             workspace,
+            _workspace_root: workspace_root,
             cli,
             sandbox,
         };
@@ -1593,6 +1636,7 @@ mod run {
     struct Sandboxed {
         port: u16,
         workspace: PathBuf,
+        _workspace_root: Option<ReplayRoot>,
         cli: Installed,
         sandbox: Sandbox,
     }
@@ -1660,6 +1704,7 @@ mod run {
             workspace,
             cli,
             sandbox,
+            ..
         } = run;
         let port = *port;
         let script = render_script(p, scenario, workspace, sandbox.dir.path())?;
@@ -2810,6 +2855,28 @@ mod run {
                 assert!(on(vec![(label, "judged".into())]), "{label:?}");
             }
             assert!(on(Vec::new()));
+        }
+
+        #[test]
+        fn a_replay_runs_in_a_workspace_of_its_own_and_a_recording_in_the_canonical_one() {
+            let (first, a) = run_workspace(false).expect("a replay's workspace");
+            let (second, b) = run_workspace(false).expect("another's");
+            assert_ne!(a, b, "two replays at once would share their files");
+            for ws in [&a, &b] {
+                assert!(ws.starts_with(capture_root().expect("the root")), "{ws:?}");
+                assert!(
+                    pixtuoid_core::harness::capture_base(ws).is_some(),
+                    "the recorder clears only a capture base: {ws:?}"
+                );
+            }
+            let root = second.as_ref().expect("a replay owns its root").0.clone();
+            assert!(root.is_dir());
+            drop(second);
+            assert!(!root.exists(), "a replay's root goes with it");
+            drop(first);
+            let (none, canonical) = run_workspace(true).expect("a recording's workspace");
+            assert!(none.is_none());
+            assert_eq!(canonical, capture_workspace().expect("the canonical one"));
         }
 
         #[test]

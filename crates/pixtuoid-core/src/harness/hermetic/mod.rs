@@ -1269,9 +1269,15 @@ trust_level = "trusted"
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
-        // A non-read-only tool is denied headless; this allows the one a
-        // blocking spawn needs (`docs/CLI.md:502-503`, `:517-519`).
-        invocation: &["reasonix", "--allowed-tools", "task", "-p", "{prompt}"],
+        // A non-read-only tool is denied headless; this allows the ones the
+        // spawns need (`docs/CLI.md:502-503`, `:517-519`).
+        invocation: &[
+            "reasonix",
+            "--allowed-tools",
+            "task,explore",
+            "-p",
+            "{prompt}",
+        ],
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
@@ -1330,6 +1336,35 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
+            // A skill tool's child fires no SubagentStart or SubagentStop.
+            Scenario {
+                name: "explore",
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "reasonix/fixtures/explore-hermetic",
+            },
+            Scenario {
+                name: "bash-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/bash-run-hermetic",
+            },
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
@@ -1348,10 +1383,8 @@ model = "deepseek-v4-flash"
         script_vars: &[],
         not_yet: &[],
         event_name: event_field,
-        // A bash call's; the tool-run reads a file, and the permission turn's call
-        // is refused before it starts.
-        not_yet_fields: &[("hook:PreToolUse", "/toolArgs/command")],
-        not_yet_literals: &[":guardian", ":planner", "explore"],
+        not_yet_fields: &[],
+        not_yet_literals: &[":guardian", ":planner"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,

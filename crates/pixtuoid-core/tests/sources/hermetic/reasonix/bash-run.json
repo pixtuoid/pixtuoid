@@ -1,0 +1,12 @@
+{
+  "fixtures": [
+    {
+      "match": { "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "bash", "arguments": { "command": "cat NOTE.txt" } } ] }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "pong" }
+    }
+  ]
+}

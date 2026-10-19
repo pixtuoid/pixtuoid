@@ -3,36 +3,36 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     source: reasonix
-    session_id: 20261019-063638.389045000-deepseek-v4-flash
+    session_id: 20261019-162745.781162000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     source: reasonix
-    session_id: 20261019-063638.389045000-deepseek-v4-flash
+    session_id: 20261019-162745.781162000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     source: reasonix
-    session_id: 20261019-063638.389045000-deepseek-v4-flash
+    session_id: 20261019-162745.781162000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     reason: "approval: bash rm NOTE.txt"
 - Identity:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     source: reasonix
-    session_id: 20261019-063638.389045000-deepseek-v4-flash
+    session_id: 20261019-162745.781162000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     reason: "approval needed: bash rm NOTE.txt"
 - ActivityEnd:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 8132906170409740459
+    agent_id: 5184308392907486056
     as_child: false

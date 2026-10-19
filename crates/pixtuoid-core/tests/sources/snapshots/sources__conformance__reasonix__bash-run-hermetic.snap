@@ -1,0 +1,41 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 9091377341290153023
+    source: reasonix
+    session_id: 20261019-162737.429435000-deepseek-v4-flash
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- SessionStart:
+    agent_id: 9091377341290153023
+    source: reasonix
+    session_id: 20261019-162737.429435000-deepseek-v4-flash
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 9091377341290153023
+    source: reasonix
+    session_id: 20261019-162737.429435000-deepseek-v4-flash
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 9091377341290153023
+    tool_use_id: ~
+    detail:
+      Generic:
+        display: "bash: cat NOTE.txt"
+- Identity:
+    agent_id: 9091377341290153023
+    source: reasonix
+    session_id: 20261019-162737.429435000-deepseek-v4-flash
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 9091377341290153023
+    tool_use_id: ~
+- ActivityEnd:
+    agent_id: 9091377341290153023
+    tool_use_id: ~
+- SessionEnd:
+    agent_id: 9091377341290153023
+    as_child: false
