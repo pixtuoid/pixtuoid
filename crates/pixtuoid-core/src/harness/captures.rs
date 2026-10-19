@@ -210,10 +210,6 @@ pub mod recorder_flag {
     pub const RESUME: &str = "--resume";
 }
 
-/// The environment variable a recorder run takes its prompt from, in place of
-/// the shared one.
-pub const PROMPT_ENV: &str = "CAPTURE_PROMPT";
-
 /// What only the recorder knows about a raw (`--out`) capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureRecord {
@@ -228,6 +224,18 @@ pub struct CaptureRecord {
     /// The turn that resumed its session, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumed: Option<Resumed>,
+}
+
+impl CaptureRecord {
+    /// Whether the CLI ran `shape`'s turn as scripted, and the turn resuming
+    /// it where one ran.
+    pub fn exited_as_scripted(&self, shape: crate::harness::hermetic::Shape) -> bool {
+        shape.exits_as_scripted(self.exit_code)
+            && self
+                .resumed
+                .as_ref()
+                .is_none_or(|r| shape.exits_as_scripted(r.exit_code))
+    }
 }
 
 /// A second turn, as the recorder ran it.

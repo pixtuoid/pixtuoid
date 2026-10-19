@@ -40,15 +40,15 @@ mod run {
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step, StepRecord, Surface,
-        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
+        PROMPT_PLACEHOLDER, Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step,
+        StepRecord, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, PROMPT_ENV, capture_root,
-        capture_workspace, capture_workspace_tail, recorder_flag, required_version_probe,
-        version_answer, wait_until,
+        BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
+        capture_workspace_tail, recorder_flag, required_version_probe, version_answer, wait_until,
     };
     use semver::Version;
 
@@ -1789,11 +1789,8 @@ mod run {
             Ok(sandbox.scene.accepting())
         })?;
 
-        let mut recorder = sandbox.command(&built.recorder);
-        if let Some(prompt) = scenario.run.prompt {
-            recorder.env(PROMPT_ENV, prompt);
-        }
-        let recorder = recorder
+        let recorder = sandbox
+            .command(&built.recorder)
             .args(recorder_args(
                 &RecorderRun {
                     out: dir,
@@ -1973,10 +1970,10 @@ mod run {
                 }
             }
         }
-        if let (Some(turn), Some(resume)) = (&scenario.run.resume, p.resume) {
-            let words = resume[1..]
-                .iter()
-                .map(|w| w.replace("{prompt}", turn.prompt).into());
+        // A scenario's prompts expand here; the recorder expands only its own.
+        let prompted = |word: &str, prompt: &str| word.replace(PROMPT_PLACEHOLDER, prompt);
+        if let (Some(prompt), Some(resume)) = (scenario.turn.resume, p.resume) {
+            let words = resume[1..].iter().map(|w| prompted(w, prompt).into());
             for word in run.launch.argv().into_iter().chain(words) {
                 args.extend([recorder_flag::RESUME.into(), word]);
             }
@@ -1985,8 +1982,15 @@ mod run {
         match scenario.surface {
             Surface::Headless => {
                 args.extend(run.launch.argv());
-                args.extend(p.invocation[1..].iter().map(OsString::from));
-                args.extend(scenario.run.args.iter().map(OsString::from));
+                args.extend(
+                    p.invocation[1..]
+                        .iter()
+                        .map(|w| match scenario.turn.prompt {
+                            Some(prompt) => prompted(w, prompt).into(),
+                            None => OsString::from(w),
+                        }),
+                );
+                args.extend(scenario.turn.args.iter().map(OsString::from));
             }
             Surface::Tui(tui) => {
                 args.push(run.driver.into());
@@ -1995,8 +1999,11 @@ mod run {
                         source: p.source.to_owned(),
                         scenario: scenario.name.to_owned(),
                         log: run.out.join(TUI_LOG),
-                        // The recorder expands it, as in a headless invocation.
-                        prompt: "{prompt}".to_owned(),
+                        prompt: scenario
+                            .turn
+                            .prompt
+                            .unwrap_or(PROMPT_PLACEHOLDER)
+                            .to_owned(),
                         program: run
                             .launch
                             .argv()
@@ -2496,19 +2503,22 @@ mod run {
                 .filter(|kv| kv[0] == recorder_flag::RESUME)
                 .map(|kv| kv[1].to_string_lossy().into_owned())
                 .collect();
-            let turn = scenario.run.resume.as_ref().expect("a second turn");
+            let second = scenario.turn.resume.expect("a second turn");
             let want: Vec<String> = std::iter::once("/cli/claude".to_owned())
                 .chain(
                     p.resume.expect("claude-code resumes")[1..]
                         .iter()
-                        .map(|w| w.replace("{prompt}", turn.prompt)),
+                        .map(|w| w.replace(PROMPT_PLACEHOLDER, second)),
                 )
                 .collect();
             assert_eq!(resumed, want);
             assert!(resumed.iter().any(|w| w == hermetic::SESSION_PLACEHOLDER));
-            let first = &args[args.len() - scenario.run.args.len()..];
+            let prompt = scenario.turn.prompt.expect("its own prompt");
+            assert!(args[source..].iter().any(|a| a == prompt), "{args:?}");
+            assert!(!args.iter().any(|a| a == PROMPT_PLACEHOLDER), "{args:?}");
+            let first = &args[args.len() - scenario.turn.args.len()..];
             assert_eq!(
-                first, scenario.run.args,
+                first, scenario.turn.args,
                 "the first turn's args follow its invocation"
             );
         }
@@ -2592,7 +2602,7 @@ mod run {
             let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
-            assert_eq!(line.prompt, "{prompt}");
+            assert_eq!(line.prompt, PROMPT_PLACEHOLDER);
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
@@ -3026,7 +3036,7 @@ mod run {
                 surface,
                 expects: &[],
                 fixture,
-                run: hermetic::Run::PROFILE,
+                turn: hermetic::Turn::PROFILE,
             };
             let tui_first = [
                 scenario(tui.surface, "tui"),

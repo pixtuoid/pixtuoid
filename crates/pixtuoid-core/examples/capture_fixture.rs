@@ -29,8 +29,11 @@ mod recorder {
     /// the CLI refuses to run unasked).
     const DEFAULT_PROMPT: &str =
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
+    const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, SESSION_PLACEHOLDER};
+    use pixtuoid_core::harness::hermetic::{
+        self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
+    };
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
@@ -41,9 +44,8 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROMPT_ENV, PROVENANCE, Resumed, capture_base, capture_root, capture_workspace,
-        capture_workspace_tail, jsonl_files_under, required_version_probe, version_answer,
-        wait_until,
+        PROVENANCE, Resumed, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -65,11 +67,13 @@ mod recorder {
         scratch.join("driver")
     }
 
-    /// [`hermetic::Shape::exits_as_scripted`] for `source`'s profiled `scenario`.
-    fn exited_as_scripted(source: &str, scenario: &str, code: Option<i32>) -> bool {
+    /// [`CaptureRecord::exited_as_scripted`] for `source`'s profiled `scenario`.
+    fn exited_as_scripted(source: &str, scenario: &str, record: &CaptureRecord) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(code == Some(0), |s| s.shape.exits_as_scripted(code))
+            .map_or(record.exit_code == Some(0), |s| {
+                record.exited_as_scripted(s.shape)
+            })
     }
 
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
@@ -198,6 +202,11 @@ mod recorder {
                 _ => break,
             }
         }
+        if !options.resume.is_empty() && options.out.is_none() {
+            return Err(format!(
+                "{RESUME} runs only under {OUT}: a committed capture records one turn"
+            ));
+        }
         if daemon != DaemonCmd::default() {
             if daemon.start.is_empty() || daemon.ready.is_empty() {
                 return Err(format!("{DAEMON} and {DAEMON_READY} come together"));
@@ -274,6 +283,7 @@ mod recorder {
             eprintln!(
                 "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket|pipe>] [{WITHIN} <dir>] [{ENV} K=V]... \
                  [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] [{DAEMON} <word>]... [{DAEMON_READY} <word>]... \
+                 [{RESUME} <word>]... \
                  <source-id> <scenario> <cmd...>   \
                  ('{{prompt}}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
@@ -288,7 +298,7 @@ mod recorder {
         let prompt = nonempty_env(PROMPT_ENV).unwrap_or_else(|| DEFAULT_PROMPT.to_string());
         let cmd: Vec<String> = args[2..]
             .iter()
-            .map(|a| a.replace("{prompt}", &prompt))
+            .map(|a| a.replace(PROMPT_PLACEHOLDER, &prompt))
             .collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -353,9 +363,12 @@ mod recorder {
         } else {
             tap.settle();
             let born = root.as_deref().map_or_else(Vec::new, |r| {
-                born_after(
-                    &pixtuoid_core::harness::transcripts_under(&source, r),
-                    started,
+                harvested(
+                    born_after(
+                        &pixtuoid_core::harness::transcripts_under(&source, r),
+                        started,
+                    ),
+                    options.within.is_some(),
                 )
             });
             match first_session(&source, &tap.payloads(), &born) {
@@ -384,8 +397,7 @@ mod recorder {
                 }
             }
         };
-        let resume_failed =
-            !options.resume.is_empty() && resumed.as_ref().is_none_or(|r| r.exit_code != Some(0));
+        let unresumed = !options.resume.is_empty() && resumed.is_none();
         drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
@@ -443,9 +455,7 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some()
-                || resume_failed
-                || !exited_as_scripted(&source, &scenario, status.code())
+            if incomplete.is_some() || unresumed || !exited_as_scripted(&source, &scenario, &record)
             {
                 keep_scratch(sandbox);
             }
@@ -597,6 +607,13 @@ mod recorder {
     /// What the harvest keeps of the transcripts `born` during the run, oldest
     /// first: every one in a sandbox, and only the newest in the operator's own
     /// root, where another session may be born during the run.
+    fn harvested(mut born: Vec<PathBuf>, sandboxed: bool) -> Vec<PathBuf> {
+        if !sandboxed {
+            born = born.split_off(born.len().saturating_sub(1));
+        }
+        born
+    }
+
     /// The root session the first turn's own wire names: the first its hook
     /// payloads decode to, else the one its source derives from its first
     /// transcript's path, as the watcher keys it.
@@ -618,13 +635,6 @@ mod recorder {
                     .first()
                     .map(|t| registry::id_deriver_for(source)(t))
             })
-    }
-
-    fn harvested(mut born: Vec<PathBuf>, sandboxed: bool) -> Vec<PathBuf> {
-        if !sandboxed {
-            born = born.split_off(born.len().saturating_sub(1));
-        }
-        born
     }
 
     /// Where `fresh` lands under `dest`: under as few of its own parent dirs as
@@ -1505,6 +1515,8 @@ mod recorder {
             assert_eq!(o.env, [("A".to_string(), "b=c".to_string())]);
             assert_eq!(rest, args(&["codex", "tool-run", "codex"]));
             let (o, _) = parse_options(args(&[
+                "--out",
+                "/o",
                 "--resume",
                 "claude",
                 "--resume",
@@ -1518,6 +1530,10 @@ mod recorder {
                 o.resume,
                 args(&["claude", "--resume", "{session}"]),
                 "a second turn's words, in order, a flag of the CLI's among them"
+            );
+            assert!(
+                parse_options(args(&["--resume", "claude", "claude-code"])).is_err(),
+                "a resumed turn outside a raw capture"
             );
             assert!(
                 parse_options(args(&["--env", "NOEQUALS", "codex"])).is_err(),
@@ -1996,10 +2012,45 @@ mod recorder {
 
         #[test]
         fn only_a_profiled_failing_turn_may_exit_non_zero() {
-            assert!(exited_as_scripted("openclaw", "model-error", Some(1)));
-            assert!(!exited_as_scripted("openclaw", "tool-run", Some(1)));
-            assert!(!exited_as_scripted("unprofiled", "model-error", Some(1)));
-            assert!(exited_as_scripted("unprofiled", "model-error", Some(0)));
+            let exited = |exit_code, resumed: Option<i32>| CaptureRecord {
+                workspace: PathBuf::from("/ws"),
+                cli: "cli".into(),
+                version: "1".into(),
+                exit_code,
+                resumed: resumed.map(|code| Resumed {
+                    session: "s".into(),
+                    exit_code: Some(code),
+                }),
+            };
+            assert!(exited_as_scripted(
+                "openclaw",
+                "model-error",
+                &exited(Some(1), None)
+            ));
+            assert!(!exited_as_scripted(
+                "openclaw",
+                "tool-run",
+                &exited(Some(1), None)
+            ));
+            assert!(!exited_as_scripted(
+                "unprofiled",
+                "model-error",
+                &exited(Some(1), None)
+            ));
+            assert!(exited_as_scripted(
+                "unprofiled",
+                "model-error",
+                &exited(Some(0), None)
+            ));
+            assert!(exited_as_scripted(
+                "claude-code",
+                "ultra-effort",
+                &exited(Some(0), Some(0))
+            ));
+            assert!(
+                !exited_as_scripted("claude-code", "ultra-effort", &exited(Some(0), Some(1))),
+                "its resumed turn is held to the same bar"
+            );
         }
 
         #[test]

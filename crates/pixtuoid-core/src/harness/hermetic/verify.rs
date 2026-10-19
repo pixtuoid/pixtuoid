@@ -593,7 +593,8 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
 }
 
 /// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
-/// as scripted; a request no script line matched is Script either way.
+/// as scripted, and the turn resuming it where one ran; a request no script
+/// line matched is Script either way.
 fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
@@ -604,7 +605,7 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
             ),
         ));
     }
-    shape.exits_as_scripted(manifest.capture.exit_code) && manifest.requests > 0
+    manifest.capture.exited_as_scripted(shape) && manifest.requests > 0
 }
 
 fn judge(
@@ -628,37 +629,32 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
+        let resumed = manifest
+            .capture
+            .resumed
+            .as_ref()
+            .map_or(String::new(), |r| {
+                format!(", resumed exit {:?}", r.exit_code)
+            });
         findings.push((
             Label::Blocked,
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {:?}, {} \
-                 model requests): it could not run, or its model calls went elsewhere \
+                "the CLI did not complete a turn against the scripted model (exit {:?}{resumed}, \
+                 {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
                 manifest.capture.exit_code, manifest.requests
             ),
         ));
         return Ok(());
     }
-    // A resumed turn completes as the first does. One that never ran had no
-    // session the first turn's wire named, which is pixtuoid's to name.
-    if scenario.run.resume.is_some() {
-        match &manifest.capture.resumed {
-            None => {
-                findings.push((
-                    Label::Fail,
-                    "the first turn's wire named no session to resume".into(),
-                ));
-                return Ok(());
-            }
-            Some(r) if r.exit_code != Some(0) => {
-                findings.push((
-                    Label::Blocked,
-                    format!("the turn resuming {} exited {:?}", r.session, r.exit_code),
-                ));
-                return Ok(());
-            }
-            Some(_) => {}
-        }
+    // A resumed turn that never ran had no session the first turn's wire named,
+    // which is pixtuoid's to name; one that ran `completed_turn` held.
+    if scenario.turn.resume.is_some() && manifest.capture.resumed.is_none() {
+        findings.push((
+            Label::Fail,
+            "the first turn's wire named no session to resume".into(),
+        ));
+        return Ok(());
     }
     if p.result_unseen && manifest.results_seen > 0 {
         findings.push((
@@ -1983,7 +1979,7 @@ mod tests {
         assert!(has(
             &judged(resumed(Some(1))),
             Label::Blocked,
-            "exited Some(1)"
+            "resumed exit Some(1)"
         ));
     }
 
