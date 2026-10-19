@@ -1,10 +1,10 @@
 {}
 {}
 {"timestamp":0,"method":"","params":{"sessionId":"","update":{"sessionUpdate":"","content":{},"_meta":{"modelId":"grok-4.6","promptIndex":0}},"_meta":{}}}
-{"timestamp":0,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call","toolCallId":"call_6SwP3x57drmNWt9a","title":"run_terminal_command","rawInput":{},"_meta":{}},"_meta":{}}}
+{"timestamp":0,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call","toolCallId":"call_nOL-ahqr5nruVApq","title":"run_terminal_command","rawInput":{},"_meta":{}},"_meta":{}}}
 {}
 {}
-{"timestamp":0,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_6SwP3x57drmNWt9a","status":"failed","content":[],"_meta":{}},"_meta":{}}}
+{"timestamp":0,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_nOL-ahqr5nruVApq","status":"failed","content":[],"_meta":{}},"_meta":{}}}
 {}
 {"timestamp":0,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"turn_completed","prompt_id":"","stop_reason":"","usage":{},"elapsed_ms":0},"_meta":{}}}
 {}

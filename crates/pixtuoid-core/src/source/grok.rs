@@ -585,18 +585,16 @@ fn grok_transcript_tool_detail(title: &str, raw_input: Option<&Value>) -> ToolDe
     generic_tool_display(title, None)
 }
 
-/// Whether spawn args explicitly request a BLOCKING run (`false`), under EITHER
-/// spelling of the flag: the bool travels as `background` in the hook's
-/// `toolInput` (the model-facing schema's rename) and as `run_in_background` in
-/// the ACP `tool_call`'s `rawInput` (the struct's own field name). Reading both
-/// keys on both transports also survives either layer dropping its rename.
+/// Whether spawn args explicitly request a BLOCKING run (`false`): the model's
+/// `background` on both transports, since the hook's `toolInput` and a fresh
+/// `tool_call`'s `rawInput` carry its arguments as sent; the struct's own
+/// `run_in_background` rides only the later `tool_call_update` (1.0.62's run).
 /// Upstream parses the flag LENIENTLY — a model-emitted `"false"` STRING still
 /// runs blocking — which this `as_bool` read misses toward the SAFE side only:
 /// a missed `false` skips the Task detail, never over-mints it into b1.
 fn spawn_is_blocking(args: Option<&Value>) -> bool {
-    ["background", "run_in_background"]
-        .iter()
-        .find_map(|k| args.and_then(|a| a.get(k)).and_then(Value::as_bool))
+    args.and_then(|a| a.get("background"))
+        .and_then(Value::as_bool)
         == Some(false)
 }
 
@@ -956,21 +954,17 @@ mod tests {
     }
 
     #[test]
-    fn blocking_flag_reads_both_wire_spellings_on_both_transports() {
-        for key in ["background", "run_in_background"] {
-            let blocking = json!({"subagent_type": "explore", key: false});
-            assert!(
-                grok_tool_detail("spawn_subagent", Some(&blocking)).is_task(),
-                "hook side must read {key}"
-            );
-            assert!(
-                grok_transcript_tool_detail("Spawn subagent", Some(&blocking)).is_task(),
-                "transcript side must read {key}"
-            );
-            let background = json!({"subagent_type": "explore", key: true});
-            assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
-            assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
-        }
+    fn blocking_flag_is_the_models_background_on_both_transports() {
+        let blocking = json!({"subagent_type": "explore", "background": false});
+        assert!(grok_tool_detail("spawn_subagent", Some(&blocking)).is_task());
+        assert!(grok_transcript_tool_detail("Spawn subagent", Some(&blocking)).is_task());
+        let background = json!({"subagent_type": "explore", "background": true});
+        assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
+        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
+        // The struct's spelling rides no line either transport reads.
+        let canonical = json!({"subagent_type": "explore", "run_in_background": false});
+        assert!(!grok_tool_detail("spawn_subagent", Some(&canonical)).is_task());
+        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&canonical)).is_task());
         // A model-emitted STRING "false" (upstream parses leniently).
         let lenient = json!({"subagent_type": "explore", "background": "false"});
         assert!(!grok_tool_detail("spawn_subagent", Some(&lenient)).is_task());
@@ -1335,8 +1329,7 @@ mod tests {
     #[test]
     fn transcript_blocking_spawn_is_task_background_is_not() {
         // In a live capture the transcript's rawInput carried the CLIENT-form
-        // `background` key, not the canonical `run_in_background`; the
-        // cross-spelling test covers both.
+        // `background` key, not the canonical `run_in_background`.
         let blocking = decode_line(acp_line(json!({
             "sessionUpdate": "tool_call", "toolCallId": "call-0b8fe95b-2070-4e76-a5c7-036d4ad88f12-0",
             "title": "spawn_subagent",
