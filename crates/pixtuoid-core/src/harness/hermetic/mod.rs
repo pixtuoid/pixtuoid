@@ -1448,6 +1448,14 @@ telemetry:
         ],
         event_name: |_| None,
         not_yet_fields: &[],
+        not_yet_literals: &[
+            "_pid",
+            "errored",
+            "gatewayPort",
+            "runId",
+            "sessionId",
+            "type",
+        ],
         children_inherit_cwd: false,
         result_unseen: false,
         live: Some(Live {
