@@ -772,23 +772,52 @@ fn subagent(
             false
         }
     };
-    let ended = |child: AgentId, parent: AgentId| {
-        events.iter().any(|e| match e {
-            AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
-            // The reducer's b1 cascade walks a drained Task's subtree out.
-            AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: Some(t),
-            } if inference.dispatch_end_ends_child(true) => {
-                *agent_id == parent && tasks.contains(&(parent, t.as_str()))
-            }
-            // No run deletes a durable child, so its turn's end is the end a run sees.
-            AgentEvent::ActivityEnd {
+    // The reducer's untracked site (`apply_activity_end`): an id-less end while
+    // an id-less Task stands.
+    let mut standing = BTreeSet::new();
+    let mut untracked_ends = BTreeSet::new();
+    for e in events {
+        match e {
+            AgentEvent::ActivityStart {
                 agent_id,
                 tool_use_id: None,
-            } if durable => *agent_id == child,
-            _ => false,
-        })
+                detail: Some(d),
+            } if d.is_task() => {
+                standing.insert(*agent_id);
+            }
+            AgentEvent::ActivityStart { agent_id, .. } => {
+                standing.remove(agent_id);
+            }
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id,
+            } => {
+                if tool_use_id.is_none() && standing.remove(agent_id) {
+                    untracked_ends.insert(*agent_id);
+                }
+                standing.remove(agent_id);
+            }
+            _ => {}
+        }
+    }
+    let ended = |child: AgentId, parent: AgentId| {
+        (inference.dispatch_end_ends_child(false) && untracked_ends.contains(&parent))
+            || events.iter().any(|e| match e {
+                AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
+                // The reducer's b1 cascade walks a drained Task's subtree out.
+                AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: Some(t),
+                } if inference.dispatch_end_ends_child(true) => {
+                    *agent_id == parent && tasks.contains(&(parent, t.as_str()))
+                }
+                // No run deletes a durable child, so its turn's end is the end a run sees.
+                AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id: None,
+                } if durable => *agent_id == child,
+                _ => false,
+            })
     };
     if children.is_empty() {
         findings.push((Label::Fail, "no session started as another's child".into()));
@@ -1442,6 +1471,78 @@ mod tests {
         );
     }
 
+    fn subagent_findings(
+        events: &[AgentEvent],
+        inference: ChildEndInference,
+    ) -> Vec<(Label, String)> {
+        let mut findings = Vec::new();
+        subagent(
+            events,
+            &[Reach::Active, Reach::Delegating],
+            inference,
+            &mut findings,
+        );
+        findings
+    }
+
+    fn child_unended(events: &[AgentEvent], inference: ChildEndInference) -> bool {
+        subagent_findings(events, inference)
+            .iter()
+            .any(|f| f.1.contains("never ended"))
+    }
+
+    #[test]
+    fn an_untracked_task_end_ends_the_child_only_where_any_task_end_does() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("reasonix", "p"),
+            AgentId::from_parts("reasonix", "p:subagent:sa_1"),
+        );
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "reasonix".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let started = |agent_id, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: None,
+            detail: Some(detail),
+        };
+        let end = |agent_id| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let read = || ToolDetail::Generic {
+            display: "read_file".into(),
+        };
+        // As a reasonix skill call decodes: no call id, and its return re-states
+        // the Task its end closes.
+        let run = vec![
+            session(parent, "p", None),
+            started(parent, ToolDetail::Task),
+            session(child, "p:subagent:sa_1", Some(parent)),
+            started(child, read()),
+            end(child),
+            started(parent, ToolDetail::Task),
+            end(parent),
+        ];
+        assert_eq!(
+            subagent_findings(&run, ChildEndInference::AnyTaskEnd),
+            vec![]
+        );
+        for inference in [ChildEndInference::None, ChildEndInference::TaskDrain] {
+            assert!(child_unended(&run, inference), "{inference:?}");
+        }
+        let mut own_tool = run.clone();
+        own_tool[5] = started(parent, read());
+        assert!(
+            child_unended(&own_tool, ChildEndInference::AnyTaskEnd),
+            "the parent's own tool ending is no dispatch's"
+        );
+    }
+
     #[test]
     fn only_a_durable_child_ends_with_its_own_turn() {
         use crate::source::ToolDetail;
@@ -1478,21 +1579,7 @@ mod tests {
             ),
             turn_end(child),
         ];
-        let judged = |events: &[AgentEvent], inference| {
-            let mut findings = Vec::new();
-            subagent(
-                events,
-                &[Reach::Active, Reach::Delegating],
-                inference,
-                &mut findings,
-            );
-            findings
-        };
-        let unended = |events: &[AgentEvent], inference| -> bool {
-            judged(events, inference)
-                .iter()
-                .any(|f| f.1.contains("never ended"))
-        };
+        let (judged, unended) = (subagent_findings, child_unended);
         assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
         let parent_turn: Vec<_> = run[..run.len() - 1]
             .iter()

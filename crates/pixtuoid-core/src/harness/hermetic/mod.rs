@@ -1215,9 +1215,15 @@ trust_level = "trusted"
     Profile {
         source: "reasonix",
         package: Package::Npm("reasonix"),
-        // A non-read-only tool is denied headless; this allows the one a
-        // blocking spawn needs (`docs/CLI.md:502-503`, `:517-519`).
-        invocation: &["reasonix", "--allowed-tools", "task", "-p", "{prompt}"],
+        // A non-read-only tool is denied headless; this allows the ones the
+        // spawns need (`docs/CLI.md:501-502`, `:516-517`).
+        invocation: &[
+            "reasonix",
+            "--allowed-tools",
+            "task,explore",
+            "-p",
+            "{prompt}",
+        ],
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
@@ -1275,6 +1281,21 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
+            },
+            // A skill wrapper's child fires no SubagentStart or SubagentStop.
+            Scenario {
+                name: "explore",
+                shape: Shape::Subagent,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "reasonix/fixtures/explore-hermetic",
             },
             Scenario {
                 name: "bash-run",
