@@ -15,6 +15,7 @@ use crate::source::registry;
 
 pub mod bump;
 pub mod digest;
+pub mod dropped;
 mod literals;
 pub mod pin;
 pub mod tui;
@@ -335,6 +336,10 @@ pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
+
+/// The provenance key holding what a tier recording's decoders dropped
+/// ([`dropped::Dropped`]), the unknown-type report's baseline.
+pub const PROVENANCE_DROPPED: &str = "dropped";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";

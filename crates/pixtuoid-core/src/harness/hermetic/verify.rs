@@ -12,11 +12,12 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use super::dropped::Dropped;
 use super::{
-    LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
-    Surface, literals, profile, tui,
+    LIFECYCLE_RECORD, MANIFEST, Manifest, PROVENANCE_DROPPED, Profile, SCENE_LOG, STEPS, Scenario,
+    Shape, StepRecord, Surface, literals, profile, tui,
 };
-use crate::harness::captures::jsonl_files_under;
+use crate::harness::captures::{json_lines, jsonl_files_under};
 use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
 use crate::source::registry::ChildEndInference;
@@ -30,6 +31,9 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
+    /// A decoder dropped a type the recording never did (`dropped`): a review
+    /// for a decoder arm, never a failure.
+    New,
     /// An owed gap closed (`not_yet`, `not_yet_fields`, `not_yet_literals`,
     /// `result_unseen`): good news, the profile shrinks.
     Stale,
@@ -64,6 +68,11 @@ impl Verdict {
     /// Every finding, worst first.
     pub fn findings(&self) -> &[(Label, String)] {
         &self.findings
+    }
+
+    /// Whether the run passed: no finding worse than [`Label::New`].
+    pub fn passed(&self) -> bool {
+        self.label() <= Label::New
     }
 
     /// Whether the run was judged: a Blocked finding returns before any check,
@@ -205,10 +214,14 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
     // census judges fixtures, so only this makes an owed literal Stale.
     let mut kept = Fields::default();
     let mut ran = Vec::new();
+    let mut findings = Vec::new();
     for dir in dirs {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
-        ran.extend(p.scenarios.iter().filter(|s| s.name == manifest.scenario));
+        let scenario = p.scenarios.iter().find(|s| s.name == manifest.scenario);
+        ran.extend(scenario);
+        let baseline = scenario.map(baseline_of).transpose()?.flatten();
+        let mut dropped = BTreeSet::new();
         for file in jsonl_files_under(dir) {
             let mut lines = json_lines(&file)?;
             for line in &lines {
@@ -219,20 +232,25 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
                 }
                 carried.add(p, &file, line, true);
             }
+            let raw = (!is_hook_envelope(&file)).then(|| lines.clone());
             if crate::harness::reads::strip_lines(p.source, &file, &mut lines) {
                 for line in &lines {
                     kept.add(p, &file, line, false);
                 }
+                if let (Some(b), Some(raw)) = (&baseline, raw) {
+                    dropped.extend(b.new_in(&raw, &lines));
+                }
             }
         }
+        findings.extend(new_types(&manifest.scenario, baseline.as_ref(), dropped));
     }
-    let mut findings = census(
+    findings.extend(census(
         &committed_reads(p)?,
         &carried,
         p.not_yet,
         p.not_yet_fields,
         p.source,
-    );
+    ));
     for hook in p.not_yet {
         if fired.contains(*hook) {
             findings.push((
@@ -249,6 +267,55 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
         &kept,
     ));
     Ok(Verdict::new(findings))
+}
+
+/// The unknown-type report on one run of `scenario`: each value it `dropped`
+/// that its recording's baseline lacks is New, and a run with no baseline
+/// recorded on this OS says it went unjudged.
+fn new_types(
+    scenario: &str,
+    baseline: Option<&Dropped>,
+    dropped: BTreeSet<(String, String)>,
+) -> Vec<(Label, String)> {
+    let os = std::env::consts::OS;
+    match baseline {
+        None => vec![(
+            Label::Pass,
+            format!("{scenario}: new types not judged, as its recording names no `dropped`"),
+        )],
+        Some(b) if b.os != os => vec![(
+            Label::Pass,
+            format!(
+                "{scenario}: new types not judged on {os}, as it was recorded on {}",
+                b.os
+            ),
+        )],
+        Some(_) => dropped
+            .into_iter()
+            .map(|(at, value)| {
+                (
+                    Label::New,
+                    format!(
+                        "{scenario} {at}: `{value}` decoded to nothing, which its recording \
+                         never dropped"
+                    ),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// The `dropped` baseline `s`'s recording wrote into its provenance, if any.
+fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
+    let prov = crate::harness::sources_root()
+        .join(s.fixture)
+        .join(PROVENANCE);
+    let record: Value = serde_json::from_str(&std::fs::read_to_string(prov)?)?;
+    record
+        .get(PROVENANCE_DROPPED)
+        .map(|d| serde_json::from_value(d.clone()))
+        .transpose()
+        .map_err(std::io::Error::from)
 }
 
 /// The literal census over runs: each value a decoder's literal matches in
@@ -582,14 +649,6 @@ pub(crate) fn scenario_reads<'a>(
         }
     }
     Ok(reads)
-}
-
-/// A file's lines that parse; the Drive reports the ones that don't.
-fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
-    Ok(std::fs::read_to_string(file)?
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect())
 }
 
 /// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
@@ -2602,6 +2661,49 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_type_the_recording_never_dropped_is_new_and_a_new_verdict_passes() {
+        let baseline = Dropped {
+            os: std::env::consts::OS.to_owned(),
+            at: BTreeMap::from([(
+                "/type".to_owned(),
+                BTreeSet::from(["assistant.turn_start".to_owned()]),
+            )]),
+        };
+        let dropped = BTreeSet::from([("/type".to_owned(), "assistant.reasoning".to_owned())]);
+        let v = Verdict::new(new_types("tool-run", Some(&baseline), dropped));
+        assert_eq!(v.label(), Label::New, "{:?}", v.findings());
+        assert!(has(&v, Label::New, "`assistant.reasoning`"));
+        assert!(v.passed(), "New never fails a run");
+        assert!(!Verdict::new(vec![(Label::Stale, String::new())]).passed());
+    }
+
+    #[test]
+    fn a_run_with_no_baseline_on_its_os_says_so_and_passes() {
+        let none = Verdict::new(new_types("tool-run", None, BTreeSet::new()));
+        assert_eq!(none.label(), Label::Pass);
+        assert!(
+            has(&none, Label::Pass, "not judged"),
+            "{:?}",
+            none.findings()
+        );
+        let elsewhere = Dropped {
+            os: "plan9".to_owned(),
+            at: BTreeMap::new(),
+        };
+        let other = Verdict::new(new_types(
+            "tool-run",
+            Some(&elsewhere),
+            BTreeSet::from([("/type".to_owned(), "x".to_owned())]),
+        ));
+        assert!(
+            has(&other, Label::Pass, "recorded on plan9"),
+            "{:?}",
+            other.findings()
+        );
+        assert!(other.passed());
     }
 
     /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`

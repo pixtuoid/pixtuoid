@@ -10,9 +10,9 @@
 //! fixtures, and off the pin moves its pin up to the release recorded.
 //! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
 //!
-//! Exits 0 when every run passed, 1 on any other verdict (a recording refused
-//! after its runs included), and anything else when the tier itself could not
-//! run or refused a recording before any CLI ran.
+//! Exits 0 when every run passed, New findings included (`new.json` lists them),
+//! 1 on any other verdict (a recording refused after its runs included), and
+//! anything else when the tier could not run or refused a recording first.
 
 fn main() {
     match run::main() {
@@ -344,8 +344,12 @@ mod run {
         );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
+        std::fs::write(
+            runs.join(NEW),
+            serde_json::to_string(&new_findings(&entries))?,
+        )?;
         println!("\n{report}");
-        Ok(entries.iter().all(|e| e.verdict.label() == Label::Pass))
+        Ok(entries.iter().all(|e| e.verdict.passed()))
     }
 
     /// `p`'s selected runs, then, once every scenario ran, its census, the
@@ -453,7 +457,7 @@ mod run {
             let verdict = verify::verify_source(p, &judged)?;
             entries.push(Entry::new(key, None, verdict));
         }
-        let passed = entries.iter().all(|e| e.verdict.label() == Label::Pass);
+        let passed = entries.iter().all(|e| e.verdict.passed());
         let mut moved = None;
         if let (Ok(installed), true) = (&installed, passed) {
             match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
@@ -662,6 +666,24 @@ mod run {
 
     /// The run's report, beside the runs; its H1 is the tracking issue's title.
     const REPORT: &str = "report.md";
+
+    /// The run's New findings, beside the report: a run that passed with one
+    /// still uploads its runs, and the nightly files them (`hermetic.yml`).
+    const NEW: &str = "new.json";
+
+    /// Each entry's New finding, as `<entry>: <finding>`.
+    fn new_findings(entries: &[Entry]) -> Vec<String> {
+        entries
+            .iter()
+            .flat_map(|e| {
+                e.verdict
+                    .findings()
+                    .iter()
+                    .filter(|(label, _)| *label == Label::New)
+                    .map(|(_, finding)| format!("{}: {finding}", e.key))
+            })
+            .collect()
+    }
 
     /// One section of the report: one run, or a source's runs together.
     struct Entry {

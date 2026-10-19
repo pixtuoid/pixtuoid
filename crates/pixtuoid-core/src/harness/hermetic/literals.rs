@@ -141,6 +141,20 @@ fn source_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/source")
 }
 
+/// The text of each [`Match::Exact`] literal `source`'s own modules read, not
+/// a helper every decoder shares.
+///
+/// # Errors
+///
+/// If [`population`] fails.
+pub(crate) fn own_exact(source: &str) -> std::io::Result<BTreeSet<String>> {
+    Ok(population()?
+        .into_iter()
+        .filter(|l| l.how == Match::Exact && matches!(l.owner(), Owner::Source(s) if s == source))
+        .map(|l| l.text)
+        .collect())
+}
+
 /// Every literal the modules under `src/source` read, walked from `mod.rs`
 /// through each `mod` they declare, whatever its platform or feature cfg;
 /// test-only items skipped.

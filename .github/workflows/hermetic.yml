@@ -103,14 +103,19 @@ jobs:
           OS: ${{ matrix.os }}
           SHARD: ${{ matrix.shard }}
         run: echo "moved_${OS}_${SHARD}=$(cat target/hermetic/runs/moved.json)" >> "$GITHUB_OUTPUT"
-      - if: steps.run.outputs.exit != '0'
+      # A run that passes with a New finding still uploads, for the nightly to
+      # file; a tier that never wrote `new.json` exited non-zero already.
+      - name: Report the new types
+        id: new
+        run: echo "any=$(jq 'length > 0' target/hermetic/runs/new.json 2>/dev/null || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error
-      - name: Fail on any verdict but Pass
+      - name: Fail on a failing verdict
         if: steps.run.outputs.exit != '0'
         env:
           CODE: ${{ steps.run.outputs.exit }}
