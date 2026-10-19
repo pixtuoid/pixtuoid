@@ -55,8 +55,8 @@ pub const LIMITER_RELEASE: std::time::Duration = std::time::Duration::from_milli
 /// 1..BUSY_ACTIVE_MIN is the moderate anchor tier; 0 is empty.
 const BUSY_ACTIVE_MIN: usize = 3;
 
-/// The rain stem's gain at full precipitation — tuned well under the tier-1
-/// music, or the broadband rain masks the mix. The drop one-shots derive from
+/// The rain stem's gain at full precipitation — tuned well under the music,
+/// or the broadband rain masks the mix. The drop one-shots derive from
 /// this via `DROP_GAIN × wanted.rain`.
 const RAIN_GAIN: f32 = 0.30;
 

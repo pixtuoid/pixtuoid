@@ -17,27 +17,20 @@ pub(crate) trait AudioSink: Send {
     fn play_once(&mut self, samples: Arc<Vec<f32>>, gain: f32);
 }
 
-/// Records calls instead of making sound — the CI/test double. Keeps the registered
-/// BUFFERS, not just the stem tags, so tests can pin that each stem got the RIGHT
-/// bed.
+/// Records calls instead of making sound — the CI/test double.
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct NullSink {
     pub(crate) loops_started: Vec<LoopStem>,
-    pub(crate) loop_samples: std::collections::HashMap<LoopStem, Arc<Vec<f32>>>,
-    pub(crate) last_gain: std::collections::HashMap<LoopStem, f32>,
     pub(crate) one_shots: usize,
 }
 
 #[cfg(test)]
 impl AudioSink for NullSink {
-    fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
+    fn start_loop(&mut self, stem: LoopStem, _samples: Arc<Vec<f32>>) {
         self.loops_started.push(stem);
-        self.loop_samples.insert(stem, samples);
     }
-    fn set_loop_gain(&mut self, stem: LoopStem, gain: f32) {
-        self.last_gain.insert(stem, gain);
-    }
+    fn set_loop_gain(&mut self, _stem: LoopStem, _gain: f32) {}
     fn play_once(&mut self, _samples: Arc<Vec<f32>>, gain: f32) {
         if gain > 0.0 {
             self.one_shots += 1;
@@ -69,7 +62,7 @@ pub(crate) fn limited<S: Source>(source: S) -> impl Source {
     source.limit(settings).distortion(1.0, ceiling_amplitude())
 }
 
-/// The bus every lane and one-shot sums into, at the device's format, and its
+/// The bus every loop and one-shot sums into, at the device's format, and its
 /// [`limited`] output for the device's mixer.
 fn bus(
     channels: rodio::ChannelCount,

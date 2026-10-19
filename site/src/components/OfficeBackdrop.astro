@@ -647,8 +647,6 @@ const officeDriverUrl = asset('office-driver.js');
     let audioBooting = false;
     let audioUnavailable = false;
     let restoreArmed = false;
-    // Mirrors Rust's LoopStem::ALL.len() (0=Rain).
-    const LOOP_STEM_COUNT = 1;
     let loopGains = [];
     let oneShotBufs = {};
     let audioSR = 44100;
@@ -668,7 +666,7 @@ const officeDriverUrl = asset('office-driver.js');
     function audioUploadBuffers() {
       audioSR = office.audio_sample_rate(); // read once, before any view is taken
       loopGains = [];
-      for (let i = 0; i < LOOP_STEM_COUNT; i++) {
+      for (let i = 0; i < office.audio_loop_count(); i++) {
         const g = audioCtx.createGain();
         g.gain.value = 0;
         g.connect(audioBus);

@@ -413,6 +413,12 @@ impl Office {
         pixtuoid_scene::audio::LIMITER_RELEASE.as_secs_f32()
     }
 
+    /// How many loop stems a tick's `gains` carry:
+    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)'s.
+    pub fn audio_loop_count(&self) -> usize {
+        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+    }
+
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order.
     /// RE-READ after warmup completes.
@@ -818,13 +824,17 @@ mod tests {
         let mut o = office();
         o.audio_begin();
         while o.audio_warmup_step() > 0 {}
-        let baseline = o.audio_loop_len(0);
+        let rain = pixtuoid_scene::audio::mixer::LoopStem::ALL
+            .iter()
+            .position(|s| *s == pixtuoid_scene::audio::mixer::LoopStem::Rain)
+            .expect("rain is a loop stem");
+        let baseline = o.audio_loop_ptr(rain);
         adopt_take_into(&mut o);
         assert!(
             !o.audio_adopt_finish(),
             "first ready wins — a late adoption must not stomp the live driver"
         );
-        assert_eq!(o.audio_loop_len(0), baseline, "live driver untouched");
+        assert_eq!(o.audio_loop_ptr(rain), baseline, "live driver untouched");
         assert!(!o.audio_adopt_loop(0, &[0.1]));
         assert!(!o.audio_adopt_oneshot(0, &[0.1]));
     }

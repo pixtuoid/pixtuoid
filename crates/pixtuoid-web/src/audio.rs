@@ -146,11 +146,14 @@ impl Adoption {
             return false;
         }
         match LoopStem::ALL.get(idx) {
-            Some(LoopStem::Rain) if self.rain.is_none() => {
+            Some(LoopStem::Rain) => {
+                if self.rain.is_some() {
+                    return false;
+                }
                 self.rain = Some(Arc::new(samples.to_vec()));
                 true
             }
-            _ => false,
+            None => false,
         }
     }
 

@@ -587,9 +587,8 @@ pub(crate) struct AudioHandle {
     /// respawn. `None` = disabled (no device, or sound not requested yet).
     tx: std::sync::Arc<std::sync::Mutex<Option<mpsc::SyncSender<AudioFrame>>>>,
     /// Mute is STATE, not an event: it rides this atomic instead of the
-    /// droppable frame channel. During the bank-synthesis window the channel
-    /// saturates and try_sends drop — an `m`/`p` keypress there must still
-    /// land, or the rain fades in unmuted against a footer that says muted.
+    /// droppable frame channel, so an `m`/`p` keypress lands even when a
+    /// `try_send` drops.
     muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Master volume (f32 bits) — same state-not-event rationale as `muted`.
     volume: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -800,7 +799,8 @@ pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {
 /// threads, as Chromium maps its `kUtility` thread type
 /// (`base/threading/platform_thread_{apple.mm,linux.cc,win.cc}`). Best
 /// effort: a refusal leaves the thread as it was.
-pub fn demote_to_utility() {
+#[cfg(feature = "audio")]
+pub(crate) fn demote_to_utility() {
     #[cfg(target_os = "macos")]
     // SAFETY: sets the calling thread's own QoS class; nothing is borrowed.
     unsafe {
@@ -830,11 +830,15 @@ pub fn demote_to_utility() {
 
 /// Chromium's nice value for `kUtility` (`ThreadTypeToNiceValue`,
 /// `platform_thread_linux.cc`).
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "audio", target_os = "linux"))]
 const UTILITY_NICE: libc::c_int = 2;
 
 // The platforms whose class it reads back; elsewhere it yields nothing.
-#[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
+#[cfg(all(
+    test,
+    feature = "audio",
+    any(target_os = "macos", target_os = "linux", windows)
+))]
 mod utility_tests {
     /// A demoted thread reads back its platform's utility class, and the
     /// thread that spawned it keeps its own.
@@ -892,18 +896,6 @@ mod utility_tests {
     }
 }
 
-/// After the spawn-time build the channel holds a backlog. Adopt its freshest
-/// LEVELS (they re-send every render frame) but drop its event backlog — a
-/// replayed stack of chimes is a clank pile — while KEEPING the first frame's
-/// own events, which haven't played yet.
-#[cfg(feature = "audio")]
-fn merge_backlog_levels(rx: &mpsc::Receiver<AudioFrame>, mut first: AudioFrame) -> AudioFrame {
-    while let Ok(f) = rx.try_recv() {
-        first.stems = f.stems;
-    }
-    first
-}
-
 /// The per-tick dt, CLAMPED to `MAX_DT_S` — the shell's half of the engine's
 /// gap-immunity (the wasm painter clamps its `now_ms` delta the same way). A
 /// scheduler-starvation gap must not cover seconds and snap a ramp or burst
@@ -936,17 +928,10 @@ fn run_loop(
     );
 
     let mut engine = AudioEngine::new(f32::from_bits(volume.load(Relaxed)));
-    let mut backlog = rx
-        .try_recv()
-        .ok()
-        .map(|first| merge_backlog_levels(&rx, first));
     let mut last_step = Instant::now();
 
     loop {
-        let msg = match backlog.take() {
-            Some(frame) => Ok(frame),
-            None => rx.recv_timeout(std::time::Duration::from_millis(TICK_MS)),
-        };
+        let msg = rx.recv_timeout(std::time::Duration::from_millis(TICK_MS));
         engine.set_muted(muted.load(Relaxed));
         engine.set_master(f32::from_bits(volume.load(Relaxed)));
 
@@ -1028,7 +1013,7 @@ mod tests {
             events: vec![OneShot::DoorChime, OneShot::PrinterWhir],
         })
         .unwrap();
-        // Wait out frame 1 (the bank build delays it by seconds) so the mute lands BETWEEN
+        // Wait out frame 1 (the spawn-time bank build delays it) so the mute lands BETWEEN
         // the frames. UNBOUNDED on purpose: nextest's `terminate-after` names a stuck loop.
         {
             let (lock, progress) = &*recorder;
