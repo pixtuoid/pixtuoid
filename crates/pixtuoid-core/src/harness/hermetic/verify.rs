@@ -766,6 +766,12 @@ fn subagent(
             _ => None,
         })
         .collect();
+    let durable = match inference {
+        ChildEndInference::Durable => true,
+        ChildEndInference::None | ChildEndInference::TaskDrain | ChildEndInference::AnyTaskEnd => {
+            false
+        }
+    };
     let ended = |child: AgentId, parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
@@ -773,9 +779,14 @@ fn subagent(
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(t),
-            } if inference != ChildEndInference::None => {
+            } if inference.dispatch_end_ends_child(true) => {
                 *agent_id == parent && tasks.contains(&(parent, t.as_str()))
             }
+            // No run deletes a durable child, so its turn's end is the end a run sees.
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            } if durable => *agent_id == child,
             _ => false,
         })
     };
@@ -1159,6 +1170,9 @@ mod tests {
     const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Delegating), \
                                      cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
                                      agents=[] daemons=[]\n";
+    const OC_DELEGATE_SCENE: &str = "agents=[oc\u{b7}proj@0:active(Delegating), \
+                                     oc\u{b7}proj@1:active(read)]\n\
+                                     agents=[] daemons=[]\n";
     const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CC_WAIT_SCENE: &str =
         "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
@@ -1430,6 +1444,82 @@ mod tests {
     }
 
     #[test]
+    fn only_a_durable_child_ends_with_its_own_turn() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("opencode", "ses_parent"),
+            AgentId::from_parts("opencode", "ses_child"),
+        );
+        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some(id.into()),
+            detail: Some(detail),
+        };
+        let turn_end = |agent_id| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "opencode".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let run = vec![
+            session(parent, "ses_parent", None),
+            started(parent, "dispatch", ToolDetail::Task),
+            session(child, "ses_child", Some(parent)),
+            started(
+                child,
+                "read",
+                ToolDetail::Generic {
+                    display: "read".into(),
+                },
+            ),
+            turn_end(child),
+        ];
+        let judged = |events: &[AgentEvent], inference| {
+            let mut findings = Vec::new();
+            subagent(
+                events,
+                &[Reach::Active, Reach::Delegating],
+                inference,
+                &mut findings,
+            );
+            findings
+        };
+        let unended = |events: &[AgentEvent], inference| -> bool {
+            judged(events, inference)
+                .iter()
+                .any(|f| f.1.contains("never ended"))
+        };
+        assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        let parent_turn: Vec<_> = run[..run.len() - 1]
+            .iter()
+            .cloned()
+            .chain([turn_end(parent)])
+            .collect();
+        assert!(
+            unended(&parent_turn, ChildEndInference::Durable),
+            "only the child's own turn ends it"
+        );
+        for inference in [
+            ChildEndInference::None,
+            ChildEndInference::TaskDrain,
+            ChildEndInference::AnyTaskEnd,
+        ] {
+            assert!(unended(&run, inference), "{inference:?}");
+            let mut ended = run.clone();
+            ended.push(AgentEvent::SessionEnd {
+                agent_id: child,
+                as_child: true,
+            });
+            assert_eq!(judged(&ended, inference), vec![], "{inference:?}");
+        }
+    }
+
+    #[test]
     fn a_recorded_dsh_subagent_run_passes() {
         let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
@@ -1507,6 +1597,13 @@ mod tests {
     #[test]
     fn a_recorded_codex_subagent_run_passes() {
         let d = recorded("codex", Shape::Subagent, CX_DELEGATE_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_opencode_subagent_run_passes() {
+        let d = recorded("opencode", Shape::Subagent, OC_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }

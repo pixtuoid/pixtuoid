@@ -3,30 +3,30 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     source: opencode
-    session_id: ses_eac62136dffen9A6G9qgBSaufZ
+    session_id: ses_eabb87c3cffeVHXkPkR0sAM6MD
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     source: opencode
-    session_id: ses_eac62136dffen9A6G9qgBSaufZ
+    session_id: ses_eabb87c3cffeVHXkPkR0sAM6MD
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     source: opencode
-    session_id: ses_eac62136dffen9A6G9qgBSaufZ
+    session_id: ses_eabb87c3cffeVHXkPkR0sAM6MD
     cwd: ~
 - ActivityEnd:
-    agent_id: 14413192855589712388
+    agent_id: 7028411014053316332
     tool_use_id: ~

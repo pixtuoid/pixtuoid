@@ -109,6 +109,21 @@ pub(crate) enum ChildEndInference {
     /// As `TaskDrain`, and the end may carry no id: no end event names the
     /// child.
     AnyTaskEnd,
+    /// Nothing, and the child is a session that outlives its turns: only its
+    /// deletion ends it.
+    Durable,
+}
+
+impl ChildEndInference {
+    /// Whether a dispatch's end means its child returned (b1); `tracked` when
+    /// the end names its dispatch.
+    pub(crate) fn dispatch_end_ends_child(self, tracked: bool) -> bool {
+        match self {
+            Self::TaskDrain => tracked,
+            Self::AnyTaskEnd => true,
+            Self::None | Self::Durable => false,
+        }
+    }
 }
 
 impl SourceCaps {
@@ -767,7 +782,10 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
             // A `subagent` child is parented by its `session.created`'s `parentID`,
             // so its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
-            child_end_inference: ChildEndInference::TaskDrain,
+            // A `subagent` call can return while its child runs on
+            // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),
+            // and a session ends only by `session.deleted`.
+            child_end_inference: ChildEndInference::Durable,
             child_hooks_unnamed: false,
         },
         // The plugin runs in the background server every TUI attaches to
