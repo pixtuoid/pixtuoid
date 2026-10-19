@@ -165,16 +165,13 @@ pub struct Live {
 impl Live {
     /// Why a leg on `windows` doesn't run it, if it doesn't.
     pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
-        windows.then_some("its tier is a bash script")
+        windows.then_some("its tier waits on a Unix socket")
     }
 }
 
-/// A live tier's exit when a prerequisite is missing (`e2e-common.sh`'s
-/// convention), which no run of the build under test caused.
+/// A live tier's exit when a prerequisite is missing, which no run of the build
+/// under test caused.
 pub const LIVE_PREREQUISITE: i32 = 2;
-
-/// The name a [`Live`] run is selected and reported by.
-pub const LIVE: &str = "live";
 
 /// What a live tier reads as the build under test.
 pub const LIVE_PIXTUOID_ENV: &str = "PIXTUOID_BIN";
@@ -1370,8 +1367,8 @@ telemetry:
         config: &[],
         scenarios: &[],
         script_vars: &[],
-        // The live tier reads the gateways' presence off the scene and makes no
-        // model call, so no hook it fires is captured.
+        // Owed to a gateway-backed `openclaw agent` turn: the live tier reads
+        // presence off the scene and captures no hook.
         not_yet: &[
             "gateway_start",
             "gateway_stop",
@@ -1528,6 +1525,12 @@ mod tests {
             assert!(
                 script.contains(&format!("exit {LIVE_PREREQUISITE}")),
                 "{}: no prerequisite exit",
+                p.source
+            );
+            assert!(
+                p.env.iter().all(|(_, v)| !v.contains("{port}"))
+                    && p.config.iter().all(|c| !c.template.contains("{port}")),
+                "{}: no model runs, so `{{port}}` names nothing",
                 p.source
             );
             let default = script

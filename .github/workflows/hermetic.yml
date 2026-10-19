@@ -1,7 +1,7 @@
 name: hermetic
 
-# `just hermetic`: every profiled agent CLI, run for real against a scripted
-# model with a headless pixtuoid on the same run.
+# `just hermetic`: every profiled agent CLI, run for real with a headless
+# pixtuoid on the same run.
 
 on:
   workflow_call:

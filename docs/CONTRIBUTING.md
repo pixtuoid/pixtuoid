@@ -35,9 +35,8 @@ Activate the git hooks once per clone: `git config core.hooksPath .githooks`
 (`pre-commit` = `just fmt-check`; `pre-push` = `just preflight`).
 
 `just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
-scripted model (aimock) with a headless pixtuoid: the full tier gates on it at
-each `verified_version`, the nightly runs it at latest, and runs openclaw's
-gateways through `scripts/lib/`'s `just openclaw-multi-e2e`.
+scripted model (aimock), or a daemon's live tier, with a headless pixtuoid: the full tier gates on it at
+each `verified_version`, the nightly runs it at latest.
 
 ## Releasing
 

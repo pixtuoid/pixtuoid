@@ -1,5 +1,5 @@
-//! Run each profiled agent CLI for real against a scripted model (aimock), with
-//! a headless pixtuoid on the same run, and judge what pixtuoid made of it.
+//! Run each profiled agent CLI for real, against a scripted model (aimock) or as
+//! its live tier, with a headless pixtuoid on the same run, and judge the result.
 //! Profiles, scripts and the judgement: `pixtuoid_core::harness::hermetic`.
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
@@ -35,7 +35,7 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, HostConfig, LIVE, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST,
+        self, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST,
         Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, Scenario, Surface,
         TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
     };
@@ -197,6 +197,11 @@ mod run {
             }
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
+            if self.record && p.live.is_some() {
+                return Err(format!(
+                    "--record: {source}'s live tier records no capture, and only one moves its pin"
+                ));
+            }
             let Some(sc) = self.scenario.as_deref() else {
                 if p.runs_on(windows) {
                     return Ok(());
@@ -330,15 +335,35 @@ mod run {
         if selected.is_empty() {
             return Ok((entries, None));
         }
-        let pinning = Pinning::of(p, args)?;
-        let installed = &pinning.installed;
+        // Once per source, so every scenario runs, and records, one release.
+        let installed = resolve(p, &args.versions);
+        // Worked out before any CLI runs, so a refusal writes nothing.
+        let registry = match (&installed, args.record) {
+            (Ok(v), true) => {
+                let src = std::fs::read_to_string(pin::registry_path())?;
+                pin::repinned(&src, p.descriptor(), v).map_err(std::io::Error::other)?
+            }
+            _ => None,
+        };
+        let lock = match (&installed, args.record, p.package) {
+            (
+                Ok(v),
+                true,
+                Package::UpdaterManifest {
+                    manifest,
+                    platforms,
+                    ..
+                },
+            ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
+            _ => None,
+        };
         let (mut judged, mut banners, mut passed) = (Vec::new(), Vec::new(), true);
         for scenario in selected {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
             let key = format!("{}/{}", p.source, scenario.shape.name());
             println!("== {key}");
-            let ran = match installed {
+            let ran = match &installed {
                 Ok(v) => run_one(ctx, p, scenario, v, &dir),
                 Err(e) => Err(std::io::Error::other(e.clone())),
             };
@@ -363,101 +388,47 @@ mod run {
             passed &= verdict.label() == Label::Pass;
             entries.push(Entry::new(key, None, verdict));
         }
-        let (moved, recording) = pinning.settle(ctx, args, p, runs, &banners, passed)?;
-        entries.extend(recording);
-        Ok((entries, moved))
-    }
-
-    /// The release a source's runs install, and what recording them writes.
-    struct Pinning {
-        installed: Result<Version, String>,
-        /// The registry with the pin moved, for a recording off it.
-        registry: Option<String>,
-        lock: Option<ManifestLock>,
-    }
-
-    impl Pinning {
-        /// Once per source, so every run installs, and records, one release;
-        /// before any CLI runs, so a refusal writes nothing.
-        fn of(p: &Profile, args: &Args) -> std::io::Result<Self> {
-            let installed = resolve(p, &args.versions);
-            let registry = match (&installed, args.record) {
-                (Ok(v), true) => {
-                    let src = std::fs::read_to_string(pin::registry_path())?;
-                    pin::repinned(&src, p.descriptor(), v).map_err(std::io::Error::other)?
-                }
-                _ => None,
-            };
-            let lock = match (&installed, args.record, p.package) {
-                (
-                    Ok(v),
-                    true,
-                    Package::UpdaterManifest {
-                        manifest,
-                        platforms,
-                        ..
-                    },
-                ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
-                _ => None,
-            };
-            Ok(Self {
-                installed,
-                registry,
-                lock,
-            })
-        }
-
-        /// Once `p`'s runs `passed` with every one of `banners` naming the
-        /// install: the recording `args` asks for, and the release it moved to;
-        /// else the recording's refusal.
-        fn settle(
-            self,
-            ctx: &Ctx,
-            args: &Args,
-            p: &Profile,
-            runs: &Path,
-            banners: &[String],
-            passed: bool,
-        ) -> std::io::Result<(Option<Moved>, Option<Entry>)> {
-            let (Ok(installed), true) = (&self.installed, passed) else {
-                return Ok((None, None));
-            };
-            match pin::every_run_reported(installed, p.descriptor().version_hyphen, banners) {
+        let mut moved = None;
+        if let (Ok(installed), true) = (&installed, passed) {
+            match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
                 Ok(()) => {
                     if args.record {
                         record(ctx, p, runs)?;
-                        if let Some(text) = self.registry {
+                        if let Some(text) = registry {
                             std::fs::write(pin::registry_path(), text)?;
                         }
-                        if let (Some(lock), Some(path)) = (&self.lock, p.manifest_lock()) {
+                        if let (Some(lock), Some(path)) = (&lock, p.manifest_lock()) {
                             std::fs::write(path, serde_json::to_string_pretty(lock)? + "\n")?;
                         }
                     }
-                    let moved =
-                        (pin::moves(p.descriptor(), installed) == Ok(true)).then(|| Moved {
+                    if pin::moves(p.descriptor(), installed) == Ok(true) {
+                        moved = Some(Moved {
                             source: p.source.to_string(),
                             version: installed.to_string(),
                         });
-                    Ok((moved, None))
+                    }
                 }
-                Err(why) if args.record => Ok((
+                Err(why) if args.record => entries.push(Entry::new(
+                    format!("{} (recording)", p.source),
                     None,
-                    Some(Entry::new(
-                        format!("{} (recording)", p.source),
-                        None,
-                        Verdict::new(vec![(Label::Fail, why)]),
-                    )),
+                    Verdict::new(vec![(Label::Fail, why)]),
                 )),
-                Err(_) => Ok((None, None)),
+                Err(_) => {}
             }
         }
+        Ok((entries, moved))
     }
+
+    /// The name a [`Live`] run is selected and reported by.
+    const LIVE: &str = "live";
 
     /// The live tier's own log, beside its run.
     const LIVE_LOG: &str = "live.log";
 
     /// `p`'s [`Live`] run, when `args` selects it and this leg runs it: its CLI
-    /// installed as a scenario's is, then its tier driven against this build.
+    /// installed as a scenario's is, then its tier driven against this build. It
+    /// records no capture, so no pin moves on it
+    /// (`a_recorded_capture_anchors_its_sources_verified_version`).
     fn run_live(
         ctx: &Ctx,
         args: &Args,
@@ -472,21 +443,15 @@ mod run {
         println!("== {key}");
         let dir = runs.join(p.source).join(LIVE);
         std::fs::create_dir_all(&dir)?;
-        let pinning = Pinning::of(p, args)?;
-        let ran = match &pinning.installed {
-            Ok(v) => live_once(ctx, p, live, v, &dir),
-            Err(e) => Err(std::io::Error::other(e.clone())),
+        let ran = match resolve(p, &args.versions) {
+            Ok(v) => live_once(ctx, p, live, &v, &dir),
+            Err(e) => Err(std::io::Error::other(e)),
         };
         let (banner, verdict) = match ran {
             Ok((banner, verdict)) => (Some(banner), verdict),
             Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
         };
-        let passed = verdict.label() == Label::Pass;
-        let banners: Vec<String> = banner.iter().cloned().collect();
-        let mut entries = vec![Entry::new(key, banner, verdict)];
-        let (moved, recording) = pinning.settle(ctx, args, p, runs, &banners, passed)?;
-        entries.extend(recording);
-        Ok((entries, moved))
+        Ok((vec![Entry::new(key, banner, verdict)], None))
     }
 
     /// What `live`'s exit `code` says: [`LIVE_PREREQUISITE`] is a missing
@@ -514,21 +479,10 @@ mod run {
         version: &Version,
         dir: &Path,
     ) -> std::io::Result<(String, Verdict)> {
-        let workspace = capture_workspace()?;
-        if let Some(found) = outside_config(
-            p.system_config.here(),
-            p.ancestor_config,
-            &workspace,
-            std::env::var_os("USER").as_deref().and_then(OsStr::to_str),
-        ) {
-            return Err(std::io::Error::other(format!(
-                "{found} configures {} from outside the sandbox",
-                p.source
-            )));
-        }
-        let cli = install_cli(&ctx.tier, p, version)?;
         let ports = free_ports(live.ports)?;
-        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports[0], &workspace)?;
+        // No model runs; a live profile's env spells no `{port}`, pinned by
+        // `a_live_tier_takes_the_ports_the_build_and_the_exit_it_is_given`.
+        let (_, cli, sandbox) = sandboxed(ctx, p, version, ports[0])?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
         let status = sandbox
             .command("bash")
@@ -551,8 +505,7 @@ mod run {
             .collect()
     }
 
-    /// Every scenario a leg on `windows` never runs, and why, as the report
-    /// names it.
+    /// Every run a leg on `windows` never makes, and why, as the report names it.
     fn not_run(windows: bool) -> Vec<String> {
         PROFILES
             .iter()
@@ -614,10 +567,10 @@ mod run {
     /// The run's report, beside the runs; its H1 is the tracking issue's title.
     const REPORT: &str = "report.md";
 
-    /// One section of the report: a scenario's run, or a source's runs together.
+    /// One section of the report: one run, or a source's runs together.
     struct Entry {
         key: String,
-        /// The CLI's `--version`, for a scenario's run.
+        /// The CLI's `--version`, for one run.
         version: Option<String>,
         verdict: Verdict,
     }
@@ -1522,19 +1475,14 @@ mod run {
         aimock: Aimock,
     }
 
-    fn run_one(
+    /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
+    /// runs in; `port` is the scripted model's, which `{port}` names.
+    fn sandboxed(
         ctx: &Ctx,
         p: &Profile,
-        scenario: &Scenario,
         version: &Version,
-        dir: &Path,
-    ) -> std::io::Result<Manifest> {
-        let Ctx {
-            tier,
-            built,
-            shim_dir,
-            aimock,
-        } = ctx;
+        port: u16,
+    ) -> std::io::Result<(PathBuf, Installed, Sandbox)> {
         let workspace = capture_workspace()?;
         if let Some(found) = outside_config(
             p.system_config.here(),
@@ -1547,9 +1495,21 @@ mod run {
                 p.source
             )));
         }
-        let cli = install_cli(tier, p, version)?;
+        let cli = install_cli(&ctx.tier, p, version)?;
+        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, port, &workspace)?;
+        Ok((workspace, cli, sandbox))
+    }
+
+    fn run_one(
+        ctx: &Ctx,
+        p: &Profile,
+        scenario: &Scenario,
+        version: &Version,
+        dir: &Path,
+    ) -> std::io::Result<Manifest> {
+        let Ctx { built, aimock, .. } = ctx;
         let port = free_port()?;
-        let sandbox = Sandbox::new(p, shim_dir, &cli.bin, port, &workspace)?;
+        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, port)?;
 
         let connect = sandbox
             .command(&built.pixtuoid)
@@ -2024,7 +1984,7 @@ mod run {
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
-                     openclaw/live (its tier is a bash script)\n"
+                     openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"
             );
@@ -2614,8 +2574,8 @@ mod run {
             for named in [&["openclaw"][..], &["openclaw", LIVE]] {
                 let check = |windows| parse(&args(named)).expect("parse").check(windows);
                 assert!(check(false).is_ok(), "{named:?}");
-                let refused = check(true).expect_err("a bash tier on Windows");
-                assert!(refused.contains("bash"), "{refused}");
+                let refused = check(true).expect_err("a Unix-socket tier on Windows");
+                assert!(refused.contains("Unix socket"), "{refused}");
             }
         }
 
@@ -2636,6 +2596,9 @@ mod run {
             let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["--record"]).is_ok());
             assert!(check(&["--record", "dsh"]).is_ok());
+            let refused =
+                check(&["--record", "openclaw"]).expect_err("a live tier records nothing");
+            assert!(refused.contains("live tier"), "{refused}");
             assert!(check(&["--cli", "latest", "--record", "dsh"]).is_ok());
             assert!(
                 check(&["--cli", "latest", "--record"]).is_err(),
