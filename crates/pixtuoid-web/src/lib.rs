@@ -427,7 +427,7 @@ impl Office {
     }
 
     /// The time constant JS's `setTargetAtTime` smooths each tick's gains
-    /// over, in seconds: [`GAIN_DEZIPPER`].
+    /// over, in seconds: `GAIN_DEZIPPER`.
     pub fn audio_gain_dezipper_s(&self) -> f32 {
         GAIN_DEZIPPER.as_secs_f32()
     }
@@ -583,8 +583,9 @@ impl SynthTake {
     }
 }
 
-/// How long each GainNode takes to follow a tick's gain: it de-zippers the
-/// ticks' steps, well inside the mixer's own slew, which already crossfades.
+/// The `setTargetAtTime` time constant each GainNode approaches a tick's gain
+/// with: it de-zippers the ticks' steps, well inside the mixer's own slew,
+/// which already crossfades.
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 /// The music worker's lofi `Performance`, rendered in the chunks the worklet

@@ -802,13 +802,17 @@ pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {
     handle.respawn_in_place(volume);
 }
 
-/// Raise the calling thread from the default QoS a new macOS thread starts at
-/// to user-initiated, Chromium's `kDefault` (`base/threading/platform_thread_apple.mm`).
-/// Elsewhere a new thread already starts at what Chromium maps `kDefault` to:
-/// Windows creates "All threads … using THREAD_PRIORITY_NORMAL"
+/// Raise the calling thread to user-initiated QoS, Chromium's `kDefault`
+/// (`base/threading/platform_thread_apple.mm`). A new thread reads back
+/// default QoS (measured on an M1 Max), which "falls between user-initiated
+/// and utility"
+/// (<https://developer.apple.com/library/archive/documentation/Performance/Conceptual/EnergyGuide-iOS/PrioritizeWorkWithQoS.html>).
+/// Elsewhere `kDefault` is no raise: Windows' is `THREAD_PRIORITY_NORMAL`
+/// (`platform_thread_win.cc`), which "All threads are created using"
 /// (<https://learn.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities>),
-/// and a Linux thread takes its creator's nice. Best effort: a refusal leaves
-/// the thread as it was.
+/// and Linux's is nice 0 (`platform_thread_linux.cc`), which an unprivileged
+/// thread lowers its nice to only under a suitable `RLIMIT_NICE`
+/// (setpriority(2)). Best effort: a refusal leaves the thread as it was.
 #[cfg(target_os = "macos")]
 pub fn promote_to_user_initiated() {
     // SAFETY: sets the calling thread's own QoS class; nothing is borrowed.
