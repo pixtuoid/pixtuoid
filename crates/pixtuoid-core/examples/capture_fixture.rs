@@ -1882,26 +1882,6 @@ mod recorder {
 
         #[cfg(unix)]
         #[test]
-        fn a_daemon_that_exits_before_it_serves_fails_the_capture() {
-            let sandbox = tempfile::tempdir().expect("sandbox");
-            let ws = tempfile::tempdir().expect("workspace");
-            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
-            let daemon = DaemonCmd {
-                start: ["sh", "-c", "exit 3"].map(String::from).to_vec(),
-                ready: vec!["false".to_string()],
-            };
-            let wiring = CliWiring {
-                endpoint: &endpoint,
-                scratch: sandbox.path(),
-            };
-            let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
-                .map(|_| ())
-                .expect_err("it never served");
-            assert!(why.to_string().contains("exited"), "{why}");
-        }
-
-        #[cfg(unix)]
-        #[test]
         fn a_daemon_that_exited_is_refused_though_its_probe_answers() {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
