@@ -371,11 +371,12 @@ mod run {
                 Err(e) => Err(std::io::Error::other(e.clone())),
             };
             let (banner, verdict, run) = match ran {
-                Ok((manifest, run)) => (
-                    Some(manifest.capture.version),
-                    verify::verify(&dir)?,
-                    Some(run),
-                ),
+                Ok((manifest, run)) => {
+                    let verdict = verify::verify(&dir)?;
+                    // A CLI that couldn't run its scenario says nothing of its uninstall.
+                    let run = verdict.judged().then_some(run);
+                    (Some(manifest.capture.version), verdict, run)
+                }
                 Err(e) => (
                     None,
                     Verdict::new(vec![(Label::Blocked, e.to_string())]),
@@ -407,7 +408,7 @@ mod run {
                 },
                 None => Verdict::new(vec![(
                     Label::Blocked,
-                    format!("its {} run did not run", scenario.shape.name()),
+                    format!("its {} run was not judged", scenario.shape.name()),
                 )]),
             };
             entries.push(Entry::new(key, None, verdict));
@@ -2786,6 +2787,11 @@ mod run {
             assert!(lifecycle_turn(&record, codex, false).is_none());
             let all = parse(&args(&[])).expect("parse");
             assert!(lifecycle_turn(&all, codex, false).is_some());
+            let other = parse(&args(&["codex", "tool-run"])).expect("parse");
+            assert!(
+                lifecycle_turn(&other, codex, false).is_none(),
+                "not selected"
+            );
         }
 
         #[test]

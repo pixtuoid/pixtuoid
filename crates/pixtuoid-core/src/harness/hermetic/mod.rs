@@ -339,8 +339,8 @@ impl Step {
 }
 
 /// An install lifecycle, in order, after a scenario's own connect and turn: a
-/// repeat register (reasonix's `--replace`), an uninstall, a register over its
-/// residue, and the uninstall a last turn runs under, which must reach the tap
+/// repeat connect (reasonix's `--replace`), a disconnect, a connect over its
+/// residue, and the disconnect a last turn runs under, which must reach the tap
 /// with no hook.
 pub const STEPS: &[Step] = &[
     Step::Connect,

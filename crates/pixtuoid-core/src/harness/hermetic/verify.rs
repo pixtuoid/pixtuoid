@@ -1,5 +1,6 @@
-//! Judging hermetic runs: each scenario's run alone ([`verify`]), and each
-//! source's runs together ([`verify_source`]). A run's bytes ride the one
+//! Judging hermetic runs: each scenario's run alone ([`verify`]), each
+//! source's runs together ([`verify_source`]), and an install's lifecycle
+//! ([`verify_lifecycle`]). A run's bytes ride the one
 //! pipeline (`Drive`), and the scene a headless pixtuoid painted from the same
 //! run is read as text. Ids, timestamps and model text change every run, so
 //! nothing here compares bytes or goldens: only shapes, events and the fields
@@ -37,7 +38,8 @@ pub enum Label {
     /// The CLI asked the model something no script line answers: its request
     /// flow changed upstream.
     Script,
-    /// pixtuoid read the run wrong, or upstream stopped sending what it reads.
+    /// pixtuoid read the run wrong, upstream stopped sending what it reads, or
+    /// its install no longer connects and disconnects as pixtuoid drives it.
     Fail,
 }
 
