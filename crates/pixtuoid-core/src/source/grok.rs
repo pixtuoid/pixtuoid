@@ -53,8 +53,6 @@ const XAI_SESSION_UPDATE_METHOD: &str = "_x.ai/session/update";
 
 const XAI_SUBAGENT_SPAWNED: &str = "subagent_spawned";
 const XAI_SUBAGENT_FINISHED: &str = "subagent_finished";
-const XAI_MODEL_CHANGED: &str = "model_changed";
-const XAI_MODEL_AUTO_SWITCHED: &str = "model_auto_switched";
 const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
 
@@ -67,8 +65,6 @@ const XAI_HOOK_EXECUTION: &str = "hook_execution";
 pub(crate) const DECODED_XAI_TAGS: &[&str] = &[
     XAI_SUBAGENT_SPAWNED,
     XAI_SUBAGENT_FINISHED,
-    XAI_MODEL_CHANGED,
-    XAI_MODEL_AUTO_SWITCHED,
     XAI_TURN_COMPLETED,
     XAI_HOOK_EXECUTION,
 ];
@@ -490,42 +486,6 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
                 Ok(vec![AgentEvent::SessionEnd {
                     agent_id: AgentId::from_parts(SOURCE_NAME, child_key),
                     as_child: true,
-                }])
-            }
-            XAI_MODEL_CHANGED => {
-                let model = str_field("model_id")
-                    .filter(|s| !s.is_empty())
-                    .map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-                let effort = str_field("reasoning_effort")
-                    .filter(|s| !s.is_empty())
-                    .map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS));
-                if model.is_none() && effort.is_none() {
-                    return Ok(vec![]);
-                }
-                Ok(vec![AgentEvent::ModelInfo {
-                    agent_id,
-                    model,
-                    effort,
-                }])
-            }
-            // Fires INSTEAD of `model_changed` when the persisted model is no
-            // longer available — undecoded, the flame shows the dead model
-            // until the next `_meta.modelId`-bearing update corrects it.
-            XAI_MODEL_AUTO_SWITCHED => {
-                let Some(model) = str_field("new_model_id") else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "new_model_id");
-                    return Ok(vec![]);
-                };
-                // Empty names no replacement, which upstream sends by design
-                // (`mvp_agent/session_setup.rs:1898-1899`, `acp_agent.rs:1058-1061`,
-                // `:1132-1135`, at main 2bdd1d6a).
-                if model.is_empty() {
-                    return Ok(vec![]);
-                }
-                Ok(vec![AgentEvent::ModelInfo {
-                    agent_id,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
                 }])
             }
             // The transcript twin of the `stop` hook: a tool-less turn's only
@@ -1212,22 +1172,6 @@ mod tests {
     }
 
     #[test]
-    fn model_info_surfaces_when_only_one_of_model_or_effort_is_present() {
-        for (field, value) in [("model_id", "grok-4"), ("reasoning_effort", "high")] {
-            let evs = decode_line(json!({
-                "timestamp": 1721131200u64, "method": "_x.ai/session/update",
-                "params": {"sessionId": "0197fa30-sess",
-                           "update": {"sessionUpdate": "model_changed", field: value}}
-            }));
-            assert!(
-                evs.iter()
-                    .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-                "{field} alone must still surface ModelInfo, got {evs:?}"
-            );
-        }
-    }
-
-    #[test]
     fn a_bare_spawn_subagent_call_is_task_detail_without_a_subagent_type_arg() {
         // `background: false` is what makes a spawn BLOCKING; the args carry no
         // `subagent_type`, so only the tool NAME can classify this one.
@@ -1368,7 +1312,6 @@ mod tests {
                 evs = decode_line(xai_line(json!({
                     "sessionUpdate": tag,
                     "child_session_id": "c", "subagent_id": "s",
-                    "model_id": "m", "new_model_id": "m2",
                     "event_name": "session_end", "runs": [],
                 })))
                 .len();
@@ -1381,42 +1324,6 @@ mod tests {
         assert!(
             !reaches("checkpoint_saved"),
             "an unread tag reaches neither"
-        );
-
-        // The auto-switch arm reads `new_model_id`, not `model_changed`'s
-        // `model_id` — a payload carrying only the WRONG field must not emit.
-        let only = |field: &str| {
-            decode_line(xai_line(
-                json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED, field: "m2"}),
-            ))
-        };
-        assert!(
-            matches!(
-                only("new_model_id").as_slice(),
-                [AgentEvent::ModelInfo { model: Some(_), .. }]
-            ),
-            "new_model_id alone must emit ModelInfo"
-        );
-        assert!(
-            only("model_id").is_empty(),
-            "model_id alone must NOT satisfy the auto-switch arm"
-        );
-    }
-
-    #[test]
-    fn an_auto_switch_naming_no_replacement_is_silent_and_one_without_the_key_breadcrumbs() {
-        let decoded = |update: Value| {
-            let mut evs = Vec::new();
-            let logs = crate::test_capture::capture_logs(|| evs = decode_line(xai_line(update)));
-            (evs.is_empty(), logs.contains(crate::source::drift::TARGET))
-        };
-        assert_eq!(
-            decoded(json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED, "new_model_id": ""})),
-            (true, false)
-        );
-        assert_eq!(
-            decoded(json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED})),
-            (true, true)
         );
     }
 
@@ -1530,20 +1437,6 @@ mod tests {
             matches!(&evs[..], [AgentEvent::SessionEnd { agent_id, as_child: true }]
                 if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child"))
         );
-    }
-
-    #[test]
-    fn model_changed_line_is_a_model_and_effort_observation() {
-        let evs = decode_line(xai_line(json!({
-            "sessionUpdate": "model_changed",
-            "model_id": "grok-4-code",
-            "reasoning_effort": "high"
-        })));
-        assert!(
-            matches!(&evs[..], [AgentEvent::ModelInfo { model: Some(m), effort: Some(e), .. }]
-                if m == "grok-4-code" && e == "high")
-        );
-        assert!(decode_line(xai_line(json!({"sessionUpdate": "model_changed"}))).is_empty());
     }
 
     #[test]
