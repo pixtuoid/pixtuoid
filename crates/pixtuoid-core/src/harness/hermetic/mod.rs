@@ -119,6 +119,9 @@ pub enum Shape {
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
     Subagent,
+    /// A turn the model answers with an error a CLI does not retry (a 400): the
+    /// session registers, and its turn ends failed.
+    ModelError,
 }
 
 impl Shape {
@@ -128,6 +131,15 @@ impl Shape {
             Self::ToolRun => "tool-run",
             Self::Permission => "permission",
             Self::Subagent => "subagent",
+            Self::ModelError => "model-error",
+        }
+    }
+
+    /// Whether its scripted turn fails, so its CLI may exit non-zero.
+    pub const fn fails(self) -> bool {
+        match self {
+            Self::ModelError => true,
+            Self::ToolRun | Self::Permission | Self::Subagent => false,
         }
     }
 }
@@ -269,6 +281,11 @@ impl Profile {
     /// If the profile names an unregistered source, which the roster test refuses.
     pub fn descriptor(&self) -> &'static registry::SourceDescriptor {
         registry::descriptor_for(self.source).expect("a profile names a registered source")
+    }
+
+    /// Its scenario named `name`, a [`Shape::name`].
+    pub fn scenario(&self, name: &str) -> Option<&'static Scenario> {
+        self.scenarios.iter().find(|s| s.shape.name() == name)
     }
 
     /// Every home variable the CLI reads that the tier points into its own
@@ -1528,24 +1545,38 @@ telemetry:
 }
 "#,
         }],
-        scenarios: &[Scenario {
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &[
-                "gateway_start",
-                "session_start",
-                "before_agent_run",
-                "agent_end",
-                "gateway_stop",
-                "session_end",
-            ],
-            fixture: "fixtures/openclaw/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/tool-run-hermetic",
+            },
+            Scenario {
+                shape: Shape::ModelError,
+                surface: Surface::Headless,
+                expects: &[
+                    "gateway_start",
+                    "session_start",
+                    "before_agent_run",
+                    "agent_end",
+                    "gateway_stop",
+                    "session_end",
+                ],
+                fixture: "fixtures/openclaw/model-error-hermetic",
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: type_field,
-        // A failed model call's, which the plugin stamps from `model_call_ended`.
-        not_yet_fields: &[("hook:agent_end", "/errored")],
+        not_yet_fields: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: Some(Live {
@@ -1687,8 +1718,10 @@ mod tests {
             );
             assert!(
                 !p.descriptor().is_daemon()
-                    || p.scenarios.iter().all(|s| s.shape == Shape::ToolRun),
-                "{}: a daemon's turn is judged on its presence, which shows a tool run only",
+                    || p.scenarios
+                        .iter()
+                        .all(|s| matches!(s.shape, Shape::ToolRun | Shape::ModelError)),
+                "{}: a daemon's turn is judged on its presence, which shows only whether it ran or failed",
                 p.source
             );
         }
