@@ -1222,7 +1222,7 @@ trust_level = "trusted"
         daemon: None,
     },
     // grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
-    // nearest 1.0.25: the repo tags no release.
+    // nearest 1.0.25 (the repo tags no release), unless a cite names its own ref.
     Profile {
         source: "grok",
         package: Package::Npm("@xai-official/grok"),
@@ -1295,6 +1295,26 @@ trust_level = "trusted"
                 fixture: "fixtures/grok/tool-run-hermetic",
                 turn: Turn::PROFILE,
             },
+            // A tool that fails to dispatch fires PostToolUseFailure, a built-in's
+            // logical error PostToolUse, and `use_tool` on a tool no server holds
+            // errs (at main 2bdd1d6a: `crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:94-95`,
+            // `crates/codegen/xai-grok-tools/src/registry/types.rs:1611-1615`,
+            // `crates/codegen/xai-grok-shell/src/session/acp_session_impl/tool_calls.rs:1064-1074`, `:1148-1152`).
+            Scenario {
+                name: "tool-error",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUseFailure",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/grok/tool-error-hermetic",
+                turn: Turn::PROFILE,
+            },
             Scenario {
                 name: "subagent",
                 shape: Shape::Subagent,
@@ -1339,10 +1359,10 @@ trust_level = "trusted"
             },
         ],
         script_vars: &[],
-        not_yet: &["PostToolUseFailure"],
+        not_yet: &[],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog", "run_in_background"],
+        not_yet_literals: &["elicitation_dialog"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,

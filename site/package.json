@@ -54,7 +54,7 @@
     "prettier-plugin-astro": "^1.1.1",
     "prismjs": "1.30.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.71.2",
     "unist-util-visit": "^5.1.0",
     "web-vitals": "6.2.3"
   },
