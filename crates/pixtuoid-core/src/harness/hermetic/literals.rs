@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
+#[cfg(test)]
 use super::Profile;
 
 /// How a decoder matches a literal against what it reads.
@@ -507,16 +508,18 @@ impl<'ast> Visit<'ast> for Collect {
     }
 }
 
-/// What one source owes, as its profile's three lists say.
-pub(crate) struct Owing<'a> {
-    pub(crate) source: &'a str,
-    pub(crate) literals: &'a [&'a str],
-    pub(crate) hooks: &'a [&'a str],
-    pub(crate) fields: &'a [(&'a str, &'a str)],
+/// What one source owes at rest, as its profile's three lists say.
+#[cfg(test)]
+struct Owing<'a> {
+    source: &'a str,
+    literals: &'a [&'a str],
+    hooks: &'a [&'a str],
+    fields: &'a [(&'a str, &'a str)],
 }
 
+#[cfg(test)]
 impl<'a> Owing<'a> {
-    pub(crate) fn of(p: &'a Profile) -> Self {
+    fn of(p: &'a Profile) -> Self {
         Self {
             source: p.source,
             literals: p.not_yet_literals,
@@ -526,7 +529,7 @@ impl<'a> Owing<'a> {
     }
 
     /// Whether any of the three lists owes `text`.
-    pub(crate) fn owes(&self, text: &str) -> bool {
+    fn owes(&self, text: &str) -> bool {
         self.literals.contains(&text) || self.elsewhere(text)
     }
 
@@ -543,6 +546,7 @@ impl<'a> Owing<'a> {
 
 /// Whether `a` and `b` name one hook in two spellings: `not_yet`'s
 /// (`PostToolUseFailure`) and a decoder's wire one (`post_tool_use_failure`).
+#[cfg(test)]
 fn one_hook(a: &str, b: &str) -> bool {
     let spelled = |s: &str| -> String {
         s.chars()

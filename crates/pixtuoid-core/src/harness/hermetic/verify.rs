@@ -242,7 +242,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
         }
     }
     findings.extend(literal_census(
-        &literals::Owing::of(p),
+        p,
         &literals::population()?,
         &scenario_reads(p, ran.into_iter())?,
         &carried,
@@ -253,27 +253,24 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
 
 /// The literal census over runs: each value a decoder's literal matches in
 /// the `committed` fixtures must arrive in some run at the same kind and
-/// pointer, and each key it names there in some run at all, unless `owing`
-/// owes it; one of its `not_yet_literals` that the runs would keep once
+/// pointer, and each key it names there in some run at all, unless `p`'s
+/// `not_yet_literals` names it; one of those that the runs would keep once
 /// stripped (`kept`) is Stale.
 fn literal_census(
-    owing: &literals::Owing<'_>,
+    p: &Profile,
     population: &BTreeSet<literals::Literal>,
     committed: &Fields,
     carried: &Fields,
     kept: &Fields,
 ) -> Vec<(Label, String)> {
-    let mine: Vec<&literals::Literal> = population
-        .iter()
-        .filter(|l| l.is_of(owing.source))
-        .collect();
+    let mine: Vec<&literals::Literal> = population.iter().filter(|l| l.is_of(p.source)).collect();
     let mut findings = Vec::new();
     for (kind, values) in &committed.values {
         let seen = carried.values.get(kind);
         for (at, value) in values {
             for l in mine
                 .iter()
-                .filter(|l| l.matches(value) && !owing.owes(&l.text))
+                .filter(|l| l.matches(value) && !p.not_yet_literals.contains(&l.text.as_str()))
             {
                 let arrived = seen.is_some_and(|s| s.iter().any(|(q, v)| q == at && l.matches(v)));
                 if !arrived {
@@ -282,7 +279,7 @@ fn literal_census(
                         format!(
                             "{kind} {at}: `{}` ({}): a decoder reads it in a scenario fixture, \
                              and no run of {} carried it there",
-                            l.text, l.module, owing.source
+                            l.text, l.module, p.source
                         ),
                     ));
                 }
@@ -292,20 +289,20 @@ fn literal_census(
     for l in mine.iter().filter(|l| l.how == literals::Match::Exact) {
         if committed.keys.contains(&l.text)
             && !carried.keys.contains(&l.text)
-            && !owing.owes(&l.text)
+            && !p.not_yet_literals.contains(&l.text.as_str())
         {
             findings.push((
                 Label::Fail,
                 format!(
                     "`{}` ({}): a decoder reads this key in a scenario fixture, and no run of {} \
                      carried it",
-                    l.text, l.module, owing.source
+                    l.text, l.module, p.source
                 ),
             ));
         }
     }
     let held = kept.keys_and_values();
-    for owed in owing.literals {
+    for owed in p.not_yet_literals {
         if mine
             .iter()
             .any(|l| l.text == *owed && held.iter().any(|s| l.matches(s)))
@@ -2455,6 +2452,24 @@ mod tests {
         .expect("verify");
         assert!(
             has(&v, Label::Fail, "`task_complete`"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    /// A literal a fixture holds must arrive though an owed field path names it:
+    /// codex owes fields under `tx:event_msg`, and its kind is still read.
+    #[test]
+    fn a_held_literal_an_owed_path_names_must_still_arrive() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        respell(d.path(), "\"event_msg\"", "\"event_message\"");
+        let v = verify_source(
+            profile("codex").expect("profile"),
+            &[d.path().to_path_buf()],
+        )
+        .expect("verify");
+        assert!(
+            has(&v, Label::Fail, "`event_msg` (codex.rs)"),
             "{:?}",
             v.findings()
         );
