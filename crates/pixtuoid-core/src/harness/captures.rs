@@ -143,6 +143,10 @@ pub mod recorder_flag {
     pub const WORKSPACE: &str = "--workspace";
     /// `Options::prepare_root`.
     pub const PREPARE_ROOT: &str = "--prepare-root";
+    /// One word of `Options::daemon`.
+    pub const DAEMON: &str = "--daemon";
+    /// One word of `Options::daemon_ready`.
+    pub const DAEMON_READY: &str = "--daemon-ready";
 }
 
 /// What only the recorder knows about a raw (`--out`) capture.

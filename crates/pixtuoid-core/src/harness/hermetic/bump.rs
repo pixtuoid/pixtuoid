@@ -15,9 +15,11 @@ use serde_json::{Map, Value};
 use super::{PROFILES, Profile, pin};
 use crate::harness::sources_root;
 
-/// The nightly's drift legs, as `hermetic.yml`'s matrix names them: a release
-/// is proposed only once it moved on every one.
-const OSES: &[&str] = &["macos", "windows"];
+/// The leg [`Profile::runs_on`] asks about as `windows`.
+const WINDOWS: &str = "windows";
+
+/// The nightly's drift legs, as `hermetic.yml`'s matrix names them.
+const OSES: &[&str] = &["macos", WINDOWS];
 
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
@@ -72,9 +74,9 @@ impl Proposal {
 }
 
 /// The releases to propose, given the drift job's outputs: each profiled source
-/// that moved to one release on every OS in `OSES`, above its pin, under a
-/// title no PR has taken (an open one proposes it, a closed one declined it). A
-/// leg that reported nothing moved nothing.
+/// that moved to one release on every OS in `OSES` that runs it, above its pin,
+/// under a title no PR has taken (an open one proposes it, a closed one declined
+/// it). A leg that reported nothing moved nothing.
 ///
 /// # Errors
 ///
@@ -91,9 +93,11 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
     }
     let mut proposals = Vec::new();
     for p in PROFILES {
-        let versions: Vec<Option<&str>> = moved
+        let versions: Vec<Option<&str>> = OSES
             .iter()
-            .map(|rows| {
+            .zip(&moved)
+            .filter(|(os, _)| p.runs_on(**os == WINDOWS))
+            .map(|(_, rows)| {
                 rows.iter()
                     .find(|r| r.source == p.source)
                     .map(|r| r.version.as_str())
@@ -246,6 +250,18 @@ mod tests {
         );
         let taken = [proposals[0].title.clone()];
         assert_eq!(plan(&both, &taken), Ok(vec![]), "proposed or declined");
+    }
+
+    #[test]
+    fn a_source_a_leg_runs_none_of_moves_on_the_others() {
+        let openclaw = profile("openclaw").expect("openclaw's profile");
+        assert!(!openclaw.runs_on(true));
+        let up = above(openclaw).to_string();
+        let mac_only = drift(&[("macos", &[("openclaw", &up)]), ("windows", &[])]);
+        assert_eq!(
+            plan(&mac_only, &[]),
+            Ok(vec![Proposal::new("openclaw", &v(&up))])
+        );
     }
 
     #[test]

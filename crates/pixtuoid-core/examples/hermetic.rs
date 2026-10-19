@@ -35,9 +35,9 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST,
-        Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, Scenario, Surface,
-        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE,
+        Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG,
+        Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -197,11 +197,6 @@ mod run {
             }
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
-            if self.record && p.live.is_some() {
-                return Err(format!(
-                    "--record: {source}'s live tier records no capture, and only one moves its pin"
-                ));
-            }
             let Some(sc) = self.scenario.as_deref() else {
                 if p.runs_on(windows) {
                     return Ok(());
@@ -223,7 +218,7 @@ mod run {
                 .iter()
                 .find(|s| s.shape.name() == sc)
                 .ok_or_else(|| format!("{source} has no scenario {sc}"))?;
-            match s.not_run_on(windows) {
+            match p.not_run_on(s, windows) {
                 Some(why) => Err(format!("{source}/{sc} doesn't run here: {why}")),
                 None => Ok(()),
             }
@@ -326,12 +321,12 @@ mod run {
         p: &Profile,
         runs: &Path,
     ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
-        if let Some(live) = &p.live {
-            return run_live(ctx, args, p, live, runs);
-        }
+        let mut entries = match &p.live {
+            Some(live) => run_live(ctx, args, p, live, runs)?,
+            None => Vec::new(),
+        };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
-        let mut entries = Vec::new();
         if selected.is_empty() {
             return Ok((entries, None));
         }
@@ -435,9 +430,9 @@ mod run {
         p: &Profile,
         live: &Live,
         runs: &Path,
-    ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
+    ) -> std::io::Result<Vec<Entry>> {
         if !args.selects(p.source, LIVE) || live.not_run_on(cfg!(windows)).is_some() {
-            return Ok((Vec::new(), None));
+            return Ok(Vec::new());
         }
         let key = format!("{}/{LIVE}", p.source);
         println!("== {key}");
@@ -451,7 +446,7 @@ mod run {
             Ok((banner, verdict)) => (Some(banner), verdict),
             Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
         };
-        Ok((vec![Entry::new(key, banner, verdict)], None))
+        Ok(vec![Entry::new(key, banner, verdict)])
     }
 
     /// What `live`'s exit `code` says: [`LIVE_PREREQUISITE`] is a missing
@@ -479,10 +474,14 @@ mod run {
         version: &Version,
         dir: &Path,
     ) -> std::io::Result<(String, Verdict)> {
-        let ports = free_ports(live.ports)?;
-        // No model runs; a live profile's env spells no `{port}`, pinned by
-        // `a_live_tier_takes_the_ports_the_build_and_the_exit_it_is_given`.
-        let (_, cli, sandbox) = sandboxed(ctx, p, version, ports[0])?;
+        // One more than the tier takes: no model runs, so `{port}` names a port
+        // nothing listens on.
+        let mut ports = free_ports(live.ports + 1)?;
+        let held = Ports {
+            model: ports.pop().unwrap_or_default(),
+            daemon: None,
+        };
+        let (_, cli, sandbox) = sandboxed(ctx, p, version, held)?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
         let status = sandbox
             .command("bash")
@@ -501,7 +500,7 @@ mod run {
         p.scenarios
             .iter()
             .filter(|s| args.selects(p.source, s.shape.name()))
-            .filter(|s| s.not_run_on(windows).is_none())
+            .filter(|s| p.not_run_on(s, windows).is_none())
             .collect()
     }
 
@@ -511,7 +510,7 @@ mod run {
             .iter()
             .flat_map(|p| {
                 let scenarios = p.scenarios.iter().filter_map(move |s| {
-                    let why = s.not_run_on(windows)?;
+                    let why = p.not_run_on(s, windows)?;
                     Some(format!("{}/{} ({why})", p.source, s.shape.name()))
                 });
                 let live = p.live.as_ref().and_then(|l| {
@@ -553,7 +552,7 @@ mod run {
         let leg = p
             .scenarios
             .iter()
-            .filter(|s| s.not_run_on(windows).is_none());
+            .filter(|s| p.not_run_on(s, windows).is_none());
         judged.len() == leg.count()
     }
 
@@ -1362,7 +1361,7 @@ mod run {
             p: &Profile,
             shim_dir: &Path,
             cli_bin: &Path,
-            port: u16,
+            ports: Ports,
             workspace: &Path,
         ) -> std::io::Result<Self> {
             let dir = tempfile::tempdir()?;
@@ -1389,7 +1388,7 @@ mod run {
             for var in p.home_vars() {
                 env.push((var.into(), at(&format!("homes/{var}"))?.into()));
             }
-            let expand = |t: &str| expanded(t, port);
+            let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
             for (k, v) in p.env {
@@ -1413,7 +1412,7 @@ mod run {
                 }
                 std::fs::write(
                     &file,
-                    config_text(c.template, port, &reported_cwd(workspace)),
+                    config_text(c.template, ports, &reported_cwd(workspace)),
                 )?;
             }
             Ok(sandbox)
@@ -1476,12 +1475,12 @@ mod run {
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
-    /// runs in; `port` is the scripted model's, which `{port}` names.
+    /// runs in.
     fn sandboxed(
         ctx: &Ctx,
         p: &Profile,
         version: &Version,
-        port: u16,
+        ports: Ports,
     ) -> std::io::Result<(PathBuf, Installed, Sandbox)> {
         let workspace = capture_workspace()?;
         if let Some(found) = outside_config(
@@ -1496,7 +1495,7 @@ mod run {
             )));
         }
         let cli = install_cli(&ctx.tier, p, version)?;
-        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, port, &workspace)?;
+        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, ports, &workspace)?;
         Ok((workspace, cli, sandbox))
     }
 
@@ -1508,8 +1507,13 @@ mod run {
         dir: &Path,
     ) -> std::io::Result<Manifest> {
         let Ctx { built, aimock, .. } = ctx;
-        let port = free_port()?;
-        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, port)?;
+        let held = free_ports(1 + usize::from(p.daemon.is_some()))?;
+        let ports = Ports {
+            model: held[0],
+            daemon: held.get(1).copied(),
+        };
+        let port = ports.model;
+        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
 
         let connect = sandbox
             .command(&built.pixtuoid)
@@ -1587,6 +1591,7 @@ mod run {
                     cli_version: &cli_version(&sandbox, p, &cli.launch)?,
                     launch: &cli.launch,
                     driver: &built.driver,
+                    ports,
                 },
                 p,
                 scenario,
@@ -1725,6 +1730,7 @@ mod run {
         launch: &'a Launch,
         /// [`Built::driver`].
         driver: &'a Path,
+        ports: Ports,
     }
 
     /// The recorder's command line for one run: its options, then the source,
@@ -1744,6 +1750,17 @@ mod run {
         ];
         for kv in run.cli_env {
             args.extend([recorder_flag::ENV.into(), kv.into()]);
+        }
+        if let Some(daemon) = &p.daemon {
+            for (flag, words) in [
+                (recorder_flag::DAEMON, daemon.start),
+                (recorder_flag::DAEMON_READY, daemon.ready),
+            ] {
+                let expanded = words.iter().map(|w| expanded(w, run.ports).into());
+                for word in run.launch.argv().into_iter().chain(expanded) {
+                    args.extend([flag.into(), word]);
+                }
+            }
         }
         args.extend([p.source, scenario.shape.name()].map(OsString::from));
         match scenario.surface {
@@ -1821,15 +1838,19 @@ mod run {
     /// its workspace with `/` separators: how Claude Code keys its projects on
     /// Windows (`Xz` in the 2.1.302 bundle), and a JSON or TOML string holds it
     /// unescaped.
-    fn config_text(template: &str, port: u16, workspace: &str) -> String {
-        expanded(template, port).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
+    fn config_text(template: &str, ports: Ports, workspace: &str) -> String {
+        expanded(template, ports).replace(WORKSPACE_PLACEHOLDER, &workspace.replace('\\', "/"))
     }
 
     /// A profile string with the scripted model's port and key in it.
-    fn expanded(template: &str, port: u16) -> String {
-        template
-            .replace("{port}", &port.to_string())
-            .replace("{key}", DUMMY_KEY)
+    fn expanded(template: &str, ports: Ports) -> String {
+        let text = template
+            .replace("{port}", &ports.model.to_string())
+            .replace("{key}", DUMMY_KEY);
+        match ports.daemon {
+            Some(port) => text.replace(DAEMON_PORT_PLACEHOLDER, &port.to_string()),
+            None => text,
+        }
     }
 
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
@@ -1885,8 +1906,12 @@ mod run {
             .open(dir.join(name))
     }
 
-    fn free_port() -> std::io::Result<u16> {
-        Ok(TcpListener::bind("127.0.0.1:0")?.local_addr()?.port())
+    /// The ports one run holds free: the scripted model's, which `{port}` names,
+    /// and its daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
+    #[derive(Debug, Clone, Copy)]
+    struct Ports {
+        model: u16,
+        daemon: Option<u16>,
     }
 
     /// `n` ports free now, held together while picked so no two are one.
@@ -1929,6 +1954,12 @@ mod run {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// What a test's run holds: its `{port}` is the 4321 the expectations spell.
+        const TEST_PORTS: Ports = Ports {
+            model: 4321,
+            daemon: Some(4322),
+        };
 
         fn args(v: &[&str]) -> Vec<String> {
             v.iter().map(|s| (*s).to_string()).collect()
@@ -1984,6 +2015,7 @@ mod run {
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
+                     openclaw/tool-run (its daemon stops cleanly only on SIGTERM) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"
@@ -2142,6 +2174,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 &p.scenarios[0],
@@ -2172,6 +2205,47 @@ mod run {
         }
 
         #[test]
+        fn a_daemon_profile_hands_the_recorder_its_daemon_on_its_held_port() {
+            let p = hermetic::profile("openclaw").expect("openclaw");
+            let launch = Launch {
+                program: PathBuf::from("/cli/openclaw"),
+                args: Vec::new(),
+                env: Vec::new(),
+            };
+            let args = recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
+                },
+                p,
+                &p.scenarios[0],
+            );
+            let words = |flag: &str| -> Vec<String> {
+                args.windows(2)
+                    .filter(|w| w[0] == *flag)
+                    .map(|w| w[1].to_string_lossy().into_owned())
+                    .collect()
+            };
+            let held = TEST_PORTS.daemon.expect("a held daemon port").to_string();
+            let start = words(recorder_flag::DAEMON);
+            assert_eq!(start.first().map(String::as_str), Some("/cli/openclaw"));
+            assert!(start.contains(&held), "{start:?}");
+            assert!(words(recorder_flag::DAEMON_READY).contains(&held));
+            assert!(
+                !args
+                    .iter()
+                    .any(|a| a.to_string_lossy().contains(DAEMON_PORT_PLACEHOLDER))
+            );
+        }
+
+        #[test]
         fn a_tui_scenario_hands_the_recorder_the_driver_and_the_clis_interactive_launch() {
             let p = hermetic::profile("claude-code").expect("profile");
             let (scenario, tui) = p
@@ -2197,6 +2271,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 scenario,
@@ -2240,7 +2315,8 @@ mod run {
             let workspace = r"C:\ProgramData\pixtuoid-capture\proj";
             let seed = hermetic::profile("claude-code").expect("profile").config[0].template;
             let parsed: serde_json::Value =
-                serde_json::from_str(&config_text(seed, 4321, workspace)).expect("valid JSON");
+                serde_json::from_str(&config_text(seed, TEST_PORTS, workspace))
+                    .expect("valid JSON");
             assert!(
                 parsed["projects"]["C:/ProgramData/pixtuoid-capture/proj"]["hasTrustDialogAccepted"]
                     == true,
@@ -2268,7 +2344,7 @@ mod run {
                     p,
                     Path::new("/nowhere/shims"),
                     Path::new("/nowhere/bin"),
-                    4321,
+                    TEST_PORTS,
                     Path::new("/nowhere/ws"),
                 )
                 .expect("sandbox");
@@ -2285,7 +2361,10 @@ mod run {
                     p.source
                 );
                 for (k, v) in p.env {
-                    let want = v.replace("{port}", "4321").replace("{key}", DUMMY_KEY);
+                    let want = v
+                        .replace("{port}", "4321")
+                        .replace(DAEMON_PORT_PLACEHOLDER, "4322")
+                        .replace("{key}", DUMMY_KEY);
                     assert_eq!(
                         sandbox.var_os(k),
                         Some(&OsString::from(&want)),
@@ -2571,10 +2650,15 @@ mod run {
             assert!(on(false).is_ok());
             let refused = on(true).expect_err("grok's TUI under ConPTY");
             assert!(refused.contains("ConPTY"), "{refused}");
-            assert!(
-                check(&["openclaw", "tool-run"]).is_err(),
-                "a live profile's scenario"
-            );
+            assert!(check(&["openclaw", "no-such-scenario"]).is_err());
+            let turn = |windows| {
+                parse(&args(&["openclaw", "tool-run"]))
+                    .expect("parse")
+                    .check(windows)
+            };
+            assert!(turn(false).is_ok());
+            let refused = turn(true).expect_err("a daemon on Windows");
+            assert!(refused.contains("SIGTERM"), "{refused}");
             assert!(
                 check(&["codex", LIVE]).is_err(),
                 "a scenario profile's live run"
@@ -2604,9 +2688,6 @@ mod run {
             let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["--record"]).is_ok());
             assert!(check(&["--record", "dsh"]).is_ok());
-            let refused =
-                check(&["--record", "openclaw"]).expect_err("a live tier records nothing");
-            assert!(refused.contains("live tier"), "{refused}");
             assert!(check(&["--cli", "latest", "--record", "dsh"]).is_ok());
             assert!(
                 check(&["--cli", "latest", "--record"]).is_err(),

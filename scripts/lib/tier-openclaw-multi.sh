@@ -65,10 +65,11 @@ cleanup() {
 trap cleanup EXIT
 
 # An isolated pixtuoid config; each gateway's own `connect` below installs the
-# plugin, which is what connects OpenClaw. Both unset vars outrank OPENCLAW_HOME
+# plugin, which is what connects OpenClaw. The first two outrank OPENCLAW_HOME
 # (install/openclaw.rs), so one exported in the dev's shell would send those
-# connects to their real config.
-unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH
+# connects to their real config; the port var outranks each `gateway.port`
+# (`docs/help/faq/gateway-ports-and-remote-mode.md:16` at v2026.10.1).
+unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH OPENCLAW_GATEWAY_PORT
 mkdir -p "$MG/claude" "$MG/cfg/pixtuoid"
 
 # One throwaway state dir per gateway. `gateway.mode` is REQUIRED — `gateway run`

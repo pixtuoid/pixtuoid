@@ -409,6 +409,17 @@ fn judge(
         );
     }
 
+    // A daemon renders presence, not a desk sprite, so its turn is judged there.
+    if p.descriptor().is_daemon() {
+        match scenario.shape {
+            Shape::ToolRun => judge_presence(p, scene, findings),
+            other => findings.push((
+                Label::Fail,
+                format!("a daemon's scene has no judge for {}", other.name()),
+            )),
+        }
+        return Ok(());
+    }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission => 1,
         Shape::Subagent => 2,
@@ -702,6 +713,45 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
             "an agent was still in the scene after the CLI exited".into(),
         ));
     }
+    breadcrumbs(scene, findings);
+}
+
+/// A daemon's turn on the scene: its mascot busy, then idle once the turn
+/// settled, and gone once the daemon stopped.
+fn judge_presence(p: &Profile, scene: &str, findings: &mut Vec<(Label, String)>) {
+    let mascot = format!("{}@", p.source);
+    let frames: Vec<&str> = scene
+        .lines()
+        .filter_map(|l| l.split_once("daemons=[").map(|(_, daemons)| daemons))
+        .collect();
+    let shown = |frame: &str, state: &str| {
+        let state = format!(":{state}");
+        frame
+            .split(", ")
+            .any(|d| d.starts_with(&mascot) && d.contains(&state))
+    };
+    match frames.iter().position(|f| shown(f, "busy")) {
+        None => findings.push((
+            Label::Fail,
+            format!("the scene never showed a {mascot} daemon busy"),
+        )),
+        Some(at) if !frames[at..].iter().any(|f| shown(f, "idle")) => findings.push((
+            Label::Fail,
+            format!("the {mascot} daemon never settled idle after its turn"),
+        )),
+        Some(_) => {}
+    }
+    if frames.last().is_some_and(|last| last.contains(&mascot)) {
+        findings.push((
+            Label::Fail,
+            "a daemon was still in the scene after it stopped".into(),
+        ));
+    }
+    breadcrumbs(scene, findings);
+}
+
+/// Each drift breadcrumb pixtuoid logged while rendering the run.
+fn breadcrumbs(scene: &str, findings: &mut Vec<(Label, String)>) {
     for line in scene.lines().filter(|l| l.contains(BREADCRUMB_TARGET)) {
         findings.push((Label::Fail, format!("drift breadcrumb: {}", line.trim())));
     }
@@ -1397,6 +1447,28 @@ mod tests {
             Label::Script,
             "a CLI the script lost and that then exited is the script's finding"
         );
+    }
+
+    #[test]
+    fn a_daemon_s_turn_shows_busy_then_idle_then_gone() {
+        let judged = |scene: &str| {
+            let d = recorded("openclaw", Shape::ToolRun, scene);
+            verify(d.path()).expect("verify").findings().to_vec()
+        };
+        let frame = |state: &str| format!("agents=[] daemons=[openclaw@59871:{state}]\n");
+        let gone = "agents=[] daemons=[]\n";
+        let ran = [frame("idle"), frame("busy"), frame("idle"), frame("down")].concat() + gone;
+        assert_eq!(judged(&ran), vec![]);
+        let never_busy = [frame("idle"), frame("down")].concat() + gone;
+        assert!(
+            judged(&never_busy)[0].1.contains("busy"),
+            "{:?}",
+            judged(&never_busy)
+        );
+        let never_settled = [frame("busy"), frame("down")].concat() + gone;
+        assert!(judged(&never_settled)[0].1.contains("idle"));
+        let lingering = [frame("busy"), frame("idle")].concat();
+        assert!(judged(&lingering)[0].1.contains("still in the scene"));
     }
 
     #[test]

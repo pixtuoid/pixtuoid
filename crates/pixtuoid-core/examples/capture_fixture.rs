@@ -33,7 +33,7 @@ mod recorder {
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest};
     use pixtuoid_core::harness::host::{create_private_dir, owned_by_us};
     use pixtuoid_core::harness::recorder_flag::{
-        CLI_VERSION, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
+        CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
@@ -103,6 +103,11 @@ mod recorder {
         /// Run no CLI: create this source's transcript root inside `within`, as
         /// a user who ran the CLI before has it.
         prepare_root: Option<String>,
+        /// A server the CLI talks to, run with the CLI's own wiring from before
+        /// it starts until after it exits, so its hooks reach this tap too.
+        daemon: Vec<String>,
+        /// What exits 0 once `daemon` serves.
+        daemon_ready: Vec<String>,
     }
 
     impl Options {
@@ -160,6 +165,8 @@ mod recorder {
                     }
                     options.workspace = Some(ws);
                 }
+                DAEMON => options.daemon.push(take(&mut args, DAEMON)?),
+                DAEMON_READY => options.daemon_ready.push(take(&mut args, DAEMON_READY)?),
                 ENV => {
                     let value = take(&mut args, ENV)?;
                     let (k, v) = value
@@ -236,7 +243,8 @@ mod recorder {
         if args.len() < 3 {
             eprintln!(
                 "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket|pipe>] [{WITHIN} <dir>] [{ENV} K=V]... \
-                 [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] <source-id> <scenario> <cmd...>   \
+                 [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] [{DAEMON} <word>]... [{DAEMON_READY} <word>]... \
+                 <source-id> <scenario> <cmd...>   \
                  ('{{prompt}}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
                  capture_fixture {PROMOTE} <run>   (write a hermetic run into its fixture)\n       \
@@ -283,16 +291,21 @@ mod recorder {
 
         println!("capturing {source}/{scenario} — one real model turn");
         let started = SystemTime::now();
-        let status = run_cli(
+        let wiring = CliWiring {
+            endpoint: &endpoint,
+            scratch: sandbox.path(),
+        };
+        let daemon =
+            RunningDaemon::start(&options, &workspace, &wiring, descriptor.verified_version)?;
+        let status = wired(
             &cmd,
             &workspace,
-            CliWiring {
-                endpoint: &endpoint,
-                scratch: sandbox.path(),
-            },
+            &wiring,
             descriptor.verified_version,
             &options.env,
-        )?;
+        )?
+        .status()?;
+        drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
         let incomplete = tap.stopped().map(|why| {
@@ -695,13 +708,15 @@ mod recorder {
         scratch: &'a Path,
     }
 
-    fn run_cli(
+    /// `cmd` with the CLI's wiring: the tap's endpoint, the driver's dir and
+    /// the CLI it names, the pin, the agent-env scrub, then `env`.
+    fn wired(
         cmd: &[String],
         ws: &Path,
-        wiring: CliWiring<'_>,
+        wiring: &CliWiring<'_>,
         verified: &str,
         env: &[(String, String)],
-    ) -> std::io::Result<std::process::ExitStatus> {
+    ) -> std::io::Result<std::process::Command> {
         let mut c = std::process::Command::new(&cmd[0]);
         c.args(&cmd[1..])
             .current_dir(ws)
@@ -715,7 +730,84 @@ mod recorder {
             c.env_remove(k);
         }
         c.envs(env.iter().map(|(k, v)| (k, v)));
-        c.status()
+        Ok(c)
+    }
+
+    /// How long a daemon may take to serve.
+    const DAEMON_READY_BUDGET: Duration = Duration::from_secs(60);
+    /// How long a daemon may take to exit after SIGTERM before it is killed.
+    const DAEMON_STOP_GRACE: Duration = Duration::from_secs(30);
+    /// The pause between two readiness probes, and two exit checks.
+    const DAEMON_POLL: Duration = Duration::from_millis(500);
+
+    /// A capture's `--daemon`, stopped when dropped: SIGTERM, since its
+    /// shutdown hooks fire only on a clean stop, then a kill past
+    /// [`DAEMON_STOP_GRACE`].
+    struct RunningDaemon(std::process::Child);
+
+    impl RunningDaemon {
+        /// `options`' daemon, once its readiness probe exits 0; `None` when
+        /// it names none.
+        fn start(
+            options: &Options,
+            ws: &Path,
+            wiring: &CliWiring<'_>,
+            verified: &str,
+        ) -> std::io::Result<Option<Self>> {
+            if options.daemon.is_empty() {
+                return Ok(None);
+            }
+            let own = driver_dir(wiring.scratch);
+            std::fs::create_dir_all(&own)?;
+            let log = std::fs::File::create(own.join("daemon.log"))?;
+            let daemon = Self(
+                wired(&options.daemon, ws, wiring, verified, &options.env)?
+                    .stdin(std::process::Stdio::null())
+                    .stdout(log.try_clone()?)
+                    .stderr(log)
+                    .spawn()?,
+            );
+            let started = Instant::now();
+            let mut this = daemon;
+            loop {
+                let ready = wired(&options.daemon_ready, ws, wiring, verified, &options.env)?
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()?;
+                if ready.success() {
+                    return Ok(Some(this));
+                }
+                if let Some(exit) = this.0.try_wait()? {
+                    return Err(std::io::Error::other(format!(
+                        "the daemon exited {exit} before it served"
+                    )));
+                }
+                if started.elapsed() >= DAEMON_READY_BUDGET {
+                    return Err(std::io::Error::other("the daemon never served"));
+                }
+                std::thread::sleep(DAEMON_POLL);
+            }
+        }
+    }
+
+    impl Drop for RunningDaemon {
+        fn drop(&mut self) {
+            #[cfg(unix)]
+            {
+                use rustix::process::{Pid, Signal, kill_process};
+                let _ = kill_process(Pid::from_child(&self.0), Signal::TERM);
+                let stopping = Instant::now();
+                while stopping.elapsed() < DAEMON_STOP_GRACE {
+                    if matches!(self.0.try_wait(), Ok(Some(_)) | Err(_)) {
+                        return;
+                    }
+                    std::thread::sleep(DAEMON_POLL);
+                }
+            }
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
 
     fn write_payloads(payloads: &[String], dest: &Path) -> std::io::Result<PathBuf> {
@@ -1666,6 +1758,43 @@ mod recorder {
 
         /// A driver is a Unix shell script.
         #[cfg(unix)]
+        #[cfg(unix)]
+        #[test]
+        fn a_daemon_serves_before_the_cli_runs_and_stops_on_sigterm() {
+            let sandbox = tempfile::tempdir().expect("sandbox");
+            let ws = tempfile::tempdir().expect("workspace");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+            let (ready, stopped) = (ws.path().join("ready"), ws.path().join("stopped"));
+            // It serves only after a beat, so a probe that never waited fails.
+            let serve = format!(
+                "trap 'echo term >{}; exit 0' TERM; sleep 1; touch {}; while :; do sleep 0.1; done",
+                stopped.display(),
+                ready.display()
+            );
+            let options = Options {
+                daemon: ["sh", "-c", &serve].map(String::from).to_vec(),
+                daemon_ready: ["test", "-e"]
+                    .map(String::from)
+                    .into_iter()
+                    .chain([ready.display().to_string()])
+                    .collect(),
+                ..Options::default()
+            };
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            };
+            let daemon = RunningDaemon::start(&options, ws.path(), &wiring, "1.0.0")
+                .expect("starts")
+                .expect("a daemon");
+            assert!(ready.exists(), "returned before it served");
+            drop(daemon);
+            assert_eq!(
+                std::fs::read_to_string(&stopped).ok().as_deref(),
+                Some("term\n")
+            );
+        }
+
         #[test]
         fn a_driver_gets_the_verified_version_and_its_callers_env_and_names_its_cli() {
             let sandbox = tempfile::tempdir().expect("sandbox");
@@ -1692,7 +1821,9 @@ mod recorder {
                         endpoint: &endpoint,
                         scratch: sandbox.path(),
                     };
-                    run_cli(&cmd, ws.path(), wiring, "1.0.0", &env).expect("runs")
+                    wired(&cmd, ws.path(), &wiring, "1.0.0", &env)
+                        .and_then(|mut c| c.status())
+                        .expect("runs")
                 },
             );
             assert!(ran.success());

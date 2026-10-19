@@ -1576,7 +1576,7 @@ fn rs_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 #[test]
 fn every_registered_hook_is_watched() {
     for t in TARGETS {
-        let hooks = (t.registers)();
+        let hooks = (t.forwards)();
         assert!(!hooks.is_empty(), "{} registers no hook", t.name);
         let source = REGISTRY
             .iter()

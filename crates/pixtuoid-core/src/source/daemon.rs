@@ -139,8 +139,8 @@ pub struct PresenceTtl {
     /// Grace before busy → idle when no `before_agent_run`/`agent_end` arrives
     /// (a dropped `agent_end` must self-heal, never strand perpetual busy).
     pub(crate) busy_decay_ms: u64,
-    /// With no activity for this long the daemon is presumed DOWN (covers
-    /// SIGTERM, where neither `session_end` nor `gateway_stop` fires).
+    /// With no activity for this long the daemon is presumed DOWN (covers a
+    /// killed gateway, which fires neither `session_end` nor `gateway_stop`).
     pub(crate) presence_ttl_ms: u64,
     /// How long a `Down` presence lingers (drawn walking out) before it is
     /// REMOVED — generously past the renderer's elevator walk-out, so the leave
