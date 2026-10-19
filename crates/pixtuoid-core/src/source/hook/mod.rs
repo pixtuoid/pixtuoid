@@ -215,8 +215,7 @@ fn bind_targets(source: &str, evs: &[AgentEvent]) -> std::collections::BTreeMap<
     {
         // The shim GUESSED which ancestor is the CLI — corroborate it.
         Some(FocusChannel::ShimStamp) => true,
-        // The source stamped its own `process.pid`; a session that never calls a
-        // tool reports it once.
+        // The source stamped its own `process.pid`, a fact (`Bindings::sight`).
         Some(FocusChannel::PluginStamp | FocusChannel::ServerStamp) => false,
         _ => return std::collections::BTreeMap::new(),
     };
@@ -970,6 +969,40 @@ mod tests {
         );
         let (_, ev) = rx.recv().await.expect("the paired ActivityStart");
         assert!(matches!(ev, AgentEvent::ActivityStart { .. }), "got {ev:?}");
+    }
+
+    /// A session that never calls a tool still names its focus pid.
+    #[tokio::test]
+    async fn handle_conn_stamps_a_tool_less_antigravity_session_s_pid() {
+        use crate::source::decoder::EVENT_STAMP;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
+        let (mut client, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(handle_conn(server.take(MAX_CONN_BYTES), tx, None, None));
+        for event in ["SessionStart", "Stop"] {
+            let line = serde_json::json!({
+                "_pixtuoid_source": "antigravity",
+                EVENT_STAMP: event,
+                "conversationId": "c1",
+                "workspacePaths": ["/repo"],
+                "_pid": i32::MAX,
+            });
+            client
+                .write_all(format!("{line}\n").as_bytes())
+                .await
+                .unwrap();
+        }
+        drop(client);
+        task.await.unwrap();
+
+        let mut events = Vec::new();
+        while let Ok((_, ev)) = rx.try_recv() {
+            events.push(ev);
+        }
+        assert!(
+            events.iter().any(|ev| matches!(ev,
+                AgentEvent::Identity { pid: Some(p), .. } if p.pid == i32::MAX)),
+            "{events:?}"
+        );
     }
 
     #[tokio::test]

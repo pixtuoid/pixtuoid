@@ -256,13 +256,18 @@ pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
         (step.map(step_tool_id), obj.get("toolCall"))
     };
     match event {
-        "SessionStart" => Ok(vec![AgentEvent::SessionStart {
-            agent_id,
-            source: SOURCE_NAME.to_string(),
-            session_id: key.to_string(),
-            cwd: cwd.into(),
-            parent_id: None,
-        }]),
+        // The focus pid rides an `Identity`, so a session that never calls a
+        // tool still names it.
+        "SessionStart" => Ok(vec![
+            AgentEvent::SessionStart {
+                agent_id,
+                source: SOURCE_NAME.to_string(),
+                session_id: key.to_string(),
+                cwd: cwd.into(),
+                parent_id: None,
+            },
+            identity(),
+        ]),
         "PreToolUse" => {
             let (tool_use_id, tool) = call();
             let name = tool
@@ -483,12 +488,13 @@ mod tests {
                     cwd,
                     ..
                 },
+                AgentEvent::Identity { .. },
             ] => {
                 assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, &key));
                 assert_eq!(*session_id, key);
                 assert_eq!(cwd, Path::new("/repo"));
             }
-            other => panic!("expected one SessionStart, got {other:?}"),
+            other => panic!("expected a SessionStart and its Identity, got {other:?}"),
         }
     }
 
