@@ -655,7 +655,7 @@ pub const PROFILES: &[Profile] = &[
     Profile {
         source: "claude-code",
         package: Package::Npm("@anthropic-ai/claude-code"),
-        invocation: &["claude", "-p", "{prompt}"],
+        invocation: &["claude", "-p", PROMPT_PLACEHOLDER],
         // `-r, --resume [value]`: "Resume a conversation by session ID"
         // (`claude --help` at 2.1.302).
         resume: Some(&[
@@ -779,7 +779,7 @@ pub const PROFILES: &[Profile] = &[
             "codex",
             "exec",
             "--dangerously-bypass-hook-trust",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
         resume: None,
         env: &[("HERMETIC_API_KEY", "{key}")],
@@ -935,7 +935,7 @@ trust_level = "trusted"
             "--standalone",
             "--model",
             "openai/gpt-5.2",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
         resume: None,
         // The models.dev fetch and the update check
@@ -1057,7 +1057,7 @@ trust_level = "trusted"
     Profile {
         source: "dsh",
         package: Package::Npm("@deepseek-ai/dsh"),
-        invocation: &["dsh", "--profile", "headless", "{prompt}"],
+        invocation: &["dsh", "--profile", "headless", PROMPT_PLACEHOLDER],
         resume: None,
         // The Messages endpoint and key come from the launch environment
         // (`packages/llm/llm-deepseek/src/config.ts:290`,
@@ -1149,7 +1149,7 @@ trust_level = "trusted"
     Profile {
         source: "kimi",
         package: Package::Npm("@moonshot-ai/kimi-code"),
-        invocation: &["kimi", "-p", "{prompt}"],
+        invocation: &["kimi", "-p", PROMPT_PLACEHOLDER],
         resume: None,
         // `KIMI_MODEL_NAME` builds a provider from the environment
         // (`docs/en/configuration/env-vars.md:106-124`); the telemetry and
@@ -1230,7 +1230,7 @@ trust_level = "trusted"
         // (`crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md:76-94`),
         // which a blocking spawn needs: `-p` cancels every prompt
         // (`crates/codegen/xai-grok-pager/src/headless.rs:1882-1901`).
-        invocation: &["grok", "--always-approve", "-p", "{prompt}"],
+        invocation: &["grok", "--always-approve", "-p", PROMPT_PLACEHOLDER],
         resume: None,
         // What upstream's own run against a mock server sets: every service
         // URL on it, and the telemetry, feedback, update and unscripted
@@ -1359,7 +1359,7 @@ trust_level = "trusted"
             "--allowed-tools",
             "task,explore",
             "-p",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
         resume: None,
         // Off already for a non-interactive run, and pinned off against a
@@ -1484,7 +1484,7 @@ model = "deepseek-v4-flash"
     Profile {
         source: "copilot",
         package: Package::Npm("@github/copilot"),
-        invocation: &["copilot", "-p", "{prompt}"],
+        invocation: &["copilot", "-p", PROMPT_PLACEHOLDER],
         // `-r, --resume [<value>]`: "optionally specify existing session ID"
         // (`copilot --help` at 1.0.98).
         resume: Some(&[
@@ -1623,7 +1623,7 @@ model = "deepseek-v4-flash"
             ],
             sums: "SHA256SUMS.txt",
         },
-        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", "{prompt}"],
+        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", PROMPT_PLACEHOLDER],
         resume: None,
         // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
         env: &[("PI_AUTO_QA", "0")],
@@ -1731,7 +1731,7 @@ async:
         package: Package::UvLocked("NousResearch/hermes-agent"),
         // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
         // and a hook runs only once accepted.
-        invocation: &["hermes", "--accept-hooks", "-z", "{prompt}"],
+        invocation: &["hermes", "--accept-hooks", "-z", PROMPT_PLACEHOLDER],
         resume: None,
         env: &[],
         // The managed scope, which otherwise is `/etc/hermes`
@@ -1823,7 +1823,7 @@ telemetry:
             ],
             member: "antigravity",
         },
-        invocation: &["agy", "-p", "{prompt}"],
+        invocation: &["agy", "-p", PROMPT_PLACEHOLDER],
         resume: None,
         // The Gemini API route at a custom endpoint, and Go's proxy variables
         // (pkg.go.dev/net/http#ProxyFromEnvironment) sending all but the mock
@@ -1880,7 +1880,7 @@ telemetry:
             "--session-id",
             "hermetic",
             "-m",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
         resume: None,
         // Its automatic update checks, and the daily request each sends

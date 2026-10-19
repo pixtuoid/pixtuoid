@@ -285,7 +285,7 @@ mod recorder {
                  [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] [{DAEMON} <word>]... [{DAEMON_READY} <word>]... \
                  [{RESUME} <word>]... \
                  <source-id> <scenario> <cmd...>   \
-                 ('{{prompt}}' expands)\n       \
+                 ('{PROMPT_PLACEHOLDER}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
                  capture_fixture {PROMOTE} <run>   (write a hermetic run into its fixture)\n       \
                  capture_fixture {WITHIN} <dir> {PREPARE_ROOT} <source-id>   (create its root; no CLI)"
