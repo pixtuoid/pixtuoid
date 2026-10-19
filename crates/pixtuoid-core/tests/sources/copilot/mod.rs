@@ -1,6 +1,7 @@
-//! copilot's two refusal endings at 1.0.98: the `-p` auto-deny, whose call
-//! then ends, and Esc at an interactive prompt, which aborts the turn with no
-//! end for the call. Each is one call, and each resolves its wait.
+//! copilot's recorded endings at 1.0.98: two refusals, the `-p` auto-deny, whose
+//! call then ends, and Esc at an interactive prompt, which aborts the turn with
+//! no end for the call, each one call that resolves its wait; and a child whose
+//! request errs, which its own failure ends.
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
 use pixtuoid_core::source::AgentEvent;

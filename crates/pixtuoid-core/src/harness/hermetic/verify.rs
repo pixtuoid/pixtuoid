@@ -875,7 +875,7 @@ fn child_error(
 ) {
     // Its turn's end, or its session's where the end of a headless run is
     // the session's own (copilot's `-p` writes no `session.task_complete`).
-    let settled = |parent: AgentId| {
+    let ended = |parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::ActivityEnd {
                 agent_id,
@@ -887,9 +887,12 @@ fn child_error(
     };
     if !delegated(events, reaches, inference, findings)
         .iter()
-        .all(|&(_, parent)| settled(parent))
+        .all(|&(_, parent)| ended(parent))
     {
-        findings.push((Label::Fail, "the parent never settled".into()));
+        findings.push((
+            Label::Fail,
+            "the parent's turn or session never ended".into(),
+        ));
     }
 }
 
@@ -1244,6 +1247,8 @@ mod tests {
         "agents=[cp\u{b7}proj@0:waiting(permission: shell)]\nagents=[] daemons=[]\n";
     const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
                                      reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_CHILD_ERROR_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
+                                        reader@1:idle]\nagents=[] daemons=[]\n";
     const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
     const AG_SCENE: &str =
         "agents=[ag\u{b7}proj@0:active(view_file: NOTE.txt)]\nagents=[] daemons=[]\n";
@@ -1498,7 +1503,7 @@ mod tests {
     }
 
     #[test]
-    fn a_child_error_takes_no_child_work_but_the_parents_turn_end() {
+    fn a_child_error_takes_no_child_work_but_the_parents_end() {
         use crate::source::ToolDetail;
         let (parent, child) = (
             AgentId::from_parts("copilot", "root"),
@@ -1511,8 +1516,8 @@ mod tests {
             cwd: PathBuf::from("/proj"),
             parent_id,
         };
-        // As copilot decodes a child whose request errs: `subagent.failed`
-        // ends it, then the dispatch and the turn end.
+        // A child whose request errs ends, then the dispatch, then the parent's
+        // turn; copilot's `-p` ends its session instead (`shut_down` below).
         let run = vec![
             session(parent, "root", None),
             AgentEvent::ActivityStart {
@@ -1541,12 +1546,12 @@ mod tests {
         };
         let (delegating, drain) = ([(parent, Reach::Delegating)], ChildEndInference::TaskDrain);
         assert_eq!(judged(&run, &delegating, drain), Vec::<String>::new());
-        let unsettled = &run[..run.len() - 1];
+        let unended = &run[..run.len() - 1];
         assert_eq!(
-            judged(unsettled, &delegating, drain),
-            ["the parent never settled"]
+            judged(unended, &delegating, drain),
+            ["the parent's turn or session never ended"]
         );
-        let shut_down: Vec<_> = unsettled
+        let shut_down: Vec<_> = unended
             .iter()
             .cloned()
             .chain([AgentEvent::SessionEnd {
@@ -1768,11 +1773,25 @@ mod tests {
             (Shape::ToolRun, CP_SCENE),
             (Shape::Permission, CP_WAIT_SCENE),
             (Shape::Subagent, CP_DELEGATE_SCENE),
+            (Shape::ChildError, CP_CHILD_ERROR_SCENE),
         ] {
             let d = recorded("copilot", shape, scene);
             let v = verify(d.path()).expect("verify");
             assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
+    }
+
+    #[test]
+    fn a_recorded_child_error_whose_parent_never_ends_fails() {
+        let d = recorded("copilot", Shape::ChildError, CP_CHILD_ERROR_SCENE);
+        edit_transcripts(d.path(), |line| {
+            !line.contains(r#""type":"session.shutdown""#)
+        });
+        assert!(has(
+            &verify(d.path()).expect("verify"),
+            Label::Fail,
+            "the parent's turn or session never ended"
+        ));
     }
 
     #[test]

@@ -124,7 +124,7 @@ pub enum Shape {
     /// session registers, and its turn ends failed.
     ModelError,
     /// A turn whose child's model errs: the parent delegates, the child
-    /// registers as its child and ends, and the parent's turn goes on to end.
+    /// registers as its child and ends, and the parent's turn, or its session, ends.
     ChildError,
 }
 

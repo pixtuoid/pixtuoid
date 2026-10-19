@@ -23,7 +23,7 @@ tests/
 │   │                    fixtures/hook-payloads.jsonl (NOT scanned)
 │   ├── claude/ codex/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
 │   │                    an independent session (two sprites), so these can't live under the one-AgentId rule
-│   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel), each resolving its wait
+│   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel) and a failed child's own end
 │   ├── omp/             the bridge-extension rounds (#951) — hook keys FOLD
 │   │                    platform-dependently, so expectations derive through the
 │   │                    fold, not the platform-invariant conformance goldens
