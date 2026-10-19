@@ -405,11 +405,11 @@ impl<'ast> Visit<'ast> for Collect {
             syn::Expr::MethodCall(inner) if inner.method == "iter" => match &*inner.receiver {
                 syn::Expr::Array(a) => (
                     Some(format!("[..]#{}", self.bound.len())),
-                    a.elems.iter().filter_map(Self::lit).collect(),
+                    Some(a.elems.iter().filter_map(Self::lit).collect::<Vec<_>>()),
                 ),
-                r => (self.const_of(r), Vec::new()),
+                r => (self.const_of(r), None),
             },
-            _ => (None, Vec::new()),
+            _ => (None, None),
         };
         self.visit_expr(&m.receiver);
         for arg in &m.args {
@@ -427,7 +427,7 @@ impl<'ast> Visit<'ast> for Collect {
                 self.bound.pop();
             }
         }
-        if let Some(name) = iterated.filter(|_| !inline.is_empty()) {
+        if let (Some(name), Some(inline)) = (iterated, inline) {
             let mut modes = Vec::new();
             self.uses.retain(|(c, how)| {
                 let mine = *c == name;
@@ -1088,6 +1088,8 @@ mod tests {
             let _ = ROLES.iter().any(|r| s.ends_with(r));
             let _ = ["inline_a", "inline_b"].iter().find_map(|k| v.get(k));
             let _ = [":inline_tail"].iter().any(|r| s.ends_with(r));
+            let _ = [TAIL].iter().any(|r| s.ends_with(r));
+            let _ = ["after_bare"].iter().find_map(|k| v.get(k));
             let _ = matches!(s, "m1" | "m2");
             let _ = vec![field("in_vec")];
             match s { "arm" => {}, _ => {} }
@@ -1119,6 +1121,7 @@ mod tests {
             "arm",
             "inline_a",
             "inline_b",
+            "after_bare",
         ] {
             assert_eq!(got.get(exact), Some(&Match::Exact), "{exact}: {got:?}");
         }
