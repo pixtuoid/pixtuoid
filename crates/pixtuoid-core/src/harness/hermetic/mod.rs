@@ -1216,7 +1216,7 @@ trust_level = "trusted"
         source: "reasonix",
         package: Package::Npm("reasonix"),
         // A non-read-only tool is denied headless; this allows the ones the
-        // spawns need (`docs/CLI.md:501-502`, `:516-517`).
+        // spawns need (`docs/CLI.md:502-503`, `:517-519`).
         invocation: &[
             "reasonix",
             "--allowed-tools",
@@ -1282,7 +1282,7 @@ model = "deepseek-v4-flash"
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
             },
-            // A skill wrapper's child fires no SubagentStart or SubagentStop.
+            // A skill tool's child fires no SubagentStart or SubagentStop.
             Scenario {
                 name: "explore",
                 shape: Shape::Subagent,

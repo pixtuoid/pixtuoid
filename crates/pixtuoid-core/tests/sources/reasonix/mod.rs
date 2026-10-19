@@ -1,6 +1,6 @@
 //! reasonix's DELEGATING runs, recorded by the hermetic tier: a foreground
 //! `task` brackets its child with `SubagentStart`/`SubagentStop`, a skill
-//! wrapper (`explore`) brackets nothing, and either child's hooks carry a
+//! tool (`explore`) brackets nothing, and either child's hooks carry a
 //! session id of its own, so each run is two sprites and cannot sit under the
 //! conformance one-AgentId rule.
 

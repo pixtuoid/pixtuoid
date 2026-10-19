@@ -1597,8 +1597,7 @@ mod tests {
             ),
             turn_end(child),
         ];
-        let (judged, unended) = (subagent_findings, child_unended);
-        assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        assert_eq!(subagent_findings(&run, ChildEndInference::Durable), vec![]);
         for (reaches, missing) in [
             (
                 [(parent, Reach::Active), (parent, Reach::Delegating)],
@@ -1622,7 +1621,7 @@ mod tests {
             .chain([turn_end(parent)])
             .collect();
         assert!(
-            unended(&parent_turn, ChildEndInference::Durable),
+            child_unended(&parent_turn, ChildEndInference::Durable),
             "only the child's own turn ends it"
         );
         for inference in [
@@ -1630,13 +1629,17 @@ mod tests {
             ChildEndInference::TaskDrain,
             ChildEndInference::AnyTaskEnd,
         ] {
-            assert!(unended(&run, inference), "{inference:?}");
+            assert!(child_unended(&run, inference), "{inference:?}");
             let mut ended = run.clone();
             ended.push(AgentEvent::SessionEnd {
                 agent_id: child,
                 as_child: true,
             });
-            assert_eq!(judged(&ended, inference), vec![], "{inference:?}");
+            assert_eq!(
+                subagent_findings(&ended, inference),
+                vec![],
+                "{inference:?}"
+            );
         }
     }
 
