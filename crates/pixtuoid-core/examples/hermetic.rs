@@ -41,6 +41,7 @@ mod run {
         Package, PerOs, Profile, SCENE_LOG, STEPS, Scenario, Step, StepRecord, Surface, TUI_LOG,
         USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
+    use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
@@ -282,6 +283,9 @@ mod run {
             std::process::exit(2);
         }
         let tier = tier_dir()?;
+        // Every run of this build shares the tier's runs, shim and installs.
+        std::fs::create_dir_all(&tier)?;
+        let _tier = hold_lock(&tier.join(TIER_LOCK))?;
         let runs = tier.join("runs");
         match std::fs::remove_dir_all(&runs) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -289,12 +293,6 @@ mod run {
         }
         std::fs::create_dir_all(&runs)?;
         let built = Built::find()?;
-        // Every recording writes the one canonical workspace, so recordings take
-        // turns; a replay runs in a workspace of its own.
-        let _recording = args
-            .record
-            .then(|| record_lock(&capture_root()?.join(RECORD_LOCK)))
-            .transpose()?;
         let ctx = Ctx {
             shim_dir: warmed_shim_dir(&tier, &built.shim)?,
             record: args.record,
@@ -1544,28 +1542,39 @@ mod run {
         aimock: Aimock,
     }
 
-    /// The file, under the capture root, whose lock a recording holds.
-    const RECORD_LOCK: &str = "pixtuoid-capture.lock";
+    /// The file in the tier whose lock each run of the tier holds.
+    const TIER_LOCK: &str = "hermetic.lock";
 
-    /// `path`'s lock, held until the returned file drops.
-    fn record_lock(path: &Path) -> std::io::Result<std::fs::File> {
-        let lock = std::fs::File::create(path)?;
-        lock.lock()?;
-        Ok(lock)
+    /// A replay's own workspace root, removed when its run drops, waiting out
+    /// a process still holding it as the recorder waits for the canonical one.
+    struct ReplayRoot(PathBuf);
+
+    impl Drop for ReplayRoot {
+        fn drop(&mut self) {
+            if let Err(e) =
+                remove_once_released(RELEASE_PATIENCE, || std::fs::remove_dir_all(&self.0))
+            {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "hermetic: left {}: {e}",
+                    self.0.display()
+                );
+            }
+        }
     }
 
     /// The workspace a run's CLI works in: the canonical one when it records,
-    /// whose path the fixtures carry, else one of its own under the same root,
-    /// which the returned directory holds and removes.
-    fn run_workspace(record: bool) -> std::io::Result<(Option<tempfile::TempDir>, PathBuf)> {
+    /// whose path the fixtures carry, else one of its own under the same root.
+    fn run_workspace(record: bool) -> std::io::Result<(Option<ReplayRoot>, PathBuf)> {
         if record {
             return Ok((None, capture_workspace()?));
         }
         let own = tempfile::Builder::new()
             .prefix("pixtuoid-run-")
-            .tempdir_in(capture_root()?)?;
-        let workspace = own.path().join(capture_workspace_tail());
-        Ok((Some(own), workspace))
+            .tempdir_in(capture_root()?)?
+            .keep();
+        let workspace = own.join(capture_workspace_tail());
+        Ok((Some(ReplayRoot(own)), workspace))
     }
 
     /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
@@ -1575,7 +1584,7 @@ mod run {
         p: &Profile,
         version: &Version,
         ports: Ports,
-    ) -> std::io::Result<((PathBuf, Option<tempfile::TempDir>), Installed, Sandbox)> {
+    ) -> std::io::Result<((PathBuf, Option<ReplayRoot>), Installed, Sandbox)> {
         let (own, workspace) = run_workspace(ctx.record)?;
         if let Some(found) = outside_config(
             p.system_config.here(),
@@ -1633,8 +1642,7 @@ mod run {
     struct Sandboxed {
         port: u16,
         workspace: PathBuf,
-        /// A replay's own workspace root, removed with the run.
-        _workspace_root: Option<tempfile::TempDir>,
+        _workspace_root: Option<ReplayRoot>,
         cli: Installed,
         sandbox: Sandbox,
     }
@@ -2864,11 +2872,7 @@ mod run {
                     "the recorder clears only a capture base: {ws:?}"
                 );
             }
-            let root = second
-                .as_ref()
-                .expect("a replay owns its root")
-                .path()
-                .to_path_buf();
+            let root = second.as_ref().expect("a replay owns its root").0.clone();
             assert!(root.is_dir());
             drop(second);
             assert!(!root.exists(), "a replay's root goes with it");
@@ -2876,17 +2880,6 @@ mod run {
             let (none, canonical) = run_workspace(true).expect("a recording's workspace");
             assert!(none.is_none());
             assert_eq!(canonical, capture_workspace().expect("the canonical one"));
-        }
-
-        #[test]
-        fn a_recording_holds_its_lock_until_it_drops() {
-            let d = tempfile::tempdir().expect("tempdir");
-            let path = d.path().join(RECORD_LOCK);
-            let held = record_lock(&path).expect("the lock");
-            let other = std::fs::File::open(&path).expect("the lock file");
-            assert!(other.try_lock().is_err(), "a second recording waits");
-            drop(held);
-            assert!(other.try_lock().is_ok());
         }
 
         #[test]
