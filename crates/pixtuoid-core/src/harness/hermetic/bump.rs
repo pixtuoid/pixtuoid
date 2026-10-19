@@ -375,7 +375,7 @@ mod tests {
         };
         let skipped: Vec<_> = PROFILES
             .iter()
-            .filter(|p| !scanned(p))
+            .filter(|p| p.live.is_none() && !scanned(p))
             .map(|p| p.source)
             .collect();
         // omp's rounds fold their hook keys per platform, so no conformance

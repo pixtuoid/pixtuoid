@@ -1,5 +1,5 @@
-//! Run each profiled agent CLI for real against a scripted model (aimock), with
-//! a headless pixtuoid on the same run, and judge what pixtuoid made of it.
+//! Run each profiled agent CLI for real, against a scripted model (aimock) or as
+//! its live tier, with a headless pixtuoid on the same run, and judge the result.
 //! Profiles, scripts and the judgement: `pixtuoid_core::harness::hermetic`.
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
@@ -36,8 +36,9 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, HostConfig, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
-        Profile, SCENE_LOG, Scenario, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        self, DUMMY_KEY, HostConfig, LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST,
+        Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, Scenario, Surface,
+        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
     };
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
@@ -178,7 +179,7 @@ mod run {
     impl Args {
         /// Refuses what no run could honor: a selection that names nothing
         /// runnable is an operator's typo, not a run where everything was blocked.
-        fn check(&self) -> Result<(), String> {
+        fn check(&self, windows: bool) -> Result<(), String> {
             if let Some(why) = CORPUS_REFUSAL.filter(|_| self.record) {
                 return Err(format!("--record: {why}"));
             }
@@ -196,11 +197,35 @@ mod run {
             }
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
-            match self.scenario.as_deref() {
-                Some(sc) if !p.scenarios.iter().any(|s| s.shape.name() == sc) => {
-                    Err(format!("{source} has no scenario {sc}"))
+            if self.record && p.live.is_some() {
+                return Err(format!(
+                    "--record: {source}'s live tier records no capture, and only one moves its pin"
+                ));
+            }
+            let Some(sc) = self.scenario.as_deref() else {
+                if p.runs_on(windows) {
+                    return Ok(());
                 }
-                _ => Ok(()),
+                let why = p.live.as_ref().and_then(|l| l.not_run_on(windows));
+                return Err(format!(
+                    "{source} doesn't run here: {}",
+                    why.unwrap_or("none of its scenarios does")
+                ));
+            };
+            if let (LIVE, Some(live)) = (sc, &p.live) {
+                return match live.not_run_on(windows) {
+                    Some(why) => Err(format!("{source}/{LIVE} doesn't run here: {why}")),
+                    None => Ok(()),
+                };
+            }
+            let s = p
+                .scenarios
+                .iter()
+                .find(|s| s.shape.name() == sc)
+                .ok_or_else(|| format!("{source} has no scenario {sc}"))?;
+            match s.not_run_on(windows) {
+                Some(why) => Err(format!("{source}/{sc} doesn't run here: {why}")),
+                None => Ok(()),
             }
         }
 
@@ -256,7 +281,7 @@ mod run {
                 std::process::exit(2);
             }
         };
-        if let Err(e) = args.check() {
+        if let Err(e) = args.check(cfg!(windows)) {
             eprintln!("{e}");
             std::process::exit(2);
         }
@@ -281,7 +306,12 @@ mod run {
             entries.extend(ran);
             moved.extend(now);
         }
-        let report = report(&args.versions, &host_tool_versions(), &entries);
+        let report = report(
+            &args.versions,
+            &host_tool_versions(),
+            &entries,
+            &not_run(cfg!(windows)),
+        );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
         println!("\n{report}");
@@ -296,11 +326,11 @@ mod run {
         p: &Profile,
         runs: &Path,
     ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
-        let selected: Vec<&Scenario> = p
-            .scenarios
-            .iter()
-            .filter(|s| args.selects(p.source, s.shape.name()))
-            .collect();
+        if let Some(live) = &p.live {
+            return run_live(ctx, args, p, live, runs);
+        }
+        let windows = cfg!(windows);
+        let selected = selected(args, p, windows);
         let mut entries = Vec::new();
         if selected.is_empty() {
             return Ok((entries, None));
@@ -348,14 +378,16 @@ mod run {
             banners.extend(banner.clone());
             entries.push(Entry::new(key, banner, verdict));
         }
-        if !judges_source(&judged, p.scenarios.len()) {
+        if !judges_leg(p, &judged, windows) {
             return Ok((entries, None));
         }
-        let key = format!("{} (every scenario)", p.source);
-        println!("== {key}");
-        let verdict = verify::verify_source(p, &judged)?;
-        passed &= verdict.label() == Label::Pass;
-        entries.push(Entry::new(key, None, verdict));
+        if judges_source(&judged, p.scenarios.len()) {
+            let key = format!("{} (every scenario)", p.source);
+            println!("== {key}");
+            let verdict = verify::verify_source(p, &judged)?;
+            passed &= verdict.label() == Label::Pass;
+            entries.push(Entry::new(key, None, verdict));
+        }
         let mut moved = None;
         if let (Ok(installed), true) = (&installed, passed) {
             match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
@@ -387,6 +419,110 @@ mod run {
         Ok((entries, moved))
     }
 
+    /// The name a [`Live`] run is selected and reported by.
+    const LIVE: &str = "live";
+
+    /// The live tier's own log, beside its run.
+    const LIVE_LOG: &str = "live.log";
+
+    /// `p`'s [`Live`] run, when `args` selects it and this leg runs it: its CLI
+    /// installed as a scenario's is, then its tier driven against this build. It
+    /// records no capture, so no pin moves on it
+    /// (`a_recorded_capture_anchors_its_sources_verified_version`).
+    fn run_live(
+        ctx: &Ctx,
+        args: &Args,
+        p: &Profile,
+        live: &Live,
+        runs: &Path,
+    ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
+        if !args.selects(p.source, LIVE) || live.not_run_on(cfg!(windows)).is_some() {
+            return Ok((Vec::new(), None));
+        }
+        let key = format!("{}/{LIVE}", p.source);
+        println!("== {key}");
+        let dir = runs.join(p.source).join(LIVE);
+        std::fs::create_dir_all(&dir)?;
+        let ran = match resolve(p, &args.versions) {
+            Ok(v) => live_once(ctx, p, live, &v, &dir),
+            Err(e) => Err(std::io::Error::other(e)),
+        };
+        let (banner, verdict) = match ran {
+            Ok((banner, verdict)) => (Some(banner), verdict),
+            Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
+        };
+        Ok((vec![Entry::new(key, banner, verdict)], None))
+    }
+
+    /// What `live`'s exit `code` says: [`LIVE_PREREQUISITE`] is a missing
+    /// prerequisite, which no run of the build caused.
+    fn live_verdict(live: &Live, code: Option<i32>) -> Verdict {
+        match code {
+            Some(0) => Verdict::new(vec![]),
+            Some(LIVE_PREREQUISITE) => Verdict::new(vec![(
+                Label::Blocked,
+                format!("{} found a prerequisite missing ({LIVE_LOG})", live.script),
+            )]),
+            _ => Verdict::new(vec![(
+                Label::Fail,
+                format!("{} exited {code:?} ({LIVE_LOG})", live.script),
+            )]),
+        }
+    }
+
+    /// One run of `live`'s tier under the sandbox, on ports free now: what the
+    /// CLI's `--version` answered, and what the tier's exit says.
+    fn live_once(
+        ctx: &Ctx,
+        p: &Profile,
+        live: &Live,
+        version: &Version,
+        dir: &Path,
+    ) -> std::io::Result<(String, Verdict)> {
+        let ports = free_ports(live.ports)?;
+        // No model runs; a live profile's env spells no `{port}`, pinned by
+        // `a_live_tier_takes_the_ports_the_build_and_the_exit_it_is_given`.
+        let (_, cli, sandbox) = sandboxed(ctx, p, version, ports[0])?;
+        let banner = cli_version(&sandbox, p, &cli.launch)?;
+        let status = sandbox
+            .command("bash")
+            .arg(bump::repo_root().join(live.script))
+            .args(ports.iter().map(u16::to_string))
+            .env(LIVE_PIXTUOID_ENV, &ctx.built.pixtuoid)
+            .current_dir(sandbox.dir.path())
+            .stdout(log(dir, LIVE_LOG)?)
+            .stderr(log(dir, LIVE_LOG)?)
+            .status()?;
+        Ok((banner, live_verdict(live, status.code())))
+    }
+
+    /// `p`'s scenarios `args` selects that a leg on `windows` runs.
+    fn selected<'a>(args: &Args, p: &'a Profile, windows: bool) -> Vec<&'a Scenario> {
+        p.scenarios
+            .iter()
+            .filter(|s| args.selects(p.source, s.shape.name()))
+            .filter(|s| s.not_run_on(windows).is_none())
+            .collect()
+    }
+
+    /// Every run a leg on `windows` never makes, and why, as the report names it.
+    fn not_run(windows: bool) -> Vec<String> {
+        PROFILES
+            .iter()
+            .flat_map(|p| {
+                let scenarios = p.scenarios.iter().filter_map(move |s| {
+                    let why = s.not_run_on(windows)?;
+                    Some(format!("{}/{} ({why})", p.source, s.shape.name()))
+                });
+                let live = p.live.as_ref().and_then(|l| {
+                    let why = l.not_run_on(windows)?;
+                    Some(format!("{}/{LIVE} ({why})", p.source))
+                });
+                scenarios.chain(live)
+            })
+            .collect()
+    }
+
     fn run_dir(runs: &Path, p: &Profile, scenario: &Scenario) -> PathBuf {
         runs.join(p.source).join(scenario.shape.name())
     }
@@ -410,6 +546,17 @@ mod run {
         Ok(())
     }
 
+    /// Whether a leg on `windows` may move `p` on its `judged` runs: once they
+    /// are every scenario it runs, though only one that ran them all takes the
+    /// census ([`judges_source`]).
+    fn judges_leg(p: &Profile, judged: &[PathBuf], windows: bool) -> bool {
+        let leg = p
+            .scenarios
+            .iter()
+            .filter(|s| s.not_run_on(windows).is_none());
+        judged.len() == leg.count()
+    }
+
     /// Whether `verify_source` takes a source's `judged` runs: only when they are
     /// every one of its `scenarios`, since a subset, one selected or one Blocked,
     /// fails on a field only another carries.
@@ -420,10 +567,10 @@ mod run {
     /// The run's report, beside the runs; its H1 is the tracking issue's title.
     const REPORT: &str = "report.md";
 
-    /// One section of the report: a scenario's run, or a source's runs together.
+    /// One section of the report: one run, or a source's runs together.
     struct Entry {
         key: String,
-        /// The CLI's `--version`, for a scenario's run.
+        /// The CLI's `--version`, for one run.
         version: Option<String>,
         verdict: Verdict,
     }
@@ -462,7 +609,12 @@ mod run {
             .collect()
     }
 
-    fn report(versions: &Versions, host: &[String], entries: &[Entry]) -> String {
+    fn report(
+        versions: &Versions,
+        host: &[String],
+        entries: &[Entry],
+        not_run: &[String],
+    ) -> String {
         let which = match versions {
             Versions::Pinned => "verified",
             Versions::Latest => "latest",
@@ -491,6 +643,9 @@ mod run {
         out += "\nNot covered:";
         for (source, absence) in NOT_HERMETIC {
             out += &format!(" {source} ({absence:?})");
+        }
+        if !not_run.is_empty() {
+            out += &format!("\nNot run here: {}", not_run.join(" "));
         }
         out + "\n"
     }
@@ -1314,19 +1469,14 @@ mod run {
         aimock: Aimock,
     }
 
-    fn run_one(
+    /// `p`'s CLI at `version` installed and sandboxed, with the workspace it
+    /// runs in; `port` is the scripted model's, which `{port}` names.
+    fn sandboxed(
         ctx: &Ctx,
         p: &Profile,
-        scenario: &Scenario,
         version: &Version,
-        dir: &Path,
-    ) -> std::io::Result<Manifest> {
-        let Ctx {
-            tier,
-            built,
-            shim_dir,
-            aimock,
-        } = ctx;
+        port: u16,
+    ) -> std::io::Result<(PathBuf, Installed, Sandbox)> {
         let workspace = capture_workspace()?;
         if let Some(found) = outside_config(
             p.system_config.here(),
@@ -1339,9 +1489,21 @@ mod run {
                 p.source
             )));
         }
-        let cli = install_cli(tier, p, version)?;
+        let cli = install_cli(&ctx.tier, p, version)?;
+        let sandbox = Sandbox::new(p, &ctx.shim_dir, &cli.bin, port, &workspace)?;
+        Ok((workspace, cli, sandbox))
+    }
+
+    fn run_one(
+        ctx: &Ctx,
+        p: &Profile,
+        scenario: &Scenario,
+        version: &Version,
+        dir: &Path,
+    ) -> std::io::Result<Manifest> {
+        let Ctx { built, aimock, .. } = ctx;
         let port = free_port()?;
-        let sandbox = Sandbox::new(p, shim_dir, &cli.bin, port, &workspace)?;
+        let (workspace, cli, sandbox) = sandboxed(ctx, p, version, port)?;
 
         let connect = sandbox
             .command(&built.pixtuoid)
@@ -1721,6 +1883,14 @@ mod run {
         Ok(TcpListener::bind("127.0.0.1:0")?.local_addr()?.port())
     }
 
+    /// `n` ports free now, held together while picked so no two are one.
+    fn free_ports(n: usize) -> std::io::Result<Vec<u16>> {
+        let held = (0..n)
+            .map(|_| TcpListener::bind("127.0.0.1:0"))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        held.iter().map(|l| Ok(l.local_addr()?.port())).collect()
+    }
+
     fn wait_until(mut ready: impl FnMut() -> bool, what: &str) -> std::io::Result<()> {
         let started = Instant::now();
         while started.elapsed() < BOOT {
@@ -1780,6 +1950,46 @@ mod run {
         }
 
         #[test]
+        fn a_live_tier_s_exit_reads_pass_blocked_or_fail() {
+            let Some(live) = &hermetic::profile("openclaw").expect("openclaw").live else {
+                panic!("openclaw runs live");
+            };
+            let label = |code| live_verdict(live, code).label();
+            assert_eq!(label(Some(0)), Label::Pass);
+            assert_eq!(label(Some(LIVE_PREREQUISITE)), Label::Blocked);
+            assert_eq!(label(Some(1)), Label::Fail);
+            assert_eq!(label(None), Label::Fail, "a signal");
+        }
+
+        #[test]
+        fn a_windows_leg_runs_what_renders_under_conpty_and_names_the_rest() {
+            let grok = hermetic::profile("grok").expect("grok's profile");
+            let every = parse(&args(&[])).expect("parse");
+            let names = |windows| -> Vec<&str> {
+                selected(&every, grok, windows)
+                    .iter()
+                    .map(|s| s.shape.name())
+                    .collect()
+            };
+            assert_eq!(names(true), ["tool-run", "subagent"]);
+            assert_eq!(names(false), ["tool-run", "subagent", "permission"]);
+            assert!(not_run(false).is_empty());
+            let r = report(&Versions::Pinned, &[], &[], &not_run(true));
+            assert!(
+                r.ends_with(
+                    "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
+                     openclaw/live (its tier waits on a Unix socket)\n"
+                ),
+                "{r}"
+            );
+            assert!(!report(&Versions::Pinned, &[], &[], &[]).contains("Not run"));
+            let judged = |n| vec![PathBuf::new(); n];
+            assert!(judges_leg(grok, &judged(2), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(2), false));
+            assert!(judges_leg(grok, &judged(3), false));
+        }
+
+        #[test]
         fn the_reports_title_is_the_worst_verdict_or_that_nothing_ran() {
             let os = std::env::consts::OS;
             let host = ["git version 2.55.0".to_string()];
@@ -1795,7 +2005,7 @@ mod run {
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
                 )
             };
-            let r = report(&Versions::Latest, &host, &[pass, blocked()]);
+            let r = report(&Versions::Latest, &host, &[pass, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Blocked").as_str())
@@ -1803,7 +2013,7 @@ mod run {
             assert!(r.contains("Host: git version 2.55.0"), "{r}");
             assert!(r.contains("## opencode/tool-run: Blocked\n- Blocked: npm view failed"));
             assert!(r.contains("## codex/tool-run (codex-cli 0.155.1): Pass"));
-            let r = report(&Versions::Pinned, &host, &[blocked()]);
+            let r = report(&Versions::Pinned, &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, verified CLIs on {os}: NOTHING RAN").as_str())
@@ -1817,7 +2027,7 @@ mod run {
                     (Label::Script, "1 unmatched".into()),
                 ]),
             );
-            let r = report(&Versions::Latest, &host, &[lost, blocked()]);
+            let r = report(&Versions::Latest, &host, &[lost, blocked()], &[]);
             assert_eq!(
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
@@ -2340,19 +2550,41 @@ mod run {
 
         #[test]
         fn a_selection_naming_nothing_runnable_is_refused() {
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["codex"]).is_ok());
             assert!(check(&["codex", "tool-run"]).is_ok());
             assert!(check(&["codex", "no-such-scenario"]).is_err());
             assert!(check(&["no-such-source"]).is_err());
             let (absent, _) = NOT_HERMETIC[0];
             assert!(check(&[absent]).is_err(), "an unprofiled source says why");
+            let on = |windows| {
+                parse(&args(&["grok", "permission"]))
+                    .expect("parse")
+                    .check(windows)
+            };
+            assert!(on(false).is_ok());
+            let refused = on(true).expect_err("grok's TUI under ConPTY");
+            assert!(refused.contains("ConPTY"), "{refused}");
+            assert!(
+                check(&["openclaw", "tool-run"]).is_err(),
+                "a live profile's scenario"
+            );
+            assert!(
+                check(&["codex", LIVE]).is_err(),
+                "a scenario profile's live run"
+            );
+            for named in [&["openclaw"][..], &["openclaw", LIVE]] {
+                let check = |windows| parse(&args(named)).expect("parse").check(windows);
+                assert!(check(false).is_ok(), "{named:?}");
+                let refused = check(true).expect_err("a Unix-socket tier on Windows");
+                assert!(refused.contains("Unix socket"), "{refused}");
+            }
         }
 
         #[cfg(not(unix))]
         #[test]
         fn record_is_refused_off_unix() {
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             let refused = check(&["--record", "dsh"]).expect_err("the corpus pins Unix paths");
             assert!(refused.contains("Unix"), "{refused}");
         }
@@ -2363,9 +2595,12 @@ mod run {
             let a = parse(&args(&["--record", "--cli", "pinned", "dsh"])).expect("parse");
             assert!(a.record);
             assert_eq!(a.versions, Versions::Pinned);
-            let check = |v: &[&str]| parse(&args(v)).expect("parse").check();
+            let check = |v: &[&str]| parse(&args(v)).expect("parse").check(cfg!(windows));
             assert!(check(&["--record"]).is_ok());
             assert!(check(&["--record", "dsh"]).is_ok());
+            let refused =
+                check(&["--record", "openclaw"]).expect_err("a live tier records nothing");
+            assert!(refused.contains("live tier"), "{refused}");
             assert!(check(&["--cli", "latest", "--record", "dsh"]).is_ok());
             assert!(
                 check(&["--cli", "latest", "--record"]).is_err(),
