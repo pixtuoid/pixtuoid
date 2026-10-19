@@ -1,0 +1,22 @@
+{
+  "fixtures": [
+    {
+      "match": { "toolResultContains": "patch rejected" },
+      "response": {
+        "content": "pong",
+        "webSearches": ["pixtuoid"],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [],
+        "customToolCalls": [
+          { "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: HERMETIC.txt\n+hermetic\n*** End Patch\n" }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}
