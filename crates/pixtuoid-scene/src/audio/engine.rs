@@ -11,7 +11,7 @@ use super::bank::{
     DROP_GAIN, DROP_POOL, KEYSTROKE_GAIN, KEYSTROKE_POOL, ONE_SHOT_GAIN, OneShotPool,
 };
 use super::mixer::{DropScheduler, LoopStem, Mixer, TypingScheduler};
-use super::{AudioFrame, DROP_SEED, OneShot, PICK_SEED, StemLevels, TYPING_SEED};
+use super::{AudioFrame, Controls, DROP_SEED, OneShot, PICK_SEED, StemLevels, TYPING_SEED};
 
 /// dt ceiling (s): a bigger inter-tick gap (a starved native thread, a
 /// backgrounded wasm tab, a GC pause) is clamped so one tick can neither snap
@@ -35,6 +35,9 @@ pub struct TickCommands {
     pub gains: [f32; LoopStem::ALL.len()],
     /// One-shots to fire this tick.
     pub plays: Vec<PlayCmd>,
+    /// What the music is asked, `None` until the first frame: a stream that
+    /// starts sooner plays a day song at night.
+    pub music: Option<Controls>,
 }
 
 /// The per-tick audio state both backends share. Constructed once, then `tick`
@@ -48,6 +51,8 @@ pub struct AudioEngine {
     pick: NoiseStream,
     /// The last frame's target levels — held across a timeout tick (`None`).
     wanted: StemLevels,
+    /// The last frame's music, held the same way.
+    music: Option<Controls>,
     /// Monotonic scheduler clock (s), advanced by the passed (clamped) dt.
     sched_s: f64,
 }
@@ -61,6 +66,7 @@ impl AudioEngine {
             drops: DropScheduler::new(DROP_SEED),
             pick: NoiseStream::new(PICK_SEED),
             wanted: StemLevels::default(),
+            music: None,
             sched_s: 0.0,
         }
     }
@@ -83,6 +89,7 @@ impl AudioEngine {
 
         let events: Vec<OneShot> = if let Some(f) = frame {
             self.wanted = f.stems;
+            self.music = Some(f.music);
             f.events
         } else {
             Vec::new()
@@ -124,7 +131,11 @@ impl AudioEngine {
             });
         }
 
-        TickCommands { gains, plays }
+        TickCommands {
+            gains,
+            plays,
+            music: self.music,
+        }
     }
 }
 
@@ -132,12 +143,15 @@ impl AudioEngine {
 mod tests {
     use super::*;
 
-    /// The index of `stem` in a tick's `gains`.
-    fn at(stem: LoopStem) -> usize {
-        LoopStem::ALL
-            .iter()
-            .position(|s| *s == stem)
-            .expect("every stem is in ALL")
+    impl TickCommands {
+        /// `stem`'s gain in [`TickCommands::gains`].
+        fn gain(&self, stem: LoopStem) -> f32 {
+            LoopStem::ALL
+                .iter()
+                .zip(self.gains)
+                .find_map(|(s, g)| (*s == stem).then_some(g))
+                .expect("every stem has a gain")
+        }
     }
 
     fn busy_frame() -> AudioFrame {
@@ -147,6 +161,7 @@ mod tests {
                 typing: 0.8,
             },
             events: Vec::new(),
+            music: Controls::default(),
         }
     }
 
@@ -163,7 +178,7 @@ mod tests {
         let mut last_rain = 0.0;
         for _ in 0..200 {
             let cmd = e.tick(0.05, Some(busy_frame()));
-            last_rain = cmd.gains[at(LoopStem::Rain)];
+            last_rain = cmd.gain(LoopStem::Rain);
             typed += cmd
                 .plays
                 .iter()
@@ -197,7 +212,7 @@ mod tests {
         e.set_master(1.0);
         let mut rain = 0.0;
         for _ in 0..200 {
-            rain = e.tick(0.05, Some(busy_frame())).gains[at(LoopStem::Rain)];
+            rain = e.tick(0.05, Some(busy_frame())).gain(LoopStem::Rain);
         }
         assert!(rain > 0.0, "master up ramps the mix back");
     }
@@ -215,8 +230,23 @@ mod tests {
             "a None tick fires no scene one-shots"
         );
         assert!(
-            cmd.gains[at(LoopStem::Rain)] > 0.0,
+            cmd.gain(LoopStem::Rain) > 0.0,
             "the held rain keeps ramping on a None tick"
+        );
+    }
+
+    #[test]
+    fn the_music_waits_for_the_first_frame_then_holds_its_controls() {
+        let mut e = AudioEngine::new(1.0);
+        assert_eq!(e.tick(0.05, None).music, None, "no frame, no song");
+        let night = Controls::default().with_daylight(0.0);
+        let mut frame = busy_frame();
+        frame.music = night;
+        assert_eq!(e.tick(0.05, Some(frame)).music, Some(night));
+        assert_eq!(
+            e.tick(0.05, None).music,
+            Some(night),
+            "a timeout tick holds the last frame's music"
         );
     }
 
@@ -233,12 +263,15 @@ mod tests {
 
     #[test]
     fn the_dt_clamp_ceiling_stays_a_slew_while_an_unclamped_gap_would_snap() {
-        let one_tick =
-            |dt: f32| AudioEngine::new(1.0).tick(dt, Some(busy_frame())).gains[at(LoopStem::Rain)];
+        let one_tick = |dt: f32| {
+            AudioEngine::new(1.0)
+                .tick(dt, Some(busy_frame()))
+                .gain(LoopStem::Rain)
+        };
         let mut settled = AudioEngine::new(1.0);
         let mut full = 0.0;
         for _ in 0..500 {
-            full = settled.tick(0.05, Some(busy_frame())).gains[at(LoopStem::Rain)];
+            full = settled.tick(0.05, Some(busy_frame())).gain(LoopStem::Rain);
         }
         assert!(
             one_tick(MAX_DT_S) < full * 0.5,

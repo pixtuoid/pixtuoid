@@ -5,29 +5,47 @@ use pixtuoid_lofi::dsp::NoiseStream;
 
 use crate::audio::StemLevels;
 
-/// The looped stems the sink plays. `typing` is NOT here — it is a scheduled
-/// one-shot voice (`TypingScheduler`), not a loop.
+/// The continuous stems the sink plays: lofi's stream and the rain bed.
+/// `typing` is NOT here — it is a scheduled one-shot voice
+/// (`TypingScheduler`), not a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LoopStem {
+    Music,
     Rain,
 }
 
 impl LoopStem {
-    pub const ALL: [LoopStem; 1] = [LoopStem::Rain];
+    pub const ALL: [LoopStem; 2] = [LoopStem::Music, LoopStem::Rain];
 
-    fn level_of(self, s: &StemLevels) -> f32 {
+    /// This stem's gain under `s` at the volume `curve`.
+    fn goal(self, s: &StemLevels, curve: f32) -> f32 {
         match self {
-            LoopStem::Rain => s.rain,
+            // lofi masters the stream "at the listener's volume, with no
+            // further trim" (`Performance::render`).
+            LoopStem::Music => curve,
+            LoopStem::Rain => s.rain * curve * BUS_TRIM,
+        }
+    }
+
+    /// How far this stem's gain travels per second.
+    fn ramp_per_s(self) -> f32 {
+        match self {
+            LoopStem::Music => 1.0 / MUSIC_FADE_S,
+            LoopStem::Rain => RAMP_PER_S,
         }
     }
 }
 
-/// Full-scale gain travel per second — a tier change crossfades rather than
-/// stepping (the "office gets busier" feel, not a cut).
+/// Full-scale gain travel per second — a weather change crossfades rather
+/// than stepping.
 pub const RAMP_PER_S: f32 = 0.5;
 
-/// Master-bus trim under the user volume: ambient office sound must sit UNDER
-/// the user's real work/music.
+/// How long the music takes to travel its whole level, so a mute fades it
+/// no slower than [`RAMP_PER_S`] faded the loudest lane it replaced.
+const MUSIC_FADE_S: f32 = 0.5;
+
+/// The foley's trim under the volume curve: the office's sounds sit UNDER the
+/// user's real work audio. lofi stages its music at this level itself.
 const BUS_TRIM: f32 = 0.35;
 
 /// Per-stem gain ramps chasing the scene's target levels. Mute ramps to
@@ -64,29 +82,33 @@ impl Mixer {
         self.muted = muted;
     }
 
-    /// The USER volume (0..1) mapped to bus amplitude: a squared perceptual curve
-    /// (loudness is logarithmic) under the ambient BUS_TRIM. The ONE
-    /// volume→amplitude site; the footer keeps showing the user's linear percent.
-    fn master_amp(&self) -> f32 {
-        self.master * self.master * BUS_TRIM
+    /// The USER volume (0..1) mapped to amplitude: a squared perceptual curve
+    /// (loudness is logarithmic). The ONE volume→amplitude site; the footer
+    /// keeps showing the user's linear percent.
+    fn volume_curve(&self) -> f32 {
+        self.master * self.master
     }
 
     /// The scalar every one-shot's gain multiplies through — mute silences them
     /// instantly (one-shots are transient; no ramp needed).
     pub(crate) fn one_shot_gain(&self) -> f32 {
-        if self.muted { 0.0 } else { self.master_amp() }
+        if self.muted {
+            0.0
+        } else {
+            self.volume_curve() * BUS_TRIM
+        }
     }
 
     /// Advance every gain toward its target; returns `(stem, gain)` pairs
     /// for the sink. Never overshoots.
     pub(crate) fn step(&mut self, dt_s: f32) -> [(LoopStem, f32); LoopStem::ALL.len()] {
-        let max_delta = RAMP_PER_S * dt_s;
         let mut out = [(LoopStem::Rain, 0.0f32); LoopStem::ALL.len()];
         for (i, stem) in LoopStem::ALL.into_iter().enumerate() {
+            let max_delta = stem.ramp_per_s() * dt_s;
             let goal = if self.muted {
                 0.0
             } else {
-                stem.level_of(&self.target) * self.master_amp()
+                stem.goal(&self.target, self.volume_curve())
             };
             let cur = self.current[i];
             let next = if (goal - cur).abs() <= max_delta {
@@ -210,6 +232,50 @@ mod tests {
         let g = m.step(0.1);
         let rain = g.iter().find(|(s, _)| *s == LoopStem::Rain).unwrap().1;
         assert_eq!(rain, 0.8 * BUS_TRIM, "converged without overshoot");
+    }
+
+    fn gain(gains: &[(LoopStem, f32)], stem: LoopStem) -> f32 {
+        gains
+            .iter()
+            .find(|(s, _)| *s == stem)
+            .expect("every stem steps")
+            .1
+    }
+
+    #[test]
+    fn music_plays_at_the_volume_curve_and_foley_under_the_bus_trim() {
+        let mut m = Mixer::new(0.5);
+        m.set_target(levels(1.0, 0.0));
+        for _ in 0..200 {
+            m.step(0.1);
+        }
+        let g = m.step(0.1);
+        let curve = 0.5 * 0.5;
+        assert_eq!(gain(&g, LoopStem::Music), curve, "lofi masters the music");
+        assert!((gain(&g, LoopStem::Rain) - curve * BUS_TRIM).abs() < 1e-6);
+        assert!((m.one_shot_gain() - curve * BUS_TRIM).abs() < 1e-6);
+    }
+
+    /// The loudest lane the stream replaced, Moderate's texture at 0.84 of
+    /// the trimmed bus, faded at [`RAMP_PER_S`].
+    #[test]
+    fn a_mute_fades_the_music_no_slower_than_the_lanes_did() {
+        let lanes_fade_s = 0.84 * BUS_TRIM / RAMP_PER_S;
+        let dt = 0.01;
+        let mut m = Mixer::new(1.0);
+        for _ in 0..200 {
+            m.step(dt);
+        }
+        m.set_muted(true);
+        let mut faded_s = 0.0;
+        while gain(&m.step(dt), LoopStem::Music) > 0.0 {
+            faded_s += dt;
+        }
+        assert!(faded_s > 0.0, "a mute fades, never cuts");
+        assert!(
+            faded_s <= lanes_fade_s,
+            "{faded_s} s against the lanes' {lanes_fade_s} s"
+        );
     }
 
     #[test]

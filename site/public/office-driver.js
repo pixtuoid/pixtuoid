@@ -1,4 +1,5 @@
-// The shared wasm-`Office` driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus.
+// The shared wasm-`Office` driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
+// music.
 // Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so
 // they can't static-import a shared `src/` module — they dynamic-`import()` this
 // public ES module at boot instead.
@@ -82,4 +83,44 @@ export function audioBus(ctx, office) {
   const clamp = new WaveShaperNode(ctx, { curve: new Float32Array([-ceiling, ceiling]) });
   limiter.connect(trim).connect(clamp).connect(ctx.destination);
   return limiter;
+}
+
+// The ♩ music: the office's lofi stream, rendered in the audio worker (`urls.worker`, loading `urls.wasm`) and played
+// by the worklet (`urls.worklet`), the two joined by their own MessageChannel so the main thread stays off the audio
+// path. `controls` ([daylight, intensity, rain]) pick the first song. Resolves to the node to connect once the
+// worklet loads; rejects where there is no AudioWorklet. `primed` resolves on the worklet's first chunk, and
+// `failed` on the worker's death.
+export async function startMusic(ctx, urls, nowMs, controls) {
+  await ctx.audioWorklet.addModule(urls.worklet);
+  const node = new AudioWorkletNode(ctx, 'pix-music', {
+    numberOfInputs: 0,
+    outputChannelCount: [2],
+  });
+  const worker = new Worker(urls.worker, { type: 'module' });
+  const failed = new Promise(function (resolve) {
+    worker.onerror = resolve;
+    worker.onmessage = resolve;
+  });
+  const primed = new Promise(function (resolve) {
+    node.port.onmessage = function (e) {
+      if (e.data.primed) resolve();
+    };
+  });
+  const channel = new MessageChannel();
+  worker.postMessage({ wasmJsUrl: urls.wasm, music: { port: channel.port1, nowMs, controls } }, [
+    channel.port1,
+  ]);
+  node.port.postMessage({ source: channel.port2 }, [channel.port2]);
+  return {
+    node,
+    primed,
+    failed,
+    setControls(c) {
+      worker.postMessage({ controls: c });
+    },
+    stop() {
+      worker.terminate();
+      node.disconnect();
+    },
+  };
 }

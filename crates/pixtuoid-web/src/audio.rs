@@ -76,7 +76,7 @@ impl WebAudioDriver {
     pub(crate) fn loop_buffer(&self, idx: usize) -> &[f32] {
         match LoopStem::ALL.get(idx) {
             Some(LoopStem::Rain) => self.rain.as_deref().map(Vec::as_slice).unwrap_or(&[]),
-            None => &[],
+            Some(LoopStem::Music) | None => &[],
         }
     }
 
@@ -140,14 +140,14 @@ impl Adoption {
         }
     }
 
-    /// Loop stem `idx` in `LoopStem::ALL` order; a stem twice aborts.
+    /// Loop stem `idx` in `LoopStem::ALL` order, as [`WebAudioDriver::loop_buffer`]
+    /// reads it; a stem twice, or a buffer the stem doesn't have, aborts.
     pub(crate) fn push_loop(&mut self, idx: usize, samples: &[f32]) -> bool {
-        if samples.is_empty() {
-            return false;
-        }
         match LoopStem::ALL.get(idx) {
+            // The music streams from the worker; it has no bed.
+            Some(LoopStem::Music) => samples.is_empty(),
             Some(LoopStem::Rain) => {
-                if self.rain.is_some() {
+                if self.rain.is_some() || samples.is_empty() {
                     return false;
                 }
                 self.rain = Some(Arc::new(samples.to_vec()));
@@ -189,7 +189,17 @@ pub(crate) fn commands_json(cmd: &TickCommands) -> String {
             fmt_f32(p.gain)
         ));
     }
-    out.push_str("]}");
+    out.push_str("],\"music\":");
+    match cmd.music {
+        Some(c) => out.push_str(&format!(
+            "[{},{},{}]",
+            fmt_f32(c.daylight),
+            fmt_f32(c.intensity),
+            fmt_f32(c.rain)
+        )),
+        None => out.push_str("null"),
+    }
+    out.push('}');
     out
 }
 
@@ -230,6 +240,7 @@ mod tests {
                 0.5,
             ),
             events: Vec::new(),
+            music: pixtuoid_scene::audio::Controls::default().with_daylight(0.0),
         }
     }
 
@@ -291,9 +302,23 @@ mod tests {
                     gain: 0.5,
                 },
             ],
+            music: Some(
+                pixtuoid_scene::audio::Controls::default()
+                    .with_daylight(0.25)
+                    .with_intensity(1.0)
+                    .with_rain(0.5),
+            ),
         };
         let json = commands_json(&cmd);
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(
+            v["music"],
+            serde_json::json!([0.25, 1.0, 0.5]),
+            "daylight, intensity, rain"
+        );
+        let silent: serde_json::Value =
+            serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
+        assert!(silent["music"].is_null(), "no frame, no song");
         assert_eq!(v["gains"].as_array().unwrap().len(), LoopStem::ALL.len());
         assert_eq!(v["gains"][at(LoopStem::Rain)].as_f64().unwrap(), 0.35);
         assert_eq!(v["plays"][0][0], 0, "keystroke wire = 0");
@@ -344,6 +369,11 @@ mod tests {
                 .count();
         }
         assert!(last_rain > 0.0, "rain gain ramped up");
+        assert_eq!(
+            d.tick(now + 50.0, busy_rainy()).music,
+            Some(busy_rainy().music),
+            "the frame's music goes out with the tick"
+        );
         assert!(
             typed > 0,
             "the typing scheduler fired keystrokes for a busy office"
@@ -445,6 +475,10 @@ mod tests {
         assert!(
             !ad.push_loop(at(LoopStem::Rain), &[]),
             "empty buffers are refused"
+        );
+        assert!(
+            !ad.push_loop(at(LoopStem::Music), rain),
+            "the music takes no bed"
         );
         let mut ad = adopt_all_of(&src);
         assert!(

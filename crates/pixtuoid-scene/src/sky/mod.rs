@@ -475,12 +475,6 @@ pub(crate) fn weather_names() -> Vec<&'static str> {
     Weather::ALL.iter().map(|w| w.name()).collect()
 }
 
-/// How hard it is raining at `now` under `policy` (0.0 dry … 1.0 storm; snow
-/// and fog are 0.0): the audio model's weather feed.
-pub(crate) fn rain_at(now: SystemTime, policy: WeatherPolicy) -> f32 {
-    Sky::at(crate::anim::Motion::Full.timing(now), policy).rain()
-}
-
 /// What a wall clock reads at `now`, local time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ClockReading {
@@ -547,6 +541,11 @@ pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
 pub fn nightfall_on(day: SystemTime) -> Option<SystemTime> {
     let minutes = (SUN_SET_H * 60.0).round() as u32;
     crate::localclock::on_date_of(day, minutes / 60, minutes % 60)
+}
+
+/// The daylight a sky `nightfall` into the night shows the music.
+fn daylight(nightfall: f32) -> f32 {
+    1.0 - nightfall
 }
 
 /// How far into the night hour `h` is, 0..=1: zero by day, rising over
@@ -882,6 +881,12 @@ impl Sky {
     /// [`nightfall`] at this instant.
     pub(crate) fn nightfall(&self) -> f32 {
         self.nightfall
+    }
+
+    /// The music's daylight at this instant: the sun's alone, since a
+    /// weather-dimmed light would flip a storm's songs to the night family.
+    pub(crate) fn daylight(&self) -> f32 {
+        daylight(self.nightfall)
     }
 
     /// The lightning envelope at this instant: its strike's level, or 0.

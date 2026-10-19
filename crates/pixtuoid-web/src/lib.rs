@@ -27,7 +27,8 @@ use crate::script::{
     Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
-use pixtuoid_scene::audio::OneShotPool;
+use pixtuoid_scene::audio::mixer::LoopStem;
+use pixtuoid_scene::audio::{Controls, Frame, OneShotPool, Performance};
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
@@ -413,15 +414,24 @@ impl Office {
         pixtuoid_scene::audio::LIMITER_RELEASE.as_secs_f32()
     }
 
-    /// How many loop stems a tick's `gains` carry:
+    /// How many stems a tick's `gains` carry:
     /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)'s.
     pub fn audio_loop_count(&self) -> usize {
-        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+        LoopStem::ALL.len()
+    }
+
+    /// The music's index in a tick's `gains`, the GainNode the worklet plays
+    /// into.
+    pub fn audio_music_stem(&self) -> usize {
+        LoopStem::ALL
+            .iter()
+            .position(|s| *s == LoopStem::Music)
+            .unwrap_or_default()
     }
 
     /// Zero-copy pointer/length into the looping bed samples for stem `idx`, in
-    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order.
-    /// RE-READ after warmup completes.
+    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) order;
+    /// empty for the music, which streams. RE-READ after warmup completes.
     pub fn audio_loop_ptr(&self, idx: usize) -> *const f32 {
         self.audio
             .as_ref()
@@ -447,9 +457,10 @@ impl Office {
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
     /// same as `step`) and return the JS glue commands as JSON:
-    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…]}`, one gain per
-    /// [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL) stem — JS
-    /// ramps each GainNode to its gain and spawns the one-shots.
+    /// `{"gains":[g…],"plays":[[poolWire,idx,gain],…],"music":[daylight,intensity,rain]|null}`,
+    /// one gain per [`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)
+    /// stem — JS ramps each GainNode to its gain, spawns the one-shots and
+    /// hands the music's controls to its worker (`null` until the first frame).
     pub fn audio_tick(&mut self, now_ms: f64) -> String {
         let silent = || audio::commands_json(&pixtuoid_scene::audio::TickCommands::default());
         let Some(now) = self.last_now else {
@@ -547,7 +558,7 @@ impl SynthTake {
     /// The loop-stem count — loops aren't self-terminating like the one-shot
     /// pools, so JS can't discover the copy-out bound itself.
     pub fn loop_count(&self) -> usize {
-        pixtuoid_scene::audio::mixer::LoopStem::ALL.len()
+        LoopStem::ALL.len()
     }
 
     /// Zero-copy reads, same contract as the `Office::audio_*` getters — the
@@ -565,6 +576,52 @@ impl SynthTake {
     }
     pub fn oneshot_len(&self, pool: u8, idx: usize) -> usize {
         OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
+    }
+}
+
+/// The music's producer for the audio worker: one lofi `Performance`,
+/// rendered in chunks the worker copies out to the worklet.
+#[wasm_bindgen]
+#[derive(Debug)]
+pub struct MusicStream {
+    performance: Performance,
+    frames: Vec<Frame>,
+}
+
+/// The controls JS hands over as `[daylight, intensity, rain]`.
+fn controls(daylight: f32, intensity: f32, rain: f32) -> Controls {
+    Controls::default()
+        .with_daylight(daylight)
+        .with_intensity(intensity)
+        .with_rain(rain)
+}
+
+#[wasm_bindgen]
+impl MusicStream {
+    /// A stream starting at `now_ms` (UNIX-epoch milliseconds, the
+    /// `Office::step` contract) under the office's first controls, which pick
+    /// its first song.
+    #[wasm_bindgen(constructor)]
+    pub fn new(now_ms: f64, daylight: f32, intensity: f32, rain: f32) -> MusicStream {
+        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
+        MusicStream {
+            performance: Performance::new(seed, controls(daylight, intensity, rain)),
+            frames: Vec::new(),
+        }
+    }
+
+    /// The office's latest controls, which the next bar latches.
+    pub fn set_controls(&mut self, daylight: f32, intensity: f32, rain: f32) {
+        self.performance
+            .set_controls(controls(daylight, intensity, rain));
+    }
+
+    /// Render the next `frames` frames and return where their `2 × frames`
+    /// interleaved samples sit, valid until the next wasm call.
+    pub fn render(&mut self, frames: usize) -> *const f32 {
+        self.frames.resize(frames, Frame::default());
+        self.performance.render(&mut self.frames);
+        self.frames.as_flattened().as_ptr()
     }
 }
 
@@ -852,6 +909,33 @@ mod tests {
                 "stem {i} is deterministic"
             );
         }
+    }
+
+    /// The worker's stream plays the song its first controls pick, chunk
+    /// after chunk with no seam.
+    #[test]
+    fn a_music_stream_renders_the_performance_its_first_controls_pick() {
+        let now_ms = 1_753_000_000_000.0;
+        let night = controls(0.0, 1.0, 0.0);
+        let mut stream = MusicStream::new(now_ms, night.daylight, night.intensity, night.rain);
+        let mut heard = Vec::new();
+        for n in [1000, 3000] {
+            let ptr = stream.render(n);
+            assert_eq!(ptr, stream.frames.as_flattened().as_ptr());
+            heard.extend_from_slice(&stream.frames);
+        }
+        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
+        let performed = |c| {
+            let mut want = vec![Frame::default(); heard.len()];
+            Performance::new(seed, c).render(&mut want);
+            want
+        };
+        assert_eq!(heard, performed(night));
+        assert_ne!(
+            heard,
+            performed(Controls::default()),
+            "premise: a day start differs"
+        );
     }
 
     /// Anchor sim time well past 0 so `exiting_at`-style guards never see the

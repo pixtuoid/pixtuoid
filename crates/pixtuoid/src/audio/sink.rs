@@ -8,9 +8,13 @@ use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::audio::{CEILING_DBFS, LIMITER_ATTACK, LIMITER_RELEASE, ceiling_amplitude};
 use rodio::source::{LimitSettings, Source};
 
+use super::music::MusicReader;
+
 pub(crate) trait AudioSink: Send {
     /// Start `stem` looping `samples` (mono f32 at [`pixtuoid_scene::audio::SAMPLE_RATE`]) at gain 0.
     fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>);
+    /// Play the music `reader` hands out, for the sink's whole life.
+    fn start_music(&mut self, reader: MusicReader);
     /// Set a looping stem's gain (0..=1, already master-scaled).
     fn set_loop_gain(&mut self, stem: LoopStem, gain: f32);
     /// Fire-and-forget: the one-shot is detached, never tracked.
@@ -22,6 +26,7 @@ pub(crate) trait AudioSink: Send {
 #[derive(Default)]
 pub(crate) struct NullSink {
     pub(crate) loops_started: Vec<LoopStem>,
+    pub(crate) music: Option<MusicReader>,
     pub(crate) one_shots: usize,
 }
 
@@ -29,6 +34,9 @@ pub(crate) struct NullSink {
 impl AudioSink for NullSink {
     fn start_loop(&mut self, stem: LoopStem, _samples: Arc<Vec<f32>>) {
         self.loops_started.push(stem);
+    }
+    fn start_music(&mut self, reader: MusicReader) {
+        self.music = Some(reader);
     }
     fn set_loop_gain(&mut self, _stem: LoopStem, _gain: f32) {}
     fn play_once(&mut self, _samples: Arc<Vec<f32>>, gain: f32) {
@@ -45,6 +53,52 @@ pub(crate) fn mono(samples: &[f32]) -> rodio::buffer::SamplesBuffer {
     let rate =
         std::num::NonZero::new(pixtuoid_scene::audio::SAMPLE_RATE).expect("SAMPLE_RATE != 0");
     rodio::buffer::SamplesBuffer::new(channels, rate, samples)
+}
+
+/// The music as a rodio source: interleaved stereo at
+/// [`pixtuoid_scene::audio::SAMPLE_RATE`], endless, so the bus's converter is
+/// built once (`rodio::source::UniformSourceIterator` rebuilds it per span).
+pub(crate) struct MusicSource {
+    reader: MusicReader,
+    /// The right sample of the frame whose left one went out last.
+    right: Option<f32>,
+}
+
+impl MusicSource {
+    pub(crate) fn new(reader: MusicReader) -> Self {
+        Self {
+            reader,
+            right: None,
+        }
+    }
+}
+
+impl Iterator for MusicSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        if let Some(right) = self.right.take() {
+            return Some(right);
+        }
+        let [left, right] = self.reader.next_frame();
+        self.right = Some(right);
+        Some(left)
+    }
+}
+
+impl Source for MusicSource {
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> rodio::ChannelCount {
+        std::num::NonZero::new(2).expect("2 != 0")
+    }
+    fn sample_rate(&self) -> rodio::SampleRate {
+        std::num::NonZero::new(pixtuoid_scene::audio::SAMPLE_RATE).expect("SAMPLE_RATE != 0")
+    }
+    fn total_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
 }
 
 /// `source` held under [`CEILING_DBFS`]: the one output stage of the device's
@@ -153,6 +207,12 @@ pub(crate) mod rodio_sink {
     }
 
     impl AudioSink for RodioSink {
+        fn start_music(&mut self, reader: MusicReader) {
+            // Straight onto the bus: a `Player` locks its controls on the
+            // device callback every 5 ms (`rodio::Player::append`).
+            self.bus.add(MusicSource::new(reader));
+        }
+
         fn start_loop(&mut self, stem: LoopStem, samples: Arc<Vec<f32>>) {
             let player = rodio::Player::connect_new(&self.bus);
             player.set_volume(0.0);
