@@ -1,6 +1,6 @@
 //! Run each profiled agent CLI for real, against a scripted model (aimock) or as
-//! its live tier, with a headless pixtuoid on the same run, and through its
-//! install's lifecycle (`<source> lifecycle`), and judge the result.
+//! its live tier, with a headless pixtuoid on the same run, a scenario profile's
+//! install through its lifecycle too (`<source> lifecycle`), and judge the result.
 //! Profiles, scripts and the judgement: `pixtuoid_core::harness::hermetic`.
 //!
 //! `--cli pinned` (the default) installs each CLI at its registry
@@ -408,6 +408,12 @@ mod run {
             let verdict = match run {
                 Some(run) => match run_lifecycle(ctx, p, scenario, &run, &dir) {
                     Ok(_) => verify::verify_lifecycle(&dir)?,
+                    // The steps' record is judged though the turn after them failed.
+                    Err(e) if dir.join(LIFECYCLE_RECORD).is_file() => {
+                        let mut findings = verify::verify_lifecycle(&dir)?.findings().to_vec();
+                        findings.push((Label::Blocked, e.to_string()));
+                        Verdict::new(findings)
+                    }
                     Err(e) => Verdict::new(vec![(Label::Blocked, e.to_string())]),
                 },
                 None => Verdict::new(vec![(
@@ -553,7 +559,12 @@ mod run {
         if args.record || !args.selects(p.source, LIFECYCLE) {
             return None;
         }
-        p.scenarios
+        headless_first(p.scenarios, windows)
+    }
+
+    /// The first of `scenarios` a leg on `windows` runs, a headless one first.
+    fn headless_first(scenarios: &[Scenario], windows: bool) -> Option<&Scenario> {
+        scenarios
             .iter()
             .filter(|s| s.not_run_on(windows).is_none())
             .min_by_key(|s| !matches!(s.surface, Surface::Headless))
@@ -2692,19 +2703,29 @@ mod run {
 
         #[test]
         fn the_lifecycle_turns_a_headless_scenario_and_never_records() {
-            let all = parse(&args(&[])).expect("parse");
-            for p in PROFILES.iter().filter(|p| !p.scenarios.is_empty()) {
-                let s = lifecycle_turn(&all, p, false).expect("a scenario to turn");
-                if p.scenarios
-                    .iter()
-                    .any(|s| matches!(s.surface, Surface::Headless))
-                {
-                    assert!(matches!(s.surface, Surface::Headless), "{}", p.source);
-                }
-            }
-            let record = parse(&args(&["--record", "codex"])).expect("parse");
+            let tui = PROFILES
+                .iter()
+                .flat_map(|p| p.scenarios)
+                .find(|s| matches!(s.surface, Surface::Tui(_)))
+                .expect("a TUI scenario");
+            let scenario = |surface, fixture| Scenario {
+                shape: tui.shape,
+                surface,
+                expects: &[],
+                fixture,
+            };
+            let tui_first = [
+                scenario(tui.surface, "tui"),
+                scenario(Surface::Headless, "headless"),
+            ];
+            let picked = |s: &[Scenario]| headless_first(s, false).map(|s| s.fixture);
+            assert_eq!(picked(&tui_first), Some("headless"));
+            assert_eq!(picked(&tui_first[..1]), Some("tui"));
             let codex = hermetic::profile("codex").expect("profiled");
+            let record = parse(&args(&["--record", "codex"])).expect("parse");
             assert!(lifecycle_turn(&record, codex, false).is_none());
+            let all = parse(&args(&[])).expect("parse");
+            assert!(lifecycle_turn(&all, codex, false).is_some());
         }
 
         #[test]

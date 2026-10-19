@@ -138,10 +138,27 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
             ));
         }
     }
-    if !dir.join(MANIFEST).exists() {
+    let manifest: Manifest = match std::fs::read_to_string(dir.join(MANIFEST)) {
+        Ok(text) => serde_json::from_str(&text)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            findings.push((
+                Label::Blocked,
+                "the turn after the last uninstall did not run".into(),
+            ));
+            return Ok(Verdict::new(findings));
+        }
+        Err(e) => return Err(e),
+    };
+    // The scenario's own turn just completed in this sandbox, so one that
+    // cannot now is the uninstall's doing; with no turn, no hook proves nothing.
+    if !completed_turn(&manifest, &mut findings) {
         findings.push((
-            Label::Blocked,
-            "the turn after the last uninstall did not run".into(),
+            Label::Fail,
+            format!(
+                "the turn after the last uninstall did not complete (exit {:?}, {} model \
+                 requests): the uninstall left the CLI unable to run",
+                manifest.capture.exit_code, manifest.requests
+            ),
         ));
         return Ok(Verdict::new(findings));
     }
@@ -389,15 +406,9 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
         .collect())
 }
 
-fn judge(
-    p: &Profile,
-    scenario: &Scenario,
-    manifest: &Manifest,
-    dir: &Path,
-    scene: &str,
-    findings: &mut Vec<(Label, String)>,
-) -> std::io::Result<()> {
-    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+/// Whether `manifest`'s CLI completed a turn against the scripted model; a
+/// request no script line matched is Script either way.
+fn completed_turn(manifest: &Manifest, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
             Label::Script,
@@ -407,6 +418,19 @@ fn judge(
             ),
         ));
     }
+    manifest.capture.exit_code == Some(0) && manifest.requests > 0
+}
+
+fn judge(
+    p: &Profile,
+    scenario: &Scenario,
+    manifest: &Manifest,
+    dir: &Path,
+    scene: &str,
+    findings: &mut Vec<(Label, String)>,
+) -> std::io::Result<()> {
+    // Before the Blocked return: a CLI the script lost may then exit non-zero.
+    let completed = completed_turn(manifest, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
@@ -417,7 +441,7 @@ fn judge(
         return Ok(());
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
-    if manifest.capture.exit_code != Some(0) || manifest.requests == 0 {
+    if !completed {
         findings.push((
             Label::Blocked,
             format!(
@@ -964,6 +988,22 @@ mod tests {
         );
         assert!(
             has(&v, Label::Fail, "connect (step 3) left the install unsound"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_turn_that_never_ran_or_could_not_complete_proves_no_silence() {
+        let d = lifecycle_run(&sound(), 0);
+        std::fs::remove_file(d.path().join(MANIFEST)).expect("rm");
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(has(&v, Label::Blocked, "did not run"), "{:?}", v.findings());
+        let d = lifecycle_run(&sound(), 0);
+        write_manifest(d.path(), "codex", |m| m.capture.exit_code = Some(1));
+        let v = verify_lifecycle(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "did not complete"),
             "{:?}",
             v.findings()
         );

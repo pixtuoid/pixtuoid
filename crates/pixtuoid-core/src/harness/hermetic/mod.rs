@@ -335,10 +335,10 @@ pub struct StepRecord {
     pub step: Step,
     /// Its row's `outcome` for the source; `None` when it printed none.
     pub outcome: Option<String>,
-    /// Its row's `message`, or its stderr when it printed no row.
+    /// Its row's `message`, else its stderr.
     pub message: Option<String>,
-    /// After a connect, the source's `sources --json` `health`: `None` for a
-    /// sound install.
+    /// After a connect, what `sources --json` finds wrong with the install:
+    /// its `health`, or no connected row; `None` for a sound one.
     pub health: Option<String>,
 }
 
