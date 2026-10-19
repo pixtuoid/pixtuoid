@@ -36,8 +36,8 @@ Activate the git hooks once per clone: `git config core.hooksPath .githooks`
 
 `just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
 scripted model (aimock) with a headless pixtuoid: the full tier gates on it at
-each `verified_version`, the nightly runs it at latest. `just openclaw-multi-e2e`
-(`scripts/lib/`) drives real `openclaw` gateways, in no CI.
+each `verified_version`, the nightly runs it at latest, and runs openclaw's
+gateways through `scripts/lib/`'s `just openclaw-multi-e2e`.
 
 ## Releasing
 
