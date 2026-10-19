@@ -1069,8 +1069,8 @@ mod listen_gate {
     use std::sync::Arc;
 
     /// Sample-accurate mixdown of loops, one-shots and the music into one
-    /// master buffer, as a mono device hears it: rodio keeps a stereo
-    /// source's left channel there, and lofi renders L == R.
+    /// master buffer, as a mono device hears it: the music's left channel, per
+    /// `music::tests::lofi_renders_both_channels_alike`.
     struct OfflineSink {
         master: Vec<f32>,
         loops: Vec<(Arc<Vec<f32>>, f32)>, // (samples, current gain)

@@ -229,8 +229,9 @@ mod tests {
         assert_eq!(reader.underruns.load(Relaxed), 2);
     }
 
-    /// rodio keeps only the left channel on a mono device, so the music folds
-    /// to mono losslessly only while lofi renders L == R.
+    /// rodio keeps each frame's first sample on a mono device and discards the
+    /// rest (<https://docs.rs/rodio/0.22.2/src/rodio/conversions/channels.rs.html#59-80>),
+    /// so the music folds to mono losslessly only while lofi renders L == R.
     #[test]
     fn lofi_renders_both_channels_alike() {
         let frames = performed(Controls::default(), SAMPLE_RATE as usize);
