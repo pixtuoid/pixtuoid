@@ -113,7 +113,9 @@ enum Wire {
 struct WireCase {
     name: &'static str,
     source: &'static str,
-    /// Path to the fixture file, relative to `core_fixtures_root()`.
+    /// Path to the fixture file, relative to `core_fixtures_root()`, or to a
+    /// capture holding one transcript of `source`'s under a session id that
+    /// each re-record changes.
     fixture: &'static str,
     wire: Wire,
     /// The state classes this fixture's committed wire must drive the slot
@@ -122,8 +124,17 @@ struct WireCase {
     must_reach: &'static [Reach],
 }
 
-fn assert_renders_a_sprite(case: &WireCase) {
+fn fixture_path(case: &WireCase) -> PathBuf {
     let path = core_fixtures_root().join(case.fixture);
+    if !path.is_dir() {
+        return path;
+    }
+    pixtuoid_core::harness::transcript_in(case.source, &path)
+        .unwrap_or_else(|found| panic!("{}: {found:?} under {path:?}, not one", case.name))
+}
+
+fn assert_renders_a_sprite(case: &WireCase) {
+    let path = fixture_path(case);
     let lines = read_nonblank_lines(&path);
 
     let driven = match case.wire {
@@ -230,7 +241,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "grok",
             source: "grok",
-            fixture: "fixtures/grok/permission-hermetic/01a15125-ebfb-7e31-9f94-7368637d0570/updates.jsonl",
+            fixture: "fixtures/grok/permission-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Active],
         },
