@@ -154,10 +154,10 @@ fn assert_renders_a_sprite(case: &WireCase) {
     );
     for want in case.must_reach {
         assert!(
-            driven.reached.contains(want),
+            driven.reached().contains(want),
             "{}: the wire must drive the slot through {want:?}; reached only {:?}",
             case.name,
-            driven.reached
+            driven.reached()
         );
     }
 

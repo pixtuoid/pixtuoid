@@ -113,14 +113,26 @@ pub struct Driven {
     pub decode_errors: Vec<LineFailure>,
     /// Lines whose decoder PANICKED — the never-panic contract violated.
     pub panics: Vec<LineFailure>,
-    /// Lifecycle classes any slot passed through, in first-reached order.
-    pub reached: Vec<Reach>,
+    /// Each slot's lifecycle classes, as each was first reached: the one record
+    /// [`Self::reached`] unions.
+    pub reaches: Vec<(AgentId, Reach)>,
     /// The drift breadcrumbs the decode and fold logged, each as its fields: a
     /// field whose only use is the breadcrumb its absence logs is still read.
     pub(crate) breadcrumbs: Vec<String>,
 }
 
 impl Driven {
+    /// The classes any slot passed through, in first-reached order.
+    pub fn reached(&self) -> Vec<Reach> {
+        let mut out = Vec::new();
+        for &(_, class) in &self.reaches {
+            if !out.contains(&class) {
+                out.push(class);
+            }
+        }
+        out
+    }
+
     /// Slots the fold registered — "did the wire reach the scene at all".
     pub fn registered(&self) -> usize {
         self.scene.agents.len()
@@ -303,7 +315,7 @@ impl Drive {
             unparseable: 0,
             decode_errors: Vec::new(),
             panics: Vec::new(),
-            reached: Vec::new(),
+            reaches: Vec::new(),
             breadcrumbs: Vec::new(),
         };
         let sink = BreadcrumbSink::default();
@@ -382,9 +394,9 @@ impl Drive {
         let mut reducer = Reducer::new();
         for ev in &d.events {
             reducer.apply(&mut d.scene, ev.clone(), self.now, self.transport);
-            note_reached(&d.scene, &mut d.reached);
+            note_reached(&d.scene, &mut d.reaches);
             reducer.tick(&mut d.scene, self.now + SETTLE);
-            note_reached(&d.scene, &mut d.reached);
+            note_reached(&d.scene, &mut d.reaches);
         }
     }
 }
@@ -435,14 +447,10 @@ impl tracing::Subscriber for BreadcrumbSink {
     fn exit(&self, _: &tracing::span::Id) {}
 }
 
-/// Union the lifecycle classes every live slot is in into `reached`.
-///
-/// Every slot, not the first: a `HashMap`'s iteration order is arbitrary, so
-/// reading one slot makes a multi-agent wire report a different class run to
-/// run. Strictly weaker as a result — one slot reaching both classes and two
-/// slots reaching one each are indistinguishable.
-fn note_reached(scene: &SceneState, reached: &mut Vec<Reach>) {
-    for slot in scene.agents.values() {
+/// Record the lifecycle class each live slot is in, once per slot and class:
+/// two slots reaching one class each must not read as one slot reaching both.
+fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
+    for (&id, slot) in &scene.agents {
         let r = match &slot.state {
             ActivityState::Active {
                 kind: ToolKind::Task,
@@ -452,8 +460,8 @@ fn note_reached(scene: &SceneState, reached: &mut Vec<Reach>) {
             ActivityState::Waiting { .. } => Reach::Waiting,
             ActivityState::Idle => continue,
         };
-        if !reached.contains(&r) {
-            reached.push(r);
+        if !reaches.contains(&(id, r)) {
+            reaches.push((id, r));
         }
     }
 }
@@ -524,7 +532,7 @@ mod tests {
             0,
             "a JSONL event for an unknown id is a no-op"
         );
-        assert!(d.reached.is_empty());
+        assert!(d.reaches.is_empty());
     }
 
     #[test]
@@ -534,7 +542,7 @@ mod tests {
             .seeded()
             .lines([tool_line()]);
         assert_eq!(d.registered(), 1);
-        assert_eq!(d.reached, vec![Reach::Active]);
+        assert_eq!(d.reached(), vec![Reach::Active]);
     }
 
     #[test]
@@ -754,9 +762,9 @@ mod tests {
             .seeded()
             .lines([start, end]);
         assert!(
-            d.reached.contains(&Reach::Active),
+            d.reached().contains(&Reach::Active),
             "the resolved tool call must still count as reached, got {:?}",
-            d.reached
+            d.reaches
         );
     }
 }

@@ -487,7 +487,7 @@ fn judge(
     }
 
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut reached: Vec<Reach> = Vec::new();
+    let mut reaches: Vec<(AgentId, Reach)> = Vec::new();
     let mut absorb = |what: &str, d: Driven, findings: &mut Vec<(Label, String)>| {
         for f in d.decode_errors.iter().chain(&d.panics) {
             findings.push((Label::Fail, format!("{what}: {f}")));
@@ -498,7 +498,7 @@ fn judge(
                 format!("{what}: {} line(s) not JSON", d.unparseable),
             ));
         }
-        reached.extend(d.reached.iter().copied());
+        reaches.extend(d.reaches.iter().copied());
         events.extend(d.events.into_iter().skip(d.seed_events));
     };
     if !payloads.is_empty() {
@@ -541,12 +541,13 @@ fn judge(
         p.children_inherit_cwd,
         findings,
     );
+    let reached: Vec<Reach> = reaches.iter().map(|&(_, class)| class).collect();
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
         Shape::Permission => permission(&events, &reached, findings),
         Shape::Subagent => subagent(
             &events,
-            &reached,
+            &reaches,
             p.descriptor().caps().child_end_inference,
             findings,
         ),
@@ -738,7 +739,7 @@ fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
 
 fn subagent(
     events: &[AgentEvent],
-    reached: &[Reach],
+    reaches: &[(AgentId, Reach)],
     inference: ChildEndInference,
     findings: &mut Vec<(Label, String)>,
 ) {
@@ -830,10 +831,18 @@ fn subagent(
             "a child's tool never landed on the child".into(),
         ));
     }
-    if !reached.contains(&Reach::Delegating) {
+    // Per slot: a parent's own tool going Active proves nothing of its child.
+    let reached = |id: AgentId, class| reaches.contains(&(id, class));
+    if !children
+        .iter()
+        .all(|&(_, parent)| reached(parent, Reach::Delegating))
+    {
         findings.push((Label::Fail, "the parent never went Delegating".into()));
     }
-    if !reached.contains(&Reach::Active) {
+    if !children
+        .iter()
+        .all(|&(child, _)| reached(child, Reach::Active))
+    {
         findings.push((Label::Fail, "the child's tool never went Active".into()));
     }
 }
@@ -1482,7 +1491,7 @@ mod tests {
             let mut findings = Vec::new();
             subagent(
                 events,
-                &[Reach::Active, Reach::Delegating],
+                &[(child, Reach::Active), (parent, Reach::Delegating)],
                 inference,
                 &mut findings,
             );
@@ -1494,6 +1503,23 @@ mod tests {
                 .any(|f| f.1.contains("never ended"))
         };
         assert_eq!(judged(&run, ChildEndInference::Durable), vec![]);
+        for (reaches, missing) in [
+            (
+                [(parent, Reach::Active), (parent, Reach::Delegating)],
+                "the child's tool never went Active",
+            ),
+            (
+                [(child, Reach::Active), (child, Reach::Delegating)],
+                "the parent never went Delegating",
+            ),
+        ] {
+            let mut findings = Vec::new();
+            subagent(&run, &reaches, ChildEndInference::Durable, &mut findings);
+            assert!(
+                findings.iter().any(|f| f.1 == missing),
+                "a class one slot reached is not another's: {findings:?}"
+            );
+        }
         let parent_turn: Vec<_> = run[..run.len() - 1]
             .iter()
             .cloned()
