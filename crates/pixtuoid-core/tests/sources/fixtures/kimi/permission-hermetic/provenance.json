@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "kimi",
+  "version": "2.2.0",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record kimi",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 24
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/kimi/permission.json"
+}

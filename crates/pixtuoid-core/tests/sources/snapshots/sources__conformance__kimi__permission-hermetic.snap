@@ -1,0 +1,47 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 8095089409817579796
+    source: kimi
+    session_id: session_5b12b151-cdac-4a98-8691-b465577784ec
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 8095089409817579796
+    model: __kimi_env_model__
+    effort: ~
+- Identity:
+    agent_id: 8095089409817579796
+    source: kimi
+    session_id: session_5b12b151-cdac-4a98-8691-b465577784ec
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 8095089409817579796
+    tool_use_id: call_qm9KqJ4b67qMMrlH
+    detail:
+      Generic:
+        display: "Bash: rm NOTE.txt"
+- Identity:
+    agent_id: 8095089409817579796
+    source: kimi
+    session_id: session_5b12b151-cdac-4a98-8691-b465577784ec
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Waiting:
+    agent_id: 8095089409817579796
+    reason: permission
+- Identity:
+    agent_id: 8095089409817579796
+    source: kimi
+    session_id: session_5b12b151-cdac-4a98-8691-b465577784ec
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 8095089409817579796
+    tool_use_id: call_qm9KqJ4b67qMMrlH
+- ActivityEnd:
+    agent_id: 8095089409817579796
+    tool_use_id: ~
+- SessionEnd:
+    agent_id: 8095089409817579796
+    as_child: false
