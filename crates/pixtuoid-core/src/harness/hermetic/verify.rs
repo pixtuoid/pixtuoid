@@ -709,7 +709,7 @@ fn judge(
     }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
-        Shape::Subagent => 2,
+        Shape::Subagent | Shape::ChildError => 2,
     };
     started_in(
         &events,
@@ -729,9 +729,15 @@ fn judge(
             findings,
         ),
         Shape::ModelError => model_error(&events, findings),
+        Shape::ChildError => child_error(
+            &events,
+            &reaches,
+            p.descriptor().caps().child_end_inference,
+            findings,
+        ),
     }
     let shown = match scenario.shape {
-        Shape::ToolRun | Shape::Subagent => "active",
+        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "active",
         Shape::Permission => "waiting",
         Shape::ModelError => "idle",
     };
@@ -914,12 +920,15 @@ fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
     }
 }
 
-fn subagent(
+/// Each (child, parent) of a delegating run, once what every delegation shows
+/// is judged: the child registered under its parent and ended, and the parent
+/// went Delegating.
+fn delegated(
     events: &[AgentEvent],
     reaches: &[(AgentId, Reach)],
     inference: ChildEndInference,
     findings: &mut Vec<(Label, String)>,
-) {
+) -> BTreeSet<(AgentId, AgentId)> {
     let ids: BTreeSet<_> = events.iter().map(AgentEvent::agent_id).collect();
     let children: BTreeSet<(AgentId, AgentId)> = events
         .iter()
@@ -1002,6 +1011,22 @@ fn subagent(
     } else if !children.iter().all(|&(child, parent)| ended(child, parent)) {
         findings.push((Label::Fail, "the child session never ended".into()));
     }
+    if !children
+        .iter()
+        .all(|&(_, parent)| reaches.contains(&(parent, Reach::Delegating)))
+    {
+        findings.push((Label::Fail, "the parent never went Delegating".into()));
+    }
+    children
+}
+
+fn subagent(
+    events: &[AgentEvent],
+    reaches: &[(AgentId, Reach)],
+    inference: ChildEndInference,
+    findings: &mut Vec<(Label, String)>,
+) {
+    let children = delegated(events, reaches, inference, findings);
     // A call shown on both is the child's work on the parent's sprite (#1701).
     let calls = |id: AgentId| -> BTreeSet<&str> {
         events
@@ -1038,18 +1063,42 @@ fn subagent(
         ));
     }
     // Per slot: a parent's own tool going Active proves nothing of its child.
-    let reached = |id: AgentId, class| reaches.contains(&(id, class));
     if !children
         .iter()
-        .all(|&(_, parent)| reached(parent, Reach::Delegating))
-    {
-        findings.push((Label::Fail, "the parent never went Delegating".into()));
-    }
-    if !children
-        .iter()
-        .all(|&(child, _)| reached(child, Reach::Active))
+        .all(|&(child, _)| reaches.contains(&(child, Reach::Active)))
     {
         findings.push((Label::Fail, "the child's tool never went Active".into()));
+    }
+}
+
+/// The child's failure is the script's to show: the parent's reply matches
+/// only its error (`a_child_error_script_errs_the_childs_request_and_answers_only_its_error`).
+fn child_error(
+    events: &[AgentEvent],
+    reaches: &[(AgentId, Reach)],
+    inference: ChildEndInference,
+    findings: &mut Vec<(Label, String)>,
+) {
+    // Its turn's end, or its session's where the end of a headless run is
+    // the session's own (copilot's `-p` writes no `session.task_complete`).
+    let ended = |parent: AgentId| {
+        events.iter().any(|e| match e {
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            }
+            | AgentEvent::SessionEnd { agent_id, .. } => *agent_id == parent,
+            _ => false,
+        })
+    };
+    if !delegated(events, reaches, inference, findings)
+        .iter()
+        .all(|&(_, parent)| ended(parent))
+    {
+        findings.push((
+            Label::Fail,
+            "the parent's turn or session never ended".into(),
+        ));
     }
 }
 
@@ -1084,7 +1133,7 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
         Shape::ToolRun => Some("idle"),
         // `RunFailed` latches it (`crate::source::daemon`).
         Shape::ModelError => Some("degraded"),
-        Shape::Permission | Shape::Subagent => None,
+        Shape::Permission | Shape::Subagent | Shape::ChildError => None,
     }
 }
 
@@ -1404,6 +1453,8 @@ mod tests {
         "agents=[cp\u{b7}proj@0:waiting(permission: shell)]\nagents=[] daemons=[]\n";
     const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
                                      reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_CHILD_ERROR_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
+                                        reader@1:idle]\nagents=[] daemons=[]\n";
     const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
     const AG_SCENE: &str =
         "agents=[ag\u{b7}proj@0:active(view_file: NOTE.txt)]\nagents=[] daemons=[]\n";
@@ -1739,6 +1790,77 @@ mod tests {
     }
 
     #[test]
+    fn a_child_error_takes_no_child_work_but_the_parents_end() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("copilot", "root"),
+            AgentId::from_parts("copilot", "call_1"),
+        );
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "copilot".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        // A child whose request errs ends, then the dispatch, then the parent's
+        // turn; copilot's `-p` ends its session instead (`shut_down` below).
+        let run = vec![
+            session(parent, "root", None),
+            AgentEvent::ActivityStart {
+                agent_id: parent,
+                tool_use_id: Some("call_1".into()),
+                detail: Some(ToolDetail::Task),
+            },
+            session(child, "call_1", Some(parent)),
+            AgentEvent::SessionEnd {
+                agent_id: child,
+                as_child: true,
+            },
+            AgentEvent::ActivityEnd {
+                agent_id: parent,
+                tool_use_id: Some("call_1".into()),
+            },
+            AgentEvent::ActivityEnd {
+                agent_id: parent,
+                tool_use_id: None,
+            },
+        ];
+        let judged = |events: &[AgentEvent], reaches: &[(AgentId, Reach)], inference| {
+            let mut findings = Vec::new();
+            child_error(events, reaches, inference, &mut findings);
+            findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
+        };
+        let (delegating, drain) = ([(parent, Reach::Delegating)], ChildEndInference::TaskDrain);
+        assert_eq!(judged(&run, &delegating, drain), Vec::<String>::new());
+        let unended = &run[..run.len() - 1];
+        assert_eq!(
+            judged(unended, &delegating, drain),
+            ["the parent's turn or session never ended"]
+        );
+        let shut_down: Vec<_> = unended
+            .iter()
+            .cloned()
+            .chain([AgentEvent::SessionEnd {
+                agent_id: parent,
+                as_child: false,
+            }])
+            .collect();
+        assert_eq!(judged(&shut_down, &delegating, drain), Vec::<String>::new());
+        // Where no dispatch end ends a child, only its own end does.
+        let mut unended = run.clone();
+        unended.remove(3);
+        assert_eq!(
+            judged(&unended, &delegating, ChildEndInference::None),
+            ["the child session never ended"]
+        );
+        assert_eq!(
+            judged(&run, &[], drain),
+            ["the parent never went Delegating"]
+        );
+    }
+
+    #[test]
     fn only_a_durable_child_ends_with_its_own_turn() {
         use crate::source::ToolDetail;
         let (parent, child) = (
@@ -1927,11 +2049,25 @@ mod tests {
             (Shape::ToolRun, CP_SCENE),
             (Shape::Permission, CP_WAIT_SCENE),
             (Shape::Subagent, CP_DELEGATE_SCENE),
+            (Shape::ChildError, CP_CHILD_ERROR_SCENE),
         ] {
             let d = recorded("copilot", shape, scene);
             let v = verify(d.path()).expect("verify");
             assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
+    }
+
+    #[test]
+    fn a_recorded_child_error_whose_parent_never_ends_fails() {
+        let d = recorded("copilot", Shape::ChildError, CP_CHILD_ERROR_SCENE);
+        edit_transcripts(d.path(), |line| {
+            !line.contains(r#""type":"session.shutdown""#)
+        });
+        assert!(has(
+            &verify(d.path()).expect("verify"),
+            Label::Fail,
+            "the parent's turn or session never ended"
+        ));
     }
 
     #[test]

@@ -128,6 +128,9 @@ pub enum Shape {
     /// A turn the model answers with an error a CLI does not retry (a 400): the
     /// session registers, and its turn ends failed.
     ModelError,
+    /// A turn whose child's model errs: the parent delegates, the child
+    /// registers as its child and ends, and the parent's turn, or its session, ends.
+    ChildError,
 }
 
 impl Shape {
@@ -138,7 +141,7 @@ impl Shape {
             Some(0) => true,
             Some(_) => match self {
                 Self::ModelError => true,
-                Self::ToolRun | Self::Permission | Self::Subagent => false,
+                Self::ToolRun | Self::Permission | Self::Subagent | Self::ChildError => false,
             },
             None => false,
         }
@@ -1448,6 +1451,13 @@ model = "deepseek-v4-flash"
                 expects: &[],
                 fixture: "delegation/fixtures/copilot",
             },
+            Scenario {
+                name: "child-error",
+                shape: Shape::ChildError,
+                surface: Surface::Headless,
+                expects: &[],
+                fixture: "copilot/fixtures/child-error-hermetic",
+            },
         ],
         // The shell tool is `bash` or `powershell`
         // (`/en/copilot/reference/copilot-cli-reference/cli-command-reference`),
@@ -1474,7 +1484,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.resume", "session.task_complete", "subagent.failed"],
+        not_yet_literals: &["session.resume", "session.task_complete"],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
@@ -2298,6 +2308,47 @@ mod tests {
                         .iter()
                         .any(|f| f["response"]["toolCalls"].is_array()),
                     "{}: a reply calls a tool",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_child_error_script_errs_the_childs_request_and_answers_only_its_error() {
+        // A reply to any result lets a run whose child succeeded pass as failed.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::ChildError) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                let errors: Vec<&str> = replies
+                    .iter()
+                    .filter(|f| {
+                        f["match"]["userMessage"].is_string()
+                            && f["response"]["status"]
+                                .as_u64()
+                                .is_some_and(|status| status >= 400)
+                    })
+                    .filter_map(|f| f["response"]["error"]["message"].as_str())
+                    .collect();
+                assert!(
+                    !errors.is_empty(),
+                    "{}: the child's request never errs",
+                    p.source
+                );
+                assert!(
+                    replies.iter().any(|f| f["match"]["toolResultContains"]
+                        .as_str()
+                        .is_some_and(|t| errors.iter().any(|e| e.contains(t)))),
+                    "{}: no reply waits for the child's error",
+                    p.source
+                );
+                assert!(
+                    !replies.iter().any(|f| f["match"]["hasToolResult"] == true),
+                    "{}: a reply takes any tool result",
                     p.source
                 );
             }

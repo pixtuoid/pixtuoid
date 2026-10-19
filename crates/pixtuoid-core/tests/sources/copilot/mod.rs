@@ -1,8 +1,10 @@
-//! copilot's two refusal endings at 1.0.98: the `-p` auto-deny, whose call
-//! then ends, and Esc at an interactive prompt, which aborts the turn with no
-//! end for the call. Each is one call, and each resolves its wait.
+//! copilot's recorded endings at 1.0.98: two refusals, the `-p` auto-deny, whose
+//! call then ends, and Esc at an interactive prompt, which aborts the turn with
+//! no end for the call, each one call that resolves its wait; and a child whose
+//! request errs, which its own failure ends.
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
+use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::state::ActivityState;
 
 fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
@@ -60,4 +62,58 @@ fn an_esc_at_the_prompt_resolves_its_wait() {
         r#"{"type":"abort","data":{"reason":""},"id":"","timestamp":"","parentId":""}"#,
     ]);
     assert_the_refusal_resolves_its_wait("Esc cancel", &d);
+}
+
+/// A child whose request errs, recorded: `subagent.failed` ends it before its
+/// parent's failed dispatch could drain it, and the parent stops delegating.
+#[test]
+fn a_failed_child_leaves_and_its_parent_stops_delegating() {
+    let t = super::captures::transcript_in(
+        &super::captures::sources_root().join("copilot/fixtures/child-error-hermetic"),
+    );
+    // Its shutdown would end the parent this reads.
+    let lines = super::captures::fixture_lines(&t)
+        .into_iter()
+        .filter(|l| !l.contains(r#""type":"session.shutdown""#));
+    let d = Drive::transcript_at("copilot", &t)
+        .expect("copilot has a line decoder")
+        .seeded()
+        .lines(lines);
+    d.assert_clean("child error");
+    let child = d
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(parent),
+                ..
+            } => Some((*agent_id, *parent)),
+            _ => None,
+        })
+        .expect("the recording's child");
+    assert!(d.reaches.contains(&(child.1, Reach::Delegating)));
+    let at = |end: &dyn Fn(&AgentEvent) -> bool| d.events.iter().position(end);
+    let failed =
+        at(&|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child.0));
+    let drained = at(
+        &|e| matches!(e, AgentEvent::ActivityEnd { agent_id, tool_use_id: Some(_) } if *agent_id == child.1),
+    );
+    assert!(
+        failed.is_some_and(|f| drained.is_none_or(|d| f < d)),
+        "the child's own failure never ended it"
+    );
+    assert!(
+        d.scene
+            .agents
+            .get(&child.0)
+            .is_none_or(|s| s.exiting_at.is_some()),
+        "the failed child stayed"
+    );
+    let parent = d.scene.agents.get(&child.1).expect("the parent's slot");
+    assert!(
+        !matches!(&parent.state, ActivityState::Active { detail: Some(d), .. } if &**d == "Delegating"),
+        "the parent still delegates: {:?}",
+        parent.state
+    );
 }
