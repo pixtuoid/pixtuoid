@@ -912,11 +912,11 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
         waited.iter().any(|t| ended_calls.contains(t))
     } else if started.is_empty() {
         // The slot waited, and every call it covered and the turn ended: one
-        // End per Start (a reviewer's read before the wait) plus the turn's,
-        // counted exactly because no call carries an id, so a stray End would
-        // hide an unended call. That the refused call never ran anyway is the
-        // script contract's (`a_permission_script_calls_no_tool_after_its_refusal`)
-        // and the CLI's own denial.
+        // End per Start (a reviewer's read before the wait) plus the turn's.
+        // Counted, not paired: reasonix's tool hooks carry no call id
+        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0). That the refused
+        // call never ran is the script contract's
+        // (`a_permission_script_calls_no_tool_after_its_refusal`) and the CLI's own denial.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
