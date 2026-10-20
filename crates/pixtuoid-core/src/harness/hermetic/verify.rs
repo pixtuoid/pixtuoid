@@ -1,10 +1,10 @@
 //! Judging hermetic runs: each scenario's run alone ([`verify`]), each
 //! source's runs together ([`verify_source`]), and an install's lifecycle
-//! ([`verify_lifecycle`]). A run's bytes ride the one
-//! pipeline (`Drive`), and the scene a headless pixtuoid painted from the same
-//! run is read as text. Ids, timestamps and model text change every run, so
-//! nothing here compares bytes or goldens: only shapes, events and the fields
-//! a decoder reads.
+//! ([`verify_lifecycle`]). A judge decides on the events and call ids a run's
+//! bytes decode to through the one pipeline (`Drive`); the scene a headless
+//! pixtuoid painted from the same run answers only what the user saw. Ids,
+//! timestamps and model text change every run, so nothing here compares bytes
+//! or goldens: only shapes, events and the fields a decoder reads.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
