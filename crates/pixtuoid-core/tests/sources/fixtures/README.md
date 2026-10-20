@@ -46,11 +46,10 @@ no probe can see — declares `"deidentified": {"method": "none", "why": …}` a
 both paths leave it alone; the gate refuses the exemption without its reason.
 
 The table above is not the schema — [`provenance.schema.json`](provenance.schema.json)
-is, and both readers (this table and
-`every_capture_declares_a_valid_origin_with_its_required_fields`) read it. They
-each carried their own copy until #929, and had drifted apart.
+is, and the gates in `captures.rs` and this table read it. They each carried
+their own copy until #929, and had drifted apart.
 
-`every_capture_declares_a_valid_origin_with_its_required_fields` enforces the schema, and its
+Those gates enforce the schema, and `captures.rs`'s
 `NO_WIRE_EVIDENCE_YET` list — the hook-only sources with no recorded scenario at
 all — only shrinks: recording one forces its entry out, and a new hook-only CLI
 cannot join by default.

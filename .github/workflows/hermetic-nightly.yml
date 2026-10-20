@@ -2,7 +2,8 @@ name: hermetic-nightly
 
 # Each profiled CLI's latest release against the scripted model, where a CLI
 # that renamed or reshaped what pixtuoid reads in a recorded scenario turns a
-# verdict red before a user upgrades into it.
+# verdict red before a user upgrades into it, and one that added a type its
+# decoders drop is filed as New.
 
 on:
   schedule:
@@ -195,13 +196,14 @@ jobs:
     name: file the hermetic report
     needs: drift
     # A dispatch on a branch is a pre-merge proof, not the nightly's verdict.
-    if: ${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}
+    # A passing run with a New finding uploads its report too, so this files
+    # whatever the legs uploaded, failed or not.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       issues: write
     steps:
-      # Each failed leg's runs, in a directory named after its artifact.
       - uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.drift.outputs.runs-stem }}*
@@ -210,15 +212,31 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          DRIFT: ${{ needs.drift.result }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          # One uploaded leg lands flat, several each in their artifact's
+          # directory (download-artifact v8.0.2 `src/download-artifact.ts:188-193`).
+          legs=()
+          if [ -f report.md ]; then
+            reports=(report.md)
+          else
+            legs=(*/)
+            # None uploaded: nothing to file, unless drift failed first.
+            if [ ${#legs[@]} -eq 0 ]; then
+              if [ "$DRIFT" = failure ]; then echo "::error::drift failed and no leg uploaded its runs"; exit 1; fi
+              exit 0
+            fi
+            reports=(*/report.md)
+          fi
           gh label create hermetic --color FBCA04 \
             --description "A hermetic run's verdict on an agent CLI's latest release" 2>/dev/null || true
-          # The orchestrator owns the title, as each failed leg's report H1
+          # The orchestrator owns the title, as each uploaded leg's report H1
           # naming its OS and shard, and they carry the disposition: retitle on the dedup
           # path too. A leg whose runs hold no report.md could not run: red,
           # once the others are filed.
-          reports=(*/report.md)
+          [ ${#reports[@]} -gt 0 ] || { echo "::error::no uploaded leg holds a report.md"; exit 1; }
           title=$(for r in "${reports[@]}"; do head -1 "$r" | sed 's/^# //'; done | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')
           num=$(gh issue list --label hermetic --state open \
             --json number --jq '.[0].number // empty')
@@ -233,6 +251,6 @@ jobs:
           for r in "${reports[@]:filed}"; do
             gh issue comment "$num" --body-file "$r"
           done
-          for d in */; do
+          for d in ${legs[@]+"${legs[@]}"}; do
             [ -f "${d}report.md" ] || { echo "::error::${d%/} holds no report.md"; exit 1; }
           done

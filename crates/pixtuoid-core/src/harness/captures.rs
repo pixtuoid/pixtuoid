@@ -267,6 +267,14 @@ impl Capture {
     }
 }
 
+/// A file's lines that parse; the Drive reports the ones that don't.
+pub(crate) fn json_lines(file: &Path) -> std::io::Result<Vec<serde_json::Value>> {
+    Ok(std::fs::read_to_string(file)?
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect())
+}
+
 /// Every `.jsonl` under `dir`, recursively, sorted.
 pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();

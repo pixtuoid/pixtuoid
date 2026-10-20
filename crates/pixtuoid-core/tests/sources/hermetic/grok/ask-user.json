@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "match": { "model": "grok-4.6", "systemMessage": "generating the session title" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "model": "grok-4.6", "toolResultContains": "No user is available" },
+      "response": { "content": "pong" }
+    },
+    {
+      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "ask_user_question", "arguments": { "questions": [ { "question": "Which color?", "options": [ { "label": "red", "description": "Red" }, { "label": "blue", "description": "Blue" } ] } ] } } ] }
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 //! from the line unchanged. The recorder strips captures with it, so a field a
 //! decoder stopped reading cannot linger in committed bytes.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -302,6 +303,40 @@ pub(crate) fn child_pointer(at: &str, key: &str) -> String {
 /// `tests/sources/captures.rs`, which dates a capture by it.
 pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
     at.is_empty() && key.starts_with('_')
+}
+
+/// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
+/// string that holds JSON read on under its own pointer. A shim stamp counts:
+/// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
+/// does not send it (antigravity).
+pub(crate) fn string_leaves(v: &Value, at: &str, out: &mut BTreeSet<(String, String)>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                string_leaves(x, &child_pointer(at, k), out);
+            }
+        }
+        Value::Array(a) => {
+            for x in a {
+                string_leaves(x, &format!("{at}/*"), out);
+            }
+        }
+        Value::String(s) if !s.is_empty() => {
+            if let Some(inner) = embedded_json(s) {
+                string_leaves(&inner, at, out);
+            }
+            out.insert((at.to_owned(), s.clone()));
+        }
+        _ => {}
+    }
+}
+
+/// The JSON a string holds, which the censuses read on into: codex's
+/// `arguments` keys its call's fields.
+pub(crate) fn embedded_json(s: &str) -> Option<Value> {
+    s.starts_with(['{', '['])
+        .then(|| serde_json::from_str(s).ok())
+        .flatten()
 }
 
 fn probe(
