@@ -399,6 +399,7 @@ mod recorder {
             }
         };
         let unresumed = !options.resume.is_empty() && resumed.is_none();
+        let note_survived = note_survived(&workspace);
         drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
@@ -446,6 +447,7 @@ mod recorder {
                 version,
                 exit_code: status.code(),
                 resumed,
+                note_survived: Some(note_survived),
             };
             std::fs::write(
                 dest.join(CAPTURE_RECORD),
@@ -631,6 +633,12 @@ mod recorder {
 
     /// What the harvest keeps of `source`'s transcripts under `root` born since
     /// `started`.
+    /// Whether the note [`prepare_workspace`] planted is still there, unchanged.
+    fn note_survived(workspace: &Path) -> bool {
+        std::fs::read_to_string(workspace.join("NOTE.txt"))
+            .is_ok_and(|note| note == format!("{CAPTURE_NOTE}\n"))
+    }
+
     fn born_transcripts(
         source: &str,
         root: &Path,
@@ -1288,6 +1296,7 @@ mod recorder {
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
                     resumed: None,
+                    note_survived: None,
                 },
                 aimock: "1.43.0".into(),
                 requests: 3,
@@ -1402,6 +1411,7 @@ mod recorder {
                     version: "1.0.98".into(),
                     exit_code: Some(0),
                     resumed: None,
+                    note_survived: None,
                 },
                 aimock: "1.45.1".into(),
                 requests: 2,
@@ -1580,6 +1590,17 @@ mod recorder {
             for corpus in [Options::default(), promote] {
                 assert_eq!(corpus.corpus_refusal().is_some(), !cfg!(unix), "{corpus:?}");
             }
+        }
+
+        #[test]
+        fn the_note_survives_only_while_it_is_there_unchanged() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let note = d.path().join("NOTE.txt");
+            assert!(!note_survived(d.path()), "a deleted note did not survive");
+            std::fs::write(&note, "other\n").expect("write");
+            assert!(!note_survived(d.path()), "a rewritten note did not survive");
+            std::fs::write(&note, format!("{CAPTURE_NOTE}\n")).expect("write");
+            assert!(note_survived(d.path()));
         }
 
         #[test]
@@ -2114,6 +2135,7 @@ mod recorder {
                 resumed: resumed.map(|code| Resumed {
                     exit_code: Some(code),
                 }),
+                note_survived: None,
             };
             assert!(exited_as_scripted(
                 "openclaw",

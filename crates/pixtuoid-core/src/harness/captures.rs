@@ -224,6 +224,11 @@ pub struct CaptureRecord {
     /// The turn that resumed its session, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumed: Option<Resumed>,
+    /// Whether the note the recorder planted was still there, unchanged, once
+    /// every turn exited: a refused call that deletes it did not stay refused.
+    /// `None` for a record that predates the check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_survived: Option<bool>,
 }
 
 impl CaptureRecord {

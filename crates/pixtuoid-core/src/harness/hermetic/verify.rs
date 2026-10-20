@@ -733,7 +733,9 @@ fn judge(
     let reached: Vec<Reach> = reaches.iter().map(|&(_, class)| class).collect();
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
-        Shape::Permission => permission(&events, &reached, findings),
+        Shape::Permission => {
+            permission(&events, &reached, manifest.capture.note_survived, findings)
+        }
         Shape::Subagent => subagent(
             &events,
             &reaches,
@@ -878,7 +880,18 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     }
 }
 
-fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label, String)>) {
+fn permission(
+    events: &[AgentEvent],
+    reached: &[Reach],
+    note_survived: Option<bool>,
+    findings: &mut Vec<(Label, String)>,
+) {
+    if note_survived != Some(true) {
+        findings.push((
+            Label::Fail,
+            "the note the refused call deletes is gone, or was never checked".into(),
+        ));
+    }
     if !reached.contains(&Reach::Waiting) {
         findings.push((Label::Fail, "the slot never went Waiting".into()));
     }
@@ -914,8 +927,8 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
         // No start carries a call id (reasonix): one End per Start (a
         // guardian's read before the wait) plus the turn's, counted not paired
         // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0). The script
-        // contract forbids a retry after the refusal, and the CLI's own denial
-        // keeps the refused call from running.
+        // contract forbids a retry after the refusal, and the note's survival
+        // proves the refused call never ran.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
@@ -1333,6 +1346,7 @@ mod tests {
                 version: "test".into(),
                 exit_code: Some(0),
                 resumed: None,
+                note_survived: Some(true),
             },
             aimock: "test".into(),
             requests: 2,
@@ -1716,6 +1730,23 @@ mod tests {
             "ids are absent, so a surplus End could stand in for an unended call: {:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_refused_call_that_took_the_note_with_it_fails() {
+        for (survived, label) in [(Some(false), Label::Fail), (None, Label::Fail)] {
+            let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+            write_manifest(d.path(), "dsh", |m| {
+                m.scenario = "permission".into();
+                m.capture.note_survived = survived;
+            });
+            let v = verify(d.path()).expect("verify");
+            assert!(
+                has(&v, label, "the refused call deletes is gone"),
+                "{survived:?}: {:?}",
+                v.findings()
+            );
+        }
     }
 
     #[test]

@@ -2624,6 +2624,28 @@ mod tests {
     }
 
     #[test]
+    fn a_permission_script_gates_a_call_that_deletes_the_note() {
+        // The recorder's `note_survived` is only evidence of a refusal if the
+        // refused call would have removed the note. A question's gate calls
+        // nothing that could, so those rows are held to the note alone.
+        const QUESTIONS: &[&str] = &["ask-user", "ask-question"];
+        for p in PROFILES {
+            for s in p
+                .scenarios
+                .iter()
+                .filter(|s| s.shape == Shape::Permission && !QUESTIONS.contains(&s.name))
+            {
+                let text = std::fs::read_to_string(s.script(p.source)).expect("the script");
+                assert!(
+                    text.contains("rm ") && text.contains("NOTE.txt"),
+                    "{}: no scripted call deletes the note",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_model_error_script_errs_and_calls_no_tool() {
         // A reply that answers the turn lets a sound run pass as a failed one.
         for p in PROFILES {
