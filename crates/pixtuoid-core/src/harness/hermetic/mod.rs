@@ -536,9 +536,10 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
         deny: &[tui::Key::Esc],
-        // A dialog ignores keys for its first 150 ms and restarts that on each
-        // ignored key (`AM=150` in the 2.1.302 bundle).
-        dwell: std::time::Duration::from_millis(400),
+        // Past the 6 s an unanswered dialog waits before it fires `Notification`
+        // (`qYt=6000` in `eTe`, the 2.1.302 bundle), and so past the 150 ms it
+        // ignores keys for (`AM=150`).
+        dwell: std::time::Duration::from_secs(7),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
@@ -762,6 +763,7 @@ pub const PROFILES: &[Profile] = &[
                     "SessionStart",
                     "PreToolUse",
                     "PermissionRequest",
+                    "Notification",
                     "SessionEnd",
                 ],
                 fixture: "fixtures/claude-code/permission-hermetic",
@@ -769,7 +771,7 @@ pub const PROFILES: &[Profile] = &[
             },
         ],
         script_vars: &[],
-        not_yet: &["Notification"],
+        not_yet: &[],
         event_name: hook_event_name,
         not_yet_fields: &[
             // aimock's Messages usage is input and output tokens alone

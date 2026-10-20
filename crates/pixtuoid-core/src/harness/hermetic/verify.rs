@@ -2573,6 +2573,16 @@ mod tests {
         assert!(has(&v, Label::Stale, "result_unseen"), "{:?}", v.findings());
     }
 
+    /// claude-code owing `Notification`, a hook its committed captures fire.
+    fn owing_notification() -> Profile {
+        Profile {
+            not_yet: &["Notification"],
+            live: None,
+            daemon: None,
+            ..*profile("claude-code").expect("profile")
+        }
+    }
+
     #[test]
     fn a_not_yet_hook_any_run_fires_is_stale() {
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
@@ -2583,11 +2593,7 @@ mod tests {
             }
             Some(v)
         });
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");
         assert!(has(&v, Label::Stale, "Notification"), "{:?}", v.findings());
     }
 
@@ -2905,11 +2911,7 @@ mod tests {
         // fixtures/claude-code/permission-recorded fires it; a tool run doesn't.
         let owed = ["hook:Notification"];
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");
         assert!(
             !v.findings()
                 .iter()
