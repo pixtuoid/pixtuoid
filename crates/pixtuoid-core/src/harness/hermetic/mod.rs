@@ -2240,6 +2240,22 @@ mod tests {
     }
 
     #[test]
+    fn a_succession_answers_by_settling() {
+        // Its command raises no dialog, so a run waiting to answer one hangs.
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Succession) {
+                assert_eq!(
+                    s.turn.answer,
+                    tui::Answer::Settle,
+                    "{}/{}",
+                    p.source,
+                    s.name
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_resumed_scenarios_profile_names_how_its_session_resumes() {
         for p in PROFILES {
             let resumes = p.scenarios.iter().any(|s| s.turn.resume.is_some());
