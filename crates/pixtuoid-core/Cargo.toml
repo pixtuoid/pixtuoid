@@ -58,6 +58,9 @@ harness = [
     "dep:sha2",
     # The literal census parses the decoders (`hermetic::literals`).
     "dep:syn",
+    # A re-record's capture is read up to the ids its CLI mints
+    # (`harness::captures::canonical_capture`).
+    "dep:regex",
 ]
 
 [dependencies]
@@ -80,6 +83,8 @@ semver      = { workspace = true }
 sha2        = { workspace = true, optional = true }
 # The literal census reads what the decoders compare (`hermetic::literals`).
 syn         = { workspace = true, optional = true }
+# The id families a re-record may rename: `harness::captures::canonical_capture`.
+regex       = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
