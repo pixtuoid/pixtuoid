@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.302 (Claude Code)",
+  "version": "2.1.304 (Claude Code)",
   "captured": "2026-10-20",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 349
+    "blanked": 362
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/ultra-effort.json",
@@ -16,6 +16,7 @@
       "/attachment/type": [
         "agent_listing_delta",
         "date",
+        "deferred_tools_delta",
         "environment",
         "model",
         "prompt_snapshot",
