@@ -265,20 +265,14 @@ pub(crate) fn installed_shim(content: &str) -> ShimRef {
 }
 
 pub(crate) fn render_hooks(hook_cmd: &str) -> Result<String> {
-    render_hooks_in(hook_cmd, cfg!(windows))
-}
-
-/// [`render_hooks`] with the form a parameter, so every platform's tests render
-/// Windows' exec form.
-pub(crate) fn render_hooks_in(hook_cmd: &str, exec_form: bool) -> Result<String> {
-    host_plugin::render_hooks(EVENTS, &managed_entry(hook_cmd, exec_form))
+    host_plugin::render_hooks(EVENTS, &managed_entry(hook_cmd))
 }
 
 /// The one place Claude's nested per-event shape lives.
-fn managed_entry(hook_command: &str, exec_form: bool) -> Value {
+fn managed_entry(hook_command: &str) -> Value {
     json!({
         "matcher": ".*",
-        "hooks": [ hook_entry(hook_command, exec_form) ]
+        "hooks": [ hook_entry(hook_command, cfg!(windows)) ]
     })
 }
 
