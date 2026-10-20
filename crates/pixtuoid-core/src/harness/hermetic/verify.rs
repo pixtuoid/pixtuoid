@@ -618,7 +618,7 @@ fn judge(
 ) -> std::io::Result<()> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
-    let unrefused = matches!(scenario.surface, Surface::Tui(_))
+    let unrefused = matches!(scenario.surface, Surface::Tui { .. })
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
@@ -636,15 +636,18 @@ fn judge(
             .map_or(String::new(), |r| {
                 format!(", resumed exit {:?}", r.exit_code)
             });
-        findings.push((
-            Label::Blocked,
+        let exit = manifest.capture.exit_code;
+        let why = if scenario.shape.asks_the_model() {
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {:?}{resumed}, \
+                "the CLI did not complete a turn against the scripted model (exit {exit:?}{resumed}, \
                  {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
-                manifest.capture.exit_code, manifest.requests
-            ),
-        ));
+                manifest.requests
+            )
+        } else {
+            format!("the CLI did not complete its turn (exit {exit:?}{resumed}): it could not run")
+        };
+        findings.push((Label::Blocked, why));
         return Ok(());
     }
     // A resumed turn that never ran had no session the first turn's wire named,
@@ -1120,8 +1123,8 @@ fn child_error(
     }
 }
 
-/// The first session to start ends, and another starts as no child of it. One
-/// CLI process runs the scenario, so both ran under its pid.
+/// The first session to start ends, and another starts as a root; one process
+/// runs the scenario, so its pid is not judged.
 fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
     let mut starts = events.iter().filter_map(|e| match e {
         AgentEvent::SessionStart {
@@ -1541,6 +1544,31 @@ mod tests {
         let d = recorded_succession(OM_NEW_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_succession_that_could_not_run_is_blocked_without_blaming_the_model() {
+        let d = recorded_succession(OM_NEW_SCENE);
+        write_manifest(d.path(), "omp", |m| {
+            m.scenario = "new-session".into();
+            m.requests = 0;
+            m.capture.exit_code = Some(1);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(
+                &v,
+                Label::Blocked,
+                "did not complete its turn (exit Some(1))"
+            ),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            !v.findings().iter().any(|f| f.1.contains("model")),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]

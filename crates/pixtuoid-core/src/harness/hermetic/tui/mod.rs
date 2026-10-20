@@ -63,11 +63,12 @@ pub(crate) struct Gate {
 /// How a scenario's run answers its turn's dialog, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answer {
-    /// Refuse it with its gate's `deny` keys; the turn is over once refused.
+    /// Refuse it with its gate's `deny` keys; the turn is over once refused
+    /// and the screen settles.
     Deny,
-    /// None: the turn raises no dialog to answer, and is over once the screen
-    /// settles after the prompt.
-    Settle,
+    /// Nothing: the turn raises no dialog, and is over once the screen settles
+    /// after the prompt.
+    Nothing,
 }
 
 /// Where a CLI's composer is on screen.
@@ -214,8 +215,7 @@ impl<'a> Driver<'a> {
                 Action::Keys(&[Key::Enter])
             }
             Phase::Submitted { .. }
-                if (self.answered || self.answer == Answer::Settle)
-                    && now.duration_since(self.changed_at) >= SETTLE =>
+                if !self.owes_answer() && now.duration_since(self.changed_at) >= SETTLE =>
             {
                 self.phase = Phase::Quit;
                 Action::Quit(self.tui.quit)
@@ -227,9 +227,14 @@ impl<'a> Driver<'a> {
     /// What `tui_drive` exits with if it gives up now.
     pub fn gave_up(&self) -> i32 {
         match self.phase {
-            Phase::Submitted { .. } if self.answer != Answer::Settle && !self.answered => UNREFUSED,
+            Phase::Submitted { .. } if self.owes_answer() => UNREFUSED,
             _ => GAVE_UP,
         }
+    }
+
+    /// Whether the turn still waits on the dialog its answer answers.
+    fn owes_answer(&self) -> bool {
+        self.answer != Answer::Nothing && !self.answered
     }
 
     /// A dialog on screen: answered after it has stood its dwell, once the
@@ -252,7 +257,7 @@ impl<'a> Driver<'a> {
         let gate = &self.tui.gates[index];
         let keys = match self.answer {
             Answer::Deny => gate.deny,
-            Answer::Settle => return Some(Action::Wait),
+            Answer::Nothing => return Some(Action::Wait),
         };
         if !matches!(self.phase, Phase::Submitted { .. }) {
             return Some(Action::Wait);
@@ -387,56 +392,54 @@ mod tests {
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
     const OMP_BOOT: &str = include_str!("screens/omp-boot.txt");
     const OMP_NEW: &str = include_str!("screens/omp-new.txt");
+    /// Claude Code's blank input line, which it opens with a no-break space.
+    const READY_INPUT: &str = "❯\u{a0} ";
+    const OMP_INPUT: &str = "╰─";
 
-    /// `source`'s TUI scenario: its row, and how it answers its turn.
-    fn tui_scenario(source: &str) -> (&'static Tui, Answer) {
-        profile(source)
+    /// `source`'s TUI scenario `name`: its row, and how it answers its turn.
+    fn tui_scenario(source: &str, name: &str) -> (&'static Tui, Answer) {
+        match profile(source)
+            .and_then(|p| p.scenario(name))
             .expect("profiled")
-            .scenarios
-            .iter()
-            .find_map(|s| match s.surface {
-                Surface::Tui(tui) => Some((tui, s.turn.answer)),
-                Surface::Headless => None,
-            })
-            .expect("drives a TUI scenario")
-    }
-
-    fn row(source: &str) -> &'static Tui {
-        tui_scenario(source).0
+            .surface
+        {
+            Surface::Tui { row, answer } => (row, answer),
+            Surface::Headless => panic!("{source}/{name} drives no TUI"),
+        }
     }
 
     fn claude_code() -> &'static Tui {
-        row("claude-code")
+        tui_scenario("claude-code", "permission").0
+    }
+
+    fn omp() -> (&'static Tui, Answer) {
+        tui_scenario("omp", "new-session")
     }
 
     fn dwell() -> Duration {
         claude_code().gates[0].dwell
     }
 
-    /// The ready screen with `text` in its composer, which Claude Code opens
-    /// with a no-break space.
-    fn typed(text: &str) -> String {
-        let screen = READY.replacen("\n❯\u{a0} \n", &format!("\n❯\u{a0}{text}\n"), 1);
-        assert_ne!(screen, READY, "the ready screen's composer line moved");
-        screen
-    }
-
-    /// omp's boot screen with `text` in its composer.
-    fn omp_typed(text: &str) -> String {
-        let screen = OMP_BOOT.replacen("\n╰─\n", &format!("\n╰─ {text}\n"), 1);
-        assert_ne!(screen, OMP_BOOT, "the boot screen's composer line moved");
-        screen
+    /// `screen` with [`PROMPT`] typed into `input`, its blank input line.
+    fn typed(screen: &str, input: &str) -> String {
+        let filled = format!("\n{}{PROMPT}\n", input.trim_end_matches(' '));
+        let typed = screen.replacen(&format!("\n{input}\n"), &filled, 1);
+        assert_ne!(typed, screen, "the screen's input line moved");
+        typed
     }
 
     fn driver(t0: Instant) -> Driver<'static> {
-        let (tui, answer) = tui_scenario("claude-code");
+        let (tui, answer) = tui_scenario("claude-code", "permission");
         Driver::new(tui, answer, PROMPT.to_owned(), t0)
     }
 
     /// Steps a booted driver to a submitted prompt.
     fn submitted(d: &mut Driver<'_>, t0: Instant) {
         assert_eq!(d.step(BOOT, t0), Action::Type(PROMPT.to_owned()));
-        assert_eq!(d.step(&typed(PROMPT), t0), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(&typed(READY, READY_INPUT), t0),
+            Action::Keys(&[Key::Enter])
+        );
     }
 
     #[test]
@@ -454,7 +457,7 @@ mod tests {
         submitted(&mut d, t0);
         let late = t0 + ENTER_RETRY;
         assert_eq!(
-            d.step(&typed(PROMPT), late),
+            d.step(&typed(READY, READY_INPUT), late),
             Action::Keys(&[Key::Enter]),
             "a swallowed Enter"
         );
@@ -528,9 +531,9 @@ mod tests {
     }
 
     #[test]
-    fn a_settling_turn_quits_once_the_screen_settles_after_its_prompt() {
-        let (tui, answer) = tui_scenario("omp");
-        assert_eq!(answer, Answer::Settle);
+    fn a_turn_answering_nothing_quits_once_the_screen_settles_after_its_prompt() {
+        let (tui, answer) = omp();
+        assert_eq!(answer, Answer::Nothing);
         let t0 = Instant::now();
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
         assert_eq!(d.step("", t0), Action::Wait);
@@ -541,9 +544,10 @@ mod tests {
         );
         let t1 = t0 + SETTLE;
         assert_eq!(d.step(OMP_BOOT, t1), Action::Type(PROMPT.to_owned()));
-        assert_eq!(d.step(&omp_typed(PROMPT), t1), Action::Keys(&[Key::Enter]));
+        let holding = typed(OMP_BOOT, OMP_INPUT);
+        assert_eq!(d.step(&holding, t1), Action::Keys(&[Key::Enter]));
         assert_eq!(
-            d.step(&omp_typed(PROMPT), t1 + SETTLE),
+            d.step(&holding, t1 + SETTLE),
             Action::Keys(&[Key::Enter]),
             "a composer still holding the prompt was never submitted"
         );
@@ -557,26 +561,29 @@ mod tests {
     }
 
     #[test]
-    fn a_run_quits_unanswered_only_where_its_answer_is_to_settle() {
-        let tui = row("omp");
-        for answer in [Answer::Deny, Answer::Settle] {
+    fn a_run_quits_unanswered_only_where_it_answers_nothing() {
+        let (tui, _) = omp();
+        for answer in [Answer::Deny, Answer::Nothing] {
             let t0 = Instant::now();
             let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
             assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
-            assert_eq!(d.step(&omp_typed(PROMPT), t0), Action::Keys(&[Key::Enter]));
+            assert_eq!(
+                d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
+                Action::Keys(&[Key::Enter])
+            );
             assert_eq!(d.step(OMP_NEW, t0), Action::Wait);
             let end = match answer {
                 Answer::Deny => Action::Wait,
-                Answer::Settle => Action::Quit(tui.quit),
+                Answer::Nothing => Action::Quit(tui.quit),
             };
             assert_eq!(d.step(OMP_NEW, t0 + SETTLE), end, "{answer:?}");
         }
     }
 
     #[test]
-    fn a_settling_turn_answers_no_dialog_its_row_lists() {
+    fn a_turn_answering_nothing_leaves_a_dialog_its_row_lists_unanswered() {
         let t0 = Instant::now();
-        let mut d = Driver::new(claude_code(), Answer::Settle, PROMPT.to_owned(), t0);
+        let mut d = Driver::new(claude_code(), Answer::Nothing, PROMPT.to_owned(), t0);
         submitted(&mut d, t0);
         let shown = t0 + Duration::from_millis(1);
         for t in [shown, shown + dwell(), shown + SETTLE] {
@@ -589,14 +596,15 @@ mod tests {
     }
 
     #[test]
-    fn a_stalled_settling_turn_gives_up_as_a_run_that_could_not_happen() {
-        let (tui, answer) = tui_scenario("omp");
+    fn a_stalled_turn_answering_nothing_gives_up_as_a_run_that_could_not_happen() {
+        let (tui, answer) = omp();
         let t0 = Instant::now();
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        let holding = typed(OMP_BOOT, OMP_INPUT);
         assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
-        assert_eq!(d.step(&omp_typed(PROMPT), t0), Action::Keys(&[Key::Enter]));
+        assert_eq!(d.step(&holding, t0), Action::Keys(&[Key::Enter]));
         assert_eq!(
-            d.step(&omp_typed(PROMPT), t0 + STALL),
+            d.step(&holding, t0 + STALL),
             Action::Fail("the screen stood still with the turn unfinished")
         );
         assert_eq!(d.gave_up(), GAVE_UP, "no gate was owed");
@@ -647,7 +655,7 @@ mod tests {
             "Allow this tool?",
         );
         let t0 = Instant::now();
-        let (tui, answer) = tui_scenario("codex");
+        let (tui, answer) = tui_scenario("codex", "permission");
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
         assert_eq!(
             d.step(&unlisted, t0),
@@ -682,42 +690,49 @@ mod tests {
     #[test]
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
         let recorded = [
-            ("claude-code", BOOT, GATE),
-            ("codex", CODEX_BOOT, CODEX_GATE),
+            ("claude-code", "permission", BOOT, GATE),
+            ("codex", "permission", CODEX_BOOT, CODEX_GATE),
             (
                 "kimi",
+                "permission",
                 include_str!("screens/kimi-boot.txt"),
                 include_str!("screens/kimi-gate.txt"),
             ),
             (
                 "grok",
+                "permission",
                 include_str!("screens/grok-boot.txt"),
                 include_str!("screens/grok-gate.txt"),
             ),
             (
                 "reasonix",
+                "permission",
                 include_str!("screens/reasonix-boot.txt"),
                 include_str!("screens/reasonix-gate.txt"),
             ),
-            ("omp", OMP_BOOT, OMP_NEW),
+            ("omp", "new-session", OMP_BOOT, OMP_NEW),
             (
                 "hermes",
+                "permission",
                 include_str!("screens/hermes-boot.txt"),
                 include_str!("screens/hermes-gate.txt"),
             ),
         ];
-        let rows: Vec<&str> = super::super::PROFILES
+        let scenarios: Vec<(&str, &str)> = super::super::PROFILES
             .iter()
-            .filter(|p| {
+            .flat_map(|p| {
                 p.scenarios
                     .iter()
-                    .any(|s| matches!(s.surface, Surface::Tui(_)))
+                    .filter(|s| matches!(s.surface, Surface::Tui { .. }))
+                    .map(|s| (p.source, s.name))
             })
-            .map(|p| p.source)
             .collect();
-        assert_eq!(recorded.map(|(source, ..)| source).to_vec(), rows);
-        for (source, boot, end) in recorded {
-            let (tui, answer) = tui_scenario(source);
+        assert_eq!(
+            recorded.map(|(source, name, ..)| (source, name)).to_vec(),
+            scenarios
+        );
+        for (source, name, boot, end) in recorded {
+            let (tui, answer) = tui_scenario(source, name);
             let t0 = Instant::now();
             let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
             assert_eq!(
@@ -726,7 +741,7 @@ mod tests {
                 "{source}"
             );
             assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
-            if answer == Answer::Settle {
+            if answer == Answer::Nothing {
                 assert_eq!(d.step(end, t0), Action::Wait, "{source}: the screen moved");
                 assert_eq!(d.step(end, t0 + SETTLE), Action::Quit(tui.quit), "{source}");
                 continue;
