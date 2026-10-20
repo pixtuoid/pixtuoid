@@ -712,6 +712,102 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     );
 }
 
+// Line shapes follow agy's `ask-question` recording.
+#[test]
+fn an_answered_agy_question_clears_waiting_on_either_transport() {
+    use pixtuoid_core::source::antigravity::{SOURCE_NAME, decode_ag_line};
+    use pixtuoid_core::source::decoder::decode_hook_payload;
+    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
+    use serde_json::{Value, json};
+    const TRANSCRIPT: &str =
+        "/h/.gemini/antigravity-cli/brain/c1/.system_generated/logs/transcript.jsonl";
+    fn feed(r: &mut Reducer, scene: &mut SceneState, wire: &[(Value, Transport)], at: SystemTime) {
+        for (v, tp) in wire {
+            let events = match tp {
+                Transport::Hook => decode_hook_payload(v.clone()),
+                _ => decode_ag_line(TRANSCRIPT, SOURCE_NAME, v.clone()),
+            };
+            for ev in events.expect("agy's wire decodes") {
+                r.apply(scene, ev, at, *tp);
+            }
+        }
+    }
+    let hook = |event: &str| {
+        (
+            json!({
+                "_pixtuoid_source": SOURCE_NAME, "_pixtuoid_event": event,
+                "conversationId": "c1", "workspacePaths": ["/repo"], "stepIdx": 2,
+                "toolCall": { "name": "ask_question", "args": {} },
+            }),
+            Transport::Hook,
+        )
+    };
+    let asked = (
+        json!({ "step_index": 1, "type": "PLANNER_RESPONSE",
+                "tool_calls": [{ "name": "ask_question", "args": {} }] }),
+        Transport::Jsonl,
+    );
+    let answered = (
+        json!({ "step_index": 2, "type": "GENERIC" }),
+        Transport::Jsonl,
+    );
+    let id = AgentId::from_parts(SOURCE_NAME, "c1");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let t1 = t0 + Duration::from_secs(5);
+    for (what, asks, answers) in [
+        ("transcript", vec![asked.clone()], vec![answered.clone()]),
+        ("hooks", vec![hook("PreToolUse")], vec![hook("PostToolUse")]),
+        (
+            "both",
+            vec![asked.clone(), hook("PreToolUse")],
+            vec![hook("PostToolUse"), answered.clone()],
+        ),
+        (
+            "both, reversed",
+            vec![hook("PreToolUse"), asked.clone()],
+            vec![answered.clone(), hook("PostToolUse")],
+        ),
+    ] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        start_as(&mut r, &mut scene, id, SOURCE_NAME);
+        feed(&mut r, &mut scene, &asks, t0);
+        assert!(
+            matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+            "{what}: the question parks the slot Waiting"
+        );
+        feed(&mut r, &mut scene, &answers, t1);
+        r.tick(
+            &mut scene,
+            t1 + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
+        );
+        assert!(
+            matches!(scene.agents[&id].state, ActivityState::Idle),
+            "{what}: the answer clears Waiting before the turn ends"
+        );
+    }
+    // Both sides of the window the hook End is remembered for.
+    let inside = HOOK_WINS_WINDOW / 10;
+    let past = HOOK_WINS_WINDOW + Duration::from_millis(1);
+    for (what, late, after, parks) in [
+        ("hook", hook("PreToolUse"), inside, false),
+        ("transcript", asked.clone(), inside, false),
+        ("hook", hook("PreToolUse"), past, true),
+        ("transcript", asked, past, true),
+    ] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        start_as(&mut r, &mut scene, id, SOURCE_NAME);
+        feed(&mut r, &mut scene, &[hook("PostToolUse")], t0);
+        feed(&mut r, &mut scene, &[late], t0 + after);
+        assert_eq!(
+            matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+            parks,
+            "{what}: a wait {after:?} after its call's hook End parks the slot only past the window"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // omp extension-bridge approval rounds (#951): the interleavings human approval
 // latency makes reachable past `HOOK_WINS_WINDOW` (`counted_calls`' own doc) —
