@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::harness::CaptureRecord;
+use crate::harness::plan::Placeholder;
 use crate::source::registry;
 
 pub mod bump;
@@ -29,24 +30,24 @@ pub const DUMMY_KEY: &str = "hermetic-dummy-key";
 const AIMOCK_V1: &str = "http://127.0.0.1:{port}/v1";
 
 /// What a Unix [`Profile::system_config`] path spells the operator's user name as.
-pub const USER_PLACEHOLDER: &str = "{user}";
+pub const USER_PLACEHOLDER: &str = Placeholder::User.as_str();
 /// What a script spells [`CAPTURE_NOTE`](crate::harness::CAPTURE_NOTE) as.
-pub(crate) const NOTE_PLACEHOLDER: &str = "{note}";
+pub(crate) const NOTE_PLACEHOLDER: &str = Placeholder::Note.as_str();
 /// What a script or a [`ConfigFile`] spells the workspace the recorder runs the
 /// CLI in as, with its OS's own separators.
-pub const WORKSPACE_PLACEHOLDER: &str = "{workspace}";
+pub const WORKSPACE_PLACEHOLDER: &str = Placeholder::Workspace.as_str();
 /// What a [`ConfigFile`] spells that workspace as with `/` separators, which a
 /// JSON string holds unescaped: how Claude Code keys its projects on Windows
 /// (`Xz` in the 2.1.302 bundle).
-pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = "{workspace_slashed}";
+pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = Placeholder::WorkspaceSlashed.as_str();
 /// What a [`Profile::invocation`] or [`Profile::second_turn`] spells its turn's
 /// prompt as.
-pub const PROMPT_PLACEHOLDER: &str = "{prompt}";
+pub const PROMPT_PLACEHOLDER: &str = Placeholder::Prompt.as_str();
 /// What a [`Profile::second_turn`] spells the session its second turn acts on as.
-pub const SESSION_PLACEHOLDER: &str = "{session}";
+pub const SESSION_PLACEHOLDER: &str = Placeholder::Session.as_str();
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
-pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = "{shell_tool}";
+pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = Placeholder::ShellTool.as_str();
 
 /// A fact that differs between Unix and Windows. Both arms are plain data, so
 /// a test on any host reads both, as `platform::resolve_user_home_opt` takes
@@ -269,7 +270,7 @@ pub struct Daemon {
 }
 
 /// The port a [`Daemon`] listens on, picked free by the orchestrator.
-pub const DAEMON_PORT_PLACEHOLDER: &str = "{daemon_port}";
+pub const DAEMON_PORT_PLACEHOLDER: &str = Placeholder::DaemonPort.as_str();
 
 /// A live tier's exit when a prerequisite is missing, which no run of the build
 /// under test caused.

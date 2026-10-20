@@ -35,6 +35,7 @@ use crate::{AgentEvent, AgentId, Reducer, Transport};
 mod captures;
 pub mod hermetic;
 pub mod host;
+pub mod plan;
 pub mod provenance;
 pub mod reads;
 #[cfg(feature = "native")]
