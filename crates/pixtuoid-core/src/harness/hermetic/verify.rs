@@ -911,20 +911,19 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     let ended = if !waited.is_empty() {
         waited.iter().any(|t| ended_calls.contains(t))
     } else if started.is_empty() {
-        // The slot waited, and every call it covered and the turn ended: one
-        // End per Start (a reviewer's read before the wait) plus the turn's.
-        // Counted, not paired: reasonix's tool hooks carry no call id
-        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0). That the refused
-        // call never ran is the script contract's
-        // (`a_permission_script_calls_no_tool_after_its_refusal`) and the CLI's own denial.
+        // No start carries a call id (reasonix): one End per Start (a
+        // guardian's read before the wait) plus the turn's, counted not paired
+        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0). The script
+        // contract forbids a retry after the refusal, and the CLI's own denial
+        // keeps the refused call from running.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
         ends == starts + 1
     } else {
-        // A wait that names no call (claude-code's `PermissionRequest`): every
-        // started tool ends.
-        !started.is_empty() && started.is_subset(&ended_calls)
+        // Starts carry call ids (claude-code, whose `PermissionRequest` names
+        // none): every started call ends.
+        started.is_subset(&ended_calls)
     };
     if !ended {
         findings.push((
@@ -1682,15 +1681,15 @@ mod tests {
     }
 
     #[test]
-    fn a_reviewer_that_reads_before_the_wait_passes_while_the_read_ends() {
+    fn a_guardian_that_reads_before_the_wait_passes_while_the_read_ends() {
         let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         edit_hooks(d.path(), |v| {
-            let reviewer = v["sessionId"]
+            let guardian = v["sessionId"]
                 .as_str()
                 .is_some_and(|s| s.ends_with(":guardian"));
-            (!(reviewer && v["event"] == "PostToolUse")).then_some(v)
+            (!(guardian && v["event"] == "PostToolUse")).then_some(v)
         });
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1707,7 +1706,7 @@ mod tests {
             let end = lines
                 .iter()
                 .position(|v| v["event"] == "PostToolUse")
-                .expect("the reviewer's read ended");
+                .expect("the guardian's read ended");
             let again = lines[end].clone();
             lines.insert(end, again);
         });
