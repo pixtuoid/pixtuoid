@@ -262,9 +262,9 @@ pub(crate) fn json_lines(file: &Path) -> std::io::Result<Vec<serde_json::Value>>
         .collect())
 }
 
-/// Where a failed sandboxed run's scratch is copied inside its run dir: for
+/// Where a failed sandboxed run's driver dir is copied inside its run dir: for
 /// whoever reads the run after, and never capture data.
-pub const SCRATCH_COPY: &str = "scratch";
+pub const DRIVER_COPY: &str = "driver";
 
 /// Every regular file under `dir`, recursively, sorted: a symlink is not
 /// followed and a socket, FIFO or broken link is not a file.
@@ -288,12 +288,12 @@ pub fn files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Every `.jsonl` under `dir`, recursively, sorted, but for a run dir's
-/// [`SCRATCH_COPY`], which holds logs and no capture.
+/// [`DRIVER_COPY`], which holds logs and no capture.
 pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
-    let scratch = dir.join(SCRATCH_COPY);
+    let driver = dir.join(DRIVER_COPY);
     files_under(dir)
         .into_iter()
-        .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && !p.starts_with(&scratch))
+        .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && !p.starts_with(&driver))
         .collect()
 }
 
@@ -938,12 +938,12 @@ mod tests {
     }
 
     #[test]
-    fn a_run_dirs_scratch_copy_is_never_capture_data() {
+    fn a_run_dirs_driver_copy_is_never_capture_data() {
         let d = tempfile::tempdir().expect("run dir");
         std::fs::write(d.path().join("hook-payloads.jsonl"), "{}\n").expect("write");
-        std::fs::create_dir_all(d.path().join(SCRATCH_COPY).join("deep")).expect("mkdir");
-        std::fs::write(d.path().join(SCRATCH_COPY).join("x.jsonl"), "{}\n").expect("write");
-        std::fs::write(d.path().join(SCRATCH_COPY).join("deep/y.jsonl"), "{}\n").expect("write");
+        std::fs::create_dir_all(d.path().join(DRIVER_COPY).join("deep")).expect("mkdir");
+        std::fs::write(d.path().join(DRIVER_COPY).join("x.jsonl"), "{}\n").expect("write");
+        std::fs::write(d.path().join(DRIVER_COPY).join("deep/y.jsonl"), "{}\n").expect("write");
         std::fs::create_dir(d.path().join("s")).expect("mkdir");
         std::fs::write(d.path().join("s").join("t.jsonl"), "{}\n").expect("write");
         let names: Vec<_> = jsonl_files_under(d.path())
