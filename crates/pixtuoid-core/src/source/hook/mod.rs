@@ -457,8 +457,8 @@ mod tests {
         );
     }
 
-    /// Only the source whose runner reaches our hook command through a
-    /// recognised shell may act on its first sighting.
+    /// Among `ShimStamp` sources, only an `OnceViaShell` one acts on its first
+    /// sighting; a `Twice` one waits for a second.
     #[test]
     fn corroboration_is_per_source() {
         let target = |source: &str| {
