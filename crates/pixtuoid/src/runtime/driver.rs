@@ -38,9 +38,9 @@ use super::{
 /// How often the headless loop samples the scene for a summary line.
 const HEADLESS_SUMMARY_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-// A resolved wait stays shown for the grace window, which is the only reason a
-// hermetic Permission row's brief wait (at `crates/pixtuoid-core/src/state/reducer/mod.rs:32`)
-// is seen by a poll at all: at or below the interval it can be sampled past.
+// A resolved wait stays shown for `ACTIVE_GRACE_WINDOW`
+// (`crates/pixtuoid-core/src/state/reducer/mod.rs:32`), and that alone lets a
+// poll see a hermetic Permission row's brief wait.
 const _: () = assert!(
     ACTIVE_GRACE_WINDOW.as_millis() > HEADLESS_SUMMARY_POLL_INTERVAL.as_millis(),
     "a resolved wait must outlast one headless poll"
