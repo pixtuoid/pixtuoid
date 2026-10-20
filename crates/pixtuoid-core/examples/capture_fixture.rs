@@ -36,7 +36,7 @@ mod recorder {
     const SEED_ENV: &str = "CAPTURE_SEED";
 
     use pixtuoid_core::harness::hermetic::{
-        self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
+        self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, PerOs, SESSION_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
@@ -47,7 +47,7 @@ mod recorder {
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
+        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
         PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
@@ -348,7 +348,7 @@ mod recorder {
         };
         let daemon = match RunningDaemon::start(
             options.daemon.as_ref(),
-            DAEMON_BOOT,
+            *DAEMON_BOOT.here(),
             &workspace,
             &wiring,
             descriptor.verified_version,
@@ -401,7 +401,7 @@ mod recorder {
             }
         };
         let unresumed = !options.resume.is_empty() && resumed.is_none();
-        let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(DAEMON_STOP_GRACE));
+        let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(*DAEMON_STOP_GRACE.here()));
         tap.settle();
         let payloads = tap.payloads();
         let incomplete = incomplete(tap.stopped(), daemon_stop);
@@ -855,12 +855,18 @@ mod recorder {
     }
 
     /// How long a daemon gets to serve: its cold boot and a cold-starting probe
-    /// after it, which on Windows outlast the rig's
-    /// [`BOOT`](pixtuoid_core::harness::BOOT).
-    const DAEMON_BOOT: Duration = Duration::from_secs(120);
-    /// How long a daemon may take to exit once its stdin closed, openclaw's slow
-    /// Windows exit included: a kill would lose its shutdown hooks' last sends.
-    const DAEMON_STOP_GRACE: Duration = Duration::from_secs(150);
+    /// after it, which on Windows outlast the rig's [`BOOT`].
+    const DAEMON_BOOT: PerOs<Duration> = PerOs {
+        unix: BOOT,
+        windows: Duration::from_secs(120),
+    };
+    /// How long a daemon may take to exit once its stdin closed: a kill would
+    /// lose its shutdown hooks' last sends, and openclaw's Windows stop,
+    /// `process.exit` included, outlasts the Unix grace.
+    const DAEMON_STOP_GRACE: PerOs<Duration> = PerOs {
+        unix: Duration::from_secs(30),
+        windows: Duration::from_secs(150),
+    };
     /// How many last lines of its log, and of its probes' when it never served,
     /// a daemon that never served or never stopped carries in its error: a failed
     /// run's uploaded dir keeps the recorder's error; both logs stay in its scratch.
@@ -2112,12 +2118,18 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let running =
-                RunningDaemon::start(Some(&daemon), DAEMON_BOOT, ws.path(), &wiring, "1.0.0", &[])
-                    .expect("starts")
-                    .expect("a daemon");
+            let running = RunningDaemon::start(
+                Some(&daemon),
+                *DAEMON_BOOT.here(),
+                ws.path(),
+                &wiring,
+                "1.0.0",
+                &[],
+            )
+            .expect("starts")
+            .expect("a daemon");
             assert!(ready.exists(), "returned before it served");
-            running.stop(DAEMON_STOP_GRACE).expect("it stops");
+            running.stop(*DAEMON_STOP_GRACE.here()).expect("it stops");
         }
 
         /// Where a re-run of this test binary as the fake daemon keeps its
@@ -2209,10 +2221,10 @@ mod recorder {
                 return;
             }
             let markers = tempfile::tempdir().expect("markers");
-            let running = start_fake(TEST, markers.path(), DAEMON_BOOT).expect("starts");
+            let running = start_fake(TEST, markers.path(), *DAEMON_BOOT.here()).expect("starts");
             std::fs::write(markers.path().join("stopping"), "").expect("stopping");
             running
-                .stop(DAEMON_STOP_GRACE)
+                .stop(*DAEMON_STOP_GRACE.here())
                 .expect("it stops on its own");
             assert_eq!(
                 std::fs::read_to_string(markers.path().join("stopped"))
@@ -2250,7 +2262,7 @@ mod recorder {
             };
             RunningDaemon::start(
                 Some(&daemon),
-                DAEMON_BOOT,
+                *DAEMON_BOOT.here(),
                 dir.path(),
                 &wiring,
                 "1.0.0",
@@ -2258,7 +2270,7 @@ mod recorder {
             )
             .expect("it serves")
             .expect("a daemon")
-            .stop(DAEMON_STOP_GRACE)
+            .stop(*DAEMON_STOP_GRACE.here())
             .expect("it stops");
             assert_eq!(
                 std::fs::read_to_string(dir.path().join("own"))
@@ -2303,7 +2315,7 @@ mod recorder {
                 return;
             }
             let markers = tempfile::tempdir().expect("markers");
-            let running = start_fake(TEST, markers.path(), DAEMON_BOOT).expect("starts");
+            let running = start_fake(TEST, markers.path(), *DAEMON_BOOT.here()).expect("starts");
             let grace = Duration::from_secs(1);
             let started = std::time::Instant::now();
             let why = running.stop(grace).expect_err("a killed daemon fails");
@@ -2339,10 +2351,16 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let why =
-                RunningDaemon::start(Some(&daemon), DAEMON_BOOT, ws.path(), &wiring, "1.0.0", &[])
-                    .map(|_| ())
-                    .expect_err("its probe answered for someone else");
+            let why = RunningDaemon::start(
+                Some(&daemon),
+                *DAEMON_BOOT.here(),
+                ws.path(),
+                &wiring,
+                "1.0.0",
+                &[],
+            )
+            .map(|_| ())
+            .expect_err("its probe answered for someone else");
             assert!(why.to_string().contains("exited"), "{why}");
             assert!(why.to_string().contains("out of disk"), "its log: {why}");
         }
@@ -2384,7 +2402,18 @@ mod recorder {
             let started = std::time::Instant::now();
             let running = start_fake(TEST, dir.path(), SLOW * 3).expect("a slow probe answers");
             assert!(started.elapsed() >= SLOW, "{:?}", started.elapsed());
-            running.stop(DAEMON_STOP_GRACE).expect("it stops");
+            running.stop(*DAEMON_STOP_GRACE.here()).expect("it stops");
+        }
+
+        #[test]
+        fn a_daemons_boot_and_stop_are_budgeted_per_os() {
+            assert_eq!(
+                DAEMON_BOOT.unix, BOOT,
+                "a Unix daemon boots inside the rig's budget"
+            );
+            assert_eq!(DAEMON_BOOT.windows, Duration::from_secs(120));
+            assert_eq!(DAEMON_STOP_GRACE.unix, Duration::from_secs(30));
+            assert_eq!(DAEMON_STOP_GRACE.windows, Duration::from_secs(150));
         }
 
         #[test]
