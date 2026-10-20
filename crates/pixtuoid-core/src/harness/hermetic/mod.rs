@@ -137,6 +137,9 @@ pub enum Shape {
     /// A turn whose child's model errs: the parent delegates, the child
     /// registers as its child and ends, and the parent's turn, or its session, ends.
     ChildError,
+    /// A command that starts the CLI's next session in place: the session it
+    /// switches away from ends, and a root session succeeds it.
+    Succession,
 }
 
 impl Shape {
@@ -147,9 +150,26 @@ impl Shape {
             Some(0) => true,
             Some(_) => match self {
                 Self::ModelError => true,
-                Self::ToolRun | Self::Permission | Self::Subagent | Self::ChildError => false,
+                Self::ToolRun
+                | Self::Permission
+                | Self::Subagent
+                | Self::ChildError
+                | Self::Succession => false,
             },
             None => false,
+        }
+    }
+
+    /// Whether its turn asks the scripted model anything: a succession's
+    /// command runs in the CLI alone.
+    pub(crate) const fn asks_the_model(self) -> bool {
+        match self {
+            Self::ToolRun
+            | Self::Permission
+            | Self::Subagent
+            | Self::ModelError
+            | Self::ChildError => true,
+            Self::Succession => false,
         }
     }
 }
@@ -160,7 +180,12 @@ pub enum Surface {
     /// The profile's headless invocation, with the prompt in its argv.
     Headless,
     /// Its interactive TUI under a pty, for a turn only the TUI asks.
-    Tui(&'static tui::Tui),
+    Tui {
+        /// The CLI's interactive facts.
+        row: &'static tui::Tui,
+        /// How the run answers the turn's dialog.
+        answer: tui::Answer,
+    },
 }
 
 /// A CLI's scripted turn, and its second where [`Turn::resume`] names one.
@@ -663,6 +688,19 @@ const REASONIX_TUI: tui::Tui = tui::Tui {
     renders_under_conpty: true,
 };
 
+/// omp's TUI, cited as its profile is.
+const OMP_TUI: tui::Tui = tui::Tui {
+    args: &[],
+    composer: tui::Composer {
+        marker: "╰─",
+        above: tui::Above::Nothing,
+    },
+    gates: &[],
+    // `src/slash-commands/builtin-lifecycle.ts:835-839`.
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
 /// opencode's daemon, as its `--server` commands name it.
 const OPENCODE_SERVER: &str = "http://127.0.0.1:{daemon_port}";
 
@@ -758,7 +796,10 @@ pub const PROFILES: &[Profile] = &[
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&CLAUDE_CODE_TUI),
+                surface: Surface::Tui {
+                    row: &CLAUDE_CODE_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
@@ -904,7 +945,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&CODEX_TUI),
+                surface: Surface::Tui {
+                    row: &CODEX_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1248,7 +1292,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&KIMI_TUI),
+                surface: Surface::Tui {
+                    row: &KIMI_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
@@ -1393,7 +1440,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&GROK_TUI),
+                surface: Surface::Tui {
+                    row: &GROK_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1554,7 +1604,10 @@ model = "deepseek-v4-flash"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&REASONIX_TUI),
+                surface: Surface::Tui {
+                    row: &REASONIX_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1752,7 +1805,9 @@ model = "deepseek-v4-flash"
             // A headless prompt is refused, and `always-ask` prompts for every
             // tool but a read (`docs/approval-mode.md:18-24`), so only the spawn
             // is allowed. `-p` exits once the turn ends, killing a background
-            // child, so the spawn blocks (`src/task/settings.ts:251`).
+            // child, so the spawn blocks (`src/task/settings.ts:251`). The TUI
+            // would open on a setup wizard and fetch the latest release
+            // (`src/main.ts:240-254`, `:668-679`).
             ConfigFile {
                 home: "PI_CODING_AGENT_DIR",
                 path: "config.yml",
@@ -1762,6 +1817,9 @@ model = "deepseek-v4-flash"
     task: allow
 async:
   enabled: false
+startup:
+  setupWizard: false
+  checkUpdate: false
 "#,
             },
         ],
@@ -1795,9 +1853,28 @@ async:
                 fixture: "delegation/fixtures/omp",
                 turn: Turn::PROFILE,
             },
+            // `/new` is a TUI builtin, which `-p` never runs
+            // (`src/slash-commands/builtin-lifecycle.ts:159-167`,
+            // `src/session/agent-session.ts:7574-7596`); its switch names the
+            // session it leaves (`:10250-10255`).
+            Scenario {
+                name: "new-session",
+                shape: Shape::Succession,
+                surface: Surface::Tui {
+                    row: &OMP_TUI,
+                    answer: tui::Answer::Nothing,
+                },
+                expects: &["session_start", "session_switch", "session_shutdown"],
+                fixture: "omp/fixtures/new-session-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: Some("/new"),
+                    resume: None,
+                },
+            },
         ],
         script_vars: &[],
-        not_yet: &["session_switch", "session_branch"],
+        not_yet: &["session_branch"],
         event_name: type_field,
         not_yet_fields: &[
             // Only a UI approves a prompt (`src/extensibility/extensions/wrapper.ts:386-398`).
@@ -1812,7 +1889,7 @@ async:
                 "/message/content/*/arguments/questions/*/question",
             ),
         ],
-        not_yet_literals: &["ask", "previousSessionFile"],
+        not_yet_literals: &["ask"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1881,7 +1958,10 @@ telemetry:
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&HERMES_TUI),
+                surface: Surface::Tui {
+                    row: &HERMES_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "on_session_start",
                     "pre_tool_call",
@@ -2142,7 +2222,7 @@ impl Scenario {
     /// Why a leg on `windows` doesn't run it, if it doesn't.
     pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
-            Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
+            Surface::Tui { row, .. } if windows && !row.renders_under_conpty => {
                 Some("its TUI paints nothing under ConPTY")
             }
             _ => None,
@@ -2255,15 +2335,9 @@ mod tests {
     }
 
     #[test]
-    fn a_tui_scenario_is_a_permission_turn() {
+    fn a_tui_turn_takes_no_args_and_resumes_nothing() {
         for p in PROFILES {
             for s in p.scenarios {
-                assert!(
-                    matches!(s.surface, Surface::Headless) || s.shape == Shape::Permission,
-                    "{}/{}: the TUI driver refuses its dialog, which only a Permission turn wants",
-                    p.source,
-                    s.name
-                );
                 assert!(
                     matches!(s.surface, Surface::Headless)
                         || (s.turn.args.is_empty() && s.turn.resume.is_none()),
@@ -2285,6 +2359,26 @@ mod tests {
                     p.scenarios.iter().any(|s| s.not_run_on(windows).is_none()),
                     "{}: a leg (windows: {windows}) runs none of its scenarios",
                     p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_tui_turn_answers_a_gate_exactly_when_its_shape_is_permission() {
+        // A turn waiting on a dialog it never raises stalls, and the verdict
+        // blames its CLI.
+        for p in PROFILES {
+            for s in p.scenarios {
+                let Surface::Tui { answer, .. } = s.surface else {
+                    continue;
+                };
+                assert_eq!(
+                    answer != tui::Answer::Nothing,
+                    s.shape == Shape::Permission,
+                    "{}/{}",
+                    p.source,
+                    s.name
                 );
             }
         }
@@ -2585,6 +2679,28 @@ mod tests {
                         .any(|f| f["response"]["toolCalls"].is_array()),
                     "{}: a reply calls a tool",
                     p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_shape_asks_the_model_nothing_exactly_when_its_script_has_no_reply() {
+        // A reply to a turn that asks nothing lets a run whose calls left the
+        // sandbox complete with no request.
+        for p in PROFILES {
+            for s in p.scenarios {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert_eq!(
+                    replies.is_empty(),
+                    !s.shape.asks_the_model(),
+                    "{}/{}",
+                    p.source,
+                    s.name
                 );
             }
         }

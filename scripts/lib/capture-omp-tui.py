@@ -7,7 +7,6 @@ keystrokes, so this driver types them on a resilient schedule. Modes:
     capture-omp-tui.py approve <prompt...>   one always-ask gate, approved
     capture-omp-tui.py deny <prompt...>      one always-ask gate, denied
     capture-omp-tui.py exit                  no prompt: /exit an empty session
-    capture-omp-tui.py switch                no prompt: /new then /exit
 
 The gate response repeats every few seconds rather than guessing model
 latency — an extra Enter (or Down+Enter) on the empty composer is a no-op, so
@@ -67,11 +66,6 @@ while time.time() - start < TOTAL:
             if "submit" in sent and t >= next_response and t < TOTAL - 15:
                 os.write(fd, RESPONSE)
                 next_response = t + 8
-        elif mode == "switch":
-            if t >= 5:
-                once("new", b"/new")
-            if t >= 7:
-                once("new-enter", b"\r")
         if t >= TOTAL - 12:
             once("exit", b"/exit")
         if t >= TOTAL - 10:

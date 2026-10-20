@@ -585,9 +585,9 @@ pub(crate) fn scenario_reads<'a>(
     Ok(reads)
 }
 
-/// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
-/// as scripted, and the turn resuming it where one ran; a request no script
-/// line matched is Script either way.
+/// Whether `manifest`'s CLI ran its turn of `shape` as scripted, against the
+/// scripted model where the shape asks it anything, and the turn resuming it
+/// where one ran; a request no script line matched is Script either way.
 fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
@@ -598,7 +598,7 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
             ),
         ));
     }
-    manifest.capture.exited_as_scripted(shape) && manifest.requests > 0
+    manifest.capture.exited_as_scripted(shape) && (manifest.requests > 0 || !shape.asks_the_model())
 }
 
 fn judge(
@@ -611,7 +611,7 @@ fn judge(
 ) -> std::io::Result<Option<Unjudged>> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
-    let unrefused = matches!(scenario.surface, Surface::Tui(_))
+    let unrefused = matches!(scenario.surface, Surface::Tui { .. })
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
@@ -629,15 +629,18 @@ fn judge(
             .map_or(String::new(), |r| {
                 format!(", resumed exit {:?}", r.exit_code)
             });
-        findings.push((
-            Label::Blocked,
+        let exit = manifest.capture.exit_code;
+        let why = if scenario.shape.asks_the_model() {
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {:?}{resumed}, \
+                "the CLI did not complete a turn against the scripted model (exit {exit:?}{resumed}, \
                  {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
-                manifest.capture.exit_code, manifest.requests
-            ),
-        ));
+                manifest.requests
+            )
+        } else {
+            format!("the CLI did not complete its turn (exit {exit:?}{resumed}): it could not run")
+        };
+        findings.push((Label::Blocked, why));
         return Ok(None);
     }
     // A resumed turn that never ran had no session the first turn's wire named,
@@ -719,7 +722,7 @@ fn judge(
     }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
-        Shape::Subagent | Shape::ChildError => 2,
+        Shape::Subagent | Shape::ChildError | Shape::Succession => 2,
     };
     started_in(
         &events,
@@ -745,11 +748,12 @@ fn judge(
             p.descriptor().caps().child_end_inference,
             findings,
         ),
+        Shape::Succession => succession(&events, findings),
     }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent | Shape::ChildError => "active",
         Shape::Permission => "waiting",
-        Shape::ModelError => "idle",
+        Shape::ModelError | Shape::Succession => "idle",
     };
     judge_scene(p, scene, shown, findings);
     new_types(p, dir, dropped::baseline_of(scenario)?.as_ref(), findings)
@@ -1134,6 +1138,39 @@ fn child_error(
     }
 }
 
+/// The first session to start ends, and another starts as a root; one process
+/// runs the scenario, so its pid is not judged.
+fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+    let mut starts = events.iter().filter_map(|e| match e {
+        AgentEvent::SessionStart {
+            agent_id,
+            parent_id,
+            ..
+        } => Some((*agent_id, *parent_id)),
+        _ => None,
+    });
+    // No start at all is `started_in`'s finding.
+    let Some((first, _)) = starts.next() else {
+        return;
+    };
+    match starts.find(|(id, _)| *id != first) {
+        None => findings.push((Label::Fail, "no session succeeded the first".into())),
+        Some((_, Some(_))) => {
+            findings.push((Label::Fail, "the successor started as a child".into()))
+        }
+        Some((_, None)) => {}
+    }
+    if !events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == first))
+    {
+        findings.push((
+            Label::Fail,
+            "the session switched away from never ended".into(),
+        ));
+    }
+}
+
 /// The scene a headless pixtuoid painted, and every drift breadcrumb it logged.
 /// The agent must be seen in the `shown` state its shape is about, and every
 /// agent, a child under its own label included, gone once the CLI has exited:
@@ -1165,7 +1202,7 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
         Shape::ToolRun => Some("idle"),
         // `RunFailed` latches it (`crate::source::daemon`).
         Shape::ModelError => Some("degraded"),
-        Shape::Permission | Shape::Subagent | Shape::ChildError => None,
+        Shape::Permission | Shape::Subagent | Shape::ChildError | Shape::Succession => None,
     }
 }
 
@@ -1231,9 +1268,18 @@ fn hook_lines(dir: &Path) -> std::io::Result<Vec<String>> {
     }
 }
 
-/// macOS's `/tmp` is `/private/tmp`: a CLI may report either.
+/// macOS's `/tmp` is `/private/tmp`, and a CLI may report either: omp drops
+/// the `/private` (`packages/utils/src/dirs.ts:144-155`, `:228` at
+/// `v18.12.1`). A recording is judged on hosts where neither spelling exists,
+/// so the alias folds by name, not through the filesystem.
 fn canonical(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    const PRIVATE_TMP: &str = "/private/tmp";
+    const TMP: &str = "/tmp";
+    let real = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    match real.strip_prefix(PRIVATE_TMP) {
+        Ok(rest) => Path::new(TMP).join(rest),
+        Err(_) => real,
+    }
 }
 
 #[cfg(test)]
@@ -1276,6 +1322,14 @@ mod tests {
     }
 
     fn write_manifest(dir: &Path, source: &str, edit: impl FnOnce(&mut Manifest)) {
+        std::fs::write(
+            dir.join(MANIFEST),
+            serde_json::to_string(&manifest(source, edit)).expect("json"),
+        )
+        .expect("write");
+    }
+
+    fn manifest(source: &str, edit: impl FnOnce(&mut Manifest)) -> Manifest {
         let mut m = Manifest {
             source: source.into(),
             scenario: "tool-run".into(),
@@ -1292,8 +1346,7 @@ mod tests {
             results_seen: 1,
         };
         edit(&mut m);
-        std::fs::write(dir.join(MANIFEST), serde_json::to_string(&m).expect("json"))
-            .expect("write");
+        m
     }
 
     /// Rewrite the hook lines through `f`, which may reorder them.
@@ -1495,6 +1548,80 @@ mod tests {
                                      Read the note@1:active(read_file)]\nagents=[] daemons=[]\n";
     const RX_DELEGATE_SCENE: &str = "agents=[rx\u{b7}proj@0:active(Delegating), \
                                      rx\u{b7}proj@1:active(read_file)]\nagents=[] daemons=[]\n";
+    const OM_NEW_SCENE: &str = "agents=[om\u{b7}proj@0:idle]\n\
+                                agents=[om\u{b7}proj@0:idle, om\u{b7}proj@1:idle]\n\
+                                agents=[om\u{b7}proj@1:idle]\nagents=[] daemons=[]\n";
+
+    /// omp's recorded `/new`, which asked the model nothing.
+    fn recorded_succession(scene: &str) -> tempfile::TempDir {
+        let d = recorded("omp", Shape::Succession, scene);
+        write_manifest(d.path(), "omp", |m| {
+            m.scenario = "new-session".into();
+            m.requests = 0;
+            m.results_seen = 0;
+        });
+        d
+    }
+
+    #[test]
+    fn a_recorded_omp_succession_passes() {
+        let d = recorded_succession(OM_NEW_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_succession_that_could_not_run_is_blocked_without_blaming_the_model() {
+        let d = recorded_succession(OM_NEW_SCENE);
+        write_manifest(d.path(), "omp", |m| {
+            m.scenario = "new-session".into();
+            m.requests = 0;
+            m.capture.exit_code = Some(1);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(
+                &v,
+                Label::Blocked,
+                "did not complete its turn (exit Some(1))"
+            ),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            !v.findings().iter().any(|f| f.1.contains("model")),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_recorded_succession_cut_before_its_switch_fails() {
+        // Killed before the command ran, or quit before it: one session, its
+        // successor's transcript never written.
+        for quit_first in [false, true] {
+            let d = recorded_succession("agents=[om\u{b7}proj@0:idle]\nagents=[] daemons=[]\n");
+            let mut first = None;
+            edit_hooks(d.path(), |mut v| match v["type"].as_str() {
+                Some("session_start") => {
+                    first = Some(v["sessionFile"].clone());
+                    Some(v)
+                }
+                Some("session_shutdown") if quit_first => {
+                    v["sessionFile"] = first.clone().expect("started first");
+                    Some(v)
+                }
+                _ => None,
+            });
+            blank_transcripts(d.path());
+            let v = verify(d.path()).expect("verify");
+            assert!(
+                has(&v, Label::Fail, "no session succeeded"),
+                "{quit_first}: {:?}",
+                v.findings()
+            );
+        }
+    }
 
     #[test]
     fn a_recorded_dsh_permission_run_passes() {
@@ -2162,6 +2289,35 @@ mod tests {
     }
 
     #[test]
+    fn a_tmp_cwd_is_its_private_tmp_workspace_where_neither_exists() {
+        let start = |cwd: &str| AgentEvent::SessionStart {
+            agent_id: crate::AgentId::from_parts("omp", "s"),
+            source: "omp".into(),
+            session_id: "s".into(),
+            cwd: cwd.into(),
+            parent_id: None,
+        };
+        let ws = Path::new("/private/tmp/pixtuoid-judged-elsewhere/proj");
+        for cwd in [
+            "/tmp/pixtuoid-judged-elsewhere/proj",
+            "/private/tmp/pixtuoid-judged-elsewhere/proj",
+        ] {
+            let mut f = Vec::new();
+            started_in(&[start(cwd)], ws, 1, false, &mut f);
+            assert!(f.is_empty(), "{cwd}: {f:?}");
+        }
+        let mut f = Vec::new();
+        started_in(
+            &[start("/tmp/pixtuoid-judged-elsewhere/other")],
+            ws,
+            1,
+            false,
+            &mut f,
+        );
+        assert!(has(&Verdict::new(f), Label::Fail, "is not the workspace"));
+    }
+
+    #[test]
     fn a_cwd_outside_the_workspace_fails() {
         let d = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(d.path(), "codex", |m| {
@@ -2229,6 +2385,67 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_succession_completes_with_no_model_request_and_only_on_a_clean_exit() {
+        let completed = |shape, exit_code, requests| {
+            let m = manifest("omp", |m| {
+                m.capture.exit_code = exit_code;
+                m.requests = requests;
+            });
+            completed_turn(&m, shape, &mut Vec::new())
+        };
+        assert!(completed(Shape::Succession, Some(0), 0));
+        assert!(!completed(Shape::Succession, Some(1), 0));
+        assert!(
+            !completed(Shape::Succession, None, 0),
+            "a signal ends no turn"
+        );
+        assert!(
+            !completed(Shape::ToolRun, Some(0), 0),
+            "a turn that asks the model"
+        );
+    }
+
+    #[test]
+    fn a_succession_ends_its_first_session_and_starts_a_root_after_it() {
+        let id = |id: &str| crate::AgentId::from_parts("omp", id);
+        let start = |agent: &str, parent: Option<&str>| AgentEvent::SessionStart {
+            agent_id: id(agent),
+            source: "omp".into(),
+            session_id: agent.into(),
+            cwd: "/w".into(),
+            parent_id: parent.map(id),
+        };
+        let end = |agent: &str| AgentEvent::SessionEnd {
+            agent_id: id(agent),
+            as_child: false,
+        };
+        let judged = |events: &[AgentEvent]| {
+            let mut f = Vec::new();
+            succession(events, &mut f);
+            Verdict::new(f)
+        };
+        let v = judged(&[start("a", None), end("a"), start("b", None), end("b")]);
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = judged(&[start("a", None), start("b", None), end("a")]);
+        assert_eq!(
+            v.label(),
+            Label::Pass,
+            "an end's arrival order is its shim's"
+        );
+        // A quit that won the race with the command: one session, ended.
+        let v = judged(&[start("a", None), end("a")]);
+        assert!(
+            has(&v, Label::Fail, "no session succeeded"),
+            "{:?}",
+            v.findings()
+        );
+        let v = judged(&[start("a", None), start("b", None), end("b")]);
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+        let v = judged(&[start("a", None), end("a"), start("b", Some("a"))]);
+        assert!(has(&v, Label::Fail, "as a child"), "{:?}", v.findings());
     }
 
     #[test]
