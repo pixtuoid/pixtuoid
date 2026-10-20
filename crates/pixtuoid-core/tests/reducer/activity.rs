@@ -789,11 +789,11 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
     // Both sides of the window the hook End is remembered for.
     let inside = HOOK_WINS_WINDOW / 10;
     let past = HOOK_WINS_WINDOW + Duration::from_millis(1);
-    for (late, after, parks) in [
-        (hook("PreToolUse"), inside, false),
-        (asked.clone(), inside, false),
-        (hook("PreToolUse"), past, true),
-        (asked, past, true),
+    for (what, late, after, parks) in [
+        ("hook", hook("PreToolUse"), inside, false),
+        ("transcript", asked.clone(), inside, false),
+        ("hook", hook("PreToolUse"), past, true),
+        ("transcript", asked, past, true),
     ] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
@@ -803,7 +803,7 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
         assert_eq!(
             matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
             parks,
-            "a wait {after:?} after its call's hook End parks the slot only past the window"
+            "{what}: a wait {after:?} after its call's hook End parks the slot only past the window"
         );
     }
 }
