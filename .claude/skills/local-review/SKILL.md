@@ -43,9 +43,9 @@ contract; fill briefs from them, never a paraphrase here.
    first — and REFUTE one that REVIEW.md's Do not flag covers, or deliberate
    design, with its mechanism.
 4. **Fold** accepted findings into ONE commit.
-5. **Disposition** each finding in a review thread once the PR is open. The
-   bots open theirs; open each local finding the same way, then reply and
-   resolve:
+5. **Disposition** each finding in a review thread once the PR is open. Open
+   each local finding, and each bot finding with no thread, as the bots open
+   theirs, then reply and resolve:
 
    ```sh
    pr=<N>; head=$(gh pr view $pr --json headRefOid -q .headRefOid)
