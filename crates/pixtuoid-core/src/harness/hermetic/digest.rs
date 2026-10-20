@@ -1,7 +1,7 @@
 //! The checks on a download against the digest its release lists.
 
 /// `bytes`' SHA-256 as a sums file lists it.
-pub fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     digest_hex::<sha2::Sha256>(bytes)
 }
 

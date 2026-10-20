@@ -141,7 +141,7 @@ pub enum Shape {
 impl Shape {
     /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
     /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
         match code {
             Some(0) => true,
             Some(_) => match self {
