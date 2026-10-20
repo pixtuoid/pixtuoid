@@ -1,0 +1,91 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: ~
+    effort: ultrathink
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: ~
+    effort: ultra
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: claude-opus-5-5
+    effort: ~
+- Usage:
+    agent_id: 13356418949385523147
+    fresh_tokens: 19
+- ActivityStart:
+    agent_id: 13356418949385523147
+    tool_use_id: toolu_FnougYLloSudJHWa
+    detail:
+      Generic:
+        display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
+- ActivityEnd:
+    agent_id: 13356418949385523147
+    tool_use_id: toolu_FnougYLloSudJHWa
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: claude-opus-5-5
+    effort: ~
+- Usage:
+    agent_id: 13356418949385523147
+    fresh_tokens: 19
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: ~
+    effort: ultra_exit
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: claude-opus-5-5
+    effort: ~
+- Usage:
+    agent_id: 13356418949385523147
+    fresh_tokens: 19
+- SessionStart:
+    agent_id: 13356418949385523147
+    source: claude-code
+    session_id: d0b475dd-c580-4740-b4c4-567167716c40
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 13356418949385523147
+    source: claude-code
+    session_id: d0b475dd-c580-4740-b4c4-567167716c40
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 13356418949385523147
+    tool_use_id: toolu_FnougYLloSudJHWa
+    detail:
+      Generic:
+        display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: ~
+    effort: xhigh
+- Identity:
+    agent_id: 13356418949385523147
+    source: claude-code
+    session_id: d0b475dd-c580-4740-b4c4-567167716c40
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 13356418949385523147
+    tool_use_id: toolu_FnougYLloSudJHWa
+- ModelInfo:
+    agent_id: 13356418949385523147
+    model: ~
+    effort: xhigh
+- SessionEnd:
+    agent_id: 13356418949385523147
+    as_child: false
+- SessionStart:
+    agent_id: 13356418949385523147
+    source: claude-code
+    session_id: d0b475dd-c580-4740-b4c4-567167716c40
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- SessionEnd:
+    agent_id: 13356418949385523147
+    as_child: false
