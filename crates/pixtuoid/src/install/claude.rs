@@ -187,8 +187,8 @@ fn marketplace_listed(json_out: &str) -> Result<bool> {
 /// the binary is off-PATH — and is single-quoted, since CC runs shell-form
 /// commands through a shell.
 ///
-/// Windows: exec form requires the absolute PE path (shell-form goes through
-/// cmd.exe/PowerShell — unportable, PATHEXT-dependent). The orchestrator hard-errors if
+/// Windows: exec form requires the absolute PE path (shell form goes through Git
+/// Bash, or PowerShell without it, per the hooks reference). The orchestrator hard-errors if
 /// resolution failed, so `resolved` is guaranteed absolute here.
 pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
     #[cfg(not(windows))]
@@ -265,14 +265,20 @@ pub(crate) fn installed_shim(content: &str) -> ShimRef {
 }
 
 pub(crate) fn render_hooks(hook_cmd: &str) -> Result<String> {
-    host_plugin::render_hooks(EVENTS, &managed_entry(hook_cmd))
+    render_hooks_in(hook_cmd, cfg!(windows))
+}
+
+/// [`render_hooks`] with the form a parameter, so every platform's tests render
+/// Windows' exec form.
+pub(crate) fn render_hooks_in(hook_cmd: &str, exec_form: bool) -> Result<String> {
+    host_plugin::render_hooks(EVENTS, &managed_entry(hook_cmd, exec_form))
 }
 
 /// The one place Claude's nested per-event shape lives.
-fn managed_entry(hook_command: &str) -> Value {
+fn managed_entry(hook_command: &str, exec_form: bool) -> Value {
     json!({
         "matcher": ".*",
-        "hooks": [ hook_entry(hook_command, cfg!(windows)) ]
+        "hooks": [ hook_entry(hook_command, exec_form) ]
     })
 }
 
