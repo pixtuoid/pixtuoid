@@ -26,6 +26,7 @@ use pixtuoid_core::source::hook::HookRouter;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
+use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
 use pixtuoid_core::{Reducer, SceneState, TaggedReceiver};
 use tokio::sync::watch;
 
@@ -33,6 +34,17 @@ use super::gate;
 use super::{
     ConnectedSources, QuitArms, QuitSignal, RunConfig, SceneRx, resolve_boot_caps, summarize,
 };
+
+/// How often the headless loop samples the scene for a summary line.
+const HEADLESS_SUMMARY_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+// A resolved wait stays shown for the grace window, which is the only reason a
+// hermetic Permission row's brief wait (at `crates/pixtuoid-core/src/state/reducer/mod.rs:32`)
+// is seen by a poll at all: at or below the interval it can be sampled past.
+const _: () = assert!(
+    ACTIVE_GRACE_WINDOW.as_millis() > HEADLESS_SUMMARY_POLL_INTERVAL.as_millis(),
+    "a resolved wait must outlast one headless poll"
+);
 
 /// Boot the TUI (unless headless) and drive the source pipeline until it exits;
 /// the quit signal that ended it, for the caller to re-raise.
@@ -295,7 +307,6 @@ async fn headless_loop_with_signal(
     // deaths must surface in the summary stream or a dead transport reads as a
     // silently empty office. Tracked by count: the watch Vec only grows.
     let mut deaths_seen = 0usize;
-    const HEADLESS_SUMMARY_POLL_INTERVAL_MS: u64 = 200;
     loop {
         // Headless mode exists to feed this stream, so a reader that left
         // (`| head`) ends the run.
@@ -304,7 +315,7 @@ async fn headless_loop_with_signal(
             return Ok(None);
         }
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(HEADLESS_SUMMARY_POLL_INTERVAL_MS)) => {
+            _ = tokio::time::sleep(HEADLESS_SUMMARY_POLL_INTERVAL) => {
                 let snapshot = scene_rx.borrow_and_update().clone();
                 let summary = summarize(&snapshot);
                 if summary != prev_summary {
