@@ -2351,6 +2351,13 @@ mod tests {
     #[test]
     fn no_leg_skips_a_whole_source() {
         for p in PROFILES {
+            assert!(
+                p.scenarios
+                    .iter()
+                    .any(|s| matches!(s.surface, Surface::Headless)),
+                "{}: no Headless scenario, which every leg runs and the lifecycle turns",
+                p.source
+            );
             for windows in [false, true] {
                 assert!(
                     p.scenarios.iter().any(|s| s.not_run_on(windows).is_none()),

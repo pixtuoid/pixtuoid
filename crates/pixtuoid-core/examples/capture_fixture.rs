@@ -2125,7 +2125,16 @@ mod recorder {
                 assert!(parse_options(args(&half)).is_err(), "{half:?} alone");
             }
             assert!(
-                parse_options(args(&["--daemon-env", "NOEQUALS", "codex"])).is_err(),
+                parse_options(args(&[
+                    "--daemon",
+                    "d",
+                    "--daemon-ready",
+                    "up",
+                    "--daemon-env",
+                    "NOEQUALS",
+                    "codex",
+                ]))
+                .is_err(),
                 "a daemon's env without its value"
             );
         }
