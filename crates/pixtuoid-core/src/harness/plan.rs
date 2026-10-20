@@ -185,6 +185,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Argv<T> {
 
 impl Argv<Resolved> {
     /// `words`, each finished.
+    ///
+    /// # Errors
+    ///
+    /// A word spells a placeholder, or there is none.
     pub fn resolved<S: AsRef<str>>(words: impl IntoIterator<Item = S>) -> Result<Self, PlanError> {
         words
             .into_iter()
@@ -304,6 +308,10 @@ pub struct CapturePlan {
 
 impl CapturePlan {
     /// Why this plan cannot run, across the fields no type holds apart.
+    ///
+    /// # Errors
+    ///
+    /// Fields that cannot run together.
     pub fn validate(&self) -> Result<(), PlanError> {
         if self.second_turn.is_some() && !matches!(self.sink, Sink::Raw { .. }) {
             return Err(PlanError::new(
@@ -314,6 +322,10 @@ impl CapturePlan {
     }
 
     /// Write it into `dir` as [`CAPTURE_PLAN`], once it validates.
+    ///
+    /// # Errors
+    ///
+    /// It does not validate, or the file cannot be written.
     pub fn write_to(&self, dir: &Path) -> std::io::Result<PathBuf> {
         self.validate().map_err(std::io::Error::other)?;
         let file = dir.join(CAPTURE_PLAN);
@@ -322,10 +334,150 @@ impl CapturePlan {
     }
 
     /// The plan `file` holds.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read, is not a plan, or does not validate.
     pub fn read(file: &Path) -> std::io::Result<Self> {
         let plan: Self = serde_json::from_str(&std::fs::read_to_string(file)?)
             .map_err(|e| std::io::Error::other(format!("{}: {e}", file.display())))?;
         plan.validate().map_err(std::io::Error::other)?;
+        Ok(plan)
+    }
+}
+
+/// What one run of the recorder asks of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Invocation {
+    /// Strip every committed capture in place.
+    StripCorpus,
+    /// Write a hermetic run into the fixture its scenario names.
+    Promote(PathBuf),
+    /// Create a source's transcript root inside `within`, with no CLI run: a
+    /// user who ran the CLI before has it.
+    PrepareRoot {
+        /// The source whose root it is.
+        source: String,
+        /// The sandbox the root must lie in.
+        within: AbsPath,
+    },
+    /// Run the capture a runner wrote.
+    Plan(PathBuf),
+    /// Run a capture an operator spelled.
+    Capture(Box<CapturePlan>),
+}
+
+impl Invocation {
+    /// The `--out` an operator may give a capture: drift evidence kept raw.
+    pub const OUT: &'static str = "--out";
+    /// Strips every committed capture.
+    pub const STRIP_CORPUS: &'static str = "--strip-corpus";
+    /// Runs the plan in the file that follows.
+    pub const PLAN: &'static str = "--plan";
+    /// Promotes the run dir that follows.
+    pub const PROMOTE: &'static str = "promote";
+    /// Prepares a source's root inside the `--within` dir that follows.
+    pub const PREPARE_ROOT: &'static str = "prepare-root";
+    /// The sandbox a prepared root must lie in.
+    pub const WITHIN: &'static str = "--within";
+
+    /// What `args` (after the program) ask. `env` is the operator's, read once
+    /// here and nowhere after: a text variable, unset when absent.
+    ///
+    /// # Errors
+    ///
+    /// The line asks for none of these, or its operands are wrong.
+    pub fn parse(args: &[String], env: &dyn Fn(&str) -> Option<String>) -> Result<Self, PlanError> {
+        let usage = |flag: &str| PlanError::new(format!("{flag} takes a value"));
+        match args.first().map(String::as_str) {
+            Some(Self::STRIP_CORPUS) if args.len() == 1 => Ok(Self::StripCorpus),
+            Some(Self::PLAN) => match args {
+                [_, file] => Ok(Self::Plan(PathBuf::from(file))),
+                _ => Err(usage(Self::PLAN)),
+            },
+            Some(Self::PROMOTE) => match args {
+                [_, run] => Ok(Self::Promote(PathBuf::from(run))),
+                _ => Err(usage(Self::PROMOTE)),
+            },
+            Some(Self::PREPARE_ROOT) => match args {
+                [_, flag, within, source] if flag == Self::WITHIN => Ok(Self::PrepareRoot {
+                    source: source.clone(),
+                    within: AbsPath::try_from(PathBuf::from(within))?,
+                }),
+                _ => Err(PlanError::new(format!(
+                    "{} takes {} <dir> <source> and nothing else",
+                    Self::PREPARE_ROOT,
+                    Self::WITHIN
+                ))),
+            },
+            _ => CapturePlan::from_operator(args, env).map(|p| Self::Capture(Box::new(p))),
+        }
+    }
+}
+
+impl CapturePlan {
+    /// The capture an operator's line asks: `[--out <dir>] <source> <scenario>
+    /// <cmd...>`, `{prompt}` in the command filled from [`PROMPT_ENV`] or
+    /// [`DEFAULT_PROMPT`]. It runs in memory and is never written, since its
+    /// `cli_env` may hold a real credential on a billed capture.
+    ///
+    /// # Errors
+    ///
+    /// The line is short, a word spells a placeholder the host cannot fill, or `--out` is unusable.
+    pub fn from_operator(
+        args: &[String],
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Self, PlanError> {
+        let (sink, rest) =
+            match args {
+                [flag, out, rest @ ..] if flag == Invocation::OUT => (
+                    Sink::Raw {
+                        out: AbsPath::try_from(std::path::absolute(out).map_err(|e| {
+                            PlanError::new(format!("{} {out}: {e}", Invocation::OUT))
+                        })?)?,
+                    },
+                    rest,
+                ),
+                _ => (Sink::Committed, args),
+            };
+        let [source, scenario, command @ ..] = rest else {
+            return Err(PlanError::new(
+                "a capture needs <source> <scenario> <cmd...>",
+            ));
+        };
+        if command.is_empty() {
+            return Err(PlanError::new(
+                "a capture needs <source> <scenario> <cmd...>",
+            ));
+        }
+        // Set-but-blank is unset: a blank prompt would expand `{prompt}` to nothing.
+        let text = |key: &str| env(key).and_then(|v| NonEmpty::try_from(v).ok());
+        let prompt_override = text(PROMPT_ENV);
+        let prompt = prompt_override
+            .as_ref()
+            .map_or(DEFAULT_PROMPT, NonEmpty::as_str)
+            .to_owned();
+        let plan = Self {
+            source: source.clone(),
+            scenario: scenario.clone(),
+            sink,
+            tee: None,
+            within: None,
+            workspace: None,
+            cli_version: None,
+            cli_env: BTreeMap::new(),
+            seed: text(SEED_ENV),
+            prompt_override,
+            recorded_command: Some(NonEmpty::try_from(command.join(" ")).map_err(PlanError::new)?),
+            daemon: None,
+            first_turn: Argv::resolved(
+                command
+                    .iter()
+                    .map(|w| w.replace(Placeholder::Prompt.as_str(), &prompt)),
+            )?,
+            second_turn: None,
+        };
+        plan.validate()?;
         Ok(plan)
     }
 }
@@ -452,5 +604,123 @@ mod tests {
             p.write_to(tempfile::tempdir().expect("dir").path())
                 .is_err()
         );
+    }
+
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|w| (*w).to_owned()).collect()
+    }
+
+    #[test]
+    fn an_operators_line_fills_the_prompt_and_records_what_they_typed() {
+        let plan = CapturePlan::from_operator(
+            &args(&["kimi", "tool-run", "kimi", "-p", "{prompt}"]),
+            &env_of(&[]),
+        )
+        .expect("plan");
+        assert_eq!(plan.sink, Sink::Committed);
+        assert_eq!(plan.first_turn.strings(), ["kimi", "-p", DEFAULT_PROMPT]);
+        assert_eq!(plan.prompt_override, None);
+        assert_eq!(
+            plan.recorded_command.as_ref().map(NonEmpty::as_str),
+            Some("kimi -p {prompt}")
+        );
+    }
+
+    #[test]
+    fn an_operators_prompt_and_seed_come_from_their_env_and_a_blank_one_is_unset() {
+        let line = args(&["kimi", "gate", "kimi", "-p", "{prompt}"]);
+        let plan = CapturePlan::from_operator(
+            &line,
+            &env_of(&[(PROMPT_ENV, "rm NOTE.txt"), (SEED_ENV, "/seed")]),
+        )
+        .expect("plan");
+        assert_eq!(plan.first_turn.strings(), ["kimi", "-p", "rm NOTE.txt"]);
+        assert_eq!(
+            plan.prompt_override.as_ref().map(NonEmpty::as_str),
+            Some("rm NOTE.txt")
+        );
+        assert_eq!(plan.seed.as_ref().map(NonEmpty::as_str), Some("/seed"));
+        let blank =
+            CapturePlan::from_operator(&line, &env_of(&[(PROMPT_ENV, "  "), (SEED_ENV, "")]))
+                .expect("plan");
+        assert_eq!(blank.first_turn.strings()[2], DEFAULT_PROMPT);
+        assert_eq!((blank.prompt_override, blank.seed), (None, None));
+    }
+
+    #[test]
+    fn an_operators_out_makes_a_raw_capture_in_an_absolute_dir() {
+        let plan = CapturePlan::from_operator(
+            &args(&["--out", "evidence", "kimi", "tool-run", "kimi"]),
+            &env_of(&[]),
+        )
+        .expect("plan");
+        let Sink::Raw { out } = plan.sink else {
+            panic!("a raw capture");
+        };
+        assert!(out.as_path().is_absolute() && out.as_path().ends_with("evidence"));
+    }
+
+    #[test]
+    fn an_operators_line_with_a_placeholder_the_host_cannot_fill_is_refused() {
+        let line = args(&["kimi", "tool-run", "kimi", "--port", "{port}"]);
+        assert!(CapturePlan::from_operator(&line, &env_of(&[])).is_err());
+    }
+
+    #[test]
+    fn an_operators_line_needs_a_source_a_scenario_and_a_command() {
+        for short in [
+            &[][..],
+            &["kimi"],
+            &["kimi", "tool-run"],
+            &["--out", "d", "kimi", "x"],
+        ] {
+            assert!(
+                CapturePlan::from_operator(&args(short), &env_of(&[])).is_err(),
+                "{short:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_other_invocations_take_exactly_their_operands() {
+        let parse = |w: &[&str]| Invocation::parse(&args(w), &env_of(&[]));
+        assert_eq!(parse(&["--strip-corpus"]), Ok(Invocation::StripCorpus));
+        assert_eq!(
+            parse(&["--plan", "p.json"]),
+            Ok(Invocation::Plan("p.json".into()))
+        );
+        assert_eq!(
+            parse(&["promote", "run"]),
+            Ok(Invocation::Promote("run".into()))
+        );
+        let root = std::env::temp_dir();
+        let within = root.to_string_lossy();
+        assert_eq!(
+            parse(&["prepare-root", "--within", &within, "codex"]),
+            Ok(Invocation::PrepareRoot {
+                source: "codex".into(),
+                within: AbsPath::try_from(root.clone()).expect("abs"),
+            })
+        );
+        for bad in [
+            &["--strip-corpus", "x"][..],
+            &["--plan"],
+            &["promote"],
+            &["promote", "a", "b"],
+            &["prepare-root", "codex"],
+            &["prepare-root", "--within", "rel", "codex"],
+            &["prepare-root", "--within", &within, "codex", "x"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
     }
 }
