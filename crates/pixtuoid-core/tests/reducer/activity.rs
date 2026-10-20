@@ -712,8 +712,7 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     );
 }
 
-// Line shapes follow agy's `ask-question` recording; agy writes the question's
-// step before its PreToolUse fires, and the result step after its PostToolUse.
+// Line shapes follow agy's `ask-question` recording.
 #[test]
 fn an_answered_agy_question_clears_waiting_on_either_transport() {
     use pixtuoid_core::source::antigravity::{SOURCE_NAME, decode_ag_line};
@@ -763,6 +762,11 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
             vec![asked.clone(), hook("PreToolUse")],
             vec![hook("PostToolUse"), answered.clone()],
         ),
+        (
+            "both, reversed",
+            vec![hook("PreToolUse"), asked.clone()],
+            vec![answered.clone(), hook("PostToolUse")],
+        ),
     ] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
@@ -780,6 +784,16 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
         assert!(
             matches!(scene.agents[&id].state, ActivityState::Idle),
             "{what}: the answer clears Waiting before the turn ends"
+        );
+    }
+    for late in [hook("PreToolUse"), asked] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        start_as(&mut r, &mut scene, id, SOURCE_NAME);
+        feed(&mut r, &mut scene, &[hook("PostToolUse"), late], t0);
+        assert!(
+            !matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+            "a wait arriving after its call's hook End must not park the slot"
         );
     }
 }
