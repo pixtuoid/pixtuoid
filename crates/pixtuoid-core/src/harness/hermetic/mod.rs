@@ -39,10 +39,10 @@ pub const WORKSPACE_PLACEHOLDER: &str = "{workspace}";
 /// JSON string holds unescaped: how Claude Code keys its projects on Windows
 /// (`Xz` in the 2.1.302 bundle).
 pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = "{workspace_slashed}";
-/// What a [`Profile::invocation`] or [`Profile::resume`] spells its turn's
+/// What a [`Profile::invocation`] or [`Profile::second_turn`] spells its turn's
 /// prompt as.
 pub const PROMPT_PLACEHOLDER: &str = "{prompt}";
-/// What a [`Profile::resume`] spells the session its second turn acts on as.
+/// What a [`Profile::second_turn`] spells the session its second turn acts on as.
 pub const SESSION_PLACEHOLDER: &str = "{session}";
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
@@ -188,7 +188,7 @@ pub enum Surface {
     },
 }
 
-/// A CLI's scripted turn, and its second where [`Turn::resume`] names one.
+/// A CLI's scripted turn, and its second where [`Turn::second`] names one.
 #[derive(Debug)]
 pub struct Scenario {
     /// Its name, unique in its profile: its script's file stem, its run
@@ -215,13 +215,13 @@ pub struct Turn {
     /// Its prompt, in place of the recorder's shared one.
     pub prompt: Option<&'static str>,
     /// A second headless turn on this one's session, in the same sandbox and
-    /// workspace once its CLI exited: [`Profile::resume`]'s words.
-    pub resume: Option<Resume>,
+    /// workspace once its CLI exited: [`Profile::second_turn`]'s words.
+    pub second: Option<Second>,
 }
 
-/// What a [`Turn::resume`] asks of [`Profile::resume`]'s words.
+/// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Resume {
+pub enum Second {
     /// A turn with this prompt, which the words spell as [`PROMPT_PLACEHOLDER`].
     Prompt(&'static str),
     /// No prompt: words that act on the session, as deleting it does.
@@ -233,7 +233,7 @@ impl Turn {
     pub const PROFILE: Self = Self {
         args: &[],
         prompt: None,
-        resume: None,
+        second: None,
     };
 }
 
@@ -259,7 +259,8 @@ impl Live {
 /// OS: one that outlives it is killed, and its capture fails.
 #[derive(Debug)]
 pub struct Daemon {
-    /// Its start, after the CLI's binary.
+    /// Its start, after the CLI's binary; `{port}`, `{key}` and
+    /// [`DAEMON_PORT_PLACEHOLDER`] expand in the runner, here and in [`Self::ready`].
     pub start: &'static [&'static str],
     /// What exits 0 once it serves, after the CLI's binary.
     pub ready: &'static [&'static str],
@@ -298,12 +299,13 @@ pub struct Profile {
     /// How users install it.
     pub package: Package,
     /// The headless invocation: [`PROMPT_PLACEHOLDER`] expands to the
-    /// scenario's prompt in the runner, else to the recorder's shared one.
+    /// scenario's prompt in the runner, else to the recorder's shared one, and
+    /// `{port}`, `{key}` and [`DAEMON_PORT_PLACEHOLDER`] in the runner.
     pub invocation: &'static [&'static str],
-    /// The headless invocation of a second turn, as [`Turn::resume`] runs it:
-    /// the runner expands a [`Resume::Prompt`]'s [`PROMPT_PLACEHOLDER`], the
-    /// recorder [`SESSION_PLACEHOLDER`].
-    pub resume: Option<&'static [&'static str]>,
+    /// The headless invocation of a second turn, as [`Turn::second`] runs it:
+    /// the runner expands `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and a
+    /// [`Second::Prompt`]'s [`PROMPT_PLACEHOLDER`], the recorder [`SESSION_PLACEHOLDER`].
+    pub second_turn: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
     /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
     pub env: &'static [(&'static str, &'static str)],
@@ -706,7 +708,7 @@ pub const PROFILES: &[Profile] = &[
         invocation: &["claude", "-p", PROMPT_PLACEHOLDER],
         // `-r, --resume [value]`: "Resume a conversation by session ID"
         // (`claude --help` at 2.1.302).
-        resume: Some(&[
+        second_turn: Some(&[
             "claude",
             "-p",
             PROMPT_PLACEHOLDER,
@@ -769,7 +771,7 @@ pub const PROFILES: &[Profile] = &[
                 turn: Turn {
                     args: &["--effort", "ultracode"],
                     prompt: Some("ultrathink: read NOTE.txt."),
-                    resume: Some(Resume::Prompt("Say done.")),
+                    second: Some(Second::Prompt("Say done.")),
                 },
             },
             Scenario {
@@ -833,7 +835,7 @@ pub const PROFILES: &[Profile] = &[
             "--dangerously-bypass-hook-trust",
             PROMPT_PLACEHOLDER,
         ],
-        resume: None,
+        second_turn: None,
         env: &[("HERMETIC_API_KEY", "{key}")],
         homes: &[],
         // System config, requirements and managed config; `CODEX_HOME` never
@@ -995,7 +997,7 @@ trust_level = "trusted"
         ],
         // `session delete` (`packages/cli/src/commands/commands.ts:437-443` at
         // v2.1.0).
-        resume: Some(&[
+        second_turn: Some(&[
             "opencode",
             "session",
             "delete",
@@ -1128,7 +1130,7 @@ trust_level = "trusted"
                 turn: Turn {
                     args: &[],
                     prompt: None,
-                    resume: Some(Resume::Bare),
+                    second: Some(Second::Bare),
                 },
             },
         ],
@@ -1155,7 +1157,7 @@ trust_level = "trusted"
         source: "dsh",
         package: Package::Npm("@deepseek-ai/dsh"),
         invocation: &["dsh", "--profile", "headless", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         // The Messages endpoint and key come from the launch environment
         // (`packages/llm/llm-deepseek/src/config.ts:290`,
         // `packages/llm/llm-deepseek-api-key/src/index.ts:20-35`); the feedback
@@ -1247,7 +1249,7 @@ trust_level = "trusted"
         source: "kimi",
         package: Package::Npm("@moonshot-ai/kimi-code"),
         invocation: &["kimi", "-p", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         // `KIMI_MODEL_NAME` builds a provider from the environment
         // (`docs/en/configuration/env-vars.md:106-124`); the telemetry and
         // update-check switches (`:27`, `:185`).
@@ -1331,7 +1333,7 @@ trust_level = "trusted"
         // which a blocking spawn needs: `-p` cancels every prompt
         // (`crates/codegen/xai-grok-pager/src/headless.rs:1882-1901`).
         invocation: &["grok", "--always-approve", "-p", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         // What upstream's own run against a mock server sets: every service
         // URL on it, and the telemetry, feedback, update and unscripted
         // side-request switches
@@ -1504,7 +1506,7 @@ trust_level = "trusted"
             "-p",
             PROMPT_PLACEHOLDER,
         ],
-        resume: None,
+        second_turn: None,
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
@@ -1618,7 +1620,7 @@ model = "guardian-model"
                 turn: Turn {
                     args: &[],
                     prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
-                    resume: None,
+                    second: None,
                 },
             },
             Scenario {
@@ -1676,7 +1678,7 @@ model = "guardian-model"
         invocation: &["copilot", "-p", PROMPT_PLACEHOLDER],
         // `-r, --resume [<value>]`: "optionally specify existing session ID"
         // (`copilot --help` at 1.0.98).
-        resume: Some(&[
+        second_turn: Some(&[
             "copilot",
             "--resume",
             SESSION_PLACEHOLDER,
@@ -1731,7 +1733,7 @@ model = "guardian-model"
                 turn: Turn {
                     args: &[],
                     prompt: None,
-                    resume: Some(Resume::Prompt("Say done.")),
+                    second: Some(Second::Prompt("Say done.")),
                 },
             },
             Scenario {
@@ -1826,7 +1828,7 @@ model = "guardian-model"
             sums: "SHA256SUMS.txt",
         },
         invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
         env: &[("PI_AUTO_QA", "0")],
         homes: &[],
@@ -1920,7 +1922,7 @@ startup:
                 turn: Turn {
                     args: &[],
                     prompt: Some("/new"),
-                    resume: None,
+                    second: None,
                 },
             },
         ],
@@ -1958,7 +1960,7 @@ startup:
         // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
         // and a hook runs only once accepted.
         invocation: &["hermes", "--accept-hooks", "-z", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         env: &[],
         // The managed scope, which otherwise is `/etc/hermes`
         // (`hermes_cli/managed_scope.py:31`, `:45-58`).
@@ -2053,7 +2055,7 @@ telemetry:
             member: "antigravity",
         },
         invocation: &["agy", "-p", PROMPT_PLACEHOLDER],
-        resume: None,
+        second_turn: None,
         // The Gemini API route at a custom endpoint, and Go's proxy variables
         // (pkg.go.dev/net/http#ProxyFromEnvironment) sending all but the mock
         // to a closed port: an unproxied run updated its own binary.
@@ -2123,7 +2125,7 @@ telemetry:
             "-m",
             PROMPT_PLACEHOLDER,
         ],
-        resume: None,
+        second_turn: None,
         // Its automatic update checks, and the daily request each sends
         // (`docs/install/updating/automatic-updates.md:160-162`,
         // `docs/gateway/telemetry.md:11`).
@@ -2385,13 +2387,13 @@ mod tests {
     }
 
     #[test]
-    fn a_tui_turn_takes_no_args_and_resumes_nothing() {
+    fn a_tui_turn_takes_no_args_and_has_no_second_turn() {
         for p in PROFILES {
             for s in p.scenarios {
                 assert!(
                     matches!(s.surface, Surface::Headless)
-                        || (s.turn.args.is_empty() && s.turn.resume.is_none()),
-                    "{}/{}: a TUI turn takes no args and resumes nothing",
+                        || (s.turn.args.is_empty() && s.turn.second.is_none()),
+                    "{}/{}: a TUI turn takes no args and has no second turn",
                     p.source,
                     s.name
                 );
@@ -2435,21 +2437,21 @@ mod tests {
     }
 
     #[test]
-    fn a_resumed_scenarios_profile_names_how_its_session_resumes() {
+    fn a_second_turns_words_name_its_session_and_a_prompt_only_when_it_has_one() {
         for p in PROFILES {
-            if let Some(words) = p.resume {
+            if let Some(words) = p.second_turn {
                 assert!(words.contains(&SESSION_PLACEHOLDER), "{}", p.source);
             }
             for s in p.scenarios {
-                let Some(resume) = s.turn.resume else {
+                let Some(second) = s.turn.second else {
                     continue;
                 };
                 let words = p
-                    .resume
-                    .unwrap_or_else(|| panic!("{}: no resume", p.source));
+                    .second_turn
+                    .unwrap_or_else(|| panic!("{}: no second turn", p.source));
                 assert_eq!(
                     words.contains(&PROMPT_PLACEHOLDER),
-                    matches!(resume, Resume::Prompt(_)),
+                    matches!(second, Second::Prompt(_)),
                     "{}/{}: its words spell a prompt exactly when it has one",
                     p.source,
                     s.name

@@ -585,7 +585,7 @@ pub(crate) fn scenario_reads<'a>(
 }
 
 /// Whether `manifest`'s CLI ran its turn of `shape` as scripted, against the
-/// scripted model where the shape asks it anything, and the turn resuming it
+/// scripted model where the shape asks it anything, and its second turn
 /// where one ran; a request no script line matched is Script either way.
 fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
@@ -621,33 +621,33 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
-        let resumed = manifest
+        let second = manifest
             .capture
-            .resumed
+            .second_turn
             .as_ref()
             .map_or(String::new(), |r| {
-                format!(", resumed exit {:?}", r.exit_code)
+                format!(", second turn exit {:?}", r.exit_code)
             });
         let exit = manifest.capture.exit_code;
         let why = if scenario.shape.asks_the_model() {
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {exit:?}{resumed}, \
+                "the CLI did not complete a turn against the scripted model (exit {exit:?}{second}, \
                  {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
                 manifest.requests
             )
         } else {
-            format!("the CLI did not complete its turn (exit {exit:?}{resumed}): it could not run")
+            format!("the CLI did not complete its turn (exit {exit:?}{second}): it could not run")
         };
         findings.push((Label::Blocked, why));
         return Ok(None);
     }
-    // A resumed turn that never ran had no session the first turn's wire named,
+    // A second turn that never ran had no session the first turn's wire named,
     // which is pixtuoid's to name; one that ran `completed_turn` held.
-    if scenario.turn.resume.is_some() && manifest.capture.resumed.is_none() {
+    if scenario.turn.second.is_some() && manifest.capture.second_turn.is_none() {
         findings.push((
             Label::Fail,
-            "the first turn's wire named no session to resume".into(),
+            "the first turn's wire named no session for its second turn".into(),
         ));
         return Ok(None);
     }
@@ -1312,10 +1312,10 @@ mod tests {
             .expect("a profiled scenario");
         let src = crate::harness::sources_root().join(scenario.fixture);
         let d = run_of(&src, source, name, scene);
-        if scenario.turn.resume.is_some() {
+        if scenario.turn.second.is_some() {
             write_manifest(d.path(), source, |m| {
                 m.scenario = name.into();
-                m.capture.resumed = Some(crate::harness::Resumed { exit_code: Some(0) });
+                m.capture.second_turn = Some(crate::harness::SecondTurn { exit_code: Some(0) });
             });
         }
         d
@@ -1350,7 +1350,7 @@ mod tests {
                 cli: "test".into(),
                 version: "test".into(),
                 exit_code: Some(0),
-                resumed: None,
+                second_turn: None,
                 note_survived: true,
             },
             aimock: "test".into(),
@@ -2327,29 +2327,29 @@ mod tests {
     }
 
     #[test]
-    fn a_resumed_turn_passes_only_once_it_ran_and_exited_clean() {
+    fn a_second_turn_passes_only_once_it_ran_and_exited_clean() {
         let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
-        let judged = |exit_code, resumed: Option<crate::harness::Resumed>| {
+        let judged = |exit_code, second: Option<crate::harness::SecondTurn>| {
             let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "ultra-effort".into();
                 m.capture.exit_code = exit_code;
-                m.capture.resumed = resumed;
+                m.capture.second_turn = second;
             });
             verify(d.path()).expect("verify")
         };
-        let resumed = |exit_code| Some(crate::harness::Resumed { exit_code });
-        let v = judged(Some(0), resumed(Some(0)));
+        let second = |exit_code| Some(crate::harness::SecondTurn { exit_code });
+        let v = judged(Some(0), second(Some(0)));
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         assert!(has(
             &judged(Some(0), None),
             Label::Fail,
-            "named no session to resume"
+            "named no session for its second turn"
         ));
         assert!(has(
-            &judged(Some(0), resumed(Some(1))),
+            &judged(Some(0), second(Some(1))),
             Label::Blocked,
-            "resumed exit Some(1)"
+            "second turn exit Some(1)"
         ));
         let v = judged(Some(1), None);
         assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());

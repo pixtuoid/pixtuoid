@@ -42,13 +42,13 @@ mod recorder {
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
     use pixtuoid_core::harness::recorder_flag::{
-        CLI_VERSION, DAEMON, DAEMON_ENV, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, RESUME,
-        TEE, WITHIN, WORKSPACE,
+        CLI_VERSION, DAEMON, DAEMON_ENV, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE,
+        SECOND_TURN, TEE, WITHIN, WORKSPACE,
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        NOTE_FILE, PROVENANCE, Resumed, canonical_capture, capture_base, capture_workspace,
+        NOTE_FILE, PROVENANCE, SecondTurn, canonical_capture, capture_base, capture_workspace,
         capture_workspace_tail, jsonl_files_under, required_version_probe, slashed_under,
         version_answer, wait_until,
     };
@@ -127,7 +127,7 @@ mod recorder {
         daemon: Option<DaemonCmd>,
         /// A second turn's words, run once the first's CLI exited:
         /// [`SESSION_PLACEHOLDER`] names the session the first turn's wire did.
-        resume: Vec<String>,
+        second_turn: Vec<String>,
     }
 
     /// A [`DAEMON`]'s words, its [`DAEMON_READY`] probe's (what exits 0 once
@@ -206,14 +206,14 @@ mod recorder {
                 DAEMON => daemon.start.push(take(&mut args, DAEMON)?),
                 DAEMON_READY => daemon.ready.push(take(&mut args, DAEMON_READY)?),
                 DAEMON_ENV => daemon.env.push(pair(&mut args, DAEMON_ENV)?),
-                RESUME => options.resume.push(take(&mut args, RESUME)?),
+                SECOND_TURN => options.second_turn.push(take(&mut args, SECOND_TURN)?),
                 ENV => options.env.push(pair(&mut args, ENV)?),
                 _ => break,
             }
         }
-        if !options.resume.is_empty() && options.out.is_none() {
+        if !options.second_turn.is_empty() && options.out.is_none() {
             return Err(format!(
-                "{RESUME} runs only under {OUT}: a committed capture records one turn"
+                "{SECOND_TURN} runs only under {OUT}: a committed capture records one turn"
             ));
         }
         if daemon != DaemonCmd::default() {
@@ -294,7 +294,7 @@ mod recorder {
             eprintln!(
                 "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket|pipe>] [{WITHIN} <dir>] [{ENV} K=V]... \
                  [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] [{DAEMON} <word>]... [{DAEMON_READY} <word>]... \
-                 [{DAEMON_ENV} K=V]... [{RESUME} <word>]... \
+                 [{DAEMON_ENV} K=V]... [{SECOND_TURN} <word>]... \
                  <source-id> <scenario> <cmd...>   \
                  ('{PROMPT_PLACEHOLDER}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
@@ -376,7 +376,7 @@ mod recorder {
             &options.env,
         )?
         .status()?;
-        let resumed = if options.resume.is_empty() {
+        let second_turn = if options.second_turn.is_empty() {
             None
         } else {
             tap.settle();
@@ -386,7 +386,7 @@ mod recorder {
             match first_session(&source, &tap.payloads(), &born) {
                 Some(session) => {
                     let turn: Vec<String> = options
-                        .resume
+                        .second_turn
                         .iter()
                         .map(|w| w.replace(SESSION_PLACEHOLDER, &session))
                         .collect();
@@ -398,17 +398,17 @@ mod recorder {
                         &options.env,
                     )?
                     .status()?;
-                    Some(Resumed {
+                    Some(SecondTurn {
                         exit_code: exit.code(),
                     })
                 }
                 None => {
-                    eprintln!("the first turn's wire named no session to resume");
+                    eprintln!("the first turn's wire named no session for its second turn");
                     None
                 }
             }
         };
-        let unresumed = !options.resume.is_empty() && resumed.is_none();
+        let no_second_turn = !options.second_turn.is_empty() && second_turn.is_none();
         let note_survived = note_survived(&workspace);
         let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(*DAEMON_STOP_GRACE.here()));
         tap.settle();
@@ -452,7 +452,7 @@ mod recorder {
                 cli,
                 version,
                 exit_code: status.code(),
-                resumed,
+                second_turn,
                 note_survived,
             };
             std::fs::write(
@@ -462,7 +462,9 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some() || unresumed || !exited_as_scripted(&source, &scenario, &record)
+            if incomplete.is_some()
+                || no_second_turn
+                || !exited_as_scripted(&source, &scenario, &record)
             {
                 keep_scratch(sandbox);
             }
@@ -1416,7 +1418,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
-                    resumed: None,
+                    second_turn: None,
                     note_survived: true,
                 },
                 aimock: "1.43.0".into(),
@@ -1531,7 +1533,7 @@ mod recorder {
                     cli: "copilot".into(),
                     version: "1.0.98".into(),
                     exit_code: Some(0),
-                    resumed: None,
+                    second_turn: None,
                     note_survived: true,
                 },
                 aimock: "1.45.1".into(),
@@ -1718,7 +1720,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: versions.0.into(),
                     exit_code: Some(0),
-                    resumed: None,
+                    second_turn: None,
                     note_survived: true,
                 },
                 aimock: versions.1.into(),
@@ -2003,7 +2005,7 @@ mod recorder {
         }
 
         #[test]
-        fn the_resumed_session_is_the_one_the_first_turns_wire_names() {
+        fn the_second_turns_session_is_the_one_the_first_turns_wire_names() {
             let cc = sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
             let payloads: Vec<String> = std::fs::read_to_string(cc.join(HOOK_PAYLOADS))
                 .expect("payloads")
@@ -2066,23 +2068,23 @@ mod recorder {
             let (o, _) = parse_options(args(&[
                 "--out",
                 "/o",
-                RESUME,
+                SECOND_TURN,
                 "claude",
-                RESUME,
+                SECOND_TURN,
                 "--resume",
-                RESUME,
+                SECOND_TURN,
                 "{session}",
                 "claude-code",
             ]))
             .expect("parse");
             assert_eq!(
-                o.resume,
+                o.second_turn,
                 args(&["claude", "--resume", "{session}"]),
                 "a second turn's words, in order, a flag of the CLI's among them"
             );
             assert!(
-                parse_options(args(&[RESUME, "claude", "claude-code"])).is_err(),
-                "a resumed turn outside a raw capture"
+                parse_options(args(&[SECOND_TURN, "claude", "claude-code"])).is_err(),
+                "a second turn outside a raw capture"
             );
             assert!(
                 parse_options(args(&["--env", "NOEQUALS", "codex"])).is_err(),
@@ -2772,12 +2774,12 @@ mod recorder {
 
         #[test]
         fn only_a_profiled_failing_turn_may_exit_non_zero() {
-            let exited = |exit_code, resumed: Option<i32>| CaptureRecord {
+            let exited = |exit_code, second: Option<i32>| CaptureRecord {
                 workspace: PathBuf::from("/ws"),
                 cli: "cli".into(),
                 version: "1".into(),
                 exit_code,
-                resumed: resumed.map(|code| Resumed {
+                second_turn: second.map(|code| SecondTurn {
                     exit_code: Some(code),
                 }),
                 note_survived: true,
@@ -2809,7 +2811,7 @@ mod recorder {
             ));
             assert!(
                 !exited_as_scripted("claude-code", "ultra-effort", &exited(Some(0), Some(1))),
-                "its resumed turn is held to the same bar"
+                "its second turn is held to the same bar"
             );
         }
 

@@ -213,8 +213,8 @@ pub mod recorder_flag {
     pub const DAEMON_READY: &str = "--daemon-ready";
     /// One `KEY=VALUE` of `Options::daemon`'s own environment.
     pub const DAEMON_ENV: &str = "--daemon-env";
-    /// One word of `Options::resume`, the invocation a second turn runs.
-    pub const RESUME: &str = "--resume-word";
+    /// One word of `Options::second_turn`, the invocation a second turn runs.
+    pub const SECOND_TURN: &str = "--second-turn-word";
 }
 
 /// What only the recorder knows about a raw (`--out`) capture.
@@ -228,9 +228,9 @@ pub struct CaptureRecord {
     pub version: String,
     /// Its exit code; `None` when a signal ended it.
     pub exit_code: Option<i32>,
-    /// The turn that resumed its session, for a run that had one.
+    /// Its second turn, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resumed: Option<Resumed>,
+    pub second_turn: Option<SecondTurn>,
     /// Whether the note the recorder planted was still there, unchanged, once
     /// every turn exited: a refused call that deletes it did not stay refused.
     #[serde(default)]
@@ -238,12 +238,12 @@ pub struct CaptureRecord {
 }
 
 impl CaptureRecord {
-    /// Whether the CLI ran `shape`'s turn as scripted, and the turn resuming
-    /// it where one ran.
+    /// Whether the CLI ran `shape`'s turn as scripted, and its second turn
+    /// where one ran.
     pub fn exited_as_scripted(&self, shape: crate::harness::hermetic::Shape) -> bool {
         shape.exits_as_scripted(self.exit_code)
             && self
-                .resumed
+                .second_turn
                 .as_ref()
                 .is_none_or(|r| shape.exits_as_scripted(r.exit_code))
     }
@@ -251,7 +251,7 @@ impl CaptureRecord {
 
 /// A second turn, as the recorder ran it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Resumed {
+pub struct SecondTurn {
     /// Its exit code; `None` when a signal ended it.
     pub exit_code: Option<i32>,
 }
