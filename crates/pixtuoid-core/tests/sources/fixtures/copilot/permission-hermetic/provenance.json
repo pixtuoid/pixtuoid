@@ -9,5 +9,18 @@
     "blanked": 60
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/copilot/permission.json"
+  "script": "tests/sources/hermetic/copilot/permission.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "assistant.message",
+        "assistant.turn_end",
+        "assistant.turn_start",
+        "session.usage_record",
+        "system.message",
+        "user.message"
+      ]
+    }
+  }
 }

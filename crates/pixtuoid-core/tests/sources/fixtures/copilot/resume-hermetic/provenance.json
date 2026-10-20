@@ -9,5 +9,18 @@
     "blanked": 57
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/copilot/resume.json"
+  "script": "tests/sources/hermetic/copilot/resume.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "assistant.message",
+        "assistant.turn_end",
+        "assistant.turn_start",
+        "session.usage_record",
+        "system.message",
+        "user.message"
+      ]
+    }
+  }
 }

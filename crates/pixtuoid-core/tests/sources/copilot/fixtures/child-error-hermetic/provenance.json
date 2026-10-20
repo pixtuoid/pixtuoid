@@ -9,5 +9,23 @@
     "blanked": 60
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/copilot/child-error.json"
+  "script": "tests/sources/hermetic/copilot/child-error.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/data/toolName": [],
+      "/type": [
+        "assistant.message",
+        "assistant.turn_end",
+        "assistant.turn_start",
+        "session.error",
+        "session.model_change",
+        "session.usage_record",
+        "subagent.configured",
+        "subagent.selected",
+        "system.message",
+        "user.message"
+      ]
+    }
+  }
 }
