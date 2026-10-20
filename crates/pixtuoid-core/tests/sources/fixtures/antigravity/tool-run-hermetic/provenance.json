@@ -2,12 +2,22 @@
   "origin": "recorded",
   "cli": "agy",
   "version": "1.4.2",
-  "captured": "2026-10-19",
+  "captured": "2026-10-20",
   "command": "just hermetic --record antigravity",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 46
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/antigravity/tool-run.json"
+  "script": "tests/sources/hermetic/antigravity/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "GENERIC",
+        "PLANNER_RESPONSE",
+        "USER_INPUT"
+      ]
+    }
+  }
 }

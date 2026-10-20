@@ -2,12 +2,33 @@
   "origin": "recorded",
   "cli": "omp",
   "version": "omp/18.12.1",
-  "captured": "2026-10-19",
+  "captured": "2026-10-20",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 61
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/omp/tool-run.json"
+  "script": "tests/sources/hermetic/omp/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/customType": [
+        "system-prompt-digest",
+        "tool_execution_start"
+      ],
+      "/message/content/*/type": [
+        "text"
+      ],
+      "/message/role": [
+        "user"
+      ],
+      "/type": [
+        "custom",
+        "message",
+        "model_change",
+        "title"
+      ]
+    }
+  }
 }

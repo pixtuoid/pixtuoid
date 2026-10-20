@@ -4,10 +4,10 @@
   "version": "2.0.27",
   "captured": "2026-10-12",
   "command": "scripts/lib/capture-opencode-session.sh — a private `opencode serve` with the plugin, `run --auto` on CAPTURE_PROMPT (OC_MODEL=deepseek/deepseek-flash), then `session delete` through that server",
+  "note": "The `subagent` tool's child is its own session, created with the parent's `parentID`; deleting the parent deletes the child first.",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 4
   },
-  "prompt": "Use the subagent tool to have a subagent read NOTE.txt and report its content, then tell me what it said.",
-  "note": "The `subagent` tool's child is its own session, created with the parent's `parentID`; deleting the parent deletes the child first."
+  "prompt": "Use the subagent tool to have a subagent read NOTE.txt and report its content, then tell me what it said."
 }
