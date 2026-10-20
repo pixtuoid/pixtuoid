@@ -224,8 +224,8 @@ impl Refusal {
 /// re-opens the leak or the double-apply the pre-pass was added to close.
 #[must_use]
 enum Preprocessed {
-    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start
-    /// whose End already landed (#242).
+    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start or
+    /// Waiting whose call's End already landed (#242).
     Drop,
     /// Survived the pre-pass; carries what task tracking already applied, so
     /// the general arms can skip work the tracker has done.

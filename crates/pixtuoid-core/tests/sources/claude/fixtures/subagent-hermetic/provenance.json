@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.302 (Claude Code)",
+  "version": "2.1.304 (Claude Code)",
   "captured": "2026-10-20",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 517
+    "blanked": 543
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/subagent.json",

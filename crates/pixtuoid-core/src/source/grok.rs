@@ -1321,9 +1321,9 @@ mod tests {
         }
     }
 
-    /// `child_session_id` is required on every subagent update
-    /// (`xai-grok-shell/src/extensions/notification.rs`), so it alone keys the
-    /// child: a line without it is not one grok writes.
+    /// `child_session_id` is required on every subagent update, so it alone keys
+    /// the child (`crates/codegen/xai-grok-shell/src/extensions/notification.rs:679,753`
+    /// at `37949780c1`): a line without it is not one grok writes.
     #[test]
     fn a_subagent_update_keys_its_child_by_child_session_id_alone() {
         for tag in ["subagent_spawned", "subagent_finished"] {

@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use super::{PROFILES, Profile, SHARDS, pin};
 use crate::harness::sources_root;
 
-/// The nightly's drift legs, as `hermetic.yml`'s matrix names them.
+/// The matrix's `os` axis, as `hermetic.yml` names it.
 const OSES: &[&str] = &["macos", "windows"];
 
 /// The file beside a run's reports naming each source that moved.
@@ -78,8 +78,8 @@ impl Proposal {
 ///
 /// # Errors
 ///
-/// When a leg's rows are not rows, or the one release every leg moved a source
-/// to is not a release or is below its pin.
+/// When a leg's rows are not rows, or the one release every OS in `OSES`
+/// moved a source to is not a release or is below its pin.
 pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal>, String> {
     let mut moved = Vec::new();
     for os in OSES {
