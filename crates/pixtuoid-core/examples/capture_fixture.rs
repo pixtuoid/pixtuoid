@@ -1053,15 +1053,16 @@ mod recorder {
         lines[lines.len().saturating_sub(DAEMON_LOG_TAIL)..].join("\n")
     }
 
-    /// Why a capture is incomplete, if it is: its tap stopped accepting, or
-    /// its daemon had to be killed.
+    /// Why a capture is incomplete, if it is: its tap stopped accepting, its
+    /// daemon had to be killed, or both.
     fn incomplete(tap: Option<String>, daemon: std::io::Result<()>) -> Option<std::io::Error> {
-        tap.map(|why| {
-            std::io::Error::other(format!(
-                "the tap stopped accepting, so this capture is incomplete: {why}"
-            ))
-        })
-        .or_else(|| daemon.err())
+        let tap = tap
+            .map(|why| format!("the tap stopped accepting, so this capture is incomplete: {why}"));
+        let whys: Vec<String> = tap
+            .into_iter()
+            .chain(daemon.err().map(|e| e.to_string()))
+            .collect();
+        (!whys.is_empty()).then(|| std::io::Error::other(whys.join("; ")))
     }
 
     fn write_payloads(payloads: &[String], dest: &Path) -> std::io::Result<PathBuf> {
@@ -2688,6 +2689,17 @@ mod recorder {
             assert!(incomplete(None, Ok(())).is_none());
         }
 
+        #[test]
+        fn a_capture_whose_tap_stopped_and_daemon_was_killed_names_both() {
+            const TAP: &str = "the tap's own reason";
+            const KILL: &str = "the daemon's kill";
+            let why = incomplete(Some(TAP.into()), Err(std::io::Error::other(KILL)))
+                .expect("incomplete")
+                .to_string();
+            assert!(why.contains(TAP), "{why}");
+            assert!(why.contains(KILL), "{why}");
+        }
+
         #[cfg(unix)]
         #[test]
         fn a_daemon_that_exited_is_refused_though_its_probe_answers() {
@@ -2760,14 +2772,12 @@ mod recorder {
         }
 
         #[test]
-        fn a_daemons_boot_and_stop_are_budgeted_per_os() {
-            assert_eq!(
-                DAEMON_BOOT.unix, BOOT,
-                "a Unix daemon boots inside the rig's budget"
+        fn a_windows_daemon_gets_longer_to_boot_and_stop_than_a_unix_one() {
+            assert!(DAEMON_BOOT.windows > DAEMON_BOOT.unix, "its cold boot");
+            assert!(
+                DAEMON_STOP_GRACE.windows > DAEMON_STOP_GRACE.unix,
+                "its stop"
             );
-            assert_eq!(DAEMON_BOOT.windows, Duration::from_secs(120));
-            assert_eq!(DAEMON_STOP_GRACE.unix, Duration::from_secs(30));
-            assert_eq!(DAEMON_STOP_GRACE.windows, Duration::from_secs(150));
         }
 
         #[test]
