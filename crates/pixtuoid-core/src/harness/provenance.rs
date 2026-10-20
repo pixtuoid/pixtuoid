@@ -41,7 +41,8 @@ pub struct Recorded {
     pub captured: NonEmpty,
     /// What recorded it, unexpanded.
     pub command: NonEmpty,
-    /// What was edited by hand since, which nothing in the bytes shows.
+    /// The scenario's own story, and any hand edit since, which nothing in the
+    /// bytes shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<NonEmpty>,
     /// What the strip did to the bytes.
@@ -237,6 +238,24 @@ mod tests {
         assert!(parse(&method).is_err(), "a stray key inside `deidentified`");
     }
 
+    /// Without it, a required key made optional passes every test once the
+    /// README's row follows.
+    #[test]
+    fn a_record_missing_a_required_key_fails_to_parse() {
+        for key in ["cli", "version", "captured", "command"] {
+            let without: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str::<serde_json::Map<_, _>>(RECORDED)
+                    .expect("json")
+                    .into_iter()
+                    .filter(|(k, _)| k != key)
+                    .collect();
+            let text = serde_json::to_string(&without).expect("json");
+            assert!(parse(&text).is_err(), "a recording without {key:?}");
+        }
+        assert!(parse(r#"{"origin":"composed"}"#).is_err());
+        assert!(parse(r#"{"origin":"unknown"}"#).is_err());
+    }
+
     #[test]
     fn a_blank_required_string_fails_to_parse() {
         assert!(parse(&RECORDED.replace(r#""cli":"c""#, r#""cli":" ""#)).is_err());
@@ -280,6 +299,14 @@ mod tests {
             format!("{}\n", serde_json::to_string_pretty(&p).expect("json")),
             text
         );
+        for unset in [RECORDED, r#"{"origin":"composed","note":"n"}"#] {
+            let p = parse(unset).expect("parses");
+            assert_eq!(
+                serde_json::to_string(&p).expect("json"),
+                unset,
+                "an unset field writes no key"
+            );
+        }
         assert!(p.strips());
         assert_eq!(p.exemption(), None);
     }

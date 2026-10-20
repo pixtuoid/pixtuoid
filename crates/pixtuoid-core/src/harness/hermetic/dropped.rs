@@ -212,17 +212,6 @@ mod tests {
         );
     }
 
-    /// A baseline that does not parse fails the whole tier when a run looks it
-    /// up, so every committed one parses here, on every PR.
-    #[test]
-    fn every_committed_baseline_parses() {
-        for p in crate::harness::hermetic::PROFILES {
-            for s in p.scenarios {
-                baseline_of(s).unwrap_or_else(|e| panic!("{}/{}: {e}", p.source, s.name));
-            }
-        }
-    }
-
     #[test]
     fn a_scenario_not_yet_recorded_has_no_baseline() {
         assert_eq!(

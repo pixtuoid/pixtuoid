@@ -606,7 +606,7 @@ mod tests {
             let before = scenario_events(source, &files);
             let strip = strip_unread(source, &files).expect("strip");
             assert_eq!(scenario_events(source, &files), before, "{label}");
-            let recorded = Provenance::read_if_any(&scenario.join(crate::harness::PROVENANCE))
+            let recorded = Provenance::read_if_any(&capture.provenance_path())
                 .expect("a committed record parses")
                 .is_some_and(|record| record.strips());
             assert!(

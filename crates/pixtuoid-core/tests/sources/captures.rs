@@ -720,11 +720,7 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
                 ));
             }
         }
-        if !dates.is_empty()
-            && !captured.is_empty()
-            && captured != "unknown"
-            && !dates.contains(captured)
-        {
+        if !dates.is_empty() && captured != "unknown" && !dates.contains(captured) {
             bad.push(format!(
                 "{at}: `captured` {captured} contradicts the stamps in the bytes \
                  ({dates:?}) — the recorder dates in UTC"
