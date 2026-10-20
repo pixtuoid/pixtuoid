@@ -746,11 +746,10 @@ mod tests {
             false
         }
 
-        /// A pid no process holds. Dropping `child` closes its handle, so on
-        /// Windows the pid no longer opens: OpenProcess documents
-        /// ERROR_INVALID_PARAMETER only for pid 0, and this is the same code for a
-        /// pid no process holds. A pid recycle in the microseconds between would
-        /// flake its callers.
+        /// A pid no process holds: on Windows dropping `child` closes its handle,
+        /// so OpenProcess fails with ERROR_INVALID_PARAMETER, a code its docs name
+        /// only for pid 0 (learn.microsoft.com, `OpenProcess`). A pid recycled
+        /// before the caller's `watch` would flake that caller.
         fn dead_pid() -> i32 {
             let mut child = sleeper();
             let pid = child.id() as i32;
