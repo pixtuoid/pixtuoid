@@ -116,7 +116,6 @@ schemars = { workspace = true }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
 filetime = "0.2"
-regex = { workspace = true }
 insta = { workspace = true, features = ["yaml"] }
 tracing-subscriber = { workspace = true }
 # Wire→state benchmarks (`just bench`); same CodSpeed compat passthrough as

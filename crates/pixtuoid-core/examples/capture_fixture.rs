@@ -49,8 +49,8 @@ mod recorder {
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
         PROVENANCE, Resumed, canonical_capture, capture_base, capture_workspace,
-        capture_workspace_tail, jsonl_files_under, required_version_probe, version_answer,
-        wait_until,
+        capture_workspace_tail, jsonl_files_under, required_version_probe, slashed_under,
+        version_answer, wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -522,8 +522,8 @@ mod recorder {
     }
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
-    /// beside them: the old ones are git's. A run whose bytes and record match
-    /// them up to its ids, its baseline included, leaves them as they were.
+    /// beside them: the old ones are git's. A run whose record equals theirs but
+    /// for `captured`, and whose bytes match theirs up to ids, leaves both be.
     fn promote(run: &Path, root: &Path, needles: &BTreeSet<String>) -> std::io::Result<()> {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(run.join(MANIFEST))?)?;
@@ -553,15 +553,10 @@ mod recorder {
             Some(_) => None,
         };
         let deidentified = deidentify(&manifest.source, &fresh, exempt)?;
-        let script = scenario.script(&manifest.source);
-        // The record names its script as every host's checkout spells it.
-        let script = script
-            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .unwrap_or(&script)
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/");
+        let script = slashed_under(
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            &scenario.script(&manifest.source),
+        )?;
         let command = ["just", "hermetic", "--record", manifest.source.as_str()].map(String::from);
         let fresh_record = Recorded {
             aimock: Some(filled("aimock", &manifest.aimock)?),
@@ -1656,9 +1651,7 @@ mod recorder {
             let p = rerun(
                 "tool-run",
                 (DSH_VERSION, AIMOCK),
-                |r| {
-                    r["dropped"] = serde_json::json!({"os": std::env::consts::OS, "at": {}});
-                },
+                |_| {},
                 unchanged,
                 unchanged,
             );
@@ -1726,40 +1719,6 @@ mod recorder {
                 unchanged,
             );
             assert!(!kept(&p), "a kept record would name a script that is gone");
-        }
-
-        #[test]
-        fn a_re_record_whose_free_text_changed_one_for_one_is_rewritten() {
-            let p = rerun(
-                "tool-run",
-                (DSH_VERSION, AIMOCK),
-                |_| {},
-                unchanged,
-                |text| text.replace("deepseek-flash", "deepseek-fresh"),
-            );
-            assert!(!kept(&p));
-        }
-
-        #[test]
-        fn a_re_record_whose_unknown_id_changed_is_rewritten() {
-            let p = rerun(
-                "tool-run",
-                (DSH_VERSION, AIMOCK),
-                |_| {},
-                |text| {
-                    let id = text
-                        .lines()
-                        .find_map(|l| {
-                            serde_json::from_str::<serde_json::Value>(l).ok()?["sessionId"]
-                                .as_str()
-                                .map(str::to_owned)
-                        })
-                        .expect("a session");
-                    text.replace(&id, "session-q7Hk29Lm4QpZ")
-                },
-                unchanged,
-            );
-            assert!(!kept(&p), "a token no family names is text");
         }
 
         #[test]

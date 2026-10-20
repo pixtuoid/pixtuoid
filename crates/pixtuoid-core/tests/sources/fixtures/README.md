@@ -79,11 +79,11 @@ directory would be auto-scanned by `conformance.rs` with no committed bytes
 beside it for the `.new` no-clobber rule to protect.
 
 **Re-recording an existing scenario needs a hand** unless the tier records it. The tier keeps a
-fixture whose bytes and record, `dropped` included, the run matched up to the ids an `ID_FAMILIES`
-row (`harness::captures`) names; else `just hermetic --record` replaces both whole, and git holds
-the diff. `just capture-fixture` never overwrites committed bytes: it writes `<name>.new` beside
-them to diff, not trust; only `*.jsonl` and `provenance.json` are read, so one you do not `mv`
-over the old changes nothing.
+fixture whose record equals the run's but for `captured`, `dropped` included, and whose bytes
+match the run's up to the ids an `ID_FAMILIES` row (`harness::captures`) names; else
+`just hermetic --record` replaces both whole. `just capture-fixture` never overwrites committed
+bytes: it writes `<name>.new` beside them to diff, not trust; only `*.jsonl` and
+`provenance.json` are read, so one you do not `mv` over the old changes nothing.
 
 **A capture is recorded only on Unix.** The corpus pins Unix realpaths and cwds,
 so on Windows the recorder writes only a raw `--out` capture and

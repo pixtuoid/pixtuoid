@@ -1,7 +1,8 @@
 //! The committed capture corpus: where each capture's bytes live and which
-//! registered source owns them, read off the tree's layout; and the recorder's
-//! contract with its callers: its workspace, raw record, flag spellings and
-//! the wait on a server either starts.
+//! registered source owns them, read off the tree's layout, and what they say
+//! blind to the ids their run minted; and the recorder's contract with its
+//! callers: its workspace, raw record, flag spellings and the wait on a
+//! server either starts.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -303,10 +304,6 @@ pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// A kind of token a CLI or the recorder mints afresh each run.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "a row's citation is its test's to read")
-)]
 struct IdFamily {
     /// The token's name in a canonical capture.
     name: &'static str,
@@ -314,7 +311,12 @@ struct IdFamily {
     /// value of the same shape.
     pattern: &'static str,
     /// A committed capture that carries one, under `tests/sources`.
+    #[cfg_attr(not(test), expect(dead_code, reason = "its test reads the citation"))]
     seen_in: &'static str,
+    /// Tokens of it two recordings of one turn minted, off the corpus's own
+    /// re-records.
+    #[cfg_attr(not(test), expect(dead_code, reason = "its test reads the pairs"))]
+    renamed: &'static [(&'static str, &'static str)],
 }
 
 /// Every family of minted token a tier recording carries, so two recordings
@@ -326,68 +328,110 @@ const ID_FAMILIES: &[IdFamily] = &[
         name: "uuid",
         pattern: r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
         seen_in: "fixtures/claude-code/tool-run-hermetic",
+        renamed: &[(
+            "3a94538f-09fe-4231-8195-8e5277ac55fe",
+            "5c268a10-f98f-494a-b750-92a110ad30a9",
+        )],
     },
     IdFamily {
         name: "anthropic-tool-use",
         pattern: r"toolu_[0-9A-Za-z_-]+",
         seen_in: "fixtures/claude-code/tool-run-hermetic",
+        renamed: &[("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R")],
     },
+    // Not the wire names that hold it (`call_id`, `function_call_output`): a
+    // minted id starts a word and runs 16 past its prefix.
     IdFamily {
         name: "openai-tool-call",
-        pattern: r"call_[0-9A-Za-z_-]+",
+        pattern: r"\bcall_[0-9A-Za-z_-]{16,}",
         seen_in: "fixtures/kimi/tool-run-hermetic",
+        renamed: &[
+            ("call_orvKmWb1fXgIDLfw", "call_2Xs85giJlWCQx58K"),
+            (
+                "call_00_CsfLiRTSh5dPH4PAwUsZ5285",
+                "call_00_DLuPvdg14pUXhocfirg30399",
+            ),
+        ],
     },
     IdFamily {
         name: "claude-code-subagent",
         pattern: r"\ba[0-9a-f]{16}\b",
         seen_in: "claude/fixtures/subagent-hermetic",
+        renamed: &[("agent-a8074a27caeedb715", "agent-a615cb511b5899d39")],
     },
     IdFamily {
         name: "opencode-session",
         pattern: r"ses_[0-9A-Za-z]{26}",
         seen_in: "fixtures/opencode/tool-run-hermetic",
+        renamed: &[(
+            "ses_eabb87c3cffeVHXkPkR0sAM6MD",
+            "ses_eab5376a1ffezRy0f5TzOmUH7a",
+        )],
     },
     IdFamily {
         name: "reasonix-subagent",
         pattern: r"sa_\d{8}_\d{6}_\d{9}_[0-9a-f]{12}",
         seen_in: "reasonix/fixtures/subagent-hermetic",
+        renamed: &[(
+            "sa_20261019_162721_000000000_167006df8d3b",
+            "sa_20261019_162729_000000000_53910816d8e4",
+        )],
     },
     IdFamily {
         name: "reasonix-session-start",
         pattern: r"\d{8}-\d{6}\.\d{9}",
         seen_in: "fixtures/reasonix/tool-run-hermetic",
+        renamed: &[(
+            "20261019-063638.389045000-deepseek-v4-flash",
+            "20261019-162745.781162000-deepseek-v4-flash",
+        )],
     },
     IdFamily {
         name: "hermes-session",
         pattern: r"\d{8}_\d{6}_[0-9a-f]{6}",
         seen_in: "fixtures/hermes/tool-run-hermetic",
+        renamed: &[("20261020_005102_5e501b", "20261020_005045_5564c8")],
     },
     // Codex's and omp's.
     IdFamily {
         name: "session-file-start",
         pattern: r"\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d(?:-\d{3}Z)?",
         seen_in: "codex/fixtures/subagent-hermetic",
+        renamed: &[
+            (
+                "rollout-2026-10-18T22-11-05-x",
+                "rollout-2026-10-20T00-47-42-x",
+            ),
+            ("2026-10-19T22-12-48-510Z_x", "2026-10-20T07-52-32-773Z_x"),
+        ],
     },
     IdFamily {
         name: "recorder-sandbox",
         pattern: r"\.tmp[0-9A-Za-z]{6}",
         seen_in: "delegation/fixtures/omp",
+        renamed: &[("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes")],
     },
     IdFamily {
         name: "shim-pid",
         pattern: r#""_pid":(\d+)"#,
         seen_in: "fixtures/dsh/tool-run-recorded",
+        renamed: &[(r#"{"_pid":56875}"#, r#"{"_pid":42895}"#)],
     },
     IdFamily {
         name: "shim-clock",
         pattern: r#""_shim_ts_ms":(\d+)"#,
         seen_in: "fixtures/dsh/tool-run-recorded",
+        renamed: &[(
+            r#"{"_shim_ts_ms":1792464600287}"#,
+            r#"{"_shim_ts_ms":1792482405228}"#,
+        )],
     },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",
         pattern: r#""gatewayPort":(\d+)"#,
         seen_in: "fixtures/openclaw/tool-run-hermetic",
+        renamed: &[(r#"{"gatewayPort":55736}"#, r#"{"gatewayPort":63297}"#)],
     },
 ];
 
@@ -449,13 +493,7 @@ pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, Stri
     };
     let mut files = Vec::new();
     for file in jsonl_files_under(dir) {
-        let path = file
-            .strip_prefix(dir)
-            .map_err(std::io::Error::other)?
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/");
+        let path = slashed_under(dir, &file)?;
         let text = std::fs::read_to_string(&file)?;
         files.push(((masked(&path), masked(&text)), (path, text)));
     }
@@ -478,6 +516,27 @@ pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, Stri
             .map(|(_, (path, text))| (numbered(&path), numbered(&text)))
             .collect(),
     ))
+}
+
+/// `path` from `base`, its components `/`-joined as every host's checkout
+/// spells them.
+///
+/// # Errors
+///
+/// Where `path` is not under `base`: no spelling of it is the checkout's.
+pub fn slashed_under(base: &Path, path: &Path) -> std::io::Result<String> {
+    let under = path.strip_prefix(base).map_err(|_| {
+        std::io::Error::other(format!(
+            "{} is not under {}",
+            path.display(),
+            base.display()
+        ))
+    })?;
+    Ok(under
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 /// THE enumeration of committed captures under a `tests/sources` tree, from the
@@ -692,50 +751,48 @@ mod tests {
         ));
     }
 
-    /// One token of each family as two recordings of one turn minted it,
-    /// read off the corpus's own re-records.
-    const RENAMED_BETWEEN_RECORDINGS: &[(&str, &str)] = &[
-        (
-            "3a94538f-09fe-4231-8195-8e5277ac55fe",
-            "5c268a10-f98f-494a-b750-92a110ad30a9",
-        ),
-        ("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R"),
-        ("call_orvKmWb1fXgIDLfw", "call_2Xs85giJlWCQx58K"),
-        ("agent-a8074a27caeedb715", "agent-a615cb511b5899d39"),
-        (
-            "ses_eabb87c3cffeVHXkPkR0sAM6MD",
-            "ses_eab5376a1ffezRy0f5TzOmUH7a",
-        ),
-        (
-            "sa_20261019_162721_000000000_167006df8d3b",
-            "sa_20261019_162729_000000000_53910816d8e4",
-        ),
-        (
-            "20261019-063638.389045000-deepseek-v4-flash",
-            "20261019-162745.781162000-deepseek-v4-flash",
-        ),
-        ("20261020_005102_5e501b", "20261020_005045_5564c8"),
-        (
-            "rollout-2026-10-18T22-11-05-x",
-            "rollout-2026-10-20T00-47-42-x",
-        ),
-        ("2026-10-19T22-12-48-510Z_x", "2026-10-20T07-52-32-773Z_x"),
-        ("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes"),
-        (r#"{"_pid":56875}"#, r#"{"_pid":42895}"#),
-        (
-            r#"{"_shim_ts_ms":1792464600287}"#,
-            r#"{"_shim_ts_ms":1792482405228}"#,
-        ),
-        (r#"{"gatewayPort":55736}"#, r#"{"gatewayPort":63297}"#),
-    ];
+    #[test]
+    fn a_wire_name_that_holds_call_is_text_not_an_id() {
+        for name in [
+            "call_id",
+            "tool_call_id",
+            "tool_call_update",
+            "function_call_output",
+            "custom_tool_call_output",
+        ] {
+            let was = format!(r#"{{"{name}":1}}"#);
+            let now = format!(r#"{{"{}x":1}}"#, &name[..name.len() - 1]);
+            assert!(
+                !same_up_to_ids(&[("h.jsonl", &was)], &[("h.jsonl", &now)]),
+                "{name}"
+            );
+        }
+        assert!(
+            !same_up_to_ids(
+                &[("h.jsonl", r#"{"tool":"recall_0123456789abcdef"}"#)],
+                &[("h.jsonl", r#"{"tool":"recall_0123456789abcdex"}"#)]
+            ),
+            "a word that holds call_ is no id"
+        );
+    }
 
     #[test]
     fn each_family_renames_what_two_recordings_minted() {
-        for (was, now) in RENAMED_BETWEEN_RECORDINGS {
-            assert!(
-                same_up_to_ids(&[("h.jsonl", was)], &[("h.jsonl", now)]),
-                "{was} -> {now}"
-            );
+        let patterns = id_patterns().expect("every pattern compiles");
+        for (family, pattern) in ID_FAMILIES.iter().zip(&patterns) {
+            assert!(!family.renamed.is_empty(), "{}: no pair", family.name);
+            for (was, now) in family.renamed {
+                assert!(
+                    pattern.is_match(was) && pattern.is_match(now),
+                    "{}: {was} or {now} is not its token",
+                    family.name
+                );
+                assert!(
+                    same_up_to_ids(&[("h.jsonl", was)], &[("h.jsonl", now)]),
+                    "{}: {was} -> {now}",
+                    family.name
+                );
+            }
         }
     }
 
@@ -743,14 +800,23 @@ mod tests {
     fn every_id_family_is_carried_by_the_capture_it_cites() {
         let patterns = id_patterns().expect("every pattern compiles");
         for (family, pattern) in ID_FAMILIES.iter().zip(&patterns) {
-            let carried = jsonl_files_under(&crate::harness::sources_root().join(family.seen_in))
-                .iter()
-                .any(|f| {
-                    pattern.is_match(&f.to_string_lossy())
-                        || pattern.is_match(&std::fs::read_to_string(f).expect("read"))
-                });
+            let capture = crate::harness::sources_root().join(family.seen_in);
+            let carried = jsonl_files_under(&capture).iter().any(|f| {
+                pattern.is_match(&slashed_under(&capture, f).expect("under"))
+                    || pattern.is_match(&std::fs::read_to_string(f).expect("read"))
+            });
             assert!(carried, "{}: {} carries none", family.name, family.seen_in);
         }
+    }
+
+    #[test]
+    fn a_path_under_its_base_is_slash_joined_and_one_elsewhere_has_no_spelling() {
+        let base = Path::new("root");
+        assert_eq!(
+            slashed_under(base, &base.join("s").join("h.jsonl")).expect("under"),
+            "s/h.jsonl"
+        );
+        assert!(slashed_under(base, Path::new("elsewhere/h.jsonl")).is_err());
     }
 
     #[test]
