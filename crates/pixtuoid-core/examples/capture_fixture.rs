@@ -337,6 +337,7 @@ mod recorder {
         };
         let daemon = match RunningDaemon::start(
             options.daemon.as_ref(),
+            BOOT,
             &workspace,
             &wiring,
             descriptor.verified_version,
@@ -835,6 +836,10 @@ mod recorder {
     /// How long one readiness probe may take before it is killed and read as
     /// a no: a probe that blocked would hold the wait past [`BOOT`].
     const DAEMON_PROBE_BUDGET: Duration = Duration::from_secs(5);
+    /// How many last lines of its log, and of its last probe's, a daemon that
+    /// never served carries in its error: a failed run's uploaded dir keeps the
+    /// recorder's error, while both logs stay in its scratch.
+    const DAEMON_LOG_TAIL: usize = 40;
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
     /// tap. It stops when its stdin closes ([`hermetic::Daemon`]), which
@@ -848,9 +853,10 @@ mod recorder {
     }
 
     impl RunningDaemon {
-        /// `daemon` started, once its probe exits 0.
+        /// `daemon` started, once its probe exits 0 within `boot`.
         fn start(
             daemon: Option<&DaemonCmd>,
+            boot: Duration,
             ws: &Path,
             wiring: &CliWiring<'_>,
             verified: &str,
@@ -861,7 +867,8 @@ mod recorder {
             };
             let own = driver_dir(wiring.scratch);
             std::fs::create_dir_all(&own)?;
-            let log = std::fs::File::create(own.join("daemon.log"))?;
+            let log_path = own.join("daemon.log");
+            let log = std::fs::File::create(&log_path)?;
             let mut child = wired(&daemon.start, ws, wiring, verified, env)?
                 .stdin(std::process::Stdio::piped())
                 .stdout(log.try_clone()?)
@@ -872,27 +879,43 @@ mod recorder {
                 child,
                 start: daemon.start.join(" "),
             };
-            wait_until("the daemon", BOOT, || {
+            // The last probe's, which each one truncates.
+            let probe_log = own.join("probe.log");
+            let mut last_probe = String::from("never ran");
+            wait_until("the daemon", boot, || {
+                let out = std::fs::File::create(&probe_log)?;
                 let mut probe = wired(&daemon.ready, ws, wiring, verified, env)?
                     .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
+                    .stdout(out.try_clone()?)
+                    .stderr(out)
                     .spawn()?;
-                if wait_until("its probe", DAEMON_PROBE_BUDGET, || {
+                let answered = wait_until("its probe", DAEMON_PROBE_BUDGET, || {
                     Ok(probe.try_wait()?.is_some())
                 })
-                .is_err()
-                {
+                .is_ok();
+                if !answered {
                     let _ = probe.kill();
                 }
-                let served = probe.wait()?.success();
+                let status = probe.wait()?;
+                last_probe = if answered {
+                    status.to_string()
+                } else {
+                    format!("killed past {DAEMON_PROBE_BUDGET:?}")
+                };
                 match running.child.try_wait()? {
                     // A probe answered by whatever else holds the port.
                     Some(exit) => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
                     ))),
-                    None => Ok(served),
+                    None => Ok(status.success()),
                 }
+            })
+            .map_err(|e| {
+                std::io::Error::other(format!(
+                    "{e}; its last probe ({last_probe}) said:\n{}\nits log ends:\n{}",
+                    tail(&probe_log),
+                    tail(&log_path)
+                ))
             })?;
             Ok(Some(running))
         }
@@ -917,6 +940,15 @@ mod recorder {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+    }
+
+    /// The last [`DAEMON_LOG_TAIL`] lines of the log at `path`.
+    fn tail(path: &Path) -> String {
+        let text = std::fs::read(path)
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        lines[lines.len().saturating_sub(DAEMON_LOG_TAIL)..].join("\n")
     }
 
     /// Why a capture is incomplete, if it is: its tap stopped accepting, or
@@ -1970,9 +2002,10 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let running = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
-                .expect("starts")
-                .expect("a daemon");
+            let running =
+                RunningDaemon::start(Some(&daemon), BOOT, ws.path(), &wiring, "1.0.0", &[])
+                    .expect("starts")
+                    .expect("a daemon");
             assert!(ready.exists(), "returned before it served");
             running.stop(DAEMON_STOP_GRACE).expect("it stops");
         }
@@ -1982,6 +2015,8 @@ mod recorder {
         const FAKE_DAEMON: &str = "PIXTUOID_TEST_FAKE_DAEMON";
         /// A second libtest filter, naming no test, that marks the fake's probe.
         const FAKE_PROBE: &str = "fake-daemon-probe";
+        /// What the fake's probe says while the fake does not serve.
+        const NOT_YET: &str = "the fake does not serve yet";
 
         /// `test`'s name as libtest filters it: module path without the crate.
         fn this_test(test: &str) -> String {
@@ -2018,36 +2053,36 @@ mod recorder {
 
         /// In a re-run as the fake: its marker directory, and whether it is the
         /// probe, which has asserted the fake serves by the time this returns.
-        fn as_fake() -> Option<(PathBuf, bool)> {
+        /// A fake that `serves` says so before it returns.
+        fn as_fake(serves: bool) -> Option<(PathBuf, bool)> {
             let dir = PathBuf::from(std::env::var_os(FAKE_DAEMON)?);
             let probe = std::env::args().any(|a| a == FAKE_PROBE);
             if probe {
-                assert!(dir.join("ready").exists(), "the fake does not serve yet");
-            } else {
+                assert!(dir.join("ready").exists(), "{NOT_YET}");
+            } else if serves {
                 std::fs::write(dir.join("ready"), "").expect("ready");
             }
             Some((dir, probe))
         }
 
-        /// The fake daemon, started as the recorder starts one, in `dir`: its
-        /// workspace, its scratch and its markers, which outlive it.
-        fn start_fake(test: &str, dir: &Path) -> RunningDaemon {
+        /// The fake daemon, started within `boot` as the recorder starts one,
+        /// in `dir`: its workspace, its scratch and its markers, which outlive it.
+        fn start_fake(test: &str, dir: &Path, boot: Duration) -> std::io::Result<RunningDaemon> {
             let endpoint = Endpoint::in_dir(dir, "capture");
             let wiring = CliWiring {
                 endpoint: &endpoint,
                 scratch: dir,
             };
             let env = [(FAKE_DAEMON.to_owned(), dir.display().to_string())];
-            RunningDaemon::start(Some(&fake_daemon(test)), dir, &wiring, "1.0.0", &env)
-                .expect("starts")
-                .expect("a daemon")
+            RunningDaemon::start(Some(&fake_daemon(test)), boot, dir, &wiring, "1.0.0", &env)
+                .map(|d| d.expect("a daemon"))
         }
 
         /// Not `cfg(unix)`: the lifeline is the recorder's one stop on every OS.
         #[test]
         fn a_daemon_stops_when_its_stdin_closes() {
             const TEST: &str = "a_daemon_stops_when_its_stdin_closes";
-            if let Some((dir, probe)) = as_fake() {
+            if let Some((dir, probe)) = as_fake(true) {
                 if !probe {
                     std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
                     // An EOF that came before the recorder stopped it is a
@@ -2062,7 +2097,7 @@ mod recorder {
                 return;
             }
             let markers = tempfile::tempdir().expect("markers");
-            let running = start_fake(TEST, markers.path());
+            let running = start_fake(TEST, markers.path(), BOOT).expect("starts");
             std::fs::write(markers.path().join("stopping"), "").expect("stopping");
             running
                 .stop(DAEMON_STOP_GRACE)
@@ -2077,18 +2112,39 @@ mod recorder {
         }
 
         #[test]
+        fn a_daemon_that_never_serves_carries_both_logs_into_the_error() {
+            const TEST: &str = "a_daemon_that_never_serves_carries_both_logs_into_the_error";
+            const SAYS: &str = "the fake daemon will not serve";
+            if let Some((_, probe)) = as_fake(false) {
+                if !probe {
+                    println!("{SAYS}");
+                    std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
+                }
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let why = start_fake(TEST, dir.path(), Duration::from_secs(2))
+                .map(|_| ())
+                .expect_err("it never serves")
+                .to_string();
+            assert!(why.contains("never came up"), "{why}");
+            assert!(why.contains(SAYS), "its log: {why}");
+            assert!(why.contains(NOT_YET), "its last probe: {why}");
+        }
+
+        #[test]
         fn a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture() {
             const TEST: &str = "a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture";
             /// Past any grace this test gives it.
             const OUTLIVES: Duration = Duration::from_secs(600);
-            if let Some((_, probe)) = as_fake() {
+            if let Some((_, probe)) = as_fake(true) {
                 if !probe {
                     std::thread::sleep(OUTLIVES);
                 }
                 return;
             }
             let markers = tempfile::tempdir().expect("markers");
-            let running = start_fake(TEST, markers.path());
+            let running = start_fake(TEST, markers.path(), BOOT).expect("starts");
             let grace = Duration::from_secs(1);
             let started = std::time::Instant::now();
             let why = running.stop(grace).expect_err("a killed daemon fails");
@@ -2113,17 +2169,20 @@ mod recorder {
             let ws = tempfile::tempdir().expect("workspace");
             let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
             let daemon = DaemonCmd {
-                start: ["sh", "-c", "exit 3"].map(String::from).to_vec(),
+                start: ["sh", "-c", "echo out of disk; exit 3"]
+                    .map(String::from)
+                    .to_vec(),
                 ready: ["sh", "-c", "sleep 1"].map(String::from).to_vec(),
             };
             let wiring = CliWiring {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
+            let why = RunningDaemon::start(Some(&daemon), BOOT, ws.path(), &wiring, "1.0.0", &[])
                 .map(|_| ())
                 .expect_err("its probe answered for someone else");
             assert!(why.to_string().contains("exited"), "{why}");
+            assert!(why.to_string().contains("out of disk"), "its log: {why}");
         }
 
         #[cfg(unix)]
@@ -2141,7 +2200,7 @@ mod recorder {
                 scratch: sandbox.path(),
             };
             let started = std::time::Instant::now();
-            let why = RunningDaemon::start(Some(&daemon), ws.path(), &wiring, "1.0.0", &[])
+            let why = RunningDaemon::start(Some(&daemon), BOOT, ws.path(), &wiring, "1.0.0", &[])
                 .map(|_| ())
                 .expect_err("it never served");
             assert!(why.to_string().contains("exited"), "{why}");
