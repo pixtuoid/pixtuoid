@@ -2883,6 +2883,7 @@ dependencies = [
  "proptest",
  "regex",
  "rustix 1.1.5",
+ "schemars",
  "semver",
  "serde",
  "serde_json",

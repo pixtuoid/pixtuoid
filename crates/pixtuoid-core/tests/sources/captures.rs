@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
 use pixtuoid_core::source::registry;
 
 /// A committed capture: the bytes, the record of where they came from, and the
@@ -18,23 +19,19 @@ pub(crate) struct Capture {
     /// about its `cli` must not get to pick which rules apply to it.
     pub(crate) source: String,
     pub(crate) provenance_path: PathBuf,
-    pub(crate) provenance: serde_json::Value,
+    pub(crate) provenance: Provenance,
 }
 
 impl Capture {
-    pub(crate) fn origin(&self) -> &str {
-        self.provenance
-            .get("origin")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
+    pub(crate) fn recorded(&self) -> Option<&Recorded> {
+        self.provenance.recorded()
     }
 
-    pub(crate) fn is_recorded(&self) -> bool {
-        self.origin() == "recorded"
-    }
-
-    pub(crate) fn field(&self, key: &str) -> Option<&str> {
-        self.provenance.get(key).and_then(serde_json::Value::as_str)
+    pub(crate) fn note(&self) -> Option<&str> {
+        match &self.provenance {
+            Provenance::Recorded(r) => r.note.as_ref().map(NonEmpty::as_str),
+            Provenance::Composed { note } | Provenance::Unknown { note } => Some(note.as_str()),
+        }
     }
 
     /// The scenario's transcripts — every `.jsonl` that is not the hook payload
@@ -132,10 +129,9 @@ pub(crate) fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
 /// Sorted, so failures name captures in a stable order.
 pub(crate) fn every_capture() -> Vec<Capture> {
     let mut out = Vec::new();
-    for pixtuoid_core::harness::Capture { dir, source } in
-        pixtuoid_core::harness::captures(&sources_root())
-    {
-        let prov = dir.join("provenance.json");
+    for capture in pixtuoid_core::harness::captures(&sources_root()) {
+        let prov = capture.provenance_path();
+        let pixtuoid_core::harness::Capture { dir, source } = capture;
         assert!(
             prov.is_file(),
             "{}: a capture must declare its origin — add provenance.json here, or \
@@ -143,10 +139,7 @@ pub(crate) fn every_capture() -> Vec<Capture> {
              composition, which is the whole reason provenance exists.",
             dir.display()
         );
-        let body = std::fs::read_to_string(&prov)
-            .unwrap_or_else(|e| panic!("read {}: {e}", prov.display()));
-        let provenance: serde_json::Value = serde_json::from_str(&body)
-            .unwrap_or_else(|e| panic!("{}: not valid JSON: {e}", prov.display()));
+        let provenance = Provenance::read(&prov).unwrap_or_else(|e| panic!("{e}"));
         out.push(Capture {
             dir,
             source,
@@ -155,6 +148,11 @@ pub(crate) fn every_capture() -> Vec<Capture> {
         });
     }
     out
+}
+
+/// Each recording among `captures`, with its record.
+pub(crate) fn recordings(captures: &[Capture]) -> impl Iterator<Item = (&Capture, &Recorded)> {
+    captures.iter().filter_map(|c| Some((c, c.recorded()?)))
 }
 
 /// The completeness pin that makes the single walk load-bearing: a capture the
@@ -266,115 +264,17 @@ const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &["copilot"];
 /// will ever be, and a new hook-only CLI must not join it by default.
 const NO_WIRE_EVIDENCE_YET: &[&str] = &[];
 
-/// `provenance.schema.json` — the ONE statement of what each origin requires and allows.
-struct ProvenanceSchema(serde_json::Value);
-
-impl ProvenanceSchema {
-    fn load() -> Self {
-        let p = fixtures_root().join("provenance.schema.json");
-        let body =
-            std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-        Self(serde_json::from_str(&body).unwrap_or_else(|e| panic!("{}: {e}", p.display())))
-    }
-
-    fn origins(&self) -> &serde_json::Map<String, serde_json::Value> {
-        self.0["origins"].as_object().expect("origins is an object")
-    }
-
-    fn required(&self, origin: &str) -> Option<Vec<String>> {
-        self.keys(origin, "required")
-    }
-
-    /// Every key a record of `origin` may carry: its required and optional
-    /// ones, and `origin` itself.
-    fn allowed(&self, origin: &str) -> Option<BTreeSet<String>> {
-        let mut keys: BTreeSet<String> = self.required(origin)?.into_iter().collect();
-        keys.extend(self.keys(origin, "optional").unwrap_or_default());
-        keys.insert("origin".into());
-        Some(keys)
-    }
-
-    fn keys(&self, origin: &str, list: &str) -> Option<Vec<String>> {
-        Some(
-            self.origins().get(origin)?[list]
-                .as_array()?
-                .iter()
-                .map(|v| v.as_str().expect("a key is a string").to_string())
-                .collect(),
-        )
-    }
-}
-
-/// Every scenario declares where its bytes came from, because nothing IN them
-/// separates a capture from a composition — a redacted cwd and an invented one
-/// look alike. A composed fixture pins its author's belief and the decoder then
-/// agrees with it: kimi's shipped four confident per-call ids for a field kimi
-/// never sends.
-#[test]
-fn every_capture_declares_a_valid_origin_with_its_required_fields() {
-    let schema = ProvenanceSchema::load();
-    for c in every_capture() {
-        let required = schema.required(c.origin()).unwrap_or_else(|| {
-            panic!(
-                "{}: origin {:?} is not recorded | composed | unknown",
-                c.provenance_path.display(),
-                c.origin()
-            )
-        });
-        for key in &required {
-            assert!(
-                c.field(key).is_some_and(|s| !s.trim().is_empty()),
-                "{}: origin {:?} requires a non-empty {key:?}",
-                c.provenance_path.display(),
-                c.origin()
-            );
-        }
-    }
-}
-
-/// A record carries only the keys its schema names, so a misspelled one
-/// (`droped`) is refused instead of read as absent.
-#[test]
-fn every_capture_carries_only_keys_its_schema_names() {
-    let schema = ProvenanceSchema::load();
-    for c in every_capture() {
-        let allowed = schema.allowed(c.origin()).expect("a valid origin");
-        for key in c.provenance.as_object().expect("an object").keys() {
-            assert!(
-                allowed.contains(key),
-                "{}: {key:?} is no key provenance.schema.json names for {:?}",
-                c.provenance_path.display(),
-                c.origin()
-            );
-        }
-    }
-}
-
-/// The baseline's key is one the schema names: a renamed const reads every
-/// committed baseline as absent, which no record-side gate sees.
-#[test]
-fn the_schema_allows_the_baselines_key() {
-    let allowed = ProvenanceSchema::load()
-        .allowed("recorded")
-        .expect("recorded");
-    let key = pixtuoid_core::harness::hermetic::PROVENANCE_DROPPED;
-    assert!(
-        allowed.contains(key),
-        "{key:?} is no recorded key the schema names"
-    );
-}
-
 /// `cli` was the one required field nothing could falsify, so a provenance
 /// naming a DIFFERENT CLI than the tree it sits in passed every gate. The
 /// registry's probe argv[0] is the name the user types (`agy`, `cursor-agent`),
 /// which is what a capture command starts with.
 #[test]
 fn a_recorded_captures_cli_is_its_trees_binary() {
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         let Some(probe) = registry::descriptor_for(&c.source).and_then(|d| d.version_probe) else {
             continue;
         };
-        let Some(cli) = c.field("cli") else { continue };
+        let cli = r.cli.as_str();
         assert_eq!(
             cli,
             probe[0],
@@ -488,30 +388,25 @@ fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
     }
 }
 
-/// The strip is disclosed by `deidentified`; a note that still calls the bytes
-/// verbatim contradicts it, and an exemption without its reason is a silent hole.
+/// The strip is disclosed by `deidentified`, so a note that still calls the
+/// bytes verbatim contradicts it.
 #[test]
-fn a_stripped_record_does_not_call_its_bytes_verbatim_and_an_exemption_says_why() {
+fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_exempt() {
     let mut exempt = BTreeSet::new();
     for c in every_capture() {
-        let prov = c.provenance_path;
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&prov).expect("read")).expect("json");
-        let blanked = v["deidentified"]["blanked"].as_u64().unwrap_or(0);
-        let note = v["note"].as_str().unwrap_or("");
+        let prov = &c.provenance_path;
+        let deidentified = c.recorded().and_then(|r| r.deidentified.as_ref());
+        let blanked = match deidentified {
+            Some(Deidentified::Stripped { blanked }) => *blanked,
+            _ => 0,
+        };
+        let note = c.note().unwrap_or("");
         assert!(
             blanked == 0 || !note.to_ascii_lowercase().contains("verbatim"),
             "{}: {blanked} subtrees were blanked, and the note still says verbatim: {note:?}",
             prov.display()
         );
-        if v["deidentified"]["method"] == "none" {
-            assert!(
-                v["deidentified"]["why"]
-                    .as_str()
-                    .is_some_and(|w| !w.trim().is_empty()),
-                "{}: exempt from the strip without saying why",
-                prov.display()
-            );
+        if let Some(Deidentified::Exempt { .. }) = deidentified {
             exempt.insert(
                 c.dir
                     .strip_prefix(sources_root())
@@ -597,8 +492,8 @@ fn a_recorded_capture_that_was_edited_says_so() {
     // A word ending the clause right before "redact" that inverts it.
     const NEGATIONS: &[&str] = &["no", "not", "nothing", "never", "without"];
     let mut silent = Vec::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
-        let note = c.field("note").unwrap_or_default().to_ascii_lowercase();
+    for (c, _) in recordings(&every_capture()) {
+        let note = c.note().unwrap_or_default().to_ascii_lowercase();
         // "verbatim" USED to satisfy this, and a bare `contains` re-opens that hole
         // one word over ("unredacted"). "sanitiz" too — the oldest captures use it.
         let declares = ["redact", "sanitiz"].iter().any(|stem| {
@@ -633,14 +528,14 @@ fn a_recorded_capture_anchors_its_sources_verified_version() {
     let mut by_source: std::collections::BTreeMap<String, Vec<(String, String)>> =
         std::collections::BTreeMap::new();
     let mut recorded_at_all: BTreeSet<String> = BTreeSet::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         recorded_at_all.insert(c.source.clone());
-        let version = c.field("version").unwrap_or_default();
+        let version = r.version.as_str();
         if version.chars().any(|ch| ch.is_ascii_digit()) {
-            by_source.entry(c.source.clone()).or_default().push((
-                c.field("captured").unwrap_or_default().to_string(),
-                version.to_string(),
-            ));
+            by_source
+                .entry(c.source.clone())
+                .or_default()
+                .push((r.captured.to_string(), version.to_string()));
         }
     }
     for source in recorded_at_all {
@@ -705,16 +600,14 @@ fn a_recorded_capture_anchors_its_sources_verified_version() {
 #[test]
 fn the_pinned_provenance_rosters_hold_both_ways() {
     let captures = every_capture();
-    let recorded: BTreeSet<&str> = captures
-        .iter()
-        .filter(|c| c.is_recorded())
-        .map(|c| c.source.as_str())
+    let recorded: BTreeSet<&str> = recordings(&captures)
+        .map(|(c, _)| c.source.as_str())
         .collect();
     // Keyed off `sources_root()`, not `fixtures_root()`: the `?` on the narrower
     // prefix silently dropped every single-owner capture from this rule.
     let unknown: BTreeSet<String> = captures
         .iter()
-        .filter(|c| c.origin() == "unknown")
+        .filter(|c| matches!(c.provenance, Provenance::Unknown { .. }))
         .map(|c| {
             c.dir
                 .strip_prefix(sources_root())
@@ -765,56 +658,6 @@ fn the_pinned_provenance_rosters_hold_both_ways() {
     }
 }
 
-/// Moving the required list into a DATA file made every provenance gate editable
-/// as prose: emptying `required` and updating the README to match disarms both
-/// gates and reads as documentation maintenance. Widening is free; narrowing has
-/// to come through here.
-#[test]
-fn the_schema_cannot_be_narrowed_by_a_data_edit() {
-    let schema = ProvenanceSchema::load();
-    for (origin, must) in [
-        ("recorded", &["cli", "version", "captured", "command"][..]),
-        ("composed", &["note"][..]),
-        ("unknown", &["note"][..]),
-    ] {
-        let got: BTreeSet<String> = schema
-            .required(origin)
-            .unwrap_or_else(|| panic!("{origin} missing from the schema"))
-            .into_iter()
-            .collect();
-        let want: BTreeSet<String> = must.iter().map(|s| (*s).to_string()).collect();
-        assert!(
-            got.is_superset(&want),
-            "provenance.schema.json narrowed {origin} to {got:?} — it must still require \
-             at least {want:?}"
-        );
-    }
-}
-
-/// The README's table is prose a human reads instead of the JSON, so it is the
-/// copy most likely to rot.
-#[test]
-fn the_readme_states_the_schema_the_gates_enforce() {
-    let schema = ProvenanceSchema::load();
-    let readme = std::fs::read_to_string(fixtures_root().join("README.md")).expect("README");
-    for (origin, spec) in schema.origins() {
-        let fields = schema.required(origin).expect("origin in its own table");
-        let row = format!(
-            "| `{origin}` | {} | {} |",
-            fields
-                .iter()
-                .map(|f| format!("`{f}`"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            spec["means"].as_str().expect("means is a string")
-        );
-        assert!(
-            readme.contains(&row),
-            "fixtures/README.md must carry this row verbatim:\n  {row}"
-        );
-    }
-}
-
 /// A `recorded` provenance must be FALSIFIABLE by its own bytes; one that is not
 /// is a claim, not a record — a wholly false one (`cli: codex`, `version:
 /// 0.0.0-A-LIE`) passed every gate in this tree until an equivalent of this ran.
@@ -823,23 +666,20 @@ fn the_readme_states_the_schema_the_gates_enforce() {
 #[test]
 fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
     let mut bad: Vec<String> = Vec::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         let at = c.provenance_path.display();
 
         // A `version` holding the INVOCATION reports a drift of nothing for as long
         // as it sits there — the live instance was `"grok --permission-mode default"`.
-        let version = c.field("version").unwrap_or_default();
-        if !version.is_empty()
-            && version != "unknown"
-            && !version.chars().any(|ch| ch.is_ascii_digit())
-        {
+        let version = r.version.as_str();
+        if version != "unknown" && !version.chars().any(|ch| ch.is_ascii_digit()) {
             bad.push(format!(
                 "{at}: `version` carries no version number: {version:?}"
             ));
         }
 
-        let captured = c.field("captured").unwrap_or_default();
-        if !captured.is_empty() && captured != "unknown" && !is_iso_date(captured) {
+        let captured = r.captured.as_str();
+        if captured != "unknown" && !is_iso_date(captured) {
             bad.push(format!("{at}: `captured` is not an ISO date: {captured:?}"));
         }
 
@@ -880,11 +720,7 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
                 ));
             }
         }
-        if !dates.is_empty()
-            && !captured.is_empty()
-            && captured != "unknown"
-            && !dates.contains(captured)
-        {
+        if !dates.is_empty() && captured != "unknown" && !dates.contains(captured) {
             bad.push(format!(
                 "{at}: `captured` {captured} contradicts the stamps in the bytes \
                  ({dates:?}) — the recorder dates in UTC"

@@ -2037,7 +2037,7 @@ mod run {
                 );
                 args.extend(scenario.turn.args.iter().map(OsString::from));
             }
-            Surface::Tui(tui) => {
+            Surface::Tui { row, .. } => {
                 args.push(run.driver.into());
                 args.extend(
                     tui::CommandLine {
@@ -2053,7 +2053,7 @@ mod run {
                             .launch
                             .argv()
                             .into_iter()
-                            .chain(tui.args().iter().map(OsString::from))
+                            .chain(row.args().iter().map(OsString::from))
                             .collect(),
                     }
                     .to_args(),
@@ -2678,11 +2678,11 @@ mod run {
         #[test]
         fn a_tui_scenario_hands_the_recorder_the_driver_and_the_clis_interactive_launch() {
             let p = hermetic::profile("claude-code").expect("profile");
-            let (scenario, tui) = p
+            let (scenario, row) = p
                 .scenarios
                 .iter()
                 .find_map(|s| match s.surface {
-                    Surface::Tui(tui) => Some((s, tui)),
+                    Surface::Tui { row, .. } => Some((s, row)),
                     Surface::Headless => None,
                 })
                 .expect("a TUI scenario");
@@ -2716,7 +2716,7 @@ mod run {
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
-                .chain(tui.args().iter().map(OsString::from))
+                .chain(row.args().iter().map(OsString::from))
                 .collect();
             assert_eq!(line.program, program);
         }
@@ -3138,7 +3138,7 @@ mod run {
             let tui = PROFILES
                 .iter()
                 .flat_map(|p| p.scenarios)
-                .find(|s| matches!(s.surface, Surface::Tui(_)))
+                .find(|s| matches!(s.surface, Surface::Tui { .. }))
                 .expect("a TUI scenario");
             let scenario = |surface, fixture| Scenario {
                 name: tui.name,

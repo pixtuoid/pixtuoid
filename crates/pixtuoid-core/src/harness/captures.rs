@@ -265,6 +265,11 @@ impl Capture {
     pub(crate) fn jsonl_files(&self) -> Vec<PathBuf> {
         jsonl_files_under(&self.dir)
     }
+
+    /// Its `provenance.json`.
+    pub fn provenance_path(&self) -> PathBuf {
+        self.dir.join(PROVENANCE)
+    }
 }
 
 /// A file's lines that parse; the Drive reports the ones that don't.

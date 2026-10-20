@@ -1,0 +1,14 @@
+
+                                            ████████████    
+                                               ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                               ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                               ▒▒  ██                  █
+                                                   ██       v18.12.1
+
+                        Tip: Start your prompt with `!` to run it as bash — `!!` runs it without
+                                              adding the output to context
+
+ ✔ New session started                                                                                                  
+
+ π > ◒ gpt-4.1 > 🗑 pixtuoid-capture/proj > ⑂ main ▶─0.7%───────────────────────────────────────────────────┃─────────1M─
+╰─                                                                                          ⇧⇥ to change thinking effort

@@ -164,7 +164,7 @@ proc-macro2 = { workspace = true }
 snapbox  = { workspace = true, features = ["json"] }
 # Emits the SourceStatus JSON Schema — test/gen only, so the `JsonSchema` derive
 # is `cfg_attr(test)` and this stays a dev-dep. See sources.rs + `just gen-contract`.
-schemars = "1"
+schemars = { workspace = true }
 # test-util: paused-clock signal-arm tests in runtime/driver.rs (headless_loop).
 tokio    = { workspace = true, features = ["test-util"] }
 image    = { workspace = true, features = ["gif"] }

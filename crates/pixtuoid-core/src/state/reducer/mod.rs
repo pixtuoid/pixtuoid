@@ -712,7 +712,7 @@ impl Reducer {
                     .insert(agent_id, vec![tuid.clone()]);
             } else if !matches!(slot.state, ActivityState::Waiting { .. }) {
                 // A re-notified Waiting slot is the SAME gate: CC follows its
-                // tool-less PermissionRequest with an idle Notification.
+                // tool-less PermissionRequest with a Notification.
                 self.corr.gated_before_waiting.remove(&agent_id);
             }
             fsm::enter_waiting(slot, Arc::<str>::from(reason), now);
