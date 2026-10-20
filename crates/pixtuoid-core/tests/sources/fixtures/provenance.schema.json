@@ -1,5 +1,5 @@
 {
-  "$comment": "THE statement of what a provenance.json must carry. Read by tests/sources/captures.rs's gates (the required and the only allowed keys) and the README table, which used to state it separately and had drifted apart.",
+  "$comment": "THE statement of what a provenance.json must carry. The README table's prose, and the key lists `harness::provenance::Provenance` parses, pinned to it by tests/sources/captures.rs, which used to state it separately and had drifted apart.",
   "origins": {
     "recorded": {
       "required": ["cli", "version", "captured", "command"],

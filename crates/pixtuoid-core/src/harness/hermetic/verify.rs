@@ -18,10 +18,11 @@ use super::{
     Surface, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
+use crate::harness::provenance::Provenance;
 use crate::harness::reads::{
-    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves, strips,
+    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
+use crate::harness::{Drive, Driven, HOOK_PAYLOADS, Reach, captures};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -487,9 +488,7 @@ pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
         if capture.source != p.source {
             continue;
         }
-        let record: Value =
-            serde_json::from_str(&std::fs::read_to_string(capture.dir.join(PROVENANCE))?)?;
-        if !strips(&record) {
+        if !Provenance::read(&capture.dir)?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {

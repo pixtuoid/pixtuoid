@@ -1,6 +1,7 @@
 //! The baseline a New finding is judged against: at each discriminator of a
 //! source's transcript, the values its decoders dropped. A hermetic recording writes it
-//! into its scenario's provenance ([`PROVENANCE_DROPPED`]); a run that drops a
+//! into its scenario's provenance
+//! ([`Recorded::dropped`](crate::harness::provenance::Recorded::dropped)); a run that drops a
 //! value there its recording did not is New, a type the CLI added that no
 //! decoder reads.
 
@@ -10,9 +11,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{PROVENANCE_DROPPED, Scenario, literals};
-use crate::harness::PROVENANCE;
+use super::{Scenario, literals};
 use crate::harness::captures::json_lines;
+use crate::harness::provenance::Provenance;
 use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
 
 /// What a recording's decoders dropped, by discriminator.
@@ -110,20 +111,10 @@ pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
 }
 
 fn baseline_at(fixture: &str) -> std::io::Result<Option<Dropped>> {
-    let prov = crate::harness::sources_root()
-        .join(fixture)
-        .join(PROVENANCE);
-    let text = match std::fs::read_to_string(prov) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    let record: Value = serde_json::from_str(&text)?;
-    record
-        .get(PROVENANCE_DROPPED)
-        .map(|d| serde_json::from_value(d.clone()))
-        .transpose()
-        .map_err(std::io::Error::from)
+    Ok(
+        Provenance::read_if_any(&crate::harness::sources_root().join(fixture))?
+            .and_then(|p| p.recorded().and_then(|r| r.dropped.clone())),
+    )
 }
 
 /// Each `(pointer, value)` a raw line holds at one of `at`'s pointers that its
