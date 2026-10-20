@@ -652,6 +652,15 @@ mod recorder {
     /// and a permission script's refused call would delete.
     const NOTE_FILE: &str = "NOTE.txt";
 
+    /// The seed's files, then the note: a seed carrying its own `NOTE_FILE`
+    /// must not replace the one `note_survived` compares against.
+    fn fill_workspace(ws: &Path, seed: Option<&Path>) -> std::io::Result<()> {
+        if let Some(seed) = seed {
+            copy_tree(seed, ws)?;
+        }
+        plant_note(ws)
+    }
+
     fn plant_note(ws: &Path) -> std::io::Result<()> {
         std::fs::write(ws.join(NOTE_FILE), format!("{CAPTURE_NOTE}\n"))
     }
@@ -773,10 +782,7 @@ mod recorder {
         // anyone re-created it since the remove.
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
-        plant_note(&ws)?;
-        if let Some(seed) = std::env::var_os(SEED_ENV) {
-            copy_tree(Path::new(&seed), &ws)?;
-        }
+        fill_workspace(&ws, std::env::var_os(SEED_ENV).as_deref().map(Path::new))?;
         init_repo(&ws)?;
         Ok((ws, lock))
     }
@@ -1598,6 +1604,17 @@ mod recorder {
             for corpus in [Options::default(), promote] {
                 assert_eq!(corpus.corpus_refusal().is_some(), !cfg!(unix), "{corpus:?}");
             }
+        }
+
+        #[test]
+        fn a_seed_that_carries_a_note_does_not_replace_the_planted_one() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (seed, ws) = (d.path().join("seed"), d.path().join("ws"));
+            std::fs::create_dir(&seed).expect("mkdir");
+            std::fs::create_dir(&ws).expect("mkdir");
+            std::fs::write(seed.join(NOTE_FILE), "seeded\n").expect("write");
+            fill_workspace(&ws, Some(&seed)).expect("fill");
+            assert!(note_survived(&ws));
         }
 
         #[test]

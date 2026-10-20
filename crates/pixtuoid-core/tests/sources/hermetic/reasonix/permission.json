@@ -9,11 +9,11 @@
       "response": { "content": "{\"risk_level\":\"high\",\"user_authorization\":\"low\",\"outcome\":\"deny\",\"rationale\":\"deletes the note\"}" }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "model": "deepseek-v4-flash", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "bash", "arguments": { "command": "rm NOTE.txt" } } ] }
     },
     {
-      "match": { "hasToolResult": true },
+      "match": { "model": "deepseek-v4-flash", "hasToolResult": true },
       "response": { "content": "refused" }
     }
   ]

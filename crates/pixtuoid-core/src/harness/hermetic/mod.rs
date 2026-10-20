@@ -1596,6 +1596,9 @@ model = "guardian-model"
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
+                    // The guardian's read: the refused bash fires no PreToolUse.
+                    "PreToolUse",
+                    "PostToolUse",
                     "PermissionRequest",
                     "Notification",
                     "Stop",

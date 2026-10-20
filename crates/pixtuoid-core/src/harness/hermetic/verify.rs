@@ -929,7 +929,8 @@ fn permission(
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
-        ends == starts + 1
+        // An End naming a call no Start opened is not this branch's to count.
+        ended_calls.is_empty() && ends == starts + 1
     } else {
         // Starts carry call ids (claude-code, whose `PermissionRequest` names
         // none): every started call ends.
@@ -1707,6 +1708,48 @@ mod tests {
             has(&v, Label::Fail, "never ended"),
             "a read before the wait is held to its own end: {:?}",
             v.findings()
+        );
+    }
+
+    #[test]
+    fn an_orphaned_id_bearing_end_cannot_mask_an_idless_calls_missing_end() {
+        let agent_id = AgentId::from_parts("reasonix", "p");
+        let end = |tool_use_id: Option<&str>| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: tool_use_id.map(Into::into),
+        };
+        let events = |read_ends_as: Option<&str>| {
+            vec![
+                AgentEvent::ActivityStart {
+                    agent_id,
+                    tool_use_id: None,
+                    detail: None,
+                },
+                end(read_ends_as),
+                AgentEvent::Waiting {
+                    agent_id,
+                    reason: "approval".into(),
+                    tool_use_id: None,
+                },
+                end(None),
+            ]
+        };
+        let judged = |read_ends_as| {
+            let mut findings = Vec::new();
+            permission(
+                &events(read_ends_as),
+                &[Reach::Waiting],
+                true,
+                &mut findings,
+            );
+            findings
+        };
+        assert!(judged(None).is_empty(), "the start and the turn each ended");
+        assert!(
+            judged(Some("orphan"))
+                .iter()
+                .any(|f| f.1.contains("never ended")),
+            "an End naming a call no Start opened stands in for the start's"
         );
     }
 
