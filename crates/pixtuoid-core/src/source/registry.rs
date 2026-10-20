@@ -221,9 +221,8 @@ pub enum FocusChannel {
     /// The shim RESOLVES the CLI's pid into `_pid` by walking past the runner's
     /// interposed shell (`pixtuoid-hook`'s `cli_pid`) — a `cmd /C` on Windows, a
     /// `$SHELL -c` wrapper on Unix, which need NOT exec-replace itself with the
-    /// shim (#896). An unrecognised wrapper resolves to a pid that is not the
-    /// CLI, so `HookPidWatch` corroborates before acting on one.
-    ShimStamp,
+    /// shim (#896). How far to trust the resolved pid is the [`Corroboration`].
+    ShimStamp(Corroboration),
     /// The source's own runtime stamps `_pid` — cross-platform, and survives
     /// even where the shim sends nothing.
     PluginStamp,
@@ -239,12 +238,25 @@ pub enum FocusChannel {
     Unsupported,
 }
 
+/// How many sightings a shim-resolved pid needs before the exit watch acts on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corroboration {
+    /// A wrapper the walk does not recognise can sit between the CLI and our
+    /// hook command (Cursor `eval`s it mid-script, #896), so the resolved pid may
+    /// not be the CLI: `HookPidWatch` waits for a second consecutive sighting.
+    Twice,
+    /// The runner reaches our hook command only through a shell the walk
+    /// recognises, so the first sighting is the CLI. The second can never come
+    /// from a turn that ends the process (its parent is gone before the shim walks).
+    OnceViaShell,
+}
+
 impl FocusChannel {
     /// Whether a hook-envelope `_pid` stamp is this session's own focusable
     /// process.
     #[cfg(feature = "native")]
     pub(crate) fn stamps_focus_pid(self) -> bool {
-        matches!(self, FocusChannel::ShimStamp | FocusChannel::PluginStamp)
+        matches!(self, FocusChannel::ShimStamp(_) | FocusChannel::PluginStamp)
     }
 }
 
@@ -612,7 +624,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp,
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
 };
 
@@ -648,7 +660,7 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::AnyTaskEnd,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp,
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
 };
 
@@ -727,7 +739,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp,
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
 };
 
@@ -844,7 +856,7 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp,
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
 };
 
@@ -875,7 +887,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp,
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
 };
 
@@ -1027,7 +1039,11 @@ const KIMI: SourceDescriptor = SourceDescriptor {
             // (kimi-code@2.2.0 `agentExternalHooksService.ts:301-313`).
             child_hooks_unnamed: true,
         },
-        focus: FocusChannel::ShimStamp,
+        // kimi-code 2.2.0 spawns every hook with `shell: true`, which Node runs as
+        // `/bin/sh -c` on Unix and `%ComSpec%` on Windows
+        // (`packages/agent-core-v2/src/features/externalHooks/internal/runHook.ts:66-67`,
+        // https://nodejs.org/api/child_process.html): re-check both if either changes.
+        focus: FocusChannel::ShimStamp(Corroboration::OnceViaShell),
     },
 };
 

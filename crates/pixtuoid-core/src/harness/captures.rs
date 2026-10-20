@@ -265,6 +265,19 @@ impl Capture {
     pub(crate) fn jsonl_files(&self) -> Vec<PathBuf> {
         jsonl_files_under(&self.dir)
     }
+
+    /// Its `provenance.json`.
+    pub fn provenance_path(&self) -> PathBuf {
+        self.dir.join(PROVENANCE)
+    }
+}
+
+/// A file's lines that parse; the Drive reports the ones that don't.
+pub(crate) fn json_lines(file: &Path) -> std::io::Result<Vec<serde_json::Value>> {
+    Ok(std::fs::read_to_string(file)?
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect())
 }
 
 /// Every `.jsonl` under `dir`, recursively, sorted.

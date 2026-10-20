@@ -1,0 +1,14 @@
+{}
+{"type":"session","version":0,"id":"","timestamp":"","cwd":"/tmp/pixtuoid-capture/proj","parentSession":""}
+{}
+{}
+{}
+{}
+{}
+{}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_wvIUr7VHL6BQpOm1","name":"read","arguments":{"i":"","path":"NOTE.txt"},"partialArgs":"","streamIndex":0,"intent":""}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2642,"output":12,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"toolResult","toolCallId":"call_wvIUr7VHL6BQpOm1","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2648,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"","runtime":{}}

@@ -107,6 +107,7 @@ tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "ti
 proptest = { workspace = true }
 tempfile = { workspace = true }
 temp-env = { workspace = true }
+schemars = { workspace = true }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
 filetime = "0.2"

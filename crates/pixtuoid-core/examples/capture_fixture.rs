@@ -19,7 +19,10 @@ mod recorder {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
 
-    use pixtuoid_core::harness::reads::{self, Deidentified};
+    use pixtuoid_core::harness::provenance::{
+        Deidentified, Dropped, NonEmpty, Provenance, Recorded,
+    };
+    use pixtuoid_core::harness::reads;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
     /// One prompt for every source, so captures stay comparable: reading the SAME
@@ -45,7 +48,7 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROVENANCE, Resumed, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
 
@@ -295,11 +298,14 @@ mod recorder {
         }
         let (source, scenario) = (args[0].clone(), args[1].clone());
         // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
-        // `{prompt}` to nothing and record `"prompt": ""` as if it were a choice.
-        let prompt = nonempty_env(PROMPT_ENV).unwrap_or_else(|| DEFAULT_PROMPT.to_string());
+        // `{prompt}` to nothing.
+        let chosen_prompt = nonempty_env(PROMPT_ENV);
+        let prompt = chosen_prompt
+            .as_ref()
+            .map_or(DEFAULT_PROMPT, NonEmpty::as_str);
         let cmd: Vec<String> = args[2..]
             .iter()
-            .map(|a| a.replace(PROMPT_PLACEHOLDER, &prompt))
+            .map(|a| a.replace(PROMPT_PLACEHOLDER, prompt))
             .collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -321,13 +327,14 @@ mod recorder {
             eprintln!("{why}");
             std::process::exit(2);
         }
+        // Before the billed turn: a record that does not parse fails here.
+        let exempt = exemption(&dest)?;
 
         let ws = match options.workspace.clone() {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let _recording = record_lock(&ws, &capture_workspace()?, &capture_root()?)?;
-        let workspace = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -463,23 +470,23 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let deidentified = deidentify(&source, &wrote, reads::exemption(&dest.join(PROVENANCE)))?;
+        let deidentified = deidentify(&source, &wrote, exempt)?;
         write_provenance(
             &dest,
-            (&cli, &version),
-            &args[2..],
-            &deidentified,
-            &[
-                ("prompt", nonempty_env(PROMPT_ENV)),
-                ("seed", nonempty_env(SEED_ENV)),
-            ],
+            Recorded {
+                prompt: chosen_prompt,
+                seed: nonempty_env(SEED_ENV),
+                ..record(&cli, &version, &args[2..], deidentified.clone())?
+            },
         )?;
         for p in &wrote {
             println!("wrote {} ({} lines)", p.display(), count_lines(p));
         }
         match &deidentified {
-            Deidentified::Stripped(n) => println!("blanked {n} subtrees no decoder reads"),
-            Deidentified::Exempt(why) => println!("not stripped, as the record declares: {why}"),
+            Deidentified::Stripped { blanked } => {
+                println!("blanked {blanked} subtrees no decoder reads");
+            }
+            Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
         if !status.success() {
@@ -494,16 +501,23 @@ mod recorder {
     fn deidentify(
         source: &str,
         files: &[PathBuf],
-        exemption: Option<String>,
+        exemption: Option<NonEmpty>,
     ) -> std::io::Result<Deidentified> {
         Ok(match exemption {
-            Some(why) => Deidentified::Exempt(why),
+            Some(why) => Deidentified::Exempt { why },
             None => {
                 let strip = reads::strip_unread(source, files)?;
                 report_not_json(&strip);
-                Deidentified::Stripped(strip.blanked)
+                Deidentified::Stripped {
+                    blanked: strip.blanked,
+                }
             }
         })
+    }
+
+    /// The exemption the record in `dest` declares, if it holds one.
+    fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
+        Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
     }
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
@@ -516,7 +530,7 @@ mod recorder {
             .and_then(|p| p.scenario(&manifest.scenario))
             .ok_or_else(|| std::io::Error::other(format!("{named}: no profiled scenario")))?;
         let dest = root.join(scenario.fixture);
-        let exempt = reads::exemption(&dest.join(PROVENANCE));
+        let exempt = exemption(&dest)?;
         for old in jsonl_files_under(&dest)
             .into_iter()
             .chain([dest.join(PROVENANCE)])
@@ -542,6 +556,11 @@ mod recorder {
             std::fs::copy(&raw, &to)?;
             wrote.push(to);
         }
+        // Before the strip: what the decoders drop is what it blanks.
+        let dropped = match exempt {
+            None => Some(Dropped::of_files(&manifest.source, &wrote)?),
+            Some(_) => None,
+        };
         let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
         let script = scenario.script(&manifest.source);
         // The record names its script as every host's checkout spells it.
@@ -555,13 +574,17 @@ mod recorder {
         let command = ["just", "hermetic", "--record", manifest.source.as_str()].map(String::from);
         write_provenance(
             &dest,
-            (&manifest.capture.cli, &manifest.capture.version),
-            &command,
-            &deidentified,
-            &[
-                (hermetic::PROVENANCE_AIMOCK, Some(manifest.aimock.clone())),
-                ("script", Some(script)),
-            ],
+            Recorded {
+                aimock: Some(filled("aimock", &manifest.aimock)?),
+                script: Some(filled("script", &script)?),
+                dropped,
+                ..record(
+                    &manifest.capture.cli,
+                    &manifest.capture.version,
+                    &command,
+                    deidentified,
+                )?
+            },
         )?;
         refuse_on_pii(&wrote, needles)?;
         println!("recorded {named} into {}", dest.display());
@@ -697,28 +720,25 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// The file, under the capture root, whose lock a capture of the canonical
-    /// workspace holds.
+    /// The file, beside a capture base, whose lock a capture there holds.
     const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The lock a capture in `ws` holds until it ends: `canonical`'s, under
-    /// `root`, since every capture there clears it, so they take turns. A
-    /// workspace of a run's own takes none.
-    fn record_lock(
-        ws: &Path,
-        canonical: &Path,
-        root: &Path,
-    ) -> std::io::Result<Option<std::fs::File>> {
-        if ws != canonical {
-            return Ok(None);
-        }
-        hold_lock(&root.join(RECORD_LOCK)).map(Some)
+    /// The lock a capture in `base` holds until it ends, in the directory the
+    /// base sits in: the capture root for the canonical workspace, which every
+    /// recording clears, so they take turns; a replay's own root for its own,
+    /// which nothing else locks.
+    fn record_lock(base: &Path) -> std::io::Result<std::fs::File> {
+        // Read off the base, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
+        hold_lock(&base.with_file_name(RECORD_LOCK))
     }
 
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
+    /// `ws` made afresh, and the lock held while the capture uses it.
+    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
+        let lock = record_lock(base)?;
         // A fixed name in a shared directory is pre-plantable; a foreign owner is
         // refused, not removed — under the sticky bit the remove fails and the
         // capture lands in theirs. Asked of the entry, so a dangling planted link
@@ -742,7 +762,7 @@ mod recorder {
             copy_tree(Path::new(&seed), &ws)?;
         }
         init_repo(&ws)?;
-        Ok(ws)
+        Ok((ws, lock))
     }
 
     /// Make `ws` its own repository, every step of which must succeed: that
@@ -974,34 +994,41 @@ mod recorder {
             .and_then(version_answer)
     }
 
-    fn write_provenance(
-        dest: &Path,
-        (cli, version): (&str, &str),
+    /// A recording's record: `command` is the unexpanded argv, so an
+    /// override-driven scenario records a `{prompt}` placeholder.
+    fn record(
+        cli: &str,
+        version: &str,
         raw: &[String],
-        deidentified: &Deidentified,
-        overrides: &[(&str, Option<String>)],
-    ) -> std::io::Result<()> {
-        let mut prov = serde_json::json!({
-            "origin": "recorded",
-            "cli": cli,
-            "version": version,
-            "captured": today(),
-            "command": raw.join(" "),
-            "deidentified": deidentified.record(),
-        });
-        // `command` is the UN-expanded argv, so an override-driven scenario records a
-        // `{prompt}` placeholder; written only when set, so committed records stay schema-clean.
-        if let Some(map) = prov.as_object_mut() {
-            for (key, value) in overrides {
-                if let Some(v) = value {
-                    map.insert((*key).into(), serde_json::Value::String(v.clone()));
-                }
-            }
-        }
+        deidentified: Deidentified,
+    ) -> std::io::Result<Recorded> {
+        Ok(Recorded {
+            cli: filled("cli", cli)?,
+            version: filled("version", version)?,
+            captured: filled("captured", &today())?,
+            command: filled("command", &raw.join(" "))?,
+            note: None,
+            deidentified: Some(deidentified),
+            prompt: None,
+            seed: None,
+            aimock: None,
+            script: None,
+            dropped: None,
+        })
+    }
+
+    /// `value`, refused where it is blank: the record would not parse.
+    fn filled(key: &str, value: &str) -> std::io::Result<NonEmpty> {
+        NonEmpty::try_from(value).map_err(|e| std::io::Error::other(format!("{key}: {e}")))
+    }
+
+    fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
         let out = no_clobber(dest.join(PROVENANCE));
-        std::fs::write(&out, format!("{}\n", serde_json::to_string_pretty(&prov)?))?;
+        let unknown = record.version.as_str() == "unknown";
+        let cli = record.cli.clone();
+        Provenance::Recorded(Box::new(record)).write_to(&out)?;
         // Loud, because the record just written is unusable.
-        if version == "unknown" {
+        if unknown {
             eprintln!(
                 "WARNING: {} records version \"unknown\" — `{cli} --version` did not \
                  answer, or a driver named no CLI at ${CLI_ENV}. Fix `cli` and `version` \
@@ -1012,8 +1039,8 @@ mod recorder {
         Ok(())
     }
 
-    fn nonempty_env(key: &str) -> Option<String> {
-        pixtuoid_core::platform::text_env(key).filter(|s| !s.trim().is_empty())
+    fn nonempty_env(key: &str) -> Option<NonEmpty> {
+        pixtuoid_core::platform::text_env(key).and_then(|s| NonEmpty::try_from(s).ok())
     }
 
     fn today() -> String {
@@ -1201,21 +1228,22 @@ mod recorder {
         const OPERATOR: &str = "Ada Lovelace";
 
         #[test]
-        fn only_a_capture_of_the_canonical_workspace_takes_turns() {
+        fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
-            let canonical = d.path().join("pixtuoid-capture/proj");
-            let own = d.path().join("pixtuoid-run-1/pixtuoid-capture/proj");
-            assert!(
-                record_lock(&own, &canonical, d.path())
-                    .expect("no lock")
-                    .is_none()
-            );
-            let held = record_lock(&canonical, &canonical, d.path()).expect("the lock");
-            assert!(held.is_some());
+            let own = d.path().join("pixtuoid-run-1");
+            std::fs::create_dir(&own).expect("a replay's root");
+            let base = |root: &Path| {
+                capture_base(&root.join(capture_workspace_tail()))
+                    .expect("a capture base")
+                    .to_path_buf()
+            };
+            let held = record_lock(&base(d.path())).expect("the canonical lock");
+            let replay = record_lock(&base(&own)).expect("a replay never waits on a recording");
             let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
-            assert!(other.try_lock().is_err(), "a second capture waits");
+            assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
+            drop((other, replay));
         }
 
         struct Promotable {
@@ -1274,7 +1302,8 @@ mod recorder {
             let dest = root.join(fixture);
             std::fs::create_dir_all(dest.join("old")).expect("mkdir");
             std::fs::write(dest.join("old").join("old.jsonl"), "{}\n").expect("old");
-            std::fs::write(dest.join(PROVENANCE), record.to_string()).expect("record");
+            std::fs::write(dest.join(PROVENANCE), complete_record(record).to_string())
+                .expect("record");
             Promotable {
                 _dir: d,
                 run,
@@ -1283,14 +1312,30 @@ mod recorder {
             }
         }
 
+        /// A committed record carrying every required field, with `over`'s keys
+        /// laid over it: the recorder parses the record it replaces.
+        fn complete_record(over: serde_json::Value) -> serde_json::Value {
+            let mut record = serde_json::json!({
+                "origin": "recorded",
+                "cli": "dsh",
+                "version": "0.2.0-rc.1",
+                "captured": "2026-01-01",
+                "command": "just hermetic --record dsh",
+            });
+            if let (Some(base), Some(over)) = (record.as_object_mut(), over.as_object()) {
+                base.extend(over.clone());
+            }
+            record
+        }
+
         fn needles() -> BTreeSet<String> {
             BTreeSet::from([OPERATOR.to_string()])
         }
 
-        fn written(dest: &Path) -> (String, serde_json::Value) {
+        fn written(dest: &Path) -> (String, Recorded) {
             let bytes = std::fs::read_to_string(dest.join(HOOK_PAYLOADS)).expect("bytes");
-            let record = std::fs::read_to_string(dest.join(PROVENANCE)).expect("record");
-            (bytes, serde_json::from_str(&record).expect("json"))
+            let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
+            (bytes, record.recorded().expect("a recording").clone())
         }
 
         #[test]
@@ -1306,18 +1351,85 @@ mod recorder {
             );
             let (bytes, record) = written(&p.dest);
             assert!(!bytes.contains("unread"), "the planted key is stripped");
-            assert_eq!(record["deidentified"]["method"], "decoder-allowlist");
             assert!(
-                record["deidentified"]["blanked"]
-                    .as_u64()
-                    .is_some_and(|n| n > 0)
+                matches!(record.deidentified, Some(Deidentified::Stripped { blanked }) if blanked > 0),
+                "{record:?}"
             );
-            assert_eq!(record[hermetic::PROVENANCE_AIMOCK], "1.43.0");
-            assert_eq!(record["script"], "tests/sources/hermetic/dsh/tool-run.json");
-            assert_eq!(record["version"], "0.2.0-rc.2");
-            assert!(
-                record.get("note").is_none(),
+            assert_eq!(record.aimock.as_ref().map(NonEmpty::as_str), Some("1.43.0"));
+            assert_eq!(
+                record.script.as_ref().map(NonEmpty::as_str),
+                Some("tests/sources/hermetic/dsh/tool-run.json")
+            );
+            assert_eq!(record.version.as_str(), "0.2.0-rc.2");
+            assert_eq!(
+                record.note, None,
                 "the record is the run's, not the old one"
+            );
+            assert!(
+                record.dropped.is_some(),
+                "a stripped capture records its baseline, empty for hook payloads alone"
+            );
+        }
+
+        /// The baseline is taken before the strip: after it, a type the decoder
+        /// drops is gone from the bytes it would be read off.
+        #[test]
+        fn a_promoted_run_records_the_types_its_decoders_dropped() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (run, root) = (d.path().join("run"), d.path().join("sources"));
+            let fixture = hermetic::profile("copilot")
+                .and_then(|p| p.scenario("tool-run"))
+                .map(|s| s.fixture)
+                .expect("copilot's tool-run");
+            for from in jsonl_files_under(&sources_root().join(fixture)) {
+                let rel = from
+                    .strip_prefix(sources_root().join(fixture))
+                    .expect("under");
+                let to = run.join(rel);
+                std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                let mut text = std::fs::read_to_string(&from).expect("read");
+                if from.ends_with("events.jsonl") {
+                    text.push_str("{\"type\":\"assistant.zz_dropped\",\"data\":{\"x\":\"y\"}}\n");
+                }
+                std::fs::write(&to, text).expect("write");
+            }
+            let manifest = Manifest {
+                source: "copilot".into(),
+                scenario: "tool-run".into(),
+                capture: CaptureRecord {
+                    workspace: capture_workspace().expect("the workspace"),
+                    cli: "copilot".into(),
+                    version: "1.0.98".into(),
+                    exit_code: Some(0),
+                    resumed: None,
+                },
+                aimock: "1.45.1".into(),
+                requests: 2,
+                unmatched: 0,
+                results_seen: 1,
+            };
+            std::fs::write(
+                run.join(MANIFEST),
+                serde_json::to_string(&manifest).expect("json"),
+            )
+            .expect("manifest");
+            let dest = root.join(fixture);
+            std::fs::create_dir_all(&dest).expect("mkdir");
+            std::fs::write(
+                dest.join(PROVENANCE),
+                complete_record(serde_json::json!({"origin": "recorded"})).to_string(),
+            )
+            .expect("record");
+            promote(&run, &root, &needles()).expect("promote");
+            let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
+            let dropped = record.dropped().expect("a baseline");
+            let json = serde_json::to_value(dropped).expect("json");
+            assert_eq!(json["os"], std::env::consts::OS, "{json}");
+            assert!(
+                json["at"]["/type"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().any(|t| t == "assistant.zz_dropped")),
+                "the planted type the decoder drops is the baseline's: {json}"
             );
         }
 
@@ -1348,8 +1460,16 @@ mod recorder {
                 bytes.contains("unread"),
                 "an exempt capture is not stripped"
             );
-            assert_eq!(record["deidentified"]["method"], "none");
-            assert_eq!(record["deidentified"]["why"], why);
+            assert_eq!(
+                record.deidentified,
+                Some(Deidentified::Exempt {
+                    why: why.try_into().expect("a reason")
+                })
+            );
+            assert_eq!(
+                record.dropped, None,
+                "an unstripped capture drops nothing it could baseline"
+            );
         }
 
         #[test]
@@ -1811,41 +1931,6 @@ mod recorder {
             assert_eq!(no_clobber(p.clone()), p, "a fresh path is used as-is");
             std::fs::write(&p, "{}").expect("write");
             assert!(no_clobber(p).to_string_lossy().ends_with(".new"));
-        }
-
-        #[test]
-        fn provenance_records_an_override_only_when_it_was_actually_set() {
-            // Both directions: committed records predate these fields and must stay
-            // schema-clean, so an unset override writes nothing at all.
-            let read = |d: &Path| -> serde_json::Value {
-                serde_json::from_str(
-                    &std::fs::read_to_string(d.join("provenance.json")).expect("read"),
-                )
-                .expect("json")
-            };
-            let argv = ["true".to_string()];
-
-            let bare = tempfile::tempdir().expect("tempdir");
-            write_provenance(
-                bare.path(),
-                ("true", "1.0"),
-                &argv,
-                &Deidentified::Stripped(0),
-                &[("prompt", None)],
-            )
-            .expect("write");
-            assert!(read(bare.path()).get("prompt").is_none());
-
-            let set = tempfile::tempdir().expect("tempdir");
-            write_provenance(
-                set.path(),
-                ("true", "1.0"),
-                &argv,
-                &Deidentified::Stripped(0),
-                &[("prompt", Some("read NOTE.txt".into()))],
-            )
-            .expect("write");
-            assert_eq!(read(set.path())["prompt"], "read NOTE.txt");
         }
 
         #[test]

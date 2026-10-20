@@ -236,7 +236,10 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 pub(crate) fn render_manifest(hook_cmd: &str) -> Result<String> {
     let entry = json!({
         "command": hook_cmd,
-        "args": ["--source", pixtuoid_core::source::reasonix::SOURCE_NAME],
+        "args": [
+            crate::install::hook_cmd::SOURCE_FLAG.trim(),
+            pixtuoid_core::source::reasonix::SOURCE_NAME,
+        ],
         "timeout": 1000,
         "description": "pixtuoid visualizer",
     });

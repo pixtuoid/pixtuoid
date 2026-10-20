@@ -16,7 +16,9 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use pixtuoid_core::harness::hermetic::tui::{Action, CommandLine, Driver, GAVE_UP, Key, Tui};
+use pixtuoid_core::harness::hermetic::tui::{
+    Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
+};
 use pixtuoid_core::harness::hermetic::{self, Surface};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -62,12 +64,12 @@ fn main() {
     std::process::exit(code);
 }
 
-fn tui_of(source: &str, scenario: &str) -> std::io::Result<&'static Tui> {
+fn tui_of(source: &str, scenario: &str) -> std::io::Result<(&'static Tui, Answer)> {
     hermetic::profile(source)
         .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
         .scenario(scenario)
         .and_then(|s| match s.surface {
-            Surface::Tui(tui) => Some(tui),
+            Surface::Tui { row, answer } => Some((row, answer)),
             Surface::Headless => None,
         })
         .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))
@@ -91,7 +93,7 @@ fn command(argv: &[OsString], env: impl Iterator<Item = (OsString, OsString)>) -
 }
 
 fn drive(line: CommandLine) -> std::io::Result<i32> {
-    let tui = tui_of(&line.source, &line.scenario)?;
+    let (tui, answer) = tui_of(&line.source, &line.scenario)?;
     let mut log = std::fs::File::create(&line.log)?;
     let pair = NativePtySystem::default()
         .openpty(SIZE)
@@ -122,7 +124,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
 
     let started = Instant::now();
     let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
-    let mut driver = Driver::new(tui, line.prompt, started);
+    let mut driver = Driver::new(tui, answer, line.prompt, started);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -225,9 +227,9 @@ mod tests {
         let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
         let rule = "─".repeat(usize::from(SIZE.cols));
         screen.process(format!("{rule}❯ ").as_bytes());
-        let tui = tui_of("claude-code", "permission").expect("a TUI row");
+        let (tui, answer) = tui_of("claude-code", "permission").expect("a TUI row");
         let now = Instant::now();
-        let mut driver = Driver::new(tui, "hi".to_owned(), now);
+        let mut driver = Driver::new(tui, answer, "hi".to_owned(), now);
         assert_eq!(
             driver.step(&shown(screen.screen()), now),
             Action::Type("hi".to_owned())

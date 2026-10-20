@@ -15,6 +15,7 @@ use crate::source::registry;
 
 pub mod bump;
 pub mod digest;
+pub mod dropped;
 mod literals;
 pub mod pin;
 pub mod tui;
@@ -136,19 +137,39 @@ pub enum Shape {
     /// A turn whose child's model errs: the parent delegates, the child
     /// registers as its child and ends, and the parent's turn, or its session, ends.
     ChildError,
+    /// A command that starts the CLI's next session in place: the session it
+    /// switches away from ends, and a root session succeeds it.
+    Succession,
 }
 
 impl Shape {
     /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
     /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
         match code {
             Some(0) => true,
             Some(_) => match self {
                 Self::ModelError => true,
-                Self::ToolRun | Self::Permission | Self::Subagent | Self::ChildError => false,
+                Self::ToolRun
+                | Self::Permission
+                | Self::Subagent
+                | Self::ChildError
+                | Self::Succession => false,
             },
             None => false,
+        }
+    }
+
+    /// Whether its turn asks the scripted model anything: a succession's
+    /// command runs in the CLI alone.
+    pub(crate) const fn asks_the_model(self) -> bool {
+        match self {
+            Self::ToolRun
+            | Self::Permission
+            | Self::Subagent
+            | Self::ModelError
+            | Self::ChildError => true,
+            Self::Succession => false,
         }
     }
 }
@@ -159,7 +180,12 @@ pub enum Surface {
     /// The profile's headless invocation, with the prompt in its argv.
     Headless,
     /// Its interactive TUI under a pty, for a turn only the TUI asks.
-    Tui(&'static tui::Tui),
+    Tui {
+        /// The CLI's interactive facts.
+        row: &'static tui::Tui,
+        /// How the run answers the turn's dialog.
+        answer: tui::Answer,
+    },
 }
 
 /// A CLI's scripted turn, and the turn resuming it where [`Turn::resume`]
@@ -366,9 +392,9 @@ pub const SCENE_LOG: &str = "scene.log";
 /// The pty log of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_LOG: &str = "tui.log";
-/// The provenance key naming the aimock a recording ran against, which only
-/// the tier's own recordings carry.
-pub const PROVENANCE_AIMOCK: &str = "aimock";
+/// The file beside a run's report counting its New findings, which
+/// `hermetic.yml` reads to upload a run that passed with one.
+pub const NEW_TYPES: &str = "new-types.json";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -524,9 +550,10 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
         deny: &[tui::Key::Esc],
-        // A dialog ignores keys for its first 150 ms and restarts that on each
-        // ignored key (`AM=150` in the 2.1.302 bundle).
-        dwell: std::time::Duration::from_millis(400),
+        // Past the 6 s an unanswered dialog waits before it fires `Notification`
+        // (`qYt=6000` in `eTe`, the 2.1.302 bundle), and so past the 150 ms it
+        // ignores keys for (`AM=150`).
+        dwell: std::time::Duration::from_secs(7),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
@@ -650,6 +677,19 @@ const REASONIX_TUI: tui::Tui = tui::Tui {
     renders_under_conpty: true,
 };
 
+/// omp's TUI, cited as its profile is.
+const OMP_TUI: tui::Tui = tui::Tui {
+    args: &[],
+    composer: tui::Composer {
+        marker: "╰─",
+        above: tui::Above::Nothing,
+    },
+    gates: &[],
+    // `src/slash-commands/builtin-lifecycle.ts:835-839`.
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
+
 /// The profiled CLIs.
 pub const PROFILES: &[Profile] = &[
     Profile {
@@ -742,11 +782,15 @@ pub const PROFILES: &[Profile] = &[
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&CLAUDE_CODE_TUI),
+                surface: Surface::Tui {
+                    row: &CLAUDE_CODE_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
                     "PermissionRequest",
+                    "Notification",
                     "SessionEnd",
                 ],
                 fixture: "fixtures/claude-code/permission-hermetic",
@@ -754,7 +798,7 @@ pub const PROFILES: &[Profile] = &[
             },
         ],
         script_vars: &[],
-        not_yet: &["Notification"],
+        not_yet: &[],
         event_name: hook_event_name,
         not_yet_fields: &[
             // aimock's Messages usage is input and output tokens alone
@@ -887,7 +931,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&CODEX_TUI),
+                surface: Surface::Tui {
+                    row: &CODEX_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1190,7 +1237,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&KIMI_TUI),
+                surface: Surface::Tui {
+                    row: &KIMI_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "PreToolUse",
@@ -1335,7 +1385,10 @@ trust_level = "trusted"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&GROK_TUI),
+                surface: Surface::Tui {
+                    row: &GROK_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1357,12 +1410,32 @@ trust_level = "trusted"
                 fixture: "fixtures/grok/model-error-hermetic",
                 turn: Turn::PROFILE,
             },
+            // A question headless cannot answer: the shell fires the
+            // `elicitation_dialog` notification, then headless cancels it at
+            // once (at main 2bdd1d6a: `crates/codegen/xai-grok-shell/src/session/acp_session_impl/spawn.rs:2336-2341`,
+            // `crates/codegen/xai-grok-pager/src/headless/ext_protocol.rs:27`).
+            Scenario {
+                name: "ask-user",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Notification",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/grok/ask-user-hermetic",
+                turn: Turn::PROFILE,
+            },
         ],
         script_vars: &[],
         not_yet: &[],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1476,7 +1549,10 @@ model = "deepseek-v4-flash"
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&REASONIX_TUI),
+                surface: Surface::Tui {
+                    row: &REASONIX_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
@@ -1687,7 +1763,9 @@ model = "deepseek-v4-flash"
             // A headless prompt is refused, and `always-ask` prompts for every
             // tool but a read (`docs/approval-mode.md:18-24`), so only the spawn
             // is allowed. `-p` exits once the turn ends, killing a background
-            // child, so the spawn blocks (`src/task/settings.ts:251`).
+            // child, so the spawn blocks (`src/task/settings.ts:251`). The TUI
+            // would open on a setup wizard and fetch the latest release
+            // (`src/main.ts:240-254`, `:668-679`).
             ConfigFile {
                 home: "PI_CODING_AGENT_DIR",
                 path: "config.yml",
@@ -1697,6 +1775,9 @@ model = "deepseek-v4-flash"
     task: allow
 async:
   enabled: false
+startup:
+  setupWizard: false
+  checkUpdate: false
 "#,
             },
         ],
@@ -1730,9 +1811,28 @@ async:
                 fixture: "delegation/fixtures/omp",
                 turn: Turn::PROFILE,
             },
+            // `/new` is a TUI builtin, which `-p` never runs
+            // (`src/slash-commands/builtin-lifecycle.ts:159-167`,
+            // `src/session/agent-session.ts:7574-7596`); its switch names the
+            // session it leaves (`:10250-10255`).
+            Scenario {
+                name: "new-session",
+                shape: Shape::Succession,
+                surface: Surface::Tui {
+                    row: &OMP_TUI,
+                    answer: tui::Answer::Nothing,
+                },
+                expects: &["session_start", "session_switch", "session_shutdown"],
+                fixture: "omp/fixtures/new-session-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: Some("/new"),
+                    resume: None,
+                },
+            },
         ],
         script_vars: &[],
-        not_yet: &["session_switch", "session_branch"],
+        not_yet: &["session_branch"],
         event_name: type_field,
         not_yet_fields: &[
             // Only a UI approves a prompt (`src/extensibility/extensions/wrapper.ts:386-398`).
@@ -1747,7 +1847,7 @@ async:
                 "/message/content/*/arguments/questions/*/question",
             ),
         ],
-        not_yet_literals: &["ask", "previousSessionFile"],
+        not_yet_literals: &["ask"],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1816,7 +1916,10 @@ telemetry:
             Scenario {
                 name: "permission",
                 shape: Shape::Permission,
-                surface: Surface::Tui(&HERMES_TUI),
+                surface: Surface::Tui {
+                    row: &HERMES_TUI,
+                    answer: tui::Answer::Deny,
+                },
                 expects: &[
                     "on_session_start",
                     "pre_tool_call",
@@ -1883,19 +1986,31 @@ telemetry:
             path: ".gemini/antigravity-cli/settings.json",
             template: "{\"modelProvider\": \"gemini\"}\n",
         }],
-        scenarios: &[Scenario {
-            name: "tool-run",
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "fixtures/antigravity/tool-run-hermetic",
-            turn: Turn::PROFILE,
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/tool-run-hermetic",
+                turn: Turn::PROFILE,
+            },
+            // `-p` answers the question itself: "Auto-answering ask_question at
+            // step %d with skipped=true" (`ask_question_manager.go:30`).
+            Scenario {
+                name: "ask-question",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/ask-question-hermetic",
+                turn: Turn::PROFILE,
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
-        not_yet_literals: &["ask_question"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
@@ -2078,7 +2193,7 @@ impl Scenario {
     /// Why a leg on `windows` doesn't run it, if it doesn't.
     fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
-            Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
+            Surface::Tui { row, .. } if windows && !row.renders_under_conpty => {
                 Some("its TUI paints nothing under ConPTY")
             }
             _ => None,
@@ -2092,6 +2207,17 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::harness::provenance::Provenance;
+
+    #[test]
+    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+        let yml = std::fs::read_to_string(bump::repo_root().join(".github/workflows/hermetic.yml"))
+            .expect("hermetic.yml");
+        assert!(
+            yml.contains(&format!("runs/{NEW_TYPES}")),
+            "a run that passed with a New finding uploads only as this file says"
+        );
+    }
 
     #[test]
     fn every_registered_source_is_profiled_or_says_why_not_and_never_both() {
@@ -2181,19 +2307,33 @@ mod tests {
     }
 
     #[test]
-    fn a_tui_scenario_is_a_permission_turn() {
+    fn a_tui_turn_takes_no_args_and_resumes_nothing() {
         for p in PROFILES {
             for s in p.scenarios {
-                assert!(
-                    matches!(s.surface, Surface::Headless) || s.shape == Shape::Permission,
-                    "{}/{}: the TUI driver refuses its dialog, which only a Permission turn wants",
-                    p.source,
-                    s.name
-                );
                 assert!(
                     matches!(s.surface, Surface::Headless)
                         || (s.turn.args.is_empty() && s.turn.resume.is_none()),
                     "{}/{}: a TUI turn takes no args and resumes nothing",
+                    p.source,
+                    s.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_tui_turn_answers_a_gate_exactly_when_its_shape_is_permission() {
+        // A turn waiting on a dialog it never raises stalls, and the verdict
+        // blames its CLI.
+        for p in PROFILES {
+            for s in p.scenarios {
+                let Surface::Tui { answer, .. } = s.surface else {
+                    continue;
+                };
+                assert_eq!(
+                    answer != tui::Answer::Nothing,
+                    s.shape == Shape::Permission,
+                    "{}/{}",
                     p.source,
                     s.name
                 );
@@ -2244,16 +2384,12 @@ mod tests {
         for p in PROFILES {
             for s in p.scenarios {
                 assert!(fixtures.insert(s.fixture), "{} recorded twice", s.fixture);
-                let prov = crate::harness::sources_root()
+                let path = crate::harness::sources_root()
                     .join(s.fixture)
                     .join(crate::harness::PROVENANCE);
-                let prov: serde_json::Value = serde_json::from_str(
-                    &std::fs::read_to_string(&prov)
-                        .unwrap_or_else(|e| panic!("{}: {}: {e}", p.source, prov.display())),
-                )
-                .expect("provenance is json");
+                let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
-                    prov.get(PROVENANCE_AIMOCK).is_some(),
+                    prov.recorded().is_some_and(|r| r.aimock.is_some()),
                     "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",
                     p.source,
                     s.fixture
@@ -2484,6 +2620,28 @@ mod tests {
                         .any(|f| f["response"]["toolCalls"].is_array()),
                     "{}: a reply calls a tool",
                     p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_shape_asks_the_model_nothing_exactly_when_its_script_has_no_reply() {
+        // A reply to a turn that asks nothing lets a run whose calls left the
+        // sandbox complete with no request.
+        for p in PROFILES {
+            for s in p.scenarios {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                assert_eq!(
+                    replies.is_empty(),
+                    !s.shape.asks_the_model(),
+                    "{}/{}",
+                    p.source,
+                    s.name
                 );
             }
         }
