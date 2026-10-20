@@ -3,55 +3,55 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     source: hermes
-    session_id: 20261018_153400_e15189
+    session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     model: hermetic
     effort: ~
 - Identity:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     source: hermes
-    session_id: 20261018_153400_e15189
+    session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 7100831433049174356
-    tool_use_id: call_pYEMdFOY-2DCFmhE
+    agent_id: 10770421639948276803
+    tool_use_id: call_swB_RV2PQNAASCQk
     detail:
       Generic:
         display: "terminal: rm -rf NOTE.txt"
 - Identity:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     source: hermes
-    session_id: 20261018_153400_e15189
+    session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     reason: recursive delete
-    tool_use_id: call_pYEMdFOY-2DCFmhE
+    tool_use_id: call_swB_RV2PQNAASCQk
 - Identity:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     source: hermes
-    session_id: 20261018_153400_e15189
+    session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 7100831433049174356
-    tool_use_id: call_pYEMdFOY-2DCFmhE
+    agent_id: 10770421639948276803
+    tool_use_id: call_swB_RV2PQNAASCQk
 - Identity:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     source: hermes
-    session_id: 20261018_153400_e15189
+    session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     tool_use_id: ~
 - ModelInfo:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     model: hermetic
     effort: ~
 - SessionEnd:
-    agent_id: 7100831433049174356
+    agent_id: 10770421639948276803
     as_child: false

@@ -2,12 +2,31 @@
   "origin": "recorded",
   "cli": "codex",
   "version": "codex-cli 0.163.0",
-  "captured": "2026-10-19",
+  "captured": "2026-10-20",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 247
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/codex/subagent.json"
+  "script": "tests/sources/hermetic/codex/subagent.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/payload/name": [],
+      "/payload/type": [
+        "item_completed",
+        "message",
+        "reasoning",
+        "thread_settings_applied"
+      ],
+      "/type": [
+        "event_msg",
+        "response_item",
+        "session_meta",
+        "token_usage_record",
+        "world_state"
+      ]
+    }
+  }
 }

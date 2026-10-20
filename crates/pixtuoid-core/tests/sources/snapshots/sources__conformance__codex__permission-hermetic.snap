@@ -3,64 +3,64 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ActivityStart:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     tool_use_id: ~
     detail: ~
 - ModelInfo:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     model: gpt-5.5
     effort: high
 - Waiting:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     reason: permission
 - ActivityEnd:
-    agent_id: 9255425499388792368
-    tool_use_id: call_LLPnzFT3_S_J8XAs
+    agent_id: 7917893489455234133
+    tool_use_id: call_0xRx_mmBAjZSz4hy
 - ActivityStart:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     fresh_tokens: 19
 - ActivityEnd:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     tool_use_id: ~
 - SessionStart:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     source: codex
-    session_id: 01a15292-cd36-70a0-9070-ae83d869e959
+    session_id: 01a15848-8cc5-7fe2-9b85-dfc522e9858f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     source: codex
-    session_id: 01a15292-cd36-70a0-9070-ae83d869e959
+    session_id: 01a15848-8cc5-7fe2-9b85-dfc522e9858f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     source: codex
-    session_id: 01a15292-cd36-70a0-9070-ae83d869e959
+    session_id: 01a15848-8cc5-7fe2-9b85-dfc522e9858f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 9255425499388792368
-    tool_use_id: call_LLPnzFT3_S_J8XAs
+    agent_id: 7917893489455234133
+    tool_use_id: call_0xRx_mmBAjZSz4hy
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     source: codex
-    session_id: 01a15292-cd36-70a0-9070-ae83d869e959
+    session_id: 01a15848-8cc5-7fe2-9b85-dfc522e9858f
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     reason: permission
 - SessionEnd:
-    agent_id: 9255425499388792368
+    agent_id: 7917893489455234133
     as_child: false

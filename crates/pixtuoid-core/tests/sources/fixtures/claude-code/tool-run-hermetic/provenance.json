@@ -9,5 +9,24 @@
     "blanked": 229
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/claude-code/tool-run.json"
+  "script": "tests/sources/hermetic/claude-code/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/message/content/*/type": [
+        "text"
+      ],
+      "/type": [
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "atis-latch",
+        "attachment",
+        "cost-state",
+        "last-prompt",
+        "queue-operation",
+        "user"
+      ]
+    }
+  }
 }

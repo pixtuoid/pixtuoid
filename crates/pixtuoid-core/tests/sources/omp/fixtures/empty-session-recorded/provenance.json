@@ -4,9 +4,9 @@
   "version": "omp/18.2.6",
   "captured": "2026-09-19",
   "command": "omp (interactive TUI, driven by scripts/lib/capture-omp-tui.py exit — /exit before any prompt)",
+  "note": "hook sessionFile home path redacted to /Users/dev. interactive TUI under a pty, /exit before any prompt: omp persists no transcript for a launch session that never took a prompt, and never a session_exit, so the bridge shutdown is the only end signal.",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 2
-  },
-  "note": "hook sessionFile home path redacted to /Users/dev. interactive TUI under a pty, /exit before any prompt: omp persists no transcript for a launch session that never took a prompt, and never a session_exit, so the bridge shutdown is the only end signal."
+  }
 }

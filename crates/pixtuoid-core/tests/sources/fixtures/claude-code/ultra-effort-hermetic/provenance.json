@@ -6,8 +6,39 @@
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 352
+    "blanked": 349
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/claude-code/ultra-effort.json"
+  "script": "tests/sources/hermetic/claude-code/ultra-effort.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/attachment/type": [
+        "agent_listing_delta",
+        "date",
+        "environment",
+        "model",
+        "prompt_snapshot",
+        "remote_session_change",
+        "session_context",
+        "skill_listing",
+        "total_tokens_reminder"
+      ],
+      "/message/content/*/type": [
+        "text"
+      ],
+      "/type": [
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "atis-latch",
+        "attachment",
+        "cost-state",
+        "last-prompt",
+        "mode",
+        "queue-operation",
+        "user"
+      ]
+    }
+  }
 }
