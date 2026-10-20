@@ -49,7 +49,8 @@ pub enum Label {
     Fail,
 }
 
-/// One verdict: its findings, worst first.
+/// One verdict: its findings, worst first, and why a run could not judge new
+/// types here.
 #[derive(Debug)]
 pub struct Verdict {
     findings: Vec<(Label, String)>,
@@ -66,7 +67,17 @@ impl Verdict {
         }
     }
 
-    /// Why its run judged no new types, if it judged none.
+    /// This verdict, of a run that reached the new-type check and could not
+    /// judge it here, for `why`.
+    #[must_use]
+    pub fn unjudged_because(self, why: Option<Unjudged>) -> Self {
+        Self {
+            unjudged: why,
+            ..self
+        }
+    }
+
+    /// Why its run reached the new-type check and could not judge it here.
     pub fn unjudged(&self) -> Option<&Unjudged> {
         self.unjudged.as_ref()
     }
@@ -113,10 +124,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    Ok(Verdict {
-        unjudged,
-        ..Verdict::new(findings)
-    })
+    Ok(Verdict::new(findings).unjudged_because(unjudged))
 }
 
 /// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
@@ -742,7 +750,7 @@ fn new_types(
     for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
         findings.push((
             Label::New,
-            format!("{at}: `{value}` went unread, which the recording never dropped"),
+            format!("{at}: `{value}` went unread, as it never did in the recording"),
         ));
     }
     Ok(None)
@@ -2656,6 +2664,23 @@ mod tests {
         let (v, unjudged) = check(None);
         assert!(v.findings().is_empty());
         assert_eq!(unjudged, Some(Unjudged::NoBaseline));
+    }
+
+    /// `verify` carries why its run could not judge new types, as its
+    /// scenario's baseline says, whichever baseline the fixture holds.
+    #[test]
+    fn a_verdict_says_why_its_run_judged_no_new_types() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let v = verify(d.path()).expect("verify");
+        let scenario = profile("codex")
+            .and_then(|p| p.scenarios.iter().find(|s| s.shape == Shape::ToolRun))
+            .expect("codex's tool-run");
+        let want = match dropped::baseline_of(scenario).expect("baseline") {
+            None => Some(Unjudged::NoBaseline),
+            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
+            Some(_) => None,
+        };
+        assert_eq!(v.unjudged(), want.as_ref(), "{:?}", v.findings());
     }
 
     /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`

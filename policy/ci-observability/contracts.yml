@@ -126,9 +126,9 @@
   file: .github/workflows/hermetic-nightly.yml
   why: >-
     The issue is filed from the runs each OS leg uploaded, under the stem the
-    tier's `runs-stem` output hands on, several legs' each in its own directory:
-    a name rebuilt here can disagree with it and find nothing, and merged legs
-    would overwrite one report with the other.
+    tier's `runs-stem` output hands on, each leg's in its own directory when
+    several upload: a name rebuilt here can disagree with it and find nothing,
+    and merged legs would overwrite one report with the other.
   assert: |
     [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
     == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*"}]

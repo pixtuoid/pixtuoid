@@ -350,22 +350,18 @@ fn every_capture_carries_only_keys_its_schema_names() {
     }
 }
 
-/// The keys the recorder writes by name are ones the schema allows, so a
-/// renamed const fails here, not on the next recording's record.
+/// The baseline's key is one the schema allows: no committed record holds it
+/// yet, so a renamed const would only read every baseline as absent.
 #[test]
-fn the_schema_allows_the_keys_the_recorder_writes() {
+fn the_schema_allows_the_baselines_key() {
     let allowed = ProvenanceSchema::load()
         .allowed("recorded")
         .expect("recorded");
-    for key in [
-        pixtuoid_core::harness::hermetic::PROVENANCE_AIMOCK,
-        pixtuoid_core::harness::hermetic::PROVENANCE_DROPPED,
-    ] {
-        assert!(
-            allowed.contains(key),
-            "{key:?} is no recorded key the schema names"
-        );
-    }
+    let key = pixtuoid_core::harness::hermetic::PROVENANCE_DROPPED;
+    assert!(
+        allowed.contains(key),
+        "{key:?} is no recorded key the schema names"
+    );
 }
 
 /// `cli` was the one required field nothing could falsify, so a provenance

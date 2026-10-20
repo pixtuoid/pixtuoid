@@ -613,9 +613,9 @@ mod run {
             .collect()
     }
 
-    /// The runs that judged no new types, each `(key, why)`, as the report
-    /// names them: each with no baseline, and a count of those recorded on
-    /// another OS.
+    /// The runs among `(key, why)` that reached the new-type check and could
+    /// not judge it here: each with no baseline named, those recorded on
+    /// another OS counted.
     fn not_judged<'a>(runs: impl Iterator<Item = (&'a str, Option<&'a Unjudged>)>) -> String {
         let (mut missing, mut elsewhere) = (Vec::new(), BTreeMap::<&str, usize>::new());
         for (key, why) in runs {
@@ -2335,6 +2335,29 @@ mod run {
                     .into_iter()
                 ),
                 "copilot/tool-run (no baseline); 2 recorded on macos"
+            );
+            let unjudged = |key: &str, why| {
+                Entry::new(
+                    key.into(),
+                    None,
+                    Verdict::new(Vec::new()).unjudged_because(Some(why)),
+                )
+            };
+            let r = report(
+                &Versions::Pinned,
+                None,
+                &[],
+                &[
+                    unjudged("copilot/tool-run", Unjudged::NoBaseline),
+                    unjudged("codex/tool-run", Unjudged::RecordedOn("macos".into())),
+                ],
+                &[],
+            );
+            assert!(
+                r.ends_with(
+                    "\nNew types not judged: copilot/tool-run (no baseline); 1 recorded on macos\n"
+                ),
+                "{r}"
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
