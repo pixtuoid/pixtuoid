@@ -786,14 +786,24 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
             "{what}: the answer clears Waiting before the turn ends"
         );
     }
-    for late in [hook("PreToolUse"), asked] {
+    // Both sides of the window the hook End is remembered for.
+    let inside = HOOK_WINS_WINDOW / 10;
+    let past = HOOK_WINS_WINDOW + Duration::from_millis(1);
+    for (late, after, parks) in [
+        (hook("PreToolUse"), inside, false),
+        (asked.clone(), inside, false),
+        (hook("PreToolUse"), past, true),
+        (asked, past, true),
+    ] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
         start_as(&mut r, &mut scene, id, SOURCE_NAME);
-        feed(&mut r, &mut scene, &[hook("PostToolUse"), late], t0);
-        assert!(
-            !matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
-            "a wait arriving after its call's hook End must not park the slot"
+        feed(&mut r, &mut scene, &[hook("PostToolUse")], t0);
+        feed(&mut r, &mut scene, &[late], t0 + after);
+        assert_eq!(
+            matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+            parks,
+            "a wait {after:?} after its call's hook End parks the slot only past the window"
         );
     }
 }
