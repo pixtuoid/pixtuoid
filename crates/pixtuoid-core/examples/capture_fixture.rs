@@ -260,18 +260,19 @@ mod recorder {
             Invocation::PrepareRoot { source, within } => {
                 prepare_root(resolved_source_root(&source).as_deref(), within.as_path())
             }
-            Invocation::Promote(run) => {
-                if let Some(why) = corpus_refusal(true) {
+            Invocation::Promote(run) => match promote_unless_refused(
+                corpus_refusal(true),
+                &run,
+                &sources_root(),
+                &identity_needles(git_config),
+                &mut std::io::stderr(),
+            ) {
+                Ok(promoted) => promoted,
+                Err(why) => {
                     eprintln!("{why}");
                     std::process::exit(2);
                 }
-                promote(
-                    &run,
-                    &sources_root(),
-                    &identity_needles(git_config),
-                    &mut std::io::stderr(),
-                )
-            }
+            },
             Invocation::Plan(file) => run(&CapturePlan::read(&file)?),
             Invocation::Capture(plan) => run(&plan),
         }
@@ -495,6 +496,21 @@ mod recorder {
     /// The exemption the record in `dest` declares, if it holds one.
     fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
         Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
+    }
+
+    /// [`promote`], unless `refusal` says this host may not write the corpus; the
+    /// refusal is the `Err`, the promotion's own outcome the `Ok`.
+    fn promote_unless_refused(
+        refusal: Option<&'static str>,
+        run: &Path,
+        root: &Path,
+        needles: &BTreeSet<String>,
+        notices: &mut impl Write,
+    ) -> Result<std::io::Result<()>, &'static str> {
+        match refusal {
+            Some(why) => Err(why),
+            None => Ok(promote(run, root, needles, notices)),
+        }
     }
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
@@ -1908,6 +1924,32 @@ mod recorder {
             );
             raw.workspace = Some(abs(std::env::temp_dir().join(capture_workspace_tail())));
             assert_eq!(plan_refusal(&raw), None);
+        }
+
+        #[test]
+        fn a_refused_promotion_writes_nothing_and_says_why() {
+            let root = tempfile::tempdir().expect("root");
+            let run = tempfile::tempdir().expect("run");
+            let refused = promote_unless_refused(
+                Some("not this host"),
+                run.path(),
+                root.path(),
+                &BTreeSet::new(),
+                &mut Vec::new(),
+            );
+            assert_eq!(refused.err(), Some("not this host"));
+            assert_eq!(std::fs::read_dir(root.path()).expect("root").count(), 0);
+            let allowed = promote_unless_refused(
+                None,
+                run.path(),
+                root.path(),
+                &BTreeSet::new(),
+                &mut Vec::new(),
+            );
+            assert!(
+                allowed.expect("not refused").is_err(),
+                "it ran, and a run with no manifest fails there"
+            );
         }
 
         #[test]
