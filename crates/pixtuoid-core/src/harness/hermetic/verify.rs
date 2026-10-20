@@ -70,9 +70,9 @@ impl Verdict {
     /// This verdict, of a run that reached the new-type check and could not
     /// judge it here, for `why`.
     #[must_use]
-    pub fn unjudged_because(self, why: Option<Unjudged>) -> Self {
+    pub fn unjudged_because(self, why: Unjudged) -> Self {
         Self {
-            unjudged: why,
+            unjudged: Some(why),
             ..self
         }
     }
@@ -124,7 +124,11 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    Ok(Verdict::new(findings).unjudged_because(unjudged))
+    let verdict = Verdict::new(findings);
+    Ok(match unjudged {
+        Some(why) => verdict.unjudged_because(why),
+        None => verdict,
+    })
 }
 
 /// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its

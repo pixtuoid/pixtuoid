@@ -350,8 +350,8 @@ fn every_capture_carries_only_keys_its_schema_names() {
     }
 }
 
-/// The baseline's key is one the schema allows: no committed record holds it
-/// yet, so a renamed const would only read every baseline as absent.
+/// The baseline's key is one the schema names: a renamed const reads every
+/// committed baseline as absent, which no record-side gate sees.
 #[test]
 fn the_schema_allows_the_baselines_key() {
     let allowed = ProvenanceSchema::load()

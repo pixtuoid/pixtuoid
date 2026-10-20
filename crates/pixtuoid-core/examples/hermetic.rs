@@ -2369,7 +2369,7 @@ mod run {
                 Entry::new(
                     key.into(),
                     None,
-                    Verdict::new(Vec::new()).unjudged_because(Some(why)),
+                    Verdict::new(Vec::new()).unjudged_because(why),
                 )
             };
             let r = report(

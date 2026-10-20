@@ -376,7 +376,7 @@ pub const PROVENANCE_AIMOCK: &str = "aimock";
 pub const NEW_TYPES: &str = "new-types.json";
 
 /// The provenance key holding what a tier recording's decoders dropped
-/// ([`dropped::Dropped`]), the unknown-type report's baseline.
+/// ([`dropped::Dropped`]), the baseline a New finding is judged against.
 pub const PROVENANCE_DROPPED: &str = "dropped";
 
 /// The name an install lifecycle run is selected and reported by.

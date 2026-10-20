@@ -1,5 +1,5 @@
-//! The unknown-type report's baseline: at each discriminator of a source's
-//! transcript, the values its decoders dropped. A hermetic recording writes it
+//! The baseline a New finding is judged against: at each discriminator of a
+//! source's transcript, the values its decoders dropped. A hermetic recording writes it
 //! into its scenario's provenance ([`PROVENANCE_DROPPED`]); a run that drops a
 //! value there its recording did not is New, a type the CLI added that no
 //! decoder reads.
