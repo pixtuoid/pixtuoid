@@ -167,13 +167,7 @@ pub(crate) fn population() -> std::io::Result<BTreeSet<Literal>> {
     let mut out = BTreeSet::new();
     let mut pending = vec![root.join("mod.rs")];
     while let Some(path) = pending.pop() {
-        let module = path
-            .strip_prefix(&root)
-            .unwrap_or(&path)
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/");
+        let module = crate::harness::slashed_under(&root, &path)?;
         let file = syn::parse_file(&std::fs::read_to_string(&path)?).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{module}: {e}"))
         })?;
