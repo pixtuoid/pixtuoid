@@ -38,8 +38,7 @@ use super::{
 /// How often the headless loop samples the scene for a summary line.
 const HEADLESS_SUMMARY_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-// A resolved wait stays shown for `ACTIVE_GRACE_WINDOW`
-// (`crates/pixtuoid-core/src/state/reducer/mod.rs:32`), and that alone lets a
+// A resolved wait stays shown for `ACTIVE_GRACE_WINDOW`, and that alone lets a
 // poll see a hermetic Permission row's brief wait.
 const _: () = assert!(
     ACTIVE_GRACE_WINDOW.as_millis() > HEADLESS_SUMMARY_POLL_INTERVAL.as_millis(),
