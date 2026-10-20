@@ -68,8 +68,10 @@ trap cleanup EXIT
 # plugin, which is what connects OpenClaw. The first two outrank OPENCLAW_HOME
 # (install/openclaw.rs), so one exported in the dev's shell would send those
 # connects to their real config; the port var outranks each `gateway.port`
-# (`docs/help/faq/gateway-ports-and-remote-mode.md:16` at v2026.10.1).
-unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH OPENCLAW_GATEWAY_PORT
+# (`docs/help/faq/gateway-ports-and-remote-mode.md:16` at v2026.10.1). The
+# lifeline, the hermetic profile's, would stop a gateway backgrounded below on
+# its /dev/null stdin; these are stopped by signal.
+unset OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH OPENCLAW_GATEWAY_PORT OPENCLAW_GATEWAY_HOST_LIFELINE
 mkdir -p "$MG/claude" "$MG/cfg/pixtuoid"
 
 # One throwaway state dir per gateway. `gateway.mode` is REQUIRED — `gateway run`

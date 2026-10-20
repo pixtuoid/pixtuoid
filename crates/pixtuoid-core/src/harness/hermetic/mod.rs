@@ -192,19 +192,14 @@ impl Live {
 }
 
 /// A server a profile's CLI talks to, run inside each scenario's recorded run.
+/// It must stop when its stdin closes, the one stop the recorder has on every
+/// OS: one that outlives it is killed, and its capture fails.
 #[derive(Debug)]
 pub struct Daemon {
     /// Its start, after the CLI's binary.
     pub start: &'static [&'static str],
     /// What exits 0 once it serves, after the CLI's binary.
     pub ready: &'static [&'static str],
-}
-
-impl Daemon {
-    /// Why a leg on `windows` runs no daemon, if it runs none.
-    pub fn not_run_on(windows: bool) -> Option<&'static str> {
-        windows.then_some("the recorder stops its daemon by a Unix signal")
-    }
 }
 
 /// The port a [`Daemon`] listens on, picked free by the orchestrator.
@@ -1781,10 +1776,17 @@ telemetry:
             "-m",
             "{prompt}",
         ],
-        // Its automatic update checks, and the daily request each sends
-        // (`docs/install/updating/automatic-updates.md:160-162`,
-        // `docs/gateway/telemetry.md:11`).
-        env: &[("OPENCLAW_NO_AUTO_UPDATE", "1")],
+        env: &[
+            // Its automatic update checks, and the daily request each sends
+            // (`docs/install/updating/automatic-updates.md:160-162`,
+            // `docs/gateway/telemetry.md:11`).
+            ("OPENCLAW_NO_AUTO_UPDATE", "1"),
+            // Its gateway stops gracefully on its stdin's EOF, the recorder's
+            // stop (`src/cli/gateway-cli/host-lifeline.ts:4-14`, `:40-47`,
+            // `src/cli/gateway-cli/run-loop.ts:1214-1217`,
+            // `docs/platforms/mac/bundled-gateway.md:46-49`).
+            ("OPENCLAW_GATEWAY_HOST_LIFELINE", "stdin"),
+        ],
         homes: &[],
         system_config: PerOs {
             unix: &[],
@@ -1909,20 +1911,11 @@ impl Profile {
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
 
-    /// Why a leg on `windows` doesn't run `s`, one of this profile's
-    /// scenarios, if it doesn't.
-    pub fn not_run_on(&self, s: &Scenario, windows: bool) -> Option<&'static str> {
-        self.daemon
-            .as_ref()
-            .and_then(|_| Daemon::not_run_on(windows))
-            .or_else(|| s.not_run_on(windows))
-    }
-
     /// Whether a leg on `windows` runs any of it, and so reports it.
     pub fn runs_on(&self, windows: bool) -> bool {
         self.scenarios
             .iter()
-            .any(|s| self.not_run_on(s, windows).is_none())
+            .any(|s| s.not_run_on(windows).is_none())
             || self
                 .live
                 .as_ref()
@@ -1939,7 +1932,7 @@ impl Scenario {
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
-    fn not_run_on(&self, windows: bool) -> Option<&'static str> {
+    pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
             Surface::Tui(tui) if windows && !tui.renders_under_conpty => {
                 Some("its TUI paints nothing under ConPTY")

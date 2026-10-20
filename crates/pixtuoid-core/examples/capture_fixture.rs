@@ -196,9 +196,6 @@ mod recorder {
             if daemon.start.is_empty() || daemon.ready.is_empty() {
                 return Err(format!("{DAEMON} and {DAEMON_READY} come together"));
             }
-            if let Some(why) = hermetic::Daemon::not_run_on(cfg!(windows)) {
-                return Err(format!("{DAEMON}: {why}"));
-            }
             options.daemon = Some(daemon);
         }
         Ok((options, args))
@@ -342,14 +339,10 @@ mod recorder {
             &options.env,
         )?
         .status()?;
-        drop(daemon);
+        let stopped = daemon.map_or(Ok(()), |d| d.stop(DAEMON_STOP_GRACE));
         tap.settle();
         let payloads = tap.payloads();
-        let incomplete = tap.stopped().map(|why| {
-            std::io::Error::other(format!(
-                "the tap stopped accepting, so this capture is incomplete: {why}"
-            ))
-        });
+        let incomplete = incomplete(tap.stopped(), stopped);
 
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
@@ -746,18 +739,23 @@ mod recorder {
         Ok(c)
     }
 
-    /// How long a daemon may take to exit after SIGTERM before it is killed.
-    #[cfg(unix)]
+    /// How long a daemon may take to exit once its stdin closed: its shutdown
+    /// hooks' last sends, which a kill would lose.
     const DAEMON_STOP_GRACE: Duration = Duration::from_secs(30);
     /// How long one readiness probe may take before it is killed and read as
     /// a no: a probe that blocked would hold the wait past [`BOOT`].
     const DAEMON_PROBE_BUDGET: Duration = Duration::from_secs(5);
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
-    /// tap, and stopped when dropped: by SIGTERM, which stops it cleanly
-    /// (openclaw `docs/cli/gateway/running.md:32` at v2026.10.1) so its
-    /// shutdown hooks fire, then by a kill past `DAEMON_STOP_GRACE`.
-    struct RunningDaemon(std::process::Child);
+    /// tap. It stops when its stdin closes ([`hermetic::Daemon`]), which
+    /// [`Self::stop`] does; one dropped unstopped is killed.
+    struct RunningDaemon {
+        child: std::process::Child,
+        /// Its stdin's write end, held until it should stop.
+        lifeline: Option<std::process::ChildStdin>,
+        /// Its start, which names it.
+        start: String,
+    }
 
     impl RunningDaemon {
         /// `daemon` started, once its probe exits 0.
@@ -774,13 +772,16 @@ mod recorder {
             let own = driver_dir(wiring.scratch);
             std::fs::create_dir_all(&own)?;
             let log = std::fs::File::create(own.join("daemon.log"))?;
-            let mut running = Self(
-                wired(&daemon.start, ws, wiring, verified, env)?
-                    .stdin(std::process::Stdio::null())
-                    .stdout(log.try_clone()?)
-                    .stderr(log)
-                    .spawn()?,
-            );
+            let mut child = wired(&daemon.start, ws, wiring, verified, env)?
+                .stdin(std::process::Stdio::piped())
+                .stdout(log.try_clone()?)
+                .stderr(log)
+                .spawn()?;
+            let mut running = Self {
+                lifeline: child.stdin.take(),
+                child,
+                start: daemon.start.join(" "),
+            };
             wait_until("the daemon", BOOT, || {
                 let mut probe = wired(&daemon.ready, ws, wiring, verified, env)?
                     .stdin(std::process::Stdio::null())
@@ -795,7 +796,7 @@ mod recorder {
                     let _ = probe.kill();
                 }
                 let served = probe.wait()?.success();
-                match running.0.try_wait()? {
+                match running.child.try_wait()? {
                     // A probe answered by whatever else holds the port.
                     Some(exit) => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
@@ -805,24 +806,38 @@ mod recorder {
             })?;
             Ok(Some(running))
         }
+
+        /// Closes its stdin and waits `grace` for it to exit. One that outlives
+        /// it is killed, and that fails its capture: a kill loses the hooks its
+        /// shutdown would have sent.
+        fn stop(mut self, grace: Duration) -> std::io::Result<()> {
+            drop(self.lifeline.take());
+            if wait_until("its exit", grace, || Ok(self.child.try_wait()?.is_some())).is_ok() {
+                return Ok(());
+            }
+            Err(std::io::Error::other(format!(
+                "the daemon `{}` outlived its stdin by {grace:?} and was killed",
+                self.start
+            )))
+        }
     }
 
     impl Drop for RunningDaemon {
         fn drop(&mut self) {
-            #[cfg(unix)]
-            {
-                use rustix::process::{Pid, Signal, kill_process};
-                let _ = kill_process(Pid::from_child(&self.0), Signal::TERM);
-                let exited = wait_until("its exit", DAEMON_STOP_GRACE, || {
-                    Ok(self.0.try_wait()?.is_some())
-                });
-                if exited.is_ok() {
-                    return;
-                }
-            }
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+            let _ = self.child.kill();
+            let _ = self.child.wait();
         }
+    }
+
+    /// Why a capture is incomplete, if it is: its tap stopped accepting, or
+    /// its daemon had to be killed.
+    fn incomplete(tap: Option<String>, daemon: std::io::Result<()>) -> Option<std::io::Error> {
+        tap.map(|why| {
+            std::io::Error::other(format!(
+                "the tap stopped accepting, so this capture is incomplete: {why}"
+            ))
+        })
+        .or_else(|| daemon.err())
     }
 
     fn write_payloads(payloads: &[String], dest: &Path) -> std::io::Result<PathBuf> {
@@ -1428,11 +1443,7 @@ mod recorder {
                 "codex",
             ]))
             .map(|(o, _)| o.daemon.map(|d| (d.start, d.ready)));
-            if cfg!(windows) {
-                assert!(daemon.is_err(), "a Windows recorder stops no daemon");
-            } else {
-                assert_eq!(daemon, Ok(Some((args(&["d", "run"]), args(&["up"])))));
-            }
+            assert_eq!(daemon, Ok(Some((args(&["d", "run"]), args(&["up"])))));
             for half in [["--daemon", "d"], ["--daemon-ready", "up"]] {
                 assert!(parse_options(args(&half)).is_err(), "{half:?} alone");
             }
@@ -1796,17 +1807,13 @@ mod recorder {
 
         #[cfg(unix)]
         #[test]
-        fn a_daemon_serves_before_the_cli_runs_and_stops_on_sigterm() {
+        fn a_daemon_serves_before_the_cli_runs() {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
             let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
-            let (ready, stopped) = (ws.path().join("ready"), ws.path().join("stopped"));
+            let ready = ws.path().join("ready");
             // It serves only after a beat, so a probe that never waited fails.
-            let serve = format!(
-                "trap 'echo term >{}; exit 0' TERM; sleep 1; touch {}; while :; do sleep 0.1; done",
-                stopped.display(),
-                ready.display()
-            );
+            let serve = format!("sleep 1; touch {}; cat >/dev/null", ready.display());
             let daemon = DaemonCmd {
                 start: ["sh", "-c", &serve].map(String::from).to_vec(),
                 ready: ["test", "-e"]
@@ -1823,11 +1830,136 @@ mod recorder {
                 .expect("starts")
                 .expect("a daemon");
             assert!(ready.exists(), "returned before it served");
-            drop(running);
+            running.stop(DAEMON_STOP_GRACE).expect("it stops");
+        }
+
+        /// Where a re-run of this test binary as the fake daemon keeps its
+        /// markers: the env var marks the re-run.
+        const FAKE_DAEMON: &str = "PIXTUOID_TEST_FAKE_DAEMON";
+        /// A second libtest filter, naming no test, that marks the fake's probe.
+        const FAKE_PROBE: &str = "fake-daemon-probe";
+
+        /// `test`'s name as libtest filters it: module path without the crate.
+        fn this_test(test: &str) -> String {
+            let module = module_path!()
+                .split_once("::")
+                .map_or(module_path!(), |(_, m)| m);
+            format!("{module}::{test}")
+        }
+
+        /// This test binary, re-run as `test` playing a daemon, and as its probe,
+        /// which passes once the fake wrote its `ready`.
+        fn fake_daemon(test: &str) -> DaemonCmd {
+            let exe = std::env::current_exe()
+                .expect("the test binary")
+                .display()
+                .to_string();
+            let name = this_test(test);
+            DaemonCmd {
+                start: vec![
+                    exe.clone(),
+                    "--exact".into(),
+                    name.clone(),
+                    "--nocapture".into(),
+                ],
+                ready: vec![
+                    exe,
+                    "--exact".into(),
+                    name,
+                    FAKE_PROBE.into(),
+                    "--nocapture".into(),
+                ],
+            }
+        }
+
+        /// In a re-run as the fake: its marker directory, and whether it is the
+        /// probe, which has asserted the fake serves by the time this returns.
+        fn as_fake() -> Option<(PathBuf, bool)> {
+            let dir = PathBuf::from(std::env::var_os(FAKE_DAEMON)?);
+            let probe = std::env::args().any(|a| a == FAKE_PROBE);
+            if probe {
+                assert!(dir.join("ready").exists(), "the fake does not serve yet");
+            } else {
+                std::fs::write(dir.join("ready"), "").expect("ready");
+            }
+            Some((dir, probe))
+        }
+
+        /// The fake daemon, started as the recorder starts one, in `dir`: its
+        /// workspace, its scratch and its markers, which outlive it.
+        fn start_fake(test: &str, dir: &Path) -> RunningDaemon {
+            let endpoint = Endpoint::in_dir(dir, "capture");
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: dir,
+            };
+            let env = [(FAKE_DAEMON.to_owned(), dir.display().to_string())];
+            RunningDaemon::start(Some(&fake_daemon(test)), dir, &wiring, "1.0.0", &env)
+                .expect("starts")
+                .expect("a daemon")
+        }
+
+        /// Not `cfg(unix)`: the lifeline is the recorder's one stop on every OS.
+        #[test]
+        fn a_daemon_stops_when_its_stdin_closes() {
+            const TEST: &str = "a_daemon_stops_when_its_stdin_closes";
+            if let Some((dir, probe)) = as_fake() {
+                if !probe {
+                    std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
+                    // An EOF that came before the recorder stopped it is a
+                    // stdin it never held.
+                    let when = if dir.join("stopping").exists() {
+                        "after stop"
+                    } else {
+                        "before stop"
+                    };
+                    std::fs::write(dir.join("stopped"), when).expect("stopped");
+                }
+                return;
+            }
+            let markers = tempfile::tempdir().expect("markers");
+            let running = start_fake(TEST, markers.path());
+            std::fs::write(markers.path().join("stopping"), "").expect("stopping");
+            running
+                .stop(DAEMON_STOP_GRACE)
+                .expect("it stops on its own");
             assert_eq!(
-                std::fs::read_to_string(&stopped).ok().as_deref(),
-                Some("term\n")
+                std::fs::read_to_string(markers.path().join("stopped"))
+                    .ok()
+                    .as_deref(),
+                Some("after stop"),
+                "the daemon saw EOF only once the recorder stopped it"
             );
+        }
+
+        #[test]
+        fn a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture() {
+            const TEST: &str = "a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture";
+            /// Past any grace this test gives it.
+            const OUTLIVES: Duration = Duration::from_secs(600);
+            if let Some((_, probe)) = as_fake() {
+                if !probe {
+                    std::thread::sleep(OUTLIVES);
+                }
+                return;
+            }
+            let markers = tempfile::tempdir().expect("markers");
+            let running = start_fake(TEST, markers.path());
+            let grace = Duration::from_secs(1);
+            let started = std::time::Instant::now();
+            let why = running.stop(grace).expect_err("a killed daemon fails");
+            assert!(started.elapsed() >= grace, "killed before its grace");
+            let why = why.to_string();
+            assert!(why.contains(&this_test(TEST)), "names the daemon: {why}");
+            assert!(
+                why.contains(&format!("{grace:?}")),
+                "names the grace: {why}"
+            );
+            assert!(
+                incomplete(None, Err(std::io::Error::other(why))).is_some(),
+                "a capture whose daemon was killed is incomplete"
+            );
+            assert!(incomplete(None, Ok(())).is_none());
         }
 
         #[cfg(unix)]

@@ -227,7 +227,7 @@ mod run {
             let s = p
                 .scenario(sc)
                 .ok_or_else(|| format!("{source} has no scenario {sc}"))?;
-            match p.not_run_on(s, windows) {
+            match s.not_run_on(windows) {
                 Some(why) => Err(format!("{source}/{sc} doesn't run here: {why}")),
                 None => Ok(()),
             }
@@ -566,7 +566,7 @@ mod run {
         p.scenarios
             .iter()
             .filter(|s| args.selects(p.source, s.name))
-            .filter(|s| p.not_run_on(s, windows).is_none())
+            .filter(|s| s.not_run_on(windows).is_none())
             .collect()
     }
 
@@ -580,7 +580,7 @@ mod run {
         headless_first(
             p.scenarios
                 .iter()
-                .filter(|s| p.not_run_on(s, windows).is_none()),
+                .filter(|s| s.not_run_on(windows).is_none()),
         )
     }
 
@@ -610,7 +610,7 @@ mod run {
     /// Each of `p`'s runs a leg on `windows` never makes, and why.
     fn not_run_of(p: &Profile, windows: bool) -> Vec<String> {
         let scenarios = p.scenarios.iter().filter_map(|s| {
-            let why = p.not_run_on(s, windows)?;
+            let why = s.not_run_on(windows)?;
             Some(format!("{}/{} ({why})", p.source, s.name))
         });
         let live = p.live.as_ref().and_then(|l| {
@@ -649,7 +649,7 @@ mod run {
         let leg = p
             .scenarios
             .iter()
-            .filter(|s| p.not_run_on(s, windows).is_none());
+            .filter(|s| s.not_run_on(windows).is_none());
         judged.len() == leg.count()
     }
 
@@ -2268,8 +2268,6 @@ mod run {
             assert!(
                 r.ends_with(
                     "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
-                     openclaw/tool-run (the recorder stops its daemon by a Unix signal) \
-                     openclaw/model-error (the recorder stops its daemon by a Unix signal) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"
@@ -3020,8 +3018,7 @@ mod run {
                     .check(windows)
             };
             assert!(turn(false).is_ok());
-            let refused = turn(true).expect_err("a daemon on Windows");
-            assert!(refused.contains("Unix signal"), "{refused}");
+            assert!(turn(true).is_ok(), "a daemon runs on Windows");
             assert!(
                 check(&["codex", LIVE]).is_err(),
                 "a scenario profile's live run"
@@ -3034,15 +3031,22 @@ mod run {
             };
             assert!(lifecycle(false).is_ok());
             assert!(
-                lifecycle(true).is_err(),
-                "its one scenario runs on no Windows leg"
+                lifecycle(true).is_ok(),
+                "a daemon's lifecycle runs on Windows"
             );
-            for named in [&["openclaw"][..], &["openclaw", LIVE]] {
-                let check = |windows| parse(&args(named)).expect("parse").check(windows);
-                assert!(check(false).is_ok(), "{named:?}");
-                let refused = check(true).expect_err("a Unix-socket tier on Windows");
-                assert!(refused.contains("Unix socket"), "{refused}");
-            }
+            let source = parse(&args(&["openclaw"])).expect("parse");
+            assert!(
+                source.check(true).is_ok(),
+                "a daemon profile runs on Windows"
+            );
+            let live = |windows| {
+                parse(&args(&["openclaw", LIVE]))
+                    .expect("parse")
+                    .check(windows)
+            };
+            assert!(live(false).is_ok());
+            let refused = live(true).expect_err("a Unix-socket tier on Windows");
+            assert!(refused.contains("Unix socket"), "{refused}");
         }
 
         #[cfg(not(unix))]

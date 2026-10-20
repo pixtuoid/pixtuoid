@@ -272,18 +272,6 @@ mod tests {
     }
 
     #[test]
-    fn a_source_a_leg_runs_none_of_moves_on_the_others() {
-        let openclaw = profile("openclaw").expect("openclaw's profile");
-        assert!(!openclaw.runs_on(true));
-        let up = above(openclaw).to_string();
-        let mac_only = drift(&[("macos", &[("openclaw", &up)]), ("windows", &[])]);
-        assert_eq!(
-            plan(&mac_only, &[]),
-            Ok(vec![Proposal::new("openclaw", &v(&up))])
-        );
-    }
-
-    #[test]
     fn each_shards_rows_count_toward_its_os() {
         let hermes = profile("hermes").expect("hermes's profile");
         assert_ne!(shard_of(codex().source), shard_of(hermes.source));
