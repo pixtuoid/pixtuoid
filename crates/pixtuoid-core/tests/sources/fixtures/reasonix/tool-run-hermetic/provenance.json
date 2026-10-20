@@ -9,5 +9,9 @@
     "blanked": 9
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/reasonix/tool-run.json"
+  "script": "tests/sources/hermetic/reasonix/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {}
+  }
 }

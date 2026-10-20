@@ -9,5 +9,9 @@
     "blanked": 9
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/reasonix/planner.json"
+  "script": "tests/sources/hermetic/reasonix/planner.json",
+  "dropped": {
+    "os": "macos",
+    "at": {}
+  }
 }
