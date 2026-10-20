@@ -49,8 +49,8 @@ jobs:
         include:
           # The recorded workspace's realpath (`/private/tmp`) and kqueue
           # liveness are macOS's, the platform the corpus was recorded on.
-          - { os: macos, runner: macos-latest, timeout: 30 }
-          - { os: windows, runner: windows-latest, timeout: 45 }
+          - { os: macos, runner: macos-latest, timeout: 30, run-timeout: 25 }
+          - { os: windows, runner: windows-latest, timeout: 45, run-timeout: 40 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
     defaults:
@@ -88,6 +88,9 @@ jobs:
           tool: uv
       - name: Run the shard's profiles
         id: run
+        # Inside the leg's own, so a run that times out is a failed step the
+        # upload still follows, not a cancelled job.
+        timeout-minutes: ${{ matrix.run-timeout }}
         env:
           CLI: ${{ inputs.cli }}
           SHARD: ${{ matrix.shard }}
@@ -111,7 +114,7 @@ jobs:
         run: |
           any=$(jq '. > 0' target/hermetic/runs/new-types.json)
           echo "any=$any" >> "$GITHUB_OUTPUT"
-      - if: steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'
+      - if: always() && (steps.run.outcome != 'success' || steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true')
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
