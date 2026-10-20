@@ -612,22 +612,42 @@ mod tests {
     }
 
     #[test]
-    fn files_walk_in_their_masked_order_whatever_their_ids_sort_as() {
-        // U1 < U2 < U3: the first run's parent dir sorts first raw, the
-        // second's last.
-        let run = |parent: &str, child: &str| {
-            vec![
-                (
-                    format!("{parent}/events.jsonl"),
-                    format!(r#"{{"role":"parent","id":"{parent}"}}"#),
-                ),
-                (
-                    format!("{child}/events.jsonl"),
-                    format!(r#"{{"role":"child","parent":"{parent}"}}"#),
-                ),
-            ]
+    fn a_two_session_capture_whose_dirs_swap_raw_order_reads_the_same() {
+        let dir = crate::harness::sources_root().join("grok/fixtures/subagent-hermetic");
+        let old: Vec<(String, String)> = jsonl_files_under(&dir)
+            .into_iter()
+            .map(|f| {
+                let path = f.strip_prefix(&dir).expect("under").to_string_lossy();
+                let text = std::fs::read_to_string(&f).expect("read");
+                (path.replace('\\', "/"), text)
+            })
+            .collect();
+        let mut sessions: Vec<&str> = old
+            .iter()
+            .filter_map(|(path, _)| path.split_once('/').map(|(session, _)| session))
+            .collect();
+        sessions.dedup();
+        assert!(
+            sessions.len() >= 2,
+            "a parent and a child session: {sessions:?}"
+        );
+        // The rename that sorts the dirs in reverse: the first takes the last name.
+        let renamed = |text: &str| {
+            sessions
+                .iter()
+                .enumerate()
+                .fold(text.to_owned(), |text, (i, id)| {
+                    text.replace(
+                        id,
+                        &format!("{:08x}-0000-4000-8000-000000000000", sessions.len() - i),
+                    )
+                })
         };
-        assert!(same_up_to_ids(&refs(&run(U1, U2)), &refs(&run(U3, U2))));
+        let new: Vec<(String, String)> = old
+            .iter()
+            .map(|(path, text)| (renamed(path), renamed(text)))
+            .collect();
+        assert!(same_up_to_ids(&refs(&old), &refs(&new)));
     }
 
     #[test]
