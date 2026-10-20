@@ -724,7 +724,7 @@ mod tests {
             r#"{"type":"subagent.completed","data":{"toolCallId":""}}"#,
             r#"{"type":"subagent.failed","agentId":"","data":{"toolCallId":""}}"#,
             // The STARTED arm is the other `copilot_child_key` call site, and
-            // `data.toolCallId` is the documented key for a spawn — the
+            // `data.toolCallId` is its fallback key without an `agentId` — the
             // existing started-arm test omits the key entirely, so the
             // empty-string shape was unpinned there.
             r#"{"type":"subagent.started","data":{"toolCallId":"","agentName":"x"}}"#,

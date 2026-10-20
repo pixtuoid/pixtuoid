@@ -1302,7 +1302,7 @@ mod tests {
     /// writes, judged as that scenario's run.
     fn recorded(source: &str, name: &str, scene: &str) -> tempfile::TempDir {
         let scenario = profile(source)
-            .and_then(|p| p.scenarios.iter().find(|s| s.name == name))
+            .and_then(|p| p.scenario(name))
             .expect("a profiled scenario");
         let src = crate::harness::sources_root().join(scenario.fixture);
         let d = run_of(&src, source, name, scene);
