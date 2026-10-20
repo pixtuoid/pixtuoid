@@ -206,6 +206,8 @@ pub mod recorder_flag {
     pub const DAEMON: &str = "--daemon";
     /// One word of `Options::daemon`'s readiness probe.
     pub const DAEMON_READY: &str = "--daemon-ready";
+    /// One word of `Options::resume`, the invocation a second turn runs.
+    pub const RESUME: &str = "--resume-word";
 }
 
 /// What only the recorder knows about a raw (`--out`) capture.
@@ -217,6 +219,28 @@ pub struct CaptureRecord {
     pub cli: String,
     /// Its `--version`.
     pub version: String,
+    /// Its exit code; `None` when a signal ended it.
+    pub exit_code: Option<i32>,
+    /// The turn that resumed its session, for a run that had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed: Option<Resumed>,
+}
+
+impl CaptureRecord {
+    /// Whether the CLI ran `shape`'s turn as scripted, and the turn resuming
+    /// it where one ran.
+    pub fn exited_as_scripted(&self, shape: crate::harness::hermetic::Shape) -> bool {
+        shape.exits_as_scripted(self.exit_code)
+            && self
+                .resumed
+                .as_ref()
+                .is_none_or(|r| shape.exits_as_scripted(r.exit_code))
+    }
+}
+
+/// A second turn, as the recorder ran it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resumed {
     /// Its exit code; `None` when a signal ended it.
     pub exit_code: Option<i32>,
 }
@@ -241,6 +265,14 @@ impl Capture {
     pub(crate) fn jsonl_files(&self) -> Vec<PathBuf> {
         jsonl_files_under(&self.dir)
     }
+}
+
+/// A file's lines that parse; the Drive reports the ones that don't.
+pub(crate) fn json_lines(file: &Path) -> std::io::Result<Vec<serde_json::Value>> {
+    Ok(std::fs::read_to_string(file)?
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect())
 }
 
 /// Every `.jsonl` under `dir`, recursively, sorted.

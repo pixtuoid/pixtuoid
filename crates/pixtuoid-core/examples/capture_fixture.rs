@@ -20,7 +20,7 @@ mod recorder {
     use std::time::{Duration, SystemTime};
 
     use pixtuoid_core::harness::reads::{self, Deidentified};
-    use pixtuoid_core::source::{registry, resolved_source_root};
+    use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
     /// One prompt for every source, so captures stay comparable: reading the SAME
     /// file twice around a list forces both shapes the composed fixtures got wrong —
@@ -29,20 +29,27 @@ mod recorder {
     /// the CLI refuses to run unasked).
     const DEFAULT_PROMPT: &str =
         "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
+    const PROMPT_ENV: &str = "CAPTURE_PROMPT";
+    const SEED_ENV: &str = "CAPTURE_SEED";
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest};
+    use pixtuoid_core::harness::hermetic::dropped::Dropped;
+    use pixtuoid_core::harness::hermetic::{
+        self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
+    };
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
     use pixtuoid_core::harness::recorder_flag::{
-        CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, TEE, WITHIN, WORKSPACE,
+        CLI_VERSION, DAEMON, DAEMON_READY, ENV, OUT, PREPARE_ROOT, PROMOTE, RESUME, TEE, WITHIN,
+        WORKSPACE,
     };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, HOOK_PAYLOADS,
-        PROVENANCE, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
+        PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
+    use serde_json::Value;
 
     /// Where a driver names the CLI it drives, a command or the path to its
     /// binary, for the recorder to ask its `--version`.
@@ -63,11 +70,13 @@ mod recorder {
         scratch.join("driver")
     }
 
-    /// [`hermetic::Shape::exits_as_scripted`] for `source`'s profiled `scenario`.
-    fn exited_as_scripted(source: &str, scenario: &str, code: Option<i32>) -> bool {
+    /// [`CaptureRecord::exited_as_scripted`] for `source`'s profiled `scenario`.
+    fn exited_as_scripted(source: &str, scenario: &str, record: &CaptureRecord) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(code == Some(0), |s| s.shape.exits_as_scripted(code))
+            .map_or(record.exit_code == Some(0), |s| {
+                record.exited_as_scripted(s.shape)
+            })
     }
 
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
@@ -114,6 +123,9 @@ mod recorder {
         prepare_root: Option<String>,
         /// A server the CLI talks to, run around the CLI's run.
         daemon: Option<DaemonCmd>,
+        /// A second turn's words, run once the first's CLI exited:
+        /// [`SESSION_PLACEHOLDER`] names the session the first turn's wire did.
+        resume: Vec<String>,
     }
 
     /// A [`DAEMON`]'s words, and its [`DAEMON_READY`] probe's: what exits 0
@@ -182,6 +194,7 @@ mod recorder {
                 }
                 DAEMON => daemon.start.push(take(&mut args, DAEMON)?),
                 DAEMON_READY => daemon.ready.push(take(&mut args, DAEMON_READY)?),
+                RESUME => options.resume.push(take(&mut args, RESUME)?),
                 ENV => {
                     let value = take(&mut args, ENV)?;
                     let (k, v) = value
@@ -191,6 +204,11 @@ mod recorder {
                 }
                 _ => break,
             }
+        }
+        if !options.resume.is_empty() && options.out.is_none() {
+            return Err(format!(
+                "{RESUME} runs only under {OUT}: a committed capture records one turn"
+            ));
         }
         if daemon != DaemonCmd::default() {
             if daemon.start.is_empty() || daemon.ready.is_empty() {
@@ -265,8 +283,9 @@ mod recorder {
             eprintln!(
                 "usage: capture_fixture [{OUT} <dir>] [{TEE} <socket|pipe>] [{WITHIN} <dir>] [{ENV} K=V]... \
                  [{CLI_VERSION} <version>] [{WORKSPACE} <dir>] [{DAEMON} <word>]... [{DAEMON_READY} <word>]... \
+                 [{RESUME} <word>]... \
                  <source-id> <scenario> <cmd...>   \
-                 ('{{prompt}}' expands)\n       \
+                 ('{PROMPT_PLACEHOLDER}' expands)\n       \
                  capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
                  capture_fixture {PROMOTE} <run>   (write a hermetic run into its fixture)\n       \
                  capture_fixture {WITHIN} <dir> {PREPARE_ROOT} <source-id>   (create its root; no CLI)"
@@ -276,10 +295,10 @@ mod recorder {
         let (source, scenario) = (args[0].clone(), args[1].clone());
         // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
         // `{prompt}` to nothing and record `"prompt": ""` as if it were a choice.
-        let prompt = nonempty_env("CAPTURE_PROMPT").unwrap_or_else(|| DEFAULT_PROMPT.to_string());
+        let prompt = nonempty_env(PROMPT_ENV).unwrap_or_else(|| DEFAULT_PROMPT.to_string());
         let cmd: Vec<String> = args[2..]
             .iter()
-            .map(|a| a.replace("{prompt}", &prompt))
+            .map(|a| a.replace(PROMPT_PLACEHOLDER, &prompt))
             .collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -306,8 +325,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let _recording = record_lock(&ws, &capture_workspace()?, &capture_root()?)?;
-        let workspace = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -340,6 +358,39 @@ mod recorder {
             &options.env,
         )?
         .status()?;
+        let resumed = if options.resume.is_empty() {
+            None
+        } else {
+            tap.settle();
+            let born = root.as_deref().map_or_else(Vec::new, |r| {
+                born_transcripts(&source, r, started, options.within.is_some())
+            });
+            match first_session(&source, &tap.payloads(), &born) {
+                Some(session) => {
+                    let turn: Vec<String> = options
+                        .resume
+                        .iter()
+                        .map(|w| w.replace(SESSION_PLACEHOLDER, &session))
+                        .collect();
+                    let exit = wired(
+                        &turn,
+                        &workspace,
+                        &wiring,
+                        descriptor.verified_version,
+                        &options.env,
+                    )?
+                    .status()?;
+                    Some(Resumed {
+                        exit_code: exit.code(),
+                    })
+                }
+                None => {
+                    eprintln!("the first turn's wire named no session to resume");
+                    None
+                }
+            }
+        };
+        let unresumed = !options.resume.is_empty() && resumed.is_none();
         let stopped = daemon.map_or(Ok(()), |d| d.stop(DAEMON_STOP_GRACE));
         tap.settle();
         let payloads = tap.payloads();
@@ -359,9 +410,7 @@ mod recorder {
         // A source can be BOTH: CC's tool run is in the transcript while its
         // permission gate is a hook event, so the two are harvested together.
         if let Some(root) = root.as_deref() {
-            let candidates = pixtuoid_core::harness::transcripts_under(&source, root);
-            let born = born_after(&candidates, started);
-            for fresh in harvested(born, options.within.is_some()) {
+            for fresh in born_transcripts(&source, root, started, options.within.is_some()) {
                 wrote.push(place_transcript(&source, &fresh, &dest)?);
             }
         }
@@ -384,6 +433,7 @@ mod recorder {
                 cli,
                 version,
                 exit_code: status.code(),
+                resumed,
             };
             std::fs::write(
                 dest.join(CAPTURE_RECORD),
@@ -392,7 +442,8 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if incomplete.is_some() || !exited_as_scripted(&source, &scenario, status.code()) {
+            if incomplete.is_some() || unresumed || !exited_as_scripted(&source, &scenario, &record)
+            {
                 keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
@@ -414,8 +465,8 @@ mod recorder {
             &args[2..],
             &deidentified,
             &[
-                ("prompt", nonempty_env("CAPTURE_PROMPT")),
-                ("seed", nonempty_env("CAPTURE_SEED")),
+                ("prompt", nonempty_env(PROMPT_ENV).map(Value::String)),
+                ("seed", nonempty_env(SEED_ENV).map(Value::String)),
             ],
         )?;
         for p in &wrote {
@@ -486,6 +537,14 @@ mod recorder {
             std::fs::copy(&raw, &to)?;
             wrote.push(to);
         }
+        // Before the strip: what the decoders drop is what it blanks.
+        let dropped = match exempt {
+            None => Some(serde_json::to_value(Dropped::of_files(
+                &manifest.source,
+                &wrote,
+            )?)?),
+            Some(_) => None,
+        };
         let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
         let script = scenario.script(&manifest.source);
         // The record names its script as every host's checkout spells it.
@@ -503,8 +562,12 @@ mod recorder {
             &command,
             &deidentified,
             &[
-                (hermetic::PROVENANCE_AIMOCK, Some(manifest.aimock.clone())),
-                ("script", Some(script)),
+                (
+                    hermetic::PROVENANCE_AIMOCK,
+                    Some(Value::String(manifest.aimock.clone())),
+                ),
+                ("script", Some(Value::String(script))),
+                (hermetic::PROVENANCE_DROPPED, dropped),
             ],
         )?;
         refuse_on_pii(&wrote, needles)?;
@@ -548,6 +611,46 @@ mod recorder {
             born = born.split_off(born.len().saturating_sub(1));
         }
         born
+    }
+
+    /// What the harvest keeps of `source`'s transcripts under `root` born since
+    /// `started`.
+    fn born_transcripts(
+        source: &str,
+        root: &Path,
+        started: SystemTime,
+        sandboxed: bool,
+    ) -> Vec<PathBuf> {
+        harvested(
+            born_after(
+                &pixtuoid_core::harness::transcripts_under(source, root),
+                started,
+            ),
+            sandboxed,
+        )
+    }
+
+    /// The root session the first turn's own wire names: the first its hook
+    /// payloads decode to, else the one its source derives from its first
+    /// transcript's path, as the watcher keys it.
+    fn first_session(source: &str, payloads: &[String], transcripts: &[PathBuf]) -> Option<String> {
+        Drive::hooks()
+            .lines(payloads)
+            .events
+            .into_iter()
+            .find_map(|e| match e {
+                AgentEvent::SessionStart {
+                    session_id,
+                    parent_id: None,
+                    ..
+                } => Some(session_id),
+                _ => None,
+            })
+            .or_else(|| {
+                transcripts
+                    .first()
+                    .map(|t| registry::id_deriver_for(source)(t))
+            })
     }
 
     /// Where `fresh` lands under `dest`: under as few of its own parent dirs as
@@ -601,28 +704,25 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// The file, under the capture root, whose lock a capture of the canonical
-    /// workspace holds.
+    /// The file, beside a capture base, whose lock a capture there holds.
     const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The lock a capture in `ws` holds until it ends: `canonical`'s, under
-    /// `root`, since every capture there clears it, so they take turns. A
-    /// workspace of a run's own takes none.
-    fn record_lock(
-        ws: &Path,
-        canonical: &Path,
-        root: &Path,
-    ) -> std::io::Result<Option<std::fs::File>> {
-        if ws != canonical {
-            return Ok(None);
-        }
-        hold_lock(&root.join(RECORD_LOCK)).map(Some)
+    /// The lock a capture in `base` holds until it ends, in the directory the
+    /// base sits in: the capture root for the canonical workspace, which every
+    /// recording clears, so they take turns; a replay's own root for its own,
+    /// which nothing else locks.
+    fn record_lock(base: &Path) -> std::io::Result<std::fs::File> {
+        // Read off the base, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
+        hold_lock(&base.with_file_name(RECORD_LOCK))
     }
 
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
+    /// `ws` made afresh, and the lock held while the capture uses it.
+    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
+        let lock = record_lock(base)?;
         // A fixed name in a shared directory is pre-plantable; a foreign owner is
         // refused, not removed — under the sticky bit the remove fails and the
         // capture lands in theirs. Asked of the entry, so a dangling planted link
@@ -642,11 +742,11 @@ mod recorder {
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
         std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n"))?;
-        if let Some(seed) = std::env::var_os("CAPTURE_SEED") {
+        if let Some(seed) = std::env::var_os(SEED_ENV) {
             copy_tree(Path::new(&seed), &ws)?;
         }
         init_repo(&ws)?;
-        Ok(ws)
+        Ok((ws, lock))
     }
 
     /// Make `ws` its own repository, every step of which must succeed: that
@@ -936,7 +1036,7 @@ mod recorder {
         (cli, version): (&str, &str),
         raw: &[String],
         deidentified: &Deidentified,
-        overrides: &[(&str, Option<String>)],
+        overrides: &[(&str, Option<Value>)],
     ) -> std::io::Result<()> {
         let mut prov = serde_json::json!({
             "origin": "recorded",
@@ -951,7 +1051,7 @@ mod recorder {
         if let Some(map) = prov.as_object_mut() {
             for (key, value) in overrides {
                 if let Some(v) = value {
-                    map.insert((*key).into(), serde_json::Value::String(v.clone()));
+                    map.insert((*key).into(), v.clone());
                 }
             }
         }
@@ -1158,21 +1258,22 @@ mod recorder {
         const OPERATOR: &str = "Ada Lovelace";
 
         #[test]
-        fn only_a_capture_of_the_canonical_workspace_takes_turns() {
+        fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
-            let canonical = d.path().join("pixtuoid-capture/proj");
-            let own = d.path().join("pixtuoid-run-1/pixtuoid-capture/proj");
-            assert!(
-                record_lock(&own, &canonical, d.path())
-                    .expect("no lock")
-                    .is_none()
-            );
-            let held = record_lock(&canonical, &canonical, d.path()).expect("the lock");
-            assert!(held.is_some());
+            let own = d.path().join("pixtuoid-run-1");
+            std::fs::create_dir(&own).expect("a replay's root");
+            let base = |root: &Path| {
+                capture_base(&root.join(capture_workspace_tail()))
+                    .expect("a capture base")
+                    .to_path_buf()
+            };
+            let held = record_lock(&base(d.path())).expect("the canonical lock");
+            let replay = record_lock(&base(&own)).expect("a replay never waits on a recording");
             let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
-            assert!(other.try_lock().is_err(), "a second capture waits");
+            assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
+            drop((other, replay));
         }
 
         struct Promotable {
@@ -1216,6 +1317,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
+                    resumed: None,
                 },
                 aimock: "1.43.0".into(),
                 requests: 3,
@@ -1275,6 +1377,70 @@ mod recorder {
                 record.get("note").is_none(),
                 "the record is the run's, not the old one"
             );
+            assert!(
+                record[hermetic::PROVENANCE_DROPPED].is_object(),
+                "a stripped capture records its baseline, empty for hook payloads alone"
+            );
+        }
+
+        /// The baseline is taken before the strip: after it, a type the decoder
+        /// drops is gone from the bytes it would be read off.
+        #[test]
+        fn a_promoted_run_records_the_types_its_decoders_dropped() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (run, root) = (d.path().join("run"), d.path().join("sources"));
+            let fixture = hermetic::profile("copilot")
+                .and_then(|p| p.scenario("tool-run"))
+                .map(|s| s.fixture)
+                .expect("copilot's tool-run");
+            for from in jsonl_files_under(&sources_root().join(fixture)) {
+                let rel = from
+                    .strip_prefix(sources_root().join(fixture))
+                    .expect("under");
+                let to = run.join(rel);
+                std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                let mut text = std::fs::read_to_string(&from).expect("read");
+                if from.ends_with("events.jsonl") {
+                    text.push_str("{\"type\":\"assistant.zz_dropped\",\"data\":{\"x\":\"y\"}}\n");
+                }
+                std::fs::write(&to, text).expect("write");
+            }
+            let manifest = Manifest {
+                source: "copilot".into(),
+                scenario: "tool-run".into(),
+                capture: CaptureRecord {
+                    workspace: capture_workspace().expect("the workspace"),
+                    cli: "copilot".into(),
+                    version: "1.0.98".into(),
+                    exit_code: Some(0),
+                    resumed: None,
+                },
+                aimock: "1.45.1".into(),
+                requests: 2,
+                unmatched: 0,
+                results_seen: 1,
+            };
+            std::fs::write(
+                run.join(MANIFEST),
+                serde_json::to_string(&manifest).expect("json"),
+            )
+            .expect("manifest");
+            let dest = root.join(fixture);
+            std::fs::create_dir_all(&dest).expect("mkdir");
+            std::fs::write(dest.join(PROVENANCE), r#"{"origin":"recorded"}"#).expect("record");
+            promote(&run, &root, &needles()).expect("promote");
+            let record: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dest.join(PROVENANCE)).expect("record"),
+            )
+            .expect("json");
+            let dropped = &record[hermetic::PROVENANCE_DROPPED];
+            assert_eq!(dropped["os"], std::env::consts::OS, "{dropped}");
+            assert!(
+                dropped["at"]["/type"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().any(|t| t == "assistant.zz_dropped")),
+                "the planted type the decoder drops is the baseline's: {dropped}"
+            );
         }
 
         #[test]
@@ -1306,6 +1472,10 @@ mod recorder {
             );
             assert_eq!(record["deidentified"]["method"], "none");
             assert_eq!(record["deidentified"]["why"], why);
+            assert!(
+                record.get(hermetic::PROVENANCE_DROPPED).is_none(),
+                "an unstripped capture drops nothing it could baseline"
+            );
         }
 
         #[test]
@@ -1419,6 +1589,38 @@ mod recorder {
         }
 
         #[test]
+        fn the_resumed_session_is_the_one_the_first_turns_wire_names() {
+            let cc = sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+            let payloads: Vec<String> = std::fs::read_to_string(cc.join(HOOK_PAYLOADS))
+                .expect("payloads")
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            let transcript = pixtuoid_core::harness::transcript_in("claude-code", &cc)
+                .expect("the one transcript");
+            let named = first_session("claude-code", &payloads, &[]).expect("a hook-named session");
+            assert_eq!(
+                transcript.file_stem().and_then(|s| s.to_str()),
+                Some(named.as_str()),
+                "claude-code's hooks name the session its transcript keys"
+            );
+            // copilot fires no hooks; its session rides its transcript's path.
+            let cp = sources_root().join("fixtures/copilot/resume-hermetic");
+            let events =
+                pixtuoid_core::harness::transcript_in("copilot", &cp).expect("the one transcript");
+            let dir = events
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|n| n.to_str())
+                .expect("the session dir");
+            assert_eq!(
+                first_session("copilot", &[], std::slice::from_ref(&events)).as_deref(),
+                Some(dir)
+            );
+            assert_eq!(first_session("copilot", &[], &[]), None);
+        }
+
+        #[test]
         fn leading_option_pairs_are_options_and_the_rest_is_positional() {
             let args = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
             let ws = capture_workspace().expect("the workspace");
@@ -1447,6 +1649,27 @@ mod recorder {
             assert_eq!(o.within, Some(PathBuf::from("/w")));
             assert_eq!(o.env, [("A".to_string(), "b=c".to_string())]);
             assert_eq!(rest, args(&["codex", "tool-run", "codex"]));
+            let (o, _) = parse_options(args(&[
+                "--out",
+                "/o",
+                RESUME,
+                "claude",
+                RESUME,
+                "--resume",
+                RESUME,
+                "{session}",
+                "claude-code",
+            ]))
+            .expect("parse");
+            assert_eq!(
+                o.resume,
+                args(&["claude", "--resume", "{session}"]),
+                "a second turn's words, in order, a flag of the CLI's among them"
+            );
+            assert!(
+                parse_options(args(&[RESUME, "claude", "claude-code"])).is_err(),
+                "a resumed turn outside a raw capture"
+            );
             assert!(
                 parse_options(args(&["--env", "NOEQUALS", "codex"])).is_err(),
                 "an env pair without its value"
@@ -1741,7 +1964,7 @@ mod recorder {
                 ("true", "1.0"),
                 &argv,
                 &Deidentified::Stripped(0),
-                &[("prompt", Some("read NOTE.txt".into()))],
+                &[("prompt", Some(Value::String("read NOTE.txt".into())))],
             )
             .expect("write");
             assert_eq!(read(set.path())["prompt"], "read NOTE.txt");
@@ -2068,10 +2291,44 @@ mod recorder {
 
         #[test]
         fn only_a_profiled_failing_turn_may_exit_non_zero() {
-            assert!(exited_as_scripted("openclaw", "model-error", Some(1)));
-            assert!(!exited_as_scripted("openclaw", "tool-run", Some(1)));
-            assert!(!exited_as_scripted("unprofiled", "model-error", Some(1)));
-            assert!(exited_as_scripted("unprofiled", "model-error", Some(0)));
+            let exited = |exit_code, resumed: Option<i32>| CaptureRecord {
+                workspace: PathBuf::from("/ws"),
+                cli: "cli".into(),
+                version: "1".into(),
+                exit_code,
+                resumed: resumed.map(|code| Resumed {
+                    exit_code: Some(code),
+                }),
+            };
+            assert!(exited_as_scripted(
+                "openclaw",
+                "model-error",
+                &exited(Some(1), None)
+            ));
+            assert!(!exited_as_scripted(
+                "openclaw",
+                "tool-run",
+                &exited(Some(1), None)
+            ));
+            assert!(!exited_as_scripted(
+                "unprofiled",
+                "model-error",
+                &exited(Some(1), None)
+            ));
+            assert!(exited_as_scripted(
+                "unprofiled",
+                "model-error",
+                &exited(Some(0), None)
+            ));
+            assert!(exited_as_scripted(
+                "claude-code",
+                "ultra-effort",
+                &exited(Some(0), Some(0))
+            ));
+            assert!(
+                !exited_as_scripted("claude-code", "ultra-effort", &exited(Some(0), Some(1))),
+                "its resumed turn is held to the same bar"
+            );
         }
 
         #[test]

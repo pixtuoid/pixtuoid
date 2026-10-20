@@ -15,6 +15,7 @@ use crate::source::registry;
 
 pub mod bump;
 pub mod digest;
+pub mod dropped;
 mod literals;
 pub mod pin;
 pub mod tui;
@@ -38,6 +39,11 @@ pub const WORKSPACE_PLACEHOLDER: &str = "{workspace}";
 /// JSON string holds unescaped: how Claude Code keys its projects on Windows
 /// (`Xz` in the 2.1.302 bundle).
 pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = "{workspace_slashed}";
+/// What a [`Profile::invocation`] or [`Profile::resume`] spells its turn's
+/// prompt as.
+pub const PROMPT_PLACEHOLDER: &str = "{prompt}";
+/// What a [`Profile::resume`] spells the session its turn resumes as.
+pub const SESSION_PLACEHOLDER: &str = "{session}";
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
 pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = "{shell_tool}";
@@ -136,7 +142,7 @@ pub enum Shape {
 impl Shape {
     /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
     /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
         match code {
             Some(0) => true,
             Some(_) => match self {
@@ -157,7 +163,8 @@ pub enum Surface {
     Tui(&'static tui::Tui),
 }
 
-/// One scripted turn of a CLI.
+/// A CLI's scripted turn, and the turn resuming it where [`Turn::resume`]
+/// names one.
 #[derive(Debug)]
 pub struct Scenario {
     /// Its name, unique in its profile: its script's file stem, its run
@@ -172,6 +179,29 @@ pub struct Scenario {
     /// The committed recording `--record` rewrites, under `tests/sources`: the
     /// tier's own, beside any capture still carrying a field the profile owes.
     pub fixture: &'static str,
+    /// What its turn asks of the CLI beyond the profile's invocation.
+    pub turn: Turn,
+}
+
+/// A scenario's own part of its turn.
+#[derive(Debug)]
+pub struct Turn {
+    /// Appended to the profile's headless invocation.
+    pub args: &'static [&'static str],
+    /// Its prompt, in place of the recorder's shared one.
+    pub prompt: Option<&'static str>,
+    /// The prompt of a second headless turn, resuming this one's session in
+    /// the same sandbox and workspace once its CLI exited.
+    pub resume: Option<&'static str>,
+}
+
+impl Turn {
+    /// The profile's invocation as it stands.
+    pub const PROFILE: Self = Self {
+        args: &[],
+        prompt: None,
+        resume: None,
+    };
 }
 
 /// A daemon's own live tier, driven against this build.
@@ -232,8 +262,13 @@ pub struct Profile {
     pub source: &'static str,
     /// How users install it.
     pub package: Package,
-    /// The headless invocation; `{prompt}` expands (the recorder's own rule).
+    /// The headless invocation: [`PROMPT_PLACEHOLDER`] expands to the
+    /// scenario's prompt in the runner, else to the recorder's shared one.
     pub invocation: &'static [&'static str],
+    /// The headless invocation that resumes a session, as [`Turn::resume`] runs
+    /// it: the runner expands [`PROMPT_PLACEHOLDER`], the recorder
+    /// [`SESSION_PLACEHOLDER`].
+    pub resume: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
     /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
     pub env: &'static [(&'static str, &'static str)],
@@ -330,6 +365,14 @@ pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
+
+/// The file beside a run's report counting its New findings, which
+/// `hermetic.yml` reads to upload a run that passed with one.
+pub const NEW_TYPES: &str = "new-types.json";
+
+/// The provenance key holding what a tier recording's decoders dropped
+/// ([`dropped::Dropped`]), the baseline a New finding is judged against.
+pub const PROVENANCE_DROPPED: &str = "dropped";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -485,9 +528,10 @@ const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
         deny: &[tui::Key::Esc],
-        // A dialog ignores keys for its first 150 ms and restarts that on each
-        // ignored key (`AM=150` in the 2.1.302 bundle).
-        dwell: std::time::Duration::from_millis(400),
+        // Past the 6 s an unanswered dialog waits before it fires `Notification`
+        // (`qYt=6000` in `eTe`, the 2.1.302 bundle), and so past the 150 ms it
+        // ignores keys for (`AM=150`).
+        dwell: std::time::Duration::from_secs(7),
     }],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
@@ -616,7 +660,16 @@ pub const PROFILES: &[Profile] = &[
     Profile {
         source: "claude-code",
         package: Package::Npm("@anthropic-ai/claude-code"),
-        invocation: &["claude", "-p", "{prompt}"],
+        invocation: &["claude", "-p", PROMPT_PLACEHOLDER],
+        // `-r, --resume [value]`: "Resume a conversation by session ID"
+        // (`claude --help` at 2.1.302).
+        resume: Some(&[
+            "claude",
+            "-p",
+            PROMPT_PLACEHOLDER,
+            "--resume",
+            SESSION_PLACEHOLDER,
+        ]),
         env: &[
             ("ANTHROPIC_BASE_URL", "http://127.0.0.1:{port}"),
             // A bearer token, not `ANTHROPIC_API_KEY`: the TUI asks to approve an API
@@ -659,6 +712,22 @@ pub const PROFILES: &[Profile] = &[
                 surface: Surface::Headless,
                 expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
                 fixture: "fixtures/claude-code/tool-run-hermetic",
+                turn: Turn::PROFILE,
+            },
+            // Ultracode on enters, a prompt naming ultrathink adds its effort,
+            // and the resumed turn, ultracode off, exits (`GQr`, `jQr` in the
+            // 2.1.302 bundle).
+            Scenario {
+                name: "ultra-effort",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
+                fixture: "fixtures/claude-code/ultra-effort-hermetic",
+                turn: Turn {
+                    args: &["--effort", "ultracode"],
+                    prompt: Some("ultrathink: read NOTE.txt."),
+                    resume: Some("Say done."),
+                },
             },
             Scenario {
                 name: "subagent",
@@ -673,6 +742,7 @@ pub const PROFILES: &[Profile] = &[
                     "SessionEnd",
                 ],
                 fixture: "claude/fixtures/subagent-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -682,24 +752,22 @@ pub const PROFILES: &[Profile] = &[
                     "SessionStart",
                     "PreToolUse",
                     "PermissionRequest",
+                    "Notification",
                     "SessionEnd",
                 ],
                 fixture: "fixtures/claude-code/permission-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
-        not_yet: &["Notification"],
+        not_yet: &[],
         event_name: hook_event_name,
         not_yet_fields: &[
             // aimock's Messages usage is input and output tokens alone
             // (`CopilotKit/aimock` `src/messages.ts:413-421` at v1.45.1).
             ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
         ],
-        not_yet_literals: &[
-            "ultra_effort_enter",
-            "ultra_effort_exit",
-            "ultrathink_effort",
-        ],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -717,8 +785,9 @@ pub const PROFILES: &[Profile] = &[
             "codex",
             "exec",
             "--dangerously-bypass-hook-trust",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
+        resume: None,
         env: &[("HERMETIC_API_KEY", "{key}")],
         homes: &[],
         // System config, requirements and managed config; `CODEX_HOME` never
@@ -786,6 +855,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/codex/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "custom-tool",
@@ -801,6 +871,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/codex/custom-tool-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -817,6 +888,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "codex/fixtures/subagent-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -830,6 +902,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/codex/permission-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -868,8 +941,9 @@ trust_level = "trusted"
             "--standalone",
             "--model",
             "openai/gpt-5.2",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
+        resume: None,
         // The models.dev fetch and the update check
         // (`packages/cli/src/server-process.ts:113`, `services/updater.ts:534`).
         env: &[
@@ -931,6 +1005,7 @@ trust_level = "trusted"
                     "session.execution.succeeded",
                 ],
                 fixture: "fixtures/opencode/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -944,6 +1019,7 @@ trust_level = "trusted"
                     "session.execution.succeeded",
                 ],
                 fixture: "opencode/fixtures/subagent-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "model-error",
@@ -955,6 +1031,7 @@ trust_level = "trusted"
                     "session.execution.failed",
                 ],
                 fixture: "fixtures/opencode/model-error-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -969,6 +1046,7 @@ trust_level = "trusted"
                     "session.execution.succeeded",
                 ],
                 fixture: "fixtures/opencode/permission-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -985,7 +1063,8 @@ trust_level = "trusted"
     Profile {
         source: "dsh",
         package: Package::Npm("@deepseek-ai/dsh"),
-        invocation: &["dsh", "--profile", "headless", "{prompt}"],
+        invocation: &["dsh", "--profile", "headless", PROMPT_PLACEHOLDER],
+        resume: None,
         // The Messages endpoint and key come from the launch environment
         // (`packages/llm/llm-deepseek/src/config.ts:290`,
         // `packages/llm/llm-deepseek-api-key/src/index.ts:20-35`); the feedback
@@ -1019,6 +1098,7 @@ trust_level = "trusted"
                     "agent/disposed",
                 ],
                 fixture: "fixtures/dsh/tool-run-recorded",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1035,6 +1115,7 @@ trust_level = "trusted"
                     "agent/disposed",
                 ],
                 fixture: "fixtures/dsh/permission-recorded",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -1049,6 +1130,7 @@ trust_level = "trusted"
                     "agent/disposed",
                 ],
                 fixture: "delegation/fixtures/dsh",
+                turn: Turn::PROFILE,
             },
         ],
         // The shell tool win32 mounts in bash's place, which alone can
@@ -1073,7 +1155,8 @@ trust_level = "trusted"
     Profile {
         source: "kimi",
         package: Package::Npm("@moonshot-ai/kimi-code"),
-        invocation: &["kimi", "-p", "{prompt}"],
+        invocation: &["kimi", "-p", PROMPT_PLACEHOLDER],
+        resume: None,
         // `KIMI_MODEL_NAME` builds a provider from the environment
         // (`docs/en/configuration/env-vars.md:106-124`); the telemetry and
         // update-check switches (`:27`, `:185`).
@@ -1108,6 +1191,7 @@ trust_level = "trusted"
                 surface: Surface::Headless,
                 expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
                 fixture: "fixtures/kimi/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1122,6 +1206,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/kimi/permission-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "model-error",
@@ -1129,6 +1214,7 @@ trust_level = "trusted"
                 surface: Surface::Headless,
                 expects: &["SessionStart", "StopFailure"],
                 fixture: "fixtures/kimi/model-error-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -1150,7 +1236,8 @@ trust_level = "trusted"
         // (`crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md:76-94`),
         // which a blocking spawn needs: `-p` cancels every prompt
         // (`crates/codegen/xai-grok-pager/src/headless.rs:1882-1901`).
-        invocation: &["grok", "--always-approve", "-p", "{prompt}"],
+        invocation: &["grok", "--always-approve", "-p", PROMPT_PLACEHOLDER],
+        resume: None,
         // What upstream's own run against a mock server sets: every service
         // URL on it, and the telemetry, feedback, update and unscripted
         // side-request switches
@@ -1212,6 +1299,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/grok/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             // A tool that fails to dispatch fires PostToolUseFailure, a built-in's
             // logical error PostToolUse, and `use_tool` on a tool no server holds
@@ -1231,6 +1319,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/grok/tool-error-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -1247,6 +1336,7 @@ trust_level = "trusted"
                     "SessionEnd",
                 ],
                 fixture: "grok/fixtures/subagent-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1263,6 +1353,7 @@ trust_level = "trusted"
                     "Stop",
                 ],
                 fixture: "fixtures/grok/permission-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "model-error",
@@ -1270,13 +1361,34 @@ trust_level = "trusted"
                 surface: Surface::Headless,
                 expects: &["SessionStart", "UserPromptSubmit", "StopFailure"],
                 fixture: "fixtures/grok/model-error-hermetic",
+                turn: Turn::PROFILE,
+            },
+            // A question headless cannot answer: the shell fires the
+            // `elicitation_dialog` notification, then headless cancels it at
+            // once (at main 2bdd1d6a: `crates/codegen/xai-grok-shell/src/session/acp_session_impl/spawn.rs:2336-2341`,
+            // `crates/codegen/xai-grok-pager/src/headless/ext_protocol.rs:27`).
+            Scenario {
+                name: "ask-user",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Notification",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/grok/ask-user-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
         not_yet: &[],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1293,8 +1405,9 @@ trust_level = "trusted"
             "--allowed-tools",
             "task,explore",
             "-p",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
+        resume: None,
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
@@ -1336,6 +1449,7 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/reasonix/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -1352,6 +1466,7 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "reasonix/fixtures/subagent-hermetic",
+                turn: Turn::PROFILE,
             },
             // A skill tool's child fires no SubagentStart or SubagentStop.
             Scenario {
@@ -1367,6 +1482,7 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "reasonix/fixtures/explore-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "bash-run",
@@ -1381,6 +1497,7 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/reasonix/bash-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1395,6 +1512,7 @@ model = "deepseek-v4-flash"
                     "SessionEnd",
                 ],
                 fixture: "fixtures/reasonix/permission-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -1412,7 +1530,16 @@ model = "deepseek-v4-flash"
     Profile {
         source: "copilot",
         package: Package::Npm("@github/copilot"),
-        invocation: &["copilot", "-p", "{prompt}"],
+        invocation: &["copilot", "-p", PROMPT_PLACEHOLDER],
+        // `-r, --resume [<value>]`: "optionally specify existing session ID"
+        // (`copilot --help` at 1.0.98).
+        resume: Some(&[
+            "copilot",
+            "--resume",
+            SESSION_PLACEHOLDER,
+            "-p",
+            PROMPT_PLACEHOLDER,
+        ]),
         // The BYOK provider, with GitHub's servers kept out
         // (`/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models`).
         env: &[
@@ -1450,6 +1577,19 @@ model = "deepseek-v4-flash"
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/tool-run-hermetic",
+                turn: Turn::PROFILE,
+            },
+            Scenario {
+                name: "resume",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[],
+                fixture: "fixtures/copilot/resume-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: None,
+                    resume: Some("Say done."),
+                },
             },
             Scenario {
                 name: "permission",
@@ -1457,6 +1597,7 @@ model = "deepseek-v4-flash"
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "fixtures/copilot/permission-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -1464,6 +1605,7 @@ model = "deepseek-v4-flash"
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "delegation/fixtures/copilot",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "child-error",
@@ -1471,6 +1613,7 @@ model = "deepseek-v4-flash"
                 surface: Surface::Headless,
                 expects: &[],
                 fixture: "copilot/fixtures/child-error-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         // The shell tool is `bash` or `powershell`
@@ -1498,7 +1641,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.resume", "session.task_complete"],
+        not_yet_literals: &["session.task_complete"],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
@@ -1526,7 +1669,8 @@ model = "deepseek-v4-flash"
             ],
             sums: "SHA256SUMS.txt",
         },
-        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", "{prompt}"],
+        invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", PROMPT_PLACEHOLDER],
+        resume: None,
         // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
         env: &[("PI_AUTO_QA", "0")],
         homes: &[],
@@ -1576,6 +1720,7 @@ async:
                 surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
                 fixture: "omp/fixtures/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1588,6 +1733,7 @@ async:
                     "session_shutdown",
                 ],
                 fixture: "omp/fixtures/permission-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "subagent",
@@ -1595,6 +1741,7 @@ async:
                 surface: Surface::Headless,
                 expects: &["session_start", "session_shutdown"],
                 fixture: "delegation/fixtures/omp",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -1630,7 +1777,8 @@ async:
         package: Package::UvLocked("NousResearch/hermes-agent"),
         // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
         // and a hook runs only once accepted.
-        invocation: &["hermes", "--accept-hooks", "-z", "{prompt}"],
+        invocation: &["hermes", "--accept-hooks", "-z", PROMPT_PLACEHOLDER],
+        resume: None,
         env: &[],
         // The managed scope, which otherwise is `/etc/hermes`
         // (`hermes_cli/managed_scope.py:31`, `:45-58`).
@@ -1676,6 +1824,7 @@ telemetry:
                     "on_session_finalize",
                 ],
                 fixture: "fixtures/hermes/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "permission",
@@ -1690,6 +1839,7 @@ telemetry:
                     "on_session_finalize",
                 ],
                 fixture: "fixtures/hermes/permission-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -1719,7 +1869,8 @@ telemetry:
             ],
             member: "antigravity",
         },
-        invocation: &["agy", "-p", "{prompt}"],
+        invocation: &["agy", "-p", PROMPT_PLACEHOLDER],
+        resume: None,
         // The Gemini API route at a custom endpoint, and Go's proxy variables
         // (pkg.go.dev/net/http#ProxyFromEnvironment) sending all but the mock
         // to a closed port: an unproxied run updated its own binary.
@@ -1745,18 +1896,31 @@ telemetry:
             path: ".gemini/antigravity-cli/settings.json",
             template: "{\"modelProvider\": \"gemini\"}\n",
         }],
-        scenarios: &[Scenario {
-            name: "tool-run",
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "fixtures/antigravity/tool-run-hermetic",
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/tool-run-hermetic",
+                turn: Turn::PROFILE,
+            },
+            // `-p` answers the question itself: "Auto-answering ask_question at
+            // step %d with skipped=true" (`ask_question_manager.go:30`).
+            Scenario {
+                name: "ask-question",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/ask-question-hermetic",
+                turn: Turn::PROFILE,
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
-        not_yet_literals: &["ask_question"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
@@ -1774,8 +1938,9 @@ telemetry:
             "--session-id",
             "hermetic",
             "-m",
-            "{prompt}",
+            PROMPT_PLACEHOLDER,
         ],
+        resume: None,
         env: &[
             // Its automatic update checks, and the daily request each sends
             // (`docs/install/updating/automatic-updates.md:160-162`,
@@ -1834,6 +1999,7 @@ telemetry:
                     "session_end",
                 ],
                 fixture: "fixtures/openclaw/tool-run-hermetic",
+                turn: Turn::PROFILE,
             },
             Scenario {
                 name: "model-error",
@@ -1848,6 +2014,7 @@ telemetry:
                     "session_end",
                 ],
                 fixture: "fixtures/openclaw/model-error-hermetic",
+                turn: Turn::PROFILE,
             },
         ],
         script_vars: &[],
@@ -1937,6 +2104,16 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+        let yml = std::fs::read_to_string(bump::repo_root().join(".github/workflows/hermetic.yml"))
+            .expect("hermetic.yml");
+        assert!(
+            yml.contains(&format!("runs/{NEW_TYPES}")),
+            "a run that passed with a New finding uploads only as this file says"
+        );
+    }
 
     #[test]
     fn every_registered_source_is_profiled_or_says_why_not_and_never_both() {
@@ -2035,6 +2212,13 @@ mod tests {
                     p.source,
                     s.name
                 );
+                assert!(
+                    matches!(s.surface, Surface::Headless)
+                        || (s.turn.args.is_empty() && s.turn.resume.is_none()),
+                    "{}/{}: a TUI turn takes no args and resumes nothing",
+                    p.source,
+                    s.name
+                );
             }
         }
     }
@@ -2051,6 +2235,18 @@ mod tests {
                     p.source
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_resumed_scenarios_profile_names_how_its_session_resumes() {
+        for p in PROFILES {
+            let resumes = p.scenarios.iter().any(|s| s.turn.resume.is_some());
+            if let Some(words) = p.resume {
+                assert!(words.contains(&SESSION_PLACEHOLDER), "{}", p.source);
+                assert!(words.contains(&PROMPT_PLACEHOLDER), "{}", p.source);
+            }
+            assert!(!resumes || p.resume.is_some(), "{}: no resume", p.source);
         }
     }
 

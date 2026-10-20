@@ -129,7 +129,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
 }
 
 /// Decode one tool call, from either transport: a permission/question prompt
-/// becomes `Waiting`; anything else an `ActivityStart` keyed `tool_use_id`.
+/// becomes `Waiting`, anything else an `ActivityStart`, each keyed `tool_use_id`.
 fn decode_ag_tool_call(
     agent_id: AgentId,
     name: &str,
@@ -141,7 +141,7 @@ fn decode_ag_tool_call(
         return AgentEvent::Waiting {
             agent_id,
             reason: "asking permission".to_string(),
-            tool_use_id: None,
+            tool_use_id,
         };
     }
     let target = ag_tool_target(args);
@@ -498,7 +498,8 @@ mod tests {
         });
         let out = decode_ag_hook_payload(&hook("PreToolUse", ask)).unwrap();
         assert!(
-            out.iter().any(|e| matches!(e, AgentEvent::Waiting { .. })),
+            out.iter().any(|e| matches!(e,
+                AgentEvent::Waiting { tool_use_id: Some(t), .. } if t == "ag-4")),
             "{out:?}"
         );
     }

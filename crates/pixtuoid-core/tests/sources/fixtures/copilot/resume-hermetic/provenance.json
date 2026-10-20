@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "copilot",
+  "version": "GitHub Copilot CLI 1.0.98.",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record copilot",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 57
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/copilot/resume.json"
+}
