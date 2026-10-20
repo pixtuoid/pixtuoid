@@ -1,6 +1,6 @@
-{"type":"gateway_start","gatewayPort":63258,"_pid":64908,"_shim_ts_ms":1792482831483,"_pixtuoid_source":"openclaw"}
-{"type":"session_start","sessionId":"","gatewayPort":63258,"_pid":64908,"_shim_ts_ms":1792482833884,"_pixtuoid_source":"openclaw"}
-{"type":"before_agent_run","runId":"87cde34f-37e7-4859-905b-730b23073e86","sessionId":"","gatewayPort":63258,"_pid":64908,"_shim_ts_ms":1792482836570,"_pixtuoid_source":"openclaw"}
-{"type":"agent_end","runId":"87cde34f-37e7-4859-905b-730b23073e86","sessionId":"","gatewayPort":63258,"_pid":64908,"errored":false,"_shim_ts_ms":1792482837047,"_pixtuoid_source":"openclaw"}
-{"type":"gateway_stop","gatewayPort":63258,"_pid":64908,"_shim_ts_ms":1792482837298,"_pixtuoid_source":"openclaw"}
-{"type":"session_end","sessionId":"","gatewayPort":63258,"_pid":64908,"_shim_ts_ms":1792482837300,"_pixtuoid_source":"openclaw"}
+{"type":"gateway_start","gatewayPort":49239,"_pid":9670,"_shim_ts_ms":1792503647805,"_pixtuoid_source":"openclaw"}
+{"type":"session_start","sessionId":"","gatewayPort":49239,"_pid":9670,"_shim_ts_ms":1792503659966,"_pixtuoid_source":"openclaw"}
+{"type":"before_agent_run","runId":"f71da3df-c954-456c-afd8-0efbcba629ec","sessionId":"","gatewayPort":49239,"_pid":9670,"_shim_ts_ms":1792503671161,"_pixtuoid_source":"openclaw"}
+{"type":"agent_end","runId":"f71da3df-c954-456c-afd8-0efbcba629ec","sessionId":"","gatewayPort":49239,"_pid":9670,"errored":false,"_shim_ts_ms":1792503674340,"_pixtuoid_source":"openclaw"}
+{"type":"gateway_stop","gatewayPort":49239,"_pid":9670,"_shim_ts_ms":1792503676152,"_pixtuoid_source":"openclaw"}
+{"type":"session_end","sessionId":"","gatewayPort":49239,"_pid":9670,"_shim_ts_ms":1792503676154,"_pixtuoid_source":"openclaw"}

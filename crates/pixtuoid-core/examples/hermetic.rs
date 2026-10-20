@@ -1521,7 +1521,7 @@ mod run {
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
-            for (k, v) in p.env_on(cfg!(windows)) {
+            for (k, v) in p.env {
                 env.push(((*k).to_string(), expand(v).into()));
             }
             let sandbox = Self {
@@ -1551,7 +1551,8 @@ mod run {
         /// The profile's pairs as this sandbox holds them, then what the CLI's
         /// launch sets, for the recorder to set on the CLI as [`recorder_flag::ENV`].
         fn cli_env(&self, p: &Profile, launch: &Launch) -> Vec<String> {
-            p.env_on(cfg!(windows))
+            p.env
+                .iter()
                 .filter_map(|(k, _)| {
                     self.var_os(k)
                         .map(|v| format!("{k}={}", v.to_string_lossy()))
@@ -2007,6 +2008,9 @@ mod run {
                 for word in run.launch.argv().into_iter().chain(words) {
                     args.extend([flag.into(), word]);
                 }
+            }
+            for (k, v) in daemon.env {
+                args.extend([recorder_flag::DAEMON_ENV.into(), format!("{k}={v}").into()]);
             }
         }
         // A scenario's prompts expand here; the recorder expands only its own.
@@ -2758,6 +2762,23 @@ mod run {
                 words(recorder_flag::DAEMON_READY),
                 ["/cli/openclaw", "gateway", "health"]
             );
+            assert_eq!(
+                words(recorder_flag::DAEMON_ENV),
+                ["OPENCLAW_GATEWAY_HOST_LIFELINE=stdin"]
+            );
+            let sandbox = Sandbox::new(
+                p,
+                Path::new("/nowhere/shims"),
+                Path::new("/nowhere/bin"),
+                TEST_PORTS,
+                Path::new("/nowhere/ws"),
+            )
+            .expect("sandbox");
+            assert_eq!(
+                sandbox.var_os("OPENCLAW_GATEWAY_HOST_LIFELINE"),
+                None,
+                "the CLI, its probes and the live tier keep openclaw's own stop"
+            );
             let config: serde_json::Value =
                 serde_json::from_str(&config_text(p.config[0].template, TEST_PORTS, "/ws"))
                     .expect("valid JSON");
@@ -2917,7 +2938,7 @@ mod run {
                 let cli_env = sandbox.cli_env(p, &launch);
                 assert_eq!(
                     cli_env.len(),
-                    p.env_on(cfg!(windows)).count() + launch.env.len(),
+                    p.env.len() + launch.env.len(),
                     "{}",
                     p.source
                 );
@@ -2926,7 +2947,7 @@ mod run {
                     "{}: the launch's own env misses the CLI",
                     p.source
                 );
-                for (k, v) in p.env_on(cfg!(windows)) {
+                for (k, v) in p.env {
                     let want = v
                         .replace("{port}", &TEST_PORTS.model.to_string())
                         .replace(DAEMON_PORT_PLACEHOLDER, &TEST_PORTS.daemon.to_string())

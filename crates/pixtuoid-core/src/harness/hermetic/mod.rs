@@ -62,12 +62,11 @@ pub struct PerOs<T> {
 impl<T> PerOs<T> {
     /// The arm for the platform this was built for.
     pub const fn here(&self) -> &T {
-        self.on(cfg!(windows))
-    }
-
-    /// The arm for Windows when `windows`, else Unix's.
-    pub(crate) const fn on(&self, windows: bool) -> &T {
-        if windows { &self.windows } else { &self.unix }
+        if cfg!(windows) {
+            &self.windows
+        } else {
+            &self.unix
+        }
     }
 }
 
@@ -264,6 +263,8 @@ pub struct Daemon {
     pub start: &'static [&'static str],
     /// What exits 0 once it serves, after the CLI's binary.
     pub ready: &'static [&'static str],
+    /// Environment it alone gets, beside the profile's.
+    pub env: &'static [(&'static str, &'static str)],
 }
 
 /// The port a [`Daemon`] listens on, picked free by the orchestrator.
@@ -305,10 +306,7 @@ pub struct Profile {
     pub resume: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
     /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
-    pub(crate) env: &'static [(&'static str, &'static str)],
-    /// Environment one OS's CLI gets beside [`Self::env`]; read both through
-    /// [`Self::env_on`].
-    pub(crate) os_env: PerOs<&'static [(&'static str, &'static str)]>,
+    pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
     pub(crate) homes: &'static [&'static str],
     /// Fixed places the CLI reads policy or config from, which no home
@@ -697,16 +695,6 @@ const OMP_TUI: tui::Tui = tui::Tui {
     renders_under_conpty: true,
 };
 
-/// An unref'd no-op that wakes the event loop every 5 s: a stop waits up to
-/// one period past its close, inside the recorder's `DAEMON_STOP_GRACE`.
-const OPENCLAW_WAKEUP: &str = "--import=data:text/javascript,setInterval(()=>{},5000).unref()";
-
-/// A profile whose env is the same on every OS.
-const NO_OS_ENV: PerOs<&[(&str, &str)]> = PerOs {
-    unix: &[],
-    windows: &[],
-};
-
 /// opencode's daemon, as its `--server` commands name it.
 const OPENCODE_SERVER: &str = "http://127.0.0.1:{daemon_port}";
 
@@ -736,7 +724,6 @@ pub const PROFILES: &[Profile] = &[
             ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
             ("CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL", "1"),
         ],
-        os_env: NO_OS_ENV,
         homes: &[],
         // Managed settings, managed MCP servers and a managed CLAUDE.md, and
         // on Windows the registry policy beside them
@@ -848,7 +835,6 @@ pub const PROFILES: &[Profile] = &[
         ],
         resume: None,
         env: &[("HERMETIC_API_KEY", "{key}")],
-        os_env: NO_OS_ENV,
         homes: &[],
         // System config, requirements and managed config; `CODEX_HOME` never
         // reaches them (`codex-rs/config/src/loader/mod.rs:69`, `:102-107`,
@@ -1028,7 +1014,6 @@ trust_level = "trusted"
             // `packages/cli/src/server-process.ts:82-85` at v2.0.32).
             ("OPENCODE_PASSWORD", "{key}"),
         ],
-        os_env: NO_OS_ENV,
         // On Windows its system config is under `env.ProgramData`
         // (`packages/core/src/config/discovery.ts:27-31`), so a sandboxed
         // ProgramData holds none.
@@ -1162,6 +1147,7 @@ trust_level = "trusted"
         daemon: Some(Daemon {
             start: &["serve", "--stdio", "--port", DAEMON_PORT_PLACEHOLDER],
             ready: &["session", "list", "--server", OPENCODE_SERVER],
+            env: &[],
         }),
     },
     // dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
@@ -1179,7 +1165,6 @@ trust_level = "trusted"
             ("DEEPSEEK_API_KEY", "{key}"),
             ("DSH_TELEMETRY_DISABLED", "1"),
         ],
-        os_env: NO_OS_ENV,
         homes: &["DSH_HOME"],
         system_config: PerOs {
             unix: &[],
@@ -1275,7 +1260,6 @@ trust_level = "trusted"
             // The TUI otherwise asks to trust the folder at boot (`:168`).
             ("KIMI_CODE_TRUST_WORKSPACE", "1"),
         ],
-        os_env: NO_OS_ENV,
         homes: &[],
         system_config: PerOs {
             unix: &[],
@@ -1377,7 +1361,6 @@ trust_level = "trusted"
             ("GROK_PROMPT_SUGGESTIONS", "false"),
             ("GROK_TURN_SUMMARY", "0"),
         ],
-        os_env: NO_OS_ENV,
         homes: &[],
         // Its system config, and the Claude Code managed settings it imports
         // (`crates/codegen/xai-grok-config/src/paths.rs:5-9`, `:23-29`): none
@@ -1525,7 +1508,6 @@ trust_level = "trusted"
         // Off already for a non-interactive run, and pinned off against a
         // changed default (`internal/platform/telemetry/policy.go:44`).
         env: &[("REASONIX_TELEMETRY", "off")],
-        os_env: NO_OS_ENV,
         homes: &["REASONIX_HOME"],
         system_config: PerOs {
             unix: &[],
@@ -1666,7 +1648,6 @@ model = "deepseek-v4-flash"
             ("COPILOT_PROVIDER_API_KEY", "{key}"),
             ("COPILOT_MODEL", "gpt-4.1"),
         ],
-        os_env: NO_OS_ENV,
         homes: &[],
         // Managed settings and the policy directory, and on Windows the
         // registry policy beside them: each a string of its 1.0.98 binary.
@@ -1792,7 +1773,6 @@ model = "deepseek-v4-flash"
         resume: None,
         // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
         env: &[("PI_AUTO_QA", "0")],
-        os_env: NO_OS_ENV,
         homes: &[],
         system_config: PerOs {
             unix: &[],
@@ -1924,7 +1904,6 @@ startup:
         invocation: &["hermes", "--accept-hooks", "-z", PROMPT_PLACEHOLDER],
         resume: None,
         env: &[],
-        os_env: NO_OS_ENV,
         // The managed scope, which otherwise is `/etc/hermes`
         // (`hermes_cli/managed_scope.py:31`, `:45-58`).
         homes: &["HERMES_MANAGED_DIR"],
@@ -2029,7 +2008,6 @@ telemetry:
             ("HTTP_PROXY", "http://127.0.0.1:9"),
             ("NO_PROXY", "127.0.0.1,localhost"),
         ],
-        os_env: NO_OS_ENV,
         homes: &[],
         system_config: PerOs {
             unix: &[],
@@ -2090,25 +2068,10 @@ telemetry:
             PROMPT_PLACEHOLDER,
         ],
         resume: None,
-        env: &[
-            // Its automatic update checks, and the daily request each sends
-            // (`docs/install/updating/automatic-updates.md:160-162`,
-            // `docs/gateway/telemetry.md:11`).
-            ("OPENCLAW_NO_AUTO_UPDATE", "1"),
-            // Its gateway stops gracefully on its stdin's EOF, the recorder's
-            // stop (`src/cli/gateway-cli/host-lifeline.ts:4-14`, `:40-47`,
-            // `src/cli/gateway-cli/run-loop.ts:1214-1217`,
-            // `docs/platforms/mac/bundled-gateway.md:46-49`).
-            ("OPENCLAW_GATEWAY_HOST_LIFELINE", "stdin"),
-        ],
-        os_env: PerOs {
-            unix: &[],
-            // openclaw's awaits after its server closes never settle on Windows
-            // until the event loop wakes (`src/cli/gateway-cli/run-loop.ts:896-911`
-            // at v2026.10.1): run 39398284959 Blocked without this, run
-            // 39398289499 passed with it.
-            windows: &[("NODE_OPTIONS", OPENCLAW_WAKEUP)],
-        },
+        // Its automatic update checks, and the daily request each sends
+        // (`docs/install/updating/automatic-updates.md:160-162`,
+        // `docs/gateway/telemetry.md:11`).
+        env: &[("OPENCLAW_NO_AUTO_UPDATE", "1")],
         homes: &[],
         system_config: PerOs {
             unix: &[],
@@ -2189,6 +2152,11 @@ telemetry:
         daemon: Some(Daemon {
             start: &["gateway", "run"],
             ready: &["gateway", "health"],
+            // Its gateway stops gracefully on its stdin's EOF, the recorder's
+            // stop (`src/cli/gateway-cli/host-lifeline.ts:4-14`, `:40-47`,
+            // `src/cli/gateway-cli/run-loop.ts:1214-1217`,
+            // `docs/platforms/mac/bundled-gateway.md:46-49`).
+            env: &[("OPENCLAW_GATEWAY_HOST_LIFELINE", "stdin")],
         }),
     },
 ];
@@ -2228,14 +2196,6 @@ pub fn scripts_dir() -> PathBuf {
 }
 
 impl Profile {
-    /// Its environment for a CLI on Windows when `windows`, else on Unix.
-    pub fn env_on(
-        &self,
-        windows: bool,
-    ) -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-        self.env.iter().chain(self.os_env.on(windows).iter())
-    }
-
     /// The pinned build's per-platform manifests, beside the profile's scripts,
     /// for a [`Package::UpdaterManifest`] profile.
     pub fn manifest_lock(&self) -> Option<PathBuf> {
@@ -2440,33 +2400,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn openclaws_event_loop_wakeup_is_windows_only() {
-        let p = profile("openclaw").expect("openclaw");
-        let options = |windows| -> Vec<&str> {
-            p.env_on(windows)
-                .filter(|(k, _)| *k == "NODE_OPTIONS")
-                .map(|(_, v)| *v)
-                .collect()
-        };
-        assert!(options(false).is_empty(), "Unix keeps openclaw's own stop");
-        assert_eq!(options(true), [OPENCLAW_WAKEUP]);
-    }
-
-    #[test]
-    fn openclaws_wakeup_is_rechecked_when_its_pin_moves() {
-        /// The openclaw release [`OPENCLAW_WAKEUP`] was verified needed on.
-        const VERIFIED_NEEDED_ON: &str = "2026.10.1";
-        let pin = pin::pinned(profile("openclaw").expect("openclaw").descriptor()).expect("a pin");
-        assert_eq!(
-            pin,
-            semver::Version::parse(VERIFIED_NEEDED_ON).expect("a release"),
-            "openclaw's pin moved: dispatch the full tier with OPENCLAW_WAKEUP removed; if \
-             openclaw on Windows passes, delete the wakeup and this test, else move this const \
-             to the new pin."
-        );
     }
 
     #[test]

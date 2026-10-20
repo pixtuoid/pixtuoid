@@ -699,17 +699,9 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_waiting() 
     // name (not the fixture's own) is what identifies the session.
     let recorded = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/sources/fixtures/codex/permission-hermetic");
-    let rollouts: Vec<_> = pixtuoid_core::harness::jsonl_files_under(&recorded)
-        .into_iter()
-        .filter(|f| {
-            f.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("rollout-"))
-        })
-        .collect();
-    let [fixture] = &rollouts[..] else {
-        panic!("one recorded rollout under {}", recorded.display());
-    };
-    let body = std::fs::read_to_string(fixture).expect("committed permission-hermetic fixture");
+    let fixture = pixtuoid_core::harness::transcript_in("codex", &recorded)
+        .unwrap_or_else(|found| panic!("one recorded rollout, found {found:?}"));
+    let body = std::fs::read_to_string(&fixture).expect("committed permission-hermetic fixture");
     let transcript = sessions_root
         .join("rollout-2026-01-01T00-00-00-0a0a0a0a-0b0b-0c0c-0d0d-0e0e0e0e0e0e.jsonl");
 

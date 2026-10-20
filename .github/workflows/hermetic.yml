@@ -86,7 +86,7 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: uv
-      - name: Run every profile
+      - name: Run the shard's profiles
         id: run
         env:
           CLI: ${{ inputs.cli }}
