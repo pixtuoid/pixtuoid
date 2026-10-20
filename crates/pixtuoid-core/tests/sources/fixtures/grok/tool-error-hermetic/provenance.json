@@ -2,12 +2,35 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.62 (1474f9cbdd91)",
-  "captured": "2026-10-19",
+  "captured": "2026-10-20",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 109
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/grok/tool-error.json"
+  "script": "tests/sources/hermetic/grok/tool-error.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/method": [
+        "_x.ai/session/update",
+        "session/update"
+      ],
+      "/params/update/event_name": [
+        "post_tool_use_failure",
+        "pre_tool_use",
+        "session_start",
+        "stop",
+        "user_prompt_submit"
+      ],
+      "/params/update/sessionUpdate": [
+        "agent_message_chunk",
+        "hook_execution",
+        "tool_call_update",
+        "user_message_chunk"
+      ],
+      "/params/update/status": []
+    }
+  }
 }

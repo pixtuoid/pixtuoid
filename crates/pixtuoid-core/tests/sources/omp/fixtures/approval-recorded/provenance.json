@@ -4,9 +4,9 @@
   "version": "omp/18.2.6",
   "captured": "2026-09-19",
   "command": "omp --approval-mode always-ask (interactive TUI, driven by scripts/lib/capture-omp-tui.py approve 'Run the shell command: echo hi')",
+  "note": "hook sessionFile home path redacted to /Users/dev. interactive TUI driven under a pty; Enter approves the always-ask gate",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 68
-  },
-  "note": "hook sessionFile home path redacted to /Users/dev. interactive TUI driven under a pty; Enter approves the always-ask gate"
+  }
 }
