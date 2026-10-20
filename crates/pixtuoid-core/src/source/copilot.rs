@@ -8,9 +8,9 @@
 //! Sharp edges (real-byte-confirmed):
 //! - **Session id = the PARENT-DIR UUID** of `events.jsonl` (the filename stem is
 //!   the constant `events`, NOT the id).
-//! - **Sub-agents INTERLEAVE in the root file**, distinguished by the top-level
-//!   envelope `agentId` (== the spawning `task` tool's `data.toolCallId`); there
-//!   is no per-agent file split. A line with `agentId` set belongs to that child.
+//! - **Sub-agents INTERLEAVE in the root file**: each line of a child carries its
+//!   own envelope `agentId` (a UUID, not the spawning `task` call's id, which rides
+//!   `data.toolCallId` / `data.parentToolCallId`); there is no per-agent file split.
 //! - `subagent.completed` is **minimal** on disk (`toolCallId`/`agentName`/
 //!   `agentDisplayName` only) — never require model/token/duration fields.
 //! - The `ephemeral` envelope flag is inconsistent across CLI versions — never
