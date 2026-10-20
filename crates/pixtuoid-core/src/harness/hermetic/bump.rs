@@ -18,7 +18,7 @@ use crate::harness::sources_root;
 /// The leg [`Profile::runs_on`] asks about as `windows`.
 const WINDOWS: &str = "windows";
 
-/// The nightly's drift legs, as `hermetic.yml`'s matrix names them.
+/// The matrix's `os` axis, as `hermetic.yml` names it.
 const OSES: &[&str] = &["macos", WINDOWS];
 
 /// The file beside a run's reports naming each source that moved.
@@ -81,8 +81,8 @@ impl Proposal {
 ///
 /// # Errors
 ///
-/// When a leg's rows are not rows, or the one release every leg moved a source
-/// to is not a release or is below its pin.
+/// When a leg's rows are not rows, or the one release every OS that runs a
+/// source moved it to is not a release or is below its pin.
 pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal>, String> {
     let mut moved = Vec::new();
     for os in OSES {
