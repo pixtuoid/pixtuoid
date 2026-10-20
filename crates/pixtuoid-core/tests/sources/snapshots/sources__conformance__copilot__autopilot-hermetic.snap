@@ -1,0 +1,42 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 15351489535794662387
+    source: copilot
+    session_id: 38324e6d-59b2-4760-b77f-f6a5db9b62c5
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ActivityStart:
+    agent_id: 15351489535794662387
+    tool_use_id: call_7Rj4su0gXEpYUbHL
+    detail:
+      Generic:
+        display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
+- ActivityEnd:
+    agent_id: 15351489535794662387
+    tool_use_id: call_7Rj4su0gXEpYUbHL
+- ModelInfo:
+    agent_id: 15351489535794662387
+    model: gpt-4.1
+    effort: ~
+- ActivityStart:
+    agent_id: 15351489535794662387
+    tool_use_id: call_KEe4NNioRzcYvoPd
+    detail:
+      Generic:
+        display: task_complete
+- ActivityEnd:
+    agent_id: 15351489535794662387
+    tool_use_id: call_KEe4NNioRzcYvoPd
+- ModelInfo:
+    agent_id: 15351489535794662387
+    model: gpt-4.1
+    effort: ~
+- ActivityEnd:
+    agent_id: 15351489535794662387
+    tool_use_id: ~
+- SessionEnd:
+    agent_id: 15351489535794662387
+    as_child: false

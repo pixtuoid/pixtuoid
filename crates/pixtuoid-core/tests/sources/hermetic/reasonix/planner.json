@@ -1,0 +1,20 @@
+{
+  "fixtures": [
+    {
+      "match": { "model": "planner-model", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "planner-model", "toolResultContains": "{note}" },
+      "response": { "content": "Plan: report the note." }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "content": "pong" }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "pong" }
+    }
+  ]
+}

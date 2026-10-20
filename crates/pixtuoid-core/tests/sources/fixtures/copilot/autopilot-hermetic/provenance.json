@@ -1,0 +1,28 @@
+{
+  "origin": "recorded",
+  "cli": "copilot",
+  "version": "GitHub Copilot CLI 1.0.98.",
+  "captured": "2026-10-20",
+  "command": "just hermetic --record copilot",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 59
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/copilot/autopilot.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "assistant.message",
+        "assistant.turn_end",
+        "assistant.turn_start",
+        "session.mode_changed",
+        "session.mode_notice_delivered",
+        "session.usage_record",
+        "system.message",
+        "user.message"
+      ]
+    }
+  }
+}
