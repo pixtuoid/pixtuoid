@@ -188,35 +188,6 @@ pub const PROVENANCE: &str = "provenance.json";
 /// A raw capture's [`CaptureRecord`].
 pub const CAPTURE_RECORD: &str = "capture.json";
 
-/// The recorder's (`capture_fixture`) options, as its callers spell them; each
-/// does what the recorder's `Options` field of its name says.
-pub mod recorder_flag {
-    /// `Options::out`.
-    pub const OUT: &str = "--out";
-    /// `Options::tee`.
-    pub const TEE: &str = "--tee";
-    /// `Options::within`.
-    pub const WITHIN: &str = "--within";
-    /// `Options::env`.
-    pub const ENV: &str = "--env";
-    /// `Options::promote`.
-    pub const PROMOTE: &str = "--promote";
-    /// `Options::cli_version`.
-    pub const CLI_VERSION: &str = "--cli-version";
-    /// `Options::workspace`.
-    pub const WORKSPACE: &str = "--workspace";
-    /// `Options::prepare_root`.
-    pub const PREPARE_ROOT: &str = "--prepare-root";
-    /// One word of `Options::daemon`'s start.
-    pub const DAEMON: &str = "--daemon";
-    /// One word of `Options::daemon`'s readiness probe.
-    pub const DAEMON_READY: &str = "--daemon-ready";
-    /// One `KEY=VALUE` of `Options::daemon`'s own environment.
-    pub const DAEMON_ENV: &str = "--daemon-env";
-    /// One word of `Options::second_turn`, the invocation a second turn runs.
-    pub const SECOND_TURN: &str = "--second-turn-word";
-}
-
 /// What only the recorder knows about a raw (`--out`) capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureRecord {

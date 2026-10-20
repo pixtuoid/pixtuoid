@@ -3,7 +3,7 @@
 //!
 //! The hermetic runner writes it into the run dir ([`CAPTURE_PLAN`]) and the
 //! recorder reads it back; an operator's `just capture-fixture` line builds the
-//! same type in memory ([`CapturePlan::from_operator`]). So the recorder has one
+//! same type in memory. So the recorder has one
 //! input, and a word the host left unexpanded cannot be spelled in it: [`Resolved`]
 //! refuses a placeholder, and [`Word::Session`] is the one hole, filled after the
 //! first turn.
@@ -20,15 +20,15 @@ pub const CAPTURE_PLAN: &str = "capture-plan.json";
 
 /// One prompt for every source, so captures stay comparable: reading the SAME
 /// file twice around a list forces both shapes the composed fixtures got wrong —
-/// tools that interleave, and a tool id that repeats. [`PROMPT_ENV`] overrides
+/// tools that interleave, and a tool id that repeats. `CAPTURE_PROMPT` overrides
 /// it for a scenario the shared one cannot reach (a permission gate needs a tool
 /// the CLI refuses to run unasked).
 pub const DEFAULT_PROMPT: &str =
     "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
 /// The operator's prompt for a scenario [`DEFAULT_PROMPT`] cannot reach.
-pub const PROMPT_ENV: &str = "CAPTURE_PROMPT";
+pub(crate) const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 /// A directory the operator's capture copies into its workspace first.
-pub const SEED_ENV: &str = "CAPTURE_SEED";
+pub(crate) const SEED_ENV: &str = "CAPTURE_SEED";
 
 /// A word a profile, script or config spells for the host to fill in. Each
 /// spelling here is the one every expansion site and every check reads.
@@ -106,7 +106,7 @@ pub struct Resolved(String);
 
 impl Resolved {
     /// The word.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -312,7 +312,7 @@ impl CapturePlan {
     /// # Errors
     ///
     /// Fields that cannot run together.
-    pub fn validate(&self) -> Result<(), PlanError> {
+    pub(crate) fn validate(&self) -> Result<(), PlanError> {
         if self.second_turn.is_some() && !matches!(self.sink, Sink::Raw { .. }) {
             return Err(PlanError::new(
                 "a second turn runs only into a raw capture: a committed one records one turn",
@@ -369,9 +369,9 @@ pub enum Invocation {
 
 impl Invocation {
     /// The `--out` an operator may give a capture: drift evidence kept raw.
-    pub const OUT: &'static str = "--out";
+    pub(crate) const OUT: &'static str = "--out";
     /// Strips every committed capture.
-    pub const STRIP_CORPUS: &'static str = "--strip-corpus";
+    pub(crate) const STRIP_CORPUS: &'static str = "--strip-corpus";
     /// Runs the plan in the file that follows.
     pub const PLAN: &'static str = "--plan";
     /// Promotes the run dir that follows.
@@ -381,13 +381,26 @@ impl Invocation {
     /// The sandbox a prepared root must lie in.
     pub const WITHIN: &'static str = "--within";
 
+    /// What `args` (after the program) ask, with the process's own env, which is
+    /// the operator's.
+    ///
+    /// # Errors
+    ///
+    /// The line asks for none of these, or its operands are wrong.
+    pub fn parse_process(args: &[String]) -> Result<Self, PlanError> {
+        Self::parse(args, &crate::platform::text_env)
+    }
+
     /// What `args` (after the program) ask. `env` is the operator's, read once
     /// here and nowhere after: a text variable, unset when absent.
     ///
     /// # Errors
     ///
     /// The line asks for none of these, or its operands are wrong.
-    pub fn parse(args: &[String], env: &dyn Fn(&str) -> Option<String>) -> Result<Self, PlanError> {
+    pub(crate) fn parse(
+        args: &[String],
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Self, PlanError> {
         let usage = |flag: &str| PlanError::new(format!("{flag} takes a value"));
         match args.first().map(String::as_str) {
             Some(Self::STRIP_CORPUS) if args.len() == 1 => Ok(Self::StripCorpus),
@@ -417,14 +430,14 @@ impl Invocation {
 
 impl CapturePlan {
     /// The capture an operator's line asks: `[--out <dir>] <source> <scenario>
-    /// <cmd...>`, `{prompt}` in the command filled from [`PROMPT_ENV`] or
+    /// <cmd...>`, `{prompt}` in the command filled from `CAPTURE_PROMPT` or
     /// [`DEFAULT_PROMPT`]. It runs in memory and is never written, since its
     /// `cli_env` may hold a real credential on a billed capture.
     ///
     /// # Errors
     ///
     /// The line is short, a word spells a placeholder the host cannot fill, or `--out` is unusable.
-    pub fn from_operator(
+    pub(crate) fn from_operator(
         args: &[String],
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Self, PlanError> {
@@ -722,5 +735,80 @@ mod tests {
         ] {
             assert!(parse(bad).is_err(), "{bad:?}");
         }
+    }
+
+    /// The recorder takes its inputs from the plan. A direct env read in
+    /// `capture_fixture.rs` is a second channel, bar two that read an env that
+    /// is not an input: the scrub of the CLI's inherited agent env, and the
+    /// operator's own identity, kept out of the bytes it writes.
+    #[test]
+    fn the_recorder_reads_no_env_but_the_scrub_and_the_operators_identity() {
+        use syn::visit::Visit;
+        const READS: [&str; 7] = [
+            "var",
+            "var_os",
+            "vars",
+            "vars_os",
+            "text_env",
+            "path_env",
+            "path_env_trimmed",
+        ];
+        const EXEMPT: [(&str, &str); 2] = [("wired", "vars_os"), ("identity_needles", "text_env")];
+        struct Reads {
+            in_fn: Vec<String>,
+            found: Vec<String>,
+        }
+        impl Reads {
+            fn note(&mut self, path: &syn::Path) {
+                let Some(last) = path.segments.last() else {
+                    return;
+                };
+                let name = last.ident.to_string();
+                let exempt = self
+                    .in_fn
+                    .last()
+                    .is_some_and(|f| EXEMPT.contains(&(f.as_str(), name.as_str())));
+                if READS.contains(&name.as_str()) && !exempt {
+                    self.found.push(name);
+                }
+            }
+        }
+        impl<'ast> Visit<'ast> for Reads {
+            fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
+                if m.ident != "tests" {
+                    syn::visit::visit_item_mod(self, m);
+                }
+            }
+            fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
+                self.in_fn.push(f.sig.ident.to_string());
+                syn::visit::visit_item_fn(self, f);
+                self.in_fn.pop();
+            }
+            fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
+                if let syn::Expr::Path(p) = &*c.func {
+                    self.note(&p.path);
+                }
+                syn::visit::visit_expr_call(self, c);
+            }
+            fn visit_expr_path(&mut self, e: &'ast syn::ExprPath) {
+                // A fn handed on, not called; a bare name is a local.
+                if e.path.segments.len() > 1 {
+                    self.note(&e.path);
+                }
+                syn::visit::visit_expr_path(self, e);
+            }
+        }
+        let file =
+            syn::parse_file(include_str!("../../examples/capture_fixture.rs")).expect("parses");
+        let mut reads = Reads {
+            in_fn: Vec::new(),
+            found: Vec::new(),
+        };
+        reads.visit_file(&file);
+        assert!(
+            reads.found.is_empty(),
+            "the recorder reads env: {:?}",
+            reads.found
+        );
     }
 }

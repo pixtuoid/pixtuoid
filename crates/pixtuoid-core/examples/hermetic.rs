@@ -42,15 +42,19 @@ mod run {
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        PROMPT_PLACEHOLDER, Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second,
-        Step, StepRecord, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
-        WORKSPACE_SLASHED_PLACEHOLDER,
+        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second, Step, StepRecord,
+        Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
+    use pixtuoid_core::harness::plan::{
+        AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Resolved,
+        Sink, Word,
+    };
+    use pixtuoid_core::harness::provenance::NonEmpty;
     use pixtuoid_core::harness::tap::Endpoint;
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, capture_root, capture_workspace,
-        capture_workspace_tail, recorder_flag, required_version_probe, version_answer, wait_until,
+        capture_workspace_tail, required_version_probe, version_answer, wait_until,
     };
     use semver::Version;
 
@@ -645,7 +649,7 @@ mod run {
     fn record(ctx: &Ctx, p: &Profile, runs: &Path) -> std::io::Result<()> {
         for scenario in p.scenarios {
             let status = Command::new(&ctx.built.recorder)
-                .arg(recorder_flag::PROMOTE)
+                .arg(Invocation::PROMOTE)
                 .arg(run_dir(runs, p, scenario))
                 .status()?;
             if !status.success() {
@@ -1549,15 +1553,15 @@ mod run {
         }
 
         /// The profile's pairs as this sandbox holds them, then what the CLI's
-        /// launch sets, for the recorder to set on the CLI as [`recorder_flag::ENV`].
-        fn cli_env(&self, p: &Profile, launch: &Launch) -> Vec<String> {
+        /// launch sets, for the recorder to set on the CLI; a later pair wins.
+        fn cli_env(&self, p: &Profile, launch: &Launch) -> BTreeMap<String, String> {
             p.env
                 .iter()
                 .filter_map(|(k, _)| {
                     self.var_os(k)
-                        .map(|v| format!("{k}={}", v.to_string_lossy()))
+                        .map(|v| ((*k).to_owned(), v.to_string_lossy().into_owned()))
                 })
-                .chain(launch.env.iter().map(|(k, v)| format!("{k}={v}")))
+                .chain(launch.env.iter().map(|(k, v)| (k.clone(), v.clone())))
                 .collect()
         }
 
@@ -1805,9 +1809,9 @@ mod run {
         // run would reach pixtuoid by hook alone.
         let mut prepare = sandbox.command(&built.recorder);
         prepare
-            .arg(recorder_flag::WITHIN)
+            .args([Invocation::PREPARE_ROOT, Invocation::WITHIN])
             .arg(sandbox.dir.path())
-            .args([recorder_flag::PREPARE_ROOT, p.source]);
+            .arg(p.source);
         succeed(prepare)?;
 
         let scene = Reaped(
@@ -1825,23 +1829,25 @@ mod run {
             Ok(sandbox.scene.accepting())
         })?;
 
+        let plan_file = write_plan(
+            &RecorderRun {
+                out: dir,
+                scene: sandbox.scene.path(),
+                within: sandbox.dir.path(),
+                workspace,
+                cli_env: &sandbox.cli_env(p, &cli.launch),
+                cli_version: &cli_version(sandbox, p, &cli.launch)?,
+                launch: &cli.launch,
+                driver: &built.driver,
+                ports: *ports,
+            },
+            p,
+            scenario,
+        )?;
         let recorder = sandbox
             .command(&built.recorder)
-            .args(recorder_args(
-                &RecorderRun {
-                    out: dir,
-                    scene: sandbox.scene.path(),
-                    within: sandbox.dir.path(),
-                    workspace,
-                    cli_env: &sandbox.cli_env(p, &cli.launch),
-                    cli_version: &cli_version(sandbox, p, &cli.launch)?,
-                    launch: &cli.launch,
-                    driver: &built.driver,
-                    ports: *ports,
-                },
-                p,
-                scenario,
-            ))
+            .arg(Invocation::PLAN)
+            .arg(plan_file)
             .stdout(log(dir, RECORDER_LOG)?)
             .stderr(log(dir, RECORDER_LOG)?)
             .status()?;
@@ -1971,7 +1977,7 @@ mod run {
         /// The workspace the CLI runs in, as this tier resolved it.
         workspace: &'a Path,
         /// Set on the CLI after the recorder's scrub.
-        cli_env: &'a [String],
+        cli_env: &'a BTreeMap<String, String>,
         cli_version: &'a str,
         launch: &'a Launch,
         /// [`Built::driver`].
@@ -1980,88 +1986,125 @@ mod run {
         ports: Ports,
     }
 
-    /// The recorder's command line for one run: its options, then the source,
-    /// the scenario and the CLI's own launch and invocation.
-    fn recorder_args(run: &RecorderRun<'_>, p: &Profile, scenario: &Scenario) -> Vec<OsString> {
-        let mut args: Vec<OsString> = vec![
-            recorder_flag::OUT.into(),
-            run.out.into(),
-            recorder_flag::TEE.into(),
-            run.scene.into(),
-            recorder_flag::WITHIN.into(),
-            run.within.into(),
-            recorder_flag::CLI_VERSION.into(),
-            run.cli_version.into(),
-            recorder_flag::WORKSPACE.into(),
-            run.workspace.into(),
-        ];
-        for kv in run.cli_env {
-            args.extend([recorder_flag::ENV.into(), kv.into()]);
-        }
+    /// [`plan_for`]'s plan, written into the run dir where it stays for whoever
+    /// reads the run after: the file the recorder is started on.
+    fn write_plan(
+        run: &RecorderRun<'_>,
+        p: &Profile,
+        scenario: &Scenario,
+    ) -> std::io::Result<PathBuf> {
+        plan_for(run, p, scenario)?.write_to(run.out)
+    }
+
+    /// The plan the recorder runs one scenario from: every word finished here,
+    /// since the recorder expands nothing but the session its second turn names.
+    fn plan_for(
+        run: &RecorderRun<'_>,
+        p: &Profile,
+        scenario: &Scenario,
+    ) -> std::io::Result<CapturePlan> {
+        let text = |s: &OsStr| {
+            s.to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| std::io::Error::other(format!("{s:?} is not UTF-8")))
+        };
+        let plan_error = std::io::Error::other;
+        let path = |p: &Path| AbsPath::try_from(p).map_err(plan_error);
+        let launch = run.launch.argv();
+        let launch = launch
+            .iter()
+            .map(|w| text(w))
+            .collect::<std::io::Result<Vec<_>>>()?;
         let ported = |word: &str| expanded(word, run.ports);
-        if let Some(daemon) = &p.daemon {
-            for (flag, words) in [
-                (recorder_flag::DAEMON, daemon.start),
-                (recorder_flag::DAEMON_READY, daemon.ready),
-            ] {
-                let words = words.iter().map(|w| ported(w).into());
-                for word in run.launch.argv().into_iter().chain(words) {
-                    args.extend([flag.into(), word]);
-                }
-            }
-            for (k, v) in daemon.env {
-                args.extend([recorder_flag::DAEMON_ENV.into(), format!("{k}={v}").into()]);
-            }
-        }
-        // A scenario's prompts expand here; the recorder expands only its own.
-        let prompted = |word: &str, prompt: &str| ported(word).replace(PROMPT_PLACEHOLDER, prompt);
-        if let (Some(second), Some(words)) = (scenario.turn.second, p.second_turn) {
-            let words = words[1..].iter().map(|w| match second {
-                Second::Prompt(prompt) => prompted(w, prompt).into(),
-                Second::Bare => ported(w).into(),
-            });
-            for word in run.launch.argv().into_iter().chain(words) {
-                args.extend([recorder_flag::SECOND_TURN.into(), word]);
-            }
-        }
-        args.extend([p.source, scenario.name].map(OsString::from));
-        match scenario.surface {
-            Surface::Headless => {
-                args.extend(run.launch.argv());
-                args.extend(
-                    p.invocation[1..]
-                        .iter()
-                        .map(|w| match scenario.turn.prompt {
-                            Some(prompt) => prompted(w, prompt).into(),
-                            None => ported(w).into(),
-                        }),
-                );
-                args.extend(scenario.turn.args.iter().map(OsString::from));
-            }
-            Surface::Tui { row, .. } => {
-                args.push(run.driver.into());
-                args.extend(
-                    tui::CommandLine {
-                        source: p.source.to_owned(),
-                        scenario: scenario.name.to_owned(),
-                        log: run.out.join(TUI_LOG),
-                        prompt: scenario
-                            .turn
-                            .prompt
-                            .unwrap_or(PROMPT_PLACEHOLDER)
-                            .to_owned(),
-                        program: run
-                            .launch
-                            .argv()
-                            .into_iter()
-                            .chain(row.args().iter().map(OsString::from))
-                            .collect(),
+        let prompt = scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT);
+        let prompted = |word: &str| ported(word).replace(Placeholder::Prompt.as_str(), prompt);
+        let with_launch =
+            |words: Vec<String>| launch.iter().cloned().chain(words).collect::<Vec<_>>();
+        let daemon = match &p.daemon {
+            Some(d) => Some(DaemonPlan {
+                start: Argv::resolved(with_launch(d.start.iter().map(|w| ported(w)).collect()))
+                    .map_err(plan_error)?,
+                ready: Argv::resolved(with_launch(d.ready.iter().map(|w| ported(w)).collect()))
+                    .map_err(plan_error)?,
+                env: d
+                    .env
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                    .collect(),
+            }),
+            None => None,
+        };
+        let second_turn = match (scenario.turn.second, p.second_turn) {
+            (Some(second), Some(words)) => {
+                let words = words[1..].iter().map(|w| match second {
+                    Second::Prompt(prompt) => {
+                        ported(w).replace(Placeholder::Prompt.as_str(), prompt)
                     }
-                    .to_args(),
-                );
+                    Second::Bare => ported(w),
+                });
+                let words = launch
+                    .iter()
+                    .cloned()
+                    .chain(words)
+                    .map(|w| {
+                        if w == Placeholder::Session.as_str() {
+                            Ok(Word::Session)
+                        } else {
+                            Resolved::try_from(w).map(Word::Lit)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(plan_error)?;
+                Some(Argv::try_from(words).map_err(plan_error)?)
             }
-        }
-        args
+            _ => None,
+        };
+        let first_turn = match scenario.surface {
+            Surface::Headless => with_launch(
+                p.invocation[1..]
+                    .iter()
+                    .map(|w| prompted(w))
+                    .chain(scenario.turn.args.iter().map(|w| (*w).to_owned()))
+                    .collect(),
+            ),
+            Surface::Tui { row, .. } => {
+                let mut words = vec![text(run.driver.as_os_str())?];
+                let line = tui::CommandLine {
+                    source: p.source.to_owned(),
+                    scenario: scenario.name.to_owned(),
+                    log: run.out.join(TUI_LOG),
+                    prompt: prompt.to_owned(),
+                    program: run
+                        .launch
+                        .argv()
+                        .into_iter()
+                        .chain(row.args().iter().map(OsString::from))
+                        .collect(),
+                };
+                for arg in line.to_args() {
+                    words.push(text(&arg)?);
+                }
+                words
+            }
+        };
+        Ok(CapturePlan {
+            source: p.source.to_owned(),
+            scenario: scenario.name.to_owned(),
+            sink: Sink::Raw {
+                out: path(run.out)?,
+            },
+            tee: Some(path(run.scene)?),
+            within: Some(path(run.within)?),
+            workspace: Some(path(run.workspace)?),
+            cli_version: Some(NonEmpty::try_from(run.cli_version).map_err(std::io::Error::other)?),
+            cli_env: run.cli_env.clone(),
+            seed: None,
+            prompt_override: None,
+            recorded_command: None,
+            daemon,
+            first_turn: Argv::resolved(first_turn).map_err(plan_error)?,
+            second_turn,
+        })
     }
 
     /// The requests aimock answered and those no script line matched, every
@@ -2536,6 +2579,53 @@ mod run {
             assert_eq!(host_config_found(&absent, None), None);
         }
 
+        fn launch_of(program: &str) -> Launch {
+            Launch {
+                program: PathBuf::from(program),
+                args: Vec::new(),
+                env: Vec::new(),
+            }
+        }
+
+        fn plan_in(
+            out: &Path,
+            cli_env: &BTreeMap<String, String>,
+            launch: &Launch,
+            p: &Profile,
+            scenario: &Scenario,
+        ) -> CapturePlan {
+            plan_for(
+                &RecorderRun {
+                    out,
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env,
+                    cli_version: "1.2.3",
+                    launch,
+                    driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
+                },
+                p,
+                scenario,
+            )
+            .expect("a plan")
+        }
+
+        fn plan_of(p: &Profile, scenario: &Scenario) -> CapturePlan {
+            plan_in(
+                Path::new("/runs/x"),
+                &BTreeMap::new(),
+                &launch_of(&format!("/cli/{}", p.source)),
+                p,
+                scenario,
+            )
+        }
+
+        fn strings(argv: &Argv<Resolved>) -> Vec<String> {
+            argv.strings()
+        }
+
         #[test]
         fn the_recorder_is_held_to_the_sandbox_and_handed_the_clis_env() {
             let p = &PROFILES[0];
@@ -2544,139 +2634,122 @@ mod run {
                 args: vec!["/cli/entry.js".into()],
                 env: Vec::new(),
             };
-            let args = recorder_args(
-                &RecorderRun {
-                    out: Path::new("/runs/x"),
-                    scene: Path::new("/sb/scene.sock"),
-                    within: Path::new("/sb"),
-                    workspace: Path::new("/ws/proj"),
-                    cli_env: &["A=b".to_string()],
-                    cli_version: "1.2.3",
-                    launch: &launch,
-                    driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
-                },
-                p,
-                &p.scenarios[0],
+            let env = BTreeMap::from([("A".to_owned(), "b".to_owned())]);
+            let plan = plan_in(Path::new("/runs/x"), &env, &launch, p, &p.scenarios[0]);
+            let path = |p: &str| AbsPath::try_from(Path::new(p)).expect("absolute");
+            assert_eq!(plan.within, Some(path("/sb")));
+            assert_eq!(plan.tee, Some(path("/sb/scene.sock")));
+            assert_eq!(
+                plan.sink,
+                Sink::Raw {
+                    out: path("/runs/x")
+                }
             );
-            let pair =
-                |flag: &str, value: &str| args.windows(2).any(|w| w[0] == *flag && w[1] == *value);
-            assert!(pair("--within", "/sb"), "{args:?}");
-            assert!(pair("--env", "A=b"), "{args:?}");
-            assert!(pair("--tee", "/sb/scene.sock"), "{args:?}");
-            assert!(pair("--out", "/runs/x"), "{args:?}");
-            assert!(pair("--cli-version", "1.2.3"), "{args:?}");
-            assert!(pair("--workspace", "/ws/proj"), "{args:?}");
-            // The recorder reads options only before its positionals.
-            let source = args.iter().position(|a| a == p.source).expect("the source");
-            assert!(
-                args[..source]
-                    .chunks(2)
-                    .all(|kv| kv[0].to_str().is_some_and(|f| f.starts_with("--"))),
-                "{args:?}"
+            assert_eq!(plan.workspace, Some(path("/ws/proj")));
+            assert_eq!(plan.cli_env, env);
+            assert_eq!(
+                plan.cli_version.as_ref().map(NonEmpty::as_str),
+                Some("1.2.3")
             );
-            let positionals: Vec<OsString> = [p.source, p.scenarios[0].name]
+            assert_eq!(
+                (plan.source.as_str(), plan.scenario.as_str()),
+                (p.source, p.scenarios[0].name)
+            );
+            let prompt = p.scenarios[0].turn.prompt.unwrap_or(DEFAULT_PROMPT);
+            let want: Vec<String> = ["/cli/node", "/cli/entry.js"]
                 .into_iter()
-                .map(OsString::from)
-                .chain(launch.argv())
-                .chain(p.invocation[1..].iter().map(OsString::from))
+                .map(String::from)
+                .chain(
+                    p.invocation[1..]
+                        .iter()
+                        .map(|w| w.replace(Placeholder::Prompt.as_str(), prompt)),
+                )
+                .chain(p.scenarios[0].turn.args.iter().map(|a| (*a).to_owned()))
                 .collect();
-            assert_eq!(args[source..], positionals[..], "{args:?}");
+            assert_eq!(strings(&plan.first_turn), want);
+        }
+
+        #[test]
+        fn the_plan_lands_in_the_run_dir_and_is_the_one_the_recorder_reads() {
+            let dir = tempfile::tempdir().expect("dir");
+            let p = &PROFILES[0];
+            let (launch, env) = (launch_of("/cli/x"), BTreeMap::new());
+            let run = RecorderRun {
+                out: dir.path(),
+                scene: Path::new("/sb/scene.sock"),
+                within: Path::new("/sb"),
+                workspace: Path::new("/ws/proj"),
+                cli_env: &env,
+                cli_version: "1.2.3",
+                launch: &launch,
+                driver: Path::new("/build/tui_drive"),
+                ports: TEST_PORTS,
+            };
+            let file = write_plan(&run, p, &p.scenarios[0]).expect("write");
+            assert_eq!(
+                file,
+                dir.path().join(pixtuoid_core::harness::plan::CAPTURE_PLAN)
+            );
+            assert_eq!(
+                CapturePlan::read(&file).expect("read"),
+                plan_for(&run, p, &p.scenarios[0]).expect("plan")
+            );
         }
 
         #[test]
         fn a_prompted_second_turn_hands_the_recorder_its_args_and_its_words() {
             let p = hermetic::profile("claude-code").expect("claude-code");
             let scenario = p.scenario("ultra-effort").expect("the row");
-            let launch = Launch {
-                program: PathBuf::from("/cli/claude"),
-                args: Vec::new(),
-                env: Vec::new(),
-            };
-            let args = recorder_args(
-                &RecorderRun {
-                    out: Path::new("/runs/x"),
-                    scene: Path::new("/sb/scene.sock"),
-                    within: Path::new("/sb"),
-                    workspace: Path::new("/ws/proj"),
-                    cli_env: &[],
-                    cli_version: "1.2.3",
-                    launch: &launch,
-                    driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
-                },
-                p,
-                scenario,
-            );
-            let source = args.iter().position(|a| a == p.source).expect("the source");
-            let words: Vec<String> = args[..source]
-                .chunks(2)
-                .filter(|kv| kv[0] == recorder_flag::SECOND_TURN)
-                .map(|kv| kv[1].to_string_lossy().into_owned())
-                .collect();
+            let plan = plan_of(p, scenario);
             let Some(Second::Prompt(second)) = scenario.turn.second else {
                 panic!("a prompted second turn");
             };
-            let want: Vec<String> = std::iter::once("/cli/claude".to_owned())
+            let want: Vec<Word> = std::iter::once("/cli/claude-code".to_owned())
                 .chain(
                     p.second_turn.expect("claude-code has a second turn")[1..]
                         .iter()
-                        .map(|w| w.replace(PROMPT_PLACEHOLDER, second)),
+                        .map(|w| w.replace(Placeholder::Prompt.as_str(), second)),
                 )
+                .map(|w| {
+                    if w == Placeholder::Session.as_str() {
+                        Word::Session
+                    } else {
+                        Word::Lit(Resolved::try_from(w).expect("resolved"))
+                    }
+                })
                 .collect();
-            assert_eq!(words, want);
-            assert!(words.iter().any(|w| w == hermetic::SESSION_PLACEHOLDER));
+            let turn = plan.second_turn.as_ref().expect("a second turn");
+            assert_eq!(turn.words(), &want[..]);
+            assert!(turn.words().contains(&Word::Session));
             let prompt = scenario.turn.prompt.expect("its own prompt");
-            assert!(args[source..].iter().any(|a| a == prompt), "{args:?}");
-            assert!(!args.iter().any(|a| a == PROMPT_PLACEHOLDER), "{args:?}");
-            let first = &args[args.len() - scenario.turn.args.len()..];
+            let first = strings(&plan.first_turn);
+            assert!(first.iter().any(|a| a == prompt), "{first:?}");
+            let args = &first[first.len() - scenario.turn.args.len()..];
             assert_eq!(
-                first, scenario.turn.args,
+                args, scenario.turn.args,
                 "the first turn's args follow its invocation"
             );
         }
 
-        /// The recorder's words, after `flag`, in `args`.
-        fn flagged(args: &[OsString], flag: &str) -> Vec<String> {
-            args.windows(2)
-                .filter(|w| w[0] == *flag)
-                .map(|w| w[1].to_string_lossy().into_owned())
-                .collect()
-        }
-
-        fn recorder_args_of(p: &Profile, scenario: &Scenario) -> Vec<OsString> {
-            let launch = Launch {
-                program: PathBuf::from(format!("/cli/{}", p.source)),
-                args: Vec::new(),
-                env: Vec::new(),
-            };
-            recorder_args(
-                &RecorderRun {
-                    out: Path::new("/runs/x"),
-                    scene: Path::new("/sb/scene.sock"),
-                    within: Path::new("/sb"),
-                    workspace: Path::new("/ws/proj"),
-                    cli_env: &[],
-                    cli_version: "1.2.3",
-                    launch: &launch,
-                    driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
-                },
-                p,
-                scenario,
-            )
-        }
-
         #[test]
-        fn no_word_reaches_the_recorder_with_its_daemon_port_unexpanded() {
+        fn every_profile_row_plans_with_nothing_left_to_expand() {
             for p in PROFILES {
                 for s in p.scenarios {
-                    let args = recorder_args_of(p, s);
-                    assert!(
-                        !args
-                            .iter()
-                            .any(|a| a.to_string_lossy().contains(DAEMON_PORT_PLACEHOLDER)),
-                        "{}/{}: {args:?}",
+                    let plan = plan_of(p, s);
+                    let json = serde_json::to_string(&plan).expect("json");
+                    for ph in Placeholder::ALL {
+                        assert!(
+                            !json.contains(ph.as_str()),
+                            "{}/{}: {} in {json}",
+                            p.source,
+                            s.name,
+                            ph.as_str()
+                        );
+                    }
+                    assert_eq!(
+                        serde_json::from_str::<CapturePlan>(&json).expect("a plan"),
+                        plan,
+                        "{}/{}",
                         p.source,
                         s.name
                     );
@@ -2689,21 +2762,23 @@ mod run {
             let p = hermetic::profile("opencode").expect("opencode");
             let scenario = p.scenario("delete").expect("the row");
             assert_eq!(scenario.turn.second, Some(Second::Bare));
-            let args = recorder_args_of(p, scenario);
+            let plan = plan_of(p, scenario);
             let server = format!("http://127.0.0.1:{}", TEST_PORTS.daemon);
+            let lit = |w: &str| Word::Lit(Resolved::try_from(w).expect("resolved"));
             assert_eq!(
-                flagged(&args, recorder_flag::SECOND_TURN),
+                plan.second_turn.as_ref().expect("a second turn").words(),
                 [
-                    "/cli/opencode",
-                    "session",
-                    "delete",
-                    "--server",
-                    &server,
-                    hermetic::SESSION_PLACEHOLDER,
+                    lit("/cli/opencode"),
+                    lit("session"),
+                    lit("delete"),
+                    lit("--server"),
+                    lit(&server),
+                    Word::Session,
                 ]
             );
+            let daemon = plan.daemon.as_ref().expect("a daemon");
             assert_eq!(
-                flagged(&args, recorder_flag::DAEMON),
+                strings(&daemon.start),
                 [
                     "/cli/opencode",
                     "serve",
@@ -2713,33 +2788,34 @@ mod run {
                 ]
             );
             assert_eq!(
-                flagged(&args, recorder_flag::DAEMON_READY),
+                strings(&daemon.ready),
                 ["/cli/opencode", "session", "list", "--server", &server]
             );
-            let source = args.iter().position(|a| a == p.source).expect("the source");
+            let first = strings(&plan.first_turn);
             assert!(
-                args[source..]
+                first
                     .windows(2)
                     .any(|w| w[0] == "--server" && w[1] == *server),
-                "the turn runs on the daemon: {args:?}"
+                "the turn runs on the daemon: {first:?}"
             );
         }
 
         #[test]
         fn a_daemon_profile_hands_the_recorder_its_daemon_and_its_config_the_held_port() {
             let p = hermetic::profile("openclaw").expect("openclaw");
-            let args = recorder_args_of(p, &p.scenarios[0]);
+            let plan = plan_of(p, &p.scenarios[0]);
+            let daemon = plan.daemon.as_ref().expect("a daemon");
+            assert_eq!(strings(&daemon.start), ["/cli/openclaw", "gateway", "run"]);
             assert_eq!(
-                flagged(&args, recorder_flag::DAEMON),
-                ["/cli/openclaw", "gateway", "run"]
-            );
-            assert_eq!(
-                flagged(&args, recorder_flag::DAEMON_READY),
+                strings(&daemon.ready),
                 ["/cli/openclaw", "gateway", "health"]
             );
             assert_eq!(
-                flagged(&args, recorder_flag::DAEMON_ENV),
-                ["OPENCLAW_GATEWAY_HOST_LIFELINE=stdin"]
+                daemon.env,
+                BTreeMap::from([(
+                    "OPENCLAW_GATEWAY_HOST_LIFELINE".to_owned(),
+                    "stdin".to_owned()
+                )])
             );
             let sandbox = Sandbox::new(
                 p,
@@ -2776,29 +2852,19 @@ mod run {
                 args: vec!["/cli/claude.js".into()],
                 env: Vec::new(),
             };
-            let args = recorder_args(
-                &RecorderRun {
-                    out: Path::new("/runs/x"),
-                    scene: Path::new("/sb/scene.sock"),
-                    within: Path::new("/sb"),
-                    workspace: Path::new("/ws/proj"),
-                    cli_env: &[],
-                    cli_version: "1.2.3",
-                    launch: &launch,
-                    driver: Path::new("/build/tui_drive"),
-                    ports: TEST_PORTS,
-                },
-                p,
-                scenario,
+            let plan = plan_in(Path::new("/runs/x"), &BTreeMap::new(), &launch, p, scenario);
+            let words: Vec<OsString> = strings(&plan.first_turn)
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            assert_eq!(
+                words[0], "/build/tui_drive",
+                "the driver runs as the command"
             );
-            let driver = args
-                .iter()
-                .position(|a| a == "/build/tui_drive")
-                .expect("the driver runs as the command");
-            let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
+            let line = tui::CommandLine::parse(&words[1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
-            assert_eq!(line.prompt, PROMPT_PLACEHOLDER);
+            assert_eq!(line.prompt, scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT));
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
@@ -2918,7 +2984,7 @@ mod run {
                     p.source
                 );
                 assert!(
-                    cli_env.contains(&"NODE_OPTIONS=--no-warnings".to_owned()),
+                    cli_env.get("NODE_OPTIONS").map(String::as_str) == Some("--no-warnings"),
                     "{}: the launch's own env misses the CLI",
                     p.source
                 );
@@ -2935,7 +3001,7 @@ mod run {
                     );
                     // The only path past the recorder's `CLAUDE_CODE_*` scrub.
                     assert!(
-                        cli_env.contains(&format!("{k}={want}")),
+                        cli_env.get(*k) == Some(&want),
                         "{}: {k} misses the CLI's `--env`",
                         p.source
                     );

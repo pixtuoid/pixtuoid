@@ -42,9 +42,9 @@ pub const WORKSPACE_PLACEHOLDER: &str = Placeholder::Workspace.as_str();
 pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = Placeholder::WorkspaceSlashed.as_str();
 /// What a [`Profile::invocation`] or [`Profile::second_turn`] spells its turn's
 /// prompt as.
-pub const PROMPT_PLACEHOLDER: &str = Placeholder::Prompt.as_str();
+pub(crate) const PROMPT_PLACEHOLDER: &str = Placeholder::Prompt.as_str();
 /// What a [`Profile::second_turn`] spells the session its second turn acts on as.
-pub const SESSION_PLACEHOLDER: &str = Placeholder::Session.as_str();
+pub(crate) const SESSION_PLACEHOLDER: &str = Placeholder::Session.as_str();
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
 pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = Placeholder::ShellTool.as_str();
@@ -223,7 +223,7 @@ pub struct Turn {
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Second {
-    /// A turn with this prompt, which the words spell as [`PROMPT_PLACEHOLDER`].
+    /// A turn with this prompt, which the words spell as [`Placeholder::Prompt`].
     Prompt(&'static str),
     /// No prompt: words that act on the session, as deleting it does.
     Bare,
@@ -299,13 +299,13 @@ pub struct Profile {
     pub source: &'static str,
     /// How users install it.
     pub package: Package,
-    /// The headless invocation: [`PROMPT_PLACEHOLDER`] expands to the
-    /// scenario's prompt in the runner, else to the recorder's shared one, and
-    /// `{port}`, `{key}` and [`DAEMON_PORT_PLACEHOLDER`] in the runner.
+    /// The headless invocation: [`Placeholder::Prompt`] expands to the
+    /// scenario's prompt in the runner, else to [`crate::harness::plan::DEFAULT_PROMPT`], and
+    /// `{port}`, `{key}` and [`DAEMON_PORT_PLACEHOLDER`] too.
     pub invocation: &'static [&'static str],
     /// The headless invocation of a second turn, as [`Turn::second`] runs it:
     /// the runner expands `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and a
-    /// [`Second::Prompt`]'s [`PROMPT_PLACEHOLDER`], the recorder [`SESSION_PLACEHOLDER`].
+    /// [`Second::Prompt`]'s [`Placeholder::Prompt`], the recorder only [`Placeholder::Session`].
     pub second_turn: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
     /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
