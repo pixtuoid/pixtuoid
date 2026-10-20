@@ -262,26 +262,39 @@ pub(crate) fn json_lines(file: &Path) -> std::io::Result<Vec<serde_json::Value>>
         .collect())
 }
 
-/// Every `.jsonl` under `dir`, recursively, sorted.
-pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
+/// Where a failed sandboxed run's scratch is copied inside its run dir: for
+/// whoever reads the run after, and never capture data.
+pub const SCRATCH_COPY: &str = "scratch";
+
+/// Every regular file under `dir`, recursively, sorted: a symlink is not
+/// followed and a socket, FIFO or broken link is not a file.
+pub fn files_under(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
     while let Some(d) = pending.pop() {
-        for p in std::fs::read_dir(d)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-        {
-            if p.is_dir() {
-                pending.push(p);
-            } else if p.extension().is_some_and(|x| x == "jsonl") {
-                files.push(p);
+        for entry in std::fs::read_dir(d).into_iter().flatten().flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if kind.is_file() {
+                files.push(entry.path());
             }
         }
     }
     files.sort();
     files
+}
+
+/// Every `.jsonl` under `dir`, recursively, sorted, but for a run dir's
+/// [`SCRATCH_COPY`], which holds logs and no capture.
+pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
+    let scratch = dir.join(SCRATCH_COPY);
+    files_under(dir)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && !p.starts_with(&scratch))
+        .collect()
 }
 
 /// A kind of token a CLI or the recorder mints afresh each run.
@@ -922,5 +935,48 @@ mod tests {
         let stale = transcript_in("codex", d.path()).expect_err("two transcripts");
         assert_eq!(stale.len(), 2, "{stale:?}");
         assert!(stale.contains(&rollout));
+    }
+
+    #[test]
+    fn a_run_dirs_scratch_copy_is_never_capture_data() {
+        let d = tempfile::tempdir().expect("run dir");
+        std::fs::write(d.path().join("hook-payloads.jsonl"), "{}\n").expect("write");
+        std::fs::create_dir_all(d.path().join(SCRATCH_COPY).join("deep")).expect("mkdir");
+        std::fs::write(d.path().join(SCRATCH_COPY).join("x.jsonl"), "{}\n").expect("write");
+        std::fs::write(d.path().join(SCRATCH_COPY).join("deep/y.jsonl"), "{}\n").expect("write");
+        std::fs::create_dir(d.path().join("s")).expect("mkdir");
+        std::fs::write(d.path().join("s").join("t.jsonl"), "{}\n").expect("write");
+        let names: Vec<_> = jsonl_files_under(d.path())
+            .iter()
+            .map(|p| p.strip_prefix(d.path()).expect("under").to_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                PathBuf::from("hook-payloads.jsonl"),
+                PathBuf::from("s/t.jsonl")
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_regular_files_are_walked_and_a_link_is_not_followed() {
+        let d = tempfile::tempdir().expect("dir");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.log"), "s").expect("write");
+        std::fs::write(d.path().join("a.log"), "a").expect("write");
+        std::os::unix::fs::symlink(outside.path(), d.path().join("link-to-dir")).expect("link");
+        std::os::unix::fs::symlink(outside.path().join("secret.log"), d.path().join("link.log"))
+            .expect("link");
+        std::os::unix::fs::symlink(d.path().join("nowhere"), d.path().join("broken"))
+            .expect("link");
+        let fifo = d.path().join("fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo");
+        assert!(made.success());
+        assert_eq!(files_under(d.path()), [d.path().join("a.log")]);
     }
 }

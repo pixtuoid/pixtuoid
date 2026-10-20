@@ -33,9 +33,9 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        NOTE_FILE, PROVENANCE, SecondTurn, canonical_capture, capture_base, capture_workspace,
-        capture_workspace_tail, jsonl_files_under, required_version_probe, slashed_under,
-        version_answer, wait_until,
+        NOTE_FILE, PROVENANCE, SCRATCH_COPY, SecondTurn, canonical_capture, capture_base,
+        capture_workspace, capture_workspace_tail, files_under, jsonl_files_under,
+        required_version_probe, slashed_under, version_answer, wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -66,17 +66,18 @@ mod recorder {
             })
     }
 
-    /// Where a failed sandboxed run's scratch is copied inside its run dir, which
-    /// the CI upload carries off the runner.
-    const SCRATCH_COPY: &str = "scratch";
-
     /// The most a failed run's copied scratch adds to the run dir: it rides an
     /// upload kept for days, beside everything else the run left.
     const SCRATCH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
+    /// What stands in a copied file's text and path for the operator's identity.
+    const REDACTED: &str = "<redacted>";
+
     /// Where `plan`'s failed run copies its scratch, if it may: only a sandboxed
-    /// raw capture, whose files hold nothing of the operator's. An operator's
-    /// billed capture may hold real credentials in its driver's logs.
+    /// raw capture. An operator's billed capture may hold real credentials in
+    /// its driver's logs; a sandboxed run's logs hold the operator's identity
+    /// only where the sandbox's env passes it through, which [`copy_scratch`]
+    /// redacts.
     fn scratch_destination(plan: &CapturePlan) -> Option<PathBuf> {
         match &plan.sink {
             Sink::Raw { out, .. } if plan.sandboxed() => Some(out.as_path().join(SCRATCH_COPY)),
@@ -84,10 +85,37 @@ mod recorder {
         }
     }
 
-    /// Copy the files of `from` into `into`, in path order, up to `cap` bytes;
-    /// the notices name each file left out and where the cap stopped it. A file
-    /// that is not text, or that embeds the operator's identity, is left out:
-    /// the run dir is uploaded, so nothing there may be one nobody checked.
+    /// `text` with every needle replaced by [`REDACTED`], a longer needle first
+    /// where two start at one place.
+    fn redact(text: &str, needles: &BTreeSet<String>) -> String {
+        let mut longest_first: Vec<&String> = needles.iter().collect();
+        longest_first.sort_by_key(|n| std::cmp::Reverse(n.len()));
+        let (mut out, mut rest) = (String::new(), text);
+        'scan: while let Some(c) = rest.chars().next() {
+            for needle in &longest_first {
+                if let Some(after) = rest.strip_prefix(needle.as_str()) {
+                    out.push_str(REDACTED);
+                    rest = after;
+                    continue 'scan;
+                }
+            }
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+        out
+    }
+
+    /// `rel` with each component redacted.
+    fn redact_path(rel: &Path, needles: &BTreeSet<String>) -> PathBuf {
+        rel.components()
+            .map(|c| redact(&c.as_os_str().to_string_lossy(), needles))
+            .collect()
+    }
+
+    /// Copy the text files of `from` into `into`, in path order, up to `cap`
+    /// bytes of what is written: each path and body with the operator's identity
+    /// redacted, since the run dir is uploaded. The notices name, by their
+    /// redacted paths, each file left out and where the cap stopped the copy.
     fn copy_scratch(
         from: &Path,
         into: &Path,
@@ -95,12 +123,15 @@ mod recorder {
         cap: u64,
     ) -> std::io::Result<Vec<String>> {
         let mut notices = Vec::new();
-        let mut files = files_under(from);
-        files.sort();
         let mut copied = 0u64;
-        for file in files {
-            let rel = file.strip_prefix(from).unwrap_or(&file).to_path_buf();
-            let len = std::fs::metadata(&file)?.len();
+        for file in files_under(from) {
+            let rel = redact_path(file.strip_prefix(from).unwrap_or(&file), needles);
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                notices.push(format!("scratch file {} left out: not text", rel.display()));
+                continue;
+            };
+            let body = redact(&text, needles);
+            let len = body.len() as u64;
             if copied + len > cap {
                 notices.push(format!(
                     "scratch copy stopped at its {cap}-byte cap before {}",
@@ -108,18 +139,14 @@ mod recorder {
                 ));
                 break;
             }
-            let Ok(body) = std::fs::read_to_string(&file) else {
-                notices.push(format!("scratch file {} left out: not text", rel.display()));
-                continue;
-            };
-            if !pii_hits(&body, needles).is_empty() {
+            let dest = into.join(&rel);
+            if dest.exists() {
                 notices.push(format!(
-                    "scratch file {} left out: it embeds the recorder's identity",
+                    "scratch file {} left out: redacted, its path is another file's",
                     rel.display()
                 ));
                 continue;
             }
-            let dest = into.join(&rel);
             if let Some(dir) = dest.parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -129,39 +156,21 @@ mod recorder {
         Ok(notices)
     }
 
-    /// Every file under `dir`, recursively.
-    fn files_under(dir: &Path) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        let mut pending = vec![dir.to_path_buf()];
-        while let Some(d) = pending.pop() {
-            for path in std::fs::read_dir(d)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| e.path())
-            {
-                if path.is_dir() {
-                    pending.push(path);
-                } else {
-                    files.push(path);
-                }
-            }
-        }
-        files
-    }
-
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
     /// driver left anything in [`driver_dir`]; and copy that into `run_copy`,
-    /// where a sandboxed run's upload finds it.
-    fn keep_scratch(scratch: tempfile::TempDir, run_copy: Option<&Path>) {
+    /// where a sandboxed run's upload finds it, redacting `needles()`.
+    fn keep_scratch(
+        scratch: tempfile::TempDir,
+        run_copy: Option<&Path>,
+        needles: impl FnOnce() -> BTreeSet<String>,
+    ) {
         if let Some(into) = run_copy {
-            let notices = copy_scratch(
+            match copy_scratch(
                 &driver_dir(scratch.path()),
                 into,
-                &identity_needles(git_config),
+                &needles(),
                 SCRATCH_CAP_BYTES,
-            );
-            match notices {
+            ) {
                 Ok(notices) => notices.iter().for_each(|n| eprintln!("{n}")),
                 Err(e) => eprintln!("the scratch copy failed: {e}"),
             }
@@ -326,7 +335,7 @@ mod recorder {
         ) {
             Ok(daemon) => daemon,
             Err(e) => {
-                keep_scratch(sandbox, run_copy.as_deref());
+                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
                 return Err(e);
             }
         };
@@ -335,7 +344,7 @@ mod recorder {
         let second_outcome = if let Some(words) = plan.second_turn() {
             tap.settle();
             let born = root.as_deref().map_or_else(Vec::new, |r| {
-                born_transcripts(&source, r, started, plan.within.is_some())
+                born_transcripts(&source, r, started, plan.sandboxed())
             });
             match first_session(&source, &tap.payloads(), &born) {
                 Some(session) => {
@@ -371,7 +380,7 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
-                keep_scratch(sandbox, run_copy.as_deref());
+                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
                 return Err(e);
             }
             kept => kept,
@@ -382,7 +391,7 @@ mod recorder {
         // A source can be BOTH: CC's tool run is in the transcript while its
         // permission gate is a hook event, so the two are harvested together.
         if let Some(root) = root.as_deref() {
-            for fresh in born_transcripts(&source, root, started, plan.within.is_some()) {
+            for fresh in born_transcripts(&source, root, started, plan.sandboxed()) {
                 wrote.push(place_transcript(&source, &fresh, &dest)?);
             }
         }
@@ -419,7 +428,7 @@ mod recorder {
                 || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
-                keep_scratch(sandbox, run_copy.as_deref());
+                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
             }
             return incomplete.map_or(Ok(()), Err);
         };
@@ -429,7 +438,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox, run_copy.as_deref());
+            keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
             std::process::exit(1);
         }
 
@@ -455,7 +464,7 @@ mod recorder {
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
-            keep_scratch(sandbox, run_copy.as_deref());
+            keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
         }
         pii?;
         println!("next: just test conformance   then   cargo insta review");
@@ -1184,6 +1193,11 @@ mod recorder {
             }
         }
         needles
+    }
+
+    /// [`identity_needles`] of the machine the recorder runs on.
+    fn operator_identity() -> BTreeSet<String> {
+        identity_needles(git_config)
     }
 
     fn git_config(key: &str) -> Option<String> {
@@ -2662,7 +2676,7 @@ mod recorder {
             let bare = tempfile::tempdir().expect("scratch");
             top_level(bare.path());
             let at = bare.path().to_path_buf();
-            keep_scratch(bare, None);
+            keep_scratch(bare, None, BTreeSet::new);
             assert!(!at.exists(), "top-level entries alone go");
 
             let used = tempfile::tempdir().expect("scratch");
@@ -2670,7 +2684,7 @@ mod recorder {
             let log = driver_dir(used.path()).join("openclaw-agent.log");
             std::fs::write(&log, "refused").expect("log");
             let at = used.path().to_path_buf();
-            keep_scratch(used, None);
+            keep_scratch(used, None, BTreeSet::new);
             assert!(log.is_file(), "a driver's log stays");
             std::fs::remove_dir_all(&at).expect("cleanup");
         }
@@ -2740,11 +2754,11 @@ mod recorder {
         }
 
         #[test]
-        fn a_scratch_file_with_the_operators_identity_or_no_text_is_left_out_and_named() {
+        fn a_scratch_file_naming_the_operator_is_copied_with_the_name_redacted() {
             let from = scratch_with(&[
                 ("clean.log", b"fine"),
-                ("leak.log", b"home is /Users/ada-lovelace/x"),
-                ("blob.bin", &[0xff, 0xfe, 0x00]),
+                ("leak.log", b"home is /Users/ada-lovelace/x, ada-lovelace"),
+                ("ada-lovelace/inner.log", b"in a dir named for them"),
             ]);
             let into = tempfile::tempdir().expect("run dir");
             let needles = BTreeSet::from(["ada-lovelace".to_owned()]);
@@ -2755,23 +2769,83 @@ mod recorder {
                 SCRATCH_CAP_BYTES,
             )
             .expect("copy");
+            assert_eq!(
+                std::fs::read_to_string(into.path().join("leak.log")).expect("copied"),
+                format!("home is /Users/{REDACTED}/x, {REDACTED}")
+            );
             assert!(into.path().join("clean.log").is_file());
-            assert!(!into.path().join("leak.log").exists());
-            assert!(!into.path().join("blob.bin").exists());
             assert!(
-                notices
-                    .iter()
-                    .any(|n| n.contains("leak.log") && n.contains("identity"))
+                !into.path().join("ada-lovelace").exists(),
+                "the path is renamed"
+            );
+            assert!(into.path().join(REDACTED).join("inner.log").is_file());
+            assert!(notices.is_empty(), "{notices:?}");
+        }
+
+        #[test]
+        fn a_notice_never_shows_the_identity_it_redacted() {
+            let from = scratch_with(&[
+                ("ada-lovelace/blob.bin", &[0xff, 0xfe, 0x00]),
+                ("ada-lovelace/b.log", b"1234"),
+            ]);
+            let into = tempfile::tempdir().expect("run dir");
+            let needles = BTreeSet::from(["ada-lovelace".to_owned()]);
+            let mut notices =
+                copy_scratch(&driver_dir(from.path()), into.path(), &needles, 2).expect("copy");
+            notices.extend(
+                copy_scratch(&driver_dir(from.path()), into.path(), &needles, 1 << 20)
+                    .expect("copy"),
             );
             assert!(
-                notices
-                    .iter()
-                    .any(|n| n.contains("blob.bin") && n.contains("not text"))
+                notices.iter().any(|n| n.contains("not text")),
+                "{notices:?}"
+            );
+            assert!(notices.iter().any(|n| n.contains("cap")), "{notices:?}");
+            assert!(
+                notices.iter().all(|n| !n.contains("ada-lovelace")),
+                "{notices:?}"
+            );
+        }
+
+        #[test]
+        fn two_files_that_redact_to_one_path_do_not_overwrite_each_other() {
+            let from = scratch_with(&[("a-1/x.log", b"one"), ("b-2/x.log", b"two")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let needles = BTreeSet::from(["a-1".to_owned(), "b-2".to_owned()]);
+            let notices = copy_scratch(
+                &driver_dir(from.path()),
+                into.path(),
+                &needles,
+                SCRATCH_CAP_BYTES,
+            )
+            .expect("copy");
+            assert_eq!(
+                std::fs::read_to_string(into.path().join(REDACTED).join("x.log")).expect("kept"),
+                "one"
             );
             assert!(
-                !notices.iter().any(|n| n.contains("ada-lovelace")),
-                "a notice must not repeat the identity it kept out"
+                notices.iter().any(|n| n.contains("another file's")),
+                "{notices:?}"
             );
+        }
+
+        #[test]
+        fn a_longer_needle_wins_where_two_start_together() {
+            let needles = BTreeSet::from(["ada".to_owned(), "ada-lovelace".to_owned()]);
+            assert_eq!(
+                redact("ada-lovelace ada", &needles),
+                format!("{REDACTED} {REDACTED}")
+            );
+        }
+
+        #[test]
+        fn a_file_that_is_not_text_does_not_end_the_copy() {
+            let big = vec![0xffu8; 64];
+            let from = scratch_with(&[("a.bin", &big), ("b.log", b"1234")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let notices = copy_scratch(&driver_dir(from.path()), into.path(), &no_needles(), 8)
+                .expect("copy");
+            assert!(into.path().join("b.log").is_file(), "{notices:?}");
         }
 
         #[test]
@@ -2789,6 +2863,31 @@ mod recorder {
                     .any(|n| n.contains("cap") && n.contains("b.log")),
                 "{notices:?}"
             );
+        }
+
+        #[test]
+        fn a_scratch_exactly_the_size_of_the_cap_is_copied_whole() {
+            let from = scratch_with(&[("a.log", b"1234"), ("b.log", b"5678")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let notices = copy_scratch(&driver_dir(from.path()), into.path(), &no_needles(), 8)
+                .expect("copy");
+            assert!(notices.is_empty(), "{notices:?}");
+            assert!(into.path().join("b.log").is_file());
+        }
+
+        #[test]
+        fn a_failed_runs_scratch_reaches_its_run_dir_through_keep_scratch() {
+            let scratch = scratch_with(&[("daemon.log", b"up as ada-lovelace")]);
+            let at = scratch.path().to_path_buf();
+            let into = tempfile::tempdir().expect("run dir");
+            keep_scratch(scratch, Some(into.path()), || {
+                BTreeSet::from(["ada-lovelace".to_owned()])
+            });
+            assert_eq!(
+                std::fs::read_to_string(into.path().join("daemon.log")).expect("copied"),
+                format!("up as {REDACTED}")
+            );
+            std::fs::remove_dir_all(at).expect("cleanup");
         }
 
         /// The recorder's env names cross into every driver, each a copy a rename
