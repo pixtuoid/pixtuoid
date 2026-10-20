@@ -9,5 +9,9 @@
     "blanked": 3
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/opencode/permission.json"
+  "script": "tests/sources/hermetic/opencode/permission.json",
+  "dropped": {
+    "os": "macos",
+    "at": {}
+  }
 }

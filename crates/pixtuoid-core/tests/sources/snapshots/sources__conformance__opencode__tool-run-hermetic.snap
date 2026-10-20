@@ -3,49 +3,49 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     source: opencode
-    session_id: ses_ea89b3afeffevquBcHTJNv43nh
+    session_id: ses_ea824de9cffeUXxSVXvPSWAzia
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     source: opencode
-    session_id: ses_ea89b3afeffevquBcHTJNv43nh
+    session_id: ses_ea824de9cffeUXxSVXvPSWAzia
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     source: opencode
-    session_id: ses_ea89b3afeffevquBcHTJNv43nh
+    session_id: ses_ea824de9cffeUXxSVXvPSWAzia
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 11653584015644224352
-    tool_use_id: call_lZPFFq4hrUZVSVpi
+    agent_id: 7073396127926797670
+    tool_use_id: call_YEBUIF6QWZYjMDri
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     source: opencode
-    session_id: ses_ea89b3afeffevquBcHTJNv43nh
+    session_id: ses_ea824de9cffeUXxSVXvPSWAzia
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 11653584015644224352
-    tool_use_id: call_lZPFFq4hrUZVSVpi
+    agent_id: 7073396127926797670
+    tool_use_id: call_YEBUIF6QWZYjMDri
 - Identity:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     source: opencode
-    session_id: ses_ea89b3afeffevquBcHTJNv43nh
+    session_id: ses_ea824de9cffeUXxSVXvPSWAzia
     cwd: ~
 - ActivityEnd:
-    agent_id: 11653584015644224352
+    agent_id: 7073396127926797670
     tool_use_id: ~

@@ -3,58 +3,58 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 8919187361430127790
-    tool_use_id: call_z4Pcu84wjCPR7xYU
+    agent_id: 15944691332274010817
+    tool_use_id: call_akFPj8Hr9hlZYjIE
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     reason: shell
-    tool_use_id: call_z4Pcu84wjCPR7xYU
+    tool_use_id: call_akFPj8Hr9hlZYjIE
 - Identity:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 8919187361430127790
-    tool_use_id: call_z4Pcu84wjCPR7xYU
+    agent_id: 15944691332274010817
+    tool_use_id: call_akFPj8Hr9hlZYjIE
 - Identity:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     source: opencode
-    session_id: ses_ea89aa2d3ffefcoTLLvez3WzZG
+    session_id: ses_ea8243508ffevxxAoBFb91hMvn
     cwd: ~
 - ActivityEnd:
-    agent_id: 8919187361430127790
+    agent_id: 15944691332274010817
     tool_use_id: ~
