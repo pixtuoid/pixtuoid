@@ -45,7 +45,7 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROVENANCE, Resumed, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
 
@@ -326,7 +326,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let _recording = record_lock(&ws, &capture_workspace()?, &capture_root()?)?;
+        let _recording = record_lock(&ws)?;
         let workspace = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
@@ -701,18 +701,17 @@ mod recorder {
     /// workspace holds.
     const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The lock a capture in `ws` holds until it ends: `canonical`'s, under
-    /// `root`, since every capture there clears it, so they take turns. A
-    /// workspace of a run's own takes none.
-    fn record_lock(
-        ws: &Path,
-        canonical: &Path,
-        root: &Path,
-    ) -> std::io::Result<Option<std::fs::File>> {
-        if ws != canonical {
-            return Ok(None);
-        }
-        hold_lock(&root.join(RECORD_LOCK)).map(Some)
+    /// The lock a capture in `ws` holds until it ends, in the directory its
+    /// base sits in: the capture root for the canonical workspace, which every
+    /// recording clears, so they take turns; a replay's own root for its own,
+    /// which nothing else locks.
+    fn record_lock(ws: &Path) -> std::io::Result<std::fs::File> {
+        // Read off `ws`, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
+        let dir = capture_base(ws).and_then(Path::parent).ok_or_else(|| {
+            std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
+        })?;
+        hold_lock(&dir.join(RECORD_LOCK))
     }
 
     fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
@@ -1201,21 +1200,23 @@ mod recorder {
         const OPERATOR: &str = "Ada Lovelace";
 
         #[test]
-        fn only_a_capture_of_the_canonical_workspace_takes_turns() {
+        fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
             let canonical = d.path().join("pixtuoid-capture/proj");
-            let own = d.path().join("pixtuoid-run-1/pixtuoid-capture/proj");
-            assert!(
-                record_lock(&own, &canonical, d.path())
-                    .expect("no lock")
-                    .is_none()
-            );
-            let held = record_lock(&canonical, &canonical, d.path()).expect("the lock");
-            assert!(held.is_some());
+            let own = d.path().join("pixtuoid-run-1");
+            std::fs::create_dir(&own).expect("a replay's root");
+            let held = record_lock(&canonical).expect("the canonical lock");
+            let replay = record_lock(&own.join("pixtuoid-capture/proj"))
+                .expect("a replay never waits on a recording");
             let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
-            assert!(other.try_lock().is_err(), "a second capture waits");
+            assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
+            drop((other, replay));
+            assert!(
+                record_lock(d.path()).is_err(),
+                "a path that is no capture workspace has no lock"
+            );
         }
 
         struct Promotable {
