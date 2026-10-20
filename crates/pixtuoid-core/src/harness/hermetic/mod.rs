@@ -387,17 +387,9 @@ pub const SCENE_LOG: &str = "scene.log";
 /// The pty log of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_LOG: &str = "tui.log";
-/// The provenance key naming the aimock a recording ran against, which only
-/// the tier's own recordings carry.
-pub const PROVENANCE_AIMOCK: &str = "aimock";
-
 /// The file beside a run's report counting its New findings, which
 /// `hermetic.yml` reads to upload a run that passed with one.
 pub const NEW_TYPES: &str = "new-types.json";
-
-/// The provenance key holding what a tier recording's decoders dropped
-/// ([`dropped::Dropped`]), the baseline a New finding is judged against.
-pub const PROVENANCE_DROPPED: &str = "dropped";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -2184,6 +2176,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::harness::provenance::Provenance;
 
     #[test]
     fn hermetic_yml_reads_the_new_types_the_tier_writes() {
@@ -2375,16 +2368,12 @@ mod tests {
         for p in PROFILES {
             for s in p.scenarios {
                 assert!(fixtures.insert(s.fixture), "{} recorded twice", s.fixture);
-                let prov = crate::harness::sources_root()
+                let path = crate::harness::sources_root()
                     .join(s.fixture)
                     .join(crate::harness::PROVENANCE);
-                let prov: serde_json::Value = serde_json::from_str(
-                    &std::fs::read_to_string(&prov)
-                        .unwrap_or_else(|e| panic!("{}: {}: {e}", p.source, prov.display())),
-                )
-                .expect("provenance is json");
+                let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
-                    prov.get(PROVENANCE_AIMOCK).is_some(),
+                    prov.recorded().is_some_and(|r| r.aimock.is_some()),
                     "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",
                     p.source,
                     s.fixture

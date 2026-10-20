@@ -12,16 +12,17 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::dropped::{self, Dropped, Unjudged};
+use super::dropped::{self, Unjudged};
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
     Surface, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
+use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
-    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves, strips,
+    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
+use crate::harness::{Drive, Driven, HOOK_PAYLOADS, Reach, captures};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -487,9 +488,7 @@ pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
         if capture.source != p.source {
             continue;
         }
-        let record: Value =
-            serde_json::from_str(&std::fs::read_to_string(capture.dir.join(PROVENANCE))?)?;
-        if !strips(&record) {
+        if !Provenance::read(&capture.provenance_path())?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {
@@ -769,7 +768,7 @@ fn new_types(
 ) -> std::io::Result<Option<Unjudged>> {
     let b = match baseline {
         None => return Ok(Some(Unjudged::NoBaseline)),
-        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.clone()))),
+        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.to_string()))),
         Some(b) => b,
     };
     for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
@@ -2931,7 +2930,7 @@ mod tests {
         assert!(!Verdict::new(vec![(Label::Stale, String::new())]).passed());
 
         let elsewhere = Dropped {
-            os: "plan9".to_owned(),
+            os: "plan9".try_into().expect("an OS"),
             ..baseline
         };
         let (v, unjudged) = check(Some(&elsewhere));
@@ -2956,7 +2955,7 @@ mod tests {
             .expect("codex's tool-run");
         let want = match dropped::baseline_of(scenario).expect("baseline") {
             None => Some(Unjudged::NoBaseline),
-            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
+            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os.to_string())),
             Some(_) => None,
         };
         assert_eq!(v.unjudged(), want.as_ref(), "{:?}", v.findings());

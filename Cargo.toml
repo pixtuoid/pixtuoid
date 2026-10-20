@@ -148,6 +148,7 @@ semver             = "1"
 windows-sys        = "0.61"
 criterion          = { package = "codspeed-criterion-compat", version = "5", default-features = false, features = ["cargo_bench_support"] }
 insta              = "1"
+schemars           = "1"
 snapbox            = "1"
 proptest           = "1"
 tempfile           = "3"

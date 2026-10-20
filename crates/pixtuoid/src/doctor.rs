@@ -1286,7 +1286,7 @@ fn focus_category(r: &DoctorReport, ink: &Ink) -> Category {
         }
         let tag = format!("{}\u{b7}{}", d.label_prefix, src);
         match d.focus_channel() {
-            FocusChannel::ShimStamp => shim_stamp.push(tag),
+            FocusChannel::ShimStamp(_) => shim_stamp.push(tag),
             FocusChannel::PluginStamp => plugin_stamp.push(tag),
             FocusChannel::Unsupported | FocusChannel::ServerStamp => no_channel.push(tag),
             FocusChannel::TranscriptProbe => unreachable!("skipped above"),
