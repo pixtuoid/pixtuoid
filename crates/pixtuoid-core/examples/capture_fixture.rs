@@ -447,7 +447,7 @@ mod recorder {
                 version,
                 exit_code: status.code(),
                 resumed,
-                note_survived: Some(note_survived),
+                note_survived,
             };
             std::fs::write(
                 dest.join(CAPTURE_RECORD),
@@ -633,12 +633,6 @@ mod recorder {
 
     /// What the harvest keeps of `source`'s transcripts under `root` born since
     /// `started`.
-    /// Whether the note [`prepare_workspace`] planted is still there, unchanged.
-    fn note_survived(workspace: &Path) -> bool {
-        std::fs::read_to_string(workspace.join("NOTE.txt"))
-            .is_ok_and(|note| note == format!("{CAPTURE_NOTE}\n"))
-    }
-
     fn born_transcripts(
         source: &str,
         root: &Path,
@@ -652,6 +646,20 @@ mod recorder {
             ),
             sandboxed,
         )
+    }
+
+    /// The file every capture workspace starts with, which the scripts read
+    /// and a permission script's refused call would delete.
+    const NOTE_FILE: &str = "NOTE.txt";
+
+    fn plant_note(ws: &Path) -> std::io::Result<()> {
+        std::fs::write(ws.join(NOTE_FILE), format!("{CAPTURE_NOTE}\n"))
+    }
+
+    /// Whether the note [`plant_note`] wrote is still there, unchanged.
+    fn note_survived(workspace: &Path) -> bool {
+        std::fs::read_to_string(workspace.join(NOTE_FILE))
+            .is_ok_and(|note| note == format!("{CAPTURE_NOTE}\n"))
     }
 
     /// The root session the first turn's own wire names: the first its hook
@@ -765,7 +773,7 @@ mod recorder {
         // anyone re-created it since the remove.
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
-        std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n"))?;
+        plant_note(&ws)?;
         if let Some(seed) = std::env::var_os(SEED_ENV) {
             copy_tree(Path::new(&seed), &ws)?;
         }
@@ -1296,7 +1304,7 @@ mod recorder {
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
                     resumed: None,
-                    note_survived: None,
+                    note_survived: true,
                 },
                 aimock: "1.43.0".into(),
                 requests: 3,
@@ -1411,7 +1419,7 @@ mod recorder {
                     version: "1.0.98".into(),
                     exit_code: Some(0),
                     resumed: None,
-                    note_survived: None,
+                    note_survived: true,
                 },
                 aimock: "1.45.1".into(),
                 requests: 2,
@@ -1487,7 +1495,7 @@ mod recorder {
             let d = tempfile::tempdir().expect("tempdir");
             let ws = d.path().join("ws");
             std::fs::create_dir(&ws).expect("mkdir");
-            std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n")).expect("write");
+            plant_note(&ws).expect("plant");
             // An operator config whose signing and commit-msg hook both fail.
             let hooks = d.path().join("hooks");
             std::fs::create_dir(&hooks).expect("mkdir");
@@ -1595,12 +1603,11 @@ mod recorder {
         #[test]
         fn the_note_survives_only_while_it_is_there_unchanged() {
             let d = tempfile::tempdir().expect("tempdir");
-            let note = d.path().join("NOTE.txt");
             assert!(!note_survived(d.path()), "a deleted note did not survive");
-            std::fs::write(&note, "other\n").expect("write");
+            plant_note(d.path()).expect("plant");
+            assert!(note_survived(d.path()), "the planted note is the survivor");
+            std::fs::write(d.path().join(NOTE_FILE), "other\n").expect("write");
             assert!(!note_survived(d.path()), "a rewritten note did not survive");
-            std::fs::write(&note, format!("{CAPTURE_NOTE}\n")).expect("write");
-            assert!(note_survived(d.path()));
         }
 
         #[test]
@@ -2135,7 +2142,7 @@ mod recorder {
                 resumed: resumed.map(|code| Resumed {
                     exit_code: Some(code),
                 }),
-                note_survived: None,
+                note_survived: true,
             };
             assert!(exited_as_scripted(
                 "openclaw",

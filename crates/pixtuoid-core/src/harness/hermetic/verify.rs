@@ -883,14 +883,11 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
 fn permission(
     events: &[AgentEvent],
     reached: &[Reach],
-    note_survived: Option<bool>,
+    note_survived: bool,
     findings: &mut Vec<(Label, String)>,
 ) {
-    if note_survived != Some(true) {
-        findings.push((
-            Label::Fail,
-            "the note the refused call deletes is gone, or was never checked".into(),
-        ));
+    if !note_survived {
+        findings.push((Label::Fail, "the note is gone".into()));
     }
     if !reached.contains(&Reach::Waiting) {
         findings.push((Label::Fail, "the slot never went Waiting".into()));
@@ -926,9 +923,9 @@ fn permission(
     } else if started.is_empty() {
         // No start carries a call id (reasonix): one End per Start (a
         // guardian's read before the wait) plus the turn's, counted not paired
-        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0). The script
-        // contract forbids a retry after the refusal, and the note's survival
-        // proves the refused call never ran.
+        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0).
+        // `a_permission_script_calls_no_tool_after_its_refusal` forbids a
+        // retry, and the note's survival proves the refused call never ran.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
@@ -1346,7 +1343,7 @@ mod tests {
                 version: "test".into(),
                 exit_code: Some(0),
                 resumed: None,
-                note_survived: Some(true),
+                note_survived: true,
             },
             aimock: "test".into(),
             requests: 2,
@@ -1734,19 +1731,17 @@ mod tests {
 
     #[test]
     fn a_refused_call_that_took_the_note_with_it_fails() {
-        for (survived, label) in [(Some(false), Label::Fail), (None, Label::Fail)] {
-            let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
-            write_manifest(d.path(), "dsh", |m| {
-                m.scenario = "permission".into();
-                m.capture.note_survived = survived;
-            });
-            let v = verify(d.path()).expect("verify");
-            assert!(
-                has(&v, label, "the refused call deletes is gone"),
-                "{survived:?}: {:?}",
-                v.findings()
-            );
-        }
+        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        write_manifest(d.path(), "dsh", |m| {
+            m.scenario = "permission".into();
+            m.capture.note_survived = false;
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "the note is gone"),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]
