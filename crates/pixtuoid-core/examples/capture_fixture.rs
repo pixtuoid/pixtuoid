@@ -376,7 +376,7 @@ mod recorder {
             &options.env,
         )?
         .status()?;
-        let second_turn = if options.second_turn.is_empty() {
+        let second_outcome = if options.second_turn.is_empty() {
             None
         } else {
             tap.settle();
@@ -408,7 +408,7 @@ mod recorder {
                 }
             }
         };
-        let no_second_turn = !options.second_turn.is_empty() && second_turn.is_none();
+        let second_turn_skipped = !options.second_turn.is_empty() && second_outcome.is_none();
         let note_survived = note_survived(&workspace);
         let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(*DAEMON_STOP_GRACE.here()));
         tap.settle();
@@ -452,7 +452,7 @@ mod recorder {
                 cli,
                 version,
                 exit_code: status.code(),
-                second_turn,
+                second_turn: second_outcome,
                 note_survived,
             };
             std::fs::write(
@@ -463,7 +463,7 @@ mod recorder {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
             if incomplete.is_some()
-                || no_second_turn
+                || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
                 keep_scratch(sandbox);
