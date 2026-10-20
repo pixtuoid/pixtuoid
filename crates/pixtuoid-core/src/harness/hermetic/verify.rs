@@ -1097,7 +1097,7 @@ fn child_error(
     findings: &mut Vec<(Label, String)>,
 ) {
     // Its turn's end, or its session's where the end of a headless run is
-    // the session's own (copilot's `-p` writes no `session.task_complete`).
+    // the session's own (copilot's plain `-p` writes no `session.task_complete`).
     let ended = |parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::ActivityEnd {

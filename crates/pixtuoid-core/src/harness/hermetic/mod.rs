@@ -1566,6 +1566,19 @@ model = "deepseek-v4-flash"
                 },
             },
             Scenario {
+                name: "autopilot",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[],
+                fixture: "fixtures/copilot/autopilot-hermetic",
+                // `--autopilot`: "Start in autopilot mode" (`copilot --help` at
+                // 1.0.98), which offers the `task_complete` tool plain `-p` does not.
+                turn: Turn {
+                    args: &["--autopilot"],
+                    ..Turn::PROFILE
+                },
+            },
+            Scenario {
                 name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Headless,
@@ -1615,7 +1628,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.task_complete"],
+        not_yet_literals: &[],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
