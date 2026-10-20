@@ -97,10 +97,9 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
     }
     let mut proposals = Vec::new();
     for p in PROFILES {
-        let versions: Vec<Option<&str>> = OSES
+        let versions: Vec<Option<&str>> = moved
             .iter()
-            .zip(&moved)
-            .map(|(_, rows)| {
+            .map(|rows| {
                 rows.iter()
                     .find(|r| r.source == p.source)
                     .map(|r| r.version.as_str())

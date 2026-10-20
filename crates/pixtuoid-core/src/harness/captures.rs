@@ -145,7 +145,7 @@ pub fn version_answer(out: &std::process::Output) -> Option<String> {
 }
 
 /// How long a server the rig starts gets to come up.
-pub const BOOT: Duration = Duration::from_secs(120);
+pub const BOOT: Duration = Duration::from_secs(60);
 /// How often a server that is coming up is asked whether it serves.
 const POLL: Duration = Duration::from_millis(200);
 
@@ -206,6 +206,8 @@ pub mod recorder_flag {
     pub const DAEMON: &str = "--daemon";
     /// One word of `Options::daemon`'s readiness probe.
     pub const DAEMON_READY: &str = "--daemon-ready";
+    /// One `KEY=VALUE` of `Options::daemon`'s own environment.
+    pub const DAEMON_ENV: &str = "--daemon-env";
     /// One word of `Options::resume`, the invocation a second turn runs.
     pub const RESUME: &str = "--resume-word";
 }
