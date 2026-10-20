@@ -1,11 +1,12 @@
 //! reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
 
+use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
 
 use serde_json::Value;
 
 use crate::harness::hermetic::{
-    ConfigFile, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
 /// reasonix's TUI. A named mode skips the folder-trust question, whose yes
@@ -45,7 +46,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "--allowed-tools",
         "task,explore",
         "-p",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
     ],
     second_turn: None,
     // Off already for a non-interactive run, and pinned off against a

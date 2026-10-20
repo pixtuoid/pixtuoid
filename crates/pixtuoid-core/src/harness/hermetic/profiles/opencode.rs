@@ -3,9 +3,9 @@
 
 use super::type_field;
 use crate::harness::hermetic::{
-    ConfigFile, DAEMON_PORT_PLACEHOLDER, Daemon, HostConfig, PROMPT_PLACEHOLDER, Package, PerOs,
-    Profile, SESSION_PLACEHOLDER, Scenario, Second, Shape, Surface, Turn,
+    ConfigFile, Daemon, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn,
 };
+use crate::harness::plan::Placeholder;
 
 /// opencode's daemon, as its `--server` commands name it.
 const SERVER: &str = "http://127.0.0.1:{daemon_port}";
@@ -24,7 +24,7 @@ pub(crate) const PROFILE: Profile = Profile {
         SERVER,
         "--model",
         "openai/gpt-5.2",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
     ],
     // `session delete` (`packages/cli/src/commands/commands.ts:437-443` at
     // v2.1.0).
@@ -34,7 +34,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "delete",
         "--server",
         SERVER,
-        SESSION_PLACEHOLDER,
+        Placeholder::Session.as_str(),
     ]),
     env: &[
         // The models.dev fetch and the update check
@@ -178,7 +178,12 @@ pub(crate) const PROFILE: Profile = Profile {
     // listing the sessions loads the workspace, and with it the plugin,
     // before the turn.
     daemon: Some(Daemon {
-        start: &["serve", "--stdio", "--port", DAEMON_PORT_PLACEHOLDER],
+        start: &[
+            "serve",
+            "--stdio",
+            "--port",
+            Placeholder::DaemonPort.as_str(),
+        ],
         ready: &["session", "list", "--server", SERVER],
         env: &[],
     }),

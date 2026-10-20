@@ -40,15 +40,13 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
-        LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second, Step, StepRecord,
-        Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
+        self, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV,
+        LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
+        Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::plan::{
-        AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Resolved,
-        Sink, Word,
+        AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
     };
     use pixtuoid_core::harness::provenance::NonEmpty;
     use pixtuoid_core::harness::tap::Endpoint;
@@ -649,8 +647,7 @@ mod run {
     fn record(ctx: &Ctx, p: &Profile, runs: &Path) -> std::io::Result<()> {
         for scenario in p.scenarios {
             let status = Command::new(&ctx.built.recorder)
-                .arg(Invocation::PROMOTE)
-                .arg(run_dir(runs, p, scenario))
+                .args(Invocation::promote_args(&run_dir(runs, p, scenario)))
                 .status()?;
             if !status.success() {
                 return Err(std::io::Error::other(format!(
@@ -1524,7 +1521,7 @@ mod run {
             }
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
-            // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
+            // the CLI under test also gets it in the plan's `cli_env` (`Sandbox::cli_env`).
             for (k, v) in p.env {
                 env.push(((*k).to_string(), expand(v).into()));
             }
@@ -1808,10 +1805,7 @@ mod run {
         // A root absent at boot is watched only from the next poll, so a short
         // run would reach pixtuoid by hook alone.
         let mut prepare = sandbox.command(&built.recorder);
-        prepare
-            .args([Invocation::PREPARE_ROOT, Invocation::WITHIN])
-            .arg(sandbox.dir.path())
-            .arg(p.source);
+        prepare.args(Invocation::prepare_root_args(sandbox.dir.path(), p.source));
         succeed(prepare)?;
 
         let scene = Reaped(
@@ -1829,7 +1823,7 @@ mod run {
             Ok(sandbox.scene.accepting())
         })?;
 
-        let plan_file = write_plan(
+        let plan_file = plan_for(
             &RecorderRun {
                 out: dir,
                 scene: sandbox.scene.path(),
@@ -1843,11 +1837,11 @@ mod run {
             },
             p,
             scenario,
-        )?;
+        )?
+        .write_to(dir)?;
         let recorder = sandbox
             .command(&built.recorder)
-            .arg(Invocation::PLAN)
-            .arg(plan_file)
+            .args(Invocation::plan_args(&plan_file))
             .stdout(log(dir, RECORDER_LOG)?)
             .stderr(log(dir, RECORDER_LOG)?)
             .status()?;
@@ -1897,7 +1891,7 @@ mod run {
     }
 
     /// Config a CLI would read that no sandbox home redirects: one of
-    /// `system_config`'s places, its [`USER_PLACEHOLDER`] the operator's
+    /// `system_config`'s places, its [`Placeholder::User`] the operator's
     /// (unchecked with none), or one of `ancestor_config` in an ancestor of
     /// `workspace`, which need not exist yet. An ancestor may be a symlink (macOS's `/tmp`), so
     /// the ancestors of the nearest existing one's target count too.
@@ -1930,8 +1924,8 @@ mod run {
         match row {
             HostConfig::Path(path) => {
                 let path = match user {
-                    _ if !path.contains(USER_PLACEHOLDER) => (*path).to_owned(),
-                    Some(name) => path.replace(USER_PLACEHOLDER, name),
+                    _ if !path.contains(Placeholder::User.as_str()) => (*path).to_owned(),
+                    Some(name) => path.replace(Placeholder::User.as_str(), name),
                     None => return None,
                 };
                 let path = pixtuoid_core::harness::host::known_folders_expanded(&path)?;
@@ -1986,16 +1980,6 @@ mod run {
         ports: Ports,
     }
 
-    /// [`plan_for`]'s plan, written into the run dir where it stays for whoever
-    /// reads the run after: the file the recorder is started on.
-    fn write_plan(
-        run: &RecorderRun<'_>,
-        p: &Profile,
-        scenario: &Scenario,
-    ) -> std::io::Result<PathBuf> {
-        plan_for(run, p, scenario)?.write_to(run.out)
-    }
-
     /// The plan the recorder runs one scenario from: every word finished here,
     /// since the recorder expands nothing but the session its second turn names.
     fn plan_for(
@@ -2017,7 +2001,8 @@ mod run {
             .collect::<std::io::Result<Vec<_>>>()?;
         let ported = |word: &str| expanded(word, run.ports);
         let prompt = scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT);
-        let prompted = |word: &str| ported(word).replace(Placeholder::Prompt.as_str(), prompt);
+        let prompted =
+            |word: &str, prompt: &str| ported(word).replace(Placeholder::Prompt.as_str(), prompt);
         let with_launch =
             |words: Vec<String>| launch.iter().cloned().chain(words).collect::<Vec<_>>();
         let daemon = match &p.daemon {
@@ -2036,25 +2021,19 @@ mod run {
         };
         let second_turn = match (scenario.turn.second, p.second_turn) {
             (Some(second), Some(words)) => {
-                let words = words[1..].iter().map(|w| match second {
-                    Second::Prompt(prompt) => {
-                        ported(w).replace(Placeholder::Prompt.as_str(), prompt)
-                    }
-                    Second::Bare => ported(w),
-                });
-                let words = launch
-                    .iter()
-                    .cloned()
-                    .chain(words)
-                    .map(|w| {
-                        if w == Placeholder::Session.as_str() {
-                            Ok(Word::Session)
-                        } else {
-                            Resolved::try_from(w).map(Word::Lit)
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(plan_error)?;
+                let words = with_launch(
+                    words[1..]
+                        .iter()
+                        .map(|w| match second {
+                            Second::Prompt(prompt) => prompted(w, prompt),
+                            Second::Bare => ported(w),
+                        })
+                        .collect(),
+                )
+                .into_iter()
+                .map(Word::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(plan_error)?;
                 Some(Argv::try_from(words).map_err(plan_error)?)
             }
             _ => None,
@@ -2063,7 +2042,7 @@ mod run {
             Surface::Headless => with_launch(
                 p.invocation[1..]
                     .iter()
-                    .map(|w| prompted(w))
+                    .map(|w| prompted(w, prompt))
                     .chain(scenario.turn.args.iter().map(|w| (*w).to_owned()))
                     .collect(),
             ),
@@ -2092,6 +2071,7 @@ mod run {
             scenario: scenario.name.to_owned(),
             sink: Sink::Raw {
                 out: path(run.out)?,
+                second_turn,
             },
             tee: Some(path(run.scene)?),
             within: Some(path(run.within)?),
@@ -2099,11 +2079,8 @@ mod run {
             cli_version: Some(NonEmpty::try_from(run.cli_version).map_err(std::io::Error::other)?),
             cli_env: run.cli_env.clone(),
             seed: None,
-            prompt_override: None,
-            recorded_command: None,
             daemon,
             first_turn: Argv::resolved(first_turn).map_err(plan_error)?,
-            second_turn,
         })
     }
 
@@ -2154,16 +2131,19 @@ mod run {
     /// with its placeholders expanded.
     fn config_text(template: &str, ports: Ports, workspace: &str) -> String {
         expanded(template, ports)
-            .replace(WORKSPACE_SLASHED_PLACEHOLDER, &workspace.replace('\\', "/"))
-            .replace(WORKSPACE_PLACEHOLDER, workspace)
+            .replace(
+                Placeholder::WorkspaceSlashed.as_str(),
+                &workspace.replace('\\', "/"),
+            )
+            .replace(Placeholder::Workspace.as_str(), workspace)
     }
 
     /// A profile string with its run's ports and the dummy key in it.
     fn expanded(template: &str, ports: Ports) -> String {
         template
-            .replace("{port}", &ports.model.to_string())
-            .replace(DAEMON_PORT_PLACEHOLDER, &ports.daemon.to_string())
-            .replace("{key}", DUMMY_KEY)
+            .replace(Placeholder::Port.as_str(), &ports.model.to_string())
+            .replace(Placeholder::DaemonPort.as_str(), &ports.daemon.to_string())
+            .replace(Placeholder::Key.as_str(), DUMMY_KEY)
     }
 
     /// `workspace` as a CLI's `getcwd` reports it: Unix's realpath (macOS's
@@ -2220,7 +2200,7 @@ mod run {
     }
 
     /// The ports one run uses, each free when picked: the scripted model's, which
-    /// `{port}` names, and a daemon's, which [`DAEMON_PORT_PLACEHOLDER`] names.
+    /// `{port}` names, and a daemon's, which [`Placeholder::DaemonPort`] names.
     #[derive(Debug, Clone, Copy)]
     struct Ports {
         model: u16,
@@ -2269,6 +2249,8 @@ mod run {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use pixtuoid_core::harness::plan::Resolved;
+        use strum::VariantArray;
 
         const TEST_PORTS: Ports = Ports {
             model: 4321,
@@ -2546,7 +2528,7 @@ mod run {
             let pattern = d
                 .path()
                 .join("prefs")
-                .join(USER_PLACEHOLDER)
+                .join(Placeholder::User.as_str())
                 .join("managed.plist");
             // The placeholder kept literal, and expanded to nothing: what the
             // no-user arm would find if it checked anything.
@@ -2587,6 +2569,12 @@ mod run {
             }
         }
 
+        /// A path rooted where this host roots one: a plan refuses a relative path,
+        /// and `/sb` is not absolute on Windows.
+        fn host(tail: &str) -> PathBuf {
+            std::env::temp_dir().join(tail)
+        }
+
         fn plan_in(
             out: &Path,
             cli_env: &BTreeMap<String, String>,
@@ -2597,9 +2585,9 @@ mod run {
             plan_for(
                 &RecorderRun {
                     out,
-                    scene: Path::new("/sb/scene.sock"),
-                    within: Path::new("/sb"),
-                    workspace: Path::new("/ws/proj"),
+                    scene: &host("sb/scene.sock"),
+                    within: &host("sb"),
+                    workspace: &host("ws/proj"),
                     cli_env,
                     cli_version: "1.2.3",
                     launch,
@@ -2614,7 +2602,7 @@ mod run {
 
         fn plan_of(p: &Profile, scenario: &Scenario) -> CapturePlan {
             plan_in(
-                Path::new("/runs/x"),
+                &host("runs/x"),
                 &BTreeMap::new(),
                 &launch_of(&format!("/cli/{}", p.source)),
                 p,
@@ -2635,17 +2623,18 @@ mod run {
                 env: Vec::new(),
             };
             let env = BTreeMap::from([("A".to_owned(), "b".to_owned())]);
-            let plan = plan_in(Path::new("/runs/x"), &env, &launch, p, &p.scenarios[0]);
-            let path = |p: &str| AbsPath::try_from(Path::new(p)).expect("absolute");
-            assert_eq!(plan.within, Some(path("/sb")));
-            assert_eq!(plan.tee, Some(path("/sb/scene.sock")));
+            let plan = plan_in(&host("runs/x"), &env, &launch, p, &p.scenarios[0]);
+            let path = |p: &str| AbsPath::try_from(host(p)).expect("absolute");
+            assert_eq!(plan.within, Some(path("sb")));
+            assert_eq!(plan.tee, Some(path("sb/scene.sock")));
             assert_eq!(
                 plan.sink,
                 Sink::Raw {
-                    out: path("/runs/x")
+                    out: path("runs/x"),
+                    second_turn: None,
                 }
             );
-            assert_eq!(plan.workspace, Some(path("/ws/proj")));
+            assert_eq!(plan.workspace, Some(path("ws/proj")));
             assert_eq!(plan.cli_env, env);
             assert_eq!(
                 plan.cli_version.as_ref().map(NonEmpty::as_str),
@@ -2670,30 +2659,29 @@ mod run {
         }
 
         #[test]
-        fn the_plan_lands_in_the_run_dir_and_is_the_one_the_recorder_reads() {
+        fn a_plan_for_a_real_profile_reads_back_from_its_file() {
             let dir = tempfile::tempdir().expect("dir");
             let p = &PROFILES[0];
             let (launch, env) = (launch_of("/cli/x"), BTreeMap::new());
+            let (scene, within, workspace) = (host("sb/scene.sock"), host("sb"), host("ws/proj"));
             let run = RecorderRun {
                 out: dir.path(),
-                scene: Path::new("/sb/scene.sock"),
-                within: Path::new("/sb"),
-                workspace: Path::new("/ws/proj"),
+                scene: &scene,
+                within: &within,
+                workspace: &workspace,
                 cli_env: &env,
                 cli_version: "1.2.3",
                 launch: &launch,
                 driver: Path::new("/build/tui_drive"),
                 ports: TEST_PORTS,
             };
-            let file = write_plan(&run, p, &p.scenarios[0]).expect("write");
+            let plan = plan_for(&run, p, &p.scenarios[0]).expect("plan");
+            let file = plan.write_to(dir.path()).expect("write");
             assert_eq!(
                 file,
                 dir.path().join(pixtuoid_core::harness::plan::CAPTURE_PLAN)
             );
-            assert_eq!(
-                CapturePlan::read(&file).expect("read"),
-                plan_for(&run, p, &p.scenarios[0]).expect("plan")
-            );
+            assert_eq!(CapturePlan::read(&file).expect("read"), plan);
         }
 
         #[test]
@@ -2718,7 +2706,7 @@ mod run {
                     }
                 })
                 .collect();
-            let turn = plan.second_turn.as_ref().expect("a second turn");
+            let turn = plan.second_turn().expect("a second turn");
             assert_eq!(turn.words(), &want[..]);
             assert!(turn.words().contains(&Word::Session));
             let prompt = scenario.turn.prompt.expect("its own prompt");
@@ -2737,7 +2725,7 @@ mod run {
                 for s in p.scenarios {
                     let plan = plan_of(p, s);
                     let json = serde_json::to_string(&plan).expect("json");
-                    for ph in Placeholder::ALL {
+                    for ph in Placeholder::VARIANTS {
                         assert!(
                             !json.contains(ph.as_str()),
                             "{}/{}: {} in {json}",
@@ -2788,7 +2776,7 @@ mod run {
             let server = format!("http://127.0.0.1:{}", TEST_PORTS.daemon);
             let lit = |w: &str| Word::Lit(Resolved::try_from(w).expect("resolved"));
             assert_eq!(
-                plan.second_turn.as_ref().expect("a second turn").words(),
+                plan.second_turn().expect("a second turn").words(),
                 [
                     lit("/cli/opencode"),
                     lit("session"),
@@ -2874,7 +2862,7 @@ mod run {
                 args: vec!["/cli/claude.js".into()],
                 env: Vec::new(),
             };
-            let plan = plan_in(Path::new("/runs/x"), &BTreeMap::new(), &launch, p, scenario);
+            let plan = plan_in(&host("runs/x"), &BTreeMap::new(), &launch, p, scenario);
             let words: Vec<OsString> = strings(&plan.first_turn)
                 .into_iter()
                 .map(Into::into)
@@ -2885,7 +2873,7 @@ mod run {
             );
             let line = tui::CommandLine::parse(&words[1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.name);
-            assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
+            assert_eq!(line.log, host("runs/x").join(TUI_LOG));
             assert_eq!(line.prompt, scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT));
             let program: Vec<OsString> = launch
                 .argv()
@@ -3012,9 +3000,12 @@ mod run {
                 );
                 for (k, v) in p.env {
                     let want = v
-                        .replace("{port}", &TEST_PORTS.model.to_string())
-                        .replace(DAEMON_PORT_PLACEHOLDER, &TEST_PORTS.daemon.to_string())
-                        .replace("{key}", DUMMY_KEY);
+                        .replace(Placeholder::Port.as_str(), &TEST_PORTS.model.to_string())
+                        .replace(
+                            Placeholder::DaemonPort.as_str(),
+                            &TEST_PORTS.daemon.to_string(),
+                        )
+                        .replace(Placeholder::Key.as_str(), DUMMY_KEY);
                     assert_eq!(
                         sandbox.var_os(k),
                         Some(&OsString::from(&want)),
@@ -3024,7 +3015,7 @@ mod run {
                     // The only path past the recorder's `CLAUDE_CODE_*` scrub.
                     assert!(
                         cli_env.get(*k) == Some(&want),
-                        "{}: {k} misses the CLI's `--env`",
+                        "{}: {k} misses the CLI's `cli_env`",
                         p.source
                     );
                 }

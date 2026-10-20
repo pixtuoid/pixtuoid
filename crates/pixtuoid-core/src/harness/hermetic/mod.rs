@@ -27,26 +27,6 @@ pub mod verify;
 /// any, and a real provider must refuse it.
 pub const DUMMY_KEY: &str = "hermetic-dummy-key";
 
-/// What a Unix [`Profile::system_config`] path spells the operator's user name as.
-pub const USER_PLACEHOLDER: &str = Placeholder::User.as_str();
-/// What a script spells [`CAPTURE_NOTE`](crate::harness::CAPTURE_NOTE) as.
-pub(crate) const NOTE_PLACEHOLDER: &str = Placeholder::Note.as_str();
-/// What a script or a [`ConfigFile`] spells the workspace the recorder runs the
-/// CLI in as, with its OS's own separators.
-pub const WORKSPACE_PLACEHOLDER: &str = Placeholder::Workspace.as_str();
-/// What a [`ConfigFile`] spells that workspace as with `/` separators, which a
-/// JSON string holds unescaped: how Claude Code keys its projects on Windows
-/// (`Xz` in the 2.1.302 bundle).
-pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = Placeholder::WorkspaceSlashed.as_str();
-/// What a [`Profile::invocation`] or [`Profile::second_turn`] spells its turn's
-/// prompt as.
-pub(crate) const PROMPT_PLACEHOLDER: &str = Placeholder::Prompt.as_str();
-/// What a [`Profile::second_turn`] spells the session its second turn acts on as.
-pub(crate) const SESSION_PLACEHOLDER: &str = Placeholder::Session.as_str();
-/// What a script spells the platform's shell tool as, a profile's
-/// [`Profile::script_vars`] naming it.
-pub(crate) const SHELL_TOOL_PLACEHOLDER: &str = Placeholder::ShellTool.as_str();
-
 /// A fact that differs between Unix and Windows. Both arms are plain data, so
 /// a test on any host reads both, as `platform::resolve_user_home_opt` takes
 /// its `windows` flag.
@@ -72,7 +52,7 @@ impl<T> PerOs<T> {
 /// Where a CLI reads policy or config that no sandbox variable redirects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostConfig {
-    /// A path; a Unix one may spell [`USER_PLACEHOLDER`], a Windows one start
+    /// A path; a Unix one may spell [`Placeholder::User`], a Windows one start
     /// with a placeholder [`crate::harness::host::known_folders_expanded`] resolves.
     Path(&'static str),
     /// A Windows registry key, `HKLM\…` or `HKCU\…`.
@@ -259,16 +239,13 @@ impl Live {
 #[derive(Debug)]
 pub struct Daemon {
     /// Its start, after the CLI's binary; `{port}`, `{key}` and
-    /// [`DAEMON_PORT_PLACEHOLDER`] expand in the runner, here and in [`Self::ready`].
+    /// [`Placeholder::DaemonPort`] expand in the runner, here and in [`Self::ready`].
     pub start: &'static [&'static str],
     /// What exits 0 once it serves, after the CLI's binary.
     pub ready: &'static [&'static str],
     /// Environment it alone gets, beside the profile's.
     pub env: &'static [(&'static str, &'static str)],
 }
-
-/// The port a [`Daemon`] listens on, picked free by the orchestrator.
-pub const DAEMON_PORT_PLACEHOLDER: &str = Placeholder::DaemonPort.as_str();
 
 /// A live tier's exit when a prerequisite is missing, which no run of the build
 /// under test caused.
@@ -285,8 +262,8 @@ pub struct ConfigFile {
     pub home: &'static str,
     /// The file's path under that home.
     pub path: &'static str,
-    /// Its contents; `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`],
-    /// [`WORKSPACE_PLACEHOLDER`] and [`WORKSPACE_SLASHED_PLACEHOLDER`] expand.
+    /// Its contents; `{port}`, `{key}`, [`Placeholder::DaemonPort`],
+    /// [`Placeholder::Workspace`] and [`Placeholder::WorkspaceSlashed`] expand.
     pub template: &'static str,
 }
 
@@ -299,14 +276,14 @@ pub struct Profile {
     pub package: Package,
     /// The headless invocation: [`Placeholder::Prompt`] expands to the
     /// scenario's prompt in the runner, else to [`crate::harness::plan::DEFAULT_PROMPT`], and
-    /// `{port}`, `{key}` and [`DAEMON_PORT_PLACEHOLDER`] too.
+    /// `{port}`, `{key}` and [`Placeholder::DaemonPort`] too.
     pub invocation: &'static [&'static str],
     /// The headless invocation of a second turn, as [`Turn::second`] runs it:
-    /// the runner expands `{port}`, `{key}`, [`DAEMON_PORT_PLACEHOLDER`] and a
+    /// the runner expands `{port}`, `{key}`, [`Placeholder::DaemonPort`] and a
     /// [`Second::Prompt`]'s [`Placeholder::Prompt`], the recorder only [`Placeholder::Session`].
     pub second_turn: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
-    /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
+    /// `{key}` and [`Placeholder::DaemonPort`] expand.
     pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
     pub(crate) homes: &'static [&'static str],
@@ -378,8 +355,11 @@ impl Profile {
     /// this platform: `workspace` as the CLI reports its cwd.
     pub fn script_values(&self, workspace: &str) -> Vec<(&'static str, String)> {
         [
-            (WORKSPACE_PLACEHOLDER, workspace.to_owned()),
-            (NOTE_PLACEHOLDER, crate::harness::CAPTURE_NOTE.to_owned()),
+            (Placeholder::Workspace.as_str(), workspace.to_owned()),
+            (
+                Placeholder::Note.as_str(),
+                crate::harness::CAPTURE_NOTE.to_owned(),
+            ),
         ]
         .into_iter()
         .chain(
@@ -734,7 +714,11 @@ mod tests {
     fn a_second_turns_words_name_its_session_and_a_prompt_only_when_it_has_one() {
         for p in PROFILES {
             if let Some(words) = p.second_turn {
-                assert!(words.contains(&SESSION_PLACEHOLDER), "{}", p.source);
+                assert!(
+                    words.contains(&Placeholder::Session.as_str()),
+                    "{}",
+                    p.source
+                );
             }
             for s in p.scenarios {
                 let Some(second) = s.turn.second else {
@@ -744,7 +728,7 @@ mod tests {
                     .second_turn
                     .unwrap_or_else(|| panic!("{}: no second turn", p.source));
                 assert_eq!(
-                    words.contains(&PROMPT_PLACEHOLDER),
+                    words.contains(&Placeholder::Prompt.as_str()),
                     matches!(second, Second::Prompt(_)),
                     "{}/{}: its words spell a prompt exactly when it has one",
                     p.source,
@@ -825,9 +809,12 @@ mod tests {
                 };
                 assert!(path.starts_with('/'), "{}: {path}", p.source);
                 assert!(
-                    !path.replace(USER_PLACEHOLDER, "").contains(['{', '}']),
-                    "{}: {path} spells a placeholder other than {USER_PLACEHOLDER}",
-                    p.source
+                    !path
+                        .replace(Placeholder::User.as_str(), "")
+                        .contains(['{', '}']),
+                    "{}: {path} spells a placeholder other than {}",
+                    p.source,
+                    Placeholder::User.as_str()
                 );
             }
             for row in p.system_config.windows {
@@ -928,12 +915,17 @@ mod tests {
                 let replies = script["fixtures"].as_array().expect("fixtures");
                 let waits = replies
                     .iter()
-                    .any(|f| f["match"]["toolResultContains"] == NOTE_PLACEHOLDER);
+                    .any(|f| f["match"]["toolResultContains"] == Placeholder::Note.as_str());
                 if p.result_unseen {
                     assert!(!waits, "{}: a wait on a result aimock never sees", p.source);
                 } else if s.name == "tool-run" {
                     // Only the note-reading scenario has a note to wait on.
-                    assert!(waits, "{}: no reply waits for {NOTE_PLACEHOLDER}", p.source);
+                    assert!(
+                        waits,
+                        "{}: no reply waits for {}",
+                        p.source,
+                        Placeholder::Note.as_str()
+                    );
                 }
                 assert!(
                     !replies.iter().any(|f| f["match"]["hasToolResult"] == true),

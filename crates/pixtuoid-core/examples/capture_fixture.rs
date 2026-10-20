@@ -80,7 +80,6 @@ mod recorder {
     /// A [`DaemonPlan`] as a process is started from it: its words, its
     /// readiness probe's (what exits 0 once it serves), and the environment its
     /// spawn alone gets.
-    #[derive(Debug, Default, Clone, PartialEq)]
     struct DaemonCmd {
         start: Vec<String>,
         ready: Vec<String>,
@@ -97,10 +96,10 @@ mod recorder {
         }
     }
 
-    /// Why this host may not write into the committed corpus, for a capture
-    /// into `sink`: a raw capture is any host's.
-    fn corpus_refusal(sink: &Sink) -> Option<&'static str> {
-        CORPUS_REFUSAL.filter(|_| matches!(sink, Sink::Committed))
+    /// Why this host may not write into the committed corpus, which only a
+    /// `committed` write reaches: a raw capture is any host's.
+    fn corpus_refusal(committed: bool) -> Option<&'static str> {
+        CORPUS_REFUSAL.filter(|_| committed)
     }
 
     /// Why `ws` is not a workspace the recorder may clear, if it is not.
@@ -143,19 +142,12 @@ mod recorder {
         std::fs::create_dir_all(root)
     }
 
-    const USAGE: &str = "usage: capture_fixture [--out <dir>] <source-id> <scenario> <cmd...>   \
-         ('{prompt}' expands)\n       \
-         capture_fixture --strip-corpus   (strip every committed capture in place)\n       \
-         capture_fixture promote <run>   (write a hermetic run into its fixture)\n       \
-         capture_fixture prepare-root --within <dir> <source-id>   (create its root; no CLI)\n       \
-         capture_fixture --plan <file>   (run a plan the hermetic tier wrote)";
-
     pub(crate) fn main() -> std::io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         let invocation = match Invocation::parse_process(&args) {
             Ok(invocation) => invocation,
             Err(e) => {
-                eprintln!("{e}\n{USAGE}");
+                eprintln!("{e}\n{}", Invocation::usage());
                 std::process::exit(2);
             }
         };
@@ -165,7 +157,7 @@ mod recorder {
                 prepare_root(resolved_source_root(&source).as_deref(), within.as_path())
             }
             Invocation::Promote(run) => {
-                if let Some(why) = corpus_refusal(&Sink::Committed) {
+                if let Some(why) = corpus_refusal(true) {
                     eprintln!("{why}");
                     std::process::exit(2);
                 }
@@ -183,7 +175,7 @@ mod recorder {
 
     /// One capture, as `plan` spells it.
     fn run(plan: &CapturePlan) -> std::io::Result<()> {
-        if let Some(why) = corpus_refusal(&plan.sink) {
+        if let Some(why) = corpus_refusal(matches!(plan.sink, Sink::Committed { .. })) {
             eprintln!("{why}");
             std::process::exit(2);
         }
@@ -191,7 +183,6 @@ mod recorder {
         let cmd = plan.first_turn.strings();
         let env: Vec<(String, String)> = plan.cli_env.clone().into_iter().collect();
         let daemon_cmd = plan.daemon.as_ref().map(DaemonCmd::from);
-        let raw_out = matches!(plan.sink, Sink::Raw { .. });
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
             let known: Vec<&str> = registry::registered_source_names().collect();
@@ -200,8 +191,8 @@ mod recorder {
         };
 
         let dest = match &plan.sink {
-            Sink::Raw { out } => out.as_path().to_path_buf(),
-            Sink::Committed => scenario_dest(&sources_root(), &source, &scenario),
+            Sink::Raw { out, .. } => out.as_path().to_path_buf(),
+            Sink::Committed { .. } => scenario_dest(&sources_root(), &source, &scenario),
         };
         let root = resolved_source_root(&source);
         if let Some(why) = plan
@@ -257,7 +248,7 @@ mod recorder {
         };
         let status =
             wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?.status()?;
-        let second_outcome = if let Some(words) = &plan.second_turn {
+        let second_outcome = if let Some(words) = plan.second_turn() {
             tap.settle();
             let born = root.as_deref().map_or_else(Vec::new, |r| {
                 born_transcripts(&source, r, started, plan.within.is_some())
@@ -286,7 +277,7 @@ mod recorder {
         } else {
             None
         };
-        let second_turn_skipped = plan.second_turn.is_some() && second_outcome.is_none();
+        let second_turn_skipped = plan.second_turn().is_some() && second_outcome.is_none();
         let note_survived = note_survived(&workspace);
         let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(*DAEMON_STOP_GRACE.here()));
         tap.settle();
@@ -295,7 +286,7 @@ mod recorder {
 
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
-            Some(e) if !raw_out => {
+            Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
                 keep_scratch(sandbox);
                 return Err(e);
             }
@@ -322,7 +313,7 @@ mod recorder {
                 identity(&cmd[0], named.as_deref(), probe_version)
             }
         };
-        if raw_out {
+        let Sink::Committed { command, prompt } = &plan.sink else {
             // An empty raw capture is still recorded: a hook that never fired
             // is evidence about the run, which a missing record would hide.
             let record = CaptureRecord {
@@ -347,7 +338,7 @@ mod recorder {
                 keep_scratch(sandbox);
             }
             return incomplete.map_or(Ok(()), Err);
-        }
+        };
         if wrote.is_empty() {
             eprintln!(
                 "captured nothing — no hook fired and no transcript was created{}; did the turn run?",
@@ -358,18 +349,14 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let recorded = plan
-            .recorded_command
-            .as_ref()
-            .map_or_else(|| cmd.join(" "), |c| c.as_str().to_owned());
         let (deidentified, not_json) = deidentify(&source, &wrote, exempt)?;
         report_not_json(&not_json);
         write_provenance(
             &dest,
             Recorded {
-                prompt: plan.prompt_override.clone(),
+                prompt: prompt.clone(),
                 seed: plan.seed.clone(),
-                ..record(&cli, &version, &recorded, deidentified.clone())?
+                ..record(&cli, &version, command.as_str(), deidentified.clone())?
             },
         )?;
         for p in &wrote {
@@ -1795,12 +1782,8 @@ mod recorder {
 
         #[test]
         fn only_a_unix_host_writes_the_corpus() {
-            let raw = Sink::Raw {
-                out: pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir())
-                    .expect("absolute"),
-            };
-            assert_eq!(corpus_refusal(&raw), None, "a raw capture is any host's");
-            assert_eq!(corpus_refusal(&Sink::Committed).is_some(), !cfg!(unix));
+            assert_eq!(corpus_refusal(false), None, "a raw capture is any host's");
+            assert_eq!(corpus_refusal(true).is_some(), !cfg!(unix));
         }
 
         #[test]

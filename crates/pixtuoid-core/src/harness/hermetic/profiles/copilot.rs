@@ -3,22 +3,22 @@
 
 use super::AIMOCK_V1;
 use crate::harness::hermetic::{
-    HostConfig, PROMPT_PLACEHOLDER, Package, PerOs, Profile, SESSION_PLACEHOLDER,
-    SHELL_TOOL_PLACEHOLDER, Scenario, Second, Shape, Surface, Turn,
+    HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn,
 };
+use crate::harness::plan::Placeholder;
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "copilot",
     package: Package::Npm("@github/copilot"),
-    invocation: &["copilot", "-p", PROMPT_PLACEHOLDER],
+    invocation: &["copilot", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [<value>]`: "optionally specify existing session ID"
     // (`copilot --help` at 1.0.98).
     second_turn: Some(&[
         "copilot",
         "--resume",
-        SESSION_PLACEHOLDER,
+        Placeholder::Session.as_str(),
         "-p",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
     ]),
     // The BYOK provider, with GitHub's servers kept out
     // (`/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models`).
@@ -111,7 +111,7 @@ pub(crate) const PROFILE: Profile = Profile {
     // (`/en/copilot/reference/copilot-cli-reference/cli-command-reference`),
     // `powershell` on Windows (`github/copilot-cli#4594`, `#4719`).
     script_vars: &[(
-        SHELL_TOOL_PLACEHOLDER,
+        Placeholder::ShellTool.as_str(),
         PerOs {
             unix: "bash",
             windows: "powershell",

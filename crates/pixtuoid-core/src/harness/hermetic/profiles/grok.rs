@@ -1,13 +1,14 @@
 //! grok's cites are `xai-org/grok-build` at `37949780c1`, the monorepo sync
 //! nearest 1.0.25 (the repo tags no release), unless a cite names its own ref.
 
+use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
 
 use serde_json::Value;
 
 use super::AIMOCK_V1;
 use crate::harness::hermetic::{
-    HostConfig, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
@@ -60,7 +61,12 @@ pub(crate) const PROFILE: Profile = Profile {
     // (`crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md:76-94`),
     // which a blocking spawn needs: `-p` cancels every prompt
     // (`crates/codegen/xai-grok-pager/src/headless.rs:1882-1901`).
-    invocation: &["grok", "--always-approve", "-p", PROMPT_PLACEHOLDER],
+    invocation: &[
+        "grok",
+        "--always-approve",
+        "-p",
+        Placeholder::Prompt.as_str(),
+    ],
     second_turn: None,
     // What upstream's own run against a mock server sets: every service
     // URL on it, and the telemetry, feedback, update and unscripted

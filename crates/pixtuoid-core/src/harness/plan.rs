@@ -9,9 +9,11 @@
 //! first turn.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use strum::VariantArray;
 
 use crate::harness::provenance::NonEmpty;
 
@@ -20,19 +22,18 @@ pub const CAPTURE_PLAN: &str = "capture-plan.json";
 
 /// One prompt for every source, so captures stay comparable: reading the SAME
 /// file twice around a list forces both shapes the composed fixtures got wrong —
-/// tools that interleave, and a tool id that repeats. `CAPTURE_PROMPT` overrides
-/// it for a scenario the shared one cannot reach (a permission gate needs a tool
-/// the CLI refuses to run unasked).
+/// tools that interleave, and a tool id that repeats.
 pub const DEFAULT_PROMPT: &str =
     "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
-/// The operator's prompt for a scenario [`DEFAULT_PROMPT`] cannot reach.
+/// The operator's prompt for a scenario [`DEFAULT_PROMPT`] cannot reach (a
+/// permission gate needs a tool the CLI refuses to run unasked).
 pub(crate) const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 /// A directory the operator's capture copies into its workspace first.
 pub(crate) const SEED_ENV: &str = "CAPTURE_SEED";
 
 /// A word a profile, script or config spells for the host to fill in. Each
 /// spelling here is the one every expansion site and every check reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray)]
 pub enum Placeholder {
     /// A turn's prompt.
     Prompt,
@@ -57,20 +58,6 @@ pub enum Placeholder {
 }
 
 impl Placeholder {
-    /// Every placeholder.
-    pub const ALL: [Self; 10] = [
-        Self::Prompt,
-        Self::Session,
-        Self::Port,
-        Self::Key,
-        Self::DaemonPort,
-        Self::Workspace,
-        Self::WorkspaceSlashed,
-        Self::User,
-        Self::Note,
-        Self::ShellTool,
-    ];
-
     /// How profiles, scripts and configs spell it.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -115,7 +102,10 @@ impl TryFrom<String> for Resolved {
     type Error = PlanError;
 
     fn try_from(word: String) -> Result<Self, PlanError> {
-        match Placeholder::ALL.iter().find(|p| word.contains(p.as_str())) {
+        match Placeholder::VARIANTS
+            .iter()
+            .find(|p| word.contains(p.as_str()))
+        {
             Some(left) => Err(PlanError::new(format!(
                 "{word:?} still spells {}: the host expands it before the plan is written",
                 left.as_str()
@@ -149,6 +139,18 @@ impl Word {
         match self {
             Self::Lit(word) => word.as_str().to_owned(),
             Self::Session => session.to_owned(),
+        }
+    }
+}
+
+impl TryFrom<String> for Word {
+    type Error = PlanError;
+
+    fn try_from(word: String) -> Result<Self, PlanError> {
+        if word == Placeholder::Session.as_str() {
+            Ok(Self::Session)
+        } else {
+            Resolved::try_from(word).map(Self::Lit)
         }
     }
 }
@@ -247,9 +249,17 @@ pub enum Sink {
     Raw {
         /// The directory it goes in.
         out: AbsPath,
+        /// A second turn, run once the first's CLI exited.
+        second_turn: Option<Argv<Word>>,
     },
-    /// The committed fixture the scenario names.
-    Committed,
+    /// The committed fixture the scenario names, from one turn.
+    Committed {
+        /// The line as the operator typed it, `{prompt}` unexpanded: what the
+        /// provenance records, never run.
+        command: NonEmpty,
+        /// The operator's prompt, when it replaced [`DEFAULT_PROMPT`].
+        prompt: Option<NonEmpty>,
+    },
 }
 
 /// A server the CLI talks to, run around its run.
@@ -292,42 +302,27 @@ pub struct CapturePlan {
     pub cli_env: BTreeMap<String, String>,
     /// A directory copied into the workspace before the run.
     pub seed: Option<NonEmpty>,
-    /// The operator's prompt, when it replaced [`DEFAULT_PROMPT`]: the record
-    /// of it, since the words already hold it.
-    pub prompt_override: Option<NonEmpty>,
-    /// The command line as the operator typed it, `{prompt}` unexpanded: what a
-    /// committed capture's provenance records. Never run.
-    pub recorded_command: Option<NonEmpty>,
     /// A server run around the CLI.
     pub daemon: Option<DaemonPlan>,
     /// The first turn.
     pub first_turn: Argv<Resolved>,
-    /// A second turn, run once the first's CLI exited.
-    pub second_turn: Option<Argv<Word>>,
 }
 
 impl CapturePlan {
-    /// Why this plan cannot run, across the fields no type holds apart.
-    ///
-    /// # Errors
-    ///
-    /// Fields that cannot run together.
-    pub(crate) fn validate(&self) -> Result<(), PlanError> {
-        if self.second_turn.is_some() && !matches!(self.sink, Sink::Raw { .. }) {
-            return Err(PlanError::new(
-                "a second turn runs only into a raw capture: a committed one records one turn",
-            ));
+    /// The second turn, for a raw capture that has one.
+    pub fn second_turn(&self) -> Option<&Argv<Word>> {
+        match &self.sink {
+            Sink::Raw { second_turn, .. } => second_turn.as_ref(),
+            Sink::Committed { .. } => None,
         }
-        Ok(())
     }
 
-    /// Write it into `dir` as [`CAPTURE_PLAN`], once it validates.
+    /// Write it into `dir` as [`CAPTURE_PLAN`].
     ///
     /// # Errors
     ///
-    /// It does not validate, or the file cannot be written.
+    /// The file cannot be written.
     pub fn write_to(&self, dir: &Path) -> std::io::Result<PathBuf> {
-        self.validate().map_err(std::io::Error::other)?;
         let file = dir.join(CAPTURE_PLAN);
         std::fs::write(&file, serde_json::to_string_pretty(self)?)?;
         Ok(file)
@@ -337,12 +332,10 @@ impl CapturePlan {
     ///
     /// # Errors
     ///
-    /// The file cannot be read, is not a plan, or does not validate.
+    /// The file cannot be read or is not a plan.
     pub fn read(file: &Path) -> std::io::Result<Self> {
-        let plan: Self = serde_json::from_str(&std::fs::read_to_string(file)?)
-            .map_err(|e| std::io::Error::other(format!("{}: {e}", file.display())))?;
-        plan.validate().map_err(std::io::Error::other)?;
-        Ok(plan)
+        serde_json::from_str(&std::fs::read_to_string(file)?)
+            .map_err(|e| std::io::Error::other(format!("{}: {e}", file.display())))
     }
 }
 
@@ -373,13 +366,51 @@ impl Invocation {
     /// Strips every committed capture.
     pub(crate) const STRIP_CORPUS: &'static str = "--strip-corpus";
     /// Runs the plan in the file that follows.
-    pub const PLAN: &'static str = "--plan";
+    pub(crate) const PLAN: &'static str = "--plan";
     /// Promotes the run dir that follows.
-    pub const PROMOTE: &'static str = "promote";
+    pub(crate) const PROMOTE: &'static str = "promote";
     /// Prepares a source's root inside the `--within` dir that follows.
-    pub const PREPARE_ROOT: &'static str = "prepare-root";
+    pub(crate) const PREPARE_ROOT: &'static str = "prepare-root";
     /// The sandbox a prepared root must lie in.
-    pub const WITHIN: &'static str = "--within";
+    pub(crate) const WITHIN: &'static str = "--within";
+
+    /// The line that runs the plan in `file`.
+    pub fn plan_args(file: &Path) -> Vec<OsString> {
+        vec![Self::PLAN.into(), file.into()]
+    }
+
+    /// The line that promotes the run in `run`.
+    pub fn promote_args(run: &Path) -> Vec<OsString> {
+        vec![Self::PROMOTE.into(), run.into()]
+    }
+
+    /// The line that creates `source`'s transcript root inside `within`.
+    pub fn prepare_root_args(within: &Path, source: &str) -> Vec<OsString> {
+        vec![
+            Self::PREPARE_ROOT.into(),
+            Self::WITHIN.into(),
+            within.into(),
+            source.into(),
+        ]
+    }
+
+    /// What the recorder prints for a line that asks none of these.
+    pub fn usage() -> String {
+        format!(
+            "usage: capture_fixture [{out} <dir>] <source-id> <scenario> <cmd...>   ('{prompt}' expands)\n       \
+             capture_fixture {strip}   (strip every committed capture in place)\n       \
+             capture_fixture {promote} <run>   (write a hermetic run into its fixture)\n       \
+             capture_fixture {prepare} {within} <dir> <source-id>   (create its root; no CLI)\n       \
+             capture_fixture {plan} <file>   (run a plan the hermetic tier wrote)",
+            out = Self::OUT,
+            prompt = Placeholder::Prompt.as_str(),
+            strip = Self::STRIP_CORPUS,
+            promote = Self::PROMOTE,
+            prepare = Self::PREPARE_ROOT,
+            within = Self::WITHIN,
+            plan = Self::PLAN,
+        )
+    }
 
     /// What `args` (after the program) ask, with the process's own env, which is
     /// the operator's.
@@ -431,8 +462,8 @@ impl Invocation {
 impl CapturePlan {
     /// The capture an operator's line asks: `[--out <dir>] <source> <scenario>
     /// <cmd...>`, `{prompt}` in the command filled from `CAPTURE_PROMPT` or
-    /// [`DEFAULT_PROMPT`]. It runs in memory and is never written, since its
-    /// `cli_env` may hold a real credential on a billed capture.
+    /// [`DEFAULT_PROMPT`]. It runs in memory: only the runner's plan is kept, as
+    /// the record of its run.
     ///
     /// # Errors
     ///
@@ -441,36 +472,41 @@ impl CapturePlan {
         args: &[String],
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Self, PlanError> {
-        let (sink, rest) =
-            match args {
-                [flag, out, rest @ ..] if flag == Invocation::OUT => (
-                    Sink::Raw {
-                        out: AbsPath::try_from(std::path::absolute(out).map_err(|e| {
-                            PlanError::new(format!("{} {out}: {e}", Invocation::OUT))
-                        })?)?,
-                    },
-                    rest,
-                ),
-                _ => (Sink::Committed, args),
-            };
+        let (out, rest) = match args {
+            [flag, out, rest @ ..] if flag == Invocation::OUT => (
+                Some(AbsPath::try_from(std::path::absolute(out).map_err(
+                    |e| PlanError::new(format!("{} {out}: {e}", Invocation::OUT)),
+                )?)?),
+                rest,
+            ),
+            _ => (None, args),
+        };
         let [source, scenario, command @ ..] = rest else {
-            return Err(PlanError::new(
-                "a capture needs <source> <scenario> <cmd...>",
-            ));
+            return Err(PlanError::new(SHORT));
         };
         if command.is_empty() {
-            return Err(PlanError::new(
-                "a capture needs <source> <scenario> <cmd...>",
-            ));
+            return Err(PlanError::new(SHORT));
         }
         // Set-but-blank is unset: a blank prompt would expand `{prompt}` to nothing.
         let text = |key: &str| env(key).and_then(|v| NonEmpty::try_from(v).ok());
-        let prompt_override = text(PROMPT_ENV);
-        let prompt = prompt_override
-            .as_ref()
-            .map_or(DEFAULT_PROMPT, NonEmpty::as_str)
-            .to_owned();
-        let plan = Self {
+        let prompt = text(PROMPT_ENV);
+        let words = prompt.as_ref().map_or(DEFAULT_PROMPT, NonEmpty::as_str);
+        let first_turn = Argv::resolved(
+            command
+                .iter()
+                .map(|w| w.replace(Placeholder::Prompt.as_str(), words)),
+        )?;
+        let sink = match out {
+            Some(out) => Sink::Raw {
+                out,
+                second_turn: None,
+            },
+            None => Sink::Committed {
+                command: NonEmpty::try_from(command.join(" ")).map_err(PlanError::new)?,
+                prompt,
+            },
+        };
+        Ok(Self {
             source: source.clone(),
             scenario: scenario.clone(),
             sink,
@@ -480,20 +516,13 @@ impl CapturePlan {
             cli_version: None,
             cli_env: BTreeMap::new(),
             seed: text(SEED_ENV),
-            prompt_override,
-            recorded_command: Some(NonEmpty::try_from(command.join(" ")).map_err(PlanError::new)?),
             daemon: None,
-            first_turn: Argv::resolved(
-                command
-                    .iter()
-                    .map(|w| w.replace(Placeholder::Prompt.as_str(), &prompt)),
-            )?,
-            second_turn: None,
-        };
-        plan.validate()?;
-        Ok(plan)
+            first_turn,
+        })
     }
 }
+
+const SHORT: &str = "a capture needs <source> <scenario> <cmd...>";
 
 #[cfg(test)]
 mod tests {
@@ -509,6 +538,7 @@ mod tests {
             scenario: "tool-run".into(),
             sink: Sink::Raw {
                 out: abs(&std::env::temp_dir().join("run").to_string_lossy()),
+                second_turn: None,
             },
             tee: None,
             within: None,
@@ -516,21 +546,18 @@ mod tests {
             cli_version: None,
             cli_env: BTreeMap::new(),
             seed: None,
-            prompt_override: None,
-            recorded_command: None,
             daemon: None,
             first_turn: Argv::resolved(["kimi", "-p", "go"]).expect("resolved"),
-            second_turn: None,
         }
     }
 
     #[test]
     fn every_placeholder_is_spelled_once_and_braced() {
         let spelled: std::collections::BTreeSet<_> =
-            Placeholder::ALL.iter().map(|p| p.as_str()).collect();
+            Placeholder::VARIANTS.iter().map(|p| p.as_str()).collect();
         assert_eq!(
             spelled.len(),
-            Placeholder::ALL.len(),
+            Placeholder::VARIANTS.len(),
             "two share a spelling"
         );
         for s in spelled {
@@ -540,7 +567,7 @@ mod tests {
 
     #[test]
     fn a_word_spelling_a_placeholder_is_not_resolved() {
-        for p in Placeholder::ALL {
+        for p in Placeholder::VARIANTS {
             let word = format!("--x={}", p.as_str());
             assert!(Resolved::try_from(word.as_str()).is_err(), "{word}");
             let json = serde_json::json!(word);
@@ -555,12 +582,28 @@ mod tests {
             serde_json::from_str(r#"[{"lit":"kimi"},"session"]"#).expect("parse");
         let words: Vec<String> = turn.words().iter().map(|w| w.filled("s-1")).collect();
         assert_eq!(words, ["kimi", "s-1"]);
-        let mut p = plan();
-        let mut json = serde_json::to_value(&p).expect("json");
+        let mut json = serde_json::to_value(plan()).expect("json");
         json["first_turn"] = serde_json::json!(["kimi", "{session}"]);
         assert!(serde_json::from_value::<CapturePlan>(json).is_err());
-        p.second_turn = Some(turn);
-        assert!(p.validate().is_ok());
+        let mut p = plan();
+        let Sink::Raw { second_turn, .. } = &mut p.sink else {
+            panic!("a raw capture");
+        };
+        *second_turn = Some(turn.clone());
+        assert_eq!(p.second_turn(), Some(&turn));
+    }
+
+    #[test]
+    fn a_word_is_the_session_only_when_it_is_exactly_the_placeholder() {
+        assert_eq!(
+            Word::try_from(Placeholder::Session.as_str().to_owned()),
+            Ok(Word::Session)
+        );
+        assert!(Word::try_from("--resume={session}".to_owned()).is_err());
+        assert_eq!(
+            Word::try_from("kimi".to_owned()),
+            Ok(Word::Lit(Resolved::try_from("kimi").expect("resolved")))
+        );
     }
 
     #[test]
@@ -607,18 +650,6 @@ mod tests {
         assert!(serde_json::from_value::<CapturePlan>(json).is_err());
     }
 
-    #[test]
-    fn a_committed_capture_records_one_turn() {
-        let mut p = plan();
-        p.sink = Sink::Committed;
-        p.second_turn = Some(Argv::try_from(vec![Word::Session]).expect("argv"));
-        assert!(p.validate().is_err());
-        assert!(
-            p.write_to(tempfile::tempdir().expect("dir").path())
-                .is_err()
-        );
-    }
-
     fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |k| {
             pairs
@@ -639,13 +670,23 @@ mod tests {
             &env_of(&[]),
         )
         .expect("plan");
-        assert_eq!(plan.sink, Sink::Committed);
         assert_eq!(plan.first_turn.strings(), ["kimi", "-p", DEFAULT_PROMPT]);
-        assert_eq!(plan.prompt_override, None);
-        assert_eq!(
-            plan.recorded_command.as_ref().map(NonEmpty::as_str),
-            Some("kimi -p {prompt}")
-        );
+        let Sink::Committed { command, prompt } = &plan.sink else {
+            panic!("a committed capture");
+        };
+        assert_eq!(command.as_str(), "kimi -p {prompt}");
+        assert_eq!(prompt, &None);
+    }
+
+    #[test]
+    fn a_flag_after_the_positionals_is_the_clis() {
+        let plan = CapturePlan::from_operator(
+            &args(&["kimi", "tool-run", "kimi", "--out", "x"]),
+            &env_of(&[]),
+        )
+        .expect("plan");
+        assert!(matches!(plan.sink, Sink::Committed { .. }));
+        assert_eq!(plan.first_turn.strings(), ["kimi", "--out", "x"]);
     }
 
     #[test]
@@ -657,16 +698,19 @@ mod tests {
         )
         .expect("plan");
         assert_eq!(plan.first_turn.strings(), ["kimi", "-p", "rm NOTE.txt"]);
-        assert_eq!(
-            plan.prompt_override.as_ref().map(NonEmpty::as_str),
-            Some("rm NOTE.txt")
-        );
+        let Sink::Committed { prompt, .. } = &plan.sink else {
+            panic!("a committed capture");
+        };
+        assert_eq!(prompt.as_ref().map(NonEmpty::as_str), Some("rm NOTE.txt"));
         assert_eq!(plan.seed.as_ref().map(NonEmpty::as_str), Some("/seed"));
         let blank =
             CapturePlan::from_operator(&line, &env_of(&[(PROMPT_ENV, "  "), (SEED_ENV, "")]))
                 .expect("plan");
         assert_eq!(blank.first_turn.strings()[2], DEFAULT_PROMPT);
-        assert_eq!((blank.prompt_override, blank.seed), (None, None));
+        let Sink::Committed { prompt, .. } = &blank.sink else {
+            panic!("a committed capture");
+        };
+        assert_eq!((prompt, blank.seed), (&None, None));
     }
 
     #[test]
@@ -676,7 +720,7 @@ mod tests {
             &env_of(&[]),
         )
         .expect("plan");
-        let Sink::Raw { out } = plan.sink else {
+        let Sink::Raw { out, .. } = plan.sink else {
             panic!("a raw capture");
         };
         assert!(out.as_path().is_absolute() && out.as_path().ends_with("evidence"));
@@ -737,21 +781,64 @@ mod tests {
         }
     }
 
-    /// The recorder takes its inputs from the plan. A direct env read in
-    /// `capture_fixture.rs` is a second channel, bar two that read an env that
-    /// is not an input: the scrub of the CLI's inherited agent env, and the
-    /// operator's own identity, kept out of the bytes it writes.
+    #[test]
+    fn the_runners_lines_parse_back_to_what_built_them() {
+        let (dir, source) = (std::env::temp_dir(), "codex");
+        let line = |argv: Vec<OsString>| {
+            argv.into_iter()
+                .map(|w| w.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        let parse = |argv: Vec<OsString>| Invocation::parse(&line(argv), &env_of(&[]));
+        assert_eq!(
+            parse(Invocation::plan_args(&dir)),
+            Ok(Invocation::Plan(dir.clone()))
+        );
+        assert_eq!(
+            parse(Invocation::promote_args(&dir)),
+            Ok(Invocation::Promote(dir.clone()))
+        );
+        assert_eq!(
+            parse(Invocation::prepare_root_args(&dir, source)),
+            Ok(Invocation::PrepareRoot {
+                source: source.into(),
+                within: AbsPath::try_from(dir).expect("absolute"),
+            })
+        );
+    }
+
+    #[test]
+    fn the_usage_names_every_spelling_the_parse_takes() {
+        let usage = Invocation::usage();
+        for word in [
+            Invocation::OUT,
+            Invocation::STRIP_CORPUS,
+            Invocation::PLAN,
+            Invocation::PROMOTE,
+            Invocation::PREPARE_ROOT,
+            Invocation::WITHIN,
+            Placeholder::Prompt.as_str(),
+        ] {
+            assert!(usage.contains(word), "{word} in {usage}");
+        }
+    }
+
+    /// The recorder takes its inputs from the plan, so a direct read of the
+    /// process env or of `platform` in `capture_fixture.rs` is a second channel,
+    /// bar two that read an env that is not an input: the scrub of the CLI's
+    /// inherited agent env, and the operator's own identity, kept out of the
+    /// bytes it writes. Every `std::env` item is a read but the ones that name
+    /// no variable.
     #[test]
     fn the_recorder_reads_no_env_but_the_scrub_and_the_operators_identity() {
         use syn::visit::Visit;
-        const READS: [&str; 7] = [
-            "var",
-            "var_os",
-            "vars",
-            "vars_os",
-            "text_env",
-            "path_env",
-            "path_env_trimmed",
+        const NO_VARIABLE: [&str; 6] = [
+            "args",
+            "args_os",
+            "current_dir",
+            "current_exe",
+            "join_paths",
+            "split_paths",
         ];
         const EXEMPT: [(&str, &str); 2] = [("wired", "vars_os"), ("identity_needles", "text_env")];
         struct Reads {
@@ -760,16 +847,19 @@ mod tests {
         }
         impl Reads {
             fn note(&mut self, path: &syn::Path) {
-                let Some(last) = path.segments.last() else {
+                let names: Vec<String> =
+                    path.segments.iter().map(|s| s.ident.to_string()).collect();
+                let Some(last) = names.last() else {
                     return;
                 };
-                let name = last.ident.to_string();
+                let reads = names.iter().any(|n| n == "platform")
+                    || (names.iter().any(|n| n == "env") && !NO_VARIABLE.contains(&last.as_str()));
                 let exempt = self
                     .in_fn
                     .last()
-                    .is_some_and(|f| EXEMPT.contains(&(f.as_str(), name.as_str())));
-                if READS.contains(&name.as_str()) && !exempt {
-                    self.found.push(name);
+                    .is_some_and(|f| EXEMPT.contains(&(f.as_str(), last.as_str())));
+                if reads && !exempt {
+                    self.found.push(names.join("::"));
                 }
             }
         }
@@ -784,18 +874,38 @@ mod tests {
                 syn::visit::visit_item_fn(self, f);
                 self.in_fn.pop();
             }
-            fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
-                if let syn::Expr::Path(p) = &*c.func {
-                    self.note(&p.path);
-                }
-                syn::visit::visit_expr_call(self, c);
-            }
             fn visit_expr_path(&mut self, e: &'ast syn::ExprPath) {
-                // A fn handed on, not called; a bare name is a local.
                 if e.path.segments.len() > 1 {
                     self.note(&e.path);
                 }
                 syn::visit::visit_expr_path(self, e);
+            }
+            fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
+                // A call through a name `use` brought in: `text_env(..)`.
+                if let syn::Expr::Path(p) = &*c.func
+                    && p.path.segments.len() == 1
+                {
+                    let name = p.path.segments[0].ident.to_string();
+                    if matches!(
+                        name.as_str(),
+                        "var" | "var_os" | "vars" | "vars_os" | "text_env" | "path_env"
+                    ) && !self
+                        .in_fn
+                        .last()
+                        .is_some_and(|f| EXEMPT.contains(&(f.as_str(), name.as_str())))
+                    {
+                        self.found.push(name);
+                    }
+                }
+                syn::visit::visit_expr_call(self, c);
+            }
+            fn visit_macro(&mut self, m: &'ast syn::Macro) {
+                // `format!`-like bodies are expressions; one that is not is no env read.
+                if let Ok(args) = m.parse_body_with(
+                    syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated,
+                ) {
+                    args.iter().for_each(|e| self.visit_expr(e));
+                }
             }
         }
         let file =
