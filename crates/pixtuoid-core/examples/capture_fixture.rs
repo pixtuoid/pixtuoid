@@ -297,7 +297,7 @@ mod recorder {
             std::process::exit(2);
         }
         let (source, scenario) = (args[0].clone(), args[1].clone());
-        // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
+        // Set-but-empty is unset: an empty `PROMPT_ENV` would otherwise expand
         // `{prompt}` to nothing.
         let chosen_prompt = nonempty_env(PROMPT_ENV);
         // One read decides the copy and the provenance record both.

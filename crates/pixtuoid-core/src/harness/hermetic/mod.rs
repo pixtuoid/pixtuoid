@@ -2626,6 +2626,44 @@ mod tests {
         }
     }
 
+    /// Every string under `v`, and each array of strings joined as the argv it
+    /// is: CLIs shape a command as `command`, `cmd` or an argv array.
+    fn argument_strings(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(items) => {
+                let words: Vec<&str> = items.iter().filter_map(|i| i.as_str()).collect();
+                if words.len() == items.len() {
+                    out.push(words.join(" "));
+                }
+                items.iter().for_each(|i| argument_strings(i, out));
+            }
+            serde_json::Value::Object(map) => map.values().for_each(|i| argument_strings(i, out)),
+            _ => {}
+        }
+    }
+
+    /// Whether a scripted reply calls a tool with `rm` then the note's name.
+    fn script_deletes_the_note(script: &serde_json::Value) -> bool {
+        let mut strings = Vec::new();
+        for reply in script["fixtures"].as_array().into_iter().flatten() {
+            for call in reply["response"]["toolCalls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                argument_strings(&call["arguments"], &mut strings);
+            }
+        }
+        strings.iter().any(|s| {
+            let words: Vec<&str> = s.split_whitespace().collect();
+            words
+                .iter()
+                .position(|w| *w == "rm")
+                .is_some_and(|at| words[at + 1..].contains(&crate::harness::NOTE_FILE))
+        })
+    }
+
     #[test]
     fn a_permission_script_gates_a_call_that_deletes_the_note() {
         // The recorder's `note_survived` is only evidence of a refusal if the
@@ -2638,14 +2676,45 @@ mod tests {
                 .iter()
                 .filter(|s| s.shape == Shape::Permission && !QUESTIONS.contains(&s.name))
             {
-                let text = std::fs::read_to_string(s.script(p.source)).expect("the script");
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
                 assert!(
-                    text.contains("rm ") && text.contains(crate::harness::NOTE_FILE),
-                    "{}: no scripted call deletes the note",
+                    script_deletes_the_note(&script),
+                    "{}: no scripted tool call deletes the note",
                     p.source
                 );
             }
         }
+    }
+
+    #[test]
+    fn only_a_scripted_tool_call_counts_as_deleting_the_note() {
+        let script = |reply: serde_json::Value| serde_json::json!({ "fixtures": [reply] });
+        let call = |arguments: serde_json::Value| {
+            script(serde_json::json!({ "response": { "toolCalls": [
+                { "name": "t", "arguments": arguments }
+            ] } }))
+        };
+        assert!(script_deletes_the_note(&call(
+            serde_json::json!({ "command": "rm NOTE.txt" })
+        )));
+        assert!(script_deletes_the_note(&call(
+            serde_json::json!({ "command": "rm -rf NOTE.txt" })
+        )));
+        assert!(script_deletes_the_note(&call(
+            serde_json::json!({ "argv": ["rm", "NOTE.txt"] })
+        )));
+        assert!(!script_deletes_the_note(&call(
+            serde_json::json!({ "command": "cat NOTE.txt" })
+        )));
+        assert!(
+            !script_deletes_the_note(&script(
+                serde_json::json!({ "response": { "content": "I will rm NOTE.txt" } })
+            )),
+            "a reply's prose is not a call"
+        );
     }
 
     #[test]
