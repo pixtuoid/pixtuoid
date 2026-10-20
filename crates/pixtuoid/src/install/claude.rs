@@ -15,9 +15,7 @@ pub(crate) const EVENTS: &[&str] = &[
     "PreToolUse",
     "PostToolUse",
     "Notification",
-    // A tool gate arrives as `PermissionRequest`; the only `Notification` a
-    // gated run fires is the idle "Claude is waiting for your input" (captured
-    // in fixtures/claude-code/permission-recorded). The decoder has read this
+    // A tool gate arrives as `PermissionRequest`. The decoder has read this
     // event since Codex needed it — unregistered, the bytes never came.
     "PermissionRequest",
     // The ONLY end signal a Workflow-fleet subagent gets: no per-agent Agent

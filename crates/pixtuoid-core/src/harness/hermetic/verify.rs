@@ -12,12 +12,15 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use super::dropped::{self, Dropped, Unjudged};
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
     Surface, literals, profile, tui,
 };
-use crate::harness::captures::jsonl_files_under;
-use crate::harness::reads::{blank_of, child_pointer, is_hook_envelope, is_shim_stamp, strips};
+use crate::harness::captures::{json_lines, jsonl_files_under};
+use crate::harness::reads::{
+    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves, strips,
+};
 use crate::harness::{Drive, Driven, HOOK_PAYLOADS, PROVENANCE, Reach, captures};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
@@ -30,6 +33,9 @@ const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 pub enum Label {
     /// Every check held.
     Pass,
+    /// A decoder dropped a type the recording never did (`dropped`): a review
+    /// for a decoder arm, never a failure.
+    New,
     /// An owed gap closed (`not_yet`, `not_yet_fields`, `not_yet_literals`,
     /// `result_unseen`): good news, the profile shrinks.
     Stale,
@@ -43,17 +49,37 @@ pub enum Label {
     Fail,
 }
 
-/// One verdict: its findings, worst first.
+/// One verdict: its findings, worst first, and why a run could not judge new
+/// types here.
 #[derive(Debug)]
 pub struct Verdict {
     findings: Vec<(Label, String)>,
+    unjudged: Option<Unjudged>,
 }
 
 impl Verdict {
     /// A verdict of `findings`, in any order.
     pub fn new(mut findings: Vec<(Label, String)>) -> Self {
         findings.sort_by_key(|f| std::cmp::Reverse(f.0));
-        Self { findings }
+        Self {
+            findings,
+            unjudged: None,
+        }
+    }
+
+    /// This verdict, of a run that reached the new-type check and could not
+    /// judge it here, for `why`.
+    #[must_use]
+    pub fn unjudged_because(self, why: Unjudged) -> Self {
+        Self {
+            unjudged: Some(why),
+            ..self
+        }
+    }
+
+    /// Why its run reached the new-type check and could not judge it here.
+    pub fn unjudged(&self) -> Option<&Unjudged> {
+        self.unjudged.as_ref()
     }
 
     /// The worst finding's label; Pass with none.
@@ -64,6 +90,11 @@ impl Verdict {
     /// Every finding, worst first.
     pub fn findings(&self) -> &[(Label, String)] {
         &self.findings
+    }
+
+    /// Whether the run passed: no finding worse than [`Label::New`].
+    pub fn passed(&self) -> bool {
+        self.label() <= Label::New
     }
 
     /// Whether the run was judged: a Blocked finding returns before any check,
@@ -92,8 +123,12 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
-    judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    Ok(Verdict::new(findings))
+    let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
+    let verdict = Verdict::new(findings);
+    Ok(match unjudged {
+        Some(why) => verdict.unjudged_because(why),
+        None => verdict,
+    })
 }
 
 /// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
@@ -529,40 +564,6 @@ fn key_chains(v: &Value, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
-/// string that holds JSON read on under its own pointer. A shim stamp counts:
-/// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
-/// does not send it (antigravity).
-fn string_leaves(v: &Value, at: &str, out: &mut BTreeSet<(String, String)>) {
-    match v {
-        Value::Object(m) => {
-            for (k, x) in m {
-                string_leaves(x, &child_pointer(at, k), out);
-            }
-        }
-        Value::Array(a) => {
-            for x in a {
-                string_leaves(x, &format!("{at}/*"), out);
-            }
-        }
-        Value::String(s) if !s.is_empty() => {
-            if let Some(inner) = embedded_json(s) {
-                string_leaves(&inner, at, out);
-            }
-            out.insert((at.to_owned(), s.clone()));
-        }
-        _ => {}
-    }
-}
-
-/// The JSON a string holds, which the censuses read on into: codex's
-/// `arguments` keys its call's fields.
-fn embedded_json(s: &str) -> Option<Value> {
-    s.starts_with(['{', '['])
-        .then(|| serde_json::from_str(s).ok())
-        .flatten()
-}
-
 /// The reads of `p`'s fixtures of `scenarios`, each a recording `--record`
 /// wrote.
 ///
@@ -584,17 +585,9 @@ pub(crate) fn scenario_reads<'a>(
     Ok(reads)
 }
 
-/// A file's lines that parse; the Drive reports the ones that don't.
-fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
-    Ok(std::fs::read_to_string(file)?
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect())
-}
-
-/// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
-/// as scripted, and the turn resuming it where one ran; a request no script
-/// line matched is Script either way.
+/// Whether `manifest`'s CLI ran its turn of `shape` as scripted, against the
+/// scripted model where the shape asks it anything, and the turn resuming it
+/// where one ran; a request no script line matched is Script either way.
 fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
@@ -605,7 +598,7 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
             ),
         ));
     }
-    manifest.capture.exited_as_scripted(shape) && manifest.requests > 0
+    manifest.capture.exited_as_scripted(shape) && (manifest.requests > 0 || !shape.asks_the_model())
 }
 
 fn judge(
@@ -615,17 +608,17 @@ fn judge(
     dir: &Path,
     scene: &str,
     findings: &mut Vec<(Label, String)>,
-) -> std::io::Result<()> {
+) -> std::io::Result<Option<Unjudged>> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
-    let unrefused = matches!(scenario.surface, Surface::Tui(_))
+    let unrefused = matches!(scenario.surface, Surface::Tui { .. })
         && manifest.capture.exit_code == Some(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
             Label::Fail,
             "the turn raised no gate the driver knows to refuse".into(),
         ));
-        return Ok(());
+        return Ok(None);
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
@@ -636,16 +629,19 @@ fn judge(
             .map_or(String::new(), |r| {
                 format!(", resumed exit {:?}", r.exit_code)
             });
-        findings.push((
-            Label::Blocked,
+        let exit = manifest.capture.exit_code;
+        let why = if scenario.shape.asks_the_model() {
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {:?}{resumed}, \
+                "the CLI did not complete a turn against the scripted model (exit {exit:?}{resumed}, \
                  {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
-                manifest.capture.exit_code, manifest.requests
-            ),
-        ));
-        return Ok(());
+                manifest.requests
+            )
+        } else {
+            format!("the CLI did not complete its turn (exit {exit:?}{resumed}): it could not run")
+        };
+        findings.push((Label::Blocked, why));
+        return Ok(None);
     }
     // A resumed turn that never ran had no session the first turn's wire named,
     // which is pixtuoid's to name; one that ran `completed_turn` held.
@@ -654,7 +650,7 @@ fn judge(
             Label::Fail,
             "the first turn's wire named no session to resume".into(),
         ));
-        return Ok(());
+        return Ok(None);
     }
     if p.result_unseen && manifest.results_seen > 0 {
         findings.push((
@@ -722,11 +718,11 @@ fn judge(
                 format!("presence cannot show a {} turn", scenario.name),
             )),
         }
-        return Ok(());
+        return Ok(None);
     }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
-        Shape::Subagent | Shape::ChildError => 2,
+        Shape::Subagent | Shape::ChildError | Shape::Succession => 2,
     };
     started_in(
         &events,
@@ -752,14 +748,37 @@ fn judge(
             p.descriptor().caps().child_end_inference,
             findings,
         ),
+        Shape::Succession => succession(&events, findings),
     }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent | Shape::ChildError => "active",
         Shape::Permission => "waiting",
-        Shape::ModelError => "idle",
+        Shape::ModelError | Shape::Succession => "idle",
     };
     judge_scene(p, scene, shown, findings);
-    Ok(())
+    new_types(p, dir, dropped::baseline_of(scenario)?.as_ref(), findings)
+}
+
+/// Each type a run in `dir` left unread that `baseline`, its recording's,
+/// never did: New. With no baseline to judge by here, why not.
+fn new_types(
+    p: &Profile,
+    dir: &Path,
+    baseline: Option<&Dropped>,
+    findings: &mut Vec<(Label, String)>,
+) -> std::io::Result<Option<Unjudged>> {
+    let b = match baseline {
+        None => return Ok(Some(Unjudged::NoBaseline)),
+        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.clone()))),
+        Some(b) => b,
+    };
+    for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
+        findings.push((
+            Label::New,
+            format!("{at}: `{value}` went unread, as it never did in the recording"),
+        ));
+    }
+    Ok(None)
 }
 
 fn started_in(
@@ -1119,6 +1138,39 @@ fn child_error(
     }
 }
 
+/// The first session to start ends, and another starts as a root; one process
+/// runs the scenario, so its pid is not judged.
+fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+    let mut starts = events.iter().filter_map(|e| match e {
+        AgentEvent::SessionStart {
+            agent_id,
+            parent_id,
+            ..
+        } => Some((*agent_id, *parent_id)),
+        _ => None,
+    });
+    // No start at all is `started_in`'s finding.
+    let Some((first, _)) = starts.next() else {
+        return;
+    };
+    match starts.find(|(id, _)| *id != first) {
+        None => findings.push((Label::Fail, "no session succeeded the first".into())),
+        Some((_, Some(_))) => {
+            findings.push((Label::Fail, "the successor started as a child".into()))
+        }
+        Some((_, None)) => {}
+    }
+    if !events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == first))
+    {
+        findings.push((
+            Label::Fail,
+            "the session switched away from never ended".into(),
+        ));
+    }
+}
+
 /// The scene a headless pixtuoid painted, and every drift breadcrumb it logged.
 /// The agent must be seen in the `shown` state its shape is about, and every
 /// agent, a child under its own label included, gone once the CLI has exited:
@@ -1150,7 +1202,7 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
         Shape::ToolRun => Some("idle"),
         // `RunFailed` latches it (`crate::source::daemon`).
         Shape::ModelError => Some("degraded"),
-        Shape::Permission | Shape::Subagent | Shape::ChildError => None,
+        Shape::Permission | Shape::Subagent | Shape::ChildError | Shape::Succession => None,
     }
 }
 
@@ -1216,9 +1268,18 @@ fn hook_lines(dir: &Path) -> std::io::Result<Vec<String>> {
     }
 }
 
-/// macOS's `/tmp` is `/private/tmp`: a CLI may report either.
+/// macOS's `/tmp` is `/private/tmp`, and a CLI may report either: omp drops
+/// the `/private` (`packages/utils/src/dirs.ts:144-155`, `:228` at
+/// `v18.12.1`). A recording is judged on hosts where neither spelling exists,
+/// so the alias folds by name, not through the filesystem.
 fn canonical(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    const PRIVATE_TMP: &str = "/private/tmp";
+    const TMP: &str = "/tmp";
+    let real = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    match real.strip_prefix(PRIVATE_TMP) {
+        Ok(rest) => Path::new(TMP).join(rest),
+        Err(_) => real,
+    }
 }
 
 #[cfg(test)]
@@ -1261,6 +1322,14 @@ mod tests {
     }
 
     fn write_manifest(dir: &Path, source: &str, edit: impl FnOnce(&mut Manifest)) {
+        std::fs::write(
+            dir.join(MANIFEST),
+            serde_json::to_string(&manifest(source, edit)).expect("json"),
+        )
+        .expect("write");
+    }
+
+    fn manifest(source: &str, edit: impl FnOnce(&mut Manifest)) -> Manifest {
         let mut m = Manifest {
             source: source.into(),
             scenario: "tool-run".into(),
@@ -1277,8 +1346,7 @@ mod tests {
             results_seen: 1,
         };
         edit(&mut m);
-        std::fs::write(dir.join(MANIFEST), serde_json::to_string(&m).expect("json"))
-            .expect("write");
+        m
     }
 
     /// Rewrite the hook lines through `f`, which may reorder them.
@@ -1480,6 +1548,80 @@ mod tests {
                                      Read the note@1:active(read_file)]\nagents=[] daemons=[]\n";
     const RX_DELEGATE_SCENE: &str = "agents=[rx\u{b7}proj@0:active(Delegating), \
                                      rx\u{b7}proj@1:active(read_file)]\nagents=[] daemons=[]\n";
+    const OM_NEW_SCENE: &str = "agents=[om\u{b7}proj@0:idle]\n\
+                                agents=[om\u{b7}proj@0:idle, om\u{b7}proj@1:idle]\n\
+                                agents=[om\u{b7}proj@1:idle]\nagents=[] daemons=[]\n";
+
+    /// omp's recorded `/new`, which asked the model nothing.
+    fn recorded_succession(scene: &str) -> tempfile::TempDir {
+        let d = recorded("omp", Shape::Succession, scene);
+        write_manifest(d.path(), "omp", |m| {
+            m.scenario = "new-session".into();
+            m.requests = 0;
+            m.results_seen = 0;
+        });
+        d
+    }
+
+    #[test]
+    fn a_recorded_omp_succession_passes() {
+        let d = recorded_succession(OM_NEW_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_succession_that_could_not_run_is_blocked_without_blaming_the_model() {
+        let d = recorded_succession(OM_NEW_SCENE);
+        write_manifest(d.path(), "omp", |m| {
+            m.scenario = "new-session".into();
+            m.requests = 0;
+            m.capture.exit_code = Some(1);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(
+                &v,
+                Label::Blocked,
+                "did not complete its turn (exit Some(1))"
+            ),
+            "{:?}",
+            v.findings()
+        );
+        assert!(
+            !v.findings().iter().any(|f| f.1.contains("model")),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_recorded_succession_cut_before_its_switch_fails() {
+        // Killed before the command ran, or quit before it: one session, its
+        // successor's transcript never written.
+        for quit_first in [false, true] {
+            let d = recorded_succession("agents=[om\u{b7}proj@0:idle]\nagents=[] daemons=[]\n");
+            let mut first = None;
+            edit_hooks(d.path(), |mut v| match v["type"].as_str() {
+                Some("session_start") => {
+                    first = Some(v["sessionFile"].clone());
+                    Some(v)
+                }
+                Some("session_shutdown") if quit_first => {
+                    v["sessionFile"] = first.clone().expect("started first");
+                    Some(v)
+                }
+                _ => None,
+            });
+            blank_transcripts(d.path());
+            let v = verify(d.path()).expect("verify");
+            assert!(
+                has(&v, Label::Fail, "no session succeeded"),
+                "{quit_first}: {:?}",
+                v.findings()
+            );
+        }
+    }
 
     #[test]
     fn a_recorded_dsh_permission_run_passes() {
@@ -2147,6 +2289,35 @@ mod tests {
     }
 
     #[test]
+    fn a_tmp_cwd_is_its_private_tmp_workspace_where_neither_exists() {
+        let start = |cwd: &str| AgentEvent::SessionStart {
+            agent_id: crate::AgentId::from_parts("omp", "s"),
+            source: "omp".into(),
+            session_id: "s".into(),
+            cwd: cwd.into(),
+            parent_id: None,
+        };
+        let ws = Path::new("/private/tmp/pixtuoid-judged-elsewhere/proj");
+        for cwd in [
+            "/tmp/pixtuoid-judged-elsewhere/proj",
+            "/private/tmp/pixtuoid-judged-elsewhere/proj",
+        ] {
+            let mut f = Vec::new();
+            started_in(&[start(cwd)], ws, 1, false, &mut f);
+            assert!(f.is_empty(), "{cwd}: {f:?}");
+        }
+        let mut f = Vec::new();
+        started_in(
+            &[start("/tmp/pixtuoid-judged-elsewhere/other")],
+            ws,
+            1,
+            false,
+            &mut f,
+        );
+        assert!(has(&Verdict::new(f), Label::Fail, "is not the workspace"));
+    }
+
+    #[test]
     fn a_cwd_outside_the_workspace_fails() {
         let d = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(d.path(), "codex", |m| {
@@ -2214,6 +2385,67 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_succession_completes_with_no_model_request_and_only_on_a_clean_exit() {
+        let completed = |shape, exit_code, requests| {
+            let m = manifest("omp", |m| {
+                m.capture.exit_code = exit_code;
+                m.requests = requests;
+            });
+            completed_turn(&m, shape, &mut Vec::new())
+        };
+        assert!(completed(Shape::Succession, Some(0), 0));
+        assert!(!completed(Shape::Succession, Some(1), 0));
+        assert!(
+            !completed(Shape::Succession, None, 0),
+            "a signal ends no turn"
+        );
+        assert!(
+            !completed(Shape::ToolRun, Some(0), 0),
+            "a turn that asks the model"
+        );
+    }
+
+    #[test]
+    fn a_succession_ends_its_first_session_and_starts_a_root_after_it() {
+        let id = |id: &str| crate::AgentId::from_parts("omp", id);
+        let start = |agent: &str, parent: Option<&str>| AgentEvent::SessionStart {
+            agent_id: id(agent),
+            source: "omp".into(),
+            session_id: agent.into(),
+            cwd: "/w".into(),
+            parent_id: parent.map(id),
+        };
+        let end = |agent: &str| AgentEvent::SessionEnd {
+            agent_id: id(agent),
+            as_child: false,
+        };
+        let judged = |events: &[AgentEvent]| {
+            let mut f = Vec::new();
+            succession(events, &mut f);
+            Verdict::new(f)
+        };
+        let v = judged(&[start("a", None), end("a"), start("b", None), end("b")]);
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = judged(&[start("a", None), start("b", None), end("a")]);
+        assert_eq!(
+            v.label(),
+            Label::Pass,
+            "an end's arrival order is its shim's"
+        );
+        // A quit that won the race with the command: one session, ended.
+        let v = judged(&[start("a", None), end("a")]);
+        assert!(
+            has(&v, Label::Fail, "no session succeeded"),
+            "{:?}",
+            v.findings()
+        );
+        let v = judged(&[start("a", None), start("b", None), end("b")]);
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+        let v = judged(&[start("a", None), end("a"), start("b", Some("a"))]);
+        assert!(has(&v, Label::Fail, "as a child"), "{:?}", v.findings());
     }
 
     #[test]
@@ -2558,6 +2790,16 @@ mod tests {
         assert!(has(&v, Label::Stale, "result_unseen"), "{:?}", v.findings());
     }
 
+    /// claude-code owing `Notification`, a hook its committed captures fire.
+    fn owing_notification() -> Profile {
+        Profile {
+            not_yet: &["Notification"],
+            live: None,
+            daemon: None,
+            ..*profile("claude-code").expect("profile")
+        }
+    }
+
     #[test]
     fn a_not_yet_hook_any_run_fires_is_stale() {
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
@@ -2568,11 +2810,7 @@ mod tests {
             }
             Some(v)
         });
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");
         assert!(has(&v, Label::Stale, "Notification"), "{:?}", v.findings());
     }
 
@@ -2654,6 +2892,74 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    /// A copilot run against a baseline of its own recording: nothing New, until
+    /// the run carries a type its decoder drops that the recording never did.
+    #[test]
+    fn a_type_a_run_drops_that_its_recording_never_did_is_new_and_passes() {
+        let p = profile("copilot").expect("profile");
+        let d = recorded("copilot", Shape::ToolRun, "");
+        let files = jsonl_files_under(d.path());
+        let baseline = Dropped::of_files("copilot", &files).expect("baseline");
+        let check = |baseline: Option<&Dropped>| {
+            let mut findings = Vec::new();
+            let unjudged = new_types(p, d.path(), baseline, &mut findings).expect("judge");
+            (Verdict::new(findings), unjudged)
+        };
+        let (v, unjudged) = check(Some(&baseline));
+        assert!(
+            v.findings().is_empty() && unjudged.is_none(),
+            "{:?}",
+            v.findings()
+        );
+
+        let transcript = files
+            .iter()
+            .find(|f| f.ends_with("events.jsonl"))
+            .expect("a transcript");
+        let mut text = std::fs::read_to_string(transcript).expect("read");
+        text.push_str("{\"type\":\"assistant.brand_new\",\"data\":{\"x\":\"y\"}}\n");
+        std::fs::write(transcript, text).expect("write");
+        let (v, _) = check(Some(&baseline));
+        assert!(
+            has(&v, Label::New, "`assistant.brand_new`"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(v.passed(), "New never fails a run");
+        assert!(!Verdict::new(vec![(Label::Stale, String::new())]).passed());
+
+        let elsewhere = Dropped {
+            os: "plan9".to_owned(),
+            ..baseline
+        };
+        let (v, unjudged) = check(Some(&elsewhere));
+        assert!(
+            v.findings().is_empty(),
+            "a baseline recorded on another OS judges nothing here"
+        );
+        assert_eq!(unjudged, Some(Unjudged::RecordedOn("plan9".to_owned())));
+        let (v, unjudged) = check(None);
+        assert!(v.findings().is_empty());
+        assert_eq!(unjudged, Some(Unjudged::NoBaseline));
+    }
+
+    /// `verify` carries why its run could not judge new types, as its
+    /// scenario's baseline says, whichever baseline the fixture holds.
+    #[test]
+    fn a_verdict_says_why_its_run_judged_no_new_types() {
+        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let v = verify(d.path()).expect("verify");
+        let scenario = profile("codex")
+            .and_then(|p| p.scenarios.iter().find(|s| s.shape == Shape::ToolRun))
+            .expect("codex's tool-run");
+        let want = match dropped::baseline_of(scenario).expect("baseline") {
+            None => Some(Unjudged::NoBaseline),
+            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
+            Some(_) => None,
+        };
+        assert_eq!(v.unjudged(), want.as_ref(), "{:?}", v.findings());
     }
 
     /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`
@@ -2822,11 +3128,7 @@ mod tests {
         // fixtures/claude-code/permission-recorded fires it; a tool run doesn't.
         let owed = ["hook:Notification"];
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");
         assert!(
             !v.findings()
                 .iter()

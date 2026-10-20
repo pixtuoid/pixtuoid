@@ -788,8 +788,13 @@ fn ag_ask_permission_and_question_emits_waiting() {
     let events_perm = antigravity::decode_ag_line(transcript, "antigravity", v_perm).unwrap();
     assert_eq!(events_perm.len(), 1);
     match &events_perm[0] {
-        AgentEvent::Waiting { reason, .. } => {
+        AgentEvent::Waiting {
+            reason,
+            tool_use_id,
+            ..
+        } => {
             assert_eq!(reason, "asking permission");
+            assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
         other => panic!("expected Waiting, got {other:?}"),
     }
@@ -804,8 +809,13 @@ fn ag_ask_permission_and_question_emits_waiting() {
     let events_quest = antigravity::decode_ag_line(transcript, "antigravity", v_quest).unwrap();
     assert_eq!(events_quest.len(), 1);
     match &events_quest[0] {
-        AgentEvent::Waiting { reason, .. } => {
+        AgentEvent::Waiting {
+            reason,
+            tool_use_id,
+            ..
+        } => {
             assert_eq!(reason, "asking permission");
+            assert_eq!(tool_use_id.as_deref(), Some("ag-6"));
         }
         other => panic!("expected Waiting, got {other:?}"),
     }

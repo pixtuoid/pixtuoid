@@ -1,0 +1,13 @@
+{
+  "origin": "recorded",
+  "cli": "grok",
+  "version": "grok 1.0.62 (1474f9cbdd91)",
+  "captured": "2026-10-19",
+  "command": "just hermetic --record grok",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 122
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/grok/ask-user.json"
+}

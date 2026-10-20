@@ -126,9 +126,9 @@
   file: .github/workflows/hermetic-nightly.yml
   why: >-
     The issue is filed from the runs each OS leg uploaded, under the stem the
-    tier's `runs-stem` output hands on, each leg's in its own directory: a name
-    rebuilt here can disagree with it and find nothing, and merged legs would
-    overwrite one report with the other.
+    tier's `runs-stem` output hands on, each leg's in its own directory when
+    several upload: a name rebuilt here can disagree with it and find nothing,
+    and merged legs would overwrite one report with the other.
   assert: |
     [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
     == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*"}]
@@ -142,6 +142,31 @@
     - |
       .jobs.file.steps |= map(
         if (.uses // "") | startswith("actions/download-artifact") then .with = {"name": "${{ needs.drift.outputs.runs-stem }}"} else . end)
+
+- id: hermetic-uploads-a-run-that-passed-with-a-new-type
+  file: .github/workflows/hermetic.yml
+  why: >-
+    A New finding never fails a run, so a run that passed with one uploads only
+    because its `new` step reads `hermetic::NEW_TYPES`: without it the nightly
+    has no report to file and the new type goes unseen.
+  assert: |
+    [.jobs.run.steps[] | select((.uses // "") | startswith("actions/upload-artifact")) | .if]
+    == ["steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'"]
+  break:
+    - |
+      .jobs.run.steps |= map(
+        if (.uses // "") | startswith("actions/upload-artifact") then .if = "steps.run.outputs.exit != '0'" else . end)
+
+- id: hermetic-nightly-files-a-run-that-passed
+  file: .github/workflows/hermetic-nightly.yml
+  why: >-
+    A leg that passes with a New finding leaves drift green, so a file job
+    gated on drift's failure would never file it.
+  assert: |
+    .jobs.file.if | test("!cancelled\\(\\)") and (test("needs\\.drift\\.result") | not)
+  break:
+    - |
+      .jobs.file.if = "${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}"
 
 - id: only-main-saves-the-rust-cache
   covers: Swatinem/rust-cache@

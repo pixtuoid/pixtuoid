@@ -3,61 +3,61 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     fresh_tokens: 19
 - ActivityStart:
-    agent_id: 15021661687569580498
-    tool_use_id: toolu_Dy20JVYxIHjJkacy
+    agent_id: 18017801594257297394
+    tool_use_id: toolu_GWmRqMRUWdfn3Qh5
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ActivityEnd:
-    agent_id: 15021661687569580498
-    tool_use_id: toolu_Dy20JVYxIHjJkacy
+    agent_id: 18017801594257297394
+    tool_use_id: toolu_GWmRqMRUWdfn3Qh5
 - ModelInfo:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     fresh_tokens: 19
 - SessionStart:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     source: claude-code
-    session_id: af20ae9a-661c-4317-a183-12060e22eb15
+    session_id: 29997024-c8df-48a0-800f-48d8a97fa2d0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     source: claude-code
-    session_id: af20ae9a-661c-4317-a183-12060e22eb15
+    session_id: 29997024-c8df-48a0-800f-48d8a97fa2d0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 15021661687569580498
-    tool_use_id: toolu_Dy20JVYxIHjJkacy
+    agent_id: 18017801594257297394
+    tool_use_id: toolu_GWmRqMRUWdfn3Qh5
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ModelInfo:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     model: ~
     effort: medium
 - Identity:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     source: claude-code
-    session_id: af20ae9a-661c-4317-a183-12060e22eb15
+    session_id: 29997024-c8df-48a0-800f-48d8a97fa2d0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 15021661687569580498
-    tool_use_id: toolu_Dy20JVYxIHjJkacy
+    agent_id: 18017801594257297394
+    tool_use_id: toolu_GWmRqMRUWdfn3Qh5
 - ModelInfo:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     model: ~
     effort: medium
 - SessionEnd:
-    agent_id: 15021661687569580498
+    agent_id: 18017801594257297394
     as_child: false
