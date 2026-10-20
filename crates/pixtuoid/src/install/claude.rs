@@ -185,8 +185,8 @@ fn marketplace_listed(json_out: &str) -> Result<bool> {
 /// the binary is off-PATH — and is single-quoted, since CC runs shell-form
 /// commands through a shell.
 ///
-/// Windows: exec form requires the absolute PE path (shell-form goes through
-/// cmd.exe/PowerShell — unportable, PATHEXT-dependent). The orchestrator hard-errors if
+/// Windows: exec form requires the absolute PE path (shell form goes through Git
+/// Bash, or PowerShell without it, per the hooks reference). The orchestrator hard-errors if
 /// resolution failed, so `resolved` is guaranteed absolute here.
 pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
     #[cfg(not(windows))]
@@ -213,12 +213,21 @@ pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
     }
 }
 
-/// The inner hook object of a hooks.json entry. `exec_form` adds the empty `args` key
-/// that makes CC spawn the PE directly instead of through a shell; `matcher` lives
-/// on the OUTER entry, not here.
+/// The inner hook object of a hooks.json entry; `matcher` lives on the OUTER entry,
+/// not here. `exec_form` adds `args`, with which "`command` is resolved as an
+/// executable and spawned directly with `args` as the argument vector, with no shell
+/// involved" (code.claude.com/docs/en/hooks.md, Command hook fields), so the source
+/// rides the shim's `--source` flag where no env prefix can.
 pub(crate) fn hook_entry(cmd: &str, exec_form: bool) -> Value {
     if exec_form {
-        json!({ "type": "command", "command": cmd, "args": [] })
+        json!({
+            "type": "command",
+            "command": cmd,
+            "args": [
+                crate::install::hook_cmd::SOURCE_FLAG.trim(),
+                pixtuoid_core::source::claude_code::SOURCE_NAME,
+            ],
+        })
     } else {
         json!({ "type": "command", "command": cmd })
     }
@@ -240,9 +249,9 @@ fn claude_shim_ref(command: &str) -> ShimRef {
             other => other,
         }
     }
-    // NOT that parser: CC's Windows entry is exec form (`args: []`), a bare
-    // absolute path with neither quoting nor `--source`, so it would fall to
-    // that parser's last-whitespace-token arm and truncate `C:\Program Files\…`.
+    // NOT that parser: CC's Windows entry is exec form, its `command` a bare
+    // absolute path with no quoting and its `--source` in `args`, so it would fall
+    // to that parser's last-whitespace-token arm and truncate `C:\Program Files\…`.
     #[cfg(windows)]
     {
         ShimRef::Absolute(PathBuf::from(command.trim()))
@@ -413,8 +422,8 @@ mod tests {
         );
         assert_eq!(
             entry["args"],
-            json!([]),
-            "exec form must carry args:[] for shell-free spawn"
+            json!(["--source", "claude-code"]),
+            "exec form spawns shell-free, so the source rides args"
         );
     }
 

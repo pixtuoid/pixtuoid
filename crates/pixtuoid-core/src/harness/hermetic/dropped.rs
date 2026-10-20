@@ -1,30 +1,19 @@
 //! The baseline a New finding is judged against: at each discriminator of a
-//! source's transcript, the values its decoders dropped. A hermetic recording writes it
-//! into its scenario's provenance ([`PROVENANCE_DROPPED`]); a run that drops a
+//! source's transcript, the values its decoders dropped. A hermetic recording
+//! writes it into its scenario's provenance ([`Dropped`]); a run that drops a
 //! value there its recording did not is New, a type the CLI added that no
 //! decoder reads.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{PROVENANCE_DROPPED, Scenario, literals};
+use super::{Scenario, literals};
 use crate::harness::PROVENANCE;
 use crate::harness::captures::json_lines;
+use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
-
-/// What a recording's decoders dropped, by discriminator.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Dropped {
-    /// The OS it was recorded on.
-    pub(crate) os: String,
-    /// Each discriminator, a pointer (`*` for an array index) where the strip
-    /// kept a non-blank string a decoder of the source names, with the values
-    /// the strip blanked at it.
-    pub(crate) at: BTreeMap<String, BTreeSet<String>>,
-}
 
 /// One transcript's lines, raw and as the strip keeps them.
 pub(crate) type Pair = (Vec<Value>, Vec<Value>);
@@ -52,7 +41,9 @@ impl Dropped {
             at.entry(p).or_default().insert(v);
         }
         Ok(Self {
-            os: std::env::consts::OS.to_owned(),
+            os: std::env::consts::OS
+                .try_into()
+                .map_err(std::io::Error::other)?,
             at,
         })
     }
@@ -60,7 +51,7 @@ impl Dropped {
     /// Whether a run on this OS is judged against it: a type only another OS's
     /// build writes is not New there.
     pub(crate) fn judges_here(&self) -> bool {
-        self.os == std::env::consts::OS
+        self.os.as_str() == std::env::consts::OS
     }
 
     /// Each `(pointer, value)` `pairs` drop at this baseline's discriminators
@@ -104,26 +95,16 @@ pub enum Unjudged {
 ///
 /// # Errors
 ///
-/// If its provenance cannot be read or its baseline does not parse.
+/// If its provenance cannot be read or does not parse.
 pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
     baseline_at(s.fixture)
 }
 
 fn baseline_at(fixture: &str) -> std::io::Result<Option<Dropped>> {
-    let prov = crate::harness::sources_root()
+    let path = crate::harness::sources_root()
         .join(fixture)
         .join(PROVENANCE);
-    let text = match std::fs::read_to_string(prov) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    let record: Value = serde_json::from_str(&text)?;
-    record
-        .get(PROVENANCE_DROPPED)
-        .map(|d| serde_json::from_value(d.clone()))
-        .transpose()
-        .map_err(std::io::Error::from)
+    Ok(Provenance::read_if_any(&path)?.and_then(|p| p.dropped().cloned()))
 }
 
 /// Each `(pointer, value)` a raw line holds at one of `at`'s pointers that its
@@ -229,17 +210,6 @@ mod tests {
             ]),
             "only at the baseline's pointers: `/data/turnId` is none"
         );
-    }
-
-    /// A baseline that does not parse fails the whole tier when a run looks it
-    /// up, so every committed one parses here, on every PR.
-    #[test]
-    fn every_committed_baseline_parses() {
-        for p in crate::harness::hermetic::PROFILES {
-            for s in p.scenarios {
-                baseline_of(s).unwrap_or_else(|e| panic!("{}/{}: {e}", p.source, s.name));
-            }
-        }
     }
 
     #[test]

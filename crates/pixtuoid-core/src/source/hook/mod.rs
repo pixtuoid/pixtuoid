@@ -209,12 +209,14 @@ impl Drop for UndeliveredEvents {
 /// kill this watch usually ends the slot first, and the jsonl exit path's
 /// trailing rows then land on an exiting slot as no-ops.
 fn bind_targets(source: &str, evs: &[AgentEvent]) -> std::collections::BTreeMap<AgentId, bool> {
-    use crate::source::registry::FocusChannel;
+    use crate::source::registry::{Corroboration, FocusChannel};
     let corroborate = match crate::source::registry::descriptor_for(source)
         .map(SourceDescriptor::focus_channel)
     {
-        // The shim GUESSED which ancestor is the CLI — corroborate it.
-        Some(FocusChannel::ShimStamp) => true,
+        // The shim GUESSED which ancestor is the CLI — corroborate it, unless
+        // the runner's own shell is the only thing it can have walked past.
+        Some(FocusChannel::ShimStamp(Corroboration::Twice)) => true,
+        Some(FocusChannel::ShimStamp(Corroboration::OnceViaShell)) => false,
         // The source stamped its own `process.pid`, a fact (`Bindings::sight`).
         Some(FocusChannel::PluginStamp | FocusChannel::ServerStamp) => false,
         _ => return std::collections::BTreeMap::new(),
@@ -451,8 +453,27 @@ mod tests {
         assert_eq!(
             bind_targets("cursor", &batch).get(&id),
             Some(&true),
-            "cursor is ShimStamp — its pid is a guess and needs corroborating"
+            "cursor is ShimStamp(Twice) — its pid is a guess and needs corroborating"
         );
+    }
+
+    /// Among `ShimStamp` sources, only an `OnceViaShell` one acts on its first
+    /// sighting; a `Twice` one waits for a second.
+    #[test]
+    fn corroboration_is_per_source() {
+        let target = |source: &str| {
+            let id = AgentId::from_parts(source, "s");
+            let ev = AgentEvent::Identity {
+                agent_id: id,
+                source: source.into(),
+                session_id: "s".into(),
+                cwd: None,
+                pid: None,
+            };
+            bind_targets(source, &[ev]).get(&id).copied()
+        };
+        assert_eq!(target("kimi"), Some(false));
+        assert_eq!(target("cursor"), Some(true));
     }
 
     /// omp is the first decoder that really pairs `SessionStart` + `Identity`
@@ -942,6 +963,48 @@ mod tests {
             matches!(ends, Err(_) | Ok(false)),
             "a single payload's pid must not end the session when it dies"
         );
+    }
+
+    /// The kimi counterpart: its failed `-p` turn exits the process, so the only
+    /// pid sighting is the one `SessionStart` carried, and its death must end the
+    /// session (`OnceViaShell`).
+    #[tokio::test]
+    async fn handle_conn_a_single_kimi_sighting_dying_ends_the_session() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
+        let Some(watch) = HookPidWatch::spawn(tx.clone()) else {
+            return; // no exit-watch backend on this platform — nothing to assert
+        };
+        let mut cli = crate::test_child::sleeper();
+        let pid = cli.id();
+
+        let (mut client, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(handle_conn(
+            server.take(MAX_CONN_BYTES),
+            tx,
+            Some(watch),
+            None,
+        ));
+        let line = format!(
+            "{{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
+             \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
+        );
+        client.write_all(line.as_bytes()).await.unwrap();
+        drop(client);
+        task.await.unwrap();
+
+        cli.kill().expect("kill the cli");
+        let _ = cli.wait();
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some((_, ev)) = rx.recv().await {
+                if let AgentEvent::SessionEnd { agent_id, .. } = ev {
+                    return Some(agent_id);
+                }
+            }
+            None
+        })
+        .await
+        .expect("a SessionEnd within 5s of the watched pid dying");
+        assert_eq!(ended, Some(AgentId::from_parts("kimi", "s")));
     }
 
     #[tokio::test]

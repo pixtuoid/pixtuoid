@@ -23,9 +23,9 @@ redacted cwd and an invented one look alike. `origin` is one of:
 
 | origin | required | means |
 | --- | --- | --- |
-| `recorded` | `cli`, `version`, `captured`, `command` | real wire bytes — a real CLI's against a scripted model where `aimock` and `script` name it — stripped of every subtree no decoder reads — unless `deidentified.method` is `none`, a reviewed per-capture exemption with its reason for a test that reads raw bytes the decoder drops; the recorder writes this file itself |
-| `composed` | `note` | hand-written, and the note says how you can tell |
-| `unknown` | `note` | predates the rule; nobody recorded where it came from |
+| `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads unless `deidentified` exempts them; the recorder writes this file itself. |
+| `composed` | `note` | Hand-written, and the note says how you can tell. |
+| `unknown` | `note` | Predates the rule; nobody recorded where it came from. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
 `deidentified` in the provenance says how many subtrees went. A plugin roster, a
@@ -45,14 +45,13 @@ premise the decoder drops on purpose — a test reads it off the raw bytes, whic
 no probe can see — declares `"deidentified": {"method": "none", "why": …}` and
 both paths leave it alone; the gate refuses the exemption without its reason.
 
-The table above is not the schema — [`provenance.schema.json`](provenance.schema.json)
-is, and the gates in `captures.rs` and this table read it. They each carried
-their own copy until #929, and had drifted apart.
+The table above is not the schema — [`Provenance`](../../../src/harness/provenance.rs)
+is: a record it does not parse fails every test that walks the captures, and
+`the_fixtures_readme_states_each_origin` pins this table to it.
 
-Those gates enforce the schema, and `captures.rs`'s
-`NO_WIRE_EVIDENCE_YET` list — the hook-only sources with no recorded scenario at
-all — only shrinks: recording one forces its entry out, and a new hook-only CLI
-cannot join by default.
+`captures.rs`'s `NO_WIRE_EVIDENCE_YET` list — the hook-only sources with no
+recorded scenario at all — only shrinks: recording one forces its entry out, and
+a new hook-only CLI cannot join by default.
 
 **The recorder is `pixtuoid-core/examples/capture_fixture.rs`** — Rust rather
 than the shell script it replaces, for the reasons under "Why the recorder is a
