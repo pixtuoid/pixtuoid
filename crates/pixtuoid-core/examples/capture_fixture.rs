@@ -298,7 +298,7 @@ mod recorder {
         }
         let (source, scenario) = (args[0].clone(), args[1].clone());
         // Set-but-empty is unset: an empty `PROMPT_ENV` would otherwise expand
-        // `{prompt}` to nothing.
+        // `PROMPT_PLACEHOLDER` to nothing.
         let chosen_prompt = nonempty_env(PROMPT_ENV);
         // One read decides the copy and the provenance record both.
         let seed = nonempty_env(SEED_ENV);

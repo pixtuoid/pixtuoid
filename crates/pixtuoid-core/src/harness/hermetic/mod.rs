@@ -2626,42 +2626,30 @@ mod tests {
         }
     }
 
-    /// Every string under `v`, and each array of strings joined as the argv it
-    /// is: CLIs shape a command as `command`, `cmd` or an argv array.
-    fn argument_strings(v: &serde_json::Value, out: &mut Vec<String>) {
-        match v {
-            serde_json::Value::String(s) => out.push(s.clone()),
-            serde_json::Value::Array(items) => {
-                let words: Vec<&str> = items.iter().filter_map(|i| i.as_str()).collect();
-                if words.len() == items.len() {
-                    out.push(words.join(" "));
-                }
-                items.iter().for_each(|i| argument_strings(i, out));
-            }
-            serde_json::Value::Object(map) => map.values().for_each(|i| argument_strings(i, out)),
-            _ => {}
-        }
-    }
-
-    /// Whether a scripted reply calls a tool with `rm` then the note's name.
+    /// Whether a scripted reply calls a tool with `rm` then the note's name,
+    /// in one of its top-level string arguments (every committed script's shape).
     fn script_deletes_the_note(script: &serde_json::Value) -> bool {
-        let mut strings = Vec::new();
-        for reply in script["fixtures"].as_array().into_iter().flatten() {
-            for call in reply["response"]["toolCalls"]
-                .as_array()
-                .into_iter()
-                .flatten()
-            {
-                argument_strings(&call["arguments"], &mut strings);
-            }
-        }
-        strings.iter().any(|s| {
-            let words: Vec<&str> = s.split_whitespace().collect();
+        let deletes = |command: &str| {
+            let words: Vec<&str> = command.split_whitespace().collect();
             words
                 .iter()
                 .position(|w| *w == "rm")
                 .is_some_and(|at| words[at + 1..].contains(&crate::harness::NOTE_FILE))
-        })
+        };
+        script["fixtures"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|reply| {
+                reply["response"]["toolCalls"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+            })
+            .filter_map(|call| call["arguments"].as_object())
+            .flat_map(|arguments| arguments.values())
+            .filter_map(serde_json::Value::as_str)
+            .any(deletes)
     }
 
     #[test]
@@ -2692,23 +2680,16 @@ mod tests {
     #[test]
     fn only_a_scripted_tool_call_counts_as_deleting_the_note() {
         let script = |reply: serde_json::Value| serde_json::json!({ "fixtures": [reply] });
-        let call = |arguments: serde_json::Value| {
+        let call = |command: &str| {
             script(serde_json::json!({ "response": { "toolCalls": [
-                { "name": "t", "arguments": arguments }
+                { "name": "t", "arguments": { "command": command } }
             ] } }))
         };
-        assert!(script_deletes_the_note(&call(
-            serde_json::json!({ "command": "rm NOTE.txt" })
-        )));
-        assert!(script_deletes_the_note(&call(
-            serde_json::json!({ "command": "rm -rf NOTE.txt" })
-        )));
-        assert!(script_deletes_the_note(&call(
-            serde_json::json!({ "argv": ["rm", "NOTE.txt"] })
-        )));
-        assert!(!script_deletes_the_note(&call(
-            serde_json::json!({ "command": "cat NOTE.txt" })
-        )));
+        assert!(script_deletes_the_note(&call("rm NOTE.txt")));
+        assert!(script_deletes_the_note(&call("rm -rf NOTE.txt")));
+        for not in ["cat NOTE.txt", "NOTE.txt rm", "rm NOTE.txt.bak"] {
+            assert!(!script_deletes_the_note(&call(not)), "{not}");
+        }
         assert!(
             !script_deletes_the_note(&script(
                 serde_json::json!({ "response": { "content": "I will rm NOTE.txt" } })
