@@ -3,58 +3,58 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 5221325637554258322
-    tool_use_id: call_FMlkC3lbrPwd4-r2
+    agent_id: 6534879710913647511
+    tool_use_id: call_pky2IivOQBjIK_qr
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     reason: shell
-    tool_use_id: call_FMlkC3lbrPwd4-r2
+    tool_use_id: call_pky2IivOQBjIK_qr
 - Identity:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 5221325637554258322
-    tool_use_id: call_FMlkC3lbrPwd4-r2
+    agent_id: 6534879710913647511
+    tool_use_id: call_pky2IivOQBjIK_qr
 - Identity:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     source: opencode
-    session_id: ses_eab535743ffehP86dmnWE5bD4Q
+    session_id: ses_ea675ceb7ffeOgmfBGkNWgTSBl
     cwd: ~
 - ActivityEnd:
-    agent_id: 5221325637554258322
+    agent_id: 6534879710913647511
     tool_use_id: ~
