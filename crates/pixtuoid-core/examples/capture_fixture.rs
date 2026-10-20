@@ -326,8 +326,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let _recording = record_lock(&ws)?;
-        let workspace = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -697,27 +696,25 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// The file, under the capture root, whose lock a capture of the canonical
-    /// workspace holds.
+    /// The file, beside a capture base, whose lock a capture there holds.
     const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The lock a capture in `ws` holds until it ends, in the directory its
+    /// The lock a capture in `base` holds until it ends, in the directory the
     /// base sits in: the capture root for the canonical workspace, which every
     /// recording clears, so they take turns; a replay's own root for its own,
     /// which nothing else locks.
-    fn record_lock(ws: &Path) -> std::io::Result<std::fs::File> {
-        // Read off `ws`, never `capture_root`: on Windows that resolves
+    fn record_lock(base: &Path) -> std::io::Result<std::fs::File> {
+        // Read off the base, never `capture_root`: on Windows that resolves
         // ProgramData, which the recorder's cleared environment can't.
-        let dir = capture_base(ws).and_then(Path::parent).ok_or_else(|| {
-            std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
-        })?;
-        hold_lock(&dir.join(RECORD_LOCK))
+        hold_lock(&base.with_file_name(RECORD_LOCK))
     }
 
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
+    /// `ws` made afresh, and the lock held while the capture uses it.
+    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
+        let lock = record_lock(base)?;
         // A fixed name in a shared directory is pre-plantable; a foreign owner is
         // refused, not removed — under the sticky bit the remove fails and the
         // capture lands in theirs. Asked of the entry, so a dangling planted link
@@ -741,7 +738,7 @@ mod recorder {
             copy_tree(Path::new(&seed), &ws)?;
         }
         init_repo(&ws)?;
-        Ok(ws)
+        Ok((ws, lock))
     }
 
     /// Make `ws` its own repository, every step of which must succeed: that
@@ -1202,21 +1199,20 @@ mod recorder {
         #[test]
         fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
-            let canonical = d.path().join("pixtuoid-capture/proj");
             let own = d.path().join("pixtuoid-run-1");
             std::fs::create_dir(&own).expect("a replay's root");
-            let held = record_lock(&canonical).expect("the canonical lock");
-            let replay = record_lock(&own.join("pixtuoid-capture/proj"))
-                .expect("a replay never waits on a recording");
+            let base = |root: &Path| {
+                capture_base(&root.join(capture_workspace_tail()))
+                    .expect("a capture base")
+                    .to_path_buf()
+            };
+            let held = record_lock(&base(d.path())).expect("the canonical lock");
+            let replay = record_lock(&base(&own)).expect("a replay never waits on a recording");
             let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
             assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
             drop((other, replay));
-            assert!(
-                record_lock(d.path()).is_err(),
-                "a path that is no capture workspace has no lock"
-            );
         }
 
         struct Promotable {
