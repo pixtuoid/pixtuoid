@@ -16,7 +16,7 @@ on:
         default: pinned
     outputs:
       runs-stem:
-        description: 'The stem each leg uploads its runs under, as `<runs-stem><os>-<shard>`, when `just hermetic` exits non-zero'
+        description: 'The stem each leg uploads its runs under, as `<runs-stem><os>-<shard>`, when `just hermetic` exits non-zero or a run passed with a New finding'
         value: ${{ jobs.run.outputs.runs-stem }}
       moved_macos_1:
         description: 'The macOS shard 1 leg''s `bump::MOVED` rows: each source whose latest passed above its pin'
@@ -103,14 +103,22 @@ jobs:
           OS: ${{ matrix.os }}
           SHARD: ${{ matrix.shard }}
         run: echo "moved_${OS}_${SHARD}=$(cat target/hermetic/runs/moved.json)" >> "$GITHUB_OUTPUT"
-      - if: steps.run.outputs.exit != '0'
+      # A run that passes with a New finding still uploads, for the nightly to
+      # file (`hermetic::NEW_TYPES`).
+      - name: Report the new types
+        id: new
+        if: steps.run.outputs.exit == '0'
+        run: |
+          any=$(jq '. > 0' target/hermetic/runs/new-types.json)
+          echo "any=$any" >> "$GITHUB_OUTPUT"
+      - if: steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error
-      - name: Fail on any verdict but Pass
+      - name: Fail on a failing verdict
         if: steps.run.outputs.exit != '0'
         env:
           CODE: ${{ steps.run.outputs.exit }}

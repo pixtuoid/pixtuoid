@@ -32,6 +32,7 @@ mod recorder {
     const PROMPT_ENV: &str = "CAPTURE_PROMPT";
     const SEED_ENV: &str = "CAPTURE_SEED";
 
+    use pixtuoid_core::harness::hermetic::dropped::Dropped;
     use pixtuoid_core::harness::hermetic::{
         self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
     };
@@ -45,9 +46,10 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROVENANCE, Resumed, capture_base, capture_root, capture_workspace, capture_workspace_tail,
+        PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
+    use serde_json::Value;
 
     /// Where a driver names the CLI it drives, a command or the path to its
     /// binary, for the recorder to ask its `--version`.
@@ -323,8 +325,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let _recording = record_lock(&ws, &capture_workspace()?, &capture_root()?)?;
-        let workspace = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws)?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -464,8 +465,8 @@ mod recorder {
             &args[2..],
             &deidentified,
             &[
-                ("prompt", nonempty_env(PROMPT_ENV)),
-                ("seed", nonempty_env(SEED_ENV)),
+                ("prompt", nonempty_env(PROMPT_ENV).map(Value::String)),
+                ("seed", nonempty_env(SEED_ENV).map(Value::String)),
             ],
         )?;
         for p in &wrote {
@@ -536,6 +537,14 @@ mod recorder {
             std::fs::copy(&raw, &to)?;
             wrote.push(to);
         }
+        // Before the strip: what the decoders drop is what it blanks.
+        let dropped = match exempt {
+            None => Some(serde_json::to_value(Dropped::of_files(
+                &manifest.source,
+                &wrote,
+            )?)?),
+            Some(_) => None,
+        };
         let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
         let script = scenario.script(&manifest.source);
         // The record names its script as every host's checkout spells it.
@@ -553,8 +562,12 @@ mod recorder {
             &command,
             &deidentified,
             &[
-                (hermetic::PROVENANCE_AIMOCK, Some(manifest.aimock.clone())),
-                ("script", Some(script)),
+                (
+                    hermetic::PROVENANCE_AIMOCK,
+                    Some(Value::String(manifest.aimock.clone())),
+                ),
+                ("script", Some(Value::String(script))),
+                (hermetic::PROVENANCE_DROPPED, dropped),
             ],
         )?;
         refuse_on_pii(&wrote, needles)?;
@@ -691,28 +704,25 @@ mod recorder {
 
     // ── plumbing ─────────────────────────────────────────────────────────────────
 
-    /// The file, under the capture root, whose lock a capture of the canonical
-    /// workspace holds.
+    /// The file, beside a capture base, whose lock a capture there holds.
     const RECORD_LOCK: &str = "pixtuoid-capture.lock";
 
-    /// The lock a capture in `ws` holds until it ends: `canonical`'s, under
-    /// `root`, since every capture there clears it, so they take turns. A
-    /// workspace of a run's own takes none.
-    fn record_lock(
-        ws: &Path,
-        canonical: &Path,
-        root: &Path,
-    ) -> std::io::Result<Option<std::fs::File>> {
-        if ws != canonical {
-            return Ok(None);
-        }
-        hold_lock(&root.join(RECORD_LOCK)).map(Some)
+    /// The lock a capture in `base` holds until it ends, in the directory the
+    /// base sits in: the capture root for the canonical workspace, which every
+    /// recording clears, so they take turns; a replay's own root for its own,
+    /// which nothing else locks.
+    fn record_lock(base: &Path) -> std::io::Result<std::fs::File> {
+        // Read off the base, never `capture_root`: on Windows that resolves
+        // ProgramData, which the recorder's cleared environment can't.
+        hold_lock(&base.with_file_name(RECORD_LOCK))
     }
 
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<PathBuf> {
+    /// `ws` made afresh, and the lock held while the capture uses it.
+    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
+        let lock = record_lock(base)?;
         // A fixed name in a shared directory is pre-plantable; a foreign owner is
         // refused, not removed — under the sticky bit the remove fails and the
         // capture lands in theirs. Asked of the entry, so a dangling planted link
@@ -736,7 +746,7 @@ mod recorder {
             copy_tree(Path::new(&seed), &ws)?;
         }
         init_repo(&ws)?;
-        Ok(ws)
+        Ok((ws, lock))
     }
 
     /// Make `ws` its own repository, every step of which must succeed: that
@@ -1026,7 +1036,7 @@ mod recorder {
         (cli, version): (&str, &str),
         raw: &[String],
         deidentified: &Deidentified,
-        overrides: &[(&str, Option<String>)],
+        overrides: &[(&str, Option<Value>)],
     ) -> std::io::Result<()> {
         let mut prov = serde_json::json!({
             "origin": "recorded",
@@ -1041,7 +1051,7 @@ mod recorder {
         if let Some(map) = prov.as_object_mut() {
             for (key, value) in overrides {
                 if let Some(v) = value {
-                    map.insert((*key).into(), serde_json::Value::String(v.clone()));
+                    map.insert((*key).into(), v.clone());
                 }
             }
         }
@@ -1248,21 +1258,22 @@ mod recorder {
         const OPERATOR: &str = "Ada Lovelace";
 
         #[test]
-        fn only_a_capture_of_the_canonical_workspace_takes_turns() {
+        fn only_captures_of_one_workspace_take_turns() {
             let d = tempfile::tempdir().expect("tempdir");
-            let canonical = d.path().join("pixtuoid-capture/proj");
-            let own = d.path().join("pixtuoid-run-1/pixtuoid-capture/proj");
-            assert!(
-                record_lock(&own, &canonical, d.path())
-                    .expect("no lock")
-                    .is_none()
-            );
-            let held = record_lock(&canonical, &canonical, d.path()).expect("the lock");
-            assert!(held.is_some());
+            let own = d.path().join("pixtuoid-run-1");
+            std::fs::create_dir(&own).expect("a replay's root");
+            let base = |root: &Path| {
+                capture_base(&root.join(capture_workspace_tail()))
+                    .expect("a capture base")
+                    .to_path_buf()
+            };
+            let held = record_lock(&base(d.path())).expect("the canonical lock");
+            let replay = record_lock(&base(&own)).expect("a replay never waits on a recording");
             let other = std::fs::File::open(d.path().join(RECORD_LOCK)).expect("the lock file");
-            assert!(other.try_lock().is_err(), "a second capture waits");
+            assert!(other.try_lock().is_err(), "a second recording waits");
             drop(held);
             assert!(other.try_lock().is_ok());
+            drop((other, replay));
         }
 
         struct Promotable {
@@ -1366,6 +1377,70 @@ mod recorder {
                 record.get("note").is_none(),
                 "the record is the run's, not the old one"
             );
+            assert!(
+                record[hermetic::PROVENANCE_DROPPED].is_object(),
+                "a stripped capture records its baseline, empty for hook payloads alone"
+            );
+        }
+
+        /// The baseline is taken before the strip: after it, a type the decoder
+        /// drops is gone from the bytes it would be read off.
+        #[test]
+        fn a_promoted_run_records_the_types_its_decoders_dropped() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (run, root) = (d.path().join("run"), d.path().join("sources"));
+            let fixture = hermetic::profile("copilot")
+                .and_then(|p| p.scenario("tool-run"))
+                .map(|s| s.fixture)
+                .expect("copilot's tool-run");
+            for from in jsonl_files_under(&sources_root().join(fixture)) {
+                let rel = from
+                    .strip_prefix(sources_root().join(fixture))
+                    .expect("under");
+                let to = run.join(rel);
+                std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                let mut text = std::fs::read_to_string(&from).expect("read");
+                if from.ends_with("events.jsonl") {
+                    text.push_str("{\"type\":\"assistant.zz_dropped\",\"data\":{\"x\":\"y\"}}\n");
+                }
+                std::fs::write(&to, text).expect("write");
+            }
+            let manifest = Manifest {
+                source: "copilot".into(),
+                scenario: "tool-run".into(),
+                capture: CaptureRecord {
+                    workspace: capture_workspace().expect("the workspace"),
+                    cli: "copilot".into(),
+                    version: "1.0.98".into(),
+                    exit_code: Some(0),
+                    resumed: None,
+                },
+                aimock: "1.45.1".into(),
+                requests: 2,
+                unmatched: 0,
+                results_seen: 1,
+            };
+            std::fs::write(
+                run.join(MANIFEST),
+                serde_json::to_string(&manifest).expect("json"),
+            )
+            .expect("manifest");
+            let dest = root.join(fixture);
+            std::fs::create_dir_all(&dest).expect("mkdir");
+            std::fs::write(dest.join(PROVENANCE), r#"{"origin":"recorded"}"#).expect("record");
+            promote(&run, &root, &needles()).expect("promote");
+            let record: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dest.join(PROVENANCE)).expect("record"),
+            )
+            .expect("json");
+            let dropped = &record[hermetic::PROVENANCE_DROPPED];
+            assert_eq!(dropped["os"], std::env::consts::OS, "{dropped}");
+            assert!(
+                dropped["at"]["/type"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().any(|t| t == "assistant.zz_dropped")),
+                "the planted type the decoder drops is the baseline's: {dropped}"
+            );
         }
 
         #[test]
@@ -1397,6 +1472,10 @@ mod recorder {
             );
             assert_eq!(record["deidentified"]["method"], "none");
             assert_eq!(record["deidentified"]["why"], why);
+            assert!(
+                record.get(hermetic::PROVENANCE_DROPPED).is_none(),
+                "an unstripped capture drops nothing it could baseline"
+            );
         }
 
         #[test]
@@ -1885,7 +1964,7 @@ mod recorder {
                 ("true", "1.0"),
                 &argv,
                 &Deidentified::Stripped(0),
-                &[("prompt", Some("read NOTE.txt".into()))],
+                &[("prompt", Some(Value::String("read NOTE.txt".into())))],
             )
             .expect("write");
             assert_eq!(read(set.path())["prompt"], "read NOTE.txt");
