@@ -746,8 +746,11 @@ mod tests {
             false
         }
 
-        /// A pid no process holds: on Windows dropping `child` closes its
-        /// handle, so the pid no longer opens.
+        /// A pid no process holds. Dropping `child` closes its handle, so on
+        /// Windows the pid no longer opens: OpenProcess documents
+        /// ERROR_INVALID_PARAMETER only for pid 0, and this is the same code for a
+        /// pid no process holds. A pid recycle in the microseconds between would
+        /// flake its callers.
         fn dead_pid() -> i32 {
             let mut child = sleeper();
             let pid = child.id() as i32;
@@ -803,17 +806,9 @@ mod tests {
             );
         }
 
-        /// Dropping `child` closes its handle, so on Windows the pid no longer
-        /// opens: OpenProcess documents ERROR_INVALID_PARAMETER only for pid 0,
-        /// and this pins the same code for a pid no process holds. A pid
-        /// recycle in the microseconds between would make this flake.
         #[tokio::test]
         async fn exit_watch_already_dead_pid_fires_immediately() {
-            let mut child = sleeper();
-            let pid = child.id() as i32;
-            kill_and_reap(&mut child);
-            drop(child);
-
+            let pid = dead_pid();
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let Some(watch) = ExitWatch::spawn(tx) else {
                 return;
@@ -852,9 +847,6 @@ mod tests {
             .await;
         }
 
-        /// `watch`'s contract: a watch registered after its pid died is answered
-        /// even when that death was already reported, since `pid_watch` re-arms
-        /// a binding on a dead pid and waits on this exit.
         #[tokio::test]
         async fn a_watch_registered_after_the_death_is_answered_again() {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
