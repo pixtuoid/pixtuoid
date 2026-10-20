@@ -27,7 +27,7 @@ mod recorder {
 
     /// One prompt for every source, so captures stay comparable: reading the SAME
     /// file twice around a list forces both shapes the composed fixtures got wrong —
-    /// tools that interleave, and a tool id that repeats. `CAPTURE_PROMPT` overrides
+    /// tools that interleave, and a tool id that repeats. [`PROMPT_ENV`] overrides
     /// it for a scenario the shared one cannot reach (a permission gate needs a tool
     /// the CLI refuses to run unasked).
     const DEFAULT_PROMPT: &str =
@@ -300,6 +300,8 @@ mod recorder {
         // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
         // `{prompt}` to nothing.
         let chosen_prompt = nonempty_env(PROMPT_ENV);
+        // One read decides the copy and the provenance record both.
+        let seed = nonempty_env(SEED_ENV);
         let prompt = chosen_prompt
             .as_ref()
             .map_or(DEFAULT_PROMPT, NonEmpty::as_str);
@@ -334,7 +336,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let (workspace, _recording) = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws, seed.as_ref())?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -477,7 +479,7 @@ mod recorder {
             &dest,
             Recorded {
                 prompt: chosen_prompt,
-                seed: nonempty_env(SEED_ENV),
+                seed,
                 ..record(&cli, &version, &args[2..], deidentified.clone())?
             },
         )?;
@@ -650,9 +652,9 @@ mod recorder {
 
     /// The seed's files, then the note: a seed carrying its own `NOTE_FILE`
     /// must not replace the one `note_survived` compares against.
-    fn fill_workspace(ws: &Path, seed: Option<&Path>) -> std::io::Result<()> {
+    fn fill_workspace(ws: &Path, seed: Option<&NonEmpty>) -> std::io::Result<()> {
         if let Some(seed) = seed {
-            copy_tree(seed, ws)?;
+            copy_tree(Path::new(seed.as_str()), ws)?;
         }
         plant_note(ws)
     }
@@ -755,7 +757,10 @@ mod recorder {
     }
 
     /// `ws` made afresh, and the lock held while the capture uses it.
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
+    fn prepare_workspace(
+        ws: PathBuf,
+        seed: Option<&NonEmpty>,
+    ) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
@@ -778,7 +783,7 @@ mod recorder {
         // anyone re-created it since the remove.
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
-        fill_workspace(&ws, workspace_seed().as_deref())?;
+        fill_workspace(&ws, seed)?;
         init_repo(&ws)?;
         Ok((ws, lock))
     }
@@ -1055,12 +1060,6 @@ mod recorder {
             );
         }
         Ok(())
-    }
-
-    /// The seed directory, read as provenance reads it: a set-but-empty
-    /// `CAPTURE_SEED` is no seed, and must not abort a copy of `""`.
-    fn workspace_seed() -> Option<PathBuf> {
-        nonempty_env(SEED_ENV).map(|dir| PathBuf::from(dir.as_str()))
     }
 
     fn nonempty_env(key: &str) -> Option<NonEmpty> {
@@ -1610,10 +1609,17 @@ mod recorder {
 
         #[test]
         fn a_set_but_empty_seed_seeds_nothing() {
-            for (value, seeds) in [(Some(""), false), (None, false), (Some("/seed"), true)] {
-                temp_env::with_var(SEED_ENV, value, || {
-                    assert_eq!(workspace_seed().is_some(), seeds, "{value:?}");
+            let d = tempfile::tempdir().expect("tempdir");
+            for (value, seeds) in [(Some(""), false), (None, false), (Some("/no/such"), true)] {
+                let ws = d
+                    .path()
+                    .join(format!("ws-{}", value.unwrap_or("unset").len()));
+                std::fs::create_dir(&ws).expect("mkdir");
+                let filled = temp_env::with_var(SEED_ENV, value, || {
+                    fill_workspace(&ws, nonempty_env(SEED_ENV).as_ref())
                 });
+                // A named seed that is missing fails the copy; none must not.
+                assert_eq!(filled.is_err(), seeds, "{value:?}");
             }
         }
 
@@ -1624,7 +1630,11 @@ mod recorder {
             std::fs::create_dir(&seed).expect("mkdir");
             std::fs::create_dir(&ws).expect("mkdir");
             std::fs::write(seed.join(NOTE_FILE), "seeded\n").expect("write");
-            fill_workspace(&ws, Some(&seed)).expect("fill");
+            fill_workspace(
+                &ws,
+                NonEmpty::try_from(seed.display().to_string()).ok().as_ref(),
+            )
+            .expect("fill");
             assert!(note_survived(&ws));
         }
 
