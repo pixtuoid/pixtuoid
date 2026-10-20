@@ -126,9 +126,9 @@
   file: .github/workflows/hermetic-nightly.yml
   why: >-
     The issue is filed from the runs each OS leg uploaded, under the stem the
-    tier's `runs-stem` output hands on, each leg's in its own directory: a name
-    rebuilt here can disagree with it and find nothing, and merged legs would
-    overwrite one report with the other.
+    tier's `runs-stem` output hands on, several legs' each in its own directory:
+    a name rebuilt here can disagree with it and find nothing, and merged legs
+    would overwrite one report with the other.
   assert: |
     [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
     == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*"}]
@@ -147,8 +147,8 @@
   file: .github/workflows/hermetic.yml
   why: >-
     A New finding never fails a run, so a run that passed with one uploads only
-    because this reads `new.json`: without it the nightly has no report to file
-    and the new type goes unseen.
+    because its `new` step reads `hermetic::NEW_TYPES`: without it the nightly
+    has no report to file and the new type goes unseen.
   assert: |
     [.jobs.run.steps[] | select((.uses // "") | startswith("actions/upload-artifact")) | .if]
     == ["steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'"]

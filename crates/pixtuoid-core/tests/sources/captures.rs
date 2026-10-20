@@ -266,8 +266,7 @@ const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &["copilot"];
 /// will ever be, and a new hook-only CLI must not join it by default.
 const NO_WIRE_EVIDENCE_YET: &[&str] = &[];
 
-/// `provenance.schema.json` — the ONE statement of what each origin requires,
-/// read by this gate and the README table.
+/// `provenance.schema.json` — the ONE statement of what each origin requires and allows.
 struct ProvenanceSchema(serde_json::Value);
 
 impl ProvenanceSchema {
@@ -348,6 +347,24 @@ fn every_capture_carries_only_keys_its_schema_names() {
                 c.origin()
             );
         }
+    }
+}
+
+/// The keys the recorder writes by name are ones the schema allows, so a
+/// renamed const fails here, not on the next recording's record.
+#[test]
+fn the_schema_allows_the_keys_the_recorder_writes() {
+    let allowed = ProvenanceSchema::load()
+        .allowed("recorded")
+        .expect("recorded");
+    for key in [
+        pixtuoid_core::harness::hermetic::PROVENANCE_AIMOCK,
+        pixtuoid_core::harness::hermetic::PROVENANCE_DROPPED,
+    ] {
+        assert!(
+            allowed.contains(key),
+            "{key:?} is no recorded key the schema names"
+        );
     }
 }
 

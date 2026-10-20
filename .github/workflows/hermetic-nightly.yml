@@ -204,8 +204,6 @@ jobs:
     permissions:
       issues: write
     steps:
-      # Each uploading leg's runs (failed, or passed with a New finding), in a
-      # directory named after its artifact.
       - uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.drift.outputs.runs-stem }}*

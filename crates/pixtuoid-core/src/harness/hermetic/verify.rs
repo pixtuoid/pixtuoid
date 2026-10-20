@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::dropped::{self, Dropped};
+use super::dropped::{self, Dropped, Unjudged};
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
     Surface, literals, profile, tui,
@@ -53,13 +53,22 @@ pub enum Label {
 #[derive(Debug)]
 pub struct Verdict {
     findings: Vec<(Label, String)>,
+    unjudged: Option<Unjudged>,
 }
 
 impl Verdict {
     /// A verdict of `findings`, in any order.
     pub fn new(mut findings: Vec<(Label, String)>) -> Self {
         findings.sort_by_key(|f| std::cmp::Reverse(f.0));
-        Self { findings }
+        Self {
+            findings,
+            unjudged: None,
+        }
+    }
+
+    /// Why its run judged no new types, if it judged none.
+    pub fn unjudged(&self) -> Option<&Unjudged> {
+        self.unjudged.as_ref()
     }
 
     /// The worst finding's label; Pass with none.
@@ -103,8 +112,11 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
     let mut findings = Vec::new();
-    judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    Ok(Verdict::new(findings))
+    let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
+    Ok(Verdict {
+        unjudged,
+        ..Verdict::new(findings)
+    })
 }
 
 /// Judge an install lifecycle's run in `dir`: each of [`STEPS`] reported its
@@ -583,7 +595,7 @@ fn judge(
     dir: &Path,
     scene: &str,
     findings: &mut Vec<(Label, String)>,
-) -> std::io::Result<()> {
+) -> std::io::Result<Option<Unjudged>> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui(_))
@@ -593,7 +605,7 @@ fn judge(
             Label::Fail,
             "the turn raised no gate the driver knows to refuse".into(),
         ));
-        return Ok(());
+        return Ok(None);
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
@@ -606,7 +618,7 @@ fn judge(
                 manifest.capture.exit_code, manifest.requests
             ),
         ));
-        return Ok(());
+        return Ok(None);
     }
     if p.result_unseen && manifest.results_seen > 0 {
         findings.push((
@@ -674,7 +686,7 @@ fn judge(
                 format!("presence cannot show a {} turn", scenario.name),
             )),
         }
-        return Ok(());
+        return Ok(None);
     }
     let sessions = match scenario.shape {
         Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
@@ -711,33 +723,29 @@ fn judge(
         Shape::ModelError => "idle",
     };
     judge_scene(p, scene, shown, findings);
-    findings.extend(new_types(p, dir, dropped::baseline_of(scenario)?.as_ref())?);
-    Ok(())
+    new_types(p, dir, dropped::baseline_of(scenario)?.as_ref(), findings)
 }
 
-/// Each type a run in `dir` dropped that `baseline`, its recording's, never
-/// did: New. A baseline recorded on another OS judges nothing here.
+/// Each type a run in `dir` left unread that `baseline`, its recording's,
+/// never did: New. With no baseline to judge by here, why not.
 fn new_types(
     p: &Profile,
     dir: &Path,
     baseline: Option<&Dropped>,
-) -> std::io::Result<Vec<(Label, String)>> {
-    let Some(b) = baseline.filter(|b| b.judges_here()) else {
-        return Ok(Vec::new());
+    findings: &mut Vec<(Label, String)>,
+) -> std::io::Result<Option<Unjudged>> {
+    let b = match baseline {
+        None => return Ok(Some(Unjudged::NoBaseline)),
+        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.clone()))),
+        Some(b) => b,
     };
-    Ok(
-        b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?)
-            .into_iter()
-            .map(|(at, value)| {
-                (
-                    Label::New,
-                    format!(
-                        "{at}: `{value}` decoded to nothing, which the recording never dropped"
-                    ),
-                )
-            })
-            .collect(),
-    )
+    for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
+        findings.push((
+            Label::New,
+            format!("{at}: `{value}` went unread, which the recording never dropped"),
+        ));
+    }
+    Ok(None)
 }
 
 fn started_in(
@@ -2607,10 +2615,16 @@ mod tests {
         let d = recorded("copilot", Shape::ToolRun, "");
         let files = jsonl_files_under(d.path());
         let baseline = Dropped::of_files("copilot", &files).expect("baseline");
+        let check = |baseline: Option<&Dropped>| {
+            let mut findings = Vec::new();
+            let unjudged = new_types(p, d.path(), baseline, &mut findings).expect("judge");
+            (Verdict::new(findings), unjudged)
+        };
+        let (v, unjudged) = check(Some(&baseline));
         assert!(
-            new_types(p, d.path(), Some(&baseline))
-                .expect("judge")
-                .is_empty()
+            v.findings().is_empty() && unjudged.is_none(),
+            "{:?}",
+            v.findings()
         );
 
         let transcript = files
@@ -2620,7 +2634,7 @@ mod tests {
         let mut text = std::fs::read_to_string(transcript).expect("read");
         text.push_str("{\"type\":\"assistant.brand_new\",\"data\":{\"x\":\"y\"}}\n");
         std::fs::write(transcript, text).expect("write");
-        let v = Verdict::new(new_types(p, d.path(), Some(&baseline)).expect("judge"));
+        let (v, _) = check(Some(&baseline));
         assert!(
             has(&v, Label::New, "`assistant.brand_new`"),
             "{:?}",
@@ -2633,13 +2647,15 @@ mod tests {
             os: "plan9".to_owned(),
             ..baseline
         };
+        let (v, unjudged) = check(Some(&elsewhere));
         assert!(
-            new_types(p, d.path(), Some(&elsewhere))
-                .expect("judge")
-                .is_empty(),
+            v.findings().is_empty(),
             "a baseline recorded on another OS judges nothing here"
         );
-        assert!(new_types(p, d.path(), None).expect("judge").is_empty());
+        assert_eq!(unjudged, Some(Unjudged::RecordedOn("plan9".to_owned())));
+        let (v, unjudged) = check(None);
+        assert!(v.findings().is_empty());
+        assert_eq!(unjudged, Some(Unjudged::NoBaseline));
     }
 
     /// A key a fixture holds, blank or not, must arrive: grok's `subagent_type`

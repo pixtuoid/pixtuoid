@@ -18,8 +18,7 @@ use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
 /// What a recording's decoders dropped, by discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dropped {
-    /// The OS it was recorded on: a type only another OS's build writes is not
-    /// New there.
+    /// The OS it was recorded on.
     pub(crate) os: String,
     /// Each discriminator, a pointer (`*` for an array index) where the strip
     /// kept a non-blank string a decoder of the source names, with the values
@@ -45,7 +44,7 @@ impl Dropped {
         let mut at: BTreeMap<String, BTreeSet<String>> = pairs
             .iter()
             .flat_map(|(_, kept)| kept)
-            .flat_map(leaves)
+            .flat_map(string_set)
             .filter(|(_, s)| named.contains(s))
             .map(|(p, _)| (p, BTreeSet::new()))
             .collect();
@@ -75,7 +74,7 @@ impl Dropped {
 }
 
 /// Each transcript of `files` the strip applies to, as a [`Pair`]: a hook
-/// envelope is never dropped whole, and its unread name breadcrumbs.
+/// envelope's unread name already breadcrumbs (`drift::unknown_event`).
 ///
 /// # Errors
 ///
@@ -92,26 +91,13 @@ pub(crate) fn pairs(source: &str, files: &[PathBuf]) -> std::io::Result<Vec<Pair
     Ok(out)
 }
 
-/// Why a run of a scenario here judges no new types.
+/// Why a run judged no new types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unjudged {
     /// Its recording wrote no baseline: one `--record` writes it.
     NoBaseline,
     /// Its baseline was recorded on this other OS.
     RecordedOn(String),
-}
-
-/// Why a run of `s` here judges no new types, if it judges none.
-///
-/// # Errors
-///
-/// If its provenance cannot be read or its baseline does not parse.
-pub fn unjudged(s: &Scenario) -> std::io::Result<Option<Unjudged>> {
-    Ok(match baseline_of(s)? {
-        None => Some(Unjudged::NoBaseline),
-        Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
-        Some(_) => None,
-    })
 }
 
 /// The baseline `s`'s recording wrote; none for a scenario not yet recorded.
@@ -146,9 +132,9 @@ fn blanked(at: &BTreeMap<String, BTreeSet<String>>, pairs: &[Pair]) -> BTreeSet<
     let mut out = BTreeSet::new();
     for (raw, kept) in pairs {
         for (r, k) in raw.iter().zip(kept) {
-            let kept = leaves(k);
+            let kept = string_set(k);
             out.extend(
-                leaves(r)
+                string_set(r)
                     .into_iter()
                     .filter(|leaf| at.contains_key(&leaf.0) && !kept.contains(leaf)),
             );
@@ -157,7 +143,7 @@ fn blanked(at: &BTreeMap<String, BTreeSet<String>>, pairs: &[Pair]) -> BTreeSet<
     out
 }
 
-fn leaves(v: &Value) -> BTreeSet<(String, String)> {
+fn string_set(v: &Value) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
     string_leaves(v, "", &mut out);
     out
@@ -243,6 +229,17 @@ mod tests {
             ]),
             "only at the baseline's pointers: `/data/turnId` is none"
         );
+    }
+
+    /// A baseline that does not parse fails the whole tier when a run looks it
+    /// up, so every committed one parses here, on every PR.
+    #[test]
+    fn every_committed_baseline_parses() {
+        for p in crate::harness::hermetic::PROFILES {
+            for s in p.scenarios {
+                baseline_of(s).unwrap_or_else(|e| panic!("{}/{}: {e}", p.source, s.name));
+            }
+        }
     }
 
     #[test]

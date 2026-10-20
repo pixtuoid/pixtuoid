@@ -109,7 +109,7 @@ jobs:
         id: new
         if: steps.run.outputs.exit == '0'
         run: |
-          any=$(jq 'length > 0' target/hermetic/runs/new-types.json)
+          any=$(jq '. > 0' target/hermetic/runs/new-types.json)
           echo "any=$any" >> "$GITHUB_OUTPUT"
       - if: steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true'
         uses: actions/upload-artifact@v7
