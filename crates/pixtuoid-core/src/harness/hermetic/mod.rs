@@ -15,6 +15,7 @@ use crate::source::registry;
 
 pub mod bump;
 pub mod digest;
+pub mod dropped;
 mod literals;
 pub mod pin;
 pub mod tui;
@@ -141,7 +142,7 @@ pub enum Shape {
 impl Shape {
     /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
     /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub const fn exits_as_scripted(self, code: Option<i32>) -> bool {
+    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
         match code {
             Some(0) => true,
             Some(_) => match self {
@@ -369,6 +370,14 @@ pub const TUI_LOG: &str = "tui.log";
 /// The provenance key naming the aimock a recording ran against, which only
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
+
+/// The file beside a run's report counting its New findings, which
+/// `hermetic.yml` reads to upload a run that passed with one.
+pub const NEW_TYPES: &str = "new-types.json";
+
+/// The provenance key holding what a tier recording's decoders dropped
+/// ([`dropped::Dropped`]), the baseline a New finding is judged against.
+pub const PROVENANCE_DROPPED: &str = "dropped";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -1357,12 +1366,32 @@ trust_level = "trusted"
                 fixture: "fixtures/grok/model-error-hermetic",
                 turn: Turn::PROFILE,
             },
+            // A question headless cannot answer: the shell fires the
+            // `elicitation_dialog` notification, then headless cancels it at
+            // once (at main 2bdd1d6a: `crates/codegen/xai-grok-shell/src/session/acp_session_impl/spawn.rs:2336-2341`,
+            // `crates/codegen/xai-grok-pager/src/headless/ext_protocol.rs:27`).
+            Scenario {
+                name: "ask-user",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "Notification",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/grok/ask-user-hermetic",
+                turn: Turn::PROFILE,
+            },
         ],
         script_vars: &[],
         not_yet: &[],
         event_name: grok_event,
         not_yet_fields: &[],
-        not_yet_literals: &["elicitation_dialog"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1910,19 +1939,31 @@ telemetry:
             path: ".gemini/antigravity-cli/settings.json",
             template: "{\"modelProvider\": \"gemini\"}\n",
         }],
-        scenarios: &[Scenario {
-            name: "tool-run",
-            shape: Shape::ToolRun,
-            surface: Surface::Headless,
-            expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "fixtures/antigravity/tool-run-hermetic",
-            turn: Turn::PROFILE,
-        }],
+        scenarios: &[
+            Scenario {
+                name: "tool-run",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/tool-run-hermetic",
+                turn: Turn::PROFILE,
+            },
+            // `-p` answers the question itself: "Auto-answering ask_question at
+            // step %d with skipped=true" (`ask_question_manager.go:30`).
+            Scenario {
+                name: "ask-question",
+                shape: Shape::Permission,
+                surface: Surface::Headless,
+                expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
+                fixture: "fixtures/antigravity/ask-question-hermetic",
+                turn: Turn::PROFILE,
+            },
+        ],
         script_vars: &[],
         not_yet: &[],
         event_name: shim_stamped_event,
         not_yet_fields: &[],
-        not_yet_literals: &["ask_question"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         // agy returns a result under role `model`, and aimock's Gemini route
         // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
@@ -2119,6 +2160,16 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+        let yml = std::fs::read_to_string(bump::repo_root().join(".github/workflows/hermetic.yml"))
+            .expect("hermetic.yml");
+        assert!(
+            yml.contains(&format!("runs/{NEW_TYPES}")),
+            "a run that passed with a New finding uploads only as this file says"
+        );
+    }
 
     #[test]
     fn every_registered_source_is_profiled_or_says_why_not_and_never_both() {

@@ -10,9 +10,9 @@
 //! fixtures, and off the pin moves its pin up to the release recorded.
 //! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
 //!
-//! Exits 0 when every run passed, 1 on any other verdict (a recording refused
-//! after its runs included), and anything else when the tier itself could not
-//! run or refused a recording before any CLI ran.
+//! Exits 0 when every run passed, New findings included (`NEW_TYPES` counts them),
+//! 1 on any other verdict (a recording refused after its runs included), and
+//! anything else when the tier could not run or refused a recording first.
 
 fn main() {
     match run::main() {
@@ -25,6 +25,7 @@ fn main() {
 }
 
 mod run {
+    use std::collections::BTreeMap;
     use std::ffi::{OsStr, OsString};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -34,6 +35,7 @@ mod run {
 
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::digest;
+    use pixtuoid_core::harness::hermetic::dropped::Unjudged;
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
@@ -345,8 +347,12 @@ mod run {
         );
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
+        std::fs::write(
+            runs.join(hermetic::NEW_TYPES),
+            new_count(&entries).to_string(),
+        )?;
         println!("\n{report}");
-        Ok(entries.iter().all(|e| e.verdict.label() == Label::Pass))
+        Ok(entries.iter().all(|e| e.verdict.passed()))
     }
 
     /// `p`'s selected runs, then, once every scenario ran, its census, the
@@ -454,7 +460,7 @@ mod run {
             let verdict = verify::verify_source(p, &judged)?;
             entries.push(Entry::new(key, None, verdict));
         }
-        let passed = entries.iter().all(|e| e.verdict.label() == Label::Pass);
+        let passed = entries.iter().all(|e| e.verdict.passed());
         let mut moved = None;
         if let (Ok(installed), true) = (&installed, passed) {
             match pin::every_run_reported(installed, p.descriptor().version_hyphen, &banners) {
@@ -608,6 +614,28 @@ mod run {
             .collect()
     }
 
+    /// The runs among `(key, why)` that reached the new-type check and could
+    /// not judge it here: each with no baseline named, those recorded on
+    /// another OS counted.
+    fn not_judged<'a>(runs: impl Iterator<Item = (&'a str, Option<&'a Unjudged>)>) -> String {
+        let (mut missing, mut elsewhere) = (Vec::new(), BTreeMap::<&str, usize>::new());
+        for (key, why) in runs {
+            match why {
+                Some(Unjudged::NoBaseline) => missing.push(key),
+                Some(Unjudged::RecordedOn(os)) => *elsewhere.entry(os.as_str()).or_default() += 1,
+                None => {}
+            }
+        }
+        let mut parts = Vec::new();
+        if !missing.is_empty() {
+            parts.push(format!("{} (no baseline)", missing.join(" ")));
+        }
+        for (os, n) in elsewhere {
+            parts.push(format!("{n} recorded on {os}"));
+        }
+        parts.join("; ")
+    }
+
     /// Each of `p`'s runs a leg on `windows` never makes, and why.
     fn not_run_of(p: &Profile, windows: bool) -> Vec<String> {
         let scenarios = p.scenarios.iter().filter_map(|s| {
@@ -663,6 +691,15 @@ mod run {
 
     /// The run's report, beside the runs; its H1 is the tracking issue's title.
     const REPORT: &str = "report.md";
+
+    /// How many New findings `entries` hold.
+    fn new_count(entries: &[Entry]) -> usize {
+        entries
+            .iter()
+            .flat_map(|e| e.verdict.findings())
+            .filter(|(label, _)| *label == Label::New)
+            .count()
+    }
 
     /// One section of the report: one run, or a source's runs together.
     struct Entry {
@@ -745,6 +782,14 @@ mod run {
         }
         if !not_run.is_empty() {
             out += &format!("\nNot run here: {}", not_run.join(" "));
+        }
+        let unjudged = not_judged(
+            entries
+                .iter()
+                .map(|e| (e.key.as_str(), e.verdict.unjudged())),
+        );
+        if !unjudged.is_empty() {
+            out += &format!("\nNew types not judged: {unjudged}");
         }
         out + "\n"
     }
@@ -2271,7 +2316,13 @@ mod run {
             };
             assert_eq!(
                 names(true),
-                ["tool-run", "tool-error", "subagent", "model-error"]
+                [
+                    "tool-run",
+                    "tool-error",
+                    "subagent",
+                    "model-error",
+                    "ask-user"
+                ]
             );
             assert_eq!(
                 names(false),
@@ -2280,7 +2331,8 @@ mod run {
                     "tool-error",
                     "subagent",
                     "permission",
-                    "model-error"
+                    "model-error",
+                    "ask-user"
                 ]
             );
             assert!(not_run(&every, false).is_empty());
@@ -2295,10 +2347,59 @@ mod run {
                 "{r}"
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
+            let entry = |label, finding: &str| {
+                Entry::new(
+                    "copilot/tool-run".into(),
+                    None,
+                    Verdict::new(vec![(label, finding.into())]),
+                )
+            };
+            assert_eq!(
+                new_count(&[entry(Label::New, "/type: `x`"), entry(Label::Fail, "lost")]),
+                1,
+                "the New findings alone"
+            );
+            let macos = Unjudged::RecordedOn("macos".into());
+            assert_eq!(
+                not_judged(
+                    [
+                        ("copilot/tool-run", Some(&Unjudged::NoBaseline)),
+                        ("codex/tool-run", Some(&macos)),
+                        ("grok/tool-run", Some(&macos)),
+                        ("kimi/tool-run", None),
+                    ]
+                    .into_iter()
+                ),
+                "copilot/tool-run (no baseline); 2 recorded on macos"
+            );
+            let unjudged = |key: &str, why| {
+                Entry::new(
+                    key.into(),
+                    None,
+                    Verdict::new(Vec::new()).unjudged_because(why),
+                )
+            };
+            let r = report(
+                &Versions::Pinned,
+                None,
+                &[],
+                &[
+                    unjudged("copilot/tool-run", Unjudged::NoBaseline),
+                    unjudged("codex/tool-run", Unjudged::RecordedOn("macos".into())),
+                ],
+                &[],
+            );
+            assert!(
+                r.ends_with(
+                    "\nNew types not judged: copilot/tool-run (no baseline); 1 recorded on macos\n"
+                ),
+                "{r}"
+            );
+            assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
-            assert!(judges_leg(grok, &judged(4), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(4), false));
-            assert!(judges_leg(grok, &judged(5), false));
+            assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(5), false));
+            assert!(judges_leg(grok, &judged(6), false));
         }
 
         #[test]
