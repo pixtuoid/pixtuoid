@@ -1521,7 +1521,7 @@ mod run {
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it as `--env` (`Sandbox::cli_env`).
-            for (k, v) in p.env {
+            for (k, v) in p.env_on(cfg!(windows)) {
                 env.push(((*k).to_string(), expand(v).into()));
             }
             let sandbox = Self {
@@ -1551,8 +1551,7 @@ mod run {
         /// The profile's pairs as this sandbox holds them, then what the CLI's
         /// launch sets, for the recorder to set on the CLI as [`recorder_flag::ENV`].
         fn cli_env(&self, p: &Profile, launch: &Launch) -> Vec<String> {
-            p.env
-                .iter()
+            p.env_on(cfg!(windows))
                 .filter_map(|(k, _)| {
                     self.var_os(k)
                         .map(|v| format!("{k}={}", v.to_string_lossy()))
@@ -2816,7 +2815,7 @@ mod run {
                 let cli_env = sandbox.cli_env(p, &launch);
                 assert_eq!(
                     cli_env.len(),
-                    p.env.len() + launch.env.len(),
+                    p.env_on(cfg!(windows)).count() + launch.env.len(),
                     "{}",
                     p.source
                 );
@@ -2825,7 +2824,7 @@ mod run {
                     "{}: the launch's own env misses the CLI",
                     p.source
                 );
-                for (k, v) in p.env {
+                for (k, v) in p.env_on(cfg!(windows)) {
                     let want = v
                         .replace("{port}", &TEST_PORTS.model.to_string())
                         .replace(DAEMON_PORT_PLACEHOLDER, &TEST_PORTS.daemon.to_string())
