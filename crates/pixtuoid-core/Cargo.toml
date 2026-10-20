@@ -106,6 +106,7 @@ pixtuoid-core = { path = ".", features = ["harness"] }
 tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
+dunce = { workspace = true }
 temp-env = { workspace = true }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }

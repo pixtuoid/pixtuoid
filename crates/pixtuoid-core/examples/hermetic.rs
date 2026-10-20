@@ -1490,7 +1490,11 @@ mod run {
             ports: Ports,
             workspace: &Path,
         ) -> std::io::Result<Self> {
-            let dir = tempfile::tempdir()?;
+            // Under the temp root's long form: a Windows runner's TEMP is an 8.3
+            // short path, which a CLI's realpath disagrees with, and openclaw's
+            // plugin copy then refuses its plugin (`@openclaw/fs-safe`
+            // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
+            let dir = tempfile::tempdir_in(dunce::canonicalize(std::env::temp_dir())?)?;
             let at = |rel: &str| -> std::io::Result<PathBuf> {
                 let d = dir.path().join(rel);
                 std::fs::create_dir_all(&d)?;
@@ -2878,6 +2882,20 @@ mod run {
             let one = [PathBuf::from("/runs/x")];
             assert!(judges_source(&one, 1));
             assert!(!judges_source(&one, 2), "a sibling selected out or Blocked");
+        }
+
+        #[test]
+        fn a_sandboxs_home_is_its_own_canonical_path() {
+            let sandbox = Sandbox::new(
+                &PROFILES[0],
+                Path::new("/nowhere/shims"),
+                Path::new("/nowhere/bin"),
+                TEST_PORTS,
+                Path::new("/nowhere/ws"),
+            )
+            .expect("sandbox");
+            let home = PathBuf::from(sandbox.var_os("HOME").expect("a HOME"));
+            assert_eq!(dunce::canonicalize(&home).expect("it exists"), home);
         }
 
         #[test]

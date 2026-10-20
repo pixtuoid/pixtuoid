@@ -151,6 +151,8 @@ insta              = "1"
 snapbox            = "1"
 proptest           = "1"
 tempfile           = "3"
+# Dev-only: a path's canonical form without std's Windows `\\?\` prefix.
+dunce              = "1"
 # Dev-only: every test that sets or unsets an env var goes through it, behind
 # one process-wide lock.
 temp-env           = "0.3"

@@ -843,11 +843,8 @@ mod recorder {
     /// How long a daemon may take to exit once its stdin closed: its shutdown
     /// hooks' last sends, which a kill would lose.
     const DAEMON_STOP_GRACE: Duration = Duration::from_secs(30);
-    /// How long one readiness probe may take before it is killed and read as
-    /// a no: a probe that blocked would hold the wait past [`BOOT`].
-    const DAEMON_PROBE_BUDGET: Duration = Duration::from_secs(5);
-    /// How many last lines of its log, and of its last probe's, a daemon that
-    /// never served carries in its error: a failed run's uploaded dir keeps the
+    /// How many last lines of its log, and of its probes', a daemon that never
+    /// served carries in its error: a failed run's uploaded dir keeps the
     /// recorder's error, while both logs stay in its scratch.
     const DAEMON_LOG_TAIL: usize = 40;
 
@@ -889,40 +886,41 @@ mod recorder {
                 child,
                 start: daemon.start.join(" "),
             };
-            // The last probe's, which each one truncates.
+            // Every probe's output, each followed by how it ended.
             let probe_log = own.join("probe.log");
-            let mut last_probe = String::from("never ran");
+            let mut probes = std::fs::File::create(&probe_log)?;
+            let deadline = std::time::Instant::now() + boot;
             wait_until("the daemon", boot, || {
-                let out = std::fs::File::create(&probe_log)?;
                 let mut probe = wired(&daemon.ready, ws, wiring, verified, env)?
                     .stdin(std::process::Stdio::null())
-                    .stdout(out.try_clone()?)
-                    .stderr(out)
+                    .stdout(probes.try_clone()?)
+                    .stderr(probes.try_clone()?)
                     .spawn()?;
-                let answered = wait_until("its probe", DAEMON_PROBE_BUDGET, || {
-                    Ok(probe.try_wait()?.is_some())
-                })
-                .is_ok();
+                // A probe may take as long as a CLI's cold start; only one that
+                // would hold the wait past `boot` is killed.
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                let answered =
+                    wait_until("its probe", left, || Ok(probe.try_wait()?.is_some())).is_ok();
                 if !answered {
                     let _ = probe.kill();
                 }
                 let status = probe.wait()?;
-                last_probe = if answered {
-                    status.to_string()
+                if answered {
+                    writeln!(probes, "[the probe exited {status}]")?;
                 } else {
-                    format!("killed past {DAEMON_PROBE_BUDGET:?}")
-                };
+                    writeln!(probes, "[the probe was killed at the boot deadline]")?;
+                }
                 match running.child.try_wait()? {
                     // A probe answered by whatever else holds the port.
                     Some(exit) => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
                     ))),
-                    None => Ok(status.success()),
+                    None => Ok(answered && status.success()),
                 }
             })
             .map_err(|e| {
                 std::io::Error::other(format!(
-                    "{e}; its last probe ({last_probe}) said:\n{}\nits log ends:\n{}",
+                    "{e}; its probes ended:\n{}\nits log ends:\n{}",
                     tail(&probe_log),
                     tail(&log_path)
                 ))
@@ -2131,12 +2129,13 @@ mod recorder {
         }
 
         /// In a re-run as the fake: its marker directory, and whether it is the
-        /// probe, which has asserted the fake serves by the time this returns.
-        /// A fake that `serves` says so before it returns.
-        fn as_fake(serves: bool) -> Option<(PathBuf, bool)> {
+        /// probe, which has taken `probe_takes` and asserted the fake serves by
+        /// the time this returns. A fake that `serves` says so before it returns.
+        fn as_fake(serves: bool, probe_takes: Duration) -> Option<(PathBuf, bool)> {
             let dir = PathBuf::from(std::env::var_os(FAKE_DAEMON)?);
             let probe = std::env::args().any(|a| a == FAKE_PROBE);
             if probe {
+                std::thread::sleep(probe_takes);
                 assert!(dir.join("ready").exists(), "{NOT_YET}");
             } else if serves {
                 std::fs::write(dir.join("ready"), "").expect("ready");
@@ -2161,7 +2160,7 @@ mod recorder {
         #[test]
         fn a_daemon_stops_when_its_stdin_closes() {
             const TEST: &str = "a_daemon_stops_when_its_stdin_closes";
-            if let Some((dir, probe)) = as_fake(true) {
+            if let Some((dir, probe)) = as_fake(true, Duration::ZERO) {
                 if !probe {
                     std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
                     // An EOF that came before the recorder stopped it is a
@@ -2194,7 +2193,7 @@ mod recorder {
         fn a_daemon_that_never_serves_carries_both_logs_into_the_error() {
             const TEST: &str = "a_daemon_that_never_serves_carries_both_logs_into_the_error";
             const SAYS: &str = "the fake daemon will not serve";
-            if let Some((_, probe)) = as_fake(false) {
+            if let Some((_, probe)) = as_fake(false, Duration::ZERO) {
                 if !probe {
                     println!("{SAYS}");
                     std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
@@ -2208,7 +2207,7 @@ mod recorder {
                 .to_string();
             assert!(why.contains("never came up"), "{why}");
             assert!(why.contains(SAYS), "its log: {why}");
-            assert!(why.contains(NOT_YET), "its last probe: {why}");
+            assert!(why.contains(NOT_YET), "its probes: {why}");
         }
 
         #[test]
@@ -2216,7 +2215,7 @@ mod recorder {
             const TEST: &str = "a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture";
             /// Past any grace this test gives it.
             const OUTLIVES: Duration = Duration::from_secs(600);
-            if let Some((_, probe)) = as_fake(true) {
+            if let Some((_, probe)) = as_fake(true, Duration::ZERO) {
                 if !probe {
                     std::thread::sleep(OUTLIVES);
                 }
@@ -2264,29 +2263,44 @@ mod recorder {
             assert!(why.to_string().contains("out of disk"), "its log: {why}");
         }
 
-        #[cfg(unix)]
         #[test]
-        fn a_probe_that_blocks_is_killed_and_read_as_a_no() {
-            let sandbox = tempfile::tempdir().expect("sandbox");
-            let ws = tempfile::tempdir().expect("workspace");
-            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
-            let daemon = DaemonCmd {
-                start: ["sh", "-c", "exit 3"].map(String::from).to_vec(),
-                ready: ["sleep", "60"].map(String::from).to_vec(),
-            };
-            let wiring = CliWiring {
-                endpoint: &endpoint,
-                scratch: sandbox.path(),
-            };
+        fn a_probe_that_blocks_is_killed_at_the_boot_deadline() {
+            const TEST: &str = "a_probe_that_blocks_is_killed_at_the_boot_deadline";
+            /// Past any boot this test gives it.
+            const BLOCKS: Duration = Duration::from_secs(600);
+            if let Some((_, probe)) = as_fake(true, BLOCKS) {
+                if !probe {
+                    std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
+                }
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let boot = Duration::from_secs(2);
             let started = std::time::Instant::now();
-            let why = RunningDaemon::start(Some(&daemon), BOOT, ws.path(), &wiring, "1.0.0", &[])
+            let why = start_fake(TEST, dir.path(), boot)
                 .map(|_| ())
-                .expect_err("it never served");
-            assert!(why.to_string().contains("exited"), "{why}");
-            assert!(
-                started.elapsed() < DAEMON_PROBE_BUDGET * 2,
-                "the probe ran out"
-            );
+                .expect_err("its probe never answered")
+                .to_string();
+            assert!(why.contains("killed at the boot deadline"), "{why}");
+            assert!(started.elapsed() < boot * 2, "the probe outlived its boot");
+        }
+
+        #[test]
+        fn a_slow_probe_answers_inside_the_boot_deadline() {
+            const TEST: &str = "a_slow_probe_answers_inside_the_boot_deadline";
+            /// A probe's own cold start, as a slow CLI's is.
+            const SLOW: Duration = Duration::from_secs(6);
+            if let Some((_, probe)) = as_fake(true, SLOW) {
+                if !probe {
+                    std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).expect("stdin");
+                }
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let started = std::time::Instant::now();
+            let running = start_fake(TEST, dir.path(), SLOW * 3).expect("a slow probe answers");
+            assert!(started.elapsed() >= SLOW, "{:?}", started.elapsed());
+            running.stop(DAEMON_STOP_GRACE).expect("it stops");
         }
 
         #[test]
