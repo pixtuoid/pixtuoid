@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "openclaw",
-  "version": "OpenClaw 2026.10.1 (e178c39)",
+  "version": "OpenClaw 2026.10.5 (1b58cb9)",
   "captured": "2026-10-20",
   "command": "just hermetic --record openclaw",
   "deidentified": {

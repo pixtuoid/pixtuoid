@@ -173,9 +173,13 @@ pub fn wait_until(
     }
 }
 
-/// The `NOTE.txt` the recorder writes into the workspace: what every scripted
-/// turn reads, and what a script waits for before it replies.
+/// What the recorder writes into the [`NOTE_FILE`] of the workspace: what every
+/// scripted turn reads, and what a script waits for before it replies.
 pub const CAPTURE_NOTE: &str = "pong";
+
+/// The file every capture workspace starts with, which the scripts read and a
+/// permission script's refused call would delete.
+pub const NOTE_FILE: &str = "NOTE.txt";
 
 /// A capture's hook payloads, one per line as the shim sent them.
 pub const HOOK_PAYLOADS: &str = "hook-payloads.jsonl";
@@ -225,6 +229,10 @@ pub struct CaptureRecord {
     /// The turn that resumed its session, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumed: Option<Resumed>,
+    /// Whether the note the recorder planted was still there, unchanged, once
+    /// every turn exited: a refused call that deletes it did not stay refused.
+    #[serde(default)]
+    pub note_survived: bool,
 }
 
 impl CaptureRecord {

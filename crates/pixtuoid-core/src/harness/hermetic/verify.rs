@@ -733,7 +733,9 @@ fn judge(
     let reached: Vec<Reach> = reaches.iter().map(|&(_, class)| class).collect();
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
-        Shape::Permission => permission(&events, &reached, findings),
+        Shape::Permission => {
+            permission(&events, &reached, manifest.capture.note_survived, findings)
+        }
         Shape::Subagent => subagent(
             &events,
             &reaches,
@@ -878,7 +880,15 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     }
 }
 
-fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label, String)>) {
+fn permission(
+    events: &[AgentEvent],
+    reached: &[Reach],
+    note_survived: bool,
+    findings: &mut Vec<(Label, String)>,
+) {
+    if !note_survived {
+        findings.push((Label::Fail, "the note is gone".into()));
+    }
     if !reached.contains(&Reach::Waiting) {
         findings.push((Label::Fail, "the slot never went Waiting".into()));
     }
@@ -910,25 +920,21 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     });
     let ended = if !waited.is_empty() {
         waited.iter().any(|t| ended_calls.contains(t))
-    } else if !events
-        .iter()
-        .any(|e| matches!(e, AgentEvent::ActivityStart { .. }))
-    {
-        // Asked before the call started (reasonix): the refused call never ran,
-        // so its turn's end.
-        events.iter().any(|e| {
-            matches!(
-                e,
-                AgentEvent::ActivityEnd {
-                    tool_use_id: None,
-                    ..
-                }
-            )
-        })
+    } else if started.is_empty() {
+        // No start carries a call id (reasonix): one End per Start (a
+        // guardian's read before the wait) plus the turn's, counted not paired
+        // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0).
+        // `a_permission_script_calls_no_tool_after_its_refusal` forbids a
+        // retry, and the note's survival proves the refused call never ran.
+        let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
+        let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
+        let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
+        // An End naming a call no Start opened is not this branch's to count.
+        ended_calls.is_empty() && ends == starts + 1
     } else {
-        // A wait that names no call (claude-code's `PermissionRequest`): every
-        // started tool ends.
-        !started.is_empty() && started.is_subset(&ended_calls)
+        // Starts carry call ids (claude-code, whose `PermissionRequest` names
+        // none): every started call ends.
+        started.is_subset(&ended_calls)
     };
     if !ended {
         findings.push((
@@ -1115,7 +1121,7 @@ fn child_error(
     findings: &mut Vec<(Label, String)>,
 ) {
     // Its turn's end, or its session's where the end of a headless run is
-    // the session's own (copilot's `-p` writes no `session.task_complete`).
+    // the session's own (copilot's plain `-p` writes no `session.task_complete`).
     let ended = |parent: AgentId| {
         events.iter().any(|e| match e {
             AgentEvent::ActivityEnd {
@@ -1298,14 +1304,21 @@ mod tests {
         run_of(&src, source, "tool-run", scene)
     }
 
-    /// A run directory built from the recording `source`'s `shape` scenario
+    /// A run directory built from the recording `source`'s scenario `name`
     /// writes, judged as that scenario's run.
-    fn recorded(source: &str, shape: Shape, scene: &str) -> tempfile::TempDir {
+    fn recorded(source: &str, name: &str, scene: &str) -> tempfile::TempDir {
         let scenario = profile(source)
-            .and_then(|p| p.scenarios.iter().find(|s| s.shape == shape))
+            .and_then(|p| p.scenario(name))
             .expect("a profiled scenario");
         let src = crate::harness::sources_root().join(scenario.fixture);
-        run_of(&src, source, scenario.name, scene)
+        let d = run_of(&src, source, name, scene);
+        if scenario.turn.resume.is_some() {
+            write_manifest(d.path(), source, |m| {
+                m.scenario = name.into();
+                m.capture.resumed = Some(crate::harness::Resumed { exit_code: Some(0) });
+            });
+        }
+        d
     }
 
     fn run_of(src: &Path, source: &str, scenario: &str, scene: &str) -> tempfile::TempDir {
@@ -1338,6 +1351,7 @@ mod tests {
                 version: "test".into(),
                 exit_code: Some(0),
                 resumed: None,
+                note_survived: true,
             },
             aimock: "test".into(),
             requests: 2,
@@ -1534,6 +1548,8 @@ mod tests {
     const DS_DELEGATE_SCENE: &str = "agents=[ds\u{b7}proj@0:active(Delegating), \
                                      ds\u{b7}proj@1:active(read)]\nagents=[] daemons=[]\n";
     const CP_SCENE: &str = "agents=[cp\u{b7}proj@0:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_AUTOPILOT_SCENE: &str =
+        "agents=[cp\u{b7}proj@0:active(task_complete)]\nagents=[] daemons=[]\n";
     const CP_WAIT_SCENE: &str =
         "agents=[cp\u{b7}proj@0:waiting(permission: shell)]\nagents=[] daemons=[]\n";
     const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
@@ -1553,7 +1569,7 @@ mod tests {
 
     /// omp's recorded `/new`, which asked the model nothing.
     fn recorded_succession(scene: &str) -> tempfile::TempDir {
-        let d = recorded("omp", Shape::Succession, scene);
+        let d = recorded("omp", "new-session", scene);
         write_manifest(d.path(), "omp", |m| {
             m.scenario = "new-session".into();
             m.requests = 0;
@@ -1624,14 +1640,14 @@ mod tests {
 
     #[test]
     fn a_recorded_dsh_permission_run_passes() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_permission_run_that_never_waits_fails() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         edit_hooks(d.path(), |v| (v["type"] != "approval_asked").then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1645,7 +1661,7 @@ mod tests {
     fn a_permission_scene_that_never_shows_the_wait_fails() {
         let d = recorded(
             "dsh",
-            Shape::Permission,
+            "permission",
             "agents=[ds\u{b7}proj@0:active(bash)]\n",
         );
         let v = verify(d.path()).expect("verify");
@@ -1654,20 +1670,20 @@ mod tests {
 
     #[test]
     fn a_recorded_codex_tui_permission_run_passes() {
-        let d = recorded("codex", Shape::Permission, CX_WAIT_SCENE);
+        let d = recorded("codex", "permission", CX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_refused_call_that_never_started_ends_with_its_turn() {
-        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         edit_hooks(d.path(), |v| (v["event"] != "Stop").then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
-        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         reorder_hooks(d.path(), |lines| {
             let at = lines
                 .iter()
@@ -1686,15 +1702,110 @@ mod tests {
     }
 
     #[test]
+    fn a_guardian_that_reads_before_the_wait_passes_while_the_read_ends() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        edit_hooks(d.path(), |v| {
+            let guardian = v["sessionId"]
+                .as_str()
+                .is_some_and(|s| s.ends_with(":guardian"));
+            (!(guardian && v["event"] == "PostToolUse")).then_some(v)
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "a read before the wait is held to its own end: {:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn an_orphaned_id_bearing_end_cannot_mask_an_idless_calls_missing_end() {
+        let agent_id = AgentId::from_parts("reasonix", "p");
+        let end = |tool_use_id: Option<&str>| AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: tool_use_id.map(Into::into),
+        };
+        let events = |read_ends_as: Option<&str>| {
+            vec![
+                AgentEvent::ActivityStart {
+                    agent_id,
+                    tool_use_id: None,
+                    detail: None,
+                },
+                end(read_ends_as),
+                AgentEvent::Waiting {
+                    agent_id,
+                    reason: "approval".into(),
+                    tool_use_id: None,
+                },
+                end(None),
+            ]
+        };
+        let judged = |read_ends_as| {
+            let mut findings = Vec::new();
+            permission(
+                &events(read_ends_as),
+                &[Reach::Waiting],
+                true,
+                &mut findings,
+            );
+            findings
+        };
+        assert!(judged(None).is_empty(), "the start and the turn each ended");
+        assert!(
+            judged(Some("orphan"))
+                .iter()
+                .any(|f| f.1.contains("never ended")),
+            "an End naming a call no Start opened stands in for the start's"
+        );
+    }
+
+    #[test]
+    fn an_end_no_call_owns_fails() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        reorder_hooks(d.path(), |lines| {
+            let end = lines
+                .iter()
+                .position(|v| v["event"] == "PostToolUse")
+                .expect("the guardian's read ended");
+            let again = lines[end].clone();
+            lines.insert(end, again);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "ids are absent, so a surplus End could stand in for an unended call: {:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_refused_call_that_took_the_note_with_it_fails() {
+        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        write_manifest(d.path(), "dsh", |m| {
+            m.scenario = "permission".into();
+            m.capture.note_survived = false;
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "the note is gone"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
     fn a_recorded_claude_code_tui_permission_run_passes() {
-        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_wait_naming_no_call_fails_when_a_started_tool_never_ends() {
-        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         edit_transcripts(d.path(), |line| !line.contains("tool_result"));
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1706,7 +1817,7 @@ mod tests {
 
     #[test]
     fn a_wait_naming_no_call_fails_when_no_tool_started() {
-        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         edit_hooks(d.path(), |v| {
             (v["hook_event_name"] != "PreToolUse").then_some(v)
         });
@@ -1721,7 +1832,7 @@ mod tests {
 
     #[test]
     fn a_wait_whose_tool_never_ends_fails() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         edit_hooks(d.path(), |v| {
             (v["type"] != "tool_result" && v["type"] != "approval_decided").then_some(v)
         });
@@ -1735,7 +1846,7 @@ mod tests {
 
     #[test]
     fn a_wait_that_lands_after_every_end_of_its_tool_still_passes() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         reorder_hooks(d.path(), |lines| {
             let asked = lines
                 .iter()
@@ -1754,7 +1865,7 @@ mod tests {
 
     #[test]
     fn a_wait_ended_only_by_another_tool_fails() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         edit_hooks(d.path(), |mut v| {
             if v["type"] == "tool_result" {
                 v["callId"] = "another-call".into();
@@ -1778,7 +1889,7 @@ mod tests {
     /// no tool of its own.
     #[test]
     fn a_childs_tool_on_its_parent_or_on_neither_fails() {
-        let clean = recorded("claude-code", Shape::Subagent, CC_DELEGATE_SCENE);
+        let clean = recorded("claude-code", "subagent", CC_DELEGATE_SCENE);
         let v = verify(clean.path()).expect("verify");
         assert!(v.findings().is_empty(), "{:?}", v.findings());
         // As a decoder that ignores `agent_id` keys them: on the root's session.
@@ -1796,7 +1907,7 @@ mod tests {
             }
             Some(v)
         };
-        let d = recorded("claude-code", Shape::Subagent, CC_DELEGATE_SCENE);
+        let d = recorded("claude-code", "subagent", CC_DELEGATE_SCENE);
         edit_hooks(d.path(), unkeyed);
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1822,7 +1933,7 @@ mod tests {
     #[test]
     fn a_parent_that_never_delegates_or_a_child_that_never_works_fails() {
         let delegation = |v: &Value| v["type"] == "tool_call" && v["toolName"] == "subagent";
-        let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
+        let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         edit_hooks(d.path(), |v| (!delegation(&v)).then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1830,7 +1941,7 @@ mod tests {
             "{:?}",
             v.findings()
         );
-        let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
+        let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         edit_hooks(d.path(), |v| {
             (v["type"] != "tool_call" || delegation(&v)).then_some(v)
         });
@@ -1844,7 +1955,7 @@ mod tests {
 
     #[test]
     fn a_session_that_names_itself_its_parent_is_no_child() {
-        let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
+        let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         let mut parent = None;
         edit_hooks(d.path(), |mut v| {
             if let Some(p) = v.as_object_mut().and_then(|o| o.remove("parentSession")) {
@@ -2103,7 +2214,7 @@ mod tests {
 
     #[test]
     fn a_recorded_dsh_subagent_run_passes() {
-        let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
+        let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
@@ -2126,7 +2237,7 @@ mod tests {
             ("claude-code", CC_DELEGATE_SCENE, claude),
         ] {
             for keep in 0..ends.len() {
-                let d = recorded(source, Shape::Subagent, scene);
+                let d = recorded(source, "subagent", scene);
                 edit_hooks(d.path(), |v| {
                     let dropped = ends.iter().enumerate().any(|(i, e)| i != keep && e(&v));
                     (!dropped).then_some(v)
@@ -2134,12 +2245,12 @@ mod tests {
                 let v = verify(d.path()).expect("verify");
                 assert!(!has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
             }
-            let d = recorded(source, Shape::Subagent, scene);
+            let d = recorded(source, "subagent", scene);
             edit_hooks(d.path(), |v| (!ends.iter().any(|e| e(&v))).then_some(v));
             let v = verify(d.path()).expect("verify");
             assert!(has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
         }
-        let d = recorded("dsh", Shape::Subagent, DS_DELEGATE_SCENE);
+        let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         edit_hooks(d.path(), |mut v| {
             if let Some(o) = v.as_object_mut() {
                 o.remove("parentSession");
@@ -2160,7 +2271,7 @@ mod tests {
         let scene = "agents=[ds\u{b7}proj@0:active(Delegating), \
                      Read the note@1:active(read)]\n\
                      agents=[Read the note@1:idle] daemons=[]\n";
-        let d = recorded("dsh", Shape::Subagent, scene);
+        let d = recorded("dsh", "subagent", scene);
         let v = verify(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "after the CLI exited"),
@@ -2178,41 +2289,40 @@ mod tests {
 
     #[test]
     fn a_recorded_codex_subagent_run_passes() {
-        let d = recorded("codex", Shape::Subagent, CX_DELEGATE_SCENE);
+        let d = recorded("codex", "subagent", CX_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_recorded_opencode_subagent_run_passes() {
-        let d = recorded("opencode", Shape::Subagent, OC_DELEGATE_SCENE);
+        let d = recorded("opencode", "subagent", OC_DELEGATE_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_recorded_grok_run_passes_each_scenario() {
-        for (shape, scene) in [
-            (Shape::ToolRun, GK_SCENE),
-            (Shape::Subagent, GK_DELEGATE_SCENE),
-        ] {
-            let d = recorded("grok", shape, scene);
+        for (name, scene) in [("tool-run", GK_SCENE), ("subagent", GK_DELEGATE_SCENE)] {
+            let d = recorded("grok", name, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
+            assert_eq!(v.label(), Label::Pass, "{name}: {:?}", v.findings());
         }
     }
 
     #[test]
     fn a_recorded_copilot_run_passes_each_scenario() {
-        for (shape, scene) in [
-            (Shape::ToolRun, CP_SCENE),
-            (Shape::Permission, CP_WAIT_SCENE),
-            (Shape::Subagent, CP_DELEGATE_SCENE),
-            (Shape::ChildError, CP_CHILD_ERROR_SCENE),
+        for (name, scene) in [
+            ("tool-run", CP_SCENE),
+            ("resume", CP_SCENE),
+            ("autopilot", CP_AUTOPILOT_SCENE),
+            ("permission", CP_WAIT_SCENE),
+            ("subagent", CP_DELEGATE_SCENE),
+            ("child-error", CP_CHILD_ERROR_SCENE),
         ] {
-            let d = recorded("copilot", shape, scene);
+            let d = recorded("copilot", name, scene);
             let v = verify(d.path()).expect("verify");
-            assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
+            assert_eq!(v.label(), Label::Pass, "{name}: {:?}", v.findings());
         }
     }
 
@@ -2252,7 +2362,7 @@ mod tests {
 
     #[test]
     fn a_recorded_child_error_whose_parent_never_ends_fails() {
-        let d = recorded("copilot", Shape::ChildError, CP_CHILD_ERROR_SCENE);
+        let d = recorded("copilot", "child-error", CP_CHILD_ERROR_SCENE);
         edit_transcripts(d.path(), |line| {
             !line.contains(r#""type":"session.shutdown""#)
         });
@@ -2537,7 +2647,7 @@ mod tests {
 
     #[test]
     fn a_tui_turn_that_raised_no_gate_to_refuse_fails() {
-        let d = recorded("claude-code", Shape::Permission, CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
@@ -2603,7 +2713,7 @@ mod tests {
     #[test]
     fn a_daemon_s_turn_shows_busy_then_idle_then_gone() {
         let judged = |scene: &str| {
-            let d = recorded("openclaw", Shape::ToolRun, scene);
+            let d = recorded("openclaw", "tool-run", scene);
             verify(d.path()).expect("verify").findings().to_vec()
         };
         let frame = |state: &str| format!("agents=[] daemons=[openclaw@59871:{state}]\n");
@@ -2632,7 +2742,7 @@ mod tests {
     #[test]
     fn a_daemon_s_failed_turn_settles_degraded() {
         let judged = |scene: &str| {
-            let d = recorded("openclaw", Shape::ModelError, scene);
+            let d = recorded("openclaw", "model-error", scene);
             write_manifest(d.path(), "openclaw", |m| {
                 m.scenario = "model-error".into();
                 m.capture.exit_code = Some(1);
@@ -2663,7 +2773,7 @@ mod tests {
                      agents=[] daemons=[openclaw@55306:degraded]\n\
                      agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
         let judged = |scenario: &str, exit_code, requests| {
-            let d = recorded("openclaw", Shape::ModelError, scene);
+            let d = recorded("openclaw", "model-error", scene);
             write_manifest(d.path(), "openclaw", |m| {
                 m.scenario = scenario.into();
                 m.capture.exit_code = exit_code;
@@ -2689,7 +2799,7 @@ mod tests {
         let run = |edit: fn(&Path)| {
             let d = recorded(
                 "opencode",
-                Shape::ModelError,
+                "model-error",
                 "agents=[oc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
             );
             write_manifest(d.path(), "opencode", |m| {
@@ -2844,7 +2954,7 @@ mod tests {
 
     #[test]
     fn a_run_of_its_own_fixture_owes_no_value() {
-        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         let v = verify_source(
             profile("codex").expect("profile"),
             &[d.path().to_path_buf()],
@@ -2861,7 +2971,7 @@ mod tests {
 
     #[test]
     fn a_value_upstream_renamed_fails_though_its_path_arrives() {
-        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         respell(d.path(), "\"task_complete\"", "\"turn_complete\"");
         let v = verify_source(
             profile("codex").expect("profile"),
@@ -2879,7 +2989,7 @@ mod tests {
     /// codex owes fields under `tx:event_msg`, and its kind is still read.
     #[test]
     fn a_held_literal_an_owed_path_names_must_still_arrive() {
-        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         respell(d.path(), "\"event_msg\"", "\"event_message\"");
         let v = verify_source(
             profile("codex").expect("profile"),
@@ -2898,7 +3008,7 @@ mod tests {
     #[test]
     fn a_type_a_run_drops_that_its_recording_never_did_is_new_and_passes() {
         let p = profile("copilot").expect("profile");
-        let d = recorded("copilot", Shape::ToolRun, "");
+        let d = recorded("copilot", "tool-run", "");
         let files = jsonl_files_under(d.path());
         let baseline = Dropped::of_files("copilot", &files).expect("baseline");
         let check = |baseline: Option<&Dropped>| {
@@ -2948,7 +3058,7 @@ mod tests {
     /// scenario's baseline says, whichever baseline the fixture holds.
     #[test]
     fn a_verdict_says_why_its_run_judged_no_new_types() {
-        let d = recorded("codex", Shape::ToolRun, CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         let v = verify(d.path()).expect("verify");
         let scenario = profile("codex")
             .and_then(|p| p.scenarios.iter().find(|s| s.shape == Shape::ToolRun))
@@ -2965,7 +3075,7 @@ mod tests {
     /// is held only blank, so no value census would see it renamed.
     #[test]
     fn a_key_upstream_renamed_fails_though_its_value_was_blank() {
-        let d = recorded("grok", Shape::Subagent, GK_DELEGATE_SCENE);
+        let d = recorded("grok", "subagent", GK_DELEGATE_SCENE);
         respell(d.path(), "\"subagent_type\"", "\"subagent_kind\"");
         let v = verify_source(profile("grok").expect("profile"), &[d.path().to_path_buf()])
             .expect("verify");
@@ -2988,7 +3098,7 @@ mod tests {
                 daemon: None,
                 ..*profile(source).expect("profile")
             };
-            let d = recorded(source, Shape::ToolRun, "");
+            let d = recorded(source, "tool-run", "");
             edit(d.path());
             let v = verify_source(&p, &[d.path().to_path_buf()]).expect("verify");
             has(&v, Label::Stale, &format!("`{owed}`"))

@@ -8,9 +8,9 @@
 //! Sharp edges (real-byte-confirmed):
 //! - **Session id = the PARENT-DIR UUID** of `events.jsonl` (the filename stem is
 //!   the constant `events`, NOT the id).
-//! - **Sub-agents INTERLEAVE in the root file**, distinguished by the top-level
-//!   envelope `agentId` (== the spawning `task` tool's `data.toolCallId`); there
-//!   is no per-agent file split. A line with `agentId` set belongs to that child.
+//! - **Sub-agents INTERLEAVE in the root file**: each line of a child carries its
+//!   own envelope `agentId` (a UUID, not the spawning `task` call's id, which rides
+//!   `data.toolCallId` / `data.parentToolCallId`); there is no per-agent file split.
 //! - `subagent.completed` is **minimal** on disk (`toolCallId`/`agentName`/
 //!   `agentDisplayName` only) — never require model/token/duration fields.
 //! - The `ephemeral` envelope flag is inconsistent across CLI versions — never
@@ -271,7 +271,10 @@ pub(crate) fn decode_copilot_line(
                 as_child: true,
             }]
         }
-        SESSION_TASK_COMPLETE => vec![AgentEvent::ActivityEnd {
+        // Only the root's ends its turn: neither listener of it in 1.0.98's
+        // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
+        // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
+        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::ActivityEnd {
             agent_id: root,
             tool_use_id: None,
         }],
@@ -721,7 +724,7 @@ mod tests {
             r#"{"type":"subagent.completed","data":{"toolCallId":""}}"#,
             r#"{"type":"subagent.failed","agentId":"","data":{"toolCallId":""}}"#,
             // The STARTED arm is the other `copilot_child_key` call site, and
-            // `data.toolCallId` is the documented key for a spawn — the
+            // `data.toolCallId` is its fallback key without an `agentId` — the
             // existing started-arm test omits the key entirely, so the
             // empty-string shape was unpinned there.
             r#"{"type":"subagent.started","data":{"toolCallId":"","agentName":"x"}}"#,
@@ -1011,6 +1014,19 @@ mod tests {
             }
             other => panic!("expected one root ActivityEnd, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_subagents_task_complete_ends_no_activity() {
+        let line = serde_json::json!({
+            "type": "session.task_complete",
+            "data": {"summary": "done", "success": true},
+            "agentId": "call_X",
+            "parentId": "p"
+        })
+        .to_string();
+        let evs = decode(&line);
+        assert!(evs.is_empty(), "got {evs:?}");
     }
 
     #[test]

@@ -27,7 +27,7 @@ mod recorder {
 
     /// One prompt for every source, so captures stay comparable: reading the SAME
     /// file twice around a list forces both shapes the composed fixtures got wrong —
-    /// tools that interleave, and a tool id that repeats. `CAPTURE_PROMPT` overrides
+    /// tools that interleave, and a tool id that repeats. [`PROMPT_ENV`] overrides
     /// it for a scenario the shared one cannot reach (a permission gate needs a tool
     /// the CLI refuses to run unasked).
     const DEFAULT_PROMPT: &str =
@@ -48,7 +48,7 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROVENANCE, Resumed, canonical_capture, capture_base, capture_workspace,
+        NOTE_FILE, PROVENANCE, Resumed, canonical_capture, capture_base, capture_workspace,
         capture_workspace_tail, jsonl_files_under, required_version_probe, slashed_under,
         version_answer, wait_until,
     };
@@ -303,9 +303,11 @@ mod recorder {
             std::process::exit(2);
         }
         let (source, scenario) = (args[0].clone(), args[1].clone());
-        // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
-        // `{prompt}` to nothing.
+        // Set-but-empty is unset: an empty `PROMPT_ENV` would otherwise expand
+        // `PROMPT_PLACEHOLDER` to nothing.
         let chosen_prompt = nonempty_env(PROMPT_ENV);
+        // One read decides the copy and the provenance record both.
+        let seed = nonempty_env(SEED_ENV);
         let prompt = chosen_prompt
             .as_ref()
             .map_or(DEFAULT_PROMPT, NonEmpty::as_str);
@@ -340,7 +342,7 @@ mod recorder {
             Some(ws) => ws,
             None => capture_workspace()?,
         };
-        let (workspace, _recording) = prepare_workspace(ws)?;
+        let (workspace, _recording) = prepare_workspace(ws, seed.as_ref())?;
         let sandbox = tempfile::tempdir()?;
         let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
         let tap = Tap::bind(&endpoint, options.tee.clone().map(Endpoint::at))?;
@@ -405,6 +407,7 @@ mod recorder {
             }
         };
         let unresumed = !options.resume.is_empty() && resumed.is_none();
+        let note_survived = note_survived(&workspace);
         drop(daemon);
         tap.settle();
         let payloads = tap.payloads();
@@ -452,6 +455,7 @@ mod recorder {
                 version,
                 exit_code: status.code(),
                 resumed,
+                note_survived,
             };
             std::fs::write(
                 dest.join(CAPTURE_RECORD),
@@ -482,7 +486,7 @@ mod recorder {
             &dest,
             Recorded {
                 prompt: chosen_prompt,
-                seed: nonempty_env(SEED_ENV),
+                seed,
                 ..record(&cli, &version, &args[2..], deidentified.clone())?
             },
         )?;
@@ -686,6 +690,25 @@ mod recorder {
         )
     }
 
+    /// The seed's files, then the note: a seed carrying its own `NOTE_FILE`
+    /// must not replace the one `note_survived` compares against.
+    fn fill_workspace(ws: &Path, seed: Option<&NonEmpty>) -> std::io::Result<()> {
+        if let Some(seed) = seed {
+            copy_tree(Path::new(seed.as_str()), ws)?;
+        }
+        plant_note(ws)
+    }
+
+    fn plant_note(ws: &Path) -> std::io::Result<()> {
+        std::fs::write(ws.join(NOTE_FILE), format!("{CAPTURE_NOTE}\n"))
+    }
+
+    /// Whether the note [`plant_note`] wrote is still there, unchanged.
+    fn note_survived(workspace: &Path) -> bool {
+        std::fs::read_to_string(workspace.join(NOTE_FILE))
+            .is_ok_and(|note| note == format!("{CAPTURE_NOTE}\n"))
+    }
+
     /// The root session the first turn's own wire names: the first its hook
     /// payloads decode to, else the one its source derives from its first
     /// transcript's path, as the watcher keys it.
@@ -774,7 +797,10 @@ mod recorder {
     }
 
     /// `ws` made afresh, and the lock held while the capture uses it.
-    fn prepare_workspace(ws: PathBuf) -> std::io::Result<(PathBuf, std::fs::File)> {
+    fn prepare_workspace(
+        ws: PathBuf,
+        seed: Option<&NonEmpty>,
+    ) -> std::io::Result<(PathBuf, std::fs::File)> {
         let base = capture_base(&ws).ok_or_else(|| {
             std::io::Error::other(format!("{} is not a capture workspace", ws.display()))
         })?;
@@ -797,10 +823,7 @@ mod recorder {
         // anyone re-created it since the remove.
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
-        std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n"))?;
-        if let Some(seed) = std::env::var_os(SEED_ENV) {
-            copy_tree(Path::new(&seed), &ws)?;
-        }
+        fill_workspace(&ws, seed)?;
         init_repo(&ws)?;
         Ok((ws, lock))
     }
@@ -1328,6 +1351,7 @@ mod recorder {
                     version: "0.2.0-rc.2".into(),
                     exit_code: Some(0),
                     resumed: None,
+                    note_survived: true,
                 },
                 aimock: "1.43.0".into(),
                 requests: 3,
@@ -1442,6 +1466,7 @@ mod recorder {
                     version: "1.0.98".into(),
                     exit_code: Some(0),
                     resumed: None,
+                    note_survived: true,
                 },
                 aimock: "1.45.1".into(),
                 requests: 2,
@@ -1628,6 +1653,7 @@ mod recorder {
                     version: versions.0.into(),
                     exit_code: Some(0),
                     resumed: None,
+                    note_survived: true,
                 },
                 aimock: versions.1.into(),
                 requests: 2,
@@ -1764,7 +1790,7 @@ mod recorder {
             let d = tempfile::tempdir().expect("tempdir");
             let ws = d.path().join("ws");
             std::fs::create_dir(&ws).expect("mkdir");
-            std::fs::write(ws.join("NOTE.txt"), format!("{CAPTURE_NOTE}\n")).expect("write");
+            plant_note(&ws).expect("plant");
             // An operator config whose signing and commit-msg hook both fail.
             let hooks = d.path().join("hooks");
             std::fs::create_dir(&hooks).expect("mkdir");
@@ -1867,6 +1893,47 @@ mod recorder {
             for corpus in [Options::default(), promote] {
                 assert_eq!(corpus.corpus_refusal().is_some(), !cfg!(unix), "{corpus:?}");
             }
+        }
+
+        #[test]
+        fn a_set_but_empty_seed_seeds_nothing() {
+            let d = tempfile::tempdir().expect("tempdir");
+            for (value, seeds) in [(Some(""), false), (None, false), (Some("/no/such"), true)] {
+                let ws = d
+                    .path()
+                    .join(format!("ws-{}", value.unwrap_or("unset").len()));
+                std::fs::create_dir(&ws).expect("mkdir");
+                let filled = temp_env::with_var(SEED_ENV, value, || {
+                    fill_workspace(&ws, nonempty_env(SEED_ENV).as_ref())
+                });
+                // A named seed that is missing fails the copy; none must not.
+                assert_eq!(filled.is_err(), seeds, "{value:?}");
+            }
+        }
+
+        #[test]
+        fn a_seed_that_carries_a_note_does_not_replace_the_planted_one() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (seed, ws) = (d.path().join("seed"), d.path().join("ws"));
+            std::fs::create_dir(&seed).expect("mkdir");
+            std::fs::create_dir(&ws).expect("mkdir");
+            std::fs::write(seed.join(NOTE_FILE), "seeded\n").expect("write");
+            fill_workspace(
+                &ws,
+                NonEmpty::try_from(seed.display().to_string()).ok().as_ref(),
+            )
+            .expect("fill");
+            assert!(note_survived(&ws));
+        }
+
+        #[test]
+        fn the_note_survives_only_while_it_is_there_unchanged() {
+            let d = tempfile::tempdir().expect("tempdir");
+            assert!(!note_survived(d.path()), "a deleted note did not survive");
+            plant_note(d.path()).expect("plant");
+            assert!(note_survived(d.path()), "the planted note is the survivor");
+            std::fs::write(d.path().join(NOTE_FILE), "other\n").expect("write");
+            assert!(!note_survived(d.path()), "a rewritten note did not survive");
         }
 
         #[test]
@@ -2401,6 +2468,7 @@ mod recorder {
                 resumed: resumed.map(|code| Resumed {
                     exit_code: Some(code),
                 }),
+                note_survived: true,
             };
             assert!(exited_as_scripted(
                 "openclaw",

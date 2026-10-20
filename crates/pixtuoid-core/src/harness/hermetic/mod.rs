@@ -1473,13 +1473,32 @@ trust_level = "trusted"
         config: &[ConfigFile {
             home: "REASONIX_HOME",
             path: "config.toml",
+            // A role with the executor's own model builds no planner
+            // (`internal/assembly/boot/roles.go:56`), so each has a model of
+            // its own for a script to match on.
             template: r#"default_model = "aimock"
+
+[agent]
+planner_model = "planner"
+guardian_model = "guardian"
 
 [[providers]]
 name = "aimock"
 kind = "openai"
 base_url = "http://127.0.0.1:{port}/v1"
 model = "deepseek-v4-flash"
+
+[[providers]]
+name = "planner"
+kind = "openai"
+base_url = "http://127.0.0.1:{port}/v1"
+model = "planner-model"
+
+[[providers]]
+name = "guardian"
+kind = "openai"
+base_url = "http://127.0.0.1:{port}/v1"
+model = "guardian-model"
 "#,
         }],
         scenarios: &[
@@ -1531,6 +1550,27 @@ model = "deepseek-v4-flash"
                 fixture: "reasonix/fixtures/explore-hermetic",
                 turn: Turn::PROFILE,
             },
+            // The marker routes the turn through the planner
+            // (`internal/session/control/planner_gate.go:91-92`).
+            Scenario {
+                name: "planner",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/planner-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
+                    resume: None,
+                },
+            },
             Scenario {
                 name: "bash-run",
                 shape: Shape::ToolRun,
@@ -1556,6 +1596,9 @@ model = "deepseek-v4-flash"
                 expects: &[
                     "SessionStart",
                     "UserPromptSubmit",
+                    // The guardian's read: the refused bash fires no PreToolUse.
+                    "PreToolUse",
+                    "PostToolUse",
                     "PermissionRequest",
                     "Notification",
                     "Stop",
@@ -1569,7 +1612,7 @@ model = "deepseek-v4-flash"
         not_yet: &[],
         event_name: event_field,
         not_yet_fields: &[],
-        not_yet_literals: &[":guardian", ":planner"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
@@ -1642,6 +1685,19 @@ model = "deepseek-v4-flash"
                 },
             },
             Scenario {
+                name: "autopilot",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[],
+                fixture: "fixtures/copilot/autopilot-hermetic",
+                // `--autopilot`: "Start in autopilot mode" (`copilot --help` at
+                // 1.0.98), which offers the `task_complete` tool plain `-p` does not.
+                turn: Turn {
+                    args: &["--autopilot"],
+                    ..Turn::PROFILE
+                },
+            },
+            Scenario {
                 name: "permission",
                 shape: Shape::Permission,
                 surface: Surface::Headless,
@@ -1691,7 +1747,7 @@ model = "deepseek-v4-flash"
                 "/data/tokenDetails/output/tokenCount",
             ),
         ],
-        not_yet_literals: &["session.task_complete"],
+        not_yet_literals: &[],
         // A `subagent.started` child runs in-process, in the parent's transcript,
         // and no event of it names a cwd.
         children_inherit_cwd: true,
@@ -2581,6 +2637,80 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Whether a scripted reply calls a tool whose command is `rm` then the
+    /// note's name, in one of its top-level string arguments (every committed script's shape).
+    fn script_deletes_the_note(script: &serde_json::Value) -> bool {
+        let deletes = |command: &str| {
+            let words: Vec<&str> = command.split_whitespace().collect();
+            words.first() == Some(&"rm") && words[1..].contains(&crate::harness::NOTE_FILE)
+        };
+        script["fixtures"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|reply| {
+                reply["response"]["toolCalls"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+            })
+            .filter_map(|call| call["arguments"].as_object())
+            .flat_map(|arguments| arguments.values())
+            .filter_map(serde_json::Value::as_str)
+            .any(deletes)
+    }
+
+    #[test]
+    fn a_permission_script_gates_a_call_that_deletes_the_note() {
+        // The recorder's `note_survived` is only evidence of a refusal if the
+        // refused call would have removed the note. A question's gate calls
+        // nothing that could, so those rows are held to the note alone.
+        const QUESTIONS: &[&str] = &["ask-user", "ask-question"];
+        for p in PROFILES {
+            for s in p
+                .scenarios
+                .iter()
+                .filter(|s| s.shape == Shape::Permission && !QUESTIONS.contains(&s.name))
+            {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                assert!(
+                    script_deletes_the_note(&script),
+                    "{}: no scripted tool call deletes the note",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_scripted_tool_call_counts_as_deleting_the_note() {
+        let script = |reply: serde_json::Value| serde_json::json!({ "fixtures": [reply] });
+        let call = |command: &str| {
+            script(serde_json::json!({ "response": { "toolCalls": [
+                { "name": "t", "arguments": { "command": command } }
+            ] } }))
+        };
+        assert!(script_deletes_the_note(&call("rm NOTE.txt")));
+        assert!(script_deletes_the_note(&call("rm -rf NOTE.txt")));
+        for not in [
+            "cat NOTE.txt",
+            "NOTE.txt rm",
+            "rm NOTE.txt.bak",
+            "echo rm NOTE.txt",
+        ] {
+            assert!(!script_deletes_the_note(&call(not)), "{not}");
+        }
+        assert!(
+            !script_deletes_the_note(&script(
+                serde_json::json!({ "response": { "content": "I will rm NOTE.txt" } })
+            )),
+            "a reply's prose is not a call"
+        );
     }
 
     #[test]

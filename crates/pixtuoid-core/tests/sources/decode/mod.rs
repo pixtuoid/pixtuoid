@@ -1161,10 +1161,11 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures");
     // A hermetic recording names its session dir after the conversation, which
     // every re-record changes.
-    let agy = pixtuoid_core::harness::transcripts_under(
+    let agy = pixtuoid_core::harness::transcript_in(
         "antigravity",
         &fixtures.join("antigravity/tool-run-hermetic"),
-    );
+    )
+    .unwrap_or_else(|found| panic!("one antigravity transcript, found {found:?}"));
     let cases: [(&str, PathBuf, Option<&str>); 4] = [
         (
             "claude-code",
@@ -1183,7 +1184,7 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
         ),
         (
             "antigravity",
-            agy.first().expect("antigravity's recorded transcript").clone(),
+            agy,
             None,
         ),
     ];

@@ -1,0 +1,14 @@
+{
+  "fixtures": [
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "view", "arguments": {"path": "{workspace}/NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"toolCalls": [{"name": "task_complete", "arguments": {"summary": "pong"}}]},
+      "latency": 300
+    }
+  ]
+}

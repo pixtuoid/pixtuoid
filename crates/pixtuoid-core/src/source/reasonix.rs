@@ -53,8 +53,8 @@ const SUBAGENT_TOOLS: &[&str] = &[
 /// (`internal/ext/hook/runner.go:57-66`). A subagent's role is
 /// `subagent:<id>` (`internal/runtime/delegation/task.go:901-909`).
 const SUBAGENT_ROLE: &str = ":subagent:";
-/// The planner's and guardian's roles (`internal/assembly/boot/roles.go:80`,
-/// `:119`): phases of the parent's own turn, not delegations.
+/// The planner's and guardian's roles (`internal/assembly/boot/roles.go:79`,
+/// `:118`): phases of the parent's own turn, not delegations.
 const TURN_ROLES: &[&str] = &[":planner", ":guardian"];
 
 /// The field `SubagentStart`/`SubagentStop` pair a call on.
