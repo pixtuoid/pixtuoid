@@ -267,7 +267,7 @@ impl Capture {
     }
 
     /// Its `provenance.json`.
-    pub fn provenance(&self) -> PathBuf {
+    pub fn provenance_path(&self) -> PathBuf {
         self.dir.join(PROVENANCE)
     }
 }

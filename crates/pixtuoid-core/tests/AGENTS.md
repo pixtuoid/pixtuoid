@@ -9,7 +9,7 @@ MUST be `<area>/main.rs`, because a top-level `<area>.rs` is a crate root whose
 ```
 tests/
 ├── sources/main.rs      the source/decode layer
-│   ├── captures.rs      THE walk (`every_capture()`) + every provenance RULE, in Rust
+│   ├── captures.rs      THE walk (`every_capture()`) + every corpus RULE, in Rust
 │   │                    so the rules ride `just test` on all three platforms. ONE
 │   │                    enumeration, no mirror: with two populations a fix lands
 │   │                    on one and misses the other. `conformance.rs` imports its

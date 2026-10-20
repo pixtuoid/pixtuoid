@@ -41,7 +41,9 @@ impl Dropped {
             at.entry(p).or_default().insert(v);
         }
         Ok(Self {
-            os: std::env::consts::OS.to_owned(),
+            os: std::env::consts::OS
+                .try_into()
+                .map_err(std::io::Error::other)?,
             at,
         })
     }
@@ -49,7 +51,7 @@ impl Dropped {
     /// Whether a run on this OS is judged against it: a type only another OS's
     /// build writes is not New there.
     pub(crate) fn judges_here(&self) -> bool {
-        self.os == std::env::consts::OS
+        self.os.as_str() == std::env::consts::OS
     }
 
     /// Each `(pointer, value)` `pairs` drop at this baseline's discriminators
@@ -93,7 +95,7 @@ pub enum Unjudged {
 ///
 /// # Errors
 ///
-/// If its provenance cannot be read or its baseline does not parse.
+/// If its provenance cannot be read or does not parse.
 pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
     baseline_at(s.fixture)
 }

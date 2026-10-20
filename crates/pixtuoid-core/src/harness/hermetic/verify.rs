@@ -488,7 +488,7 @@ pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
         if capture.source != p.source {
             continue;
         }
-        if !Provenance::read(&capture.provenance())?.strips() {
+        if !Provenance::read(&capture.provenance_path())?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {
@@ -768,7 +768,7 @@ fn new_types(
 ) -> std::io::Result<Option<Unjudged>> {
     let b = match baseline {
         None => return Ok(Some(Unjudged::NoBaseline)),
-        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.clone()))),
+        Some(b) if !b.judges_here() => return Ok(Some(Unjudged::RecordedOn(b.os.to_string()))),
         Some(b) => b,
     };
     for (at, value) in b.new_in(&dropped::pairs(p.source, &jsonl_files_under(dir))?) {
@@ -2930,7 +2930,7 @@ mod tests {
         assert!(!Verdict::new(vec![(Label::Stale, String::new())]).passed());
 
         let elsewhere = Dropped {
-            os: "plan9".to_owned(),
+            os: "plan9".try_into().expect("an OS"),
             ..baseline
         };
         let (v, unjudged) = check(Some(&elsewhere));
@@ -2955,7 +2955,7 @@ mod tests {
             .expect("codex's tool-run");
         let want = match dropped::baseline_of(scenario).expect("baseline") {
             None => Some(Unjudged::NoBaseline),
-            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
+            Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os.to_string())),
             Some(_) => None,
         };
         assert_eq!(v.unjudged(), want.as_ref(), "{:?}", v.findings());

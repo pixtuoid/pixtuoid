@@ -128,8 +128,12 @@ fn sibling_of(file: &Path) -> PathBuf {
 /// If a provenance or capture file cannot be read, parsed or rewritten.
 pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> std::io::Result<()> {
     for capture in captures(root) {
-        let mut record = Provenance::read(&capture.provenance())?;
-        if !record.strips() {
+        let path = capture.provenance_path();
+        let mut record = Provenance::read(&path)?;
+        let Provenance::Recorded(r) = &mut record else {
+            continue;
+        };
+        if !r.strips() {
             continue;
         }
         let files = capture.jsonl_files();
@@ -137,9 +141,7 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
             continue;
         }
         let strip = strip_unread(&capture.source, &files)?;
-        if let Provenance::Recorded(r) = &mut record
-            && (strip.blanked > 0 || r.deidentified.is_none())
-        {
+        if strip.blanked > 0 || r.deidentified.is_none() {
             let earlier = match r.deidentified {
                 Some(Deidentified::Stripped { blanked }) => blanked,
                 _ => 0,
@@ -147,7 +149,7 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
             r.deidentified = Some(Deidentified::Stripped {
                 blanked: earlier + strip.blanked,
             });
-            record.write_to(&capture.provenance())?;
+            record.write_to(&path)?;
         }
         report(&capture, &strip);
     }

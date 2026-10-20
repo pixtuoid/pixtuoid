@@ -92,18 +92,27 @@ pub enum Deidentified {
 #[serde(deny_unknown_fields)]
 pub struct Dropped {
     /// The OS it was recorded on.
-    pub(crate) os: String,
+    pub(crate) os: NonEmpty,
     /// Each discriminator, a pointer (`*` for an array index) where the strip
     /// kept a non-blank string a decoder of the source names, with the values
     /// the strip blanked at it.
     pub(crate) at: BTreeMap<String, BTreeSet<String>>,
 }
 
-/// A string holding more than whitespace: a field a record must fill.
+/// A string holding more than whitespace: the type of a record's text fields,
+/// so a blank one fails to parse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(try_from = "String")]
 pub struct NonEmpty(String);
+
+impl Recorded {
+    /// Whether the strip applies: not declared exempt, so its committed bytes
+    /// hold only what a decoder reads.
+    pub(crate) fn strips(&self) -> bool {
+        !matches!(self.deidentified, Some(Deidentified::Exempt { .. }))
+    }
+}
 
 impl NonEmpty {
     /// The string.
@@ -186,11 +195,9 @@ impl Provenance {
         self.recorded()?.dropped.as_ref()
     }
 
-    /// Whether the strip applies: a recording not declared exempt, whose
-    /// committed bytes then hold only what a decoder reads.
+    /// Whether the strip applies: to a recording, as [`Recorded::strips`].
     pub(crate) fn strips(&self) -> bool {
-        self.recorded()
-            .is_some_and(|r| !matches!(r.deidentified, Some(Deidentified::Exempt { .. })))
+        self.recorded().is_some_and(Recorded::strips)
     }
 
     /// The exemption it declares, if any.
@@ -249,12 +256,23 @@ mod tests {
   "version": "1.0.98",
   "captured": "2026-10-19",
   "command": "just hermetic --record copilot",
+  "note": "n",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 38
   },
+  "prompt": "p",
+  "seed": "s",
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/copilot/tool-run.json"
+  "script": "tests/sources/hermetic/copilot/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "assistant.turn_start"
+      ]
+    }
+  }
 }
 "#;
         let p = parse(text).expect("parses");

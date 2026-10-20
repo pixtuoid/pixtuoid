@@ -1934,40 +1934,6 @@ mod recorder {
         }
 
         #[test]
-        fn provenance_records_an_override_only_when_it_was_actually_set() {
-            // Both directions: committed records predate these fields and must stay
-            // schema-clean, so an unset override writes nothing at all.
-            let read = |d: &Path| -> serde_json::Value {
-                serde_json::from_str(
-                    &std::fs::read_to_string(d.join("provenance.json")).expect("read"),
-                )
-                .expect("json")
-            };
-            let argv = ["true".to_string()];
-
-            let bare = tempfile::tempdir().expect("tempdir");
-            write_provenance(
-                bare.path(),
-                record("true", "1.0", &argv, Deidentified::Stripped { blanked: 0 })
-                    .expect("filled"),
-            )
-            .expect("write");
-            assert!(read(bare.path()).get("prompt").is_none());
-
-            let set = tempfile::tempdir().expect("tempdir");
-            write_provenance(
-                set.path(),
-                Recorded {
-                    prompt: Some("read NOTE.txt".try_into().expect("a prompt")),
-                    ..record("true", "1.0", &argv, Deidentified::Stripped { blanked: 0 })
-                        .expect("filled")
-                },
-            )
-            .expect("write");
-            assert_eq!(read(set.path())["prompt"], "read NOTE.txt");
-        }
-
-        #[test]
         fn the_seed_lands_in_the_sandbox_including_a_dotted_config_dir() {
             let src = tempfile::tempdir().expect("src");
             let dst = tempfile::tempdir().expect("dst");

@@ -27,10 +27,6 @@ impl Capture {
         self.provenance.recorded()
     }
 
-    pub(crate) fn is_recorded(&self) -> bool {
-        self.recorded().is_some()
-    }
-
     pub(crate) fn note(&self) -> Option<&str> {
         match &self.provenance {
             Provenance::Recorded(r) => r.note.as_ref().map(NonEmpty::as_str),
@@ -134,7 +130,7 @@ pub(crate) fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
 pub(crate) fn every_capture() -> Vec<Capture> {
     let mut out = Vec::new();
     for capture in pixtuoid_core::harness::captures(&sources_root()) {
-        let prov = capture.provenance();
+        let prov = capture.provenance_path();
         let pixtuoid_core::harness::Capture { dir, source } = capture;
         assert!(
             prov.is_file(),
@@ -152,6 +148,11 @@ pub(crate) fn every_capture() -> Vec<Capture> {
         });
     }
     out
+}
+
+/// Each recording among `captures`, with its record.
+pub(crate) fn recordings(captures: &[Capture]) -> impl Iterator<Item = (&Capture, &Recorded)> {
+    captures.iter().filter_map(|c| Some((c, c.recorded()?)))
 }
 
 /// The completeness pin that makes the single walk load-bearing: a capture the
@@ -269,13 +270,11 @@ const NO_WIRE_EVIDENCE_YET: &[&str] = &[];
 /// which is what a capture command starts with.
 #[test]
 fn a_recorded_captures_cli_is_its_trees_binary() {
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         let Some(probe) = registry::descriptor_for(&c.source).and_then(|d| d.version_probe) else {
             continue;
         };
-        let Some(cli) = c.recorded().map(|r| r.cli.as_str()) else {
-            continue;
-        };
+        let cli = r.cli.as_str();
         assert_eq!(
             cli,
             probe[0],
@@ -493,7 +492,7 @@ fn a_recorded_capture_that_was_edited_says_so() {
     // A word ending the clause right before "redact" that inverts it.
     const NEGATIONS: &[&str] = &["no", "not", "nothing", "never", "without"];
     let mut silent = Vec::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, _) in recordings(&every_capture()) {
         let note = c.note().unwrap_or_default().to_ascii_lowercase();
         // "verbatim" USED to satisfy this, and a bare `contains` re-opens that hole
         // one word over ("unredacted"). "sanitiz" too — the oldest captures use it.
@@ -529,14 +528,14 @@ fn a_recorded_capture_anchors_its_sources_verified_version() {
     let mut by_source: std::collections::BTreeMap<String, Vec<(String, String)>> =
         std::collections::BTreeMap::new();
     let mut recorded_at_all: BTreeSet<String> = BTreeSet::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         recorded_at_all.insert(c.source.clone());
-        let version = c.recorded().map_or("", |r| r.version.as_str());
+        let version = r.version.as_str();
         if version.chars().any(|ch| ch.is_ascii_digit()) {
-            by_source.entry(c.source.clone()).or_default().push((
-                c.recorded().map_or("", |r| r.captured.as_str()).to_string(),
-                version.to_string(),
-            ));
+            by_source
+                .entry(c.source.clone())
+                .or_default()
+                .push((r.captured.to_string(), version.to_string()));
         }
     }
     for source in recorded_at_all {
@@ -601,10 +600,8 @@ fn a_recorded_capture_anchors_its_sources_verified_version() {
 #[test]
 fn the_pinned_provenance_rosters_hold_both_ways() {
     let captures = every_capture();
-    let recorded: BTreeSet<&str> = captures
-        .iter()
-        .filter(|c| c.is_recorded())
-        .map(|c| c.source.as_str())
+    let recorded: BTreeSet<&str> = recordings(&captures)
+        .map(|(c, _)| c.source.as_str())
         .collect();
     // Keyed off `sources_root()`, not `fixtures_root()`: the `?` on the narrower
     // prefix silently dropped every single-owner capture from this rule.
@@ -669,23 +666,20 @@ fn the_pinned_provenance_rosters_hold_both_ways() {
 #[test]
 fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
     let mut bad: Vec<String> = Vec::new();
-    for c in every_capture().iter().filter(|c| c.is_recorded()) {
+    for (c, r) in recordings(&every_capture()) {
         let at = c.provenance_path.display();
 
         // A `version` holding the INVOCATION reports a drift of nothing for as long
         // as it sits there — the live instance was `"grok --permission-mode default"`.
-        let version = c.recorded().map_or("", |r| r.version.as_str());
-        if !version.is_empty()
-            && version != "unknown"
-            && !version.chars().any(|ch| ch.is_ascii_digit())
-        {
+        let version = r.version.as_str();
+        if version != "unknown" && !version.chars().any(|ch| ch.is_ascii_digit()) {
             bad.push(format!(
                 "{at}: `version` carries no version number: {version:?}"
             ));
         }
 
-        let captured = c.recorded().map_or("", |r| r.captured.as_str());
-        if !captured.is_empty() && captured != "unknown" && !is_iso_date(captured) {
+        let captured = r.captured.as_str();
+        if captured != "unknown" && !is_iso_date(captured) {
             bad.push(format!("{at}: `captured` is not an ISO date: {captured:?}"));
         }
 
