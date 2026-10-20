@@ -238,7 +238,7 @@ impl Live {
 /// OS: one that outlives it is killed, and its capture fails.
 #[derive(Debug)]
 pub struct Daemon {
-    /// Its start, after the CLI's binary; `{port}`, `{key}` and
+    /// Its start, after the CLI's binary; [`Placeholder::Port`], [`Placeholder::Key`] and
     /// [`Placeholder::DaemonPort`] expand in the runner, here and in [`Self::ready`].
     pub start: &'static [&'static str],
     /// What exits 0 once it serves, after the CLI's binary.
@@ -262,7 +262,7 @@ pub struct ConfigFile {
     pub home: &'static str,
     /// The file's path under that home.
     pub path: &'static str,
-    /// Its contents; `{port}`, `{key}`, [`Placeholder::DaemonPort`],
+    /// Its contents; [`Placeholder::Port`], [`Placeholder::Key`], [`Placeholder::DaemonPort`],
     /// [`Placeholder::Workspace`] and [`Placeholder::WorkspaceSlashed`] expand.
     pub template: &'static str,
 }
@@ -276,14 +276,14 @@ pub struct Profile {
     pub package: Package,
     /// The headless invocation: [`Placeholder::Prompt`] expands to the
     /// scenario's prompt in the runner, else to [`crate::harness::plan::DEFAULT_PROMPT`], and
-    /// `{port}`, `{key}` and [`Placeholder::DaemonPort`] too.
+    /// [`Placeholder::Port`], [`Placeholder::Key`] and [`Placeholder::DaemonPort`] too.
     pub invocation: &'static [&'static str],
     /// The headless invocation of a second turn, as [`Turn::second`] runs it:
-    /// the runner expands `{port}`, `{key}`, [`Placeholder::DaemonPort`] and a
+    /// the runner expands [`Placeholder::Port`], [`Placeholder::Key`], [`Placeholder::DaemonPort`] and a
     /// [`Second::Prompt`]'s [`Placeholder::Prompt`], the recorder only [`Placeholder::Session`].
     pub second_turn: Option<&'static [&'static str]>,
-    /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
-    /// `{key}` and [`Placeholder::DaemonPort`] expand.
+    /// Environment for the CLI: endpoint, dummy key and opt-outs; [`Placeholder::Port`],
+    /// [`Placeholder::Key`] and [`Placeholder::DaemonPort`] expand.
     pub env: &'static [(&'static str, &'static str)],
     /// Homes the registry row does not name, each pointed into the sandbox.
     pub(crate) homes: &'static [&'static str],

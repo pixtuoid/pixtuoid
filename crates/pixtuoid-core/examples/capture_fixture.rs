@@ -174,29 +174,22 @@ mod recorder {
         }
     }
 
-    /// A [`DaemonPlan`] as a process is started from it: its words, its
-    /// readiness probe's (what exits 0 once it serves), and the environment its
-    /// spawn alone gets.
-    struct DaemonCmd {
-        start: Vec<String>,
-        ready: Vec<String>,
-        env: Vec<(String, String)>,
-    }
-
-    impl From<&DaemonPlan> for DaemonCmd {
-        fn from(plan: &DaemonPlan) -> Self {
-            Self {
-                start: plan.start.strings(),
-                ready: plan.ready.strings(),
-                env: plan.env.clone().into_iter().collect(),
-            }
-        }
-    }
-
     /// Why this host may not write into the committed corpus, which only a
     /// `committed` write reaches: a raw capture is any host's.
     fn corpus_refusal(committed: bool) -> Option<&'static str> {
         CORPUS_REFUSAL.filter(|_| committed)
+    }
+
+    /// Why this host may not run `plan`, if it may not: a committed write off
+    /// Unix, or a workspace whose parent the recorder may not clear.
+    fn plan_refusal(plan: &CapturePlan) -> Option<String> {
+        corpus_refusal(matches!(plan.sink, Sink::Committed { .. }))
+            .map(str::to_owned)
+            .or_else(|| {
+                plan.workspace
+                    .as_ref()
+                    .and_then(|ws| workspace_refusal(ws.as_path()))
+            })
     }
 
     /// Why `ws` is not a workspace the recorder may clear, if it is not.
@@ -272,7 +265,7 @@ mod recorder {
 
     /// One capture, as `plan` spells it.
     fn run(plan: &CapturePlan) -> std::io::Result<()> {
-        if let Some(why) = corpus_refusal(matches!(plan.sink, Sink::Committed { .. })) {
+        if let Some(why) = plan_refusal(plan) {
             eprintln!("{why}");
             std::process::exit(2);
         }
@@ -280,7 +273,6 @@ mod recorder {
         let cmd = plan.first_turn.strings();
         let run_copy = scratch_destination(plan);
         let env: Vec<(String, String)> = plan.cli_env.clone().into_iter().collect();
-        let daemon_cmd = plan.daemon.as_ref().map(DaemonCmd::from);
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
             let known: Vec<&str> = registry::registered_source_names().collect();
@@ -305,13 +297,7 @@ mod recorder {
         let exempt = exemption(&dest)?;
 
         let ws = match &plan.workspace {
-            Some(ws) => {
-                if let Some(why) = workspace_refusal(ws.as_path()) {
-                    eprintln!("{why}");
-                    std::process::exit(2);
-                }
-                ws.as_path().to_path_buf()
-            }
+            Some(ws) => ws.as_path().to_path_buf(),
             None => capture_workspace()?,
         };
         let (workspace, _recording) = prepare_workspace(ws, plan.seed.as_ref())?;
@@ -331,7 +317,7 @@ mod recorder {
             scratch: sandbox.path(),
         };
         let daemon = match RunningDaemon::start(
-            daemon_cmd.as_ref(),
+            plan.daemon.as_ref(),
             *DAEMON_BOOT.here(),
             &workspace,
             &wiring,
@@ -920,7 +906,7 @@ mod recorder {
     impl RunningDaemon {
         /// `daemon` started, once its probe exits 0 within `boot`.
         fn start(
-            daemon: Option<&DaemonCmd>,
+            daemon: Option<&DaemonPlan>,
             boot: Duration,
             ws: &Path,
             wiring: &CliWiring<'_>,
@@ -934,8 +920,9 @@ mod recorder {
             std::fs::create_dir_all(&own)?;
             let log_path = own.join("daemon.log");
             let log = std::fs::File::create(&log_path)?;
-            let mut child = wired(&daemon.start, ws, wiring, verified, env)?
-                .envs(daemon.env.iter().map(|(k, v)| (k, v)))
+            let (start, ready) = (daemon.start.strings(), daemon.ready.strings());
+            let mut child = wired(&start, ws, wiring, verified, env)?
+                .envs(daemon.env.iter())
                 .stdin(std::process::Stdio::piped())
                 .stdout(log.try_clone()?)
                 .stderr(log)
@@ -943,7 +930,7 @@ mod recorder {
             let mut running = Self {
                 lifeline: child.stdin.take(),
                 child,
-                start: daemon.start.join(" "),
+                start: start.join(" "),
                 log: log_path.clone(),
             };
             // Every probe's output, each followed by how it ended.
@@ -951,7 +938,7 @@ mod recorder {
             let mut probes = std::fs::File::create(&probe_log)?;
             let deadline = std::time::Instant::now() + boot;
             wait_until("the daemon", boot, || {
-                let mut probe = wired(&daemon.ready, ws, wiring, verified, env)?
+                let mut probe = wired(&ready, ws, wiring, verified, env)?
                     .stdin(std::process::Stdio::null())
                     .stdout(probes.try_clone()?)
                     .stderr(probes.try_clone()?)
@@ -1093,8 +1080,8 @@ mod recorder {
             .and_then(version_answer)
     }
 
-    /// A recording's record: `command` is the line as typed, so an
-    /// override-driven scenario records a `{prompt}` placeholder.
+    /// A recording's record: `command` is the operator's argv, space-joined, so an
+    /// override-driven scenario records the unexpanded [`Placeholder::Prompt`](pixtuoid_core::harness::plan::Placeholder::Prompt).
     fn record(
         cli: &str,
         version: &str,
@@ -1318,6 +1305,8 @@ mod recorder {
         use std::time::Duration;
 
         use super::*;
+        use pixtuoid_core::harness::plan::Argv;
+        use std::collections::BTreeMap;
 
         /// An operator nobody's bytes carry, so no test reads the machine's.
         const OPERATOR: &str = "Ada Lovelace";
@@ -1878,6 +1867,30 @@ mod recorder {
             assert_eq!(workspace_refusal(&root.join(&tail)), None);
         }
 
+        fn operator_plan(args: &[&str]) -> CapturePlan {
+            let args: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+            match Invocation::parse_process(&args).expect("a line") {
+                Invocation::Capture(plan) => *plan,
+                other => panic!("not a capture: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn a_plan_the_host_may_not_run_is_refused_before_it_starts() {
+            let committed = operator_plan(&["kimi", "tool-run", "kimi"]);
+            assert_eq!(plan_refusal(&committed).is_some(), !cfg!(unix));
+            let mut raw = operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
+            assert_eq!(plan_refusal(&raw), None, "a raw capture is any host's");
+            let abs = |p: PathBuf| pixtuoid_core::harness::plan::AbsPath::try_from(p).expect("abs");
+            raw.workspace = Some(abs(std::env::temp_dir().join("proj")));
+            assert!(
+                plan_refusal(&raw).is_some_and(|why| why.contains("clears its parent")),
+                "its parent is the operator's"
+            );
+            raw.workspace = Some(abs(std::env::temp_dir().join(capture_workspace_tail())));
+            assert_eq!(plan_refusal(&raw), None);
+        }
+
         #[test]
         fn only_a_unix_host_writes_the_corpus() {
             assert_eq!(corpus_refusal(false), None, "a raw capture is any host's");
@@ -2281,15 +2294,11 @@ mod recorder {
             let ready = ws.path().join("ready");
             // It serves only after a beat, so a probe that never waited fails.
             let serve = format!("sleep 1; touch {}; cat >/dev/null", ready.display());
-            let daemon = DaemonCmd {
-                start: ["sh", "-c", &serve].map(String::from).to_vec(),
-                ready: ["test", "-e"]
-                    .map(String::from)
-                    .into_iter()
-                    .chain([ready.display().to_string()])
-                    .collect(),
-                env: Vec::new(),
-            };
+            let daemon = daemon_of(
+                &["sh", "-c", &serve],
+                &["test", "-e", &ready.display().to_string()],
+                &[],
+            );
             let wiring = CliWiring {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
@@ -2326,27 +2335,28 @@ mod recorder {
 
         /// This test binary, re-run as `test` playing a daemon, and as its probe,
         /// which passes once the fake wrote its `ready`.
-        fn fake_daemon(test: &str) -> DaemonCmd {
+        fn fake_daemon(test: &str) -> DaemonPlan {
             let exe = std::env::current_exe()
                 .expect("the test binary")
                 .display()
                 .to_string();
             let name = this_test(test);
-            DaemonCmd {
-                start: vec![
-                    exe.clone(),
-                    "--exact".into(),
-                    name.clone(),
-                    "--nocapture".into(),
-                ],
-                ready: vec![
-                    exe,
-                    "--exact".into(),
-                    name,
-                    FAKE_PROBE.into(),
-                    "--nocapture".into(),
-                ],
-                env: Vec::new(),
+            daemon_of(
+                &[&exe, "--exact", &name, "--nocapture"],
+                &[&exe, "--exact", &name, FAKE_PROBE, "--nocapture"],
+                &[],
+            )
+        }
+
+        /// A daemon plan from plain words, as a test spells one.
+        fn daemon_of(start: &[&str], ready: &[&str], env: &[(&str, &str)]) -> DaemonPlan {
+            DaemonPlan {
+                start: Argv::resolved(start).expect("words"),
+                ready: Argv::resolved(ready).expect("words"),
+                env: env
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                    .collect(),
             }
         }
 
@@ -2432,8 +2442,8 @@ mod recorder {
                 scratch: dir.path(),
             };
             let env = [(FAKE_DAEMON.to_owned(), dir.path().display().to_string())];
-            let daemon = DaemonCmd {
-                env: vec![(OWN.to_owned(), "1".to_owned())],
+            let daemon = DaemonPlan {
+                env: BTreeMap::from([(OWN.to_owned(), "1".to_owned())]),
                 ..fake_daemon(TEST)
             };
             RunningDaemon::start(
@@ -2527,13 +2537,11 @@ mod recorder {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
             let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
-            let daemon = DaemonCmd {
-                start: ["sh", "-c", "echo out of disk; exit 3"]
-                    .map(String::from)
-                    .to_vec(),
-                ready: ["sh", "-c", "sleep 1"].map(String::from).to_vec(),
-                env: Vec::new(),
-            };
+            let daemon = daemon_of(
+                &["sh", "-c", "echo out of disk; exit 3"],
+                &["sh", "-c", "sleep 1"],
+                &[],
+            );
             let wiring = CliWiring {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),

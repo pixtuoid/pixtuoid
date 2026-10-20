@@ -47,7 +47,8 @@ pub enum Placeholder {
     DaemonPort,
     /// The workspace the CLI runs in, with its OS's separators.
     Workspace,
-    /// The same, with `/` separators.
+    /// The same, with `/` separators, which a JSON string holds unescaped: how
+    /// Claude Code keys its projects on Windows (`Xz` in the 2.1.302 bundle).
     WorkspaceSlashed,
     /// The operator's user name.
     User,
@@ -242,7 +243,7 @@ impl TryFrom<&Path> for AbsPath {
 
 /// Where a capture is written.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Sink {
     /// The raw capture, unstripped, with no provenance: drift evidence, never
     /// committed.
@@ -254,8 +255,8 @@ pub enum Sink {
     },
     /// The committed fixture the scenario names, from one turn.
     Committed {
-        /// The line as the operator typed it, `{prompt}` unexpanded: what the
-        /// provenance records, never run.
+        /// The operator's argv, space-joined, with [`Placeholder::Prompt`]
+        /// unexpanded: what the provenance records, never run.
         command: NonEmpty,
         /// The operator's prompt, when it replaced [`DEFAULT_PROMPT`].
         prompt: Option<NonEmpty>,
@@ -468,7 +469,7 @@ impl Invocation {
 
 impl CapturePlan {
     /// The capture an operator's line asks: `[--out <dir>] <source> <scenario>
-    /// <cmd...>`, `{prompt}` in the command filled from `CAPTURE_PROMPT` or
+    /// <cmd...>`, [`Placeholder::Prompt`] in the command filled from [`PROMPT_ENV`] or
     /// [`DEFAULT_PROMPT`]. It runs in memory: only the runner's plan is kept, as
     /// the record of its run.
     ///
@@ -494,7 +495,7 @@ impl CapturePlan {
         if command.is_empty() {
             return Err(PlanError::new(SHORT));
         }
-        // Set-but-blank is unset: a blank prompt would expand `{prompt}` to nothing.
+        // Set-but-blank is unset: a blank prompt would expand [`Placeholder::Prompt`] to nothing.
         let text = |key: &str| env(key).and_then(|v| NonEmpty::try_from(v).ok());
         let prompt = text(PROMPT_ENV);
         let words = prompt.as_ref().map_or(DEFAULT_PROMPT, NonEmpty::as_str);
@@ -648,6 +649,13 @@ mod tests {
         let file = p.write_to(dir.path()).expect("write");
         assert_eq!(file, dir.path().join(CAPTURE_PLAN));
         assert_eq!(CapturePlan::read(&file).expect("read"), p);
+    }
+
+    #[test]
+    fn a_field_the_sink_does_not_have_is_refused() {
+        let mut json = serde_json::to_value(plan()).expect("json");
+        json["sink"]["raw"]["a_flag_from_another_build"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<CapturePlan>(json).is_err());
     }
 
     #[test]
@@ -848,7 +856,42 @@ mod tests {
             "split_paths",
         ];
         const EXEMPT: [(&str, &str); 2] = [("wired", "vars_os"), ("identity_needles", "text_env")];
+        /// The names a `use` brings in from `std::env` or `platform`, which a bare
+        /// call then reads the env by.
+        #[derive(Default)]
+        struct Imports(std::collections::BTreeSet<String>);
+        impl Imports {
+            fn tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+                let reads_env = |prefix: &[String], last: &str| {
+                    prefix.iter().any(|n| n == "platform" || n == "env")
+                        && !NO_VARIABLE.contains(&last)
+                };
+                match tree {
+                    syn::UseTree::Path(p) => {
+                        prefix.push(p.ident.to_string());
+                        self.tree(&p.tree, prefix);
+                        prefix.pop();
+                    }
+                    syn::UseTree::Name(n) if reads_env(prefix, &n.ident.to_string()) => {
+                        self.0.insert(n.ident.to_string());
+                    }
+                    syn::UseTree::Rename(r) if reads_env(prefix, &r.ident.to_string()) => {
+                        self.0.insert(r.rename.to_string());
+                    }
+                    syn::UseTree::Group(g) => {
+                        g.items.iter().for_each(|t| self.tree(t, prefix));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        impl<'ast> Visit<'ast> for Imports {
+            fn visit_item_use(&mut self, u: &'ast syn::ItemUse) {
+                self.tree(&u.tree, &mut Vec::new());
+            }
+        }
         struct Reads {
+            imported: std::collections::BTreeSet<String>,
             in_fn: Vec<String>,
             found: Vec<String>,
         }
@@ -893,14 +936,11 @@ mod tests {
                     && p.path.segments.len() == 1
                 {
                     let name = p.path.segments[0].ident.to_string();
-                    if matches!(
-                        name.as_str(),
-                        "var" | "var_os" | "vars" | "vars_os" | "text_env" | "path_env"
-                    ) && !self
+                    let exempt = self
                         .in_fn
                         .last()
-                        .is_some_and(|f| EXEMPT.contains(&(f.as_str(), name.as_str())))
-                    {
+                        .is_some_and(|f| EXEMPT.contains(&(f.as_str(), name.as_str())));
+                    if self.imported.contains(&name) && !exempt {
                         self.found.push(name);
                     }
                 }
@@ -917,7 +957,10 @@ mod tests {
         }
         let file =
             syn::parse_file(include_str!("../../examples/capture_fixture.rs")).expect("parses");
+        let mut imports = Imports::default();
+        imports.visit_file(&file);
         let mut reads = Reads {
+            imported: imports.0,
             in_fn: Vec::new(),
             found: Vec::new(),
         };
