@@ -32,6 +32,7 @@ mod recorder {
     const PROMPT_ENV: &str = "CAPTURE_PROMPT";
     const SEED_ENV: &str = "CAPTURE_SEED";
 
+    use pixtuoid_core::harness::hermetic::dropped::Dropped;
     use pixtuoid_core::harness::hermetic::{
         self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
     };
@@ -48,6 +49,7 @@ mod recorder {
         PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
+    use serde_json::Value;
 
     /// Where a driver names the CLI it drives, a command or the path to its
     /// binary, for the recorder to ask its `--version`.
@@ -469,8 +471,8 @@ mod recorder {
             &args[2..],
             &deidentified,
             &[
-                ("prompt", nonempty_env(PROMPT_ENV)),
-                ("seed", nonempty_env(SEED_ENV)),
+                ("prompt", nonempty_env(PROMPT_ENV).map(Value::String)),
+                ("seed", nonempty_env(SEED_ENV).map(Value::String)),
             ],
         )?;
         for p in &wrote {
@@ -541,6 +543,14 @@ mod recorder {
             std::fs::copy(&raw, &to)?;
             wrote.push(to);
         }
+        // Before the strip: what the decoders drop is what it blanks.
+        let dropped = match exempt {
+            None => Some(serde_json::to_value(Dropped::of_files(
+                &manifest.source,
+                &wrote,
+            )?)?),
+            Some(_) => None,
+        };
         let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
         let script = scenario.script(&manifest.source);
         // The record names its script as every host's checkout spells it.
@@ -558,8 +568,12 @@ mod recorder {
             &command,
             &deidentified,
             &[
-                (hermetic::PROVENANCE_AIMOCK, Some(manifest.aimock.clone())),
-                ("script", Some(script)),
+                (
+                    hermetic::PROVENANCE_AIMOCK,
+                    Some(Value::String(manifest.aimock.clone())),
+                ),
+                ("script", Some(Value::String(script))),
+                (hermetic::PROVENANCE_DROPPED, dropped),
             ],
         )?;
         refuse_on_pii(&wrote, needles)?;
@@ -975,7 +989,7 @@ mod recorder {
         (cli, version): (&str, &str),
         raw: &[String],
         deidentified: &Deidentified,
-        overrides: &[(&str, Option<String>)],
+        overrides: &[(&str, Option<Value>)],
     ) -> std::io::Result<()> {
         let mut prov = serde_json::json!({
             "origin": "recorded",
@@ -990,7 +1004,7 @@ mod recorder {
         if let Some(map) = prov.as_object_mut() {
             for (key, value) in overrides {
                 if let Some(v) = value {
-                    map.insert((*key).into(), serde_json::Value::String(v.clone()));
+                    map.insert((*key).into(), v.clone());
                 }
             }
         }
@@ -1316,6 +1330,70 @@ mod recorder {
                 record.get("note").is_none(),
                 "the record is the run's, not the old one"
             );
+            assert!(
+                record[hermetic::PROVENANCE_DROPPED].is_object(),
+                "a stripped capture records its baseline, empty for hook payloads alone"
+            );
+        }
+
+        /// The baseline is taken before the strip: after it, a type the decoder
+        /// drops is gone from the bytes it would be read off.
+        #[test]
+        fn a_promoted_run_records_the_types_its_decoders_dropped() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (run, root) = (d.path().join("run"), d.path().join("sources"));
+            let fixture = hermetic::profile("copilot")
+                .and_then(|p| p.scenario("tool-run"))
+                .map(|s| s.fixture)
+                .expect("copilot's tool-run");
+            for from in jsonl_files_under(&sources_root().join(fixture)) {
+                let rel = from
+                    .strip_prefix(sources_root().join(fixture))
+                    .expect("under");
+                let to = run.join(rel);
+                std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                let mut text = std::fs::read_to_string(&from).expect("read");
+                if from.ends_with("events.jsonl") {
+                    text.push_str("{\"type\":\"assistant.zz_dropped\",\"data\":{\"x\":\"y\"}}\n");
+                }
+                std::fs::write(&to, text).expect("write");
+            }
+            let manifest = Manifest {
+                source: "copilot".into(),
+                scenario: "tool-run".into(),
+                capture: CaptureRecord {
+                    workspace: capture_workspace().expect("the workspace"),
+                    cli: "copilot".into(),
+                    version: "1.0.98".into(),
+                    exit_code: Some(0),
+                    resumed: None,
+                },
+                aimock: "1.45.1".into(),
+                requests: 2,
+                unmatched: 0,
+                results_seen: 1,
+            };
+            std::fs::write(
+                run.join(MANIFEST),
+                serde_json::to_string(&manifest).expect("json"),
+            )
+            .expect("manifest");
+            let dest = root.join(fixture);
+            std::fs::create_dir_all(&dest).expect("mkdir");
+            std::fs::write(dest.join(PROVENANCE), r#"{"origin":"recorded"}"#).expect("record");
+            promote(&run, &root, &needles()).expect("promote");
+            let record: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dest.join(PROVENANCE)).expect("record"),
+            )
+            .expect("json");
+            let dropped = &record[hermetic::PROVENANCE_DROPPED];
+            assert_eq!(dropped["os"], std::env::consts::OS, "{dropped}");
+            assert!(
+                dropped["at"]["/type"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().any(|t| t == "assistant.zz_dropped")),
+                "the planted type the decoder drops is the baseline's: {dropped}"
+            );
         }
 
         #[test]
@@ -1347,6 +1425,10 @@ mod recorder {
             );
             assert_eq!(record["deidentified"]["method"], "none");
             assert_eq!(record["deidentified"]["why"], why);
+            assert!(
+                record.get(hermetic::PROVENANCE_DROPPED).is_none(),
+                "an unstripped capture drops nothing it could baseline"
+            );
         }
 
         #[test]
@@ -1839,7 +1921,7 @@ mod recorder {
                 ("true", "1.0"),
                 &argv,
                 &Deidentified::Stripped(0),
-                &[("prompt", Some("read NOTE.txt".into()))],
+                &[("prompt", Some(Value::String("read NOTE.txt".into())))],
             )
             .expect("write");
             assert_eq!(read(set.path())["prompt"], "read NOTE.txt");

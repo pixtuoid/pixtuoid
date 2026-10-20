@@ -490,6 +490,21 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
+        // Likewise a wait for a call whose hook End already landed, from a
+        // reordered hook (#242) or a lagging watcher: its answer came first.
+        if let AgentEvent::Waiting {
+            tool_use_id: Some(tuid),
+            ..
+        } = event
+            && self
+                .corr
+                .recent_hook_tool_uses
+                .get(&(id, tuid.clone()))
+                .is_some_and(|(_, kind)| *kind == ToolEventKind::End)
+        {
+            return Preprocessed::Drop;
+        }
+
         // Gated on the slot EXISTING: a synthesis REFUSED for desk exhaustion
         // would leave a record that dedup-eats the JSONL registration's Start.
         if from == Transport::Hook

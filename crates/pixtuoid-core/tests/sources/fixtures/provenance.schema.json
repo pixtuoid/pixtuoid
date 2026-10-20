@@ -1,9 +1,9 @@
 {
-  "$comment": "THE statement of what a provenance.json must carry. Read by the Rust gate (every_capture_declares_a_valid_origin_with_its_required_fields) and the README table, which used to state it separately and had drifted apart.",
+  "$comment": "THE statement of what a provenance.json must carry. Read by tests/sources/captures.rs's gates (the required and the only allowed keys) and the README table, which used to state it separately and had drifted apart.",
   "origins": {
     "recorded": {
       "required": ["cli", "version", "captured", "command"],
-      "optional": ["prompt", "seed", "deidentified", "aimock", "script"],
+      "optional": ["prompt", "seed", "note", "deidentified", "aimock", "script", "dropped"],
       "means": "real wire bytes — a real CLI's against a scripted model where `aimock` and `script` name it — stripped of every subtree no decoder reads — unless `deidentified.method` is `none`, a reviewed per-capture exemption with its reason for a test that reads raw bytes the decoder drops; the recorder writes this file itself"
     },
     "composed": {

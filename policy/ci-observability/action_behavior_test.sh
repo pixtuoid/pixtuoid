@@ -269,7 +269,7 @@ git init -q "$test_dir/no-parent" && echo a >"$test_dir/no-parent/lock" && git -
 grep -q 'bad revision' "$test_dir/no-parent.err" ||
     fail "the parentless repo's diff did not fail on its missing parent: $(<"$test_dir/no-parent.err")"
 
-# ── hermetic-nightly.yml: one issue, titled by every failed leg, each report on it ──
+# ── hermetic-nightly.yml: one issue, titled by every uploaded leg, each report on it ──
 file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "Open or update tracking issue")"
 file_bin="$test_dir/file-bin"
 mkdir -p "$file_bin"
@@ -312,3 +312,33 @@ if (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPE
 fi
 [[ $(grep -c '^issue comment 7 --body-file' "$test_dir/gh.log") == 2 ]] ||
     fail "a leg with no report kept the others' reports off the issue: $(<"$test_dir/gh.log")"
+# A lone uploaded leg lands flat: it files under its own H1.
+flat="$test_dir/file-flat"
+mkdir -p "$flat/copilot"
+printf '# hermetic, latest CLIs on macos, shard 1: New\n\nbody\n' >"$flat/report.md"
+: >"$test_dir/gh.log"
+(cd "$flat" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN='' GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a lone leg that landed flat"
+grep -qxF "issue create --title hermetic, latest CLIs on macos, shard 1: New --label hermetic --body-file report.md" "$test_dir/gh.log" ||
+    fail "a lone flat leg is not filed under its H1: $(<"$test_dir/gh.log")"
+# None uploaded: a green drift files nothing, and a failed one is red.
+empty="$test_dir/file-empty"
+mkdir -p "$empty"
+: >"$test_dir/gh.log"
+(cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" DRIFT=success GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a night nothing uploaded on"
+[[ ! -s "$test_dir/gh.log" ]] || fail "a night nothing uploaded on filed something: $(<"$test_dir/gh.log")"
+if (cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" DRIFT=failure GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1; then
+    fail "the file step passed a failed drift that uploaded nothing"
+fi
+# Every uploaded leg failed before its report: red, and no issue retitled or opened.
+bare="$test_dir/file-bare"
+mkdir -p "$bare/hermetic-runs-1-1-linux"
+: >"$test_dir/gh.log"
+if (cd "$bare" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1; then
+    fail "the file step passed with no uploaded leg holding a report"
+fi
+! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
+    fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
