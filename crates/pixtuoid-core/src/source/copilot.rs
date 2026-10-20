@@ -271,7 +271,10 @@ pub(crate) fn decode_copilot_line(
                 as_child: true,
             }]
         }
-        SESSION_TASK_COMPLETE => vec![AgentEvent::ActivityEnd {
+        // Only the root's ends its turn: neither listener of it in 1.0.98's
+        // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
+        // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
+        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::ActivityEnd {
             agent_id: root,
             tool_use_id: None,
         }],
@@ -1011,6 +1014,19 @@ mod tests {
             }
             other => panic!("expected one root ActivityEnd, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_subagents_task_complete_ends_no_activity() {
+        let line = serde_json::json!({
+            "type": "session.task_complete",
+            "data": {"summary": "done", "success": true},
+            "agentId": "call_X",
+            "parentId": "p"
+        })
+        .to_string();
+        let evs = decode(&line);
+        assert!(evs.is_empty(), "got {evs:?}");
     }
 
     #[test]
