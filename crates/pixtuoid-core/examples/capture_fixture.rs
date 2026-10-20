@@ -48,7 +48,7 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, Drive, HOOK_PAYLOADS,
-        PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
+        NOTE_FILE, PROVENANCE, Resumed, capture_base, capture_workspace, capture_workspace_tail,
         jsonl_files_under, required_version_probe, version_answer, wait_until,
     };
 
@@ -648,10 +648,6 @@ mod recorder {
         )
     }
 
-    /// The file every capture workspace starts with, which the scripts read
-    /// and a permission script's refused call would delete.
-    const NOTE_FILE: &str = "NOTE.txt";
-
     /// The seed's files, then the note: a seed carrying its own `NOTE_FILE`
     /// must not replace the one `note_survived` compares against.
     fn fill_workspace(ws: &Path, seed: Option<&Path>) -> std::io::Result<()> {
@@ -782,7 +778,7 @@ mod recorder {
         // anyone re-created it since the remove.
         create_private_dir(base)?;
         std::fs::create_dir(&ws)?;
-        fill_workspace(&ws, std::env::var_os(SEED_ENV).as_deref().map(Path::new))?;
+        fill_workspace(&ws, workspace_seed().as_deref())?;
         init_repo(&ws)?;
         Ok((ws, lock))
     }
@@ -1059,6 +1055,12 @@ mod recorder {
             );
         }
         Ok(())
+    }
+
+    /// The seed directory, read as provenance reads it: a set-but-empty
+    /// `CAPTURE_SEED` is no seed, and must not abort a copy of `""`.
+    fn workspace_seed() -> Option<PathBuf> {
+        nonempty_env(SEED_ENV).map(|dir| PathBuf::from(dir.as_str()))
     }
 
     fn nonempty_env(key: &str) -> Option<NonEmpty> {
@@ -1603,6 +1605,15 @@ mod recorder {
             };
             for corpus in [Options::default(), promote] {
                 assert_eq!(corpus.corpus_refusal().is_some(), !cfg!(unix), "{corpus:?}");
+            }
+        }
+
+        #[test]
+        fn a_set_but_empty_seed_seeds_nothing() {
+            for (value, seeds) in [(Some(""), false), (None, false), (Some("/seed"), true)] {
+                temp_env::with_var(SEED_ENV, value, || {
+                    assert_eq!(workspace_seed().is_some(), seeds, "{value:?}");
+                });
             }
         }
 

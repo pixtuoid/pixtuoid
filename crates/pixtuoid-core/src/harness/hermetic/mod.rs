@@ -2640,7 +2640,7 @@ mod tests {
             {
                 let text = std::fs::read_to_string(s.script(p.source)).expect("the script");
                 assert!(
-                    text.contains("rm ") && text.contains("NOTE.txt"),
+                    text.contains("rm ") && text.contains(crate::harness::NOTE_FILE),
                     "{}: no scripted call deletes the note",
                     p.source
                 );
