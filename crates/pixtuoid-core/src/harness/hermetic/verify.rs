@@ -1268,9 +1268,18 @@ fn hook_lines(dir: &Path) -> std::io::Result<Vec<String>> {
     }
 }
 
-/// macOS's `/tmp` is `/private/tmp`: a CLI may report either.
+/// macOS's `/tmp` is `/private/tmp`, and a CLI may report either: omp drops
+/// the `/private` (`packages/utils/src/dirs.ts:144-155`, `:228` at
+/// `v18.12.1`). A recording is judged on hosts where neither spelling exists,
+/// so the alias folds by name, not through the filesystem.
 fn canonical(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    const PRIVATE_TMP: &str = "/private/tmp";
+    const TMP: &str = "/tmp";
+    let real = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    match real.strip_prefix(PRIVATE_TMP) {
+        Ok(rest) => Path::new(TMP).join(rest),
+        Err(_) => real,
+    }
 }
 
 #[cfg(test)]
@@ -2277,6 +2286,35 @@ mod tests {
             Label::Fail,
             "must decode to 1 agent(s)"
         ));
+    }
+
+    #[test]
+    fn a_tmp_cwd_is_its_private_tmp_workspace_where_neither_exists() {
+        let start = |cwd: &str| AgentEvent::SessionStart {
+            agent_id: crate::AgentId::from_parts("omp", "s"),
+            source: "omp".into(),
+            session_id: "s".into(),
+            cwd: cwd.into(),
+            parent_id: None,
+        };
+        let ws = Path::new("/private/tmp/pixtuoid-judged-elsewhere/proj");
+        for cwd in [
+            "/tmp/pixtuoid-judged-elsewhere/proj",
+            "/private/tmp/pixtuoid-judged-elsewhere/proj",
+        ] {
+            let mut f = Vec::new();
+            started_in(&[start(cwd)], ws, 1, false, &mut f);
+            assert!(f.is_empty(), "{cwd}: {f:?}");
+        }
+        let mut f = Vec::new();
+        started_in(
+            &[start("/tmp/pixtuoid-judged-elsewhere/other")],
+            ws,
+            1,
+            false,
+            &mut f,
+        );
+        assert!(has(&Verdict::new(f), Label::Fail, "is not the workspace"));
     }
 
     #[test]
