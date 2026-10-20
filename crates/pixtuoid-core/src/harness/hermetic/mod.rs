@@ -2626,15 +2626,12 @@ mod tests {
         }
     }
 
-    /// Whether a scripted reply calls a tool with `rm` then the note's name,
-    /// in one of its top-level string arguments (every committed script's shape).
+    /// Whether a scripted reply calls a tool whose command is `rm` then the
+    /// note's name, in one of its top-level string arguments (every committed script's shape).
     fn script_deletes_the_note(script: &serde_json::Value) -> bool {
         let deletes = |command: &str| {
             let words: Vec<&str> = command.split_whitespace().collect();
-            words
-                .iter()
-                .position(|w| *w == "rm")
-                .is_some_and(|at| words[at + 1..].contains(&crate::harness::NOTE_FILE))
+            words.first() == Some(&"rm") && words[1..].contains(&crate::harness::NOTE_FILE)
         };
         script["fixtures"]
             .as_array()
@@ -2687,7 +2684,12 @@ mod tests {
         };
         assert!(script_deletes_the_note(&call("rm NOTE.txt")));
         assert!(script_deletes_the_note(&call("rm -rf NOTE.txt")));
-        for not in ["cat NOTE.txt", "NOTE.txt rm", "rm NOTE.txt.bak"] {
+        for not in [
+            "cat NOTE.txt",
+            "NOTE.txt rm",
+            "rm NOTE.txt.bak",
+            "echo rm NOTE.txt",
+        ] {
             assert!(!script_deletes_the_note(&call(not)), "{not}");
         }
         assert!(
