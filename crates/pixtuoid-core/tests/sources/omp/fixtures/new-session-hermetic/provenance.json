@@ -2,12 +2,21 @@
   "origin": "recorded",
   "cli": "omp",
   "version": "omp/18.12.1",
-  "captured": "2026-10-19",
+  "captured": "2026-10-20",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 13
   },
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/omp/new-session.json"
+  "script": "tests/sources/hermetic/omp/new-session.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/type": [
+        "service_tier_change",
+        "title"
+      ]
+    }
+  }
 }

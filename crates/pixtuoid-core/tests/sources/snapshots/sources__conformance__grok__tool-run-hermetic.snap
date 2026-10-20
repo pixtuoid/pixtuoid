@@ -3,61 +3,61 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     model: grok-4.6
     effort: ~
 - ActivityStart:
-    agent_id: 12594752178969251977
-    tool_use_id: call_lqVaNIuj7O5IKzRG
+    agent_id: 2128762529621784208
+    tool_use_id: call_zSS9ZAl0Lag2fIUY
     detail:
       Generic:
         display: read_file
 - ActivityEnd:
-    agent_id: 12594752178969251977
-    tool_use_id: call_lqVaNIuj7O5IKzRG
+    agent_id: 2128762529621784208
+    tool_use_id: call_zSS9ZAl0Lag2fIUY
 - ActivityEnd:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     as_child: false
 - SessionStart:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     source: grok
-    session_id: 01a1564d-6bf4-7773-ba4e-3fcbefee1d04
+    session_id: 01a15848-e789-7653-90b0-06027a98bd21
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     source: grok
-    session_id: 01a1564d-6bf4-7773-ba4e-3fcbefee1d04
+    session_id: 01a15848-e789-7653-90b0-06027a98bd21
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     source: grok
-    session_id: 01a1564d-6bf4-7773-ba4e-3fcbefee1d04
+    session_id: 01a15848-e789-7653-90b0-06027a98bd21
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 12594752178969251977
-    tool_use_id: call_lqVaNIuj7O5IKzRG
+    agent_id: 2128762529621784208
+    tool_use_id: call_zSS9ZAl0Lag2fIUY
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     source: grok
-    session_id: 01a1564d-6bf4-7773-ba4e-3fcbefee1d04
+    session_id: 01a15848-e789-7653-90b0-06027a98bd21
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 12594752178969251977
-    tool_use_id: call_lqVaNIuj7O5IKzRG
+    agent_id: 2128762529621784208
+    tool_use_id: call_zSS9ZAl0Lag2fIUY
 - ActivityEnd:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     as_child: false
 - ActivityEnd:
-    agent_id: 12594752178969251977
+    agent_id: 2128762529621784208
     tool_use_id: ~
