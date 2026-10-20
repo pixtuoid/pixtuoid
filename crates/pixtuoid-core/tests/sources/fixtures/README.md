@@ -78,12 +78,12 @@ there (omp's bridge rounds), else to the conformance root — where a new
 directory would be auto-scanned by `conformance.rs` with no committed bytes
 beside it for the `.new` no-clobber rule to protect.
 
-**Re-recording an existing scenario needs a hand** unless the tier records it:
-`just hermetic --record` replaces a fixture's bytes whole, and git holds the diff.
-`just capture-fixture` never overwrites committed bytes: it writes `<name>.new`
-beside them to be diffed, not trusted, and since only `*.jsonl` and
-`provenance.json` are read, one you do not promote costs a billed turn and changes
-nothing. Diff the pair, then `mv` the `.new` over the old one or delete it.
+**Re-recording an existing scenario needs a hand** unless the tier records it. The tier keeps
+a fixture whose run renamed only ids of an `ID_FAMILIES` row (`capture_fixture.rs`), under its
+record's CLI version, aimock and `script_sha256`, writing only a changed `dropped`; else
+`just hermetic --record` replaces the bytes whole, and git holds the diff. `just capture-fixture`
+never overwrites committed bytes: it writes `<name>.new` beside them to diff, not trust; only
+`*.jsonl` and `provenance.json` are read, so one you do not `mv` over the old changes nothing.
 
 **A capture is recorded only on Unix.** The corpus pins Unix realpaths and cwds,
 so on Windows the recorder writes only a raw `--out` capture and

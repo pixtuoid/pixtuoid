@@ -14,7 +14,7 @@ fn main() -> std::io::Result<()> {
 }
 
 mod recorder {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
@@ -521,7 +521,8 @@ mod recorder {
     }
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
-    /// beside them: the old ones are git's.
+    /// beside them: the old ones are git's. A run that renamed only the ids of
+    /// the same turn leaves them as they were, but for its baseline.
     fn promote(run: &Path, root: &Path, needles: &BTreeSet<String>) -> std::io::Result<()> {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(run.join(MANIFEST))?)?;
@@ -530,7 +531,53 @@ mod recorder {
             .and_then(|p| p.scenario(&manifest.scenario))
             .ok_or_else(|| std::io::Error::other(format!("{named}: no profiled scenario")))?;
         let dest = root.join(scenario.fixture);
-        let exempt = exemption(&dest)?;
+        let committed = Provenance::read_if_any(&dest.join(PROVENANCE))?;
+        let exempt = committed.as_ref().and_then(|p| p.exemption().cloned());
+        // Stripped apart from the fixture, which it replaces only if it differs.
+        let staged = tempfile::tempdir()?;
+        let mut fresh = Vec::new();
+        for raw in jsonl_files_under(run) {
+            let to = staged
+                .path()
+                .join(raw.strip_prefix(run).map_err(std::io::Error::other)?);
+            if let Some(dir) = to.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::copy(&raw, &to)?;
+            fresh.push(to);
+        }
+        // Before the strip: what the decoders drop is what it blanks.
+        let dropped = match exempt {
+            None => Some(Dropped::of_files(&manifest.source, &fresh)?),
+            Some(_) => None,
+        };
+        let deidentified = deidentify(&manifest.source, &fresh, exempt)?;
+        let script_file = scenario.script(&manifest.source);
+        let script_sha256 =
+            hermetic::digest::digest_hex::<sha2::Sha256>(&std::fs::read(&script_file)?);
+        let script = slashed(
+            script_file
+                .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                .unwrap_or(&script_file),
+        );
+        if let Some(record) = committed.as_ref().and_then(Provenance::recorded)
+            && same_turn(record, &manifest, &script, &script_sha256)
+            && renamed_only(
+                &capture_text(&dest)?,
+                &capture_text(staged.path())?,
+                &id_patterns()?,
+            )
+        {
+            if record.dropped != dropped {
+                Provenance::Recorded(Box::new(Recorded {
+                    dropped,
+                    ..record.clone()
+                }))
+                .write_to(&dest.join(PROVENANCE))?;
+            }
+            println!("kept {named}: the run renamed only its ids");
+            return Ok(());
+        }
         for old in jsonl_files_under(&dest)
             .into_iter()
             .chain([dest.join(PROVENANCE)])
@@ -548,35 +595,25 @@ mod recorder {
             }
         }
         let mut wrote = Vec::new();
-        for raw in jsonl_files_under(run) {
-            let to = dest.join(raw.strip_prefix(run).map_err(std::io::Error::other)?);
+        for staged_file in &fresh {
+            let to = dest.join(
+                staged_file
+                    .strip_prefix(staged.path())
+                    .map_err(std::io::Error::other)?,
+            );
             if let Some(dir) = to.parent() {
                 std::fs::create_dir_all(dir)?;
             }
-            std::fs::copy(&raw, &to)?;
+            std::fs::copy(staged_file, &to)?;
             wrote.push(to);
         }
-        // Before the strip: what the decoders drop is what it blanks.
-        let dropped = match exempt {
-            None => Some(Dropped::of_files(&manifest.source, &wrote)?),
-            Some(_) => None,
-        };
-        let deidentified = deidentify(&manifest.source, &wrote, exempt)?;
-        let script = scenario.script(&manifest.source);
-        // The record names its script as every host's checkout spells it.
-        let script = script
-            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .unwrap_or(&script)
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/");
         let command = ["just", "hermetic", "--record", manifest.source.as_str()].map(String::from);
         write_provenance(
             &dest,
             Recorded {
                 aimock: Some(filled("aimock", &manifest.aimock)?),
                 script: Some(filled("script", &script)?),
+                script_sha256: Some(filled("script_sha256", &script_sha256)?),
                 dropped,
                 ..record(
                     &manifest.capture.cli,
@@ -589,6 +626,208 @@ mod recorder {
         refuse_on_pii(&wrote, needles)?;
         println!("recorded {named} into {}", dest.display());
         Ok(())
+    }
+
+    /// Whether `record`'s recording played the turn `manifest`'s run did: the
+    /// same CLI build against the same aimock and script, its path included,
+    /// so a kept record names the script that played.
+    fn same_turn(
+        record: &Recorded,
+        manifest: &Manifest,
+        script: &str,
+        script_sha256: &str,
+    ) -> bool {
+        record.version.as_str() == manifest.capture.version
+            && record.aimock.as_ref().map(NonEmpty::as_str) == Some(manifest.aimock.as_str())
+            && record.script.as_ref().map(NonEmpty::as_str) == Some(script)
+            && record.script_sha256.as_ref().map(NonEmpty::as_str) == Some(script_sha256)
+    }
+
+    /// A kind of token a CLI or the recorder mints afresh each run.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "a row's name and citation are its test's to read")
+    )]
+    struct IdFamily {
+        /// What mints it.
+        name: &'static str,
+        /// The token, or its one group where only its key tells the token
+        /// from a value of the same shape.
+        pattern: &'static str,
+        /// A committed capture that carries one, under `tests/sources`.
+        seen_in: &'static str,
+    }
+
+    /// Every family of minted token a tier recording carries, so two
+    /// recordings of one turn differ in these alone. Where two match at once,
+    /// the one that starts first wins, then the earlier row.
+    const ID_FAMILIES: &[IdFamily] = &[
+        IdFamily {
+            name: "a UUID, the time-ordered v7 codex and grok mint included",
+            pattern: r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            seen_in: "fixtures/claude-code/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "an Anthropic tool use",
+            pattern: r"toolu_[0-9A-Za-z_-]+",
+            seen_in: "fixtures/claude-code/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "an OpenAI tool call",
+            pattern: r"call_[0-9A-Za-z_-]+",
+            seen_in: "fixtures/kimi/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "a Claude Code subagent",
+            pattern: r"\ba[0-9a-f]{16}\b",
+            seen_in: "claude/fixtures/subagent-hermetic",
+        },
+        IdFamily {
+            name: "an opencode session",
+            pattern: r"ses_[0-9A-Za-z]{26}",
+            seen_in: "fixtures/opencode/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "a reasonix subagent",
+            pattern: r"sa_\d{8}_\d{6}_\d{9}_[0-9a-f]{12}",
+            seen_in: "reasonix/fixtures/subagent-hermetic",
+        },
+        IdFamily {
+            name: "a reasonix session's start",
+            pattern: r"\d{8}-\d{6}\.\d{9}",
+            seen_in: "fixtures/reasonix/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "a hermes session",
+            pattern: r"\d{8}_\d{6}_[0-9a-f]{6}",
+            seen_in: "fixtures/hermes/tool-run-hermetic",
+        },
+        IdFamily {
+            name: "a session file's start, codex's and omp's",
+            pattern: r"\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d(?:-\d{3}Z)?",
+            seen_in: "codex/fixtures/subagent-hermetic",
+        },
+        IdFamily {
+            name: "the recorder's sandbox",
+            pattern: r"\.tmp[0-9A-Za-z]{6}",
+            seen_in: "delegation/fixtures/omp",
+        },
+        IdFamily {
+            name: "the shim's pid",
+            pattern: r#""_pid":(\d+)"#,
+            seen_in: "fixtures/dsh/tool-run-recorded",
+        },
+        IdFamily {
+            name: "the shim's clock",
+            pattern: r#""_shim_ts_ms":(\d+)"#,
+            seen_in: "fixtures/dsh/tool-run-recorded",
+        },
+        IdFamily {
+            name: "openclaw's gateway, on a port the orchestrator picks free",
+            pattern: r#""gatewayPort":(\d+)"#,
+            seen_in: "fixtures/openclaw/tool-run-hermetic",
+        },
+    ];
+
+    fn id_patterns() -> std::io::Result<Vec<regex::Regex>> {
+        ID_FAMILIES
+            .iter()
+            .map(|f| regex::Regex::new(f.pattern).map_err(std::io::Error::other))
+            .collect()
+    }
+
+    /// A text read with its ids masked: what lies between them, and each id's
+    /// family.
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    enum Piece<'a> {
+        Text(&'a str),
+        Id(usize),
+    }
+
+    /// `text` as [`Piece`]s, and its ids in order.
+    fn pieces<'a>(text: &'a str, families: &[regex::Regex]) -> (Vec<Piece<'a>>, Vec<&'a str>) {
+        let mut found: Vec<(usize, usize, usize)> = families
+            .iter()
+            .enumerate()
+            .flat_map(|(family, re)| {
+                re.captures_iter(text).filter_map(move |c| {
+                    let token = c.get(1).or_else(|| c.get(0))?;
+                    Some((token.start(), family, token.end()))
+                })
+            })
+            .collect();
+        found.sort_unstable();
+        let (mut shape, mut ids, mut at) = (Vec::new(), Vec::new(), 0);
+        for (start, family, end) in found {
+            if start < at {
+                continue;
+            }
+            shape.extend([Piece::Text(&text[at..start]), Piece::Id(family)]);
+            ids.push(&text[start..end]);
+            at = end;
+        }
+        shape.push(Piece::Text(&text[at..]));
+        (shape, ids)
+    }
+
+    /// Each file's path and text with their ids masked, keying its ids in
+    /// order.
+    type Shapes<'a> = BTreeMap<(Vec<Piece<'a>>, Vec<Piece<'a>>), Vec<&'a str>>;
+
+    /// `files` as [`Shapes`]; none where two read the same masked, as only
+    /// their ids tell apart.
+    fn shapes<'a>(files: &'a [(String, String)], families: &[regex::Regex]) -> Option<Shapes<'a>> {
+        let mut out = BTreeMap::new();
+        for (path, text) in files {
+            let (path_shape, mut ids) = pieces(path, families);
+            let (text_shape, more) = pieces(text, families);
+            ids.extend(more);
+            if out.insert((path_shape, text_shape), ids).is_some() {
+                return None;
+            }
+        }
+        Some(out)
+    }
+
+    /// Whether `new` is `old` with only its ids renamed: each file, its path
+    /// included, reads the same with its ids masked, and one bijection renames
+    /// `old`'s ids to `new`'s across them all. Files only their ids tell apart
+    /// have no pairing to check, so they count as changed.
+    fn renamed_only(
+        old: &[(String, String)],
+        new: &[(String, String)],
+        families: &[regex::Regex],
+    ) -> bool {
+        let (Some(old), Some(new)) = (shapes(old, families), shapes(new, families)) else {
+            return false;
+        };
+        let (mut forth, mut back) = (HashMap::new(), HashMap::new());
+        old.len() == new.len()
+            && old.iter().zip(&new).all(|((shape, was), (other, now))| {
+                shape == other
+                    && was.iter().zip(now).all(|(x, y)| {
+                        *forth.entry(*x).or_insert(*y) == *y && *back.entry(*y).or_insert(*x) == *x
+                    })
+            })
+    }
+
+    /// Each capture file under `dir`, by its path from there, with its text.
+    fn capture_text(dir: &Path) -> std::io::Result<Vec<(String, String)>> {
+        jsonl_files_under(dir)
+            .into_iter()
+            .map(|f| {
+                let path = slashed(f.strip_prefix(dir).map_err(std::io::Error::other)?);
+                Ok((path, std::fs::read_to_string(&f)?))
+            })
+            .collect()
+    }
+
+    /// `path` as every host's checkout spells it.
+    fn slashed(path: &Path) -> String {
+        path.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/")
     }
 
     // ── the decisions ────────────────────────────────────────────────────────────
@@ -1013,6 +1252,7 @@ mod recorder {
             seed: None,
             aimock: None,
             script: None,
+            script_sha256: None,
             dropped: None,
         })
     }
@@ -1360,6 +1600,12 @@ mod recorder {
                 record.script.as_ref().map(NonEmpty::as_str),
                 Some("tests/sources/hermetic/dsh/tool-run.json")
             );
+            let script = sources_root().join("hermetic/dsh/tool-run.json");
+            assert_eq!(
+                record.script_sha256.as_ref().map(NonEmpty::as_str),
+                Some(sha256(&std::fs::read(script).expect("the script")).as_str()),
+                "what the script said, which its path cannot"
+            );
             assert_eq!(record.version.as_str(), "0.2.0-rc.2");
             assert_eq!(
                 record.note, None,
@@ -1470,6 +1716,470 @@ mod recorder {
                 record.dropped, None,
                 "an unstripped capture drops nothing it could baseline"
             );
+        }
+
+        /// The version the committed dsh recordings record.
+        const DSH_VERSION: &str = "0.2.0-rc.2";
+        const AIMOCK: &str = "1.45.1";
+
+        /// `c` moved one step within its class (digit, `a`-`f`, `g`-`z`,
+        /// `A`-`Z`), so a renamed id keeps its family's shape.
+        fn rotated(c: char) -> char {
+            let step = |c: char, lo: char, hi: char| {
+                if c == hi {
+                    lo
+                } else {
+                    char::from_u32(c as u32 + 1).unwrap_or(c)
+                }
+            };
+            match c {
+                '0'..='9' => step(c, '0', '9'),
+                'a'..='f' => step(c, 'a', 'f'),
+                'g'..='z' => step(c, 'g', 'z'),
+                'A'..='Z' => step(c, 'A', 'Z'),
+                _ => c,
+            }
+        }
+
+        /// `text` with every id dsh mints renamed as a second run renames it:
+        /// each session and tool call past its prefix, the pid and the clock.
+        fn renamed(text: &str) -> String {
+            let mut ids = BTreeSet::new();
+            for line in text.lines() {
+                let v: serde_json::Value = serde_json::from_str(line).expect("json");
+                for key in ["sessionId", "parentSession", "callId"] {
+                    if let Some(id) = v[key].as_str().filter(|id| !id.is_empty()) {
+                        ids.insert(id.to_owned());
+                    }
+                }
+            }
+            let mut out = text.to_owned();
+            for id in ids {
+                let cut = id.find(['-', '_']).map_or(0, |i| i + 1);
+                let new: String = id[..cut]
+                    .chars()
+                    .chain(id[cut..].chars().map(rotated))
+                    .collect();
+                out = out.replace(&id, &new);
+            }
+            out.replace("\"_pid\":", "\"_pid\":9")
+                .replace("\"_shim_ts_ms\":1", "\"_shim_ts_ms\":2")
+        }
+
+        /// `bytes`' SHA-256, as the recorder computes it.
+        fn sha256(bytes: &[u8]) -> String {
+            hermetic::digest::digest_hex::<sha2::Sha256>(bytes)
+        }
+
+        /// dsh's committed `scenario`, `committed`-edited, under a tier
+        /// record `record` edits, and a run of it whose bytes are those with
+        /// every id renamed, then `run`-edited, under the dsh and aimock
+        /// versions given.
+        fn rerun(
+            scenario: &str,
+            versions: (&str, &str),
+            record: impl FnOnce(&mut serde_json::Value),
+            committed: impl Fn(String) -> String,
+            run: impl Fn(String) -> String,
+        ) -> Promotable {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (run_dir, root) = (d.path().join("run"), d.path().join("sources"));
+            let s = hermetic::profile("dsh")
+                .and_then(|p| p.scenario(scenario))
+                .expect("dsh's scenario");
+            let dest = root.join(s.fixture);
+            for from in jsonl_files_under(&sources_root().join(s.fixture)) {
+                let rel = from
+                    .strip_prefix(sources_root().join(s.fixture))
+                    .expect("under");
+                let text = committed(std::fs::read_to_string(&from).expect("read"));
+                for (to, text) in [
+                    (dest.join(rel), text.clone()),
+                    (run_dir.join(rel), run(renamed(&text))),
+                ] {
+                    std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                    std::fs::write(to, text).expect("write");
+                }
+            }
+            let script = s.script("dsh");
+            let mut over = serde_json::json!({
+                "origin": "recorded",
+                "version": DSH_VERSION,
+                "deidentified": {"method": "decoder-allowlist", "blanked": 0},
+                "aimock": AIMOCK,
+                "script": format!("tests/sources/hermetic/dsh/{scenario}.json"),
+                "script_sha256": sha256(&std::fs::read(&script).expect("the script")),
+            });
+            record(&mut over);
+            let committed_record: Provenance =
+                serde_json::from_value(complete_record(over)).expect("a record");
+            committed_record
+                .write_to(&dest.join(PROVENANCE))
+                .expect("record");
+            let manifest = Manifest {
+                source: "dsh".into(),
+                scenario: scenario.into(),
+                capture: CaptureRecord {
+                    workspace: capture_workspace().expect("the workspace"),
+                    cli: "dsh".into(),
+                    version: versions.0.into(),
+                    exit_code: Some(0),
+                    resumed: None,
+                },
+                aimock: versions.1.into(),
+                requests: 2,
+                unmatched: 0,
+                results_seen: 1,
+            };
+            std::fs::write(
+                run_dir.join(MANIFEST),
+                serde_json::to_string(&manifest).expect("json"),
+            )
+            .expect("manifest");
+            Promotable {
+                _dir: d,
+                run: run_dir,
+                root,
+                dest,
+            }
+        }
+
+        /// The fixture's files and record, as bytes.
+        fn snapshot(dest: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+            jsonl_files_under(dest)
+                .into_iter()
+                .chain([dest.join(PROVENANCE)])
+                .map(|f| (f.clone(), std::fs::read(&f).expect("read")))
+                .collect()
+        }
+
+        /// Promotes `p`, and says whether the fixture came through untouched.
+        fn kept(p: &Promotable) -> bool {
+            let before = snapshot(&p.dest);
+            promote(&p.run, &p.root, &needles()).expect("promote");
+            let after = snapshot(&p.dest);
+            if after != before {
+                let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
+                assert_eq!(
+                    record.recorded().map(|r| r.captured.as_str()),
+                    Some(today().as_str()),
+                    "a rewrite is the run's own record"
+                );
+            }
+            after == before
+        }
+
+        fn unchanged(text: String) -> String {
+            text
+        }
+
+        #[test]
+        fn a_re_record_that_renamed_only_ids_keeps_the_fixture_whole() {
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |r| {
+                    r["dropped"] = serde_json::json!({"os": std::env::consts::OS, "at": {}});
+                },
+                unchanged,
+                unchanged,
+            );
+            assert!(kept(&p), "only ids differ");
+        }
+
+        #[test]
+        fn a_re_record_that_reparented_an_id_is_rewritten() {
+            let p = rerun(
+                "subagent",
+                (DSH_VERSION, AIMOCK),
+                |_| {},
+                unchanged,
+                |text| {
+                    let parent = text
+                        .lines()
+                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                        .find_map(|v| {
+                            v["parentSession"]
+                                .as_str()
+                                .filter(|p| !p.is_empty())
+                                .map(str::to_owned)
+                        })
+                        .expect("a child names its parent");
+                    text.replace(
+                        &format!("\"parentSession\":\"{parent}\""),
+                        "\"parentSession\":\"session-00000000-0000-4000-8000-000000000000\"",
+                    )
+                },
+            );
+            assert!(!kept(&p), "the child hangs off another session");
+        }
+
+        #[test]
+        fn a_re_record_under_another_cli_version_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                ("0.2.0-rc.3", AIMOCK),
+                |_| {},
+                unchanged,
+                unchanged,
+            );
+            assert!(!kept(&p));
+        }
+
+        #[test]
+        fn a_re_record_under_another_aimock_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, "1.46.0"),
+                |_| {},
+                unchanged,
+                unchanged,
+            );
+            assert!(!kept(&p));
+        }
+
+        #[test]
+        fn a_re_record_of_an_edited_script_is_rewritten() {
+            let script = hermetic::profile("dsh")
+                .and_then(|p| p.scenario("tool-run"))
+                .map(|s| s.script("dsh"))
+                .expect("dsh's tool-run");
+            let mut before = std::fs::read(script).expect("the script");
+            before.extend(b" ");
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |r| {
+                    r["script_sha256"] = sha256(&before).into();
+                },
+                unchanged,
+                unchanged,
+            );
+            assert!(!kept(&p), "the model played another script");
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |r| {
+                    r.as_object_mut()
+                        .expect("an object")
+                        .remove("script_sha256");
+                },
+                unchanged,
+                unchanged,
+            );
+            assert!(
+                !kept(&p),
+                "a record that names no digest vouches for no script"
+            );
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |r| r["script"] = "tests/sources/hermetic/dsh/moved.json".into(),
+                unchanged,
+                unchanged,
+            );
+            assert!(!kept(&p), "a kept record would name a script that is gone");
+        }
+
+        #[test]
+        fn a_re_record_whose_free_text_changed_one_for_one_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |_| {},
+                unchanged,
+                |text| text.replace("deepseek-flash", "deepseek-fresh"),
+            );
+            assert!(!kept(&p));
+        }
+
+        #[test]
+        fn a_re_record_whose_unknown_id_changed_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                (DSH_VERSION, AIMOCK),
+                |_| {},
+                |text| {
+                    let id = text
+                        .lines()
+                        .find_map(|l| {
+                            serde_json::from_str::<serde_json::Value>(l).ok()?["sessionId"]
+                                .as_str()
+                                .map(str::to_owned)
+                        })
+                        .expect("a session");
+                    text.replace(&id, "session-q7Hk29Lm4QpZ")
+                },
+                unchanged,
+            );
+            assert!(!kept(&p), "a token no family names is text");
+        }
+
+        #[test]
+        fn a_kept_fixture_takes_its_runs_baseline_and_keeps_its_day() {
+            for committed in [None, Some(serde_json::json!({"os": "plan9", "at": {}}))] {
+                let p = rerun(
+                    "tool-run",
+                    (DSH_VERSION, AIMOCK),
+                    |r| {
+                        if let Some(d) = committed.clone() {
+                            r["dropped"] = d;
+                        }
+                    },
+                    unchanged,
+                    unchanged,
+                );
+                let bytes = std::fs::read(p.dest.join(HOOK_PAYLOADS)).expect("bytes");
+                promote(&p.run, &p.root, &needles()).expect("promote");
+                assert_eq!(
+                    std::fs::read(p.dest.join(HOOK_PAYLOADS)).expect("bytes"),
+                    bytes,
+                    "{committed:?}: the bytes stay"
+                );
+                let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
+                let record = record.recorded().expect("a recording");
+                assert_eq!(record.captured.as_str(), "2026-01-01", "{committed:?}");
+                assert_eq!(
+                    record
+                        .dropped
+                        .as_ref()
+                        .map(|d| serde_json::to_value(d).expect("json")),
+                    Some(serde_json::json!({"os": std::env::consts::OS, "at": {}})),
+                    "{committed:?}: the run's baseline"
+                );
+            }
+        }
+
+        fn files(of: &[(&str, &str)]) -> Vec<(String, String)> {
+            of.iter()
+                .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
+                .collect()
+        }
+
+        fn renamed_only_by_families(old: &[(&str, &str)], new: &[(&str, &str)]) -> bool {
+            renamed_only(&files(old), &files(new), &id_patterns().expect("patterns"))
+        }
+
+        const U1: &str = "3e335f66-3b4f-473b-abf2-5b7cb52d7a0d";
+        const U2: &str = "4f446a77-4c5a-584c-bca3-6c8dc63e8b1e";
+        const U3: &str = "5a557b88-5d6b-695d-cdb4-7d9ed74f9c2f";
+
+        #[test]
+        fn a_file_name_renames_with_the_ids_inside_it() {
+            let old = [(&*format!("s/{U1}.jsonl"), &*format!(r#"{{"id":"{U1}"}}"#))];
+            let same = [(&*format!("s/{U2}.jsonl"), &*format!(r#"{{"id":"{U2}"}}"#))];
+            assert!(renamed_only_by_families(&old, &same));
+            let apart = [(&*format!("s/{U2}.jsonl"), &*format!(r#"{{"id":"{U3}"}}"#))];
+            assert!(
+                !renamed_only_by_families(&old, &apart),
+                "the file is named for one session and holds another"
+            );
+        }
+
+        #[test]
+        fn two_ids_renamed_to_one_is_no_bijection() {
+            let old = [("h.jsonl", &*format!(r#"{{"a":"{U1}","b":"{U2}"}}"#))];
+            let merged = [("h.jsonl", &*format!(r#"{{"a":"{U3}","b":"{U3}"}}"#))];
+            assert!(!renamed_only_by_families(&old, &merged));
+            let split = [("h.jsonl", &*format!(r#"{{"a":"{U3}","b":"{U1}"}}"#))];
+            assert!(
+                renamed_only_by_families(&old, &split),
+                "U2 may take U1's old name"
+            );
+        }
+
+        #[test]
+        fn files_their_ids_alone_tell_apart_are_a_rewrite() {
+            let old = [
+                (&*format!("{U1}.jsonl"), "{}"),
+                (&*format!("{U2}.jsonl"), "{}"),
+            ];
+            assert!(
+                !renamed_only_by_families(&old, &old),
+                "which old file is which new one"
+            );
+        }
+
+        #[test]
+        fn a_token_one_family_starts_wins_over_another_nested_in_it() {
+            let old = [(
+                "h.jsonl",
+                r#"{"subagentId":"sa_20261019_162721_000000000_167006df8d3b"}"#,
+            )];
+            let new = [(
+                "h.jsonl",
+                r#"{"subagentId":"sa_20261020_101010_000000000_aaaaaaaaaaaa"}"#,
+            )];
+            assert!(renamed_only_by_families(&old, &new));
+        }
+
+        #[test]
+        fn a_file_more_is_a_rewrite() {
+            let old = [("h.jsonl", "{}")];
+            let more = [("h.jsonl", "{}"), ("z.jsonl", "{}")];
+            assert!(!renamed_only_by_families(&old, &more));
+            assert!(!renamed_only_by_families(&more, &old));
+        }
+
+        /// One token of each family as two recordings of one turn minted it,
+        /// read off the corpus's own re-records.
+        const RENAMED_BETWEEN_RECORDINGS: &[(&str, &str)] = &[
+            (
+                "3a94538f-09fe-4231-8195-8e5277ac55fe",
+                "5c268a10-f98f-494a-b750-92a110ad30a9",
+            ),
+            ("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R"),
+            ("call_orvKmWb1fXgIDLfw", "call_2Xs85giJlWCQx58K"),
+            ("agent-a8074a27caeedb715", "agent-a615cb511b5899d39"),
+            (
+                "ses_eabb87c3cffeVHXkPkR0sAM6MD",
+                "ses_eab5376a1ffezRy0f5TzOmUH7a",
+            ),
+            (
+                "sa_20261019_162721_000000000_167006df8d3b",
+                "sa_20261019_162729_000000000_53910816d8e4",
+            ),
+            (
+                "20261019-063638.389045000-deepseek-v4-flash",
+                "20261019-162745.781162000-deepseek-v4-flash",
+            ),
+            ("20261020_005102_5e501b", "20261020_005045_5564c8"),
+            (
+                "rollout-2026-10-18T22-11-05-x",
+                "rollout-2026-10-20T00-47-42-x",
+            ),
+            ("2026-10-19T22-12-48-510Z_x", "2026-10-20T07-52-32-773Z_x"),
+            ("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes"),
+            (r#"{"_pid":56875}"#, r#"{"_pid":42895}"#),
+            (
+                r#"{"_shim_ts_ms":1792464600287}"#,
+                r#"{"_shim_ts_ms":1792482405228}"#,
+            ),
+            (r#"{"gatewayPort":55736}"#, r#"{"gatewayPort":63297}"#),
+        ];
+
+        #[test]
+        fn each_family_renames_what_two_recordings_minted() {
+            for (was, now) in RENAMED_BETWEEN_RECORDINGS {
+                assert!(
+                    renamed_only_by_families(&[("h.jsonl", was)], &[("h.jsonl", now)]),
+                    "{was} -> {now}"
+                );
+            }
+        }
+
+        #[test]
+        fn every_id_family_is_carried_by_the_capture_it_cites() {
+            let patterns = id_patterns().expect("every pattern compiles");
+            for (family, pattern) in ID_FAMILIES.iter().zip(&patterns) {
+                let carried = jsonl_files_under(&sources_root().join(family.seen_in))
+                    .iter()
+                    .any(|f| {
+                        pattern.is_match(&f.to_string_lossy())
+                            || pattern.is_match(&std::fs::read_to_string(f).expect("read"))
+                    });
+                assert!(carried, "{}: {} carries none", family.name, family.seen_in);
+            }
         }
 
         #[test]

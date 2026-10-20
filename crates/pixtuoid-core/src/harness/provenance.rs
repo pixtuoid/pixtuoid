@@ -60,6 +60,10 @@ pub struct Recorded {
     /// The scenario script the model played, as the checkout spells it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<NonEmpty>,
+    /// That script's SHA-256, which a path cannot show: an edit to it changes
+    /// what the model played.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_sha256: Option<NonEmpty>,
     /// What the decoders dropped, the baseline a New finding is judged against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dropped: Option<Dropped>,
@@ -284,6 +288,7 @@ mod tests {
   "seed": "s",
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/copilot/tool-run.json",
+  "script_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "dropped": {
     "os": "macos",
     "at": {
