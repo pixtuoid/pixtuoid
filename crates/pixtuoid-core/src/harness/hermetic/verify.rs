@@ -1703,7 +1703,7 @@ mod tests {
 
     #[test]
     fn a_guardian_that_reads_before_the_wait_passes_while_the_read_ends() {
-        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         edit_hooks(d.path(), |v| {
@@ -1764,7 +1764,7 @@ mod tests {
 
     #[test]
     fn an_end_no_call_owns_fails() {
-        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         reorder_hooks(d.path(), |lines| {
             let end = lines
                 .iter()
@@ -1783,7 +1783,7 @@ mod tests {
 
     #[test]
     fn a_refused_call_that_took_the_note_with_it_fails() {
-        let d = recorded("dsh", Shape::Permission, DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
         write_manifest(d.path(), "dsh", |m| {
             m.scenario = "permission".into();
             m.capture.note_survived = false;
