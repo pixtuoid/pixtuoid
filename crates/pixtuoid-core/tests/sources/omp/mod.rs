@@ -273,8 +273,8 @@ fn each_bridge_round_coalesces_both_transports_onto_one_id() {
 /// the previous slot leaves without waiting for the stale sweep.
 #[test]
 fn a_recorded_switch_ends_the_previous_session_and_starts_the_current() {
-    let evs = events("switch-recorded");
-    let raw: Vec<serde_json::Value> = lines("switch-recorded")
+    let evs = events("new-session-hermetic");
+    let raw: Vec<serde_json::Value> = lines("new-session-hermetic")
         .iter()
         .map(|l| serde_json::from_str(l).expect("valid json"))
         .collect();
