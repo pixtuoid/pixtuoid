@@ -204,19 +204,10 @@ mod run {
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
             let Some(sc) = self.scenario.as_deref() else {
-                if p.runs_on(windows) {
-                    return Ok(());
-                }
-                return Err(format!(
-                    "{source} doesn't run here: {}",
-                    not_run_of(p, windows).join(", ")
-                ));
+                return Ok(());
             };
             if sc == LIFECYCLE {
-                return match lifecycle_turn(self, p, windows) {
-                    Some(_) => Ok(()),
-                    None => Err(format!("{source}/{LIFECYCLE} has no scenario to turn here")),
-                };
+                return Ok(());
             }
             if let (LIVE, Some(live)) = (sc, &p.live) {
                 return match live.not_run_on(windows) {
@@ -362,7 +353,7 @@ mod run {
         };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
-        let lifecycle = lifecycle_turn(args, p, windows);
+        let lifecycle = lifecycle_turn(args, p);
         if selected.is_empty() && lifecycle.is_none() {
             return Ok((entries, None));
         }
@@ -573,15 +564,11 @@ mod run {
     /// The scenario `p`'s install lifecycle goes on from and turns under its
     /// last uninstall, when `args` selects the lifecycle. `--record` writes
     /// scenarios alone.
-    fn lifecycle_turn<'a>(args: &Args, p: &'a Profile, windows: bool) -> Option<&'a Scenario> {
+    fn lifecycle_turn<'a>(args: &Args, p: &'a Profile) -> Option<&'a Scenario> {
         if args.record || !args.selects(p.source, LIFECYCLE) {
             return None;
         }
-        headless_first(
-            p.scenarios
-                .iter()
-                .filter(|s| s.not_run_on(windows).is_none()),
-        )
+        headless_first(p.scenarios.iter())
     }
 
     /// The sandbox a lifecycle goes on in, when its scenario's `verdict` was
@@ -2984,14 +2971,11 @@ mod run {
             assert_eq!(picked(&tui_first[..1]), Some("tui"));
             let codex = hermetic::profile("codex").expect("profiled");
             let record = parse(&args(&["--record", "codex"])).expect("parse");
-            assert!(lifecycle_turn(&record, codex, false).is_none());
+            assert!(lifecycle_turn(&record, codex).is_none());
             let all = parse(&args(&[])).expect("parse");
-            assert!(lifecycle_turn(&all, codex, false).is_some());
+            assert!(lifecycle_turn(&all, codex).is_some());
             let other = parse(&args(&["codex", "tool-run"])).expect("parse");
-            assert!(
-                lifecycle_turn(&other, codex, false).is_none(),
-                "not selected"
-            );
+            assert!(lifecycle_turn(&other, codex).is_none(), "not selected");
         }
 
         #[test]

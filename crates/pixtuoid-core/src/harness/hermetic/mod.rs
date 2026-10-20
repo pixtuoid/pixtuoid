@@ -1910,17 +1910,6 @@ impl Profile {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
-
-    /// Whether a leg on `windows` runs any of it, and so reports it.
-    pub fn runs_on(&self, windows: bool) -> bool {
-        self.scenarios
-            .iter()
-            .any(|s| s.not_run_on(windows).is_none())
-            || self
-                .live
-                .as_ref()
-                .is_some_and(|l| l.not_run_on(windows).is_none())
-    }
 }
 
 impl Scenario {
@@ -2045,6 +2034,21 @@ mod tests {
                     "{}/{}: the TUI driver refuses its dialog, which only a Permission turn wants",
                     p.source,
                     s.name
+                );
+            }
+        }
+    }
+
+    /// What the runner's source selection, the lifecycle's turn and the bump
+    /// plan take for granted.
+    #[test]
+    fn no_leg_skips_a_whole_source() {
+        for p in PROFILES {
+            for windows in [false, true] {
+                assert!(
+                    p.scenarios.iter().any(|s| s.not_run_on(windows).is_none()),
+                    "{}: a leg (windows: {windows}) runs none of its scenarios",
+                    p.source
                 );
             }
         }

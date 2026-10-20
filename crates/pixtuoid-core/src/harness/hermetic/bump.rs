@@ -15,11 +15,8 @@ use serde_json::{Map, Value};
 use super::{PROFILES, Profile, SHARDS, pin};
 use crate::harness::sources_root;
 
-/// The leg [`Profile::runs_on`] asks about as `windows`.
-const WINDOWS: &str = "windows";
-
 /// The nightly's drift legs, as `hermetic.yml`'s matrix names them.
-const OSES: &[&str] = &["macos", WINDOWS];
+const OSES: &[&str] = &["macos", "windows"];
 
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
@@ -75,7 +72,7 @@ impl Proposal {
 }
 
 /// The releases to propose, given the drift job's outputs: each profiled source
-/// that moved to one release on every OS in `OSES` that runs it, above its pin,
+/// that moved to one release on every OS in `OSES`, above its pin,
 /// under a title no PR has taken (an open one proposes it, a closed one declined
 /// it). A leg that reported nothing moved nothing.
 ///
@@ -103,7 +100,6 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
         let versions: Vec<Option<&str>> = OSES
             .iter()
             .zip(&moved)
-            .filter(|(os, _)| p.runs_on(**os == WINDOWS))
             .map(|(_, rows)| {
                 rows.iter()
                     .find(|r| r.source == p.source)
