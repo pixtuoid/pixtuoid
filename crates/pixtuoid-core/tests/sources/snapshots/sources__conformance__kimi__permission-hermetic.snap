@@ -3,45 +3,45 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     source: kimi
-    session_id: session_e7b7df09-82c9-4c3a-b8a1-e801d8c55a6b
+    session_id: session_70483993-7499-4948-bedd-b0eaf413acbc
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     source: kimi
-    session_id: session_e7b7df09-82c9-4c3a-b8a1-e801d8c55a6b
+    session_id: session_70483993-7499-4948-bedd-b0eaf413acbc
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 13469575607265549292
-    tool_use_id: call_BzL05QcgWa9qYb56
+    agent_id: 3668411811756063168
+    tool_use_id: call_yfJUAKzyEcIatslU
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     source: kimi
-    session_id: session_e7b7df09-82c9-4c3a-b8a1-e801d8c55a6b
+    session_id: session_70483993-7499-4948-bedd-b0eaf413acbc
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     reason: permission
 - Identity:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     source: kimi
-    session_id: session_e7b7df09-82c9-4c3a-b8a1-e801d8c55a6b
+    session_id: session_70483993-7499-4948-bedd-b0eaf413acbc
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 13469575607265549292
-    tool_use_id: call_BzL05QcgWa9qYb56
+    agent_id: 3668411811756063168
+    tool_use_id: call_yfJUAKzyEcIatslU
 - ActivityEnd:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 13469575607265549292
+    agent_id: 3668411811756063168
     as_child: false
