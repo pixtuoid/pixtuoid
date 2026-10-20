@@ -2706,18 +2706,17 @@ fn converge_stamps_a_pre_source_windows_claude_hooks_file() {
     }
 }
 
-/// An exec-form entry that differs from this build's only by `args: []` is stale to
-/// the doctor and a launch's converge (`owned_state`) and to connect, which rewrites
-/// it.
+/// An exec-form entry that differs from a fresh connect's only by `args: []` is stale
+/// to the doctor and a launch's converge (`owned_state`) and to connect, which
+/// rewrites it.
 #[test]
 fn connect_rewrites_an_exec_form_claude_entry_without_its_source() {
     let tmp = tempfile::TempDir::new().unwrap();
     let cfg = tmp.path().join("hooks.json");
-    let shim = PathBuf::from("/fake/pixtuoid-hook");
-    let Primary::Owned { render, .. } = CLAUDE_EXEC_FILE.primary else {
-        unreachable!("an owned primary")
-    };
-    let current = render(&(CLAUDE_EXEC_FILE.hook_command)(&shim, true).unwrap()).unwrap();
+    let shim = tmp.path().join("pixtuoid-hook");
+    // What connect writes for this shim, resolved as the install resolves it.
+    install_target_from(&CLAUDE_EXEC_FILE, Some(cfg.clone()), Some(shim.clone())).unwrap();
+    let current = io::read_config(&cfg).unwrap();
     let mut doc: serde_json::Value = serde_json::from_str(&current).unwrap();
     for groups in doc["hooks"].as_object_mut().unwrap().values_mut() {
         groups[0]["hooks"][0]["args"] = serde_json::json!([]);
