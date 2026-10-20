@@ -700,6 +700,9 @@ const OMP_TUI: tui::Tui = tui::Tui {
 /// An unref'd no-op that wakes the event loop every 5 s: a stop waits up to
 /// one period past its close, inside the recorder's `DAEMON_STOP_GRACE`.
 const OPENCLAW_WAKEUP: &str = "--import=data:text/javascript,setInterval(()=>{},5000).unref()";
+/// The openclaw release [`OPENCLAW_WAKEUP`] was verified needed on.
+#[cfg(test)]
+const OPENCLAW_WAKEUP_NEEDED_ON: &str = "2026.10.1";
 
 /// A profile whose env is the same on every OS.
 const NO_OS_ENV: PerOs<&[(&str, &str)]> = PerOs {
@@ -2453,6 +2456,20 @@ mod tests {
         };
         assert!(options(false).is_empty(), "Unix keeps openclaw's own stop");
         assert_eq!(options(true), [OPENCLAW_WAKEUP]);
+    }
+
+    #[test]
+    fn openclaws_wakeup_was_verified_needed_on_its_pin() {
+        let pin = pin::pinned(profile("openclaw").expect("openclaw").descriptor()).expect("a pin");
+        let verified = semver::Version::parse(OPENCLAW_WAKEUP_NEEDED_ON).expect("a release");
+        assert_eq!(
+            pin, verified,
+            "openclaw's pin moved off {verified}, the release OPENCLAW_WAKEUP was verified needed \
+             on. On a branch with OPENCLAW_WAKEUP removed from openclaw's Windows env, run \
+             `gh workflow run ci.yml --ref <branch>` and read the Windows hermetic legs' openclaw \
+             rows: if they pass, delete OPENCLAW_WAKEUP and this test; if not, move \
+             OPENCLAW_WAKEUP_NEEDED_ON to {pin}."
+        );
     }
 
     #[test]
