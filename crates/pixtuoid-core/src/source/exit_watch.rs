@@ -95,9 +95,11 @@ impl ExitWatch {
         Some(Self { shared })
     }
 
-    /// Ask the thread to watch `pid`. Idempotent. Once the thread has died the
-    /// pid is rejected outright — nothing would ever drain it, so pushing would
-    /// only grow `pending`.
+    /// Ask the thread to watch `pid`. Idempotent while `pid` is watched; a watch
+    /// registered after its death is answered with an exit of its own, which a
+    /// binding re-armed on a dead pid waits for (`pid_watch`'s `note`). Once the
+    /// thread has died the pid is rejected outright — nothing would ever drain
+    /// it, so pushing would only grow `pending`.
     pub(crate) fn watch(&self, pid: i32) {
         if self.shared.closed.load(Ordering::SeqCst) {
             return;
@@ -744,6 +746,33 @@ mod tests {
             false
         }
 
+        /// A pid no process holds: on Windows dropping `child` closes its handle,
+        /// so OpenProcess fails with ERROR_INVALID_PARAMETER, a code its docs name
+        /// only for pid 0 (learn.microsoft.com, `OpenProcess`). A pid recycled
+        /// before the caller's `watch` would flake that caller.
+        fn dead_pid() -> i32 {
+            let mut child = sleeper();
+            let pid = child.id() as i32;
+            kill_and_reap(&mut child);
+            drop(child);
+            pid
+        }
+
+        /// Returns once every drain the watcher began before the call has
+        /// finished registering. A dead pid's exit is sent from the drain that
+        /// took it, so a second one, queued only after the first's exit
+        /// arrived, is taken by a later drain than anything queued before.
+        async fn settle(watch: &ExitWatch, rx: &mut tokio::sync::mpsc::UnboundedReceiver<i32>) {
+            for _ in 0..2 {
+                let dead = dead_pid();
+                watch.watch(dead);
+                assert!(
+                    wait_for_pid(rx, dead, LIVE_PID_DEADLINE).await,
+                    "a dead pid's watch is answered"
+                );
+            }
+        }
+
         async fn assert_no_pid_within(
             rx: &mut tokio::sync::mpsc::UnboundedReceiver<i32>,
             pid: i32,
@@ -776,17 +805,9 @@ mod tests {
             );
         }
 
-        /// Dropping `child` closes its handle, so on Windows the pid no longer
-        /// opens: OpenProcess documents ERROR_INVALID_PARAMETER only for pid 0,
-        /// and this pins the same code for a pid no process holds. A pid
-        /// recycle in the microseconds between would make this flake.
         #[tokio::test]
         async fn exit_watch_already_dead_pid_fires_immediately() {
-            let mut child = sleeper();
-            let pid = child.id() as i32;
-            kill_and_reap(&mut child);
-            drop(child);
-
+            let pid = dead_pid();
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let Some(watch) = ExitWatch::spawn(tx) else {
                 return;
@@ -808,6 +829,9 @@ mod tests {
             let pid = child.id() as i32;
             watch.watch(pid);
             watch.watch(pid);
+            // Both registered while it lives: a watch the drain takes only
+            // after the death is answered, by `watch`'s contract.
+            settle(&watch, &mut rx).await;
             kill_and_reap(&mut child);
             assert!(
                 wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
@@ -820,6 +844,29 @@ mod tests {
                 "double-watching a live pid must yield exactly ONE exit",
             )
             .await;
+        }
+
+        #[tokio::test]
+        async fn a_watch_registered_after_the_death_is_answered_again() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let Some(watch) = ExitWatch::spawn(tx) else {
+                return;
+            };
+            let mut child = sleeper();
+            let pid = child.id() as i32;
+            watch.watch(pid);
+            settle(&watch, &mut rx).await;
+            kill_and_reap(&mut child);
+            assert!(
+                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                "the death of a watched pid"
+            );
+            drop(child);
+            watch.watch(pid);
+            assert!(
+                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                "a watch after the death is answered"
+            );
         }
 
         /// A garbage pid may either synthesize an exit (ESRCH) or stay silent —
