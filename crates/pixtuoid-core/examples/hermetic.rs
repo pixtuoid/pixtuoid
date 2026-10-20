@@ -2758,6 +2758,28 @@ mod run {
         }
 
         #[test]
+        fn a_row_with_no_prompt_of_its_own_hands_the_recorder_the_default_one() {
+            let mut seen = 0;
+            for p in PROFILES {
+                for s in p.scenarios.iter().filter(|s| {
+                    s.turn.prompt.is_none()
+                        && matches!(s.surface, Surface::Headless)
+                        && p.invocation.contains(&Placeholder::Prompt.as_str())
+                }) {
+                    seen += 1;
+                    let first = strings(&plan_of(p, s).first_turn);
+                    assert!(
+                        first.iter().any(|w| w == DEFAULT_PROMPT),
+                        "{}/{}: {first:?}",
+                        p.source,
+                        s.name
+                    );
+                }
+            }
+            assert!(seen > 0, "no row leaves its prompt to the default");
+        }
+
+        #[test]
         fn a_bare_second_turn_hands_the_recorder_its_words_with_no_prompt() {
             let p = hermetic::profile("opencode").expect("opencode");
             let scenario = p.scenario("delete").expect("the row");
