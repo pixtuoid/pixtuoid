@@ -42,8 +42,9 @@ mod run {
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step, StepRecord, Surface,
-        TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER, WORKSPACE_SLASHED_PLACEHOLDER,
+        PROMPT_PLACEHOLDER, Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step,
+        StepRecord, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::tap::Endpoint;
@@ -2014,11 +2015,27 @@ mod run {
                 }
             }
         }
+        // A scenario's prompts expand here; the recorder expands only its own.
+        let prompted = |word: &str, prompt: &str| word.replace(PROMPT_PLACEHOLDER, prompt);
+        if let (Some(prompt), Some(resume)) = (scenario.turn.resume, p.resume) {
+            let words = resume[1..].iter().map(|w| prompted(w, prompt).into());
+            for word in run.launch.argv().into_iter().chain(words) {
+                args.extend([recorder_flag::RESUME.into(), word]);
+            }
+        }
         args.extend([p.source, scenario.name].map(OsString::from));
         match scenario.surface {
             Surface::Headless => {
                 args.extend(run.launch.argv());
-                args.extend(p.invocation[1..].iter().map(OsString::from));
+                args.extend(
+                    p.invocation[1..]
+                        .iter()
+                        .map(|w| match scenario.turn.prompt {
+                            Some(prompt) => prompted(w, prompt).into(),
+                            None => OsString::from(w),
+                        }),
+                );
+                args.extend(scenario.turn.args.iter().map(OsString::from));
             }
             Surface::Tui(tui) => {
                 args.push(run.driver.into());
@@ -2027,8 +2044,11 @@ mod run {
                         source: p.source.to_owned(),
                         scenario: scenario.name.to_owned(),
                         log: run.out.join(TUI_LOG),
-                        // The recorder expands it, as in a headless invocation.
-                        prompt: "{prompt}".to_owned(),
+                        prompt: scenario
+                            .turn
+                            .prompt
+                            .unwrap_or(PROMPT_PLACEHOLDER)
+                            .to_owned(),
                         program: run
                             .launch
                             .argv()
@@ -2294,10 +2314,19 @@ mod run {
                     .map(|s| s.name)
                     .collect()
             };
-            assert_eq!(names(true), ["tool-run", "subagent", "model-error"]);
+            assert_eq!(
+                names(true),
+                ["tool-run", "tool-error", "subagent", "model-error"]
+            );
             assert_eq!(
                 names(false),
-                ["tool-run", "subagent", "permission", "model-error"]
+                [
+                    "tool-run",
+                    "tool-error",
+                    "subagent",
+                    "permission",
+                    "model-error"
+                ]
             );
             assert!(not_run(&every, false).is_empty());
             let r = report(&Versions::Pinned, None, &[], &[], &not_run(&every, true));
@@ -2361,9 +2390,9 @@ mod run {
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
-            assert!(judges_leg(grok, &judged(3), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(3), false));
-            assert!(judges_leg(grok, &judged(4), false));
+            assert!(judges_leg(grok, &judged(4), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(4), false));
+            assert!(judges_leg(grok, &judged(5), false));
         }
 
         #[test]
@@ -2549,6 +2578,55 @@ mod run {
         }
 
         #[test]
+        fn a_resumed_scenario_hands_the_recorder_its_args_and_its_second_turn() {
+            let p = hermetic::profile("claude-code").expect("claude-code");
+            let scenario = p.scenario("ultra-effort").expect("the row");
+            let launch = Launch {
+                program: PathBuf::from("/cli/claude"),
+                args: Vec::new(),
+                env: Vec::new(),
+            };
+            let args = recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                },
+                p,
+                scenario,
+            );
+            let source = args.iter().position(|a| a == p.source).expect("the source");
+            let resumed: Vec<String> = args[..source]
+                .chunks(2)
+                .filter(|kv| kv[0] == recorder_flag::RESUME)
+                .map(|kv| kv[1].to_string_lossy().into_owned())
+                .collect();
+            let second = scenario.turn.resume.expect("a second turn");
+            let want: Vec<String> = std::iter::once("/cli/claude".to_owned())
+                .chain(
+                    p.resume.expect("claude-code resumes")[1..]
+                        .iter()
+                        .map(|w| w.replace(PROMPT_PLACEHOLDER, second)),
+                )
+                .collect();
+            assert_eq!(resumed, want);
+            assert!(resumed.iter().any(|w| w == hermetic::SESSION_PLACEHOLDER));
+            let prompt = scenario.turn.prompt.expect("its own prompt");
+            assert!(args[source..].iter().any(|a| a == prompt), "{args:?}");
+            assert!(!args.iter().any(|a| a == PROMPT_PLACEHOLDER), "{args:?}");
+            let first = &args[args.len() - scenario.turn.args.len()..];
+            assert_eq!(
+                first, scenario.turn.args,
+                "the first turn's args follow its invocation"
+            );
+        }
+
+        #[test]
         fn a_daemon_profile_hands_the_recorder_its_daemon_and_its_config_the_held_port() {
             let p = hermetic::profile("openclaw").expect("openclaw");
             let launch = Launch {
@@ -2627,7 +2705,7 @@ mod run {
             let line = tui::CommandLine::parse(&args[driver + 1..]).expect("a driver command line");
             assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, Path::new("/runs/x").join(TUI_LOG));
-            assert_eq!(line.prompt, "{prompt}");
+            assert_eq!(line.prompt, PROMPT_PLACEHOLDER);
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
@@ -3061,6 +3139,7 @@ mod run {
                 surface,
                 expects: &[],
                 fixture,
+                turn: hermetic::Turn::PROFILE,
             };
             let tui_first = [
                 scenario(tui.surface, "tui"),

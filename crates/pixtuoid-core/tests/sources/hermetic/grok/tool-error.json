@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "match": { "model": "grok-4.6", "systemMessage": "generating the session title" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "use_tool", "arguments": { "tool_name": "hermetic__probe", "tool_input": {} } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "toolResultContains": "Tool not found: hermetic__probe" },
+      "response": { "content": "pong" }
+    }
+  ]
+}
