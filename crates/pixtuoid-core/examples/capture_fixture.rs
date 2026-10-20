@@ -282,7 +282,12 @@ mod recorder {
             std::process::exit(2);
         }
         if let Some(run) = options.promote.as_deref() {
-            return promote(run, &sources_root(), &identity_needles(git_config));
+            return promote(
+                run,
+                &sources_root(),
+                &identity_needles(git_config),
+                &mut std::io::stderr(),
+            );
         }
         if args.len() < 3 {
             eprintln!(
@@ -471,7 +476,8 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let deidentified = deidentify(&source, &wrote, exempt)?;
+        let (deidentified, not_json) = deidentify(&source, &wrote, exempt)?;
+        report_not_json(&not_json);
         write_provenance(
             &dest,
             Recorded {
@@ -499,19 +505,18 @@ mod recorder {
         Ok(())
     }
 
+    /// What the strip did to `files`, and each it left whole as not JSON.
     fn deidentify(
         source: &str,
         files: &[PathBuf],
         exemption: Option<NonEmpty>,
-    ) -> std::io::Result<Deidentified> {
+    ) -> std::io::Result<(Deidentified, Vec<(PathBuf, String)>)> {
         Ok(match exemption {
-            Some(why) => Deidentified::Exempt { why },
+            Some(why) => (Deidentified::Exempt { why }, Vec::new()),
             None => {
                 let strip = reads::strip_unread(source, files)?;
-                report_not_json(&strip);
-                Deidentified::Stripped {
-                    blanked: strip.blanked,
-                }
+                let blanked = strip.blanked;
+                (Deidentified::Stripped { blanked }, strip.not_json)
             }
         })
     }
@@ -524,7 +529,12 @@ mod recorder {
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
     /// beside them: the old ones are git's. A run whose record equals theirs but
     /// for `captured`, and whose bytes match theirs up to ids, leaves both be.
-    fn promote(run: &Path, root: &Path, needles: &BTreeSet<String>) -> std::io::Result<()> {
+    fn promote(
+        run: &Path,
+        root: &Path,
+        needles: &BTreeSet<String>,
+        notices: &mut impl Write,
+    ) -> std::io::Result<()> {
         let manifest: Manifest =
             serde_json::from_str(&std::fs::read_to_string(run.join(MANIFEST))?)?;
         let named = format!("{}/{}", manifest.source, manifest.scenario);
@@ -552,7 +562,12 @@ mod recorder {
             None => Some(Dropped::of_files(&manifest.source, &fresh)?),
             Some(_) => None,
         };
-        let deidentified = deidentify(&manifest.source, &fresh, exempt)?;
+        let (deidentified, not_json) = deidentify(&manifest.source, &fresh, exempt)?;
+        // Named where the fixture keeps it: the staged copy is gone by then.
+        for (file, error) in &not_json {
+            let kept = dest.join(slashed_under(staged.path(), file)?);
+            let _ = writeln!(notices, "{}", not_json_notice(&kept, error));
+        }
         let script = slashed_under(
             Path::new(env!("CARGO_MANIFEST_DIR")),
             &scenario.script(&manifest.source),
@@ -1200,7 +1215,7 @@ mod recorder {
     /// The library strips and records; printing the outcome is the CLI's job.
     fn strip_corpus(root: &Path) -> std::io::Result<()> {
         reads::strip_corpus(root, |capture, strip| {
-            report_not_json(strip);
+            report_not_json(&strip.not_json);
             println!(
                 "{}: blanked {}",
                 capture
@@ -1213,8 +1228,8 @@ mod recorder {
         })
     }
 
-    fn report_not_json(strip: &reads::Strip) {
-        for (file, error) in &strip.not_json {
+    fn report_not_json(not_json: &[(PathBuf, String)]) {
+        for (file, error) in not_json {
             eprintln!("{}", not_json_notice(file, error));
         }
     }
@@ -1369,7 +1384,7 @@ mod recorder {
                 serde_json::json!({"origin": "recorded", "note": "the old record"}),
                 |_| {},
             );
-            promote(&p.run, &p.root, &needles()).expect("promote");
+            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
             assert!(
                 !p.dest.join("old").exists(),
                 "the old bytes leave whole, with the dir that held them"
@@ -1445,7 +1460,7 @@ mod recorder {
                 complete_record(serde_json::json!({"origin": "recorded"})).to_string(),
             )
             .expect("record");
-            promote(&run, &root, &needles()).expect("promote");
+            promote(&run, &root, &needles(), &mut std::io::sink()).expect("promote");
             let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
             let dropped = record.dropped().expect("a baseline");
             let json = serde_json::to_value(dropped).expect("json");
@@ -1459,12 +1474,29 @@ mod recorder {
         }
 
         #[test]
+        fn a_promoted_line_that_is_not_json_is_named_where_the_fixture_keeps_it() {
+            let p = promotable(serde_json::json!({"origin": "recorded"}), |_| {});
+            let raw = p.run.join(HOOK_PAYLOADS);
+            let mut text = std::fs::read_to_string(&raw).expect("raw");
+            text.push_str("not json\n");
+            std::fs::write(&raw, text).expect("write");
+            let mut notices = Vec::new();
+            promote(&p.run, &p.root, &needles(), &mut notices).expect("promote");
+            let notices = String::from_utf8(notices).expect("text");
+            let named = format!("not stripping {}:", p.dest.join(HOOK_PAYLOADS).display());
+            assert!(
+                matches!(&notices.lines().collect::<Vec<_>>()[..], [n] if n.starts_with(&named)),
+                "{notices}"
+            );
+        }
+
+        #[test]
         fn a_promoted_run_carrying_the_operator_is_refused() {
             let p = promotable(serde_json::json!({"origin": "recorded"}), |lines| {
                 lines[0]["cwd"] = format!("/Users/{OPERATOR}/proj").into();
             });
             assert!(
-                promote(&p.run, &p.root, &needles()).is_err(),
+                promote(&p.run, &p.root, &needles(), &mut std::io::sink()).is_err(),
                 "the operator's name is refused"
             );
         }
@@ -1479,7 +1511,7 @@ mod recorder {
                 }),
                 |_| {},
             );
-            promote(&p.run, &p.root, &needles()).expect("promote");
+            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
             let (bytes, record) = written(&p.dest);
             assert!(
                 bytes.contains("unread"),
@@ -1545,15 +1577,13 @@ mod recorder {
                 .replace("\"_shim_ts_ms\":1", "\"_shim_ts_ms\":2")
         }
 
-        /// dsh's committed `scenario`, `committed`-edited, under the record its
-        /// run writes, then `record`-edited, and a run of it whose bytes are
-        /// those with every id renamed, then `run`-edited, under the dsh and
-        /// aimock versions given.
+        /// dsh's committed `scenario`, under the record its run writes, then
+        /// `record`-edited, and a run of it whose bytes are those with every id
+        /// renamed, then `run`-edited, under the dsh and aimock versions given.
         fn rerun(
             scenario: &str,
             versions: (&str, &str),
             record: impl FnOnce(&mut serde_json::Value),
-            committed: impl Fn(String) -> String,
             run: impl Fn(String) -> String,
         ) -> Promotable {
             let d = tempfile::tempdir().expect("tempdir");
@@ -1566,7 +1596,7 @@ mod recorder {
                 let rel = from
                     .strip_prefix(sources_root().join(s.fixture))
                     .expect("under");
-                let text = committed(std::fs::read_to_string(&from).expect("read"));
+                let text = std::fs::read_to_string(&from).expect("read");
                 for (to, text) in [
                     (dest.join(rel), text.clone()),
                     (run_dir.join(rel), run(renamed(&text))),
@@ -1629,7 +1659,7 @@ mod recorder {
         /// Promotes `p`, and says whether the fixture came through untouched.
         fn kept(p: &Promotable) -> bool {
             let before = snapshot(&p.dest);
-            promote(&p.run, &p.root, &needles()).expect("promote");
+            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
             let after = snapshot(&p.dest);
             if after != before {
                 let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
@@ -1648,13 +1678,7 @@ mod recorder {
 
         #[test]
         fn a_re_record_that_renamed_only_ids_keeps_the_fixture_whole() {
-            let p = rerun(
-                "tool-run",
-                (DSH_VERSION, AIMOCK),
-                |_| {},
-                unchanged,
-                unchanged,
-            );
+            let p = rerun("tool-run", (DSH_VERSION, AIMOCK), |_| {}, unchanged);
             assert!(kept(&p), "only ids differ");
         }
 
@@ -1664,7 +1688,6 @@ mod recorder {
                 "subagent",
                 (DSH_VERSION, AIMOCK),
                 |_| {},
-                unchanged,
                 |text| {
                     let parent = text
                         .lines()
@@ -1687,25 +1710,13 @@ mod recorder {
 
         #[test]
         fn a_re_record_under_another_cli_version_is_rewritten() {
-            let p = rerun(
-                "tool-run",
-                ("0.2.0-rc.3", AIMOCK),
-                |_| {},
-                unchanged,
-                unchanged,
-            );
+            let p = rerun("tool-run", ("0.2.0-rc.3", AIMOCK), |_| {}, unchanged);
             assert!(!kept(&p));
         }
 
         #[test]
         fn a_re_record_under_another_aimock_is_rewritten() {
-            let p = rerun(
-                "tool-run",
-                (DSH_VERSION, "1.46.0"),
-                |_| {},
-                unchanged,
-                unchanged,
-            );
+            let p = rerun("tool-run", (DSH_VERSION, "1.46.0"), |_| {}, unchanged);
             assert!(!kept(&p));
         }
 
@@ -1715,7 +1726,6 @@ mod recorder {
                 "tool-run",
                 (DSH_VERSION, AIMOCK),
                 |r| r["script"] = "tests/sources/hermetic/dsh/moved.json".into(),
-                unchanged,
                 unchanged,
             );
             assert!(!kept(&p), "a kept record would name a script that is gone");
@@ -1733,7 +1743,6 @@ mod recorder {
                             r.as_object_mut().expect("an object").remove("dropped");
                         }
                     },
-                    unchanged,
                     unchanged,
                 );
                 assert!(!kept(&p), "{committed:?}: the bytes go with their baseline");

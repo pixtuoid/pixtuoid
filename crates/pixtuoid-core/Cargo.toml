@@ -58,7 +58,7 @@ harness = [
     "dep:sha2",
     # The literal census parses the decoders (`hermetic::literals`).
     "dep:syn",
-    # A re-record's capture is read up to the ids its CLI mints
+    # A re-record's capture is read up to the ids its run mints
     # (`harness::captures::canonical_capture`).
     "dep:regex",
 ]

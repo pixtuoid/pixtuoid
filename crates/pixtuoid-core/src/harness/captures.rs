@@ -340,7 +340,7 @@ const ID_FAMILIES: &[IdFamily] = &[
         renamed: &[("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R")],
     },
     // Not the wire names that hold it (`call_id`, `function_call_output`): a
-    // minted id starts a word and runs 16 past its prefix.
+    // minted id starts a word, and its tail outruns every wire name's.
     IdFamily {
         name: "openai-tool-call",
         pattern: r"\bcall_[0-9A-Za-z_-]{16,}",
