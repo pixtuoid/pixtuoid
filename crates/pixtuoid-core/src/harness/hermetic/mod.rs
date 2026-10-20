@@ -981,7 +981,7 @@ trust_level = "trusted"
         source: "opencode",
         package: Package::Npm("@opencode/cli"),
         // On the daemon, whose plugin forwards its session's delete
-        // (`packages/core/src/session.ts:367-377` at v2.0.32): a delete through
+        // (`packages/core/src/session.ts:378-388` at v2.1.0): a delete through
         // a private server of its own forwards none. Only an explicit `--model`
         // reaches the session's events (`packages/cli/src/run/run.ts:91`).
         invocation: &[
@@ -994,7 +994,7 @@ trust_level = "trusted"
             PROMPT_PLACEHOLDER,
         ],
         // `session delete` (`packages/cli/src/commands/commands.ts:437-443` at
-        // v2.0.32).
+        // v2.1.0).
         resume: Some(&[
             "opencode",
             "session",
@@ -1011,7 +1011,7 @@ trust_level = "trusted"
             // The daemon's password, which each `--server` command sends and the
             // daemon keeps from its tools' env
             // (`packages/cli/src/services/server-connection.ts:24-29`,
-            // `packages/cli/src/server-process.ts:82-85` at v2.0.32).
+            // `packages/cli/src/server-process.ts:86-89` at v2.1.0).
             ("OPENCODE_PASSWORD", "{key}"),
         ],
         // On Windows its system config is under `env.ProgramData`
@@ -1141,7 +1141,7 @@ trust_level = "trusted"
         result_unseen: false,
         live: None,
         // A server on the run's port whose stdin is its lease
-        // (`packages/cli/src/server-process.ts:204-208`, `:227-240` at v2.0.32);
+        // (`packages/cli/src/server-process.ts:208-212`, `:231-244` at v2.1.0);
         // listing the sessions loads the workspace, and with it the plugin,
         // before the turn.
         daemon: Some(Daemon {
