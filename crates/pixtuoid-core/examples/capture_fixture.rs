@@ -66,9 +66,106 @@ mod recorder {
             })
     }
 
+    /// Where a failed sandboxed run's scratch is copied inside its run dir, which
+    /// the CI upload carries off the runner.
+    const SCRATCH_COPY: &str = "scratch";
+
+    /// The most a failed run's copied scratch adds to the run dir: it rides an
+    /// upload kept for days, beside everything else the run left.
+    const SCRATCH_CAP_BYTES: u64 = 8 * 1024 * 1024;
+
+    /// Where `plan`'s failed run copies its scratch, if it may: only a sandboxed
+    /// raw capture, whose files hold nothing of the operator's. An operator's
+    /// billed capture may hold real credentials in its driver's logs.
+    fn scratch_destination(plan: &CapturePlan) -> Option<PathBuf> {
+        match &plan.sink {
+            Sink::Raw { out, .. } if plan.sandboxed() => Some(out.as_path().join(SCRATCH_COPY)),
+            _ => None,
+        }
+    }
+
+    /// Copy the files of `from` into `into`, in path order, up to `cap` bytes;
+    /// the notices name each file left out and where the cap stopped it. A file
+    /// that is not text, or that embeds the operator's identity, is left out:
+    /// the run dir is uploaded, so nothing there may be one nobody checked.
+    fn copy_scratch(
+        from: &Path,
+        into: &Path,
+        needles: &BTreeSet<String>,
+        cap: u64,
+    ) -> std::io::Result<Vec<String>> {
+        let mut notices = Vec::new();
+        let mut files = files_under(from);
+        files.sort();
+        let mut copied = 0u64;
+        for file in files {
+            let rel = file.strip_prefix(from).unwrap_or(&file).to_path_buf();
+            let len = std::fs::metadata(&file)?.len();
+            if copied + len > cap {
+                notices.push(format!(
+                    "scratch copy stopped at its {cap}-byte cap before {}",
+                    rel.display()
+                ));
+                break;
+            }
+            let Ok(body) = std::fs::read_to_string(&file) else {
+                notices.push(format!("scratch file {} left out: not text", rel.display()));
+                continue;
+            };
+            if !pii_hits(&body, needles).is_empty() {
+                notices.push(format!(
+                    "scratch file {} left out: it embeds the recorder's identity",
+                    rel.display()
+                ));
+                continue;
+            }
+            let dest = into.join(&rel);
+            if let Some(dir) = dest.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&dest, body)?;
+            copied += len;
+        }
+        Ok(notices)
+    }
+
+    /// Every file under `dir`, recursively.
+    fn files_under(dir: &Path) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(d) = pending.pop() {
+            for path in std::fs::read_dir(d)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+            {
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+        files
+    }
+
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
-    /// driver left anything in [`driver_dir`].
-    fn keep_scratch(scratch: tempfile::TempDir) {
+    /// driver left anything in [`driver_dir`]; and copy that into `run_copy`,
+    /// where a sandboxed run's upload finds it.
+    fn keep_scratch(scratch: tempfile::TempDir, run_copy: Option<&Path>) {
+        if let Some(into) = run_copy {
+            let notices = copy_scratch(
+                &driver_dir(scratch.path()),
+                into,
+                &identity_needles(git_config),
+                SCRATCH_CAP_BYTES,
+            );
+            match notices {
+                Ok(notices) => notices.iter().for_each(|n| eprintln!("{n}")),
+                Err(e) => eprintln!("the scratch copy failed: {e}"),
+            }
+        }
         let left =
             std::fs::read_dir(driver_dir(scratch.path())).is_ok_and(|mut d| d.next().is_some());
         if left {
@@ -181,6 +278,7 @@ mod recorder {
         }
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
+        let run_copy = scratch_destination(plan);
         let env: Vec<(String, String)> = plan.cli_env.clone().into_iter().collect();
         let daemon_cmd = plan.daemon.as_ref().map(DaemonCmd::from);
 
@@ -242,7 +340,7 @@ mod recorder {
         ) {
             Ok(daemon) => daemon,
             Err(e) => {
-                keep_scratch(sandbox);
+                keep_scratch(sandbox, run_copy.as_deref());
                 return Err(e);
             }
         };
@@ -287,7 +385,7 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
-                keep_scratch(sandbox);
+                keep_scratch(sandbox, run_copy.as_deref());
                 return Err(e);
             }
             kept => kept,
@@ -335,7 +433,7 @@ mod recorder {
                 || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
-                keep_scratch(sandbox);
+                keep_scratch(sandbox, run_copy.as_deref());
             }
             return incomplete.map_or(Ok(()), Err);
         };
@@ -345,7 +443,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox);
+            keep_scratch(sandbox, run_copy.as_deref());
             std::process::exit(1);
         }
 
@@ -371,7 +469,7 @@ mod recorder {
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
-            keep_scratch(sandbox);
+            keep_scratch(sandbox, run_copy.as_deref());
         }
         pii?;
         println!("next: just test conformance   then   cargo insta review");
@@ -2556,7 +2654,7 @@ mod recorder {
             let bare = tempfile::tempdir().expect("scratch");
             top_level(bare.path());
             let at = bare.path().to_path_buf();
-            keep_scratch(bare);
+            keep_scratch(bare, None);
             assert!(!at.exists(), "top-level entries alone go");
 
             let used = tempfile::tempdir().expect("scratch");
@@ -2564,9 +2662,125 @@ mod recorder {
             let log = driver_dir(used.path()).join("openclaw-agent.log");
             std::fs::write(&log, "refused").expect("log");
             let at = used.path().to_path_buf();
-            keep_scratch(used);
+            keep_scratch(used, None);
             assert!(log.is_file(), "a driver's log stays");
             std::fs::remove_dir_all(&at).expect("cleanup");
+        }
+
+        fn scratch_with(files: &[(&str, &[u8])]) -> tempfile::TempDir {
+            let d = tempfile::tempdir().expect("scratch");
+            for (name, body) in files {
+                let path = driver_dir(d.path()).join(name);
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+                std::fs::write(path, body).expect("write");
+            }
+            d
+        }
+
+        fn no_needles() -> BTreeSet<String> {
+            BTreeSet::new()
+        }
+
+        #[test]
+        fn only_a_sandboxed_capture_copies_its_scratch_into_its_run_dir() {
+            let out = std::env::temp_dir().join("run");
+            let line = |w: &[&str]| {
+                let args: Vec<String> = w.iter().map(|s| (*s).to_owned()).collect();
+                match Invocation::parse_process(&args).expect("a line") {
+                    Invocation::Capture(plan) => *plan,
+                    other => panic!("not a capture: {other:?}"),
+                }
+            };
+            let out_arg = out.display().to_string();
+            let mut raw = line(&["--out", &out_arg, "kimi", "tool-run", "kimi"]);
+            assert_eq!(
+                scratch_destination(&raw),
+                None,
+                "an operator's billed capture may hold credentials"
+            );
+            assert_eq!(
+                scratch_destination(&line(&["kimi", "tool-run", "kimi"])),
+                None
+            );
+            raw.within = Some(
+                pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir())
+                    .expect("absolute"),
+            );
+            assert_eq!(
+                scratch_destination(&raw),
+                Some(std::path::absolute(&out).expect("abs").join(SCRATCH_COPY))
+            );
+        }
+
+        #[test]
+        fn a_scratch_copy_keeps_the_drivers_layout() {
+            let from = scratch_with(&[("daemon.log", b"up"), ("homes/a/b.log", b"deep")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let notices = copy_scratch(
+                &driver_dir(from.path()),
+                into.path(),
+                &no_needles(),
+                SCRATCH_CAP_BYTES,
+            )
+            .expect("copy");
+            assert!(notices.is_empty(), "{notices:?}");
+            assert_eq!(
+                std::fs::read_to_string(into.path().join("homes/a/b.log")).expect("deep"),
+                "deep"
+            );
+            assert!(into.path().join("daemon.log").is_file());
+        }
+
+        #[test]
+        fn a_scratch_file_with_the_operators_identity_or_no_text_is_left_out_and_named() {
+            let from = scratch_with(&[
+                ("clean.log", b"fine"),
+                ("leak.log", b"home is /Users/ada-lovelace/x"),
+                ("blob.bin", &[0xff, 0xfe, 0x00]),
+            ]);
+            let into = tempfile::tempdir().expect("run dir");
+            let needles = BTreeSet::from(["ada-lovelace".to_owned()]);
+            let notices = copy_scratch(
+                &driver_dir(from.path()),
+                into.path(),
+                &needles,
+                SCRATCH_CAP_BYTES,
+            )
+            .expect("copy");
+            assert!(into.path().join("clean.log").is_file());
+            assert!(!into.path().join("leak.log").exists());
+            assert!(!into.path().join("blob.bin").exists());
+            assert!(
+                notices
+                    .iter()
+                    .any(|n| n.contains("leak.log") && n.contains("identity"))
+            );
+            assert!(
+                notices
+                    .iter()
+                    .any(|n| n.contains("blob.bin") && n.contains("not text"))
+            );
+            assert!(
+                !notices.iter().any(|n| n.contains("ada-lovelace")),
+                "a notice must not repeat the identity it kept out"
+            );
+        }
+
+        #[test]
+        fn a_scratch_copy_stops_at_its_cap_and_says_so() {
+            let from = scratch_with(&[("a.log", b"1234"), ("b.log", b"5678"), ("c.log", b"90")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let notices = copy_scratch(&driver_dir(from.path()), into.path(), &no_needles(), 6)
+                .expect("copy");
+            assert!(into.path().join("a.log").is_file());
+            assert!(!into.path().join("b.log").exists(), "past the cap");
+            assert!(!into.path().join("c.log").exists(), "it stops, not skips");
+            assert!(
+                notices
+                    .iter()
+                    .any(|n| n.contains("cap") && n.contains("b.log")),
+                "{notices:?}"
+            );
         }
 
         /// The recorder's env names cross into every driver, each a copy a rename

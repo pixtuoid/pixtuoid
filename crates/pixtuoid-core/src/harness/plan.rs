@@ -309,6 +309,13 @@ pub struct CapturePlan {
 }
 
 impl CapturePlan {
+    /// Whether this capture runs inside a sandbox the caller built around every
+    /// home, so nothing it writes can hold the operator's own credentials: the
+    /// hermetic tier's, never an operator's billed one.
+    pub fn sandboxed(&self) -> bool {
+        self.within.is_some()
+    }
+
     /// The second turn, for a raw capture that has one.
     pub fn second_turn(&self) -> Option<&Argv<Word>> {
         match &self.sink {
