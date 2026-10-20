@@ -1,31 +1,19 @@
 //! The baseline a New finding is judged against: at each discriminator of a
-//! source's transcript, the values its decoders dropped. A hermetic recording writes it
-//! into its scenario's provenance
-//! ([`Recorded::dropped`](crate::harness::provenance::Recorded::dropped)); a run that drops a
+//! source's transcript, the values its decoders dropped. A hermetic recording
+//! writes it into its scenario's provenance ([`Dropped`]); a run that drops a
 //! value there its recording did not is New, a type the CLI added that no
 //! decoder reads.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Scenario, literals};
+use crate::harness::PROVENANCE;
 use crate::harness::captures::json_lines;
-use crate::harness::provenance::Provenance;
+use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
-
-/// What a recording's decoders dropped, by discriminator.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Dropped {
-    /// The OS it was recorded on.
-    pub(crate) os: String,
-    /// Each discriminator, a pointer (`*` for an array index) where the strip
-    /// kept a non-blank string a decoder of the source names, with the values
-    /// the strip blanked at it.
-    pub(crate) at: BTreeMap<String, BTreeSet<String>>,
-}
 
 /// One transcript's lines, raw and as the strip keeps them.
 pub(crate) type Pair = (Vec<Value>, Vec<Value>);
@@ -111,10 +99,10 @@ pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
 }
 
 fn baseline_at(fixture: &str) -> std::io::Result<Option<Dropped>> {
-    Ok(
-        Provenance::read_if_any(&crate::harness::sources_root().join(fixture))?
-            .and_then(|p| p.recorded().and_then(|r| r.dropped.clone())),
-    )
+    let path = crate::harness::sources_root()
+        .join(fixture)
+        .join(PROVENANCE);
+    Ok(Provenance::read_if_any(&path)?.and_then(|p| p.dropped().cloned()))
 }
 
 /// Each `(pointer, value)` a raw line holds at one of `at`'s pointers that its

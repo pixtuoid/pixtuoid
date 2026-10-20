@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::dropped::{self, Dropped, Unjudged};
+use super::dropped::{self, Unjudged};
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
     Surface, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
-use crate::harness::provenance::Provenance;
+use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
@@ -488,7 +488,7 @@ pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
         if capture.source != p.source {
             continue;
         }
-        if !Provenance::read(&capture.dir)?.strips() {
+        if !Provenance::read(&capture.provenance())?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {

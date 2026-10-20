@@ -128,7 +128,7 @@ fn sibling_of(file: &Path) -> PathBuf {
 /// If a provenance or capture file cannot be read, parsed or rewritten.
 pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> std::io::Result<()> {
     for capture in captures(root) {
-        let mut record = Provenance::read(&capture.dir)?;
+        let mut record = Provenance::read(&capture.provenance())?;
         if !record.strips() {
             continue;
         }
@@ -147,7 +147,7 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
             r.deidentified = Some(Deidentified::Stripped {
                 blanked: earlier + strip.blanked,
             });
-            record.write_to(&capture.dir.join(crate::harness::PROVENANCE))?;
+            record.write_to(&capture.provenance())?;
         }
         report(&capture, &strip);
     }
@@ -604,7 +604,7 @@ mod tests {
             let before = scenario_events(source, &files);
             let strip = strip_unread(source, &files).expect("strip");
             assert_eq!(scenario_events(source, &files), before, "{label}");
-            let recorded = Provenance::read_if_any(scenario)
+            let recorded = Provenance::read_if_any(&scenario.join(crate::harness::PROVENANCE))
                 .expect("a committed record parses")
                 .is_some_and(|record| record.strips());
             assert!(

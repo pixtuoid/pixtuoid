@@ -19,7 +19,9 @@ mod recorder {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
 
-    use pixtuoid_core::harness::provenance::{Deidentified, Provenance, Recorded};
+    use pixtuoid_core::harness::provenance::{
+        Deidentified, Dropped, NonEmpty, Provenance, Recorded,
+    };
     use pixtuoid_core::harness::reads;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
@@ -33,7 +35,6 @@ mod recorder {
     const PROMPT_ENV: &str = "CAPTURE_PROMPT";
     const SEED_ENV: &str = "CAPTURE_SEED";
 
-    use pixtuoid_core::harness::hermetic::dropped::Dropped;
     use pixtuoid_core::harness::hermetic::{
         self, MANIFEST, Manifest, PROMPT_PLACEHOLDER, SESSION_PLACEHOLDER,
     };
@@ -297,11 +298,14 @@ mod recorder {
         }
         let (source, scenario) = (args[0].clone(), args[1].clone());
         // Set-but-empty is unset: `CAPTURE_PROMPT=` would otherwise expand
-        // `{prompt}` to nothing and record `"prompt": ""` as if it were a choice.
-        let prompt = nonempty_env(PROMPT_ENV).unwrap_or_else(|| DEFAULT_PROMPT.to_string());
+        // `{prompt}` to nothing.
+        let chosen_prompt = nonempty_env(PROMPT_ENV);
+        let prompt = chosen_prompt
+            .as_ref()
+            .map_or(DEFAULT_PROMPT, NonEmpty::as_str);
         let cmd: Vec<String> = args[2..]
             .iter()
-            .map(|a| a.replace(PROMPT_PLACEHOLDER, &prompt))
+            .map(|a| a.replace(PROMPT_PLACEHOLDER, prompt))
             .collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -323,6 +327,8 @@ mod recorder {
             eprintln!("{why}");
             std::process::exit(2);
         }
+        // Before the billed turn: a record that does not parse fails here.
+        let exempt = exemption(&dest)?;
 
         let ws = match options.workspace.clone() {
             Some(ws) => ws,
@@ -464,13 +470,13 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let deidentified = deidentify(&source, &wrote, exemption(&dest)?)?;
+        let deidentified = deidentify(&source, &wrote, exempt)?;
         write_provenance(
             &dest,
             Recorded {
-                prompt: nonempty_env(PROMPT_ENV),
+                prompt: chosen_prompt,
                 seed: nonempty_env(SEED_ENV),
-                ..record(&cli, &version, &args[2..], deidentified.clone())
+                ..record(&cli, &version, &args[2..], deidentified.clone())?
             },
         )?;
         for p in &wrote {
@@ -495,7 +501,7 @@ mod recorder {
     fn deidentify(
         source: &str,
         files: &[PathBuf],
-        exemption: Option<String>,
+        exemption: Option<NonEmpty>,
     ) -> std::io::Result<Deidentified> {
         Ok(match exemption {
             Some(why) => Deidentified::Exempt { why },
@@ -510,8 +516,8 @@ mod recorder {
     }
 
     /// The exemption the record in `dest` declares, if it holds one.
-    fn exemption(dest: &Path) -> std::io::Result<Option<String>> {
-        Ok(Provenance::read_if_any(dest)?.and_then(|p| p.exemption().map(str::to_owned)))
+    fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
+        Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
     }
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
@@ -569,15 +575,15 @@ mod recorder {
         write_provenance(
             &dest,
             Recorded {
-                aimock: Some(manifest.aimock.clone()),
-                script: Some(script),
+                aimock: Some(filled("aimock", &manifest.aimock)?),
+                script: Some(filled("script", &script)?),
                 dropped,
                 ..record(
                     &manifest.capture.cli,
                     &manifest.capture.version,
                     &command,
                     deidentified,
-                )
+                )?
             },
         )?;
         refuse_on_pii(&wrote, needles)?;
@@ -990,12 +996,17 @@ mod recorder {
 
     /// A recording's record: `command` is the unexpanded argv, so an
     /// override-driven scenario records a `{prompt}` placeholder.
-    fn record(cli: &str, version: &str, raw: &[String], deidentified: Deidentified) -> Recorded {
-        Recorded {
-            cli: cli.to_owned(),
-            version: version.to_owned(),
-            captured: today(),
-            command: raw.join(" "),
+    fn record(
+        cli: &str,
+        version: &str,
+        raw: &[String],
+        deidentified: Deidentified,
+    ) -> std::io::Result<Recorded> {
+        Ok(Recorded {
+            cli: filled("cli", cli)?,
+            version: filled("version", version)?,
+            captured: filled("captured", &today())?,
+            command: filled("command", &raw.join(" "))?,
             note: None,
             deidentified: Some(deidentified),
             prompt: None,
@@ -1003,12 +1014,17 @@ mod recorder {
             aimock: None,
             script: None,
             dropped: None,
-        }
+        })
+    }
+
+    /// `value`, refused where it is blank: the record would not parse.
+    fn filled(key: &str, value: &str) -> std::io::Result<NonEmpty> {
+        NonEmpty::try_from(value).map_err(|e| std::io::Error::other(format!("{key}: {e}")))
     }
 
     fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
         let out = no_clobber(dest.join(PROVENANCE));
-        let unknown = record.version == "unknown";
+        let unknown = record.version.as_str() == "unknown";
         let cli = record.cli.clone();
         Provenance::Recorded(Box::new(record)).write_to(&out)?;
         // Loud, because the record just written is unusable.
@@ -1023,8 +1039,8 @@ mod recorder {
         Ok(())
     }
 
-    fn nonempty_env(key: &str) -> Option<String> {
-        pixtuoid_core::platform::text_env(key).filter(|s| !s.trim().is_empty())
+    fn nonempty_env(key: &str) -> Option<NonEmpty> {
+        pixtuoid_core::platform::text_env(key).and_then(|s| NonEmpty::try_from(s).ok())
     }
 
     fn today() -> String {
@@ -1318,7 +1334,7 @@ mod recorder {
 
         fn written(dest: &Path) -> (String, Recorded) {
             let bytes = std::fs::read_to_string(dest.join(HOOK_PAYLOADS)).expect("bytes");
-            let record = Provenance::read(dest).expect("record");
+            let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
             (bytes, record.recorded().expect("a recording").clone())
         }
 
@@ -1339,12 +1355,12 @@ mod recorder {
                 matches!(record.deidentified, Some(Deidentified::Stripped { blanked }) if blanked > 0),
                 "{record:?}"
             );
-            assert_eq!(record.aimock.as_deref(), Some("1.43.0"));
+            assert_eq!(record.aimock.as_ref().map(NonEmpty::as_str), Some("1.43.0"));
             assert_eq!(
-                record.script.as_deref(),
+                record.script.as_ref().map(NonEmpty::as_str),
                 Some("tests/sources/hermetic/dsh/tool-run.json")
             );
-            assert_eq!(record.version, "0.2.0-rc.2");
+            assert_eq!(record.version.as_str(), "0.2.0-rc.2");
             assert_eq!(
                 record.note, None,
                 "the record is the run's, not the old one"
@@ -1405,12 +1421,9 @@ mod recorder {
             )
             .expect("record");
             promote(&run, &root, &needles()).expect("promote");
-            let record = Provenance::read(&dest).expect("record");
-            let dropped = record
-                .recorded()
-                .and_then(|r| r.dropped.clone())
-                .expect("a baseline");
-            let json = serde_json::to_value(&dropped).expect("json");
+            let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
+            let dropped = record.dropped().expect("a baseline");
+            let json = serde_json::to_value(dropped).expect("json");
             assert_eq!(json["os"], std::env::consts::OS, "{json}");
             assert!(
                 json["at"]["/type"]
@@ -1449,7 +1462,9 @@ mod recorder {
             );
             assert_eq!(
                 record.deidentified,
-                Some(Deidentified::Exempt { why: why.into() })
+                Some(Deidentified::Exempt {
+                    why: why.try_into().expect("a reason")
+                })
             );
             assert_eq!(
                 record.dropped, None,
@@ -1933,7 +1948,8 @@ mod recorder {
             let bare = tempfile::tempdir().expect("tempdir");
             write_provenance(
                 bare.path(),
-                record("true", "1.0", &argv, Deidentified::Stripped { blanked: 0 }),
+                record("true", "1.0", &argv, Deidentified::Stripped { blanked: 0 })
+                    .expect("filled"),
             )
             .expect("write");
             assert!(read(bare.path()).get("prompt").is_none());
@@ -1942,8 +1958,9 @@ mod recorder {
             write_provenance(
                 set.path(),
                 Recorded {
-                    prompt: Some("read NOTE.txt".into()),
+                    prompt: Some("read NOTE.txt".try_into().expect("a prompt")),
                     ..record("true", "1.0", &argv, Deidentified::Stripped { blanked: 0 })
+                        .expect("filled")
                 },
             )
             .expect("write");

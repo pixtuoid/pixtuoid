@@ -2371,8 +2371,10 @@ mod tests {
         for p in PROFILES {
             for s in p.scenarios {
                 assert!(fixtures.insert(s.fixture), "{} recorded twice", s.fixture);
-                let prov = Provenance::read(&crate::harness::sources_root().join(s.fixture))
-                    .unwrap_or_else(|e| panic!("{}: {e}", p.source));
+                let path = crate::harness::sources_root()
+                    .join(s.fixture)
+                    .join(crate::harness::PROVENANCE);
+                let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
                     prov.recorded().is_some_and(|r| r.aimock.is_some()),
                     "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",

@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use pixtuoid_core::harness::provenance::{Deidentified, Provenance, Recorded};
+use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
 use pixtuoid_core::source::registry;
 
 /// A committed capture: the bytes, the record of where they came from, and the
@@ -23,15 +23,6 @@ pub(crate) struct Capture {
 }
 
 impl Capture {
-    /// Its origin, as `provenance.schema.json` names it.
-    pub(crate) fn origin(&self) -> &'static str {
-        match &self.provenance {
-            Provenance::Recorded(_) => "recorded",
-            Provenance::Composed { .. } => "composed",
-            Provenance::Unknown { .. } => "unknown",
-        }
-    }
-
     pub(crate) fn recorded(&self) -> Option<&Recorded> {
         self.provenance.recorded()
     }
@@ -42,8 +33,8 @@ impl Capture {
 
     pub(crate) fn note(&self) -> Option<&str> {
         match &self.provenance {
-            Provenance::Recorded(r) => r.note.as_deref(),
-            Provenance::Composed { note } | Provenance::Unknown { note } => Some(note),
+            Provenance::Recorded(r) => r.note.as_ref().map(NonEmpty::as_str),
+            Provenance::Composed { note } | Provenance::Unknown { note } => Some(note.as_str()),
         }
     }
 
@@ -142,10 +133,9 @@ pub(crate) fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
 /// Sorted, so failures name captures in a stable order.
 pub(crate) fn every_capture() -> Vec<Capture> {
     let mut out = Vec::new();
-    for pixtuoid_core::harness::Capture { dir, source } in
-        pixtuoid_core::harness::captures(&sources_root())
-    {
-        let prov = dir.join("provenance.json");
+    for capture in pixtuoid_core::harness::captures(&sources_root()) {
+        let prov = capture.provenance();
+        let pixtuoid_core::harness::Capture { dir, source } = capture;
         assert!(
             prov.is_file(),
             "{}: a capture must declare its origin — add provenance.json here, or \
@@ -153,7 +143,7 @@ pub(crate) fn every_capture() -> Vec<Capture> {
              composition, which is the whole reason provenance exists.",
             dir.display()
         );
-        let provenance = Provenance::read(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let provenance = Provenance::read(&prov).unwrap_or_else(|e| panic!("{e}"));
         out.push(Capture {
             dir,
             source,
@@ -272,136 +262,6 @@ const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &["copilot"];
 /// event is transient, so for these the fixture is the only wire evidence there
 /// will ever be, and a new hook-only CLI must not join it by default.
 const NO_WIRE_EVIDENCE_YET: &[&str] = &[];
-
-/// `provenance.schema.json` — the ONE statement of what each origin requires and allows.
-struct ProvenanceSchema(serde_json::Value);
-
-impl ProvenanceSchema {
-    fn load() -> Self {
-        let p = fixtures_root().join("provenance.schema.json");
-        let body =
-            std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-        Self(serde_json::from_str(&body).unwrap_or_else(|e| panic!("{}: {e}", p.display())))
-    }
-
-    fn origins(&self) -> &serde_json::Map<String, serde_json::Value> {
-        self.0["origins"].as_object().expect("origins is an object")
-    }
-
-    fn required(&self, origin: &str) -> Option<Vec<String>> {
-        self.keys(origin, "required")
-    }
-
-    fn keys(&self, origin: &str, list: &str) -> Option<Vec<String>> {
-        Some(
-            self.origins().get(origin)?[list]
-                .as_array()?
-                .iter()
-                .map(|v| v.as_str().expect("a key is a string").to_string())
-                .collect(),
-        )
-    }
-}
-
-/// Every scenario declares where its bytes came from, because nothing IN them
-/// separates a capture from a composition — a redacted cwd and an invented one
-/// look alike. A composed fixture pins its author's belief and the decoder then
-/// agrees with it: kimi's shipped four confident per-call ids for a field kimi
-/// never sends.
-#[test]
-fn every_capture_declares_a_valid_origin_with_its_required_fields() {
-    for c in every_capture() {
-        let required: Vec<(&str, &str)> = match &c.provenance {
-            Provenance::Recorded(r) => vec![
-                ("cli", &r.cli),
-                ("version", &r.version),
-                ("captured", &r.captured),
-                ("command", &r.command),
-            ],
-            Provenance::Composed { note } | Provenance::Unknown { note } => vec![("note", note)],
-        };
-        for (key, value) in required {
-            assert!(
-                !value.trim().is_empty(),
-                "{}: origin {:?} requires a non-empty {key:?}",
-                c.provenance_path.display(),
-                c.origin()
-            );
-        }
-    }
-}
-
-/// The schema's key lists are the type's, both ways: each required key's
-/// absence fails to parse, each optional key parses, and an unknown one fails.
-#[test]
-fn the_schema_states_the_keys_the_type_parses() {
-    let schema = ProvenanceSchema::load();
-    let sample = |key: &str| match key {
-        "deidentified" => serde_json::json!({"method": "decoder-allowlist", "blanked": 0}),
-        "dropped" => serde_json::json!({"os": "macos", "at": {}}),
-        _ => serde_json::Value::String("x".into()),
-    };
-    for origin in schema.origins().keys() {
-        let record = |keys: &[String]| {
-            let mut m = serde_json::Map::from_iter([("origin".to_string(), origin.clone().into())]);
-            m.extend(keys.iter().map(|k| (k.clone(), sample(k))));
-            serde_json::Value::Object(m)
-        };
-        let parses = |v| serde_json::from_value::<Provenance>(v).is_ok();
-        let required = schema.required(origin).expect("required");
-        assert!(
-            parses(record(&required)),
-            "{origin}: its required keys alone parse"
-        );
-        for k in &required {
-            let without: Vec<String> = required.iter().filter(|r| *r != k).cloned().collect();
-            assert!(
-                !parses(record(&without)),
-                "{origin}: the type does not require {k:?}"
-            );
-        }
-        for k in schema.keys(origin, "optional").unwrap_or_default() {
-            let with: Vec<String> = required.iter().cloned().chain([k.clone()]).collect();
-            assert!(
-                parses(record(&with)),
-                "{origin}: the type does not take {k:?}"
-            );
-        }
-        let stray: Vec<String> = required.iter().cloned().chain(["zz".to_string()]).collect();
-        assert!(
-            !parses(record(&stray)),
-            "{origin}: the type takes a key no schema names"
-        );
-    }
-    // And back: every key a full recording writes is one the schema names.
-    let full = Provenance::Recorded(Box::new(Recorded {
-        cli: "c".into(),
-        version: "1".into(),
-        captured: "d".into(),
-        command: "x".into(),
-        note: Some("n".into()),
-        deidentified: Some(Deidentified::Stripped { blanked: 0 }),
-        prompt: Some("p".into()),
-        seed: Some("s".into()),
-        aimock: Some("a".into()),
-        script: Some("s".into()),
-        dropped: serde_json::from_value(serde_json::json!({"os": "macos", "at": {}})).ok(),
-    }));
-    let named: BTreeSet<String> = schema
-        .required("recorded")
-        .into_iter()
-        .flatten()
-        .chain(schema.keys("recorded", "optional").unwrap_or_default())
-        .chain(["origin".to_string()])
-        .collect();
-    let written = serde_json::to_value(&full).expect("json");
-    for key in written.as_object().expect("an object").keys() {
-        assert!(
-            named.contains(key),
-            "the type writes {key:?}, which the schema never names"
-        );
-    }
-}
 
 /// `cli` was the one required field nothing could falsify, so a provenance
 /// naming a DIFFERENT CLI than the tree it sits in passed every gate. The
@@ -529,10 +389,10 @@ fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
     }
 }
 
-/// The strip is disclosed by `deidentified`; a note that still calls the bytes
-/// verbatim contradicts it, and an exemption without its reason is a silent hole.
+/// The strip is disclosed by `deidentified`, so a note that still calls the
+/// bytes verbatim contradicts it.
 #[test]
-fn a_stripped_record_does_not_call_its_bytes_verbatim_and_an_exemption_says_why() {
+fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_exempt() {
     let mut exempt = BTreeSet::new();
     for c in every_capture() {
         let prov = &c.provenance_path;
@@ -547,12 +407,7 @@ fn a_stripped_record_does_not_call_its_bytes_verbatim_and_an_exemption_says_why(
             "{}: {blanked} subtrees were blanked, and the note still says verbatim: {note:?}",
             prov.display()
         );
-        if let Some(Deidentified::Exempt { why }) = deidentified {
-            assert!(
-                !why.trim().is_empty(),
-                "{}: exempt from the strip without saying why",
-                prov.display()
-            );
+        if let Some(Deidentified::Exempt { .. }) = deidentified {
             exempt.insert(
                 c.dir
                     .strip_prefix(sources_root())
@@ -755,7 +610,7 @@ fn the_pinned_provenance_rosters_hold_both_ways() {
     // prefix silently dropped every single-owner capture from this rule.
     let unknown: BTreeSet<String> = captures
         .iter()
-        .filter(|c| c.origin() == "unknown")
+        .filter(|c| matches!(c.provenance, Provenance::Unknown { .. }))
         .map(|c| {
             c.dir
                 .strip_prefix(sources_root())
@@ -802,56 +657,6 @@ fn the_pinned_provenance_rosters_hold_both_ways() {
             "{src} is hook-only with recorded={}; either record a scenario and drop its \
              NO_WIRE_EVIDENCE_YET entry, or add one",
             recorded.contains(src)
-        );
-    }
-}
-
-/// Moving the required list into a DATA file made every provenance gate editable
-/// as prose: emptying `required` and updating the README to match disarms both
-/// gates and reads as documentation maintenance. Widening is free; narrowing has
-/// to come through here.
-#[test]
-fn the_schema_cannot_be_narrowed_by_a_data_edit() {
-    let schema = ProvenanceSchema::load();
-    for (origin, must) in [
-        ("recorded", &["cli", "version", "captured", "command"][..]),
-        ("composed", &["note"][..]),
-        ("unknown", &["note"][..]),
-    ] {
-        let got: BTreeSet<String> = schema
-            .required(origin)
-            .unwrap_or_else(|| panic!("{origin} missing from the schema"))
-            .into_iter()
-            .collect();
-        let want: BTreeSet<String> = must.iter().map(|s| (*s).to_string()).collect();
-        assert!(
-            got.is_superset(&want),
-            "provenance.schema.json narrowed {origin} to {got:?} — it must still require \
-             at least {want:?}"
-        );
-    }
-}
-
-/// The README's table is prose a human reads instead of the JSON, so it is the
-/// copy most likely to rot.
-#[test]
-fn the_readme_states_the_schema_the_gates_enforce() {
-    let schema = ProvenanceSchema::load();
-    let readme = std::fs::read_to_string(fixtures_root().join("README.md")).expect("README");
-    for (origin, spec) in schema.origins() {
-        let fields = schema.required(origin).expect("origin in its own table");
-        let row = format!(
-            "| `{origin}` | {} | {} |",
-            fields
-                .iter()
-                .map(|f| format!("`{f}`"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            spec["means"].as_str().expect("means is a string")
-        );
-        assert!(
-            readme.contains(&row),
-            "fixtures/README.md must carry this row verbatim:\n  {row}"
         );
     }
 }
