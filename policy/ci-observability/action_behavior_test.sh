@@ -332,3 +332,13 @@ if (cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" DRIFT=failur
     bash -c "$file_script") >/dev/null 2>&1; then
     fail "the file step passed a failed drift that uploaded nothing"
 fi
+# Every uploaded leg failed before its report: red, and no issue retitled or opened.
+bare="$test_dir/file-bare"
+mkdir -p "$bare/hermetic-runs-1-1-linux"
+: >"$test_dir/gh.log"
+if (cd "$bare" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
+    bash -c "$file_script") >/dev/null 2>&1; then
+    fail "the file step passed with no uploaded leg holding a report"
+fi
+! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
+    fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
