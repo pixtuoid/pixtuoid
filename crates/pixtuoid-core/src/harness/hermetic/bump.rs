@@ -351,6 +351,16 @@ mod tests {
     }
 
     #[test]
+    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+        let yml = std::fs::read_to_string(repo_root().join(".github/workflows/hermetic.yml"))
+            .expect("hermetic.yml");
+        assert!(
+            yml.contains(&format!("runs/{}", super::super::NEW_TYPES)),
+            "a run that passed with a New finding uploads only as this file says"
+        );
+    }
+
+    #[test]
     fn hermetic_yml_reports_moved_rows_from_every_os_plan_reads() {
         let yml = std::fs::read_to_string(repo_root().join(".github/workflows/hermetic.yml"))
             .expect("hermetic.yml");

@@ -337,6 +337,10 @@ pub const TUI_LOG: &str = "tui.log";
 /// the tier's own recordings carry.
 pub const PROVENANCE_AIMOCK: &str = "aimock";
 
+/// The file beside a run's report listing its New findings, which
+/// `hermetic.yml` reads to upload a run that passed with one.
+pub const NEW_TYPES: &str = "new-types.json";
+
 /// The provenance key holding what a tier recording's decoders dropped
 /// ([`dropped::Dropped`]), the unknown-type report's baseline.
 pub const PROVENANCE_DROPPED: &str = "dropped";

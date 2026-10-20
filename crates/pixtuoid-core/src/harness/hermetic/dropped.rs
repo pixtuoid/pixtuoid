@@ -1,69 +1,56 @@
 //! The unknown-type report's baseline: at each discriminator of a source's
 //! transcript, the values its decoders dropped. A hermetic recording writes it
-//! into its scenario's provenance (`dropped`); a run that drops a value there
-//! its recording did not is New, a type the CLI added that no decoder reads.
+//! into its scenario's provenance ([`PROVENANCE_DROPPED`]); a run that drops a
+//! value there its recording did not is New, a type the CLI added that no
+//! decoder reads.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use std::path::PathBuf;
-
-use super::literals;
+use super::{PROVENANCE_DROPPED, Scenario, literals};
+use crate::harness::PROVENANCE;
 use crate::harness::captures::json_lines;
-use crate::harness::reads::{child_pointer, is_hook_envelope, strip_lines};
+use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
 
 /// What a recording's decoders dropped, by discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dropped {
     /// The OS it was recorded on: a type only another OS's build writes is not
     /// New there.
-    pub os: String,
-    /// Each discriminator, an index-free pointer where the strip kept a
-    /// non-blank string a decoder of the source names, with the values the
-    /// strip blanked at it.
-    pub at: BTreeMap<String, BTreeSet<String>>,
+    pub(crate) os: String,
+    /// Each discriminator, a pointer (`*` for an array index) where the strip
+    /// kept a non-blank string a decoder of the source names, with the values
+    /// the strip blanked at it.
+    pub(crate) at: BTreeMap<String, BTreeSet<String>>,
 }
 
+/// One transcript's lines, raw and as the strip keeps them.
+pub(crate) type Pair = (Vec<Value>, Vec<Value>);
+
 impl Dropped {
-    /// What a recording of `source` in `files` drops: each transcript's lines
-    /// raw and as the strip would keep them. Hook envelopes have none.
+    /// What `source`'s decoders drop in `files`.
     ///
     /// # Errors
     ///
     /// If a file cannot be read or the decoders cannot be parsed.
-    pub fn of_run(source: &str, files: &[PathBuf]) -> std::io::Result<Self> {
-        let mut pairs = Vec::new();
-        for file in files.iter().filter(|f| !is_hook_envelope(f)) {
-            let raw = json_lines(file)?;
-            let mut kept = raw.clone();
-            if strip_lines(source, file, &mut kept) {
-                pairs.push((raw, kept));
-            }
-        }
-        Self::of(source, &pairs)
+    pub fn of_files(source: &str, files: &[PathBuf]) -> std::io::Result<Self> {
+        Self::of(source, &pairs(source, files)?)
     }
 
-    /// What a recording of `source` dropped, from each transcript's lines raw
-    /// and as the strip kept them.
-    ///
-    /// # Errors
-    ///
-    /// If the decoders cannot be parsed.
-    pub fn of(source: &str, files: &[(Vec<Value>, Vec<Value>)]) -> std::io::Result<Self> {
+    fn of(source: &str, pairs: &[Pair]) -> std::io::Result<Self> {
         let named = literals::own_exact(source)?;
-        let mut at: BTreeMap<String, BTreeSet<String>> = files
+        let mut at: BTreeMap<String, BTreeSet<String>> = pairs
             .iter()
             .flat_map(|(_, kept)| kept)
-            .flat_map(strings)
-            .filter(|(_, s)| named.contains(*s))
+            .flat_map(leaves)
+            .filter(|(_, s)| named.contains(s))
             .map(|(p, _)| (p, BTreeSet::new()))
             .collect();
-        for (raw, kept) in files {
-            for (p, v) in blanked(&at, raw, kept) {
-                at.entry(p).or_default().insert(v);
-            }
+        for (p, v) in blanked(&at, pairs) {
+            at.entry(p).or_default().insert(v);
         }
         Ok(Self {
             os: std::env::consts::OS.to_owned(),
@@ -71,54 +58,108 @@ impl Dropped {
         })
     }
 
-    /// Each `(pointer, value)` a run's `raw` and `kept` lines drop at this
-    /// baseline's discriminators that the baseline lacks.
-    pub fn new_in(&self, raw: &[Value], kept: &[Value]) -> BTreeSet<(String, String)> {
-        blanked(&self.at, raw, kept)
+    /// Whether a run on this OS is judged against it: a type only another OS's
+    /// build writes is not New there.
+    pub(crate) fn judges_here(&self) -> bool {
+        self.os == std::env::consts::OS
+    }
+
+    /// Each `(pointer, value)` `pairs` drop at this baseline's discriminators
+    /// that it lacks.
+    pub(crate) fn new_in(&self, pairs: &[Pair]) -> BTreeSet<(String, String)> {
+        blanked(&self.at, pairs)
             .into_iter()
             .filter(|(p, v)| !self.at.get(p).is_some_and(|seen| seen.contains(v)))
             .collect()
     }
 }
 
-/// Each `(pointer, value)` a raw line holds at one of `at`'s pointers as a
-/// non-blank string its kept line blanked or lost.
-fn blanked(
-    at: &BTreeMap<String, BTreeSet<String>>,
-    raw: &[Value],
-    kept: &[Value],
-) -> BTreeSet<(String, String)> {
+/// Each transcript of `files` the strip applies to, as a [`Pair`]: a hook
+/// envelope is never dropped whole, and its unread name breadcrumbs.
+///
+/// # Errors
+///
+/// If a file cannot be read.
+pub(crate) fn pairs(source: &str, files: &[PathBuf]) -> std::io::Result<Vec<Pair>> {
+    let mut out = Vec::new();
+    for file in files.iter().filter(|f| !is_hook_envelope(f)) {
+        let raw = json_lines(file)?;
+        let mut kept = raw.clone();
+        if strip_lines(source, file, &mut kept) {
+            out.push((raw, kept));
+        }
+    }
+    Ok(out)
+}
+
+/// Why a run of a scenario here judges no new types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unjudged {
+    /// Its recording wrote no baseline: one `--record` writes it.
+    NoBaseline,
+    /// Its baseline was recorded on this other OS.
+    RecordedOn(String),
+}
+
+/// Why a run of `s` here judges no new types, if it judges none.
+///
+/// # Errors
+///
+/// If its provenance cannot be read or its baseline does not parse.
+pub fn unjudged(s: &Scenario) -> std::io::Result<Option<Unjudged>> {
+    Ok(match baseline_of(s)? {
+        None => Some(Unjudged::NoBaseline),
+        Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os)),
+        Some(_) => None,
+    })
+}
+
+/// The baseline `s`'s recording wrote; none for a scenario not yet recorded.
+///
+/// # Errors
+///
+/// If its provenance cannot be read or its baseline does not parse.
+pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
+    baseline_at(s.fixture)
+}
+
+fn baseline_at(fixture: &str) -> std::io::Result<Option<Dropped>> {
+    let prov = crate::harness::sources_root()
+        .join(fixture)
+        .join(PROVENANCE);
+    let text = match std::fs::read_to_string(prov) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let record: Value = serde_json::from_str(&text)?;
+    record
+        .get(PROVENANCE_DROPPED)
+        .map(|d| serde_json::from_value(d.clone()))
+        .transpose()
+        .map_err(std::io::Error::from)
+}
+
+/// Each `(pointer, value)` a raw line holds at one of `at`'s pointers that its
+/// kept line does not: what the strip blanked there.
+fn blanked(at: &BTreeMap<String, BTreeSet<String>>, pairs: &[Pair]) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
-    for (r, k) in raw.iter().zip(kept) {
-        for (p, v) in strings(r) {
-            let read = k
-                .pointer(&p)
-                .and_then(Value::as_str)
-                .is_some_and(|s| !s.is_empty());
-            if at.contains_key(&p) && !read {
-                out.insert((p, v.to_owned()));
-            }
+    for (raw, kept) in pairs {
+        for (r, k) in raw.iter().zip(kept) {
+            let kept = leaves(k);
+            out.extend(
+                leaves(r)
+                    .into_iter()
+                    .filter(|leaf| at.contains_key(&leaf.0) && !kept.contains(leaf)),
+            );
         }
     }
     out
 }
 
-/// Each non-blank string of `v` by its pointer, objects only: a discriminator
-/// is a field, never an array element.
-fn strings(v: &Value) -> Vec<(String, &str)> {
-    fn walk<'a>(v: &'a Value, at: &str, out: &mut Vec<(String, &'a str)>) {
-        match v {
-            Value::Object(m) => {
-                for (k, x) in m {
-                    walk(x, &child_pointer(at, k), out);
-                }
-            }
-            Value::String(s) if !s.is_empty() => out.push((at.to_owned(), s)),
-            _ => {}
-        }
-    }
-    let mut out = Vec::new();
-    walk(v, "", &mut out);
+fn leaves(v: &Value) -> BTreeSet<(String, String)> {
+    let mut out = BTreeSet::new();
+    string_leaves(v, "", &mut out);
     out
 }
 
@@ -130,7 +171,7 @@ mod tests {
 
     /// copilot dispatches on `/type`: `tool.execution_start` is a literal of
     /// its decoder, and `assistant.turn_start` one it drops.
-    fn copilot_run() -> (Vec<Value>, Vec<Value>) {
+    fn copilot_run() -> Pair {
         let raw = vec![
             json!({"type": "tool.execution_start", "data": {"toolName": "zz-custom"}}),
             json!({"type": "assistant.turn_start", "data": {"turnId": "t1"}}),
@@ -169,23 +210,47 @@ mod tests {
         assert!(d.at["/type"].contains("assistant.turn_start"), "{d:?}");
     }
 
+    /// claude-code decides on each content block's `type`
+    /// (`claude_code.rs`' `tool_use` check), an array element's field.
+    #[test]
+    fn a_discriminator_inside_an_array_element_counts() {
+        let raw =
+            vec![json!({"message": {"content": [{"type": "tool_use"}, {"type": "thinking"}]}})];
+        let kept = vec![json!({"message": {"content": [{"type": "tool_use"}, {"type": ""}]}})];
+        let d = Dropped::of("claude-code", &[(raw, kept)]).expect("parse");
+        assert!(
+            d.at["/message/content/*/type"].contains("thinking"),
+            "{d:?}"
+        );
+    }
+
     #[test]
     fn a_run_is_new_only_where_its_recording_did_not_drop_the_value() {
         let d = Dropped::of("copilot", &[copilot_run()]).expect("parse");
-        let (raw, kept) = copilot_run();
-        assert!(d.new_in(&raw, &kept).is_empty());
-        let raw = vec![
-            json!({"type": "assistant.reasoning_start"}),
-            json!({"type": "x", "data": {"turnId": "t"}}),
-        ];
-        let kept = vec![json!({}), json!({})];
+        assert!(d.new_in(&[copilot_run()]).is_empty());
+        let run = (
+            vec![
+                json!({"type": "assistant.reasoning_start"}),
+                json!({"type": "x", "data": {"turnId": "t"}}),
+            ],
+            vec![json!({}), json!({})],
+        );
         assert_eq!(
-            d.new_in(&raw, &kept),
+            d.new_in(&[run]),
             BTreeSet::from([
                 ("/type".to_owned(), "assistant.reasoning_start".to_owned()),
                 ("/type".to_owned(), "x".to_owned()),
             ]),
             "only at the baseline's pointers: `/data/turnId` is none"
+        );
+    }
+
+    #[test]
+    fn a_scenario_not_yet_recorded_has_no_baseline() {
+        assert_eq!(
+            baseline_at("fixtures/copilot/never-recorded-hermetic")
+                .expect("a missing record is no error"),
+            None
         );
     }
 }

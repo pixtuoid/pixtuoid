@@ -283,16 +283,24 @@ impl ProvenanceSchema {
     }
 
     fn required(&self, origin: &str) -> Option<Vec<String>> {
+        self.keys(origin, "required")
+    }
+
+    /// Every key a record of `origin` may carry: its required and optional
+    /// ones, and `origin` itself.
+    fn allowed(&self, origin: &str) -> Option<BTreeSet<String>> {
+        let mut keys: BTreeSet<String> = self.required(origin)?.into_iter().collect();
+        keys.extend(self.keys(origin, "optional").unwrap_or_default());
+        keys.insert("origin".into());
+        Some(keys)
+    }
+
+    fn keys(&self, origin: &str, list: &str) -> Option<Vec<String>> {
         Some(
-            self.origins().get(origin)?["required"]
-                .as_array()
-                .expect("required is an array")
+            self.origins().get(origin)?[list]
+                .as_array()?
                 .iter()
-                .map(|v| {
-                    v.as_str()
-                        .expect("a required member is a string")
-                        .to_string()
-                })
+                .map(|v| v.as_str().expect("a key is a string").to_string())
                 .collect(),
         )
     }
@@ -318,6 +326,24 @@ fn every_capture_declares_a_valid_origin_with_its_required_fields() {
             assert!(
                 c.field(key).is_some_and(|s| !s.trim().is_empty()),
                 "{}: origin {:?} requires a non-empty {key:?}",
+                c.provenance_path.display(),
+                c.origin()
+            );
+        }
+    }
+}
+
+/// A record carries only the keys its schema names, so a misspelled one
+/// (`droped`) is refused instead of read as absent.
+#[test]
+fn every_capture_carries_only_keys_its_schema_names() {
+    let schema = ProvenanceSchema::load();
+    for c in every_capture() {
+        let allowed = schema.allowed(c.origin()).expect("a valid origin");
+        for key in c.provenance.as_object().expect("an object").keys() {
+            assert!(
+                allowed.contains(key),
+                "{}: {key:?} is no key provenance.schema.json names for {:?}",
                 c.provenance_path.display(),
                 c.origin()
             );
