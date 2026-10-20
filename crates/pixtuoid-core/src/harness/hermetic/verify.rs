@@ -892,21 +892,21 @@ fn permission(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Labe
     });
     let ended = if !waited.is_empty() {
         waited.iter().any(|t| ended_calls.contains(t))
-    } else if !events
-        .iter()
-        .any(|e| matches!(e, AgentEvent::ActivityStart { .. }))
-    {
-        // Asked before the call started (reasonix): the refused call never ran,
-        // so its turn's end.
-        events.iter().any(|e| {
-            matches!(
-                e,
-                AgentEvent::ActivityEnd {
-                    tool_use_id: None,
-                    ..
-                }
-            )
-        })
+    } else if started.is_empty() {
+        // Asked with no call in flight (reasonix): the refused call never
+        // started, so only the turn's end closes the slot. A read the call's
+        // reviewer made before it is balanced by its own end, and nothing may
+        // start once the slot waits.
+        let wait = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::Waiting { .. }));
+        let starts = |e: &&AgentEvent| matches!(e, AgentEvent::ActivityStart { .. });
+        let started_after_wait = wait.is_some_and(|w| events[w..].iter().any(|e| starts(&e)));
+        let ends = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ActivityEnd { .. }))
+            .count();
+        !started_after_wait && ends > events.iter().filter(starts).count()
     } else {
         // A wait that names no call (claude-code's `PermissionRequest`): every
         // started tool ends.
@@ -1540,6 +1540,47 @@ mod tests {
         assert!(
             has(&v, Label::Fail, "never ended"),
             "a call that started is held to its own end: {:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_reviewer_that_reads_before_the_wait_passes_while_the_read_ends() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        edit_hooks(d.path(), |v| {
+            let reviewer = v["sessionId"]
+                .as_str()
+                .is_some_and(|s| s.ends_with(":guardian"));
+            (!(reviewer && v["event"] == "PostToolUse")).then_some(v)
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "a read before the wait is held to its own end: {:?}",
+            v.findings()
+        );
+    }
+
+    #[test]
+    fn a_call_that_starts_once_the_slot_waits_fails() {
+        let d = recorded("reasonix", Shape::Permission, RX_WAIT_SCENE);
+        reorder_hooks(d.path(), |lines| {
+            let at = lines
+                .iter()
+                .position(|v| v["event"] == "PermissionRequest")
+                .expect("the gate's request");
+            let mut started = lines[at].clone();
+            started["event"] = "PreToolUse".into();
+            let mut ended = started.clone();
+            ended["event"] = "PostToolUse".into();
+            lines.splice(at + 1..at + 1, [started, ended]);
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never ended"),
+            "a call that starts after the wait ran unasked: {:?}",
             v.findings()
         );
     }

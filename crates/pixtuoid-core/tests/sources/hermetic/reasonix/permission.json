@@ -1,6 +1,14 @@
 {
   "fixtures": [
     {
+      "match": { "model": "guardian-model", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "guardian-model", "hasToolResult": true },
+      "response": { "content": "{\"risk_level\":\"high\",\"user_authorization\":\"low\",\"outcome\":\"deny\",\"rationale\":\"deletes the note\"}" }
+    },
+    {
       "match": { "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "bash", "arguments": { "command": "rm NOTE.txt" } } ] }
     },

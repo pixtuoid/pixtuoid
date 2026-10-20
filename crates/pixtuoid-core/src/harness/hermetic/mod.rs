@@ -1400,13 +1400,32 @@ trust_level = "trusted"
         config: &[ConfigFile {
             home: "REASONIX_HOME",
             path: "config.toml",
+            // A role with the executor's own model builds no planner
+            // (`internal/assembly/boot/roles.go:56`), so each has a model of
+            // its own for a script to match on.
             template: r#"default_model = "aimock"
+
+[agent]
+planner_model = "planner"
+guardian_model = "guardian"
 
 [[providers]]
 name = "aimock"
 kind = "openai"
 base_url = "http://127.0.0.1:{port}/v1"
 model = "deepseek-v4-flash"
+
+[[providers]]
+name = "planner"
+kind = "openai"
+base_url = "http://127.0.0.1:{port}/v1"
+model = "planner-model"
+
+[[providers]]
+name = "guardian"
+kind = "openai"
+base_url = "http://127.0.0.1:{port}/v1"
+model = "guardian-model"
 "#,
         }],
         scenarios: &[
@@ -1458,6 +1477,27 @@ model = "deepseek-v4-flash"
                 fixture: "reasonix/fixtures/explore-hermetic",
                 turn: Turn::PROFILE,
             },
+            // The marker routes the turn through the planner
+            // (`internal/session/control/planner_gate.go:91-92`).
+            Scenario {
+                name: "planner",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "Stop",
+                    "SessionEnd",
+                ],
+                fixture: "fixtures/reasonix/planner-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
+                    resume: None,
+                },
+            },
             Scenario {
                 name: "bash-run",
                 shape: Shape::ToolRun,
@@ -1493,7 +1533,7 @@ model = "deepseek-v4-flash"
         not_yet: &[],
         event_name: event_field,
         not_yet_fields: &[],
-        not_yet_literals: &[":guardian", ":planner"],
+        not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
