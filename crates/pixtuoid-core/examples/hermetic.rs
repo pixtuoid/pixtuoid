@@ -545,7 +545,7 @@ mod run {
         version: &Version,
         dir: &Path,
     ) -> std::io::Result<(String, Verdict)> {
-        // No model runs, so `{port}` names a port nothing listens on.
+        // No model runs, so [`Placeholder::Port`] names a port nothing listens on.
         let (ports, extra) = Ports::pick(live.ports)?;
         let (_, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
@@ -2200,7 +2200,7 @@ mod run {
     }
 
     /// The ports one run uses, each free when picked: the scripted model's, which
-    /// `{port}` names, and a daemon's, which [`Placeholder::DaemonPort`] names.
+    /// [`Placeholder::Port`] names, and a daemon's, which [`Placeholder::DaemonPort`] names.
     #[derive(Debug, Clone, Copy)]
     struct Ports {
         model: u16,
