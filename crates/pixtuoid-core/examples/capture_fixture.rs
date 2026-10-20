@@ -844,8 +844,8 @@ mod recorder {
     /// hooks' last sends, which a kill would lose.
     const DAEMON_STOP_GRACE: Duration = Duration::from_secs(30);
     /// How many last lines of its log, and of its probes', a daemon that never
-    /// served carries in its error: a failed run's uploaded dir keeps the
-    /// recorder's error, while both logs stay in its scratch.
+    /// served or never stopped carries in its error: a failed run's uploaded
+    /// dir keeps the recorder's error, while both logs stay in its scratch.
     const DAEMON_LOG_TAIL: usize = 40;
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
@@ -857,6 +857,8 @@ mod recorder {
         lifeline: Option<std::process::ChildStdin>,
         /// Its start, which names it.
         start: String,
+        /// Where its output goes.
+        log: PathBuf,
     }
 
     impl RunningDaemon {
@@ -885,6 +887,7 @@ mod recorder {
                 lifeline: child.stdin.take(),
                 child,
                 start: daemon.start.join(" "),
+                log: log_path.clone(),
             };
             // Every probe's output, each followed by how it ended.
             let probe_log = own.join("probe.log");
@@ -936,9 +939,12 @@ mod recorder {
             if wait_until("its exit", grace, || Ok(self.child.try_wait()?.is_some())).is_ok() {
                 return Ok(());
             }
+            let _ = self.child.kill();
+            let _ = self.child.wait();
             Err(std::io::Error::other(format!(
-                "the daemon `{}` outlived its stdin by {grace:?} and was killed",
-                self.start
+                "the daemon `{}` outlived its stdin by {grace:?} and was killed; its log ends:\n{}",
+                self.start,
+                tail(&self.log)
             )))
         }
     }
@@ -2215,8 +2221,10 @@ mod recorder {
             const TEST: &str = "a_daemon_that_outlives_its_stdin_is_killed_and_fails_the_capture";
             /// Past any grace this test gives it.
             const OUTLIVES: Duration = Duration::from_secs(600);
+            const SAYS: &str = "the fake daemon will not stop";
             if let Some((_, probe)) = as_fake(true, Duration::ZERO) {
                 if !probe {
+                    println!("{SAYS}");
                     std::thread::sleep(OUTLIVES);
                 }
                 return;
@@ -2233,6 +2241,7 @@ mod recorder {
                 why.contains(&format!("{grace:?}")),
                 "names the grace: {why}"
             );
+            assert!(why.contains(SAYS), "its log: {why}");
             assert!(
                 incomplete(None, Err(std::io::Error::other(why))).is_some(),
                 "a capture whose daemon was killed is incomplete"
