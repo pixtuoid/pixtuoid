@@ -4,10 +4,10 @@
   "version": "2026.09.18-9a7762b",
   "captured": "2026-09-19",
   "command": "cursor-agent -p --trust --model auto {prompt}",
+  "note": "Recorded with `--model auto`: cursor-agent on a free plan refuses named models.",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 122
   },
-  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened.",
-  "note": "Recorded with `--model auto`: cursor-agent on a free plan refuses named models."
+  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened."
 }

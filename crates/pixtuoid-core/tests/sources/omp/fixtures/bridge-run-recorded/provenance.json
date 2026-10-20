@@ -4,9 +4,9 @@
   "version": "omp/18.2.6",
   "captured": "2026-09-19",
   "command": "omp -p {prompt}",
+  "note": "hook sessionFile home path redacted to /Users/dev.",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 100
-  },
-  "note": "hook sessionFile home path redacted to /Users/dev."
+  }
 }
