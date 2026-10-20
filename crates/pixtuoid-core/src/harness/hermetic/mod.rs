@@ -191,7 +191,7 @@ pub struct Scenario {
 pub struct Turn {
     /// Appended to the profile's headless invocation.
     pub args: &'static [&'static str],
-    /// Its prompt, in place of the recorder's shared one.
+    /// Its prompt, in place of [`crate::harness::plan::DEFAULT_PROMPT`].
     pub prompt: Option<&'static str>,
     /// A second headless turn on this one's session, in the same sandbox and
     /// workspace once its CLI exited: [`Profile::second_turn`]'s words.

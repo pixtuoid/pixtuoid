@@ -1,7 +1,7 @@
 //! The plan a capture runs from: everything the recorder (`capture_fixture`)
 //! needs to run one scenario, resolved on the host before the recorder starts.
 //!
-//! The hermetic runner writes it into the run dir ([`CAPTURE_PLAN`]) and the
+//! The hermetic runner writes it into the run dir and the
 //! recorder reads it back; an operator's `just capture-fixture` line builds the
 //! same type in memory. So the recorder has one
 //! input, and a word the host left unexpanded cannot be spelled in it: [`Resolved`]
@@ -14,11 +14,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
+use vec1::Vec1;
 
 use crate::harness::provenance::NonEmpty;
 
 /// A run dir's plan, beside its [`CAPTURE_RECORD`](crate::harness::CAPTURE_RECORD).
-pub const CAPTURE_PLAN: &str = "capture-plan.json";
+pub(crate) const CAPTURE_PLAN: &str = "capture-plan.json";
 
 /// One prompt for every source, so captures stay comparable: reading the SAME
 /// file twice around a list forces both shapes the composed fixtures got wrong —
@@ -157,14 +158,14 @@ impl TryFrom<String> for Word {
 }
 
 /// A command line: a program, then its arguments.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Argv<T>(Vec<T>);
+pub struct Argv<T>(Vec1<T>);
 
 impl<T> Argv<T> {
     /// The words, in order.
     pub fn words(&self) -> &[T] {
-        &self.0
+        self.0.as_slice()
     }
 }
 
@@ -172,17 +173,9 @@ impl<T> TryFrom<Vec<T>> for Argv<T> {
     type Error = PlanError;
 
     fn try_from(words: Vec<T>) -> Result<Self, PlanError> {
-        if words.is_empty() {
-            Err(PlanError::new("a command line with no program"))
-        } else {
-            Ok(Self(words))
-        }
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Argv<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Self::try_from(Vec::<T>::deserialize(d)?).map_err(serde::de::Error::custom)
+        Vec1::try_from_vec(words)
+            .map(Self)
+            .map_err(|_| PlanError::new("a command line with no program"))
     }
 }
 
@@ -318,7 +311,7 @@ impl CapturePlan {
         }
     }
 
-    /// Write it into `dir` as [`CAPTURE_PLAN`].
+    /// Write it into `dir`, as the file the recorder is started on.
     ///
     /// # Errors
     ///
@@ -362,7 +355,7 @@ pub enum Invocation {
 }
 
 impl Invocation {
-    /// The `--out` an operator may give a capture: drift evidence kept raw.
+    /// What an operator gives a capture to keep it raw, as drift evidence.
     pub(crate) const OUT: &'static str = "--out";
     /// Strips every committed capture.
     pub(crate) const STRIP_CORPUS: &'static str = "--strip-corpus";
@@ -370,7 +363,7 @@ impl Invocation {
     pub(crate) const PLAN: &'static str = "--plan";
     /// Promotes the run dir that follows.
     pub(crate) const PROMOTE: &'static str = "promote";
-    /// Prepares a source's root inside the `--within` dir that follows.
+    /// Prepares a source's root inside the [`Invocation::WITHIN`] dir that follows.
     pub(crate) const PREPARE_ROOT: &'static str = "prepare-root";
     /// The sandbox a prepared root must lie in.
     pub(crate) const WITHIN: &'static str = "--within";
@@ -433,7 +426,13 @@ impl Invocation {
         args: &[String],
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Result<Self, PlanError> {
-        let usage = |flag: &str| PlanError::new(format!("{flag} takes a value"));
+        let usage = |flag: &str| {
+            PlanError::new(if args.len() < 2 {
+                format!("{flag} takes a value")
+            } else {
+                format!("{flag} takes one value, not {}", args.len() - 1)
+            })
+        };
         match args.first().map(String::as_str) {
             Some(Self::STRIP_CORPUS) if args.len() == 1 => Ok(Self::StripCorpus),
             Some(Self::PLAN) => match args {
@@ -461,14 +460,14 @@ impl Invocation {
 }
 
 impl CapturePlan {
-    /// The capture an operator's line asks: `[--out <dir>] <source> <scenario>
-    /// <cmd...>`, [`Placeholder::Prompt`] in the command filled from [`PROMPT_ENV`] or
-    /// [`DEFAULT_PROMPT`]. It runs in memory: only the runner's plan is kept, as
+    /// The capture an operator's line asks: an optional [`Invocation::OUT`] and
+    /// its dir, then `<source> <scenario> <cmd...>`, [`Placeholder::Prompt`] in
+    /// the command filled from [`PROMPT_ENV`] or [`DEFAULT_PROMPT`]. It runs in memory: only the runner's plan is kept, as
     /// the record of its run.
     ///
     /// # Errors
     ///
-    /// The line is short, a word spells a placeholder the host cannot fill, or `--out` is unusable.
+    /// The line is short, a word spells a placeholder the host cannot fill, or the [`Invocation::OUT`] dir is unusable.
     pub(crate) fn from_operator(
         args: &[String],
         env: &dyn Fn(&str) -> Option<String>,
@@ -786,6 +785,22 @@ mod tests {
             &["prepare-root", "--within", &within, "codex", "x"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_missing_operand_and_an_extra_one_are_told_apart() {
+        let why = |w: &[&str]| {
+            Invocation::parse(&args(w), &env_of(&[]))
+                .expect_err("refused")
+                .to_string()
+        };
+        for flag in ["--plan", "promote"] {
+            assert_eq!(why(&[flag]), format!("{flag} takes a value"));
+            assert_eq!(
+                why(&[flag, "a", "b"]),
+                format!("{flag} takes one value, not 2")
+            );
         }
     }
 

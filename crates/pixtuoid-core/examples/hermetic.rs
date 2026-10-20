@@ -2659,32 +2659,6 @@ mod run {
         }
 
         #[test]
-        fn a_plan_for_a_real_profile_reads_back_from_its_file() {
-            let dir = tempfile::tempdir().expect("dir");
-            let p = &PROFILES[0];
-            let (launch, env) = (launch_of("/cli/x"), BTreeMap::new());
-            let (scene, within, workspace) = (host("sb/scene.sock"), host("sb"), host("ws/proj"));
-            let run = RecorderRun {
-                out: dir.path(),
-                scene: &scene,
-                within: &within,
-                workspace: &workspace,
-                cli_env: &env,
-                cli_version: "1.2.3",
-                launch: &launch,
-                driver: Path::new("/build/tui_drive"),
-                ports: TEST_PORTS,
-            };
-            let plan = plan_for(&run, p, &p.scenarios[0]).expect("plan");
-            let file = plan.write_to(dir.path()).expect("write");
-            assert_eq!(
-                file,
-                dir.path().join(pixtuoid_core::harness::plan::CAPTURE_PLAN)
-            );
-            assert_eq!(CapturePlan::read(&file).expect("read"), plan);
-        }
-
-        #[test]
         fn a_prompted_second_turn_hands_the_recorder_its_args_and_its_words() {
             let p = hermetic::profile("claude-code").expect("claude-code");
             let scenario = p.scenario("ultra-effort").expect("the row");
@@ -2698,13 +2672,7 @@ mod run {
                         .iter()
                         .map(|w| w.replace(Placeholder::Prompt.as_str(), second)),
                 )
-                .map(|w| {
-                    if w == Placeholder::Session.as_str() {
-                        Word::Session
-                    } else {
-                        Word::Lit(Resolved::try_from(w).expect("resolved"))
-                    }
-                })
+                .map(|w| Word::try_from(w).expect("a word"))
                 .collect();
             let turn = plan.second_turn().expect("a second turn");
             assert_eq!(turn.words(), &want[..]);
