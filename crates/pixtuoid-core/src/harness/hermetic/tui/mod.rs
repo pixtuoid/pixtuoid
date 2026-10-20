@@ -214,8 +214,13 @@ impl<'a> Driver<'a> {
                 self.phase = Phase::Submitted { enter_at: now };
                 Action::Keys(&[Key::Enter])
             }
-            Phase::Submitted { .. }
-                if !self.owes_answer() && now.duration_since(self.changed_at) >= SETTLE =>
+            // The screen must move after the Enter: one standing since before
+            // it may hold a prompt the CLI dropped, its command never run. A
+            // frame read in the Enter's own step predates the Enter.
+            Phase::Submitted { enter_at }
+                if !self.owes_answer()
+                    && self.changed_at > enter_at
+                    && now.duration_since(self.changed_at) >= SETTLE =>
             {
                 self.phase = Phase::Quit;
                 Action::Quit(self.tui.quit)
@@ -571,12 +576,13 @@ mod tests {
                 d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
                 Action::Keys(&[Key::Enter])
             );
-            assert_eq!(d.step(OMP_NEW, t0), Action::Wait);
+            let moved = t0 + Duration::from_millis(1);
+            assert_eq!(d.step(OMP_NEW, moved), Action::Wait);
             let end = match answer {
                 Answer::Deny => Action::Wait,
                 Answer::Nothing => Action::Quit(tui.quit),
             };
-            assert_eq!(d.step(OMP_NEW, t0 + SETTLE), end, "{answer:?}");
+            assert_eq!(d.step(OMP_NEW, moved + SETTLE), end, "{answer:?}");
         }
     }
 
@@ -608,6 +614,28 @@ mod tests {
             Action::Fail("the screen stood still with the turn unfinished")
         );
         assert_eq!(d.gave_up(), GAVE_UP, "no gate was owed");
+    }
+
+    #[test]
+    fn a_turn_answering_nothing_ends_only_on_a_screen_that_moved_after_its_enter() {
+        let (tui, answer) = omp();
+        let t0 = Instant::now();
+        let entered = t0 + Duration::from_millis(1);
+        // The CLI dropped the typed prompt while booting: its boot frame stands.
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(OMP_BOOT, entered), Action::Keys(&[Key::Enter]));
+        assert_eq!(d.step(OMP_BOOT, entered + SETTLE), Action::Wait);
+        assert_eq!(
+            d.step(OMP_BOOT, t0 + STALL),
+            Action::Fail("the screen stood still with the turn unfinished")
+        );
+        assert_eq!(d.gave_up(), GAVE_UP, "a run that could not happen");
+        // A frame read in the step the Enter went out predates it.
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step("", entered), Action::Keys(&[Key::Enter]));
+        assert_eq!(d.step("", entered + SETTLE), Action::Wait);
     }
 
     #[test]
@@ -742,8 +770,17 @@ mod tests {
             );
             assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
             if answer == Answer::Nothing {
-                assert_eq!(d.step(end, t0), Action::Wait, "{source}: the screen moved");
-                assert_eq!(d.step(end, t0 + SETTLE), Action::Quit(tui.quit), "{source}");
+                let moved = t0 + Duration::from_millis(1);
+                assert_eq!(
+                    d.step(end, moved),
+                    Action::Wait,
+                    "{source}: the screen moved"
+                );
+                assert_eq!(
+                    d.step(end, moved + SETTLE),
+                    Action::Quit(tui.quit),
+                    "{source}"
+                );
                 continue;
             }
             let [refused] = tui.gates else {
