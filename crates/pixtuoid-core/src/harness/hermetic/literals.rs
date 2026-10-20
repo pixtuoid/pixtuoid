@@ -796,10 +796,6 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
-    const LOSS_UNPERSISTED: &str = "loss list: grok only broadcasts it to ACP clients \
-         (`agent/mvp_agent/agent_ops.rs:2011-2035`, `agent/handlers/model_switch.rs:349-372`) \
-         and never writes it to updates.jsonl, which only `PersistenceMsg::Update` does \
-         (`session/acp_session_impl/updates.rs:1040-1055`), at untagged main 2bdd1d6a";
     const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
          which only a thread store without paginated lists gets, as `EM_RESUME` cites; \
          the tier's rollouts are Paginated";
@@ -908,11 +904,6 @@ mod tests {
         literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
         literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
-        literal("grok.rs", "model_changed", LOSS_UNPERSISTED),
-        literal("grok.rs", "model_id", LOSS_UNPERSISTED),
-        literal("grok.rs", "reasoning_effort", LOSS_UNPERSISTED),
-        literal("grok.rs", "model_auto_switched", LOSS_UNPERSISTED),
-        literal("grok.rs", "new_model_id", LOSS_UNPERSISTED),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];

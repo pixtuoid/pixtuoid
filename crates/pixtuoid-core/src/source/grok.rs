@@ -51,8 +51,6 @@ const XAI_SESSION_UPDATE_METHOD: &str = "_x.ai/session/update";
 
 const XAI_SUBAGENT_SPAWNED: &str = "subagent_spawned";
 const XAI_SUBAGENT_FINISHED: &str = "subagent_finished";
-const XAI_MODEL_CHANGED: &str = "model_changed";
-const XAI_MODEL_AUTO_SWITCHED: &str = "model_auto_switched";
 const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
 
@@ -400,41 +398,6 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
                     as_child: true,
                 }])
             }
-            XAI_MODEL_CHANGED => {
-                let model = str_field("model_id")
-                    .filter(|s| !s.is_empty())
-                    .map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-                let effort = str_field("reasoning_effort")
-                    .filter(|s| !s.is_empty())
-                    .map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS));
-                if model.is_none() && effort.is_none() {
-                    return Ok(vec![]);
-                }
-                Ok(vec![AgentEvent::ModelInfo {
-                    agent_id,
-                    model,
-                    effort,
-                }])
-            }
-            // Fires when the allowlist denies the session's model or the
-            // catalog dropped it (`xai-grok-shell/src/agent/mvp_agent/`
-            // `session_setup.rs:814,1868,1899`, `acp_agent.rs:1058,1132` at
-            // untagged main 2bdd1d6a) — undecoded, the flame shows the dead
-            // model until the next `_meta.modelId`-bearing update corrects it.
-            XAI_MODEL_AUTO_SWITCHED => {
-                let model = str_field("new_model_id")
-                    .filter(|s| !s.is_empty())
-                    .map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-                let Some(model) = model else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "new_model_id");
-                    return Ok(vec![]);
-                };
-                Ok(vec![AgentEvent::ModelInfo {
-                    agent_id,
-                    model: Some(model),
-                    effort: None,
-                }])
-            }
             // The transcript twin of the `stop` hook: a tool-less turn's only
             // end signal for transcript-only setups.
             XAI_TURN_COMPLETED => Ok(vec![AgentEvent::ActivityEnd {
@@ -495,18 +458,16 @@ fn grok_transcript_tool_detail(title: &str, raw_input: Option<&Value>) -> ToolDe
     generic_tool_display(title, None)
 }
 
-/// Whether spawn args explicitly request a BLOCKING run (`false`), under EITHER
-/// spelling of the flag: the bool travels as `background` in the hook's
-/// `toolInput` (the model-facing schema's rename) and as `run_in_background` in
-/// the ACP `tool_call`'s `rawInput` (the struct's own field name). Reading both
-/// keys on both transports also survives either layer dropping its rename.
+/// Whether spawn args explicitly request a BLOCKING run (`false`): the model's
+/// `background` on both transports, since the hook's `toolInput` and a fresh
+/// `tool_call`'s `rawInput` carry its arguments as sent; the struct's own
+/// `run_in_background` rides only the later `tool_call_update` (1.0.62's run).
 /// Upstream parses the flag LENIENTLY — a model-emitted `"false"` STRING still
 /// runs blocking — which this `as_bool` read misses toward the SAFE side only:
 /// a missed `false` skips the Task detail, never over-mints it into b1.
 fn spawn_is_blocking(args: Option<&Value>) -> bool {
-    ["background", "run_in_background"]
-        .iter()
-        .find_map(|k| args.and_then(|a| a.get(k)).and_then(Value::as_bool))
+    args.and_then(|a| a.get("background"))
+        .and_then(Value::as_bool)
         == Some(false)
 }
 
@@ -866,21 +827,17 @@ mod tests {
     }
 
     #[test]
-    fn blocking_flag_reads_both_wire_spellings_on_both_transports() {
-        for key in ["background", "run_in_background"] {
-            let blocking = json!({"subagent_type": "explore", key: false});
-            assert!(
-                grok_tool_detail("spawn_subagent", Some(&blocking)).is_task(),
-                "hook side must read {key}"
-            );
-            assert!(
-                grok_transcript_tool_detail("Spawn subagent", Some(&blocking)).is_task(),
-                "transcript side must read {key}"
-            );
-            let background = json!({"subagent_type": "explore", key: true});
-            assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
-            assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
-        }
+    fn blocking_flag_is_the_models_background_on_both_transports() {
+        let blocking = json!({"subagent_type": "explore", "background": false});
+        assert!(grok_tool_detail("spawn_subagent", Some(&blocking)).is_task());
+        assert!(grok_transcript_tool_detail("Spawn subagent", Some(&blocking)).is_task());
+        let background = json!({"subagent_type": "explore", "background": true});
+        assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
+        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
+        // The struct's spelling rides no line either transport reads.
+        let structs_spelling = json!({"subagent_type": "explore", "run_in_background": false});
+        assert!(!grok_tool_detail("spawn_subagent", Some(&structs_spelling)).is_task());
+        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&structs_spelling)).is_task());
         // A model-emitted STRING "false" (upstream parses leniently).
         let lenient = json!({"subagent_type": "explore", "background": "false"});
         assert!(!grok_tool_detail("spawn_subagent", Some(&lenient)).is_task());
@@ -1125,22 +1082,6 @@ mod tests {
     }
 
     #[test]
-    fn model_info_surfaces_when_only_one_of_model_or_effort_is_present() {
-        for (field, value) in [("model_id", "grok-4"), ("reasoning_effort", "high")] {
-            let evs = decode_line(json!({
-                "timestamp": 1721131200u64, "method": "_x.ai/session/update",
-                "params": {"sessionId": "0197fa30-sess",
-                           "update": {"sessionUpdate": "model_changed", field: value}}
-            }));
-            assert!(
-                evs.iter()
-                    .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-                "{field} alone must still surface ModelInfo, got {evs:?}"
-            );
-        }
-    }
-
-    #[test]
     fn a_bare_spawn_subagent_call_is_task_detail_without_a_subagent_type_arg() {
         // `background: false` is what makes a spawn BLOCKING; the args carry no
         // `subagent_type`, so only the tool NAME can classify this one.
@@ -1245,8 +1186,7 @@ mod tests {
     #[test]
     fn transcript_blocking_spawn_is_task_background_is_not() {
         // In a live capture the transcript's rawInput carried the CLIENT-form
-        // `background` key, not the canonical `run_in_background`; the
-        // cross-spelling test covers both.
+        // `background` key, not the struct's `run_in_background`.
         let blocking = decode_line(acp_line(json!({
             "sessionUpdate": "tool_call", "toolCallId": "call-0b8fe95b-2070-4e76-a5c7-036d4ad88f12-0",
             "title": "spawn_subagent",
@@ -1278,7 +1218,6 @@ mod tests {
                 evs = decode_line(xai_line(json!({
                     "sessionUpdate": tag,
                     "child_session_id": "c", "subagent_id": "s",
-                    "model_id": "m", "new_model_id": "m2",
                     "event_name": "session_end", "runs": [],
                 })))
                 .len();
@@ -1288,8 +1227,6 @@ mod tests {
         for tag in [
             XAI_SUBAGENT_SPAWNED,
             XAI_SUBAGENT_FINISHED,
-            XAI_MODEL_CHANGED,
-            XAI_MODEL_AUTO_SWITCHED,
             XAI_TURN_COMPLETED,
             XAI_HOOK_EXECUTION,
         ] {
@@ -1298,25 +1235,6 @@ mod tests {
         assert!(
             !reaches("checkpoint_saved"),
             "an unread tag reaches neither"
-        );
-
-        // The auto-switch arm reads `new_model_id`, not `model_changed`'s
-        // `model_id` — a payload carrying only the WRONG field must not emit.
-        let only = |field: &str| {
-            decode_line(xai_line(
-                json!({"sessionUpdate": XAI_MODEL_AUTO_SWITCHED, field: "m2"}),
-            ))
-        };
-        assert!(
-            matches!(
-                only("new_model_id").as_slice(),
-                [AgentEvent::ModelInfo { model: Some(_), .. }]
-            ),
-            "new_model_id alone must emit ModelInfo"
-        );
-        assert!(
-            only("model_id").is_empty(),
-            "model_id alone must NOT satisfy the auto-switch arm"
         );
     }
 
@@ -1430,20 +1348,6 @@ mod tests {
             matches!(&evs[..], [AgentEvent::SessionEnd { agent_id, as_child: true }]
                 if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child"))
         );
-    }
-
-    #[test]
-    fn model_changed_line_is_a_model_and_effort_observation() {
-        let evs = decode_line(xai_line(json!({
-            "sessionUpdate": "model_changed",
-            "model_id": "grok-4-code",
-            "reasoning_effort": "high"
-        })));
-        assert!(
-            matches!(&evs[..], [AgentEvent::ModelInfo { model: Some(m), effort: Some(e), .. }]
-                if m == "grok-4-code" && e == "high")
-        );
-        assert!(decode_line(xai_line(json!({"sessionUpdate": "model_changed"}))).is_empty());
     }
 
     #[test]

@@ -593,7 +593,8 @@ fn json_lines(file: &Path) -> std::io::Result<Vec<Value>> {
 }
 
 /// Whether `manifest`'s CLI ran its turn of `shape` against the scripted model
-/// as scripted; a request no script line matched is Script either way.
+/// as scripted, and the turn resuming it where one ran; a request no script
+/// line matched is Script either way.
 fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, String)>) -> bool {
     if manifest.unmatched > 0 {
         findings.push((
@@ -604,7 +605,7 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
             ),
         ));
     }
-    shape.exits_as_scripted(manifest.capture.exit_code) && manifest.requests > 0
+    manifest.capture.exited_as_scripted(shape) && manifest.requests > 0
 }
 
 fn judge(
@@ -628,14 +629,30 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
+        let resumed = manifest
+            .capture
+            .resumed
+            .as_ref()
+            .map_or(String::new(), |r| {
+                format!(", resumed exit {:?}", r.exit_code)
+            });
         findings.push((
             Label::Blocked,
             format!(
-                "the CLI did not complete a turn against the scripted model (exit {:?}, {} \
-                 model requests): it could not run, or its model calls went elsewhere \
+                "the CLI did not complete a turn against the scripted model (exit {:?}{resumed}, \
+                 {} model requests): it could not run, or its model calls went elsewhere \
                  through a home the sandbox did not redirect",
                 manifest.capture.exit_code, manifest.requests
             ),
+        ));
+        return Ok(());
+    }
+    // A resumed turn that never ran had no session the first turn's wire named,
+    // which is pixtuoid's to name; one that ran `completed_turn` held.
+    if scenario.turn.resume.is_some() && manifest.capture.resumed.is_none() {
+        findings.push((
+            Label::Fail,
+            "the first turn's wire named no session to resume".into(),
         ));
         return Ok(());
     }
@@ -1252,6 +1269,7 @@ mod tests {
                 cli: "test".into(),
                 version: "test".into(),
                 exit_code: Some(0),
+                resumed: None,
             },
             aimock: "test".into(),
             requests: 2,
@@ -2055,6 +2073,40 @@ mod tests {
             let v = verify(d.path()).expect("verify");
             assert_eq!(v.label(), Label::Pass, "{shape:?}: {:?}", v.findings());
         }
+    }
+
+    #[test]
+    fn a_resumed_turn_passes_only_once_it_ran_and_exited_clean() {
+        let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+        let judged = |exit_code, resumed: Option<crate::harness::Resumed>| {
+            let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
+            write_manifest(d.path(), "claude-code", |m| {
+                m.scenario = "ultra-effort".into();
+                m.capture.exit_code = exit_code;
+                m.capture.resumed = resumed;
+            });
+            verify(d.path()).expect("verify")
+        };
+        let resumed = |exit_code| Some(crate::harness::Resumed { exit_code });
+        let v = judged(Some(0), resumed(Some(0)));
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        assert!(has(
+            &judged(Some(0), None),
+            Label::Fail,
+            "named no session to resume"
+        ));
+        assert!(has(
+            &judged(Some(0), resumed(Some(1))),
+            Label::Blocked,
+            "resumed exit Some(1)"
+        ));
+        let v = judged(Some(1), None);
+        assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
+        assert!(
+            !has(&v, Label::Fail, "named no session"),
+            "a first turn that never ran is the CLI's, not pixtuoid's: {:?}",
+            v.findings()
+        );
     }
 
     #[test]
