@@ -40,8 +40,8 @@ mod run {
     use pixtuoid_core::harness::hermetic::{
         self, DAEMON_PORT_PLACEHOLDER, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
         LIVE_PIXTUOID_ENV, LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES,
-        PROMPT_PLACEHOLDER, Package, PerOs, Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Step,
-        StepRecord, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
+        PROMPT_PLACEHOLDER, Package, PerOs, Profile, Resume, SCENE_LOG, SHARDS, STEPS, Scenario,
+        Step, StepRecord, Surface, TUI_LOG, USER_PLACEHOLDER, WORKSPACE_PLACEHOLDER,
         WORKSPACE_SLASHED_PLACEHOLDER,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
@@ -1643,7 +1643,7 @@ mod run {
             )));
         }
         let run = Sandboxed {
-            port: ports.model,
+            ports,
             workspace,
             _workspace_root: workspace_root,
             cli,
@@ -1652,10 +1652,10 @@ mod run {
         Ok((turn(ctx, p, scenario, &run, dir)?, run))
     }
 
-    /// A sandbox `p`'s CLI is installed in, the workspace it runs in, and the
-    /// port its scripted model listens on.
+    /// A sandbox `p`'s CLI is installed in, the workspace it runs in, and its
+    /// run's ports.
     struct Sandboxed {
-        port: u16,
+        ports: Ports,
         workspace: PathBuf,
         _workspace_root: Option<ReplayRoot>,
         cli: Installed,
@@ -1721,13 +1721,13 @@ mod run {
     ) -> std::io::Result<Manifest> {
         let Ctx { built, aimock, .. } = ctx;
         let Sandboxed {
-            port,
+            ports,
             workspace,
             cli,
             sandbox,
             ..
         } = run;
-        let port = *port;
+        let port = ports.model;
         let script = render_script(p, scenario, workspace, sandbox.dir.path())?;
         let mut model = tool(&aimock.launch.program);
         model
@@ -1788,6 +1788,7 @@ mod run {
                     cli_version: &cli_version(sandbox, p, &cli.launch)?,
                     launch: &cli.launch,
                     driver: &built.driver,
+                    ports: *ports,
                 },
                 p,
                 scenario,
@@ -1926,6 +1927,8 @@ mod run {
         launch: &'a Launch,
         /// [`Built::driver`].
         driver: &'a Path,
+        /// What the daemon, invocation and resume words spell as ports.
+        ports: Ports,
     }
 
     /// The recorder's command line for one run: its options, then the source,
@@ -1946,21 +1949,25 @@ mod run {
         for kv in run.cli_env {
             args.extend([recorder_flag::ENV.into(), kv.into()]);
         }
+        let ported = |word: &str| expanded(word, run.ports);
         if let Some(daemon) = &p.daemon {
             for (flag, words) in [
                 (recorder_flag::DAEMON, daemon.start),
                 (recorder_flag::DAEMON_READY, daemon.ready),
             ] {
-                let words = words.iter().map(OsString::from);
+                let words = words.iter().map(|w| ported(w).into());
                 for word in run.launch.argv().into_iter().chain(words) {
                     args.extend([flag.into(), word]);
                 }
             }
         }
         // A scenario's prompts expand here; the recorder expands only its own.
-        let prompted = |word: &str, prompt: &str| word.replace(PROMPT_PLACEHOLDER, prompt);
-        if let (Some(prompt), Some(resume)) = (scenario.turn.resume, p.resume) {
-            let words = resume[1..].iter().map(|w| prompted(w, prompt).into());
+        let prompted = |word: &str, prompt: &str| ported(word).replace(PROMPT_PLACEHOLDER, prompt);
+        if let (Some(resume), Some(words)) = (scenario.turn.resume, p.resume) {
+            let words = words[1..].iter().map(|w| match resume {
+                Resume::Prompt(prompt) => prompted(w, prompt).into(),
+                Resume::Bare => ported(w).into(),
+            });
             for word in run.launch.argv().into_iter().chain(words) {
                 args.extend([recorder_flag::RESUME.into(), word]);
             }
@@ -1974,7 +1981,7 @@ mod run {
                         .iter()
                         .map(|w| match scenario.turn.prompt {
                             Some(prompt) => prompted(w, prompt).into(),
-                            None => OsString::from(w),
+                            None => ported(w).into(),
                         }),
                 );
                 args.extend(scenario.turn.args.iter().map(OsString::from));
@@ -2439,6 +2446,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 &p.scenarios[0],
@@ -2487,6 +2495,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 scenario,
@@ -2497,7 +2506,9 @@ mod run {
                 .filter(|kv| kv[0] == recorder_flag::RESUME)
                 .map(|kv| kv[1].to_string_lossy().into_owned())
                 .collect();
-            let second = scenario.turn.resume.expect("a second turn");
+            let Some(Resume::Prompt(second)) = scenario.turn.resume else {
+                panic!("a prompted second turn");
+            };
             let want: Vec<String> = std::iter::once("/cli/claude".to_owned())
                 .chain(
                     p.resume.expect("claude-code resumes")[1..]
@@ -2514,6 +2525,95 @@ mod run {
             assert_eq!(
                 first, scenario.turn.args,
                 "the first turn's args follow its invocation"
+            );
+        }
+
+        /// The recorder's words, after `flag`, in `args`.
+        fn flagged(args: &[OsString], flag: &str) -> Vec<String> {
+            args.windows(2)
+                .filter(|w| w[0] == *flag)
+                .map(|w| w[1].to_string_lossy().into_owned())
+                .collect()
+        }
+
+        fn recorder_args_of(p: &Profile, scenario: &Scenario) -> Vec<OsString> {
+            let launch = Launch {
+                program: PathBuf::from(format!("/cli/{}", p.source)),
+                args: Vec::new(),
+                env: Vec::new(),
+            };
+            recorder_args(
+                &RecorderRun {
+                    out: Path::new("/runs/x"),
+                    scene: Path::new("/sb/scene.sock"),
+                    within: Path::new("/sb"),
+                    workspace: Path::new("/ws/proj"),
+                    cli_env: &[],
+                    cli_version: "1.2.3",
+                    launch: &launch,
+                    driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
+                },
+                p,
+                scenario,
+            )
+        }
+
+        #[test]
+        fn no_word_reaches_the_recorder_with_its_daemon_port_unexpanded() {
+            for p in PROFILES {
+                for s in p.scenarios {
+                    let args = recorder_args_of(p, s);
+                    assert!(
+                        !args
+                            .iter()
+                            .any(|a| a.to_string_lossy().contains(DAEMON_PORT_PLACEHOLDER)),
+                        "{}/{}: {args:?}",
+                        p.source,
+                        s.name
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn a_bare_resume_hands_the_recorder_its_words_with_no_prompt() {
+            let p = hermetic::profile("opencode").expect("opencode");
+            let scenario = p.scenario("delete").expect("the row");
+            assert_eq!(scenario.turn.resume, Some(Resume::Bare));
+            let args = recorder_args_of(p, scenario);
+            let server = format!("http://127.0.0.1:{}", TEST_PORTS.daemon);
+            assert_eq!(
+                flagged(&args, recorder_flag::RESUME),
+                [
+                    "/cli/opencode",
+                    "session",
+                    "delete",
+                    "--server",
+                    &server,
+                    hermetic::SESSION_PLACEHOLDER,
+                ]
+            );
+            assert_eq!(
+                flagged(&args, recorder_flag::DAEMON),
+                [
+                    "/cli/opencode",
+                    "serve",
+                    "--stdio",
+                    "--port",
+                    &TEST_PORTS.daemon.to_string(),
+                ]
+            );
+            assert_eq!(
+                flagged(&args, recorder_flag::DAEMON_READY),
+                ["/cli/opencode", "session", "list", "--server", &server]
+            );
+            let source = args.iter().position(|a| a == p.source).expect("the source");
+            assert!(
+                args[source..]
+                    .windows(2)
+                    .any(|w| w[0] == "--server" && w[1] == *server),
+                "the turn runs on the daemon: {args:?}"
             );
         }
 
@@ -2535,6 +2635,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 &p.scenarios[0],
@@ -2585,6 +2686,7 @@ mod run {
                     cli_version: "1.2.3",
                     launch: &launch,
                     driver: Path::new("/build/tui_drive"),
+                    ports: TEST_PORTS,
                 },
                 p,
                 scenario,

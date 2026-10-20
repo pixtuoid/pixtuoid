@@ -41,7 +41,7 @@ pub const WORKSPACE_SLASHED_PLACEHOLDER: &str = "{workspace_slashed}";
 /// What a [`Profile::invocation`] or [`Profile::resume`] spells its turn's
 /// prompt as.
 pub const PROMPT_PLACEHOLDER: &str = "{prompt}";
-/// What a [`Profile::resume`] spells the session its turn resumes as.
+/// What a [`Profile::resume`] spells the session its second turn acts on as.
 pub const SESSION_PLACEHOLDER: &str = "{session}";
 /// What a script spells the platform's shell tool as, a profile's
 /// [`Profile::script_vars`] naming it.
@@ -162,8 +162,7 @@ pub enum Surface {
     Tui(&'static tui::Tui),
 }
 
-/// A CLI's scripted turn, and the turn resuming it where [`Turn::resume`]
-/// names one.
+/// A CLI's scripted turn, and its second where [`Turn::resume`] names one.
 #[derive(Debug)]
 pub struct Scenario {
     /// Its name, unique in its profile: its script's file stem, its run
@@ -189,9 +188,18 @@ pub struct Turn {
     pub args: &'static [&'static str],
     /// Its prompt, in place of the recorder's shared one.
     pub prompt: Option<&'static str>,
-    /// The prompt of a second headless turn, resuming this one's session in
-    /// the same sandbox and workspace once its CLI exited.
-    pub resume: Option<&'static str>,
+    /// A second headless turn on this one's session, in the same sandbox and
+    /// workspace once its CLI exited: [`Profile::resume`]'s words.
+    pub resume: Option<Resume>,
+}
+
+/// What a [`Turn::resume`] asks of [`Profile::resume`]'s words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resume {
+    /// A turn with this prompt, which the words spell as [`PROMPT_PLACEHOLDER`].
+    Prompt(&'static str),
+    /// No prompt: words that act on the session, as deleting it does.
+    Bare,
 }
 
 impl Turn {
@@ -264,9 +272,9 @@ pub struct Profile {
     /// The headless invocation: [`PROMPT_PLACEHOLDER`] expands to the
     /// scenario's prompt in the runner, else to the recorder's shared one.
     pub invocation: &'static [&'static str],
-    /// The headless invocation that resumes a session, as [`Turn::resume`] runs
-    /// it: the runner expands [`PROMPT_PLACEHOLDER`], the recorder
-    /// [`SESSION_PLACEHOLDER`].
+    /// The headless invocation of a second turn, as [`Turn::resume`] runs it:
+    /// the runner expands a [`Resume::Prompt`]'s [`PROMPT_PLACEHOLDER`], the
+    /// recorder [`SESSION_PLACEHOLDER`].
     pub resume: Option<&'static [&'static str]>,
     /// Environment for the CLI: endpoint, dummy key and opt-outs; `{port}`,
     /// `{key}` and [`DAEMON_PORT_PLACEHOLDER`] expand.
@@ -645,6 +653,9 @@ const REASONIX_TUI: tui::Tui = tui::Tui {
     renders_under_conpty: true,
 };
 
+/// opencode's daemon, as its `--server` commands name it.
+const OPENCODE_SERVER: &str = "http://127.0.0.1:{daemon_port}";
+
 /// The profiled CLIs.
 pub const PROFILES: &[Profile] = &[
     Profile {
@@ -716,7 +727,7 @@ pub const PROFILES: &[Profile] = &[
                 turn: Turn {
                     args: &["--effort", "ultracode"],
                     prompt: Some("ultrathink: read NOTE.txt."),
-                    resume: Some("Say done."),
+                    resume: Some(Resume::Prompt("Say done.")),
                 },
             },
             Scenario {
@@ -920,24 +931,39 @@ trust_level = "trusted"
     Profile {
         source: "opencode",
         package: Package::Npm("@opencode/cli"),
-        // A plain `run` attaches to the background service, whose env never
-        // carries the run's PIXTUOID_SOCKET; a private server inherits it
-        // (`packages/cli/src/services/standalone.ts:24-25`). Only an explicit
-        // `--model` reaches the session's events (`packages/cli/src/run/run.ts:91`).
+        // On the daemon, whose plugin forwards its session's delete
+        // (`packages/core/src/session.ts:367-377` at v2.0.32): a delete through
+        // a private server of its own forwards none. Only an explicit `--model`
+        // reaches the session's events (`packages/cli/src/run/run.ts:91`).
         invocation: &[
             "opencode",
             "run",
-            "--standalone",
+            "--server",
+            OPENCODE_SERVER,
             "--model",
             "openai/gpt-5.2",
             PROMPT_PLACEHOLDER,
         ],
-        resume: None,
-        // The models.dev fetch and the update check
-        // (`packages/cli/src/server-process.ts:113`, `services/updater.ts:534`).
+        // `session delete` (`packages/cli/src/commands/commands.ts:437-443` at
+        // v2.0.32).
+        resume: Some(&[
+            "opencode",
+            "session",
+            "delete",
+            "--server",
+            OPENCODE_SERVER,
+            SESSION_PLACEHOLDER,
+        ]),
         env: &[
+            // The models.dev fetch and the update check
+            // (`packages/cli/src/server-process.ts:113`, `services/updater.ts:534`).
             ("OPENCODE_DISABLE_MODELS_FETCH", "1"),
             ("OPENCODE_DISABLE_AUTOUPDATE", "1"),
+            // The daemon's password, which each `--server` command sends and the
+            // daemon keeps from its tools' env
+            // (`packages/cli/src/services/server-connection.ts:24-29`,
+            // `packages/cli/src/server-process.ts:82-85` at v2.0.32).
+            ("OPENCODE_PASSWORD", "{key}"),
         ],
         // On Windows its system config is under `env.ProgramData`
         // (`packages/core/src/config/discovery.ts:27-31`), so a sandboxed
@@ -1037,16 +1063,42 @@ trust_level = "trusted"
                 fixture: "fixtures/opencode/permission-hermetic",
                 turn: Turn::PROFILE,
             },
+            Scenario {
+                name: "delete",
+                shape: Shape::ToolRun,
+                surface: Surface::Headless,
+                expects: &[
+                    "session.created",
+                    "session.execution.started",
+                    "session.tool.input.started",
+                    "session.tool.success",
+                    "session.execution.succeeded",
+                    "session.deleted",
+                ],
+                fixture: "fixtures/opencode/delete-hermetic",
+                turn: Turn {
+                    args: &[],
+                    prompt: None,
+                    resume: Some(Resume::Bare),
+                },
+            },
         ],
         script_vars: &[],
-        not_yet: &["session.deleted", "session.execution.interrupted"],
+        not_yet: &["session.execution.interrupted"],
         event_name: type_field,
         not_yet_fields: &[],
         not_yet_literals: &[],
         children_inherit_cwd: false,
         result_unseen: false,
         live: None,
-        daemon: None,
+        // A server on the run's port whose stdin is its lease
+        // (`packages/cli/src/server-process.ts:204-208`, `:227-240` at v2.0.32);
+        // listing the sessions loads the workspace, and with it the plugin,
+        // before the turn.
+        daemon: Some(Daemon {
+            start: &["serve", "--stdio", "--port", DAEMON_PORT_PLACEHOLDER],
+            ready: &["session", "list", "--server", OPENCODE_SERVER],
+        }),
     },
     // dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
     Profile {
@@ -1557,7 +1609,7 @@ model = "deepseek-v4-flash"
                 turn: Turn {
                     args: &[],
                     prompt: None,
-                    resume: Some("Say done."),
+                    resume: Some(Resume::Prompt("Say done.")),
                 },
             },
             Scenario {
@@ -2188,12 +2240,24 @@ mod tests {
     #[test]
     fn a_resumed_scenarios_profile_names_how_its_session_resumes() {
         for p in PROFILES {
-            let resumes = p.scenarios.iter().any(|s| s.turn.resume.is_some());
             if let Some(words) = p.resume {
                 assert!(words.contains(&SESSION_PLACEHOLDER), "{}", p.source);
-                assert!(words.contains(&PROMPT_PLACEHOLDER), "{}", p.source);
             }
-            assert!(!resumes || p.resume.is_some(), "{}: no resume", p.source);
+            for s in p.scenarios {
+                let Some(resume) = s.turn.resume else {
+                    continue;
+                };
+                let words = p
+                    .resume
+                    .unwrap_or_else(|| panic!("{}: no resume", p.source));
+                assert_eq!(
+                    words.contains(&PROMPT_PLACEHOLDER),
+                    matches!(resume, Resume::Prompt(_)),
+                    "{}/{}: its words spell a prompt exactly when it has one",
+                    p.source,
+                    s.name
+                );
+            }
         }
     }
 
