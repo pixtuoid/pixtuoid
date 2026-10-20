@@ -145,7 +145,7 @@ pub fn version_answer(out: &std::process::Output) -> Option<String> {
 }
 
 /// How long a server the rig starts gets to come up.
-pub const BOOT: Duration = Duration::from_secs(60);
+pub const BOOT: Duration = Duration::from_secs(120);
 /// How often a server that is coming up is asked whether it serves.
 const POLL: Duration = Duration::from_millis(200);
 
