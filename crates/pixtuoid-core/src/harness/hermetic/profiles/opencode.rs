@@ -8,7 +8,7 @@ use crate::harness::hermetic::{
 };
 
 /// opencode's daemon, as its `--server` commands name it.
-const OPENCODE_SERVER: &str = "http://127.0.0.1:{daemon_port}";
+const SERVER: &str = "http://127.0.0.1:{daemon_port}";
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "opencode",
@@ -21,7 +21,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "opencode",
         "run",
         "--server",
-        OPENCODE_SERVER,
+        SERVER,
         "--model",
         "openai/gpt-5.2",
         PROMPT_PLACEHOLDER,
@@ -33,7 +33,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "session",
         "delete",
         "--server",
-        OPENCODE_SERVER,
+        SERVER,
         SESSION_PLACEHOLDER,
     ]),
     env: &[
@@ -179,7 +179,7 @@ pub(crate) const PROFILE: Profile = Profile {
     // before the turn.
     daemon: Some(Daemon {
         start: &["serve", "--stdio", "--port", DAEMON_PORT_PLACEHOLDER],
-        ready: &["session", "list", "--server", OPENCODE_SERVER],
+        ready: &["session", "list", "--server", SERVER],
         env: &[],
     }),
 };

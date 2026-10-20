@@ -8,7 +8,7 @@ use crate::harness::hermetic::{
 
 /// hermes's classic REPL, where a dangerous terminal command waits on the
 /// user.
-const HERMES_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &["--accept-hooks", "--cli", "chat"],
     composer: tui::Composer {
         marker: "❯",
@@ -91,7 +91,7 @@ telemetry:
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &HERMES_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[

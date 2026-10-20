@@ -5,10 +5,9 @@ use crate::harness::hermetic::{
     PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
-/// kimi's TUI, its cites at `@moonshot-ai/kimi-code@2.2.0`. Always Ask, its
-/// default mode, asks before a command (`docs/en/guides/interaction.md:67`);
-/// `-p` never asks (`docs/en/reference/kimi-command.md:43`).
-const KIMI_TUI: tui::Tui = tui::Tui {
+/// kimi's TUI. Always Ask, its default mode, asks before a command
+/// (`docs/en/guides/interaction.md:67`); `-p` never asks (`docs/en/reference/kimi-command.md:43`).
+const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: " │ >",
@@ -73,7 +72,7 @@ pub(crate) const PROFILE: Profile = Profile {
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &KIMI_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[

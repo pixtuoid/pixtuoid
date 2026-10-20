@@ -6,7 +6,7 @@ use crate::harness::hermetic::{
 
 /// Claude Code's TUI. Manual mode asks before a non-read-only Bash call
 /// (code.claude.com/docs/en/permission-modes).
-const CLAUDE_CODE_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "manual"],
     composer: tui::Composer {
         marker: "❯",
@@ -118,7 +118,7 @@ pub(crate) const PROFILE: Profile = Profile {
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &CLAUDE_CODE_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[

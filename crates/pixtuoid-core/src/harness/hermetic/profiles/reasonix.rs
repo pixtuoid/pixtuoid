@@ -8,10 +8,10 @@ use crate::harness::hermetic::{
     ConfigFile, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
-/// reasonix's TUI, its cites at `v2.44.0`. A named mode skips the folder-trust
-/// question, whose yes would run commands unasked
+/// reasonix's TUI. A named mode skips the folder-trust question, whose yes
+/// would run commands unasked
 /// (`internal/frontend/cli/tui_posture.go:32-42`, `:69`).
-const REASONIX_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "ask"],
     composer: tui::Composer {
         marker: " ❯",
@@ -183,7 +183,7 @@ model = "guardian-model"
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &REASONIX_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[

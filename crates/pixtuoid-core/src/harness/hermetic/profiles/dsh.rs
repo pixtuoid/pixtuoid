@@ -10,7 +10,7 @@ use crate::harness::hermetic::{
 };
 
 /// The event dsh's plugin forwards as each payload `type` (`dsh_plugin.mjs`).
-fn dsh_event(v: &Value) -> Option<Cow<'_, str>> {
+fn event(v: &Value) -> Option<Cow<'_, str>> {
     Some(Cow::Borrowed(match v.get("type")?.as_str()? {
         "session_start" => "agent/created",
         "session_end" => "agent/disposed",
@@ -107,7 +107,7 @@ pub(crate) const PROFILE: Profile = Profile {
         },
     )],
     not_yet: &[],
-    event_name: dsh_event,
+    event_name: event,
     not_yet_fields: &[],
     not_yet_literals: &[],
     children_inherit_cwd: false,

@@ -12,7 +12,7 @@ use crate::harness::hermetic::{
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
 /// list (`crates/codegen/xai-grok-pager/docs/user-guide/22-permissions-and-safety.md:140-175`).
-const GROK_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "default"],
     composer: tui::Composer {
         marker: "  │ ❯",
@@ -37,7 +37,7 @@ const GROK_TUI: tui::Tui = tui::Tui {
 /// The registration a grok envelope's `hookEventName` answers to: the wire
 /// spells each key in snake_case
 /// (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`).
-fn grok_event(v: &Value) -> Option<Cow<'_, str>> {
+fn event(v: &Value) -> Option<Cow<'_, str>> {
     let wire = v.get("hookEventName")?.as_str()?;
     let key = wire
         .split('_')
@@ -166,7 +166,7 @@ pub(crate) const PROFILE: Profile = Profile {
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &GROK_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[
@@ -213,7 +213,7 @@ pub(crate) const PROFILE: Profile = Profile {
     ],
     script_vars: &[],
     not_yet: &[],
-    event_name: grok_event,
+    event_name: event,
     not_yet_fields: &[],
     not_yet_literals: &[],
     children_inherit_cwd: false,
@@ -236,8 +236,8 @@ mod tests {
             ("a_new_hook", "ANewHook"),
         ] {
             let v = serde_json::json!({ "hookEventName": wire });
-            assert_eq!(grok_event(&v).as_deref(), Some(key));
+            assert_eq!(event(&v).as_deref(), Some(key));
         }
-        assert_eq!(grok_event(&serde_json::json!({})), None);
+        assert_eq!(event(&serde_json::json!({})), None);
     }
 }

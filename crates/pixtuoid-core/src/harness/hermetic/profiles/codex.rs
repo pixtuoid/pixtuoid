@@ -7,7 +7,7 @@ use crate::harness::hermetic::{
 /// codex's TUI, its cites at `rust-v0.163.0`. On-request lets the model ask
 /// (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call asks
 /// to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
-const CODEX_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &[
         "--dangerously-bypass-hook-trust",
         "--ask-for-approval",
@@ -151,7 +151,7 @@ trust_level = "trusted"
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Tui {
-                row: &CODEX_TUI,
+                row: &TUI,
                 answer: tui::Answer::Deny,
             },
             expects: &[

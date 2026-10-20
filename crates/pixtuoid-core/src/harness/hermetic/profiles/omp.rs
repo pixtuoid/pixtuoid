@@ -6,8 +6,7 @@ use crate::harness::hermetic::{
     ConfigFile, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
-/// omp's TUI, cited as its profile is.
-const OMP_TUI: tui::Tui = tui::Tui {
+const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: "╰─",
@@ -124,7 +123,7 @@ startup:
             name: "new-session",
             shape: Shape::Succession,
             surface: Surface::Tui {
-                row: &OMP_TUI,
+                row: &TUI,
                 answer: tui::Answer::Nothing,
             },
             expects: &["session_start", "session_switch", "session_shutdown"],
