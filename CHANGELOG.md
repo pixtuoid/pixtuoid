@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.20.0](https://github.com/pixtuoid/pixtuoid/compare/v0.19.0...v0.20.0) - 2026-10-21
 
+### Upgrading
+
+- Reconnect Claude Code, Codex and Reasonix once after upgrading: pixtuoid now loads into them as a plugin, and the hooks an older pixtuoid merged no longer connect ([#1586](https://github.com/pixtuoid/pixtuoid/pull/1586))
+- The version popup now lists what changed for you since the version you last ran, including the hosts still to reconnect; `v` reopens it ([#1587](https://github.com/pixtuoid/pixtuoid/pull/1587))
+
 ### Bug Fixes
 
 - *(install)* claude-code's Windows hook entry carries --source ([#1804](https://github.com/pixtuoid/pixtuoid/pull/1804))
@@ -27,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(scene)* [**breaking**] every painter holds a floor slide's flashes, on a type only a session makes ([#1561](https://github.com/pixtuoid/pixtuoid/pull/1561))
 - *(drift)* comments cite live names and their authorities ([#1559](https://github.com/pixtuoid/pixtuoid/pull/1559))
 - *(tui)* a hangup quits through the unwind, and links open detached ([#1552](https://github.com/pixtuoid/pixtuoid/pull/1552))
-- *(doctor)* doctor names the hooks a pre-plugin pixtuoid left in Claude Code's settings ([#1557](https://github.com/pixtuoid/pixtuoid/pull/1557))
 - *(graphics)* VS Code, Tabby and Hyper draw images only once their image addon answers ([#1468](https://github.com/pixtuoid/pixtuoid/pull/1468))
 - *(floating)* an expose the app didn't ask for presents the next frame ([#1449](https://github.com/pixtuoid/pixtuoid/pull/1449))
 - *(graphics)* #1423's round-2 review findings outside its fold ([#1426](https://github.com/pixtuoid/pixtuoid/pull/1426))
