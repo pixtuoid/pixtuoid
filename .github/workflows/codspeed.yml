@@ -82,12 +82,12 @@ jobs:
           done
       # Non-required is not enough: a red step still reaches mergeStateStatus
       # (#964 sat gated on a red simulation while memory was already forgiven).
-      - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
         continue-on-error: true
         with:
           mode: simulation
           run: cargo codspeed run
-      - uses: CodSpeedHQ/action@f842b9a3ffe213dbb81768fd7f7eeb4dfcf1c369 # v5.4.2
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
         continue-on-error: true
         with:
           mode: memory
