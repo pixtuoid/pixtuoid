@@ -111,10 +111,10 @@ our release never builds. Two consequences:
   formula, in the same bump PR.
 - **Their `test do` block is a public contract** — see the "homebrew-core
   contract" comments at `crates/pixtuoid/src/app/sources_cli.rs`,
-  `crates/pixtuoid-core/src/source/codewhale.rs`; the packaging-build action
-  replays the block. A dispatch only warns when the block calls a subcommand
-  this tree dropped, or connects a source that fails with no agent CLI
-  installed, because the owner, sending a test update ahead of the release that
+  `crates/pixtuoid-core/src/source/claude_code.rs`, `install/io.rs`; the
+  packaging-build action replays the block. A dispatch only warns when the block
+  calls a subcommand this tree dropped, or a connect exits or prints other than
+  expected, because the owner, sending a test update ahead of the release that
   needed it, was told to release first (no public record); step 4 sends it.
 
 Do not try to preempt BrewTestBot: the formula is on homebrew-core's

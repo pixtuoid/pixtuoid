@@ -132,7 +132,8 @@ fn report_batch(rows: &[sources::OutcomeRow], json: bool) -> Result<()> {
         .iter()
         .any(|r| r.outcome == sources::WireOutcome::Failed)
     {
-        // homebrew-core contract: the formula's `test do` expects this exit (1).
+        // homebrew-core contract: the formula's `test do` expects the exit
+        // `main` maps this error to (`ExitCode::FAILURE`).
         anyhow::bail!("one or more sources failed (see the rows above)");
     }
     Ok(())
