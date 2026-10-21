@@ -997,6 +997,40 @@ fn backfill_does_not_clobber_a_renamed_label() {
     assert_eq!(&*slot.label, "code-explorer", "renamed label kept");
 }
 
+/// agy's transcript names no cwd, so its first sight renames to the bare
+/// prefix; the hook's workspace names the session whichever lands first.
+#[test]
+fn a_bare_prefix_rename_never_replaces_a_cwd_label() {
+    let id = AgentId::from_parts("antigravity", "conv");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let start = |cwd: &str| AgentEvent::SessionStart {
+        agent_id: id,
+        source: "antigravity".into(),
+        session_id: "conv".into(),
+        cwd: PathBuf::from(cwd),
+        parent_id: None,
+    };
+    let hook = vec![(start("/tmp/proj"), Transport::Hook)];
+    let sight = vec![
+        (start(""), Transport::Jsonl),
+        (
+            AgentEvent::Rename {
+                agent_id: id,
+                label: "ag".into(),
+            },
+            Transport::Jsonl,
+        ),
+    ];
+    for order in [[&hook, &sight], [&sight, &hook]] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        for (ev, from) in order.into_iter().flatten() {
+            r.apply(&mut scene, ev.clone(), t0, *from);
+        }
+        assert_eq!(&*scene.agents[&id].label, "ag·proj");
+    }
+}
+
 #[test]
 fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
     let mut scene = SceneState::uniform(4);

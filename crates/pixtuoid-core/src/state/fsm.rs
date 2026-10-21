@@ -124,10 +124,10 @@ pub(crate) fn resurrect_in_place(slot: &mut AgentSlot, now: SystemTime) {
     slot.state_started_at = now;
 }
 
-/// Apply a display rename (idempotent — a same-text rename keeps the existing
-/// label AND its provenance) and refresh liveness.
+/// Apply a display rename the label yields to (idempotent — a same-text rename
+/// keeps the existing label AND its provenance) and refresh liveness.
 pub(crate) fn rename(slot: &mut AgentSlot, label: crate::state::SlotLabel, now: SystemTime) {
-    if *slot.label != *label {
+    if *slot.label != *label && slot.label.yields_to(&label) {
         slot.label = label;
     }
     slot.last_event_at = now;

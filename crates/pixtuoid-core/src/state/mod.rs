@@ -166,7 +166,7 @@ pub enum ActivityState {
 }
 
 /// How an [`AgentSlot`]'s display label came to be — recorded at mint time so
-/// the blank-registration→back-fill decision ([`SlotLabel::is_upgradable`])
+/// whether a later label replaces it ([`SlotLabel::yields_to`])
 /// doesn't rest on string-shape sniffing. One variant per REAL mint site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum LabelProvenance {
@@ -174,9 +174,9 @@ pub(crate) enum LabelProvenance {
     OrdinalGhost,
     /// Bare registry prefix from an empty-cwd deriver fallback — upgradable.
     PrefixFallback,
-    /// Derived from the cwd basename (`cc·repo`-style) — real information, never clobbered.
+    /// Derived from the cwd basename (`cc·repo`-style) — real information.
     CwdDerived,
-    /// Externally supplied display name (subagent name, a rename) — never clobbered.
+    /// Externally supplied display name (subagent name, a rename) — real information.
     Renamed,
 }
 
@@ -222,12 +222,18 @@ impl SlotLabel {
         self.provenance
     }
 
-    /// Whether the duplicate-`SessionStart` back-fill may upgrade this label.
+    /// Whether this label is a placeholder, which any later label replaces.
     pub(crate) fn is_upgradable(&self) -> bool {
         matches!(
             self.provenance,
             LabelProvenance::OrdinalGhost | LabelProvenance::PrefixFallback
         )
+    }
+
+    /// Whether `incoming` replaces this label: a rename's own name replaces
+    /// any, and anything else only a placeholder.
+    pub(crate) fn yields_to(&self, incoming: &Self) -> bool {
+        incoming.provenance == LabelProvenance::Renamed || self.is_upgradable()
     }
 }
 

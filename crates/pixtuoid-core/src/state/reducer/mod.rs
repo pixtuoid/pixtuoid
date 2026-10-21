@@ -988,13 +988,10 @@ impl Reducer {
         }
         // A slot can exist with MISSING identity: hook synthesis registers from
         // the AgentId alone, and a Codex revive ghost has an empty cwd.
-        let label_is_upgradable = slot.label.is_upgradable();
-        if let Some(base) = backfill_identity(slot, ctx)
-            && label_is_upgradable
-        {
+        if let Some(base) = backfill_identity(slot, ctx) {
             // `base` BYPASSES the `cwd_basename_label` chokepoint, so the
             // same decode-boundary cap is applied here.
-            slot.label = crate::state::SlotLabel::cwd_derived(format!(
+            let derived = crate::state::SlotLabel::cwd_derived(format!(
                 "{}·{}",
                 label_prefix_for(&slot.source),
                 crate::source::decoder::ellipsize(
@@ -1002,6 +999,9 @@ impl Reducer {
                     crate::source::decoder::MAX_DECODED_FIELD_CHARS,
                 )
             ));
+            if slot.label.yields_to(&derived) {
+                slot.label = derived;
+            }
         }
         slot.last_event_at = now;
         if revive {
