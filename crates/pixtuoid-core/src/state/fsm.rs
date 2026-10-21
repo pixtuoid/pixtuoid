@@ -124,10 +124,9 @@ pub(crate) fn resurrect_in_place(slot: &mut AgentSlot, now: SystemTime) {
     slot.state_started_at = now;
 }
 
-/// Apply a display rename the label yields to (idempotent — a same-text rename
-/// keeps the existing label AND its provenance) and refresh liveness.
+/// Apply a display rename the label yields to, and refresh liveness.
 pub(crate) fn rename(slot: &mut AgentSlot, label: crate::state::SlotLabel, now: SystemTime) {
-    if *slot.label != *label && slot.label.yields_to(&label) {
+    if slot.label.yields_to(&label) {
         slot.label = label;
     }
     slot.last_event_at = now;
@@ -297,5 +296,14 @@ mod tests {
         rename(&mut s, "code-explorer".into(), t0 + Duration::from_secs(2));
         assert_eq!(&*s.label, "code-explorer");
         assert_eq!(s.last_event_at, t0 + Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_rename_to_a_placeholders_own_text_makes_it_a_real_name() {
+        let t0 = SystemTime::now();
+        let mut s = active(t0);
+        s.label = crate::state::SlotLabel::ordinal_ghost("cc#1");
+        rename(&mut s, "cc#1".into(), t0);
+        assert!(!s.label.is_upgradable());
     }
 }
