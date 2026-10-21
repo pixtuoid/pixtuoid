@@ -47,8 +47,9 @@ mod recorder {
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
     /// Where the recorder names the dir a driver keeps its own logs and homes
-    /// in, [`driver_dir`]: gone with a capture that worked and kept, and named,
-    /// for one that did not, since only the recorder knows which.
+    /// in, [`driver_dir`]: gone with a capture that worked, or whose whole
+    /// redacted copy is in the run dir; kept, and named, for one that did not
+    /// work and has no whole copy, since only the recorder knows which.
     const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
 
     /// The driver's own part of the recorder's scratch, apart from everything the
@@ -142,10 +143,10 @@ mod recorder {
             let len = body.len() as u64;
             if copied + len > cap {
                 notices.push(format!(
-                    "driver copy stopped at its {cap}-byte cap before {}",
+                    "driver file {} left out: past the copy's {cap}-byte cap",
                     rel.display()
                 ));
-                break;
+                continue;
             }
             let dest = into.join(&rel);
             if dest.exists() {
@@ -201,15 +202,16 @@ mod recorder {
         }
         let left =
             std::fs::read_dir(driver_dir(scratch.path())).is_ok_and(|mut d| d.next().is_some());
-        if left {
+        if run_copy.is_some() && whole {
+            // The run dir holds the redacted copy; the originals are not left unnamed.
+            let _ = scratch.close();
+        } else if left {
             let kept = scratch.keep();
-            if !whole || run_copy.is_none() {
-                let _ = writeln!(
-                    log,
-                    "the driver's logs stay in {}",
-                    driver_dir(&kept).display()
-                );
-            }
+            let _ = writeln!(
+                log,
+                "the driver's logs stay in {}",
+                driver_dir(&kept).display()
+            );
         }
     }
 
@@ -2987,7 +2989,7 @@ mod recorder {
         }
 
         #[test]
-        fn a_driver_copy_stops_at_its_cap_and_says_so() {
+        fn a_file_past_the_cap_is_left_out_and_a_later_one_that_fits_is_copied() {
             let from =
                 driver_logs_with(&[("a.log", b"1234"), ("b.log", b"5678"), ("c.log", b"90")]);
             let into = tempfile::tempdir().expect("run dir");
@@ -2996,11 +2998,11 @@ mod recorder {
                 .notices;
             assert!(into.path().join("a.log").is_file());
             assert!(!into.path().join("b.log").exists(), "past the cap");
-            assert!(!into.path().join("c.log").exists(), "it stops, not skips");
+            assert!(into.path().join("c.log").is_file(), "it skips, not stops");
             assert!(
                 notices
                     .iter()
-                    .any(|n| n.contains("cap") && n.contains("b.log")),
+                    .any(|n| n.contains("past the copy's") && n.contains("b.log")),
                 "{notices:?}"
             );
         }
@@ -3055,8 +3057,8 @@ mod recorder {
         }
 
         /// `keep_scratch` over `files`, naming `ada-lovelace`: the run dir it copied
-        /// into and what it logged.
-        fn kept_scratch_log(files: &[(&str, &[u8])]) -> (tempfile::TempDir, String) {
+        /// into, what it logged, and whether the scratch was left behind.
+        fn kept_scratch_log(files: &[(&str, &[u8])]) -> (tempfile::TempDir, String, bool) {
             let scratch = driver_logs_with(files);
             let at = scratch.path().to_path_buf();
             let into = tempfile::tempdir().expect("run dir");
@@ -3067,34 +3069,40 @@ mod recorder {
                 || BTreeSet::from(["ada-lovelace".to_owned()]),
                 &mut log,
             );
-            std::fs::remove_dir_all(at).expect("cleanup");
-            (into, String::from_utf8(log).expect("utf8"))
+            let kept = at.exists();
+            if kept {
+                std::fs::remove_dir_all(at).expect("cleanup");
+            }
+            (into, String::from_utf8(log).expect("utf8"), kept)
         }
 
         #[test]
         fn a_whole_copy_says_where_it_went_and_does_not_point_at_the_scratch() {
-            let (into, log) = kept_scratch_log(&[("daemon.log", b"up as ada-lovelace")]);
+            let (into, log, kept) = kept_scratch_log(&[("daemon.log", b"up as ada-lovelace")]);
             assert_eq!(
                 std::fs::read_to_string(into.path().join("daemon.log")).expect("copied"),
                 format!("up as {REDACTED}")
             );
             assert!(log.contains("copied into"), "{log}");
             assert!(!log.contains("stay in"), "{log}");
+            assert!(!kept, "the originals do not linger unnamed");
         }
 
         #[test]
         fn an_incomplete_copy_points_at_the_scratch_that_holds_the_rest() {
-            let (_, log) = kept_scratch_log(&[("a.log", b"fine"), ("b.bin", &[0xff, 0xfe])]);
+            let (_, log, kept) = kept_scratch_log(&[("a.log", b"fine"), ("b.bin", &[0xff, 0xfe])]);
             assert!(log.contains("copied into"), "a.log was copied: {log}");
             assert!(log.contains("not text"), "{log}");
             assert!(log.contains("stay in"), "{log}");
+            assert!(kept, "it holds the rest");
         }
 
         #[test]
         fn a_copy_of_nothing_claims_no_destination() {
-            let (_, log) = kept_scratch_log(&[("b.bin", &[0xff, 0xfe])]);
+            let (_, log, kept) = kept_scratch_log(&[("b.bin", &[0xff, 0xfe])]);
             assert!(!log.contains("copied into"), "{log}");
             assert!(log.contains("stay in"), "{log}");
+            assert!(kept);
         }
 
         #[test]
