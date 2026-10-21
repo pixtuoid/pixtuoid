@@ -124,7 +124,8 @@ mod recorder {
     /// Copy the text files of `from` into `into`, in path order, up to `cap`
     /// bytes of what is written: each path and body with the operator's identity
     /// redacted, since the run dir is uploaded. The notices name, by their
-    /// redacted paths, each file left out and where the cap stopped the copy.
+    /// redacted paths, each file left out: not text, past the cap, or sharing a
+    /// redacted path.
     fn copy_driver_dir(
         from: &Path,
         into: &Path,
@@ -166,9 +167,11 @@ mod recorder {
         Ok(DriverCopy { files, notices })
     }
 
-    /// Keep `scratch` for the diagnosis of a capture that did not work, when its
-    /// driver left anything in [`driver_dir`]; and copy that into `run_copy`,
-    /// where a sandboxed run's upload finds it, redacting `needles()`.
+    /// Copy the driver's logs in `scratch` into `run_copy`, where a sandboxed
+    /// run's upload finds them, redacting `needles()`. A copy that is whole
+    /// closes `scratch`; otherwise, or with no copy, `scratch` is kept for the
+    /// diagnosis of a capture that did not work when its driver left anything in
+    /// [`driver_dir`], and named in `log`.
     fn keep_scratch(
         scratch: tempfile::TempDir,
         run_copy: Option<&Path>,
@@ -3074,6 +3077,27 @@ mod recorder {
                 std::fs::remove_dir_all(at).expect("cleanup");
             }
             (into, String::from_utf8(log).expect("utf8"), kept)
+        }
+
+        #[test]
+        fn a_copy_that_fails_keeps_and_names_the_scratch() {
+            let scratch = driver_logs_with(&[("a.log", b"fine")]);
+            let at = scratch.path().to_path_buf();
+            let run = tempfile::tempdir().expect("run dir");
+            let blocker = run.path().join("a-file");
+            std::fs::write(&blocker, "").expect("write");
+            let mut log = Vec::new();
+            keep_scratch(
+                scratch,
+                Some(&blocker.join("driver")),
+                BTreeSet::new,
+                &mut log,
+            );
+            let log = String::from_utf8(log).expect("utf8");
+            assert!(log.contains("copy failed"), "{log}");
+            assert!(log.contains("stay in"), "{log}");
+            assert!(at.exists(), "it holds the only copy of the logs");
+            std::fs::remove_dir_all(at).expect("cleanup");
         }
 
         #[test]
