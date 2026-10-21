@@ -22,7 +22,7 @@ pty alone takes it, a live run's pointer being the user's.
 zoom its config saved, whose scale is whatever that size fits.
 
 Usage:
-    just pace-check [--live] [--scale classic|4|16] [--graphics kitty|sixel|iterm2]
+    just pace-check [--live] [--scale classic|4|16] [--protocol kitty|sixel|iterm2]
                     [--run storm|dusk] [--secs N] [--hover]
     just pace-check --floating [--run storm|dusk] [--secs N]
 """
@@ -165,17 +165,17 @@ def main():
     ap.add_argument("--floating", action="store_true")
     # `None` until resolved below, so `--floating` can refuse an explicit one.
     ap.add_argument("--scale", choices=SCALES)
-    ap.add_argument("--graphics", choices=["kitty", "sixel", "iterm2"])
+    ap.add_argument("--protocol", choices=["kitty", "sixel", "iterm2"])
     ap.add_argument("--run", choices=["storm", "dusk"], default="storm")
     ap.add_argument("--secs", type=float, default=200.0)
     ap.add_argument("--hover", action="store_true")
     args = ap.parse_args()
     if args.floating:
-        terminal_only = [f"--{k}" for k in ("live", "scale", "graphics", "hover") if getattr(args, k)]
+        terminal_only = [f"--{k}" for k in ("live", "scale", "protocol", "hover") if getattr(args, k)]
         if terminal_only:
             sys.exit(f"pace-check: {' '.join(terminal_only)} picks a terminal run, and --floating runs a window")
     args.scale = args.scale or "16"
-    args.graphics = args.graphics or "kitty"
+    args.protocol = args.protocol or "kitty"
     if args.hover and args.live:
         sys.exit("pace-check: --hover drives the pty's pointer; live, hover by hand")
     if args.live and not os.isatty(0):
@@ -192,15 +192,15 @@ def main():
         # `frame slow` is debug: every frame past its interval, with its state.
         RUST_LOG="info,pixtuoid::jank=debug",
     )
-    graphics = "off" if args.scale == "classic" else args.graphics
-    argv = [str(BIN), "--log-level", "info", "run", "--graphics", graphics]
+    look = ["--look", "classic"] if args.scale == "classic" else ["--protocol", args.protocol]
+    argv = [str(BIN), "--log-level", "info", "run", *look]
     if args.floating:
         run_for(subprocess.Popen([str(BIN), "--log-level", "info", "floating"], env=env), args.secs)
     elif args.live:
         run_live(argv, env, args.secs)
     else:
         # No pty answers the probe: a terminal the environment names plans
-        # without one, and `--graphics` then picks the protocol.
+        # without one, and `--protocol` then picks it.
         env.update(TERM="xterm-256color", TERM_PROGRAM="WezTerm")
         env.pop("TMUX", None)
         geometry = tuple(int(n) for n in pacing("terminal", "16" if args.scale == "classic" else args.scale))
@@ -216,7 +216,7 @@ def main():
         if w0.get("look") != "floating":
             sys.exit(f"pace-check: ran {w0.get('look')}, not floating: {log}")
     else:
-        wanted = ("classic", "1") if args.scale == "classic" else (args.graphics, args.scale)
+        wanted = ("classic", "1") if args.scale == "classic" else (args.protocol, args.scale)
         if (w0.get("look"), w0.get("scale")) != wanted:
             sys.exit(f"pace-check: ran {w0.get('look')} x{w0.get('scale')}, not {wanted[0]} x{wanted[1]}: {log}")
     # The verdict reads these; a binary that logs none, or whose loop gives

@@ -77,8 +77,8 @@ type Boot = (
 /// the plan affords unless the config names one.
 fn boot_tui(cfg: &RunConfig) -> Result<Boot> {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
-    let plan = crate::graphics::plan_this_terminal(cfg.graphics, pack.max_density_variant(), true);
-    tracing::info!(mode = ?cfg.graphics, plan = ?plan, "graphics plan");
+    let plan = crate::graphics::plan_this_terminal(cfg.look, pack.max_density_variant(), true);
+    tracing::info!(look = ?cfg.look, plan = ?plan, "graphics plan");
     let motion = cfg.motion.or(plan.motion(crate::graphics::Link::of_env()));
     tracing::info!(mode = ?cfg.motion, motion = ?motion, "motion");
     Ok((pack, plan, motion))
@@ -97,7 +97,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
         drift,
         first_run,
         audio,
-        graphics: _,
+        look: _,
         motion: _,
     } = cfg;
     // Audio owns no state here: `run_tui` builds the AudioController, which owns

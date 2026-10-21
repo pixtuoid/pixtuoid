@@ -113,7 +113,8 @@ struct Notices {
     /// [`crate::version::BootDecision::should_show_popup`], before the
     /// onboarding could hold the popup back.
     upgraded: bool,
-    cutaway: crate::version::CutawayTip,
+    /// This run draws the cutaway.
+    cutaway: bool,
     shown: Arc<[String]>,
 }
 
@@ -129,7 +130,8 @@ pub(crate) struct Boot<'a> {
     /// The sources connected at boot, for the notices a version popup opens
     /// with.
     pub(crate) connected: &'a HashSet<String>,
-    pub(crate) cutaway: crate::version::CutawayTip,
+    /// This run draws the cutaway.
+    pub(crate) cutaway: bool,
 }
 
 /// `$PIXTUOID_FAKE_NOW`'s clock, said once at warn: a stray export would
@@ -756,22 +758,17 @@ mod tests {
     /// A run of `current` booted over the config at `path`, with `welcome`'s
     /// onboarding and nothing connected.
     fn boot_at(path: &std::path::Path, welcome: WelcomeUi, current: &str) -> UiState {
-        boot_into(
-            path,
-            welcome,
-            current,
-            &HashSet::new(),
-            crate::version::CutawayTip::default(),
-        )
+        boot_into(path, welcome, current, &HashSet::new(), false)
     }
 
-    /// [`boot_at`] with `connected` at boot and the TUI's `cutaway`.
+    /// [`boot_at`] with `connected` at boot and whether the TUI draws the
+    /// `cutaway`.
     fn boot_into(
         path: &std::path::Path,
         welcome: WelcomeUi,
         current: &str,
         connected: &HashSet<String>,
-        cutaway: crate::version::CutawayTip,
+        cutaway: bool,
     ) -> UiState {
         UiState::boot_with(
             Boot {
@@ -824,16 +821,15 @@ mod tests {
     fn an_upgrade_boots_the_popup_with_its_notices() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = tmp.path().join("config.toml");
-        crate::config::save_version(&path, "0.19.0").expect("seed the release before");
+        let across = crate::version::across_every_notice();
+        crate::config::save_version(&path, &across.previous.to_string())
+            .expect("seed the release before");
         let ui = boot_into(
             &path,
             WelcomeUi::from_detected(&[]),
-            "0.20.0",
+            &across.current.to_string(),
             &HashSet::from(["codex".to_string()]),
-            crate::version::CutawayTip {
-                off: true,
-                drawable: true,
-            },
+            true,
         );
         assert!(ui.modal().version_popup_open);
         let shown = ui.version_notices();

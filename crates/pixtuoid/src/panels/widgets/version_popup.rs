@@ -375,8 +375,9 @@ mod tests {
             "pixtuoid now connects to Claude Code, Codex and Reasonix as a plugin: \
              reconnect the ones you use in Sources (s)."
                 .to_string(),
-            "This terminal can draw the cutaway office: try \
-             `pixtuoid run --graphics auto`, or set graphics = \"auto\" in the config."
+            "The cutaway office is now the default where this terminal draws it: \
+             `pixtuoid run --look classic` (or `look = \"classic\"` in the config) keeps the \
+             classic office."
                 .to_string(),
         ]
     }

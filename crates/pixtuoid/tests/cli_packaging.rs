@@ -188,21 +188,21 @@ fn home_reading_commands_exit_0_when_their_reader_leaves() {
     }
 }
 
-/// `doctor` reads `run`'s `graphics` setting, so a typo in it is one of
+/// `doctor` reads `run`'s `look` setting, so a typo in it is one of
 /// doctor's config warnings, as it is `run`'s.
 #[cfg(unix)]
 #[test]
-fn doctor_warns_on_an_unknown_graphics_setting() {
+fn doctor_warns_on_an_unknown_look_setting() {
     let home = tempfile::TempDir::new().expect("tempdir");
     let config = home.path().join(".config/pixtuoid");
     std::fs::create_dir_all(&config).expect("config dir");
-    std::fs::write(config.join("config.toml"), "graphics = \"kity\"\n").expect("config");
+    std::fs::write(config.join("config.toml"), "look = \"clasic\"\n").expect("config");
     let out = common::isolated(&["doctor"], home.path())
         .output()
         .expect("run pixtuoid");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("unknown graphics \"kity\" in config"),
+        stdout.contains("unknown look \"clasic\" in config"),
         "{stdout}"
     );
 }

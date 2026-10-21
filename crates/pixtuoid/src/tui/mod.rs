@@ -534,10 +534,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         log,
         drift,
         connected: &connected.snapshot(),
-        cutaway: crate::version::CutawayTip {
-            off: plan.graphics_off(),
-            drawable: crate::graphics::names_a_cutaway_terminal(),
-        },
+        cutaway: matches!(plan, crate::graphics::Plan::Cutaway { .. }),
     });
     renderer.warm(&scene_rx.borrow().clone(), &pack, ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();

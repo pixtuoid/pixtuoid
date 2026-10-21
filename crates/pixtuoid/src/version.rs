@@ -69,17 +69,13 @@ const NOTICES: [Notice; 2] = [
         says: reconnect,
     },
     Notice {
-        last_without: Version::new(0, 19, 0),
-        says: cutaway_tip,
+        last_without: Version::new(0, 20, 0),
+        says: cutaway_default,
     },
 ];
 
 /// The hosts #1586 moved to a plugin.
 const REPLUGGED: [&Target; 3] = [&target::CLAUDE, &target::CODEX, &target::REASONIX];
-
-/// The run that turns the cutaway on, and the config line that keeps it on.
-const CUTAWAY_RUN: [&str; 4] = ["pixtuoid", "run", "--graphics", "auto"];
-const CUTAWAY_CONFIG: &str = "graphics = \"auto\"";
 
 /// The hooks an older pixtuoid merged no longer count as a connection, so each
 /// installed host that reads disconnected is named.
@@ -103,12 +99,15 @@ fn reconnect(facts: &Facts<'_>) -> Option<String> {
     ))
 }
 
-/// The cutaway office (#1189) ships off, so a terminal that draws it is told.
-fn cutaway_tip(facts: &Facts<'_>) -> Option<String> {
-    (facts.cutaway.off && facts.cutaway.drawable).then(|| {
+/// A run that draws the cutaway, which an older pixtuoid drew only when asked,
+/// says how to keep the classic.
+fn cutaway_default(facts: &Facts<'_>) -> Option<String> {
+    let classic = crate::graphics::LookMode::Classic;
+    facts.cutaway.then(|| {
         format!(
-            "This terminal can draw the cutaway office: try `{}`, or set {CUTAWAY_CONFIG} in the config.",
-            CUTAWAY_RUN.join(" ")
+            "The cutaway office is now the default where this terminal draws it: \
+             `pixtuoid run --look {classic}` (or `look = \"{classic}\"` in the config) keeps the classic \
+             office."
         )
     })
 }
@@ -126,17 +125,27 @@ pub(crate) struct Facts<'a> {
     /// The agent CLIs on this machine, as [`crate::sources::detect`] finds them.
     pub(crate) installed: &'a [&'static str],
     pub(crate) connected: &'a HashSet<String>,
-    pub(crate) cutaway: CutawayTip,
+    /// This run draws the cutaway.
+    pub(crate) cutaway: bool,
 }
 
-/// What a painter's look says for the cutaway tip; the default where it draws
-/// no cutaway.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CutawayTip {
-    /// The run paints classic because the user left graphics off.
-    pub(crate) off: bool,
-    /// The terminal's name alone says it draws the cutaway.
-    pub(crate) drawable: bool,
+/// From before every notice's change to past all of them: what a test that
+/// wants every notice due upgrades across.
+#[cfg(test)]
+pub(crate) fn across_every_notice() -> Versions {
+    let notices = NOTICES;
+    let without = notices.iter().map(|n| &n.last_without);
+    let previous = without.clone().min().expect("a notice").clone();
+    Versions {
+        previous,
+        current: minor_after(without.max().expect("a notice")),
+    }
+}
+
+/// The minor release after `v`.
+#[cfg(test)]
+fn minor_after(v: &Version) -> Version {
+    Version::new(v.major, v.minor + 1, 0)
 }
 
 /// Each notice due to a user who last ran `versions.previous`, now on
@@ -318,11 +327,6 @@ mod tests {
 
     const EVERY_HOST: [&str; 3] = ["claude-code", "codex", "reasonix"];
 
-    const CUTAWAY_IDLE: CutawayTip = CutawayTip {
-        off: true,
-        drawable: true,
-    };
-
     fn versions(previous: &str, current: &str) -> Versions {
         Versions {
             previous: v(previous),
@@ -331,13 +335,13 @@ mod tests {
     }
 
     /// Every notice's state holds: each replugged host installed and
-    /// disconnected, the cutaway idle in a terminal that draws it.
+    /// disconnected, the cutaway drawn.
     fn all_hold() -> Facts<'static> {
         static NONE: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         Facts {
             installed: &EVERY_HOST,
             connected: &NONE,
-            cutaway: CUTAWAY_IDLE,
+            cutaway: true,
         }
     }
 
@@ -361,22 +365,37 @@ mod tests {
     /// that lacks it (a dev build before the release) is not across it.
     #[test]
     fn a_notice_is_due_only_across_its_change() {
-        let due_from = |previous: &str, current: &str| {
-            due(Some(&versions(previous, current)), &all_hold()).len()
-        };
-        assert_eq!(due_from("0.19.0", "0.20.0"), NOTICES.len());
-        assert_eq!(
-            due_from("0.17.2", "0.22.0"),
-            NOTICES.len(),
-            "skipped releases"
-        );
-        assert_eq!(
-            due_from("0.19.0", "0.19.1"),
-            NOTICES.len(),
-            "a patch carries it too"
-        );
-        assert_eq!(due_from("0.18.0", "0.19.0"), 0, "the build that lacks it");
-        assert_eq!(due_from("0.20.0", "0.21.0"), 0, "already past it");
+        for n in &NOTICES {
+            let said = (n.says)(&all_hold()).expect("holds");
+            let due_from = |previous: &Version, current: &Version| {
+                due(
+                    Some(&Versions {
+                        previous: previous.clone(),
+                        current: current.clone(),
+                    }),
+                    &all_hold(),
+                )
+                .contains(&said)
+            };
+            let without = &n.last_without;
+            let with = minor_after(without);
+            let patch = Version::new(without.major, without.minor, without.patch + 1);
+            let older = Version::new(0, 0, 0);
+            assert!(due_from(without, &with), "{said}");
+            assert!(
+                due_from(&older, &minor_after(&with)),
+                "skipped releases: {said}"
+            );
+            assert!(due_from(without, &patch), "a patch carries it too: {said}");
+            assert!(
+                !due_from(&older, without),
+                "the build that lacks it: {said}"
+            );
+            assert!(
+                !due_from(&with, &minor_after(&with)),
+                "already past it: {said}"
+            );
+        }
     }
 
     /// `last_without` names a release, so a value guessed ahead of the build
@@ -392,10 +411,10 @@ mod tests {
     #[test]
     fn an_action_lists_before_a_tip() {
         assert_eq!(
-            due(Some(&versions("0.19.0", "0.20.0")), &all_hold()),
+            due(Some(&across_every_notice()), &all_hold()),
             [
                 reconnect(&all_hold()).expect("holds"),
-                cutaway_tip(&all_hold()).expect("holds"),
+                cutaway_default(&all_hold()).expect("holds"),
             ]
         );
     }
@@ -439,23 +458,20 @@ mod tests {
     }
 
     #[test]
-    fn the_cutaway_tip_needs_graphics_off_in_a_terminal_that_draws_it() {
-        for (off, drawable) in [(true, true), (true, false), (false, true), (false, false)] {
-            let said = cutaway_tip(&Facts {
-                cutaway: CutawayTip { off, drawable },
+    fn the_cutaway_default_is_said_only_where_the_run_draws_it() {
+        let says = |cutaway| {
+            cutaway_default(&Facts {
+                cutaway,
                 ..all_hold()
-            });
-            assert_eq!(
-                said.is_some(),
-                off && drawable,
-                "off={off} drawable={drawable}"
-            );
-        }
+            })
+        };
+        assert_eq!(says(false), None);
         assert_eq!(
-            cutaway_tip(&all_hold()).as_deref(),
+            says(true).as_deref(),
             Some(
-                "This terminal can draw the cutaway office: try \
-                 `pixtuoid run --graphics auto`, or set graphics = \"auto\" in the config."
+                "The cutaway office is now the default where this terminal draws it: \
+                 `pixtuoid run --look classic` (or `look = \"classic\"` in the config) keeps the classic \
+                 office."
             )
         );
     }
@@ -467,27 +483,31 @@ mod tests {
         assert_eq!(english_list(&["a", "b", "c"]), "a, b and c");
     }
 
-    /// The tip's command must run: a renamed flag or subcommand fails here, not
-    /// in a user's shell.
+    /// The notice's command and config line must keep the classic: a renamed
+    /// flag, key or value fails here, not in a user's shell.
     #[test]
-    fn the_cutaway_run_turns_graphics_on() {
+    fn the_cutaway_default_names_a_command_and_a_line_that_keep_the_classic() {
         use clap::Parser;
-        let cli = crate::cli::Cli::try_parse_from(CUTAWAY_RUN).expect("parses");
-        assert!(matches!(
-            cli.cmd,
-            Some(crate::cli::Cmd::Run {
-                graphics: Some(crate::GraphicsMode::Auto),
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn the_cutaway_config_line_turns_graphics_on() {
-        let cfg: crate::config::AppConfig = toml::from_str(CUTAWAY_CONFIG).expect("parses");
+        let said = cutaway_default(&all_hold()).expect("holds");
+        let quoted: Vec<&str> = said.split('`').skip(1).step_by(2).collect();
+        let [command, line] = quoted[..] else {
+            panic!("a command and a config line: {said}");
+        };
+        let classic = crate::graphics::LookChoice::new(crate::graphics::LookMode::Classic, None);
+        let args = command.split(' ');
+        let Some(crate::cli::Cmd::Run { look, .. }) =
+            crate::cli::Cli::try_parse_from(args).expect("parses").cmd
+        else {
+            panic!("{command} runs");
+        };
+        let mut w = Vec::new();
+        let none: crate::config::AppConfig = toml::from_str("").expect("parses");
+        assert_eq!(crate::config::resolve_look(&none, look, &mut w), classic);
+        let cfg: crate::config::AppConfig = toml::from_str(line).expect("parses");
         assert_eq!(
-            crate::config::resolve_graphics(&cfg, None, &mut Vec::new()),
-            crate::GraphicsMode::Auto
+            crate::config::resolve_look(&cfg, crate::cli::LookArgs::default(), &mut w),
+            classic
         );
+        assert!(w.is_empty(), "{w:?}");
     }
 }

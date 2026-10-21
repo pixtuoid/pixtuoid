@@ -38,15 +38,7 @@ enum Terminal {
     /// Another terminal that speaks iTerm2's images and isn't iTerm2
     /// (`picker.rs:372-390`).
     SpeaksIterm2,
-    /// kitty, by its own `TERM`: it draws its protocol's images, Unicode
-    /// placeholders included (sw.kovidgoyal.net/kitty/graphics-protocol/,
-    /// "Unicode placeholders").
-    Kitty,
-    /// Ghostty, by its own `TERM`: it draws kitty's images, Unicode
-    /// placeholders included (ghostty-org/ghostty@b1d9492
-    /// `src/terminal/kitty/graphics_unicode.zig:1-2`).
-    Ghostty,
-    /// Any other, Alacritty among them.
+    /// Any other, kitty, Ghostty and Alacritty among them.
     Other,
 }
 
@@ -121,15 +113,8 @@ impl Terminal {
             // Kitty over SIXEL where both answer (`picker.rs:544-554`), then
             // the iTerm2 guess (`picker.rs:136-140`).
             Self::SpeaksIterm2 => &[Kitty, Sixel, Iterm2(Iterm2Sign::Name)],
-            Self::Kitty | Self::Ghostty | Self::Other => &[Kitty, Sixel],
+            Self::Other => &[Kitty, Sixel],
         }
-    }
-
-    /// Whether its name alone says it draws an image the cutaway animates,
-    /// before any answer.
-    fn draws_by_name(self) -> bool {
-        matches!(self, Self::Kitty | Self::Ghostty)
-            || self.animates().contains(&Pick::Iterm2(Iterm2Sign::Name))
     }
 }
 
@@ -186,18 +171,16 @@ impl EnvHints {
         // Their defaults: kovidgoyal/kitty `kitty/options/definition.py:3322`,
         // ghostty-org/ghostty `src/config/Config.zig:3928`,
         // alacritty/alacritty `alacritty_terminal/src/tty/mod.rs:104`.
-        const OWN_TERMS: [(&str, Terminal); 3] = [
-            ("xterm-kitty", Terminal::Kitty),
-            ("xterm-ghostty", Terminal::Ghostty),
-            ("alacritty", Terminal::Other),
-        ];
+        const OWN_TERMS: [&str; 3] = ["xterm-kitty", "xterm-ghostty", "alacritty"];
         const XTERM_JS: [&str; 3] = ["vscode", "Tabby", "Hyper"];
         const SPEAKS_ITERM2: [&str; 3] = ["mintty", "rio", "Bobcat"];
-        if let Some(&(_, own)) = OWN_TERMS
-            .iter()
-            .find(|(name, _)| self.env.term.as_deref() == Some(*name))
+        if self
+            .env
+            .term
+            .as_deref()
+            .is_some_and(|t| OWN_TERMS.contains(&t))
         {
-            return own;
+            return Terminal::Other;
         }
         let program = self.env.term_program.as_deref().unwrap_or_default();
         let named = |names: &[&str]| names.iter().any(|n| program.contains(n));
@@ -237,13 +220,6 @@ impl EnvHints {
             Terminal::Other
         }
     }
-
-    /// [`names_a_cutaway_terminal`] for these hints. Never inside tmux: its
-    /// `allow-passthrough` is off unless set (tmux/tmux@95c1c3d
-    /// `options-table.c:1283-1287`), and reading it takes a subprocess.
-    fn names_a_cutaway_terminal(&self) -> bool {
-        !self.env.tmux() && self.terminal().draws_by_name()
-    }
 }
 
 /// What the terminal's answer and the environment together say: the first
@@ -273,12 +249,6 @@ fn unanswered(hints: &EnvHints, window_cell: Option<CellSize>) -> Probe {
     } else {
         Probe::NoAnswer
     }
-}
-
-/// Whether the terminal the environment names draws the cutaway by its name
-/// alone: what a run that never asks the terminal can still say.
-pub(crate) fn names_a_cutaway_terminal() -> bool {
-    EnvHints::read().names_a_cutaway_terminal()
 }
 
 /// The most reply bytes read before a terminal that never sends the status
@@ -502,7 +472,7 @@ mod tests {
         assert_eq!(lc.terminal(), Terminal::Iterm2);
         assert_eq!(
             hints("xterm-ghostty", "ghostty").terminal(),
-            Terminal::Ghostty
+            Terminal::Other
         );
         let leaked = EnvHints {
             lc_terminal: Some("iTerm2".into()),
@@ -623,7 +593,7 @@ mod tests {
     }
 
     /// Warp's kitty answer is taken as no protocol the cutaway animates with,
-    /// its cell kept for a `--graphics` that forces one; it is never guessed
+    /// its cell kept for a `--protocol` that forces one; it is never guessed
     /// iTerm2.
     #[test]
     fn warp_answers_but_animates_no_protocol() {
@@ -651,7 +621,7 @@ mod tests {
             warp_client: true,
             ..hints("xterm-ghostty", "ghostty")
         };
-        assert_eq!(started_from_warp.terminal(), Terminal::Ghostty);
+        assert_eq!(started_from_warp.terminal(), Terminal::Other);
     }
 
     /// Inside tmux the outer terminal's markers name iTerm2; outside they do
@@ -667,7 +637,7 @@ mod tests {
             iterm_session: true,
             ..hints("xterm-ghostty", "ghostty")
         };
-        assert_eq!(not_tmux.terminal(), Terminal::Ghostty);
+        assert_eq!(not_tmux.terminal(), Terminal::Other);
     }
 
     /// A silent terminal is still the protocol the environment names; with
@@ -755,52 +725,7 @@ mod tests {
             wezterm: true,
             ..hints("xterm-ghostty", "ghostty")
         };
-        assert_eq!(started_from_wezterm.terminal(), Terminal::Ghostty);
-    }
-
-    /// Named kitty or Ghostty, a terminal is asked and picks as any other:
-    /// the name only tells a run that never asks.
-    #[test]
-    fn kitty_and_ghostty_pick_as_any_other_terminal() {
-        for own in ["xterm-kitty", "xterm-ghostty"] {
-            let named = hints(own, "");
-            assert_eq!(named.terminal().animates(), Terminal::Other.animates());
-            assert_eq!(named.query(), EnvHints::default().query());
-        }
-    }
-
-    /// A name alone says the cutaway draws only where its row vouches for a
-    /// protocol with no answer, and never inside tmux, whether `$TMUX` or only
-    /// the `TERM`/`TERM_PROGRAM` tmux sets says so.
-    #[test]
-    fn a_cutaway_terminal_is_named_by_what_its_name_vouches_for() {
-        let iterm2_in_tmux = EnvHints {
-            iterm_session: true,
-            ..client(hints("tmux-256color", "tmux"))
-        };
-        for (named, draws) in [
-            (hints("xterm-kitty", ""), true),
-            (hints("xterm-ghostty", "ghostty"), true),
-            (hints("xterm-256color", "iTerm.app"), true),
-            (hints("xterm-256color", "WezTerm"), true),
-            (hints("xterm-256color", "mintty"), true),
-            (hints("alacritty", ""), false),
-            (hints("xterm-256color", "Apple_Terminal"), false),
-            (hints("xterm-256color", "WarpTerminal"), false),
-            (hints("xterm-256color", "vscode"), false),
-            (iterm2_in_tmux, false),
-            (client(hints("xterm-kitty", "")), false),
-            (hints("xterm-kitty", "tmux"), false),
-            (
-                EnvHints {
-                    iterm_session: true,
-                    ..hints("tmux-256color", "tmux")
-                },
-                false,
-            ),
-        ] {
-            assert_eq!(named.names_a_cutaway_terminal(), draws, "{named:?}");
-        }
+        assert_eq!(started_from_wezterm.terminal(), Terminal::Other);
     }
 
     /// kitty and Alacritty set `TERM` but no `TERM_PROGRAM`: started from

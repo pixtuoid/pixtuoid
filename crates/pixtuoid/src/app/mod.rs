@@ -103,14 +103,14 @@ pub fn run() -> Result<()> {
             source,
             max_desks: cli_max_desks,
             headless,
-            graphics,
+            look,
         } => {
             let rc = build_run_config(
                 cli_theme.as_deref(),
                 source,
                 cli_max_desks,
                 headless,
-                graphics,
+                look,
                 drift,
             )?;
             // After every Drop the run held: the unwind is done, so the signal can now
@@ -122,14 +122,24 @@ pub fn run() -> Result<()> {
         }
         Cmd::Floating { source } => {
             // No desk cap: floating seeds its capacity from the window.
-            let rc = build_run_config(cli_theme.as_deref(), source, None, false, None, drift)?;
+            let rc = build_run_config(
+                cli_theme.as_deref(),
+                source,
+                None,
+                false,
+                crate::cli::LookArgs::default(),
+                drift,
+            )?;
             if let Some(signal) = floating::run(rc)? {
                 signal.reraise();
             }
             Ok(())
         }
-        Cmd::Doctor { graphics } => {
-            let report = doctor::run(&crate::run_log::LogLocation::from_env(), graphics)?;
+        Cmd::Doctor { look, protocol } => {
+            let report = doctor::run(
+                &crate::run_log::LogLocation::from_env(),
+                crate::graphics::LookChoice::new(look, protocol),
+            )?;
             write!(crate::cli_stdout(), "{report}")?;
             Ok(())
         }
@@ -183,7 +193,7 @@ fn build_run_config(
     source: SourceArgs,
     cli_max_desks: Option<usize>,
     headless: bool,
-    cli_graphics: Option<crate::GraphicsMode>,
+    cli_look: crate::cli::LookArgs,
     drift: crate::doctor::DriftSeen,
 ) -> Result<runtime::RunConfig> {
     let SourceArgs { socket } = source;
@@ -193,7 +203,7 @@ fn build_run_config(
     let theme = config::resolve_theme(&cfg, cli_theme, &mut cfg_warnings)?;
     let desk_cap = config::resolve_desk_cap(&cfg, cli_max_desks, &mut cfg_warnings);
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
-    let graphics = config::resolve_graphics(&cfg, cli_graphics, &mut cfg_warnings);
+    let look = config::resolve_look(&cfg, cli_look, &mut cfg_warnings);
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
     let adopted =
         adopt_unless_headless(headless, || sources::adopt_flagged_targets(&cfg_path, &cfg));
@@ -235,7 +245,7 @@ fn build_run_config(
         drift,
         first_run,
         audio: config::resolve_audio(&cfg),
-        graphics,
+        look,
         motion,
     })
 }

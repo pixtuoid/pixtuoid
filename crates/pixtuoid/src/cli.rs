@@ -37,6 +37,22 @@ fn theme_help() -> String {
     format!("Color theme: {}.", names.join(", "))
 }
 
+/// `run`'s look flags, resolved over the `look` config key by
+/// [`crate::config::resolve_look`].
+#[derive(Debug, Default, Clone, Copy, clap::Args)]
+pub(crate) struct LookArgs {
+    /// Which office to paint: the cutaway, drawn in terminal graphics
+    /// (kitty/iTerm2/SIXEL), or the classic half-blocks. Overrides the `look`
+    /// config key; the default is `auto`. `pixtuoid doctor` shows what this
+    /// terminal supports.
+    #[arg(long, value_enum)]
+    pub(crate) look: Option<crate::graphics::LookMode>,
+    /// Draw the cutaway in this protocol whatever the terminal answers; it
+    /// implies `--look cutaway`.
+    #[arg(long, value_enum, conflicts_with = "look")]
+    pub(crate) protocol: Option<crate::graphics::ImageProtocol>,
+}
+
 /// The source-input flags shared VERBATIM by `run` and `floating` (the two
 /// commands that wire sources → reducer → renderer), flattened into both so
 /// they can't drift.
@@ -65,13 +81,8 @@ pub(crate) enum Cmd {
         /// 200ms when it changes.
         #[arg(long, default_value_t = false)]
         headless: bool,
-        /// Terminal graphics (kitty/iTerm2/SIXEL) for the cutaway office:
-        /// `auto` uses them when the terminal supports them, and a protocol
-        /// name uses that one whatever the terminal answers. Overrides the
-        /// `graphics` config key; the default is `off`, which never queries
-        /// the terminal. `pixtuoid doctor` shows what this terminal supports.
-        #[arg(long, value_enum)]
-        graphics: Option<crate::GraphicsMode>,
+        #[command(flatten)]
+        look: LookArgs,
     },
     /// Render the live office in a frameless, always-on-top desktop window
     /// (no TUI). Shares the same source flags as `run`.
@@ -82,13 +93,15 @@ pub(crate) enum Cmd {
     /// Diagnose source health: connection, hooks, and decode drift recorded in
     /// the log. Read-only.
     Doctor {
-        /// Whether to consider terminal image protocols (kitty/iTerm2/SIXEL)
-        /// when reporting the `graphics:` row. `off` skips the capability query
-        /// entirely and reports the classic profile with that as the reason.
-        /// Defaults to `auto` whatever the `graphics` config key says: the row
+        /// The look the `graphics:` row plans, as `run --look` takes it.
+        /// Defaults to `cutaway` whatever the `look` config key says: the row
         /// reports what this terminal can do.
-        #[arg(long, value_enum, default_value_t = crate::GraphicsMode::Auto)]
-        graphics: crate::GraphicsMode,
+        #[arg(long, value_enum, default_value_t = crate::graphics::LookMode::Cutaway)]
+        look: crate::graphics::LookMode,
+        /// The protocol the row plans the cutaway in, as `run --protocol`
+        /// takes it.
+        #[arg(long, value_enum, conflicts_with = "look")]
+        protocol: Option<crate::graphics::ImageProtocol>,
     },
     /// List agent sources + their connection state, or apply a set. The
     /// scriptable twin of the in-TUI Sources panel (Raycast / automation).
@@ -194,7 +207,7 @@ impl Cli {
             source: SourceArgs { socket: None },
             max_desks: None,
             headless: false,
-            graphics: None,
+            look: LookArgs::default(),
         });
         (level, theme, cmd)
     }
@@ -212,56 +225,89 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
-    /// The flag has to REACH `doctor`, not merely parse: an accepted value that
-    /// never arrives is the declared-but-unwired class, and `GraphicsMode` had
-    /// no producer at all before this.
+    /// The flags have to REACH `doctor`, not merely parse: an accepted value
+    /// that never arrives is the declared-but-unwired class.
     #[test]
-    fn graphics_off_parses_and_reaches_doctor() {
-        let cli = Cli::try_parse_from(["pixtuoid", "doctor", "--graphics", "off"]).expect("parses");
-        assert!(matches!(
-            cli.cmd,
-            Some(Cmd::Doctor {
-                graphics: crate::GraphicsMode::Off
-            })
-        ));
-        // Absent means Auto, so an existing `pixtuoid doctor` is unchanged.
-        let cli = Cli::try_parse_from(["pixtuoid", "doctor"]).expect("parses");
-        assert!(matches!(
-            cli.cmd,
-            Some(Cmd::Doctor {
-                graphics: crate::GraphicsMode::Auto
-            })
-        ));
-    }
-
-    /// Absent stays `None` so the config key can speak; every protocol is a
-    /// value, which is how a specific protocol is tested.
-    #[test]
-    fn run_takes_graphics_and_leaves_absence_to_the_config() {
-        let graphics = |args: &[&str]| match Cli::try_parse_from(args).expect("parses").cmd {
-            Some(Cmd::Run { graphics, .. }) => graphics,
+    fn doctor_takes_look_and_protocol() {
+        use crate::graphics::{ImageProtocol, LookMode};
+        let doctor = |args: &[&str]| match Cli::try_parse_from(args).expect("parses").cmd {
+            Some(Cmd::Doctor { look, protocol }) => (look, protocol),
             other => panic!("{other:?}"),
         };
-        assert_eq!(graphics(&["pixtuoid", "run"]), None);
+        assert_eq!(
+            doctor(&["pixtuoid", "doctor"]),
+            (LookMode::Cutaway, None),
+            "absent is what this terminal can do"
+        );
+        assert_eq!(
+            doctor(&["pixtuoid", "doctor", "--look", "classic"]),
+            (LookMode::Classic, None)
+        );
+        assert_eq!(
+            doctor(&["pixtuoid", "doctor", "--protocol", "sixel"]),
+            (LookMode::Cutaway, Some(ImageProtocol::Sixel))
+        );
+    }
+
+    /// Absent stays `None` so the config key can speak; every look and every
+    /// protocol is a value.
+    #[test]
+    fn run_takes_look_and_protocol_and_leaves_absence_to_the_config() {
+        use crate::graphics::{ImageProtocol, LookMode};
+        let look = |args: &[&str]| match Cli::try_parse_from(args).expect("parses").cmd {
+            Some(Cmd::Run { look, .. }) => (look.look, look.protocol),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(look(&["pixtuoid", "run"]), (None, None));
         for (value, mode) in [
-            ("auto", crate::GraphicsMode::Auto),
-            ("off", crate::GraphicsMode::Off),
-            ("kitty", crate::GraphicsMode::Kitty),
-            ("sixel", crate::GraphicsMode::Sixel),
-            ("iterm2", crate::GraphicsMode::Iterm2),
+            ("auto", LookMode::Auto),
+            ("cutaway", LookMode::Cutaway),
+            ("classic", LookMode::Classic),
         ] {
             assert_eq!(
-                graphics(&["pixtuoid", "run", "--graphics", value]),
-                Some(mode)
+                look(&["pixtuoid", "run", "--look", value]),
+                (Some(mode), None)
+            );
+        }
+        for (value, protocol) in [
+            ("kitty", ImageProtocol::Kitty),
+            ("sixel", ImageProtocol::Sixel),
+            ("iterm2", ImageProtocol::Iterm2),
+        ] {
+            assert_eq!(
+                look(&["pixtuoid", "run", "--protocol", value]),
+                (None, Some(protocol))
+            );
+        }
+    }
+
+    /// `--protocol` implies the cutaway, so a `--look` beside it, classic
+    /// above all, is refused.
+    #[test]
+    fn look_with_protocol_is_a_conflict() {
+        for cmd in ["doctor", "run"] {
+            let err =
+                Cli::try_parse_from(["pixtuoid", cmd, "--look", "classic", "--protocol", "kitty"])
+                    .unwrap_err();
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "{cmd}"
             );
         }
     }
 
     #[test]
-    fn graphics_typo_is_a_hard_parse_error() {
+    fn look_and_protocol_typos_are_hard_parse_errors() {
         for cmd in ["doctor", "run"] {
-            let err = Cli::try_parse_from(["pixtuoid", cmd, "--graphics", "no"]).unwrap_err();
-            assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue, "{cmd}");
+            for (flag, typo) in [("--look", "off"), ("--protocol", "auto")] {
+                let err = Cli::try_parse_from(["pixtuoid", cmd, flag, typo]).unwrap_err();
+                assert_eq!(
+                    err.kind(),
+                    clap::error::ErrorKind::InvalidValue,
+                    "{cmd} {flag}"
+                );
+            }
         }
     }
 
@@ -331,7 +377,10 @@ mod tests {
             Cmd::Run {
                 headless: false,
                 max_desks: None,
-                graphics: None,
+                look: LookArgs {
+                    look: None,
+                    protocol: None
+                },
                 ..
             }
         ));
@@ -341,7 +390,8 @@ mod tests {
     fn cmd_or_default_preserves_explicit_subcommand() {
         let cli = Cli {
             cmd: Some(Cmd::Doctor {
-                graphics: crate::GraphicsMode::Off,
+                look: crate::graphics::LookMode::Classic,
+                protocol: None,
             }),
             log_level: LogLevel::Debug,
             theme: Some("cyberpunk".into()),

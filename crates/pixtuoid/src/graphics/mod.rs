@@ -32,7 +32,7 @@ pub(crate) mod tiles;
 mod wire;
 
 #[cfg(unix)]
-pub(crate) use probe::{names_a_cutaway_terminal, probe};
+pub(crate) use probe::probe;
 
 /// [`ImageProtocol::image_budget`]'s for kitty: what Ghostty, re-scanning
 /// every placement per image, keeps up with at the paint rate.
@@ -136,7 +136,7 @@ impl Route {
 }
 
 /// A graphics protocol the terminal speaks and the cutaway can be handed over.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum ImageProtocol {
     /// kitty's graphics protocol.
     Kitty,
@@ -214,41 +214,72 @@ impl CellSize {
     }
 }
 
-/// What the user asked for: `--graphics`, else the `graphics` config key.
+/// Which office `run` paints: `--look`, else the `look` config key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub(crate) enum GraphicsMode {
-    /// Use terminal graphics when the terminal supports them.
-    Auto,
-    /// Never use terminal graphics, however capable the terminal is.
+pub(crate) enum LookMode {
+    /// The cutaway where the terminal draws it, else the classic, without
+    /// asking the terminal over ssh or inside GNU screen.
     #[default]
-    Off,
-    /// kitty's graphics protocol, whatever the terminal answers.
-    Kitty,
-    /// SIXEL, whatever the terminal answers.
-    Sixel,
-    /// iTerm2's inline images, whatever the terminal answers.
-    Iterm2,
+    Auto,
+    /// The cutaway where the terminal draws it, else the classic, always
+    /// asking the terminal.
+    Cutaway,
+    /// The classic, never asking the terminal.
+    Classic,
 }
 
-impl From<ImageProtocol> for GraphicsMode {
-    fn from(protocol: ImageProtocol) -> Self {
-        match protocol {
-            ImageProtocol::Kitty => Self::Kitty,
-            ImageProtocol::Sixel => Self::Sixel,
-            ImageProtocol::Iterm2 => Self::Iterm2,
+/// The name `--look` and the `look` key take.
+impl std::fmt::Display for LookMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match clap::ValueEnum::to_possible_value(self) {
+            Some(value) => f.write_str(value.get_name()),
+            None => Ok(()),
         }
     }
 }
 
-impl GraphicsMode {
-    /// The protocol the user named, which replaces the terminal's answer.
-    fn forced(self) -> Option<ImageProtocol> {
-        match self {
-            Self::Auto | Self::Off => None,
-            Self::Kitty => Some(ImageProtocol::Kitty),
-            Self::Sixel => Some(ImageProtocol::Sixel),
-            Self::Iterm2 => Some(ImageProtocol::Iterm2),
+/// What the user asked of the office: a [`LookMode`], and the protocol
+/// `--protocol` forces, which implies the cutaway.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct LookChoice {
+    look: LookMode,
+    protocol: Option<ImageProtocol>,
+}
+
+impl LookChoice {
+    /// `look`, the cutaway wherever `protocol` forces one.
+    pub(crate) fn new(look: LookMode, protocol: Option<ImageProtocol>) -> Self {
+        Self {
+            look: if protocol.is_some() {
+                LookMode::Cutaway
+            } else {
+                look
+            },
+            protocol,
         }
+    }
+
+    /// Why this choice paints classic in `env` before the terminal is asked;
+    /// `None` where it asks.
+    fn unasked(self, env: &TermEnv) -> Option<ClassicReason> {
+        match self.look {
+            LookMode::Classic => Some(ClassicReason::Disabled),
+            LookMode::Cutaway => None,
+            // Ours, not an upstream convention: every repaint would cross the
+            // network.
+            LookMode::Auto if env.ssh => Some(ClassicReason::OverSsh),
+            // Screen shows the query as the window's hardstatus ("ESC _ ...
+            // Application Program Command (Hardstatus)",
+            // https://www.gnu.org/software/screen/manual/html_node/Control-Sequences.html)
+            // and answers no protocol.
+            LookMode::Auto if env.screen() => Some(ClassicReason::InsideScreen),
+            LookMode::Auto => None,
+        }
+    }
+
+    /// [`Self::unasked`] where this process runs.
+    pub(crate) fn unasked_here(self) -> Option<ClassicReason> {
+        self.unasked(&TermEnv::read())
     }
 }
 
@@ -260,8 +291,12 @@ impl GraphicsMode {
 /// when the real cause was a pipe, or on the pipe when this build cannot ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClassicReason {
-    /// `--graphics off`.
+    /// [`LookMode::Classic`].
     Disabled,
+    /// [`LookMode::Auto`] over ssh: the terminal was not asked.
+    OverSsh,
+    /// [`LookMode::Auto`] inside GNU screen: the terminal was not asked.
+    InsideScreen,
     /// This build has no query to run ([`probe()`]).
     Unsupported,
     /// The terminal was never asked.
@@ -324,7 +359,7 @@ pub(crate) enum Plan {
 /// What named a cutaway's protocol, as `doctor` reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Chosen {
-    /// `--graphics`, over the terminal.
+    /// `--protocol`, over the terminal.
     Forced,
     /// The terminal's answer to the query.
     Answer,
@@ -359,6 +394,9 @@ struct TermEnv {
     /// `$TMUX`: this process is a tmux client.
     tmux_client: bool,
     ssh: bool,
+    /// `$STY`, which GNU screen sets in each window it starts
+    /// (gnu-mirror-unofficial/screen@58aa0f9 `src/screen.c:1432`).
+    screen_window: bool,
 }
 
 impl TermEnv {
@@ -369,7 +407,13 @@ impl TermEnv {
             tmux_client: env_set("TMUX"),
             // ssh(1) ENVIRONMENT: what a session's sshd sets, SSH_TTY only with a tty.
             ssh: env_set("SSH_CONNECTION") || env_set("SSH_TTY"),
+            screen_window: env_set("STY"),
         }
+    }
+
+    /// Inside GNU screen, unless inside tmux, which the tmux rules cover.
+    fn screen(&self) -> bool {
+        self.screen_window && !self.tmux()
     }
 
     /// Inside tmux: a tmux client (`$TMUX`), or the `TERM`/`TERM_PROGRAM` test
@@ -442,7 +486,7 @@ pub(crate) struct Detected {
     /// terminal's answer.
     pub(crate) tmux: bool,
     /// The terminal has no image protocol the cutaway animates with, so
-    /// `protocol` is `None` unless `--graphics` forces one.
+    /// `protocol` is `None`.
     pub(crate) unanimated: bool,
     /// `protocol` rests on the terminal's name alone, not its answer.
     pub(crate) named: bool,
@@ -464,6 +508,10 @@ pub(crate) enum Probe {
     Answered(Detected),
     /// The terminal was never asked: the caller said not to, or no controlling
     /// terminal took the query.
+    #[cfg_attr(
+        all(not(unix), not(test)),
+        expect(dead_code, reason = "only the Unix graphics probe returns it")
+    )]
     NotQueried,
     /// The terminal was asked, its reply never completed, and the environment
     /// names no protocol to fall back on.
@@ -528,19 +576,17 @@ fn image_px(cell: CellSize, area: TermSize) -> Size {
     }
 }
 
-/// Decide what to paint. Pure — [`probe()`] supplies the probe, `max_density`
-/// is the pack's [`max_density_variant`](pixtuoid_scene::pack::OfficeArt::max_density_variant),
+/// Decide what to paint from the terminal's answer. Pure — [`probe()`]
+/// supplies the probe, `forced` is `--protocol`, `max_density` is the pack's
+/// [`max_density_variant`](pixtuoid_scene::pack::OfficeArt::max_density_variant),
 /// and `area` is the image's extent in cells.
 pub(crate) fn resolve(
-    mode: GraphicsMode,
+    forced: Option<ImageProtocol>,
     probe: Probe,
     max_density: Density,
     area: TermSize,
 ) -> Plan {
     let classic = |reason| Plan::Classic { reason };
-    if mode == GraphicsMode::Off {
-        return classic(ClassicReason::Disabled);
-    }
     let d = match probe {
         Probe::Answered(d) => d,
         Probe::NotQueried => return classic(ClassicReason::NotQueried),
@@ -548,7 +594,7 @@ pub(crate) fn resolve(
         Probe::TmuxPassthroughOff => return classic(ClassicReason::TmuxPassthroughOff),
         Probe::Unsupported => return classic(ClassicReason::Unsupported),
     };
-    let Some(protocol) = mode.forced().or(d.protocol) else {
+    let Some(protocol) = forced.or(d.protocol) else {
         return classic(if d.unanimated {
             ClassicReason::NoCutawayProtocol
         } else {
@@ -570,7 +616,7 @@ pub(crate) fn resolve(
         fit,
         route: Route::of(protocol, d.tmux, d.shm),
         cell,
-        chosen: if mode.forced().is_some() {
+        chosen: if forced.is_some() {
             Chosen::Forced
         } else if d.named {
             Chosen::Name
@@ -584,7 +630,17 @@ impl ClassicReason {
     /// One line for `doctor`, explaining the fallback.
     pub(crate) fn describe(self) -> String {
         match self {
-            Self::Disabled => "disabled by --graphics off".to_string(),
+            Self::Disabled => format!("disabled by --look {}", LookMode::Classic),
+            Self::OverSsh => format!(
+                "over ssh, where every repaint crosses the network — `--look {}` asks the \
+                 terminal anyway",
+                LookMode::Cutaway
+            ),
+            Self::InsideScreen => format!(
+                "inside GNU screen, which shows the graphics query in its status line and \
+                 answers no protocol — `--look {}` asks anyway",
+                LookMode::Cutaway
+            ),
             Self::Unsupported => {
                 "this build cannot ask the terminal for graphics (not on Unix)".to_string()
             }
@@ -599,9 +655,17 @@ impl ClassicReason {
             Self::TmuxPassthroughOff => "inside tmux with allow-passthrough off — \
                  `set -g allow-passthrough on` lets kitty graphics through"
                 .to_string(),
-            Self::NoCutawayProtocol => "this terminal has no image protocol the cutaway \
-                 animates with — `--graphics kitty|sixel|iterm2` forces one"
-                .to_string(),
+            Self::NoCutawayProtocol => {
+                let names: Vec<&str> = <ImageProtocol as clap::ValueEnum>::value_variants()
+                    .iter()
+                    .map(|p| p.name())
+                    .collect();
+                format!(
+                    "this terminal has no image protocol the cutaway animates with — \
+                     `--protocol {}` forces one",
+                    names.join("|")
+                )
+            }
             Self::NoCellSize => "terminal reports no cell size in pixels".to_string(),
             Self::TmuxNeedsKitty(p) => format!(
                 "inside tmux only kitty graphics survive a pane switch here, and this terminal \
@@ -627,25 +691,29 @@ impl ClassicReason {
 /// The plan for the terminal this process runs in: the one call `run` and
 /// `doctor` both make, probe included, so `doctor` prints the plan `run`
 /// carries. `ask` is whether the terminal may be asked.
-pub(crate) fn plan_this_terminal(mode: GraphicsMode, max_density: Density, ask: bool) -> Plan {
-    detect(mode, max_density, terminal_cells(), || probe(ask))
+pub(crate) fn plan_this_terminal(choice: LookChoice, max_density: Density, ask: bool) -> Plan {
+    detect(
+        choice,
+        &TermEnv::read(),
+        max_density,
+        terminal_cells(),
+        || probe(ask),
+    )
 }
 
-/// The plan for a terminal `term` cells big. `ask` is the terminal query,
-/// called only when `mode` can use its answer, so `--graphics off` never
-/// touches the terminal.
+/// The plan for a terminal `term` cells big in `env`. `ask` is the terminal
+/// query, called only where [`LookChoice::unasked`] lets it.
 fn detect(
-    mode: GraphicsMode,
+    choice: LookChoice,
+    env: &TermEnv,
     max_density: Density,
     term: TermSize,
     ask: impl FnOnce() -> Probe,
 ) -> Plan {
-    let probe = if mode == GraphicsMode::Off {
-        Probe::NotQueried
-    } else {
-        ask()
-    };
-    resolve(mode, probe, max_density, image_area(term))
+    if let Some(reason) = choice.unasked(env) {
+        return Plan::Classic { reason };
+    }
+    resolve(choice.protocol, ask(), max_density, image_area(term))
 }
 
 /// The cells the image covers: the scene, never the footer, since text and
@@ -674,20 +742,7 @@ pub(crate) fn probe(_ask: bool) -> Probe {
     Probe::Unsupported
 }
 
-/// Off Unix no terminal draws the cutaway, whatever it is named.
-#[cfg(not(unix))]
-pub(crate) fn names_a_cutaway_terminal() -> bool {
-    false
-}
-
 impl Plan {
-    /// Whether the run paints classic only because the user left graphics off.
-    pub(crate) fn graphics_off(self) -> bool {
-        self == Self::Classic {
-            reason: ClassicReason::Disabled,
-        }
-    }
-
     /// The office's logical extent on a terminal `term` cells big: what the
     /// plan's painter lays out there.
     pub(crate) fn office_extent(self, term: TermSize) -> Size {
@@ -701,9 +756,10 @@ impl Plan {
     }
 
     /// The plan as `doctor`'s `graphics:` line: for a cutaway, everything a
-    /// tester reports back from a terminal, and how to get it when `run`'s
-    /// own setting is `off`; for classic, why it fell back.
-    pub(crate) fn diagnostic_row(self, run: GraphicsMode) -> String {
+    /// tester reports back from a terminal, and how `run` gets it where its
+    /// own choice paints classic unasked (`run_unasked`); for classic, why it
+    /// fell back.
+    pub(crate) fn diagnostic_row(self, run_unasked: bool) -> String {
         match self {
             Plan::Cutaway {
                 fit,
@@ -721,21 +777,21 @@ impl Plan {
                     0 => "every frame".to_string(),
                     ms => format!("at most every {ms} ms"),
                 };
-                // A forced plan names its protocol: `auto` may pick another.
-                let mode = if chosen == Chosen::Forced {
-                    GraphicsMode::from(protocol)
-                } else {
-                    GraphicsMode::Auto
-                };
-                let how = match (run, clap::ValueEnum::to_possible_value(&mode)) {
-                    (GraphicsMode::Off, Some(value)) => {
-                        let mode = value.get_name();
+                let how = match (run_unasked, chosen) {
+                    (false, _) => String::new(),
+                    // A forced plan names its protocol: an asked terminal may
+                    // answer another.
+                    (true, Chosen::Forced) => format!(
+                        " — `run` paints classic here: `run --protocol {}` paints it",
+                        protocol.name()
+                    ),
+                    (true, _) => {
+                        let cutaway = LookMode::Cutaway;
                         format!(
-                            " — off: `run --graphics {mode}` (or `graphics = \"{mode}\"` in \
-                             config) paints it"
+                            " — `run` paints classic here: `run --look {cutaway}` (or `look = \
+                             \"{cutaway}\"` in config) paints it"
                         )
                     }
-                    _ => String::new(),
                 };
                 format!(
                     "graphics: {} ({}) on a {}x{} cell, {} — the cutaway at {}x \
@@ -743,7 +799,7 @@ impl Plan {
                      {cadence}{how}",
                     protocol.name(),
                     match chosen {
-                        Chosen::Forced => "forced by --graphics",
+                        Chosen::Forced => "forced by --protocol",
                         Chosen::Answer => "the terminal's answer",
                         Chosen::Name => "guessed from the terminal's name",
                     },
@@ -820,20 +876,6 @@ mod tests {
         height: 40,
     };
 
-    /// Only graphics left off reads as off: a run whose terminal refused the
-    /// cutaway already asked for it, and one painting it has it.
-    #[test]
-    fn graphics_is_off_only_when_the_user_left_it_off() {
-        assert!(resolve(GraphicsMode::Off, Probe::NotQueried, BUNDLED, AREA).graphics_off());
-        let refused = resolve(GraphicsMode::Auto, Probe::NoAnswer, BUNDLED, AREA);
-        assert!(matches!(refused, Plan::Classic { .. }));
-        assert!(!refused.graphics_off());
-        let probe = answered(Some(ImageProtocol::Kitty), CELL_8X16, false);
-        let painting = resolve(GraphicsMode::Auto, probe, BUNDLED, AREA);
-        assert!(matches!(painting, Plan::Cutaway { .. }));
-        assert!(!painting.graphics_off());
-    }
-
     /// Each terminal kind's default motion: every loop on a local kitty image or
     /// half-block grid, the calm pace for SIXEL, iTerm2, tmux or ssh.
     #[test]
@@ -841,9 +883,11 @@ mod tests {
         use pixtuoid_scene::anim::Motion;
         let plan = |protocol| {
             let probe = answered(Some(protocol), CELL_8X16, false);
-            resolve(GraphicsMode::Auto, probe, BUNDLED, AREA)
+            resolve(None, probe, BUNDLED, AREA)
         };
-        let classic = resolve(GraphicsMode::Off, Probe::NotQueried, BUNDLED, AREA);
+        let classic = Plan::Classic {
+            reason: ClassicReason::Disabled,
+        };
         let local = Link::default();
         let tmux = Link {
             tmux: true,
@@ -936,11 +980,46 @@ mod tests {
     }
 
     fn plan(probe: Probe, max_density: Density) -> Plan {
-        resolve(GraphicsMode::Auto, probe, max_density, AREA)
+        resolve(None, probe, max_density, AREA)
     }
 
-    fn row(mode: GraphicsMode, probe: Probe, max_density: Density) -> String {
-        detect(mode, max_density, AREA, || probe).diagnostic_row(GraphicsMode::Auto)
+    fn look(look: LookMode) -> LookChoice {
+        LookChoice::new(look, None)
+    }
+
+    fn forced(protocol: ImageProtocol) -> LookChoice {
+        LookChoice::new(LookMode::Auto, Some(protocol))
+    }
+
+    const LOCAL: TermEnv = TermEnv {
+        term: None,
+        term_program: None,
+        tmux_client: false,
+        ssh: false,
+        screen_window: false,
+    };
+    const OVER_SSH: TermEnv = TermEnv { ssh: true, ..LOCAL };
+    const IN_SCREEN: TermEnv = TermEnv {
+        screen_window: true,
+        ..LOCAL
+    };
+
+    /// The plan `choice` makes in `env`, and how often it asked the terminal.
+    fn asked(choice: LookChoice, env: &TermEnv, probe: Probe) -> (Plan, u32) {
+        let mut asked = 0;
+        let plan = detect(choice, env, BUNDLED, AREA, || {
+            asked += 1;
+            probe
+        });
+        (plan, asked)
+    }
+
+    fn row_in(env: &TermEnv, choice: LookChoice, probe: Probe, max_density: Density) -> String {
+        detect(choice, env, max_density, AREA, || probe).diagnostic_row(false)
+    }
+
+    fn row(choice: LookChoice, probe: Probe, max_density: Density) -> String {
+        row_in(&LOCAL, choice, probe, max_density)
     }
 
     fn too_small(cell: CellSize, max_density: Density) -> Plan {
@@ -1062,18 +1141,6 @@ mod tests {
         assert_eq!(fit.logical().w, fit.scale().logical(u16::MAX));
     }
 
-    #[test]
-    fn off_beats_a_capable_terminal() {
-        // The flag is the user's, not a hint — a capable terminal must not
-        // override it.
-        assert_eq!(
-            resolve(GraphicsMode::Off, capable(CELL_8X16), BUNDLED, AREA),
-            Plan::Classic {
-                reason: ClassicReason::Disabled
-            }
-        );
-    }
-
     /// Every protocol the probe can report reaches the plan as itself.
     #[test]
     fn auto_takes_the_cutaway_through_the_protocol_the_terminal_speaks() {
@@ -1131,11 +1198,12 @@ mod tests {
     /// decides.
     #[test]
     fn a_named_protocol_overrides_the_answer_and_nothing_else() {
-        for (mode, want) in [
-            (GraphicsMode::Kitty, ImageProtocol::Kitty),
-            (GraphicsMode::Sixel, ImageProtocol::Sixel),
-            (GraphicsMode::Iterm2, ImageProtocol::Iterm2),
+        for want in [
+            ImageProtocol::Kitty,
+            ImageProtocol::Sixel,
+            ImageProtocol::Iterm2,
         ] {
+            let mode = Some(want);
             for answered_with in [None, Some(ImageProtocol::Kitty)] {
                 let got = resolve(
                     mode,
@@ -1145,7 +1213,7 @@ mod tests {
                 );
                 assert!(
                     matches!(got, Plan::Cutaway { route, chosen: Chosen::Forced, .. } if route.protocol() == want),
-                    "{mode:?} over {answered_with:?}: {got:?}"
+                    "{want:?} over {answered_with:?}: {got:?}"
                 );
             }
             let tiny = cell(2, 4);
@@ -1162,7 +1230,7 @@ mod tests {
         }
         assert_eq!(
             resolve(
-                GraphicsMode::Sixel,
+                Some(ImageProtocol::Sixel),
                 answered(Some(ImageProtocol::Kitty), CELL_8X16, true),
                 BUNDLED,
                 AREA
@@ -1173,18 +1241,120 @@ mod tests {
         );
     }
 
-    /// Off never reaches the terminal: the probe is the seam that would, and it
-    /// panics if called.
+    /// Classic never reaches the terminal, wherever it runs, however capable
+    /// the terminal is: the probe is the seam that would.
     #[test]
-    fn off_plans_without_asking_the_terminal() {
+    fn classic_plans_without_asking_the_terminal() {
+        for env in [LOCAL, OVER_SSH, IN_SCREEN] {
+            assert_eq!(
+                asked(look(LookMode::Classic), &env, capable(CELL_8X16)),
+                (
+                    Plan::Classic {
+                        reason: ClassicReason::Disabled
+                    },
+                    0
+                ),
+                "{env:?}"
+            );
+        }
+    }
+
+    /// `auto` keeps classic over ssh and inside GNU screen without asking;
+    /// `cutaway` asks there, and plans from the answer.
+    #[test]
+    fn auto_asks_neither_over_ssh_nor_inside_screen_and_cutaway_asks_both() {
+        let classic = |reason| (Plan::Classic { reason }, 0);
         assert_eq!(
-            detect(GraphicsMode::Off, BUNDLED, AREA, || panic!(
-                "Off must not query the terminal"
-            )),
-            Plan::Classic {
-                reason: ClassicReason::Disabled
-            }
+            asked(look(LookMode::Auto), &OVER_SSH, capable(CELL_8X16)),
+            classic(ClassicReason::OverSsh)
         );
+        assert_eq!(
+            asked(look(LookMode::Auto), &IN_SCREEN, capable(CELL_8X16)),
+            classic(ClassicReason::InsideScreen)
+        );
+        let both = TermEnv {
+            ssh: true,
+            ..IN_SCREEN
+        };
+        assert_eq!(
+            asked(look(LookMode::Auto), &both, capable(CELL_8X16)).1,
+            0,
+            "over ssh into screen"
+        );
+        let cutaway = (
+            resolve(None, capable(CELL_8X16), BUNDLED, image_area(AREA)),
+            1,
+        );
+        for env in [OVER_SSH, IN_SCREEN, both] {
+            assert_eq!(
+                asked(look(LookMode::Cutaway), &env, capable(CELL_8X16)),
+                cutaway,
+                "{env:?}"
+            );
+        }
+    }
+
+    /// A tmux run inside a screen window is tmux's to answer for: `auto` asks
+    /// it, whether `$TMUX` or only tmux's `TERM` says so.
+    #[test]
+    fn auto_asks_a_tmux_run_inside_screen() {
+        for tmux in [
+            TermEnv {
+                tmux_client: true,
+                ..IN_SCREEN
+            },
+            TermEnv {
+                term: Some("tmux-256color".into()),
+                ..IN_SCREEN
+            },
+        ] {
+            assert_eq!(
+                asked(look(LookMode::Auto), &tmux, capable(CELL_8X16)).1,
+                1,
+                "{tmux:?}"
+            );
+        }
+    }
+
+    /// `--protocol` implies the cutaway over any look, so it asks everywhere
+    /// and forces its protocol over the answer.
+    #[test]
+    fn a_forced_protocol_implies_the_cutaway_and_asks_everywhere() {
+        for over in [LookMode::Auto, LookMode::Cutaway, LookMode::Classic] {
+            let choice = LookChoice::new(over, Some(ImageProtocol::Sixel));
+            assert_eq!(choice, forced(ImageProtocol::Sixel), "{over:?}");
+            for env in [LOCAL, OVER_SSH, IN_SCREEN] {
+                let (got, n) = asked(choice, &env, capable(CELL_8X16));
+                assert_eq!(n, 1, "{over:?} in {env:?}");
+                assert!(
+                    matches!(got, Plan::Cutaway { route, chosen: Chosen::Forced, .. } if route.protocol() == ImageProtocol::Sixel),
+                    "{over:?} in {env:?}: {got:?}"
+                );
+            }
+        }
+    }
+
+    /// `auto` is the default, and names itself as `--look` takes it.
+    #[test]
+    fn auto_is_the_default_look() {
+        assert_eq!(LookChoice::default(), look(LookMode::Auto));
+        for mode in <LookMode as clap::ValueEnum>::value_variants() {
+            assert_eq!(
+                <LookMode as clap::ValueEnum>::from_str(&mode.to_string(), false),
+                Ok(*mode)
+            );
+        }
+    }
+
+    /// `--protocol`'s values are the names the protocols go by elsewhere.
+    #[test]
+    fn a_protocol_parses_by_its_name() {
+        for p in <ImageProtocol as clap::ValueEnum>::value_variants() {
+            assert_eq!(
+                <ImageProtocol as clap::ValueEnum>::from_str(p.name(), false),
+                Ok(*p)
+            );
+        }
     }
 
     /// `run` and `doctor` plan through the one probe this platform has, so
@@ -1203,26 +1373,55 @@ mod tests {
         }
     }
 
-    /// Every other mode asks exactly once and plans from the answer.
+    /// Every other choice asks a local terminal exactly once and plans from
+    /// the answer.
     #[test]
-    fn every_other_mode_asks_once_and_plans_from_the_answer() {
-        for mode in [
-            GraphicsMode::Auto,
-            GraphicsMode::Kitty,
-            GraphicsMode::Sixel,
-            GraphicsMode::Iterm2,
+    fn every_other_choice_asks_once_and_plans_from_the_answer() {
+        for choice in [
+            look(LookMode::Auto),
+            look(LookMode::Cutaway),
+            forced(ImageProtocol::Kitty),
+            forced(ImageProtocol::Sixel),
+            forced(ImageProtocol::Iterm2),
         ] {
-            let mut asked = 0;
-            let got = detect(mode, BUNDLED, AREA, || {
-                asked += 1;
-                capable(CELL_8X16)
-            });
-            assert_eq!(asked, 1, "{mode:?}");
             assert_eq!(
-                got,
-                resolve(mode, capable(CELL_8X16), BUNDLED, image_area(AREA))
+                asked(choice, &LOCAL, capable(CELL_8X16)),
+                (
+                    resolve(
+                        choice.protocol,
+                        capable(CELL_8X16),
+                        BUNDLED,
+                        image_area(AREA)
+                    ),
+                    1
+                ),
+                "{choice:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_environment_names_a_screen_window() {
+        let env = |sty: Option<&str>, tmux: Option<&str>| {
+            temp_env::with_vars(
+                [
+                    ("STY", sty),
+                    ("TMUX", tmux),
+                    ("TERM", None),
+                    ("TERM_PROGRAM", None),
+                ],
+                TermEnv::read,
+            )
+        };
+        assert!(env(Some("12345.pts-0.host"), None).screen());
+        for blank in ["", " \t"] {
+            assert!(!env(Some(blank), None).screen(), "{blank:?} is unset");
+        }
+        assert!(!env(None, None).screen());
+        assert!(
+            !env(Some("12345.pts-0.host"), Some("/tmp/tmux-501/default,1,0")).screen(),
+            "tmux inside screen"
+        );
     }
 
     /// The image covers the scene and never the footer: text and image never
@@ -1321,28 +1520,28 @@ mod tests {
     fn every_protocol_prints_its_own_cutaway_row() {
         let cases = [
             (
-                GraphicsMode::Auto,
+                look(LookMode::Auto),
                 answered(Some(ImageProtocol::Kitty), cell(17, 41), true),
                 "graphics: kitty (the terminal's answer) on a 17x41 cell, through tmux \
                  passthrough — the cutaway at 16x (4x art upscaled 4x), a 127x99 office, sent \
                  as 4x2-cell tiles (doubled until a frame is at most 400 tiles) every frame",
             ),
             (
-                GraphicsMode::Auto,
+                look(LookMode::Auto),
                 answered(Some(ImageProtocol::Sixel), cell(17, 41), false),
                 "graphics: sixel (the terminal's answer) on a 17x41 cell, direct — the cutaway \
                  at 16x (4x art upscaled 4x), a 127x99 office, sent as 8x4-cell tiles at most \
                  every 66 ms",
             ),
             (
-                GraphicsMode::Iterm2,
+                forced(ImageProtocol::Iterm2),
                 answered(None, cell(8, 16), false),
-                "graphics: iterm2 (forced by --graphics) on a 8x16 cell, direct — the cutaway \
+                "graphics: iterm2 (forced by --protocol) on a 8x16 cell, direct — the cutaway \
                  at 8x (4x art upscaled 2x), a 120x78 office, sent as 8x4-cell tiles at most \
                  every 100 ms",
             ),
             (
-                GraphicsMode::Auto,
+                look(LookMode::Auto),
                 Probe::Answered(Detected {
                     named: true,
                     ..match answered(Some(ImageProtocol::Iterm2), cell(8, 16), false) {
@@ -1357,9 +1556,9 @@ mod tests {
         ];
         let rows: Vec<String> = cases
             .iter()
-            .map(|&(mode, probe, want)| {
-                let got = row(mode, probe, BUNDLED);
-                assert_eq!(got, want, "{mode:?}");
+            .map(|&(choice, probe, want)| {
+                let got = row(choice, probe, BUNDLED);
+                assert_eq!(got, want, "{choice:?}");
                 got
             })
             .collect();
@@ -1367,44 +1566,32 @@ mod tests {
         assert_eq!(distinct.len(), rows.len());
     }
 
-    /// A doctor that prints a cutaway while `run` is set `off` says how to
-    /// get it, or a bare `run` would show classic unexplained; a setting that
-    /// paints it, and every classic row, add nothing.
+    /// A doctor that prints a cutaway where `run`'s own choice paints classic
+    /// unasked says how `run` gets it, or a bare `run` would show classic
+    /// unexplained; a `run` that asks, and every classic row, add nothing.
     #[test]
-    fn a_cutaway_row_says_how_to_get_it_when_run_is_off() {
-        const HOW: &str =
-            " — off: `run --graphics auto` (or `graphics = \"auto\"` in config) paints it";
+    fn a_cutaway_row_says_how_run_gets_it_where_run_paints_classic_unasked() {
+        const HOW: &str = " — `run` paints classic here: `run --look cutaway` (or `look = \
+                           \"cutaway\"` in config) paints it";
         let cutaway = plan(capable(CELL_8X16), BUNDLED);
-        let painted = cutaway.diagnostic_row(GraphicsMode::Auto);
+        let painted = cutaway.diagnostic_row(false);
         assert!(!painted.contains(HOW), "{painted}");
-        assert_eq!(
-            cutaway.diagnostic_row(GraphicsMode::Off),
-            format!("{painted}{HOW}")
-        );
-        assert_eq!(cutaway.diagnostic_row(GraphicsMode::Sixel), painted);
+        assert_eq!(cutaway.diagnostic_row(true), format!("{painted}{HOW}"));
         let classic = plan(Probe::NoAnswer, BUNDLED);
-        assert_eq!(
-            classic.diagnostic_row(GraphicsMode::Off),
-            classic.diagnostic_row(GraphicsMode::Auto)
-        );
+        assert_eq!(classic.diagnostic_row(true), classic.diagnostic_row(false));
 
-        // Forced, the hint names the protocol, as a value `--graphics` takes.
-        for mode in [
-            GraphicsMode::Kitty,
-            GraphicsMode::Sixel,
-            GraphicsMode::Iterm2,
-        ] {
-            let forced = resolve(mode, capable(CELL_8X16), BUNDLED, AREA);
-            let name = <GraphicsMode as clap::ValueEnum>::to_possible_value(&mode)
+        // Forced, the hint names the protocol, as a value `--protocol` takes.
+        for p in <ImageProtocol as clap::ValueEnum>::value_variants() {
+            let forced = resolve(Some(*p), capable(CELL_8X16), BUNDLED, AREA);
+            let name = <ImageProtocol as clap::ValueEnum>::to_possible_value(p)
                 .expect("a value")
                 .get_name()
                 .to_string();
             assert_eq!(
-                forced.diagnostic_row(GraphicsMode::Off),
+                forced.diagnostic_row(true),
                 format!(
-                    "{} — off: `run --graphics {name}` (or `graphics = \"{name}\"` in config) \
-                     paints it",
-                    forced.diagnostic_row(GraphicsMode::Auto)
+                    "{} — `run` paints classic here: `run --protocol {name}` paints it",
+                    forced.diagnostic_row(false)
                 )
             );
         }
@@ -1418,19 +1605,38 @@ mod tests {
     fn every_classic_reason_prints_its_own_row() {
         let cases = [
             (
-                GraphicsMode::Off,
+                LOCAL,
+                look(LookMode::Classic),
                 capable(CELL_8X16),
                 BUNDLED,
-                "disabled by --graphics off",
+                "disabled by --look classic",
             ),
             (
-                GraphicsMode::Auto,
+                OVER_SSH,
+                look(LookMode::Auto),
+                capable(CELL_8X16),
+                BUNDLED,
+                "over ssh, where every repaint crosses the network — `--look cutaway` asks the \
+                 terminal anyway",
+            ),
+            (
+                IN_SCREEN,
+                look(LookMode::Auto),
+                capable(CELL_8X16),
+                BUNDLED,
+                "inside GNU screen, which shows the graphics query in its status line and \
+                 answers no protocol — `--look cutaway` asks anyway",
+            ),
+            (
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::Unsupported,
                 BUNDLED,
                 "this build cannot ask the terminal for graphics (not on Unix)",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::NotQueried,
                 BUNDLED,
                 "the terminal was not asked (stdout is not a terminal, there is no controlling \
@@ -1438,26 +1644,30 @@ mod tests {
                  supports",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::NoAnswer,
                 BUNDLED,
                 "the terminal did not answer the capability query",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 answered(None, CELL_8X16, false),
                 BUNDLED,
                 "terminal reports no graphics protocol (kitty/iterm2/sixel)",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::TmuxPassthroughOff,
                 BUNDLED,
                 "inside tmux with allow-passthrough off — `set -g allow-passthrough on` lets \
                  kitty graphics through",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::Answered(Detected {
                     protocol: None,
                     cell: Some(CELL_8X16),
@@ -1468,10 +1678,11 @@ mod tests {
                 }),
                 BUNDLED,
                 "this terminal has no image protocol the cutaway animates with — \
-                 `--graphics kitty|sixel|iterm2` forces one",
+                 `--protocol kitty|sixel|iterm2` forces one",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 Probe::Answered(Detected {
                     protocol: Some(ImageProtocol::Kitty),
                     cell: None,
@@ -1484,20 +1695,23 @@ mod tests {
                 "terminal reports no cell size in pixels",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 answered(Some(ImageProtocol::Iterm2), CELL_8X16, true),
                 BUNDLED,
                 "inside tmux only kitty graphics survive a pane switch here, and this terminal \
                  speaks iterm2",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 capable(cell(2, 4)),
                 BUNDLED,
                 "terminal reports a 2x4 cell — too small for the pack's 4x art",
             ),
             (
-                GraphicsMode::Auto,
+                LOCAL,
+                look(LookMode::Auto),
                 capable(cell(1, 2)),
                 BUNDLED,
                 "terminal reports a 1x2 cell — too small to subdivide",
@@ -1508,8 +1722,8 @@ mod tests {
             std::collections::BTreeSet::new(),
             std::collections::BTreeSet::new(),
         );
-        for (mode, probe, max_density, want) in cases {
-            let Plan::Classic { reason } = resolve(mode, probe, max_density, AREA) else {
+        for (env, choice, probe, max_density, want) in cases {
+            let Plan::Classic { reason } = detect(choice, &env, max_density, AREA, || probe) else {
                 panic!("{probe:?} must fall back");
             };
             seen.insert(match reason {
@@ -1523,12 +1737,14 @@ mod tests {
                 ClassicReason::TmuxNeedsKitty(_) => 7,
                 ClassicReason::CellTooSmall { .. } => 8,
                 ClassicReason::NoCutawayProtocol => 9,
+                ClassicReason::OverSsh => 10,
+                ClassicReason::InsideScreen => 11,
             });
-            let row = row(mode, probe, max_density);
+            let row = row_in(&env, choice, probe, max_density);
             assert_eq!(row, format!("graphics: classic half-blocks — {want}"));
             rows.insert(row);
         }
-        assert_eq!(seen.len(), 10, "every reason has a pinned row");
+        assert_eq!(seen.len(), 12, "every reason has a pinned row");
         assert_eq!(rows.len(), n, "no two reasons print the same row");
     }
 
@@ -1549,7 +1765,7 @@ mod tests {
             Plan::Cutaway { route, .. } => route.medium(),
             plan => panic!("no cutaway: {plan:?}"),
         };
-        for mode in [GraphicsMode::Auto, GraphicsMode::Kitty] {
+        for mode in [None, Some(ImageProtocol::Kitty)] {
             assert_eq!(
                 medium(mode, detected(true, false)),
                 Medium::SharedMemory,
@@ -1569,7 +1785,7 @@ mod tests {
     }
 
     /// A terminal that answers no protocol the cutaway animates with falls
-    /// back on its own, but `--graphics` still forces one: it overrides
+    /// back on its own, but `--protocol` still forces one: it overrides
     /// detection.
     #[test]
     fn a_forced_protocol_paints_where_none_animates() {
@@ -1582,13 +1798,13 @@ mod tests {
             shm: false,
         });
         assert!(matches!(
-            resolve(GraphicsMode::Auto, probe, BUNDLED, AREA),
+            resolve(None, probe, BUNDLED, AREA),
             Plan::Classic {
                 reason: ClassicReason::NoCutawayProtocol
             }
         ));
         assert!(matches!(
-            resolve(GraphicsMode::Kitty, probe, BUNDLED, AREA),
+            resolve(Some(ImageProtocol::Kitty), probe, BUNDLED, AREA),
             Plan::Cutaway { .. }
         ));
     }

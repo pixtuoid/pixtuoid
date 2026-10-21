@@ -1138,34 +1138,52 @@ fn load_status_is_clean_for_a_missing_file() {
     assert!(!degraded, "a missing file is not a degraded load");
 }
 
-#[test]
-fn graphics_precedence_is_cli_then_config_then_off() {
-    use crate::GraphicsMode;
-    let cfg = |v: Option<&str>| AppConfig {
-        graphics: v.map(String::from),
+fn look_of(
+    config: Option<&str>,
+    cli: crate::cli::LookArgs,
+    w: &mut Vec<String>,
+) -> crate::graphics::LookChoice {
+    let cfg = AppConfig {
+        look: config.map(String::from),
         ..AppConfig::default()
     };
-    let resolve = |c: &AppConfig, cli| resolve_graphics(c, cli, &mut Vec::new());
-    assert_eq!(resolve(&cfg(None), None), GraphicsMode::Off);
-    assert_eq!(resolve(&cfg(Some("auto")), None), GraphicsMode::Auto);
-    assert_eq!(resolve(&cfg(Some("sixel")), None), GraphicsMode::Sixel);
+    resolve_look(&cfg, cli, w)
+}
+
+#[test]
+fn look_precedence_is_cli_then_config_then_auto() {
+    use crate::cli::LookArgs;
+    use crate::graphics::{ImageProtocol, LookChoice, LookMode};
+    let resolve =
+        |config, look, protocol| look_of(config, LookArgs { look, protocol }, &mut Vec::new());
+    let choice = |mode| LookChoice::new(mode, None);
+    assert_eq!(resolve(None, None, None), choice(LookMode::Auto));
     assert_eq!(
-        resolve(&cfg(Some("auto")), Some(GraphicsMode::Off)),
-        GraphicsMode::Off
+        resolve(Some("classic"), None, None),
+        choice(LookMode::Classic)
     );
     assert_eq!(
-        resolve(&cfg(None), Some(GraphicsMode::Iterm2)),
-        GraphicsMode::Iterm2
+        resolve(Some("cutaway"), None, None),
+        choice(LookMode::Cutaway)
+    );
+    assert_eq!(
+        resolve(Some("classic"), Some(LookMode::Auto), None),
+        choice(LookMode::Auto)
+    );
+    assert_eq!(
+        resolve(Some("classic"), None, Some(ImageProtocol::Sixel)),
+        LookChoice::new(LookMode::Cutaway, Some(ImageProtocol::Sixel)),
+        "--protocol implies the cutaway over the config's look"
     );
 }
 
 /// The key round-trips through the file under its documented name.
 #[test]
-fn graphics_parses_from_the_file() {
-    let cfg: AppConfig = toml::from_str("graphics = \"kitty\"\n").expect("parses");
+fn look_parses_from_the_file() {
+    let cfg: AppConfig = toml::from_str("look = \"classic\"\n").expect("parses");
     assert_eq!(
-        resolve_graphics(&cfg, None, &mut Vec::new()),
-        crate::GraphicsMode::Kitty
+        resolve_look(&cfg, crate::cli::LookArgs::default(), &mut Vec::new()),
+        crate::graphics::LookChoice::new(crate::graphics::LookMode::Classic, None)
     );
 }
 
@@ -1201,26 +1219,28 @@ fn a_motion_mode_overrides_only_what_auto_would_take() {
     }
 }
 
-/// A typo'd value warns and falls back rather than failing the whole load, and
-/// warns even when the flag wins — the warning is the only sign the file is
-/// stale.
+/// A typo'd value warns and falls back to `auto` rather than failing the whole
+/// load, and warns even when the flag wins — the warning is the only sign the
+/// file is stale.
 #[test]
-fn an_unknown_graphics_value_warns_and_falls_back_to_off() {
-    let cfg = AppConfig {
-        graphics: Some("kity".into()),
-        ..AppConfig::default()
-    };
+fn an_unknown_look_value_warns_and_falls_back_to_auto() {
+    use crate::cli::LookArgs;
+    use crate::graphics::{LookChoice, LookMode};
     let mut w = Vec::new();
     assert_eq!(
-        resolve_graphics(&cfg, None, &mut w),
-        crate::GraphicsMode::Off
+        look_of(Some("clasic"), LookArgs::default(), &mut w),
+        LookChoice::new(LookMode::Auto, None)
     );
     assert_eq!(w.len(), 1, "{w:?}");
-    assert!(w[0].contains("unknown graphics \"kity\""), "{w:?}");
+    assert!(w[0].contains("unknown look \"clasic\""), "{w:?}");
     let mut w = Vec::new();
+    let cli = LookArgs {
+        look: Some(LookMode::Classic),
+        protocol: None,
+    };
     assert_eq!(
-        resolve_graphics(&cfg, Some(crate::GraphicsMode::Auto), &mut w),
-        crate::GraphicsMode::Auto
+        look_of(Some("clasic"), cli, &mut w),
+        LookChoice::new(LookMode::Classic, None)
     );
     assert_eq!(w.len(), 1, "{w:?}");
 }

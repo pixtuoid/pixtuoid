@@ -17,7 +17,6 @@ pub(crate) mod doctor;
 pub(crate) mod floating;
 pub(crate) mod focus;
 pub(crate) mod graphics;
-pub(crate) use graphics::GraphicsMode;
 pub(crate) mod install;
 pub(crate) mod jank;
 pub(crate) mod pacing;

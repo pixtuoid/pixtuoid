@@ -657,9 +657,9 @@ struct DoctorReport {
     truecolor_probe: Option<crate::term::Truecolor>,
     color_pf: crate::term::ColorPreflight,
     graphics_plan: crate::graphics::Plan,
-    /// What `run` resolves `graphics` to without a flag: the config, then the
-    /// default.
-    run_graphics: crate::GraphicsMode,
+    /// `run`'s look without a flag — the config's, then the default — paints
+    /// classic here without asking ([`crate::graphics::LookChoice::unasked_here`]).
+    run_unasked: bool,
     rows: Vec<DoctorSourceRow>,
     roots: Vec<RootStatus>,
     backend: &'static str,
@@ -731,12 +731,12 @@ impl Ink {
 /// `color_preflight` gate the launcher acts on, so the rows match `run`.
 fn probe_terminal_caps(
     probe_ok: bool,
-    graphics: crate::GraphicsMode,
+    look: crate::graphics::LookChoice,
     max_density: pixtuoid_core::sprite::format::Density,
 ) -> (Option<crate::term::Truecolor>, crate::graphics::Plan) {
     let truecolor_probe =
         probe_ok.then(|| crate::term::query_truecolor(crate::term::TRUECOLOR_PROBE_TIMEOUT));
-    let graphics_plan = crate::graphics::plan_this_terminal(graphics, max_density, probe_ok);
+    let graphics_plan = crate::graphics::plan_this_terminal(look, max_density, probe_ok);
     (truecolor_probe, graphics_plan)
 }
 
@@ -802,10 +802,10 @@ fn probe_roots() -> ProbeRoots {
 
 /// All probing, no formatting. `log_at` is injected by `main` (resolved by
 /// [`LogLocation::from_env`](crate::run_log::LogLocation::from_env));
-/// `graphics` is the `--graphics` flag.
+/// `look` is the `--look` and `--protocol` flags.
 fn collect(
     log_at: &crate::run_log::LogLocation,
-    graphics: crate::GraphicsMode,
+    look: crate::graphics::LookChoice,
 ) -> anyhow::Result<DoctorReport> {
     let mut config_warnings = Vec::new();
     let config_path = crate::config::config_path();
@@ -832,8 +832,11 @@ fn collect(
         crossterm::style::force_color_output(true);
     }
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
-    let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, graphics, max_density);
-    let run_graphics = crate::config::resolve_graphics(&cfg, None, &mut config_warnings);
+    let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
+    let run_unasked =
+        crate::config::resolve_look(&cfg, crate::cli::LookArgs::default(), &mut config_warnings)
+            .unasked_here()
+            .is_some();
 
     let rows: Vec<DoctorSourceRow> = registry::registered_source_names()
         .map(|src| {
@@ -893,7 +896,7 @@ fn collect(
         truecolor_probe,
         color_pf,
         graphics_plan,
-        run_graphics,
+        run_unasked,
         rows,
         roots,
         backend,
@@ -938,7 +941,7 @@ fn terminal_category(r: &DoctorReport) -> Category {
     // classic, and a fallback must never go unexplained.
     let mut details = vec![format!(
         "{DETAIL_INDENT}{}",
-        r.graphics_plan.diagnostic_row(r.run_graphics)
+        r.graphics_plan.diagnostic_row(r.run_unasked)
     )];
     // Whenever it has something to say — incl. the ForceColor note, so a
     // NO_COLOR+CLICOLOR_FORCE report still states that color is being forced.
@@ -1403,9 +1406,9 @@ fn render(r: &DoctorReport) -> String {
 /// If the bundled pack does not load.
 pub(crate) fn run(
     log_at: &crate::run_log::LogLocation,
-    graphics: crate::GraphicsMode,
+    look: crate::graphics::LookChoice,
 ) -> anyhow::Result<String> {
-    Ok(render(&collect(log_at, graphics)?))
+    Ok(render(&collect(log_at, look)?))
 }
 
 #[cfg(test)]
@@ -1574,7 +1577,7 @@ mod tests {
         let out = temp_env::with_vars_unset(["CLICOLOR_FORCE", "NO_COLOR"], || {
             run(
                 &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                crate::GraphicsMode::Auto,
+                crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
             )
         });
         let out = out.unwrap();
@@ -1624,7 +1627,7 @@ mod tests {
             graphics_plan: crate::graphics::Plan::Classic {
                 reason: crate::graphics::ClassicReason::NotQueried,
             },
-            run_graphics: crate::GraphicsMode::Auto,
+            run_unasked: false,
             rows,
             roots: vec![],
             backend: "NSRunningApplication (macOS)",
@@ -1791,17 +1794,15 @@ mod tests {
         };
         assert_eq!(
             terminal_category(&r).details[0],
-            format!(
-                "{DETAIL_INDENT}{}",
-                r.graphics_plan.diagnostic_row(crate::GraphicsMode::Auto)
-            )
+            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(false))
         );
-        r.run_graphics = crate::GraphicsMode::Off;
-        assert!(
-            terminal_category(&r).details[0].ends_with("paints it"),
-            "the row reads run's own setting"
+        r.run_unasked = true;
+        assert_eq!(
+            terminal_category(&r).details[0],
+            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(true)),
+            "the row reads whether run asks"
         );
-        r.run_graphics = crate::GraphicsMode::Auto;
+        r.run_unasked = false;
 
         r.graphics_plan = Plan::Classic {
             reason: ClassicReason::TmuxNeedsKitty(ImageProtocol::Sixel),
@@ -2079,7 +2080,7 @@ mod tests {
         // The report must not assert clean drift off a log it never read.
         let out = run(
             &crate::run_log::LogLocation::File(dir.path().to_path_buf()),
-            crate::GraphicsMode::Auto,
+            crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
         )
         .unwrap();
         assert!(out.contains("[!] decode drift — log unreadable"), "{out}");
@@ -2145,7 +2146,7 @@ mod tests {
             || {
                 run(
                     &crate::run_log::LogLocation::File("/nonexistent-pixtuoid-doctor-log".into()),
-                    crate::GraphicsMode::Auto,
+                    crate::graphics::LookChoice::new(crate::graphics::LookMode::Cutaway, None),
                 )
             },
         );

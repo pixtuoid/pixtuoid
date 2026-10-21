@@ -53,8 +53,8 @@ pub(crate) struct RunConfig {
     /// Resolved `[audio]` settings — muted defaults TRUE (the lazy spawn waits for the
     /// first `m`), volume pre-clamped by `config::resolve_audio`. Headless ignores it.
     pub(crate) audio: crate::config::AudioConfig,
-    /// Resolved by `config::resolve_graphics`. Headless and `floating` ignore it.
-    pub(crate) graphics: crate::GraphicsMode,
+    /// Resolved by `config::resolve_look`. Headless and `floating` ignore it.
+    pub(crate) look: crate::graphics::LookChoice,
     /// Resolved by `config::resolve_motion`; `auto` is what the TUI's graphics
     /// plan affords, and Full in the floating window.
     pub(crate) motion: crate::config::MotionMode,
