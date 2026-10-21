@@ -6,4 +6,4 @@
 #
 # Run scripts via the venv:
 #   .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png
-Pillow==12.3.0
+Pillow==13.0.0
