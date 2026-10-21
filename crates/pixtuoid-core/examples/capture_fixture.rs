@@ -76,10 +76,10 @@ mod recorder {
 
     /// Where `plan`'s failed run copies its [`driver_dir`], if it may: only a sandboxed
     /// raw capture. An operator's billed capture may hold real credentials in
-    /// its driver's logs. A sandboxed run's logs hold the operator's identity only
-    /// through `USER` and `LOGNAME`, which the sandbox passes on Unix and not on
-    /// Windows, and through their git identity; its `HOME` is the sandbox's own.
-    /// [`copy_driver_dir`] redacts those.
+    /// its driver's logs. A sandboxed run's logs hold the operator's identity
+    /// through the account variables the sandbox inherits (`hermetic.rs`'s
+    /// `PLATFORM_INHERITED`) and their git identity; its `HOME` is the sandbox's
+    /// own. [`copy_driver_dir`] redacts those.
     fn driver_destination(plan: &CapturePlan) -> Option<PathBuf> {
         match &plan.sink {
             Sink::Raw { out, .. } if plan.sandboxed() => Some(out.as_path().join(DRIVER_COPY)),
@@ -172,6 +172,7 @@ mod recorder {
         scratch: tempfile::TempDir,
         run_copy: Option<&Path>,
         needles: impl FnOnce() -> BTreeSet<String>,
+        log: &mut impl Write,
     ) {
         // The scratch holds the only complete logs when the copy is not whole.
         let mut whole = true;
@@ -183,15 +184,18 @@ mod recorder {
                 DRIVER_CAP_BYTES,
             ) {
                 Ok(copy) => {
-                    copy.notices.iter().for_each(|n| eprintln!("{n}"));
+                    copy.notices.iter().for_each(|n| {
+                        let _ = writeln!(log, "{n}");
+                    });
                     whole = copy.notices.is_empty();
                     if copy.files > 0 {
-                        eprintln!("the driver's logs are copied into {}", into.display());
+                        let _ =
+                            writeln!(log, "the driver's logs are copied into {}", into.display());
                     }
                 }
                 Err(e) => {
                     whole = false;
-                    eprintln!("the driver copy failed: {e}");
+                    let _ = writeln!(log, "the driver copy failed: {e}");
                 }
             }
         }
@@ -200,7 +204,11 @@ mod recorder {
         if left {
             let kept = scratch.keep();
             if !whole || run_copy.is_none() {
-                eprintln!("the driver's logs stay in {}", driver_dir(&kept).display());
+                let _ = writeln!(
+                    log,
+                    "the driver's logs stay in {}",
+                    driver_dir(&kept).display()
+                );
             }
         }
     }
@@ -303,7 +311,6 @@ mod recorder {
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
         let run_copy = driver_destination(plan);
-        let operator = || operator_identity(plan.sandboxed());
         let env: Vec<(String, String)> = plan.cli_env.clone().into_iter().collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -358,7 +365,12 @@ mod recorder {
         ) {
             Ok(daemon) => daemon,
             Err(e) => {
-                keep_scratch(sandbox, run_copy.as_deref(), operator);
+                keep_scratch(
+                    sandbox,
+                    run_copy.as_deref(),
+                    operator_identity,
+                    &mut std::io::stderr(),
+                );
                 return Err(e);
             }
         };
@@ -403,7 +415,12 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
-                keep_scratch(sandbox, run_copy.as_deref(), operator);
+                keep_scratch(
+                    sandbox,
+                    run_copy.as_deref(),
+                    operator_identity,
+                    &mut std::io::stderr(),
+                );
                 return Err(e);
             }
             kept => kept,
@@ -451,7 +468,12 @@ mod recorder {
                 || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
-                keep_scratch(sandbox, run_copy.as_deref(), operator);
+                keep_scratch(
+                    sandbox,
+                    run_copy.as_deref(),
+                    operator_identity,
+                    &mut std::io::stderr(),
+                );
             }
             return incomplete.map_or(Ok(()), Err);
         };
@@ -461,7 +483,12 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox, run_copy.as_deref(), operator);
+            keep_scratch(
+                sandbox,
+                run_copy.as_deref(),
+                operator_identity,
+                &mut std::io::stderr(),
+            );
             std::process::exit(1);
         }
 
@@ -487,7 +514,12 @@ mod recorder {
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
-            keep_scratch(sandbox, run_copy.as_deref(), operator);
+            keep_scratch(
+                sandbox,
+                run_copy.as_deref(),
+                operator_identity,
+                &mut std::io::stderr(),
+            );
         }
         pii?;
         println!("next: just test conformance   then   cargo insta review");
@@ -1250,9 +1282,10 @@ mod recorder {
         needles
     }
 
-    /// [`identity_needles`] of the machine the recorder runs on.
-    fn operator_identity(sandboxed: bool) -> BTreeSet<String> {
-        identity_needles(git_config, !sandboxed)
+    /// The identity a sandboxed run's logs may carry: [`identity_needles`] but
+    /// for the `HOME`, which is the run's own there.
+    fn operator_identity() -> BTreeSet<String> {
+        identity_needles(git_config, false)
     }
 
     fn git_config(key: &str) -> Option<String> {
@@ -2775,7 +2808,7 @@ mod recorder {
             let bare = tempfile::tempdir().expect("scratch");
             top_level(bare.path());
             let at = bare.path().to_path_buf();
-            keep_scratch(bare, None, BTreeSet::new);
+            keep_scratch(bare, None, BTreeSet::new, &mut std::io::sink());
             assert!(!at.exists(), "top-level entries alone go");
 
             let used = tempfile::tempdir().expect("scratch");
@@ -2783,7 +2816,7 @@ mod recorder {
             let log = driver_dir(used.path()).join("openclaw-agent.log");
             std::fs::write(&log, "refused").expect("log");
             let at = used.path().to_path_buf();
-            keep_scratch(used, None, BTreeSet::new);
+            keep_scratch(used, None, BTreeSet::new, &mut std::io::sink());
             assert!(log.is_file(), "a driver's log stays");
             std::fs::remove_dir_all(&at).expect("cleanup");
         }
@@ -2837,15 +2870,15 @@ mod recorder {
         fn a_driver_copy_keeps_the_drivers_layout() {
             let from = driver_logs_with(&[("daemon.log", b"up"), ("homes/a/b.log", b"deep")]);
             let into = tempfile::tempdir().expect("run dir");
-            let notices = copy_driver_dir(
+            let copy = copy_driver_dir(
                 &driver_dir(from.path()),
                 into.path(),
                 &no_needles(),
                 DRIVER_CAP_BYTES,
             )
-            .expect("copy")
-            .notices;
-            assert!(notices.is_empty(), "{notices:?}");
+            .expect("copy");
+            assert!(copy.notices.is_empty(), "{:?}", copy.notices);
+            assert_eq!(copy.files, 2);
             assert_eq!(
                 std::fs::read_to_string(into.path().join("homes/a/b.log")).expect("deep"),
                 "deep"
@@ -2984,18 +3017,30 @@ mod recorder {
             assert!(notices.iter().any(|n| n.contains("cap")), "{notices:?}");
         }
 
-        /// A path component is written on every OS the tier runs on.
+        /// A path component is written on every OS the tier runs on. An allowlist,
+        /// since Windows' list is long: ASCII letters and digits hold none of its
+        /// reserved characters, control characters, or a trailing dot or space; and
+        /// the reserved device names are checked by name, with or without a digit
+        /// (learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file, "Naming
+        /// conventions", fetched this session).
         #[test]
         fn the_redaction_marker_is_a_file_name_on_every_os() {
             assert!(!REDACTED.is_empty());
             assert!(
-                !REDACTED.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*']),
-                "Windows refuses these in a file name"
+                REDACTED.chars().all(|c| c.is_ascii_alphanumeric()),
+                "{REDACTED}"
             );
-            assert!(
-                !REDACTED.ends_with(['.', ' ']),
-                "nor a trailing dot or space"
-            );
+            let reserved = ["CON", "PRN", "AUX", "NUL"]
+                .into_iter()
+                .map(String::from)
+                .chain(
+                    ["COM", "LPT"]
+                        .into_iter()
+                        .flat_map(|d| (1..=9).map(move |n| format!("{d}{n}"))),
+                );
+            for name in reserved {
+                assert!(!REDACTED.eq_ignore_ascii_case(&name), "{name}");
+            }
         }
 
         #[test]
@@ -3009,23 +3054,60 @@ mod recorder {
             assert!(into.path().join("b.log").is_file());
         }
 
-        #[test]
-        fn a_failed_runs_driver_logs_reach_its_run_dir_through_keep_scratch() {
-            let scratch = driver_logs_with(&[("daemon.log", b"up as ada-lovelace")]);
+        /// `keep_scratch` over `files`, naming `ada-lovelace`: the run dir it copied
+        /// into and what it logged.
+        fn kept_scratch_log(files: &[(&str, &[u8])]) -> (tempfile::TempDir, String) {
+            let scratch = driver_logs_with(files);
             let at = scratch.path().to_path_buf();
             let into = tempfile::tempdir().expect("run dir");
-            keep_scratch(scratch, Some(into.path()), || {
-                BTreeSet::from(["ada-lovelace".to_owned()])
-            });
+            let mut log = Vec::new();
+            keep_scratch(
+                scratch,
+                Some(into.path()),
+                || BTreeSet::from(["ada-lovelace".to_owned()]),
+                &mut log,
+            );
+            std::fs::remove_dir_all(at).expect("cleanup");
+            (into, String::from_utf8(log).expect("utf8"))
+        }
+
+        #[test]
+        fn a_whole_copy_says_where_it_went_and_does_not_point_at_the_scratch() {
+            let (into, log) = kept_scratch_log(&[("daemon.log", b"up as ada-lovelace")]);
             assert_eq!(
                 std::fs::read_to_string(into.path().join("daemon.log")).expect("copied"),
                 format!("up as {REDACTED}")
             );
-            std::fs::remove_dir_all(at).expect("cleanup");
+            assert!(log.contains("copied into"), "{log}");
+            assert!(!log.contains("stay in"), "{log}");
         }
 
-        /// The recorder's env names cross into every driver, each a copy a rename
-        /// would strand: every driver names its CLI, and reads only what is set.
+        #[test]
+        fn an_incomplete_copy_points_at_the_scratch_that_holds_the_rest() {
+            let (_, log) = kept_scratch_log(&[("a.log", b"fine"), ("b.bin", &[0xff, 0xfe])]);
+            assert!(log.contains("copied into"), "a.log was copied: {log}");
+            assert!(log.contains("not text"), "{log}");
+            assert!(log.contains("stay in"), "{log}");
+        }
+
+        #[test]
+        fn a_copy_of_nothing_claims_no_destination() {
+            let (_, log) = kept_scratch_log(&[("b.bin", &[0xff, 0xfe])]);
+            assert!(!log.contains("copied into"), "{log}");
+            assert!(log.contains("stay in"), "{log}");
+        }
+
+        #[test]
+        fn a_sandboxed_runs_identity_leaves_its_home_out() {
+            let home = "/home/ada-lovelace";
+            let needles =
+                temp_env::with_vars([("HOME", Some(home)), ("USER", Some("ada"))], || {
+                    operator_identity()
+                });
+            assert!(!needles.contains(home), "{needles:?}");
+            assert!(needles.contains("ada"), "{needles:?}");
+        }
+
         #[test]
         fn every_driver_reads_only_env_the_recorder_sets() {
             let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/lib");
