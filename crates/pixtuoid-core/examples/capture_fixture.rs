@@ -70,14 +70,16 @@ mod recorder {
     /// upload kept for days, beside everything else the run left.
     const DRIVER_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
-    /// What stands in a copied file's text and path for the operator's identity.
-    const REDACTED: &str = "<redacted>";
+    /// What stands in a copied file's text and path for the operator's identity:
+    /// a valid file name on every OS, which `<redacted>` is not on Windows.
+    const REDACTED: &str = "REDACTED";
 
     /// Where `plan`'s failed run copies its [`driver_dir`], if it may: only a sandboxed
     /// raw capture. An operator's billed capture may hold real credentials in
-    /// its driver's logs; a sandboxed run's logs hold the operator's identity
-    /// only where the sandbox's env passes it through, which [`copy_driver_dir`]
-    /// redacts.
+    /// its driver's logs. A sandboxed run's logs hold the operator's identity only
+    /// through `USER` and `LOGNAME`, which the sandbox passes on Unix and not on
+    /// Windows, and through their git identity; its `HOME` is the sandbox's own.
+    /// [`copy_driver_dir`] redacts those.
     fn driver_destination(plan: &CapturePlan) -> Option<PathBuf> {
         match &plan.sink {
             Sink::Raw { out, .. } if plan.sandboxed() => Some(out.as_path().join(DRIVER_COPY)),
@@ -112,6 +114,12 @@ mod recorder {
             .collect()
     }
 
+    /// What a [`copy_driver_dir`] did: the files it wrote and what it left out.
+    struct DriverCopy {
+        files: usize,
+        notices: Vec<String>,
+    }
+
     /// Copy the text files of `from` into `into`, in path order, up to `cap`
     /// bytes of what is written: each path and body with the operator's identity
     /// redacted, since the run dir is uploaded. The notices name, by their
@@ -121,9 +129,9 @@ mod recorder {
         into: &Path,
         needles: &BTreeSet<String>,
         cap: u64,
-    ) -> std::io::Result<Vec<String>> {
+    ) -> std::io::Result<DriverCopy> {
         let mut notices = Vec::new();
-        let mut copied = 0u64;
+        let (mut copied, mut files) = (0u64, 0usize);
         for file in files_under(from) {
             let rel = redact_path(file.strip_prefix(from).unwrap_or(&file), needles);
             let Ok(text) = std::fs::read_to_string(&file) else {
@@ -152,8 +160,9 @@ mod recorder {
             }
             std::fs::write(&dest, body)?;
             copied += len;
+            files += 1;
         }
-        Ok(notices)
+        Ok(DriverCopy { files, notices })
     }
 
     /// Keep `scratch` for the diagnosis of a capture that did not work, when its
@@ -164,6 +173,8 @@ mod recorder {
         run_copy: Option<&Path>,
         needles: impl FnOnce() -> BTreeSet<String>,
     ) {
+        // The scratch holds the only complete logs when the copy is not whole.
+        let mut whole = true;
         if let Some(into) = run_copy {
             match copy_driver_dir(
                 &driver_dir(scratch.path()),
@@ -171,18 +182,24 @@ mod recorder {
                 &needles(),
                 DRIVER_CAP_BYTES,
             ) {
-                Ok(notices) => {
-                    notices.iter().for_each(|n| eprintln!("{n}"));
-                    eprintln!("the driver's logs are copied into {}", into.display());
+                Ok(copy) => {
+                    copy.notices.iter().for_each(|n| eprintln!("{n}"));
+                    whole = copy.notices.is_empty();
+                    if copy.files > 0 {
+                        eprintln!("the driver's logs are copied into {}", into.display());
+                    }
                 }
-                Err(e) => eprintln!("the driver copy failed: {e}"),
+                Err(e) => {
+                    whole = false;
+                    eprintln!("the driver copy failed: {e}");
+                }
             }
         }
         let left =
             std::fs::read_dir(driver_dir(scratch.path())).is_ok_and(|mut d| d.next().is_some());
         if left {
             let kept = scratch.keep();
-            if run_copy.is_none() {
+            if !whole || run_copy.is_none() {
                 eprintln!("the driver's logs stay in {}", driver_dir(&kept).display());
             }
         }
@@ -263,7 +280,7 @@ mod recorder {
             Invocation::Promote(run) => match promote_here(
                 &run,
                 &sources_root(),
-                &identity_needles(git_config),
+                &identity_needles(git_config, true),
                 &mut std::io::stderr(),
             ) {
                 Ok(promoted) => promoted,
@@ -286,6 +303,7 @@ mod recorder {
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
         let run_copy = driver_destination(plan);
+        let operator = || operator_identity(plan.sandboxed());
         let env: Vec<(String, String)> = plan.cli_env.clone().into_iter().collect();
 
         let Some(descriptor) = registry::descriptor_for(&source) else {
@@ -340,7 +358,7 @@ mod recorder {
         ) {
             Ok(daemon) => daemon,
             Err(e) => {
-                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
+                keep_scratch(sandbox, run_copy.as_deref(), operator);
                 return Err(e);
             }
         };
@@ -385,7 +403,7 @@ mod recorder {
         // A committed capture is complete or not written at all.
         let incomplete = match incomplete {
             Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
-                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
+                keep_scratch(sandbox, run_copy.as_deref(), operator);
                 return Err(e);
             }
             kept => kept,
@@ -433,7 +451,7 @@ mod recorder {
                 || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
-                keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
+                keep_scratch(sandbox, run_copy.as_deref(), operator);
             }
             return incomplete.map_or(Ok(()), Err);
         };
@@ -443,7 +461,7 @@ mod recorder {
                 root.map(|r| format!(" under {}", r.display()))
                     .unwrap_or_default()
             );
-            keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
+            keep_scratch(sandbox, run_copy.as_deref(), operator);
             std::process::exit(1);
         }
 
@@ -466,10 +484,10 @@ mod recorder {
             }
             Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
         }
-        let pii = refuse_on_pii(&wrote, &identity_needles(git_config));
+        let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
         if !status.success() {
             eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
-            keep_scratch(sandbox, run_copy.as_deref(), operator_identity);
+            keep_scratch(sandbox, run_copy.as_deref(), operator);
         }
         pii?;
         println!("next: just test conformance   then   cargo insta review");
@@ -1208,9 +1226,16 @@ mod recorder {
     /// Strings this machine would leak into a capture, the git identity included:
     /// a CLI that renders `git status` embeds the committer's real name, which no
     /// value shape can match (`.gitleaks-identity.toml` carries the committed-tree half).
-    fn identity_needles(git: impl Fn(&str) -> Option<String>) -> BTreeSet<String> {
+    /// The `HOME` is the operator's own except in a sandbox, where it is a temp
+    /// path of the run's.
+    fn identity_needles(git: impl Fn(&str) -> Option<String>, own_home: bool) -> BTreeSet<String> {
         let mut needles: BTreeSet<String> = BTreeSet::new();
-        for var in ["HOME", "USER", "LOGNAME"] {
+        let vars: &[&str] = if own_home {
+            &["HOME", "USER", "LOGNAME"]
+        } else {
+            &["USER", "LOGNAME"]
+        };
+        for var in vars {
             if let Some(v) = pixtuoid_core::platform::text_env(var)
                 && !v.is_empty()
             {
@@ -1226,8 +1251,8 @@ mod recorder {
     }
 
     /// [`identity_needles`] of the machine the recorder runs on.
-    fn operator_identity() -> BTreeSet<String> {
-        identity_needles(git_config)
+    fn operator_identity(sandboxed: bool) -> BTreeSet<String> {
+        identity_needles(git_config, !sandboxed)
     }
 
     fn git_config(key: &str) -> Option<String> {
@@ -2145,14 +2170,38 @@ mod recorder {
         /// exactly where it is most needed.
         #[test]
         fn the_git_identity_joins_the_needles() {
-            let needles = identity_needles(|k| match k {
-                "user.name" => Some("Ada Lovelace".to_string()),
-                "user.email" => Some("ada@example.org".to_string()),
-                _ => None,
-            });
+            let needles = identity_needles(
+                |k| match k {
+                    "user.name" => Some("Ada Lovelace".to_string()),
+                    "user.email" => Some("ada@example.org".to_string()),
+                    _ => None,
+                },
+                true,
+            );
             assert!(needles.contains("Ada Lovelace"), "{needles:?}");
             assert!(needles.contains("ada@example.org"), "{needles:?}");
-            assert!(!identity_needles(|_| None).contains("Ada Lovelace"));
+            assert!(!identity_needles(|_| None, true).contains("Ada Lovelace"));
+        }
+
+        #[test]
+        fn a_sandboxed_runs_home_is_not_the_operators_identity() {
+            let home = "/home/ada-lovelace";
+            let needles = |own_home| {
+                temp_env::with_vars(
+                    [
+                        ("HOME", Some(home)),
+                        ("USER", Some("ada")),
+                        ("LOGNAME", None),
+                    ],
+                    || identity_needles(|_| None, own_home),
+                )
+            };
+            assert!(needles(true).contains(home));
+            assert!(
+                !needles(false).contains(home),
+                "the sandbox's home is the run's"
+            );
+            assert!(needles(false).contains("ada"), "the user passes through");
         }
 
         /// A name has no shape to match, so it is refused where the recorder knows
@@ -2745,7 +2794,7 @@ mod recorder {
             std::fs::remove_dir_all(&at).expect("cleanup");
         }
 
-        fn scratch_with(files: &[(&str, &[u8])]) -> tempfile::TempDir {
+        fn driver_logs_with(files: &[(&str, &[u8])]) -> tempfile::TempDir {
             let d = tempfile::tempdir().expect("scratch");
             for (name, body) in files {
                 let path = driver_dir(d.path()).join(name);
@@ -2760,7 +2809,7 @@ mod recorder {
         }
 
         #[test]
-        fn only_a_sandboxed_capture_copies_its_scratch_into_its_run_dir() {
+        fn only_a_sandboxed_capture_copies_its_driver_dir_into_its_run_dir() {
             let out = std::env::temp_dir().join("run");
             let line = |w: &[&str]| {
                 let args: Vec<String> = w.iter().map(|s| (*s).to_owned()).collect();
@@ -2792,7 +2841,7 @@ mod recorder {
 
         #[test]
         fn a_driver_copy_keeps_the_drivers_layout() {
-            let from = scratch_with(&[("daemon.log", b"up"), ("homes/a/b.log", b"deep")]);
+            let from = driver_logs_with(&[("daemon.log", b"up"), ("homes/a/b.log", b"deep")]);
             let into = tempfile::tempdir().expect("run dir");
             let notices = copy_driver_dir(
                 &driver_dir(from.path()),
@@ -2800,7 +2849,8 @@ mod recorder {
                 &no_needles(),
                 DRIVER_CAP_BYTES,
             )
-            .expect("copy");
+            .expect("copy")
+            .notices;
             assert!(notices.is_empty(), "{notices:?}");
             assert_eq!(
                 std::fs::read_to_string(into.path().join("homes/a/b.log")).expect("deep"),
@@ -2811,7 +2861,7 @@ mod recorder {
 
         #[test]
         fn a_driver_file_naming_the_operator_is_copied_with_the_name_redacted() {
-            let from = scratch_with(&[
+            let from = driver_logs_with(&[
                 ("clean.log", b"fine"),
                 ("leak.log", b"home is /Users/ada-lovelace/x, ada-lovelace"),
                 ("ada-lovelace/inner.log", b"in a dir named for them"),
@@ -2824,7 +2874,8 @@ mod recorder {
                 &needles,
                 DRIVER_CAP_BYTES,
             )
-            .expect("copy");
+            .expect("copy")
+            .notices;
             assert_eq!(
                 std::fs::read_to_string(into.path().join("leak.log")).expect("copied"),
                 format!("home is /Users/{REDACTED}/x, {REDACTED}")
@@ -2840,17 +2891,19 @@ mod recorder {
 
         #[test]
         fn a_notice_never_shows_the_identity_it_redacted() {
-            let from = scratch_with(&[
+            let from = driver_logs_with(&[
                 ("ada-lovelace/blob.bin", &[0xff, 0xfe, 0x00]),
                 ("ada-lovelace/b.log", b"1234"),
             ]);
             let into = tempfile::tempdir().expect("run dir");
             let needles = BTreeSet::from(["ada-lovelace".to_owned()]);
-            let mut notices =
-                copy_driver_dir(&driver_dir(from.path()), into.path(), &needles, 2).expect("copy");
+            let mut notices = copy_driver_dir(&driver_dir(from.path()), into.path(), &needles, 2)
+                .expect("copy")
+                .notices;
             notices.extend(
                 copy_driver_dir(&driver_dir(from.path()), into.path(), &needles, 1 << 20)
-                    .expect("copy"),
+                    .expect("copy")
+                    .notices,
             );
             assert!(
                 notices.iter().any(|n| n.contains("not text")),
@@ -2865,7 +2918,7 @@ mod recorder {
 
         #[test]
         fn two_files_that_redact_to_one_path_do_not_overwrite_each_other() {
-            let from = scratch_with(&[("a-1/x.log", b"one"), ("b-2/x.log", b"two")]);
+            let from = driver_logs_with(&[("a-1/x.log", b"one"), ("b-2/x.log", b"two")]);
             let into = tempfile::tempdir().expect("run dir");
             let needles = BTreeSet::from(["a-1".to_owned(), "b-2".to_owned()]);
             let notices = copy_driver_dir(
@@ -2874,7 +2927,8 @@ mod recorder {
                 &needles,
                 DRIVER_CAP_BYTES,
             )
-            .expect("copy");
+            .expect("copy")
+            .notices;
             assert_eq!(
                 std::fs::read_to_string(into.path().join(REDACTED).join("x.log")).expect("kept"),
                 "one"
@@ -2897,19 +2951,22 @@ mod recorder {
         #[test]
         fn a_file_that_is_not_text_does_not_end_the_copy() {
             let big = vec![0xffu8; 64];
-            let from = scratch_with(&[("a.bin", &big), ("b.log", b"1234")]);
+            let from = driver_logs_with(&[("a.bin", &big), ("b.log", b"1234")]);
             let into = tempfile::tempdir().expect("run dir");
             let notices = copy_driver_dir(&driver_dir(from.path()), into.path(), &no_needles(), 8)
-                .expect("copy");
+                .expect("copy")
+                .notices;
             assert!(into.path().join("b.log").is_file(), "{notices:?}");
         }
 
         #[test]
         fn a_driver_copy_stops_at_its_cap_and_says_so() {
-            let from = scratch_with(&[("a.log", b"1234"), ("b.log", b"5678"), ("c.log", b"90")]);
+            let from =
+                driver_logs_with(&[("a.log", b"1234"), ("b.log", b"5678"), ("c.log", b"90")]);
             let into = tempfile::tempdir().expect("run dir");
             let notices = copy_driver_dir(&driver_dir(from.path()), into.path(), &no_needles(), 6)
-                .expect("copy");
+                .expect("copy")
+                .notices;
             assert!(into.path().join("a.log").is_file());
             assert!(!into.path().join("b.log").exists(), "past the cap");
             assert!(!into.path().join("c.log").exists(), "it stops, not skips");
@@ -2922,18 +2979,45 @@ mod recorder {
         }
 
         #[test]
-        fn a_driver_dir_exactly_the_size_of_the_cap_is_copied_whole() {
-            let from = scratch_with(&[("a.log", b"1234"), ("b.log", b"5678")]);
+        fn a_driver_dir_one_byte_over_the_cap_is_not_copied_whole() {
+            let from = driver_logs_with(&[("a.log", b"1234"), ("b.log", b"5678"), ("c.log", b"9")]);
             let into = tempfile::tempdir().expect("run dir");
             let notices = copy_driver_dir(&driver_dir(from.path()), into.path(), &no_needles(), 8)
-                .expect("copy");
+                .expect("copy")
+                .notices;
+            assert!(into.path().join("b.log").is_file());
+            assert!(!into.path().join("c.log").exists(), "one byte past the cap");
+            assert!(notices.iter().any(|n| n.contains("cap")), "{notices:?}");
+        }
+
+        /// A path component is written on every OS the tier runs on.
+        #[test]
+        fn the_redaction_marker_is_a_file_name_on_every_os() {
+            assert!(!REDACTED.is_empty());
+            assert!(
+                !REDACTED.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*']),
+                "Windows refuses these in a file name"
+            );
+            assert!(
+                !REDACTED.ends_with(['.', ' ']),
+                "nor a trailing dot or space"
+            );
+        }
+
+        #[test]
+        fn a_driver_dir_exactly_the_size_of_the_cap_is_copied_whole() {
+            let from = driver_logs_with(&[("a.log", b"1234"), ("b.log", b"5678")]);
+            let into = tempfile::tempdir().expect("run dir");
+            let notices = copy_driver_dir(&driver_dir(from.path()), into.path(), &no_needles(), 8)
+                .expect("copy")
+                .notices;
             assert!(notices.is_empty(), "{notices:?}");
             assert!(into.path().join("b.log").is_file());
         }
 
         #[test]
-        fn a_failed_runs_scratch_reaches_its_run_dir_through_keep_scratch() {
-            let scratch = scratch_with(&[("daemon.log", b"up as ada-lovelace")]);
+        fn a_failed_runs_driver_logs_reach_its_run_dir_through_keep_scratch() {
+            let scratch = driver_logs_with(&[("daemon.log", b"up as ada-lovelace")]);
             let at = scratch.path().to_path_buf();
             let into = tempfile::tempdir().expect("run dir");
             keep_scratch(scratch, Some(into.path()), || {
