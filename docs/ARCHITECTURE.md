@@ -47,7 +47,7 @@ degrades, and walks out when it goes down.
 ```mermaid
 flowchart TB
   accTitle: pixtuoid data flow
-  accDescr: A hook or transcript event flows from a coding agent (Claude Code, Codex) through the pixtuoid-hook shim into pixtuoid-core, where a HookRouter demuxes agent payloads to the Transport-tagged reducer and SceneState.agents. A daemon gateway (OpenClaw) shares the same shim and socket but is routed instead to apply_presence and SceneState.daemons over a sibling channel that bypasses the reducer. The pixtuoid TUI renderer then paints the whole scene through the pixtuoid-scene engine's terminal-agnostic pixel pass and a half-block flush.
+  accDescr: A hook or transcript event flows from a coding agent (Claude Code, Codex) through the pixtuoid-hook shim into pixtuoid-core, where a HookRouter demuxes agent payloads to the Transport-tagged reducer and SceneState.agents. A daemon gateway (OpenClaw) shares the same shim and socket but is routed instead to apply_presence and SceneState.daemons over a sibling channel that bypasses the reducer. The pixtuoid TUI renderer then paints the whole scene through the pixtuoid-scene engine's terminal-agnostic pixel pass and flushes it as terminal images where the terminal draws them, else as half-block cells.
   CC["Claude Code / Codex<br/>(agent source)"]
   OC["OpenClaw gateway<br/>(daemon source)"]
 
@@ -74,7 +74,7 @@ flowchart TB
   subgraph bin["pixtuoid (binary · TUI)"]
     W["watch&lt;Arc&lt;SceneState&gt;&gt;"]
     TR["TuiRenderer"]
-    FL["flush · ½-block cells"]
+    FL["flush · images or ½-block cells"]
   end
 
   subgraph scene["pixtuoid-scene (engine)"]
@@ -104,8 +104,8 @@ flowchart TB
    sweeps on the driver's `SWEEP_TICK_INTERVAL_SECS` tick) and publishes a
    fresh `Arc<SceneState>` on a `watch` channel after every change.
 4. **Render.** The renderer borrows the latest scene (O(1), no lock), paints
-   it through the engine's terminal-agnostic pixel pass, then flushes pixel
-   rows as half-block (`▀`) terminal cells.
+   it through the engine's terminal-agnostic pixel pass, then flushes it as
+   terminal images where the terminal draws them, else half-block (`▀`) cells.
 
 **The daemon lane.** A daemon creates no agent slot and writes no transcript:
 the `HookRouter` decodes its payloads via the source's own `presence_decoder`

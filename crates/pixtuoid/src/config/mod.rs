@@ -434,15 +434,15 @@ pub(crate) fn resolve_theme(
     Ok(config_theme.unwrap_or(&NORMAL))
 }
 
-/// Resolve CLI + config into the run's [`LookChoice`](crate::graphics::LookChoice)
+/// Resolve CLI + config into the run's [`LookMode`](crate::graphics::LookMode)
 /// (CLI > config > default). The config value is checked even when a flag
 /// wins, as in [`resolve_theme`], and by clap's own parser, so the file and the
 /// flag accept the same names.
 pub(crate) fn resolve_look(
     config: &AppConfig,
-    cli: crate::cli::LookArgs,
+    cli: Option<crate::graphics::LookMode>,
     warnings: &mut Vec<String>,
-) -> crate::graphics::LookChoice {
+) -> crate::graphics::LookMode {
     let configured = config.look.as_deref().and_then(|v| {
         let mode = <crate::graphics::LookMode as clap::ValueEnum>::from_str(v, false).ok();
         if mode.is_none() {
@@ -453,7 +453,7 @@ pub(crate) fn resolve_look(
         }
         mode
     });
-    crate::graphics::LookChoice::new(cli.look.or(configured).unwrap_or_default(), cli.protocol)
+    cli.or(configured).unwrap_or_default()
 }
 
 /// How much of the office's ambient life moves: the `motion` config key.

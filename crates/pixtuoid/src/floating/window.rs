@@ -166,7 +166,7 @@ impl FloatingApp {
             log,
             drift: boot.drift.clone(),
             connected: &boot.connected.snapshot(),
-            cutaway: false,
+            terminal_cutaway: false,
         });
         let connected = boot.connected.clone();
         Self {

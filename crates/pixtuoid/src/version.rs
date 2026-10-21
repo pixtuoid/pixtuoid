@@ -99,11 +99,11 @@ fn reconnect(facts: &Facts<'_>) -> Option<String> {
     ))
 }
 
-/// A run that draws the cutaway, which an older pixtuoid drew only when asked,
+/// A TUI that draws the cutaway, which an older pixtuoid drew only when asked,
 /// says how to keep the classic.
 fn cutaway_default(facts: &Facts<'_>) -> Option<String> {
     let classic = crate::graphics::LookMode::Classic;
-    facts.cutaway.then(|| {
+    facts.terminal_cutaway.then(|| {
         format!(
             "The cutaway office is now the default where this terminal draws it: \
              `pixtuoid run --look {classic}` (or `look = \"{classic}\"` in the config) keeps the classic \
@@ -125,8 +125,9 @@ pub(crate) struct Facts<'a> {
     /// The agent CLIs on this machine, as [`crate::sources::detect`] finds them.
     pub(crate) installed: &'a [&'static str],
     pub(crate) connected: &'a HashSet<String>,
-    /// This run draws the cutaway.
-    pub(crate) cutaway: bool,
+    /// The TUI paints the cutaway in terminal graphics; the floating window,
+    /// which `look` doesn't govern, passes `false`.
+    pub(crate) terminal_cutaway: bool,
 }
 
 /// From before every notice's change to past all of them: what a test that
@@ -335,13 +336,13 @@ mod tests {
     }
 
     /// Every notice's state holds: each replugged host installed and
-    /// disconnected, the cutaway drawn.
+    /// disconnected, the TUI's cutaway drawn.
     fn all_hold() -> Facts<'static> {
         static NONE: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         Facts {
             installed: &EVERY_HOST,
             connected: &NONE,
-            cutaway: true,
+            terminal_cutaway: true,
         }
     }
 
@@ -458,10 +459,10 @@ mod tests {
     }
 
     #[test]
-    fn the_cutaway_default_is_said_only_where_the_run_draws_it() {
-        let says = |cutaway| {
+    fn the_cutaway_default_is_said_only_where_the_tui_draws_it() {
+        let says = |terminal_cutaway| {
             cutaway_default(&Facts {
-                cutaway,
+                terminal_cutaway,
                 ..all_hold()
             })
         };
@@ -493,7 +494,8 @@ mod tests {
         let [command, line] = quoted[..] else {
             panic!("a command and a config line: {said}");
         };
-        let classic = crate::graphics::LookChoice::new(crate::graphics::LookMode::Classic, None);
+        use crate::graphics::{LookChoice, LookMode};
+        let classic = LookChoice::new(LookMode::Classic, None);
         let args = command.split(' ');
         let Some(crate::cli::Cmd::Run { look, .. }) =
             crate::cli::Cli::try_parse_from(args).expect("parses").cmd
@@ -502,12 +504,11 @@ mod tests {
         };
         let mut w = Vec::new();
         let none: crate::config::AppConfig = toml::from_str("").expect("parses");
-        assert_eq!(crate::config::resolve_look(&none, look, &mut w), classic);
+        let ran = crate::config::resolve_look(&none, look.look, &mut w);
+        assert_eq!(LookChoice::new(ran, look.protocol), classic);
         let cfg: crate::config::AppConfig = toml::from_str(line).expect("parses");
-        assert_eq!(
-            crate::config::resolve_look(&cfg, crate::cli::LookArgs::default(), &mut w),
-            classic
-        );
+        let configured = crate::config::resolve_look(&cfg, None, &mut w);
+        assert_eq!(LookChoice::new(configured, None), classic);
         assert!(w.is_empty(), "{w:?}");
     }
 }

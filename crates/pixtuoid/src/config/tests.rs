@@ -1140,9 +1140,9 @@ fn load_status_is_clean_for_a_missing_file() {
 
 fn look_of(
     config: Option<&str>,
-    cli: crate::cli::LookArgs,
+    cli: Option<crate::graphics::LookMode>,
     w: &mut Vec<String>,
-) -> crate::graphics::LookChoice {
+) -> crate::graphics::LookMode {
     let cfg = AppConfig {
         look: config.map(String::from),
         ..AppConfig::default()
@@ -1152,28 +1152,14 @@ fn look_of(
 
 #[test]
 fn look_precedence_is_cli_then_config_then_auto() {
-    use crate::cli::LookArgs;
-    use crate::graphics::{ImageProtocol, LookChoice, LookMode};
-    let resolve =
-        |config, look, protocol| look_of(config, LookArgs { look, protocol }, &mut Vec::new());
-    let choice = |mode| LookChoice::new(mode, None);
-    assert_eq!(resolve(None, None, None), choice(LookMode::Auto));
+    use crate::graphics::LookMode;
+    let resolve = |config, cli| look_of(config, cli, &mut Vec::new());
+    assert_eq!(resolve(None, None), LookMode::Auto);
+    assert_eq!(resolve(Some("classic"), None), LookMode::Classic);
+    assert_eq!(resolve(Some("cutaway"), None), LookMode::Cutaway);
     assert_eq!(
-        resolve(Some("classic"), None, None),
-        choice(LookMode::Classic)
-    );
-    assert_eq!(
-        resolve(Some("cutaway"), None, None),
-        choice(LookMode::Cutaway)
-    );
-    assert_eq!(
-        resolve(Some("classic"), Some(LookMode::Auto), None),
-        choice(LookMode::Auto)
-    );
-    assert_eq!(
-        resolve(Some("classic"), None, Some(ImageProtocol::Sixel)),
-        LookChoice::new(LookMode::Cutaway, Some(ImageProtocol::Sixel)),
-        "--protocol implies the cutaway over the config's look"
+        resolve(Some("classic"), Some(LookMode::Auto)),
+        LookMode::Auto
     );
 }
 
@@ -1182,8 +1168,8 @@ fn look_precedence_is_cli_then_config_then_auto() {
 fn look_parses_from_the_file() {
     let cfg: AppConfig = toml::from_str("look = \"classic\"\n").expect("parses");
     assert_eq!(
-        resolve_look(&cfg, crate::cli::LookArgs::default(), &mut Vec::new()),
-        crate::graphics::LookChoice::new(crate::graphics::LookMode::Classic, None)
+        resolve_look(&cfg, None, &mut Vec::new()),
+        crate::graphics::LookMode::Classic
     );
 }
 
@@ -1224,23 +1210,15 @@ fn a_motion_mode_overrides_only_what_auto_would_take() {
 /// file is stale.
 #[test]
 fn an_unknown_look_value_warns_and_falls_back_to_auto() {
-    use crate::cli::LookArgs;
-    use crate::graphics::{LookChoice, LookMode};
+    use crate::graphics::LookMode;
     let mut w = Vec::new();
-    assert_eq!(
-        look_of(Some("clasic"), LookArgs::default(), &mut w),
-        LookChoice::new(LookMode::Auto, None)
-    );
+    assert_eq!(look_of(Some("clasic"), None, &mut w), LookMode::Auto);
     assert_eq!(w.len(), 1, "{w:?}");
     assert!(w[0].contains("unknown look \"clasic\""), "{w:?}");
     let mut w = Vec::new();
-    let cli = LookArgs {
-        look: Some(LookMode::Classic),
-        protocol: None,
-    };
     assert_eq!(
-        look_of(Some("clasic"), cli, &mut w),
-        LookChoice::new(LookMode::Classic, None)
+        look_of(Some("clasic"), Some(LookMode::Classic), &mut w),
+        LookMode::Classic
     );
     assert_eq!(w.len(), 1, "{w:?}");
 }

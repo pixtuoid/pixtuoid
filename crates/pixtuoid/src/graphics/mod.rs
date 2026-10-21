@@ -630,7 +630,10 @@ impl ClassicReason {
     /// One line for `doctor`, explaining the fallback.
     pub(crate) fn describe(self) -> String {
         match self {
-            Self::Disabled => format!("disabled by --look {}", LookMode::Classic),
+            Self::Disabled => {
+                let classic = LookMode::Classic;
+                format!("chosen by `--look {classic}` or `look = \"{classic}\"`")
+            }
             Self::OverSsh => format!(
                 "over ssh, where every repaint crosses the network — `--look {}` asks the \
                  terminal anyway",
@@ -756,10 +759,9 @@ impl Plan {
     }
 
     /// The plan as `doctor`'s `graphics:` line: for a cutaway, everything a
-    /// tester reports back from a terminal, and how `run` gets it where its
-    /// own choice paints classic unasked (`run_unasked`); for classic, why it
-    /// fell back.
-    pub(crate) fn diagnostic_row(self, run_unasked: bool) -> String {
+    /// tester reports back from a terminal, and why `run`'s own choice paints
+    /// classic unasked (`run_unasked`); for classic, why it fell back.
+    pub(crate) fn diagnostic_row(self, run_unasked: Option<ClassicReason>) -> String {
         match self {
             Plan::Cutaway {
                 fit,
@@ -777,26 +779,13 @@ impl Plan {
                     0 => "every frame".to_string(),
                     ms => format!("at most every {ms} ms"),
                 };
-                let how = match (run_unasked, chosen) {
-                    (false, _) => String::new(),
-                    // A forced plan names its protocol: an asked terminal may
-                    // answer another.
-                    (true, Chosen::Forced) => format!(
-                        " — `run` paints classic here: `run --protocol {}` paints it",
-                        protocol.name()
-                    ),
-                    (true, _) => {
-                        let cutaway = LookMode::Cutaway;
-                        format!(
-                            " — `run` paints classic here: `run --look {cutaway}` (or `look = \
-                             \"{cutaway}\"` in config) paints it"
-                        )
-                    }
-                };
+                let why = run_unasked
+                    .map(|why| format!(" — `run` paints classic here: {}", why.describe()))
+                    .unwrap_or_default();
                 format!(
                     "graphics: {} ({}) on a {}x{} cell, {} — the cutaway at {}x \
                      ({}x art upscaled {}x), a {}x{} office, sent as {}x{}-cell tiles{budget} \
-                     {cadence}{how}",
+                     {cadence}{why}",
                     protocol.name(),
                     match chosen {
                         Chosen::Forced => "forced by --protocol",
@@ -1015,7 +1004,7 @@ mod tests {
     }
 
     fn row_in(env: &TermEnv, choice: LookChoice, probe: Probe, max_density: Density) -> String {
-        detect(choice, env, max_density, AREA, || probe).diagnostic_row(false)
+        detect(choice, env, max_density, AREA, || probe).diagnostic_row(None)
     }
 
     fn row(choice: LookChoice, probe: Probe, max_density: Density) -> String {
@@ -1567,34 +1556,28 @@ mod tests {
     }
 
     /// A doctor that prints a cutaway where `run`'s own choice paints classic
-    /// unasked says how `run` gets it, or a bare `run` would show classic
-    /// unexplained; a `run` that asks, and every classic row, add nothing.
+    /// unasked says why, or a bare `run` would show classic unexplained; a
+    /// `run` that asks, and every classic row, add nothing.
     #[test]
-    fn a_cutaway_row_says_how_run_gets_it_where_run_paints_classic_unasked() {
-        const HOW: &str = " — `run` paints classic here: `run --look cutaway` (or `look = \
-                           \"cutaway\"` in config) paints it";
+    fn a_cutaway_row_says_why_run_paints_classic_unasked() {
         let cutaway = plan(capable(CELL_8X16), BUNDLED);
-        let painted = cutaway.diagnostic_row(false);
-        assert!(!painted.contains(HOW), "{painted}");
-        assert_eq!(cutaway.diagnostic_row(true), format!("{painted}{HOW}"));
-        let classic = plan(Probe::NoAnswer, BUNDLED);
-        assert_eq!(classic.diagnostic_row(true), classic.diagnostic_row(false));
-
-        // Forced, the hint names the protocol, as a value `--protocol` takes.
-        for p in <ImageProtocol as clap::ValueEnum>::value_variants() {
-            let forced = resolve(Some(*p), capable(CELL_8X16), BUNDLED, AREA);
-            let name = <ImageProtocol as clap::ValueEnum>::to_possible_value(p)
-                .expect("a value")
-                .get_name()
-                .to_string();
+        let painted = cutaway.diagnostic_row(None);
+        assert!(!painted.contains("paints classic"), "{painted}");
+        for why in [
+            ClassicReason::Disabled,
+            ClassicReason::OverSsh,
+            ClassicReason::InsideScreen,
+        ] {
             assert_eq!(
-                forced.diagnostic_row(true),
-                format!(
-                    "{} — `run` paints classic here: `run --protocol {name}` paints it",
-                    forced.diagnostic_row(false)
-                )
+                cutaway.diagnostic_row(Some(why)),
+                format!("{painted} — `run` paints classic here: {}", why.describe())
             );
         }
+        let classic = plan(Probe::NoAnswer, BUNDLED);
+        assert_eq!(
+            classic.diagnostic_row(Some(ClassicReason::OverSsh)),
+            classic.diagnostic_row(None)
+        );
     }
 
     /// A reason keeps its variant only by printing its own row, a remedy the
@@ -1609,7 +1592,7 @@ mod tests {
                 look(LookMode::Classic),
                 capable(CELL_8X16),
                 BUNDLED,
-                "disabled by --look classic",
+                "chosen by `--look classic` or `look = \"classic\"`",
             ),
             (
                 OVER_SSH,

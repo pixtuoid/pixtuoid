@@ -37,7 +37,7 @@ fn theme_help() -> String {
     format!("Color theme: {}.", names.join(", "))
 }
 
-/// `run`'s look flags, resolved over the `look` config key by
+/// `run`'s look flags: `--look` is resolved over the `look` config key by
 /// [`crate::config::resolve_look`].
 #[derive(Debug, Default, Clone, Copy, clap::Args)]
 pub(crate) struct LookArgs {

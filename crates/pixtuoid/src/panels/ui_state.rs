@@ -113,8 +113,7 @@ struct Notices {
     /// [`crate::version::BootDecision::should_show_popup`], before the
     /// onboarding could hold the popup back.
     upgraded: bool,
-    /// This run draws the cutaway.
-    cutaway: bool,
+    terminal_cutaway: bool,
     shown: Arc<[String]>,
 }
 
@@ -130,8 +129,8 @@ pub(crate) struct Boot<'a> {
     /// The sources connected at boot, for the notices a version popup opens
     /// with.
     pub(crate) connected: &'a HashSet<String>,
-    /// This run draws the cutaway.
-    pub(crate) cutaway: bool,
+    /// [`crate::version::Facts::terminal_cutaway`].
+    pub(crate) terminal_cutaway: bool,
 }
 
 /// `$PIXTUOID_FAKE_NOW`'s clock, said once at warn: a stray export would
@@ -190,7 +189,7 @@ impl UiState {
         );
         ui.notices.versions = decision.versions;
         ui.notices.upgraded = decision.should_show_popup;
-        ui.notices.cutaway = boot.cutaway;
+        ui.notices.terminal_cutaway = boot.terminal_cutaway;
         if pops_up {
             ui.open_version_popup(boot.connected, &installed());
         }
@@ -286,7 +285,7 @@ impl UiState {
         let facts = crate::version::Facts {
             installed,
             connected,
-            cutaway: self.notices.cutaway,
+            terminal_cutaway: self.notices.terminal_cutaway,
         };
         self.notices.shown = crate::version::due(self.notices.versions.as_ref(), &facts).into();
         self.version_popup_open = true;
@@ -762,13 +761,13 @@ mod tests {
     }
 
     /// [`boot_at`] with `connected` at boot and whether the TUI draws the
-    /// `cutaway`.
+    /// cutaway.
     fn boot_into(
         path: &std::path::Path,
         welcome: WelcomeUi,
         current: &str,
         connected: &HashSet<String>,
-        cutaway: bool,
+        terminal_cutaway: bool,
     ) -> UiState {
         UiState::boot_with(
             Boot {
@@ -779,7 +778,7 @@ mod tests {
                 log: None,
                 drift: crate::doctor::DriftSeen::default(),
                 connected,
-                cutaway,
+                terminal_cutaway,
             },
             welcome,
             || INSTALLED.to_vec(),

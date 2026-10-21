@@ -203,7 +203,10 @@ fn build_run_config(
     let theme = config::resolve_theme(&cfg, cli_theme, &mut cfg_warnings)?;
     let desk_cap = config::resolve_desk_cap(&cfg, cli_max_desks, &mut cfg_warnings);
     let pets = config::resolve_pets(&cfg, &mut cfg_warnings);
-    let look = config::resolve_look(&cfg, cli_look, &mut cfg_warnings);
+    let look = crate::graphics::LookChoice::new(
+        config::resolve_look(&cfg, cli_look.look, &mut cfg_warnings),
+        cli_look.protocol,
+    );
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
     let adopted =
         adopt_unless_headless(headless, || sources::adopt_flagged_targets(&cfg_path, &cfg));

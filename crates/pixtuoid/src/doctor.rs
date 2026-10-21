@@ -657,9 +657,9 @@ struct DoctorReport {
     truecolor_probe: Option<crate::term::Truecolor>,
     color_pf: crate::term::ColorPreflight,
     graphics_plan: crate::graphics::Plan,
-    /// `run`'s look without a flag — the config's, then the default — paints
-    /// classic here without asking ([`crate::graphics::LookChoice::unasked_here`]).
-    run_unasked: bool,
+    /// Why `run`'s look without a flag — the config's, then the default —
+    /// paints classic here unasked ([`crate::graphics::LookChoice::unasked_here`]).
+    run_unasked: Option<crate::graphics::ClassicReason>,
     rows: Vec<DoctorSourceRow>,
     roots: Vec<RootStatus>,
     backend: &'static str,
@@ -833,10 +833,11 @@ fn collect(
     }
     let max_density = pixtuoid_scene::pack::load_bundled_pack()?.max_density_variant();
     let (truecolor_probe, graphics_plan) = probe_terminal_caps(probe_ok, look, max_density);
-    let run_unasked =
-        crate::config::resolve_look(&cfg, crate::cli::LookArgs::default(), &mut config_warnings)
-            .unasked_here()
-            .is_some();
+    let run_unasked = crate::graphics::LookChoice::new(
+        crate::config::resolve_look(&cfg, None, &mut config_warnings),
+        None,
+    )
+    .unasked_here();
 
     let rows: Vec<DoctorSourceRow> = registry::registered_source_names()
         .map(|src| {
@@ -1627,7 +1628,7 @@ mod tests {
             graphics_plan: crate::graphics::Plan::Classic {
                 reason: crate::graphics::ClassicReason::NotQueried,
             },
-            run_unasked: false,
+            run_unasked: None,
             rows,
             roots: vec![],
             backend: "NSRunningApplication (macOS)",
@@ -1794,15 +1795,20 @@ mod tests {
         };
         assert_eq!(
             terminal_category(&r).details[0],
-            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(false))
+            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(None))
         );
-        r.run_unasked = true;
+        r.run_unasked = Some(ClassicReason::OverSsh);
+        let row = terminal_category(&r).details.swap_remove(0);
         assert_eq!(
-            terminal_category(&r).details[0],
-            format!("{DETAIL_INDENT}{}", r.graphics_plan.diagnostic_row(true)),
+            row,
+            format!(
+                "{DETAIL_INDENT}{}",
+                r.graphics_plan.diagnostic_row(r.run_unasked)
+            ),
             "the row reads whether run asks"
         );
-        r.run_unasked = false;
+        assert!(row.contains("`run` paints classic here: over ssh"), "{row}");
+        r.run_unasked = None;
 
         r.graphics_plan = Plan::Classic {
             reason: ClassicReason::TmuxNeedsKitty(ImageProtocol::Sixel),

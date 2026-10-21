@@ -153,7 +153,7 @@ taller-cell terminals; bundled base character sprites max at 8×12 px (their
 
 ## Where to look
 
-- Tool call → sprite: `runtime/driver.rs::run_async` → `SourceManager::spawn` → source → decoder → `reducer::Reducer::apply` → watch channel → `TuiRenderer::render` → `pixtuoid_scene::floor::OfficeSession::render` → `pixtuoid_scene::look::render` → `tui::renderer::flush_classic`.
+- Tool call → sprite: `runtime/driver.rs::run_async` → `SourceManager::spawn` → source → decoder → `reducer::Reducer::apply` → watch channel → `TuiRenderer::render` → `pixtuoid_scene::floor::OfficeSession::render` → `pixtuoid_scene::look::render` → `tui::renderer::flush_classic`, or the cutaway's tiles via `tui::cutaway::TileCutaway`.
 - Architecture + data flow: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - Refactoring the channel type, `Source` trait, `AgentEvent`, or reducer signature touches all three test areas (`tests/reducer/`, `tests/transport/socket.rs`, `tests/watcher/`) + `runtime/driver.rs`; a new `AgentEvent` variant needs an `agent_id()` arm.
 - Adding an agent CLI: [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#adding-a-new-agent-cli)'s checklist, which the `add-source` skill drives.

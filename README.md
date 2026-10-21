@@ -134,7 +134,7 @@ at **[/config](https://pixtuoid.dev/config)**.
 
 ## How It Works
 
-Agent CLIs emit events two ways — a hook shim (a bounded fire-and-forget write to a Unix socket, or a named pipe on Windows, that can never block your agent) and JSONL transcript watching. Both feed one channel; a reducer folds events into office state; the renderer draws it as half-block pixel art, with zero terminal deps in the core.
+Agent CLIs emit events two ways — a hook shim (a bounded fire-and-forget write to a Unix socket, or a named pipe on Windows, that can never block your agent) and JSONL transcript watching. Both feed one channel; a reducer folds events into office state; the renderer draws it as pixel art — terminal images (kitty, SIXEL, iTerm2) where the terminal draws them, else half-block cells — with zero terminal deps in the core.
 
 **[Full architecture with diagrams →](https://pixtuoid.dev/architecture)** · single source: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
