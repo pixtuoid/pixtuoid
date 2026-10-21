@@ -20,8 +20,8 @@ name = "pixtuoid"
 path = "src/main.rs"
 
 [dependencies]
-pixtuoid-core  = { path = "../pixtuoid-core", version = "0.19.0" }
-pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.19.0" }
+pixtuoid-core  = { path = "../pixtuoid-core", version = "0.20.0" }
+pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.20.0" }
 tokio              = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-util"] }
 ratatui            = { workspace = true }
 # The base64 of kitty's transmits and of the probe's queries.
@@ -153,7 +153,7 @@ windows-sys = { workspace = true, features = [
 [dev-dependencies]
 # `tests/wire_to_pixels.rs` drives real fixture bytes through the shared
 # `pixtuoid_core::harness` pipeline, which is behind core's dev-only feature.
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.19.0", features = ["harness"] }
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.20.0", features = ["harness"] }
 tempfile = { workspace = true }
 temp-env = { workspace = true }
 # tests/text_coverage.rs parses the source of everything that renders text.

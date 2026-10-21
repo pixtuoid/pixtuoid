@@ -2819,7 +2819,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pixtuoid"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "base64-simd",
@@ -2874,7 +2874,7 @@ dependencies = [
 
 [[package]]
 name = "pixtuoid-core"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "codspeed-criterion-compat",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "pixtuoid-hook"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "libc",
  "serde_json",
@@ -2929,7 +2929,7 @@ checksum = "7ddf10c4160ae4a0848a67b8b71236c67255c1067437a9a435f1b77866bdcdcd"
 
 [[package]]
 name = "pixtuoid-scene"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "chrono",
  "codspeed-criterion-compat",
@@ -2954,7 +2954,7 @@ dependencies = [
 
 [[package]]
 name = "pixtuoid-web"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "chrono",
  "image",

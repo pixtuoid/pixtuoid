@@ -24,8 +24,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # default-features = false → pixtuoid-core builds WITHOUT the native async
 # runtime (no tokio/notify) → the whole graph compiles to wasm32.
-pixtuoid-core  = { path = "../pixtuoid-core", version = "0.19.0", default-features = false }
-pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.19.0", default-features = false }
+pixtuoid-core  = { path = "../pixtuoid-core", version = "0.20.0", default-features = false }
+pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.20.0", default-features = false }
 wasm-bindgen   = "0.2"
 # Feature-unions `wasmbind` into scene's chrono so that on wasm32
 # `chrono::Local` resolves the REAL browser timezone via js-sys; without it the
