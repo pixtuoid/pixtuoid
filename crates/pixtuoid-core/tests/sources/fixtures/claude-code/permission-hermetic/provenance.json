@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.304 (Claude Code)",
-  "captured": "2026-10-20",
+  "version": "2.1.306 (Claude Code)",
+  "captured": "2026-10-21",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 254
+    "blanked": 246
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/permission.json",
@@ -17,9 +17,6 @@
         "text"
       ],
       "/type": [
-        "api-request",
-        "api-request-blob",
-        "api-request-shape",
         "atis-latch",
         "attachment",
         "cost-state",
