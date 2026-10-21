@@ -1,8 +1,8 @@
 use super::hook_event_name;
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, PROMPT_PLACEHOLDER, Package, PerOs, Profile, SESSION_PLACEHOLDER,
-    Scenario, Second, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
 };
+use crate::harness::plan::Placeholder;
 
 /// Claude Code's TUI. Manual mode asks before a non-read-only Bash call
 /// (code.claude.com/docs/en/permission-modes).
@@ -30,15 +30,15 @@ const TUI: tui::Tui = tui::Tui {
 pub(crate) const PROFILE: Profile = Profile {
     source: "claude-code",
     package: Package::Npm("@anthropic-ai/claude-code"),
-    invocation: &["claude", "-p", PROMPT_PLACEHOLDER],
+    invocation: &["claude", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [value]`: "Resume a conversation by session ID"
     // (`claude --help` at 2.1.302).
     second_turn: Some(&[
         "claude",
         "-p",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
         "--resume",
-        SESSION_PLACEHOLDER,
+        Placeholder::Session.as_str(),
     ]),
     env: &[
         ("ANTHROPIC_BASE_URL", "http://127.0.0.1:{port}"),

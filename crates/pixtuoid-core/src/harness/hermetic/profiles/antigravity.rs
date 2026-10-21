@@ -1,12 +1,13 @@
 //! agy is closed source: its cites are its installer,
 //! antigravity.google/cli/install.sh, and the agy 1.4.2 binary.
 
+use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
 
 use serde_json::Value;
 
 use crate::harness::hermetic::{
-    ConfigFile, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
+    ConfigFile, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
 };
 
 fn shim_stamped_event(v: &Value) -> Option<Cow<'_, str>> {
@@ -30,7 +31,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         member: "antigravity",
     },
-    invocation: &["agy", "-p", PROMPT_PLACEHOLDER],
+    invocation: &["agy", "-p", Placeholder::Prompt.as_str()],
     second_turn: None,
     // The Gemini API route at a custom endpoint, and Go's proxy variables
     // (pkg.go.dev/net/http#ProxyFromEnvironment) sending all but the mock

@@ -3,8 +3,9 @@
 
 use super::type_field;
 use crate::harness::hermetic::{
-    ConfigFile, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
+use crate::harness::plan::Placeholder;
 
 const TUI: tui::Tui = tui::Tui {
     args: &[],
@@ -36,7 +37,13 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         sums: "SHA256SUMS.txt",
     },
-    invocation: &["omp", "-p", "--model", "aimock/gpt-4.1", PROMPT_PLACEHOLDER],
+    invocation: &[
+        "omp",
+        "-p",
+        "--model",
+        "aimock/gpt-4.1",
+        Placeholder::Prompt.as_str(),
+    ],
     second_turn: None,
     // The auto-QA report posts to qa.omp.sh (`src/tools/settings.ts:962-978`).
     env: &[("PI_AUTO_QA", "0")],

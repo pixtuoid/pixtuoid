@@ -1,9 +1,8 @@
 //! kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`.
 
 use super::{AIMOCK_V1, hook_event_name};
-use crate::harness::hermetic::{
-    PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
-};
+use crate::harness::hermetic::{Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui};
+use crate::harness::plan::Placeholder;
 
 /// kimi's TUI. Always Ask, its default mode, asks before a command
 /// (`docs/en/guides/interaction.md:67`); `-p` never asks (`docs/en/reference/kimi-command.md:43`).
@@ -30,7 +29,7 @@ const TUI: tui::Tui = tui::Tui {
 pub(crate) const PROFILE: Profile = Profile {
     source: "kimi",
     package: Package::Npm("@moonshot-ai/kimi-code"),
-    invocation: &["kimi", "-p", PROMPT_PLACEHOLDER],
+    invocation: &["kimi", "-p", Placeholder::Prompt.as_str()],
     second_turn: None,
     // `KIMI_MODEL_NAME` builds a provider from the environment
     // (`docs/en/configuration/env-vars.md:106-124`); the telemetry and

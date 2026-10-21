@@ -2,9 +2,9 @@
 
 use super::hook_event_name;
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface,
-    Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
+use crate::harness::plan::Placeholder;
 
 /// hermes's classic REPL, where a dangerous terminal command waits on the
 /// user.
@@ -38,7 +38,12 @@ pub(crate) const PROFILE: Profile = Profile {
     package: Package::UvLocked("NousResearch/hermes-agent"),
     // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
     // and a hook runs only once accepted.
-    invocation: &["hermes", "--accept-hooks", "-z", PROMPT_PLACEHOLDER],
+    invocation: &[
+        "hermes",
+        "--accept-hooks",
+        "-z",
+        Placeholder::Prompt.as_str(),
+    ],
     second_turn: None,
     env: &[],
     // The managed scope, which otherwise is `/etc/hermes`

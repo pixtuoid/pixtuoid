@@ -1,13 +1,11 @@
 //! dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
 
+use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
 
 use serde_json::Value;
 
-use crate::harness::hermetic::{
-    PROMPT_PLACEHOLDER, Package, PerOs, Profile, SHELL_TOOL_PLACEHOLDER, Scenario, Shape, Surface,
-    Turn,
-};
+use crate::harness::hermetic::{Package, PerOs, Profile, Scenario, Shape, Surface, Turn};
 
 /// The event dsh's plugin forwards as each payload `type` (`dsh_plugin.mjs`).
 fn event(v: &Value) -> Option<Cow<'_, str>> {
@@ -27,7 +25,7 @@ fn event(v: &Value) -> Option<Cow<'_, str>> {
 pub(crate) const PROFILE: Profile = Profile {
     source: "dsh",
     package: Package::Npm("@deepseek-ai/dsh"),
-    invocation: &["dsh", "--profile", "headless", PROMPT_PLACEHOLDER],
+    invocation: &["dsh", "--profile", "headless", Placeholder::Prompt.as_str()],
     second_turn: None,
     // The Messages endpoint and key come from the launch environment
     // (`packages/llm/llm-deepseek/src/config.ts:290`,
@@ -100,7 +98,7 @@ pub(crate) const PROFILE: Profile = Profile {
     // The shell tool win32 mounts in bash's place, which alone can
     // escalate there.
     script_vars: &[(
-        SHELL_TOOL_PLACEHOLDER,
+        Placeholder::ShellTool.as_str(),
         PerOs {
             unix: "bash",
             windows: "pwsh",

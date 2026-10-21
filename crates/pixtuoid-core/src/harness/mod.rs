@@ -35,6 +35,7 @@ use crate::{AgentEvent, AgentId, Reducer, Transport};
 mod captures;
 pub mod hermetic;
 pub mod host;
+pub mod plan;
 pub mod provenance;
 pub mod reads;
 #[cfg(feature = "native")]
@@ -43,9 +44,8 @@ pub mod tap;
 pub use captures::{
     BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, Capture, CaptureRecord, HOOK_PAYLOADS,
     NOTE_FILE, PROVENANCE, SecondTurn, canonical_capture, capture_base, capture_root,
-    capture_workspace, capture_workspace_tail, captures, jsonl_files_under, recorder_flag,
-    required_version_probe, slashed_under, transcript_in, transcripts_under, version_answer,
-    wait_until,
+    capture_workspace, capture_workspace_tail, captures, jsonl_files_under, required_version_probe,
+    slashed_under, transcript_in, transcripts_under, version_answer, wait_until,
 };
 
 /// The committed corpus: every recorded capture, fixture and hermetic script.

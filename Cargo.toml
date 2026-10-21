@@ -141,7 +141,7 @@ strum              = { version = "0.28", default-features = false, features = ["
 # A map keyed by every variant of an enum: a pack's pieces, each present.
 enum-map           = "3.1"
 # A Vec of at least one element: an animation's frames.
-vec1               = "1.12"
+vec1               = { version = "1.12", features = ["serde"] }
 semver             = "1"
 # 0.61 to match the major tokio already pulls (via mio) on Windows — a second
 # windows-sys major would double-compile the bindings.

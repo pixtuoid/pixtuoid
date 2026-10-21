@@ -2,9 +2,9 @@
 
 use super::type_field;
 use crate::harness::hermetic::{
-    ConfigFile, Daemon, Live, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape,
-    Surface, Turn,
+    ConfigFile, Daemon, Live, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
 };
+use crate::harness::plan::Placeholder;
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "openclaw",
@@ -15,7 +15,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "--session-id",
         "hermetic",
         "-m",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
     ],
     second_turn: None,
     // Its automatic update checks, and the daily request each sends

@@ -1,8 +1,8 @@
 use super::hook_event_name;
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, PROMPT_PLACEHOLDER, Package, PerOs, Profile, Scenario, Shape, Surface,
-    Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
+use crate::harness::plan::Placeholder;
 
 /// codex's TUI, its cites at `rust-v0.163.0`. On-request lets the model ask
 /// (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call asks
@@ -42,7 +42,7 @@ pub(crate) const PROFILE: Profile = Profile {
         "codex",
         "exec",
         "--dangerously-bypass-hook-trust",
-        PROMPT_PLACEHOLDER,
+        Placeholder::Prompt.as_str(),
     ],
     second_turn: None,
     env: &[("HERMETIC_API_KEY", "{key}")],
