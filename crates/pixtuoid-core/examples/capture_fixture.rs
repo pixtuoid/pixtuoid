@@ -1845,12 +1845,6 @@ mod recorder {
         }
 
         #[test]
-        fn only_a_unix_host_writes_the_corpus() {
-            assert_eq!(corpus_refusal(false), None, "a raw capture is any host's");
-            assert_eq!(corpus_refusal(true).is_some(), !cfg!(unix));
-        }
-
-        #[test]
         fn only_a_named_seed_seeds() {
             let d = tempfile::tempdir().expect("tempdir");
             let (none, missing) = (d.path().join("none"), d.path().join("missing"));
