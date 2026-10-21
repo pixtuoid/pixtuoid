@@ -35,11 +35,13 @@ runs:
         "$BIN" --version                      > "$out/version"
         "$BIN" man                            > "$out/man.roff"
         "$BIN" completions bash               > "$out/completions.bash"
-        "$BIN" connect codewhale --json       > "$out/connect.json"
+        # As in Homebrew's sandbox, no agent CLI: Claude Code's connect needs one.
+        status=0
+        env PATH=/usr/bin:/bin "$BIN" connect claude-code --json > "$out/connect.json" || status=$?
 
         # Exit zero alone is not the formula's version-content assertion.
         grep -qF "$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)" "$out/version"
         grep -q '^\.TH' "$out/man.roff"
         grep -q pixtuoid "$out/completions.bash"
-        grep -q pixtuoid-hook "${HOME}/.codewhale/config.toml"
-        python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == [{"id":"codewhale","outcome":"connected"}], "connect --json envelope drifted from the homebrew-core contract"' "$out/connect.json"
+        [ "$status" -eq 1 ]
+        python3 -c 'import json,sys; row = json.load(open(sys.argv[1]))[0]; assert (row["id"], row["outcome"]) == ("claude-code", "failed"), "connect --json envelope drifted from the homebrew-core contract"' "$out/connect.json"

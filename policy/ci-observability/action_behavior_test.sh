@@ -155,12 +155,17 @@ cat >"$brew_bin/curl" <<'STUB'
 cat "$FAKE_FORMULA"
 STUB
 printf '#!/usr/bin/env bash\n' >"$brew_bin/cargo"
-# This tree dropped `gone-cmd`, and `connect needs-cli` fails over two lines.
+# This tree dropped `gone-cmd` and the source `renamed`, and `connect needs-cli`
+# fails with its `failed` row and two lines of cause; `wrong-id` and
+# `wrong-outcome` fail with a row the formula's assertions refuse.
 cat >"$brew_dir/target/debug/pixtuoid" <<'STUB'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
 "gone-cmd --help") exit 2 ;;
-"connect needs-cli") printf 'line one\nline two\n' && exit 1 ;;
+"connect needs-cli") printf '[{"id":"needs-cli","outcome":"failed"}]\n' && printf 'line one\nline two\n' >&2 && exit 1 ;;
+"connect renamed") printf 'unknown source\n' >&2 && exit 1 ;;
+"connect wrong-id") printf '[{"id":"other","outcome":"failed"}]\n' && exit 1 ;;
+"connect wrong-outcome") printf '[{"id":"wrong-outcome","outcome":"connected"}]\n' && exit 1 ;;
 esac
 STUB
 chmod +x "$brew_bin/curl" "$brew_bin/cargo" "$brew_dir/target/debug/pixtuoid"
@@ -192,6 +197,20 @@ assert_brew "a dropped subcommand and a failing connect" \
 { grep -q 'gone-cmd' "$brew_dir/summary" && grep -q 'needs-cli.*line one line two' "$brew_dir/summary"; } ||
     fail "the homebrew step didn't name each miss with its cause: $(<"$brew_dir/summary")"
 assert_brew "a test block this tree runs" $'  test do\n    shell_output("#{bin}/pixtuoid connect works --json")\n  end' 0
+assert_brew "an expected failure this tree fails" $'  test do\n    shell_output("#{bin}/pixtuoid connect needs-cli --json", 1)\n  end' 0
+assert_brew "an expected failure this tree passes" $'  test do\n    shell_output("#{bin}/pixtuoid connect works --json", 1)\n  end' 1
+grep -q 'exit 1, and this tree exits 0' "$brew_dir/summary" ||
+    fail "the homebrew step didn't name the exit it expected: $(<"$brew_dir/summary")"
+assert_brew "an expected failure of a source this tree renamed" $'  test do\n    shell_output("#{bin}/pixtuoid connect renamed --json", 1)\n  end' 1
+grep -q 'renamed.*print its .failed. row.*unknown source' "$brew_dir/summary" ||
+    fail "the homebrew step didn't name the missing row: $(<"$brew_dir/summary")"
+for refused in wrong-id wrong-outcome; do
+    assert_brew "an expected failure printing $refused" "  test do
+    shell_output(\"#{bin}/pixtuoid connect $refused --json\", 1)
+  end" 1
+    grep -q "$refused.*print its .failed. row" "$brew_dir/summary" ||
+        fail "the homebrew step didn't refuse $refused's row: $(<"$brew_dir/summary")"
+done
 
 # ── apt-install: a failed or stalled update or download retries under the
 # action's own bound, and the install never runs under it or after a failed

@@ -132,6 +132,8 @@ fn report_batch(rows: &[sources::OutcomeRow], json: bool) -> Result<()> {
         .iter()
         .any(|r| r.outcome == sources::WireOutcome::Failed)
     {
+        // homebrew-core contract: the formula's `test do` expects the exit
+        // `main` maps this error to (`ExitCode::FAILURE`).
         anyhow::bail!("one or more sources failed (see the rows above)");
     }
     Ok(())
@@ -181,8 +183,8 @@ mod tests {
     #[test]
     fn outcome_envelope_is_the_id_outcome_raycast_contract() {
         // Raycast is not the only consumer. homebrew-core contract: the
-        // formula's `test do` parses `connect codewhale --json` and asserts the row
-        // equals `{"id" => "codewhale", "outcome" => "connected"}`. Reshaping this
+        // formula's `test do` parses `connect claude-code --json` with no agent CLI
+        // and asserts the first row's `id` and `outcome` (`failed`). Reshaping this
         // envelope breaks Homebrew's CI on the next autobump.
         let rows = vec![
             sources::OutcomeRow::new("codewhale".to_string(), &sources::ChangeOutcome::Connected),
