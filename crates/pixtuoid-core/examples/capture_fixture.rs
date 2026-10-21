@@ -260,8 +260,7 @@ mod recorder {
             Invocation::PrepareRoot { source, within } => {
                 prepare_root(resolved_source_root(&source).as_deref(), within.as_path())
             }
-            Invocation::Promote(run) => match promote_unless_refused(
-                corpus_refusal(true),
+            Invocation::Promote(run) => match promote_here(
                 &run,
                 &sources_root(),
                 &identity_needles(git_config),
@@ -496,6 +495,16 @@ mod recorder {
     /// The exemption the record in `dest` declares, if it holds one.
     fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
         Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
+    }
+
+    /// [`promote`] on this host: refused where it may not write the corpus.
+    fn promote_here(
+        run: &Path,
+        root: &Path,
+        needles: &BTreeSet<String>,
+        notices: &mut impl Write,
+    ) -> Result<std::io::Result<()>, &'static str> {
+        promote_unless_refused(corpus_refusal(true), run, root, needles, notices)
     }
 
     /// [`promote`], unless `refusal` says this host may not write the corpus; the
@@ -1927,29 +1936,29 @@ mod recorder {
         }
 
         #[test]
-        fn a_refused_promotion_writes_nothing_and_says_why() {
-            let root = tempfile::tempdir().expect("root");
-            let run = tempfile::tempdir().expect("run");
+        fn a_refused_promotion_leaves_the_fixture_whole_and_says_why() {
+            let p = promotable(serde_json::json!({"origin": "recorded"}), |_| {});
             let refused = promote_unless_refused(
                 Some("not this host"),
-                run.path(),
-                root.path(),
-                &BTreeSet::new(),
-                &mut Vec::new(),
+                &p.run,
+                &p.root,
+                &needles(),
+                &mut std::io::sink(),
             );
             assert_eq!(refused.err(), Some("not this host"));
-            assert_eq!(std::fs::read_dir(root.path()).expect("root").count(), 0);
-            let allowed = promote_unless_refused(
-                None,
-                run.path(),
-                root.path(),
-                &BTreeSet::new(),
-                &mut Vec::new(),
-            );
             assert!(
-                allowed.expect("not refused").is_err(),
-                "it ran, and a run with no manifest fails there"
+                p.dest.join("old").join("old.jsonl").is_file(),
+                "a promotion would have replaced the fixture whole"
             );
+            assert!(!p.dest.join(HOOK_PAYLOADS).exists());
+        }
+
+        #[test]
+        fn a_promotion_on_this_host_is_refused_only_where_the_corpus_is_not_its_to_write() {
+            let p = promotable(serde_json::json!({"origin": "recorded"}), |_| {});
+            let here = promote_here(&p.run, &p.root, &needles(), &mut std::io::sink());
+            assert_eq!(here.is_err(), !cfg!(unix), "{here:?}");
+            assert_eq!(p.dest.join(HOOK_PAYLOADS).exists(), cfg!(unix));
         }
 
         #[test]
