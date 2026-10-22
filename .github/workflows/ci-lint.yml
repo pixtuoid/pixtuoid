@@ -92,9 +92,13 @@ jobs:
       # Every lint tool runs at its newest release, as the brew copies
       # `just lint` uses locally do. The Go ones build from source, so the
       # cache is keyed on the releases they resolve to: a new one misses it.
+      # gitleaks is one of them: `just fixture-pii` is a REQUIRED gate, so a
+      # failed install must fail the job, which `go install` does.
       - name: Resolve the Go tools' newest releases
         id: go-latest
-        run: echo "versions=$(go list -m -f '{{.Path}}@{{.Version}}' mvdan.cc/sh/v3@latest github.com/rhysd/actionlint@latest github.com/mikefarah/yq/v4@latest | tr '\n' ' ')" >>"$GITHUB_OUTPUT"
+        run: |
+          versions="$(go list -m -f '{{.Path}}@{{.Version}}' mvdan.cc/sh/v3@latest github.com/rhysd/actionlint@latest github.com/mikefarah/yq/v4@latest github.com/zricethezav/gitleaks/v8@latest)"
+          echo "versions=${versions//$'\n'/ }" >>"$GITHUB_OUTPUT"
       # ~/go/bin is spelled, not derived: GOPATH is the runner default, and
       # deriving it here while the cache stores a literal is how a hit could
       # restore binaries to a directory that is not on PATH.
@@ -118,36 +122,16 @@ jobs:
               *) go install "$v" ;;
             esac
           done
-      - name: Install the JSON Schema validator
-        run: pipx install check-jsonschema
+      # From PyPI, which carries each one's newest release; install-action
+      # would serve the one in the manifest its pinned ref bundles.
+      - name: Install the Python-packaged tools
+        run: pipx install check-jsonschema zizmor shellcheck-py
       # Lychee is not manifest-managed by install-action; its documented
-      # cargo-binstall fallback installs it.
+      # cargo-binstall fallback installs its newest release.
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          tool: lychee,zizmor
+          tool: lychee
           fallback: cargo-binstall
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: shellcheck
-          fallback: none
-      # `just fixture-pii` is a REQUIRED gate and cannot degrade — a missing
-      # gitleaks must fail the job, not silently scan nothing. Not via
-      # taiki-e/install-action: gitleaks is not in its TOOLS.md (checked).
-      # The release's own checksums file guards the download, not the release.
-      - name: Install gitleaks
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          ver="$(gh api repos/gitleaks/gitleaks/releases/latest --jq '.tag_name | ltrimstr("v")')"
-          tar="gitleaks_${ver}_linux_x64.tar.gz"
-          base="https://github.com/gitleaks/gitleaks/releases/download/v$ver"
-          curl -fsSL "$base/$tar" -o "/tmp/$tar"
-          curl -fsSL "$base/gitleaks_${ver}_checksums.txt" -o /tmp/gitleaks_checksums.txt
-          (cd /tmp && grep " $tar\$" gitleaks_checksums.txt | sha256sum -c -)
-          tar -xzf "/tmp/$tar" -C /tmp gitleaks
-          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
-          gitleaks version
       - uses: ./.github/actions/setup-just
       - run: just toolchain-ceiling
       - run: just shfmt-check
