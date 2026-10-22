@@ -3,58 +3,58 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 15581449404176392262
-    tool_use_id: call_yGJIH8XwgxMyj3ki
+    agent_id: 13752127424536126719
+    tool_use_id: call_rVCuW-u7xpVPgPvU
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     reason: shell
-    tool_use_id: call_yGJIH8XwgxMyj3ki
+    tool_use_id: call_rVCuW-u7xpVPgPvU
 - Identity:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 15581449404176392262
-    tool_use_id: call_yGJIH8XwgxMyj3ki
+    agent_id: 13752127424536126719
+    tool_use_id: call_rVCuW-u7xpVPgPvU
 - Identity:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     source: opencode
-    session_id: ses_ea1401481ffeqIBt3HvV9M6nYA
+    session_id: ses_e9c1d3e1effeo9QIYktcU3RQRi
     cwd: ~
 - ActivityEnd:
-    agent_id: 15581449404176392262
+    agent_id: 13752127424536126719
     tool_use_id: ~
