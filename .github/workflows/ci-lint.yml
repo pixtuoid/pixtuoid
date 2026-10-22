@@ -89,10 +89,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # This job's tools run at their newest release, as the brew copies
-      # `just lint` uses locally do. The Go ones build from source, so the
-      # cache is keyed on the releases they resolve to and on this file, which
-      # holds the recipe: a new release or a changed recipe misses it.
+      # The tools this job installs run at their newest release, as the brew
+      # copies `just lint` uses locally do. The Go ones build from source, so
+      # the cache is keyed on the releases they resolve to and on this file,
+      # which holds the recipe: a new release or a changed recipe misses it.
       - name: Resolve the Go tools' newest releases
         id: go-latest
         run: |
