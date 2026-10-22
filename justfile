@@ -83,8 +83,8 @@ default:
 
 # Format check only — fast, gates pre-commit. The justfile has a canonical
 # format too (`just --fmt`), so it is checked with the Rust; just gives its
-# formatter no cross-version guarantee, so `setup-just` pins CI's just and a
-# local one on another version may disagree.
+# formatter no cross-version guarantee, and `setup-just` installs the newest
+# just, so a release that reformats fails this until `just --fmt`'s output lands.
 [group('rust')]
 fmt-check:
     cargo fmt --all --check

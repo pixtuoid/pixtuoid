@@ -1,11 +1,7 @@
 name: 'Setup Just'
-description: 'Installs just — the single authority for its pinned version'
+description: 'Installs the newest just'
 
 runs:
   using: 'composite'
   steps:
-    # Dependabot bumps the action ref but never a `with:` input, so this
-    # version moves only by hand.
-    - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-      with:
-        just-version: "1.58.0"
+    - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] the newest just, as `just lint` runs locally

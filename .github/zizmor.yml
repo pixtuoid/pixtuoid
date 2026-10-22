@@ -1,9 +1,8 @@
 # yaml-language-server: $schema=https://json.schemastore.org/zizmor.json
 
 rules:
-  # actionlint (pinned in ci-lint.yml) rejects the `$/` uses syntax this audit
-  # nudges toward — rhysd/actionlint#711 tracks support; re-enable when the pin
-  # understands it.
+  # actionlint rejects the `$/` uses syntax this audit nudges toward; re-enable
+  # when it understands it (rhysd/actionlint#711).
   self-repository:
     disable: true
   unpinned-uses:

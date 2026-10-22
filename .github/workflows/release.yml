@@ -271,14 +271,18 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7 # zizmor: ignore[cache-poisoning] this publisher does not enable setup-node's package cache
         with:
-          node-version: 22
+          node-version-file: .nvmrc
+          # npm Trusted Publishing (#216) authenticates by OIDC only (no
+          # NODE_AUTH_TOKEN), which this triggers.
           registry-url: https://registry.npmjs.org
-      # npm Trusted Publishing (#216): node 22 bundles npm 10.x but OIDC needs
-      # >= 11.5.1, and OIDC is the only auth path (no NODE_AUTH_TOKEN) — without
-      # this upgrade the publish silently fails unauthenticated. `registry-url`
-      # above STAYS: it is what triggers npm's OIDC detection. Pinned EXACTLY, not
-      # @11 — an irreversible publish must not float with the registry.
-      - run: npm install -g npm@11.5.1 # zizmor: ignore[adhoc-packages] exact OIDC-capable npm bootstrap for trusted publishing
+      # Trusted Publishing needs npm >= 11.5.1 (docs.npmjs.com/trusted-publishers);
+      # below it the publish fails unauthenticated, so the bundled npm is held
+      # to that floor here rather than trusted.
+      - name: Check the bundled npm can publish by OIDC
+        run: |
+          have="$(npm --version)"
+          [ "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -n1)" = 11.5.1 ] \
+            || { echo "::error title=npm too old for Trusted Publishing::npm $have < 11.5.1"; exit 1; }
       - uses: ./.github/actions/setup-just
 
       - name: Download build artifacts

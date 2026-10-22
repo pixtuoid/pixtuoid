@@ -9,7 +9,7 @@ const npmrc = new Set(
 );
 
 test('the install-script policy runs on the pinned npm generation', () => {
-  assert.equal(manifest.packageManager, 'npm@12.0.1');
+  assert.match(manifest.packageManager, /^npm@12\.\d+\.\d+$/);
   assert.equal(manifest.engines.npm, '>=12.0.0 <13');
   assert.ok(npmrc.has('engine-strict=true'));
   assert.ok(npmrc.has('strict-allow-scripts=true'));

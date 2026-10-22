@@ -45,7 +45,9 @@ jobs:
       - uses: ./.github/actions/setup-npm
         with:
           directory: integrations/raycast
-          node-version: '22'
+          # Raycast runs extensions on its own Node 22 runtime, and its CLI
+          # requires 22.22.2+ (developers.raycast.com/misc/changelog).
+          node-version-file: integrations/raycast/.nvmrc
       # Each schema's own freshness vs its Rust struct is gated separately, by the
       # `*_schema_matches_the_committed_contract` tests in ci-tests.yml.
       - name: contract types match the committed schemas
