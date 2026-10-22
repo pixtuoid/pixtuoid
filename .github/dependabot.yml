@@ -23,6 +23,10 @@ updates:
       - dependency-name: "miniz_oxide"
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
+      # ratatui-core's copy (Cargo.toml), likewise: it moves only with ratatui.
+      - dependency-name: "lru"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
       # objc2-app-kit MUST track winit's stack: winit 0.30.x still pulls 0.2.x,
       # so a 0.3+ bump builds a SECOND objc2 stack beside winit's AND breaks the
       # activate API. Lift when winit itself moves to objc2 0.6.

@@ -105,6 +105,7 @@ codegen-units = 16
 incremental = true
 
 [workspace.dependencies]
+# ratatui-core's copy, so no second crate.
 lru                = { version = "0.18", default-features = false }
 tokio              = { version = "1", default-features = false }
 serde              = { version = "1", features = ["derive"] }
@@ -161,7 +162,7 @@ temp-env           = "0.3"
 # Dev-only: the hermetic tier's `tui_drive` runs a CLI's TUI under a pty
 # (ConPTY on Windows) and reads the screen it renders.
 portable-pty       = "0.9"
-vt100              = "0.17"
+vt100              = "0.18"
 # regex is already built through criterion; sha2 checks the hermetic tier's
 # release downloads, where a platform hasher would need a seam of its own to
 # keep the sums check testable.

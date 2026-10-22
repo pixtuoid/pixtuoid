@@ -13,6 +13,7 @@
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
+use std::num::NonZeroU16;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -123,7 +124,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
     });
 
     let started = Instant::now();
-    let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
+    let mut screen = parser();
     let mut driver = Driver::new(tui, answer, line.prompt, started);
     let mut quit_at: Option<Instant> = None;
     loop {
@@ -177,8 +178,14 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
     }
 }
 
+/// A screen the pty's size.
+fn parser() -> vt100::Parser {
+    let side = |n| NonZeroU16::new(n).expect("SIZE is never 0x0");
+    vt100::Parser::new(side(SIZE.rows), side(SIZE.cols), 0)
+}
+
 /// The screen row by row: `contents()` joins a wrapped row onto the next
-/// (`src/grid.rs:212-213` at vt100 0.17.0), and a ConPTY repaint wraps a
+/// (`src/grid.rs:289-290` at vt100 0.18.1), and a ConPTY repaint wraps a
 /// full-width rule into the composer's row (`hermetic.yml`'s Windows leg, run
 /// 39172132633's `claude-code/permission/tui.log`).
 fn shown(screen: &vt100::Screen) -> String {
@@ -224,7 +231,7 @@ mod tests {
 
     #[test]
     fn a_composer_under_a_rule_the_cli_let_wrap_takes_the_prompt() {
-        let mut screen = vt100::Parser::new(SIZE.rows, SIZE.cols, 0);
+        let mut screen = parser();
         let rule = "─".repeat(usize::from(SIZE.cols));
         screen.process(format!("{rule}❯ ").as_bytes());
         let (tui, answer) = tui_of("claude-code", "permission").expect("a TUI row");

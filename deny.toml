@@ -44,6 +44,8 @@ deny = [
     # Pinned to winit's stacks (crates/pixtuoid/Cargo.toml), likewise.
     { crate = "objc2-app-kit", deny-multiple-versions = true },
     { crate = "x11rb", deny-multiple-versions = true },
+    # Pinned to ratatui-core's copy (Cargo.toml), likewise.
+    { crate = "lru", deny-multiple-versions = true },
 ]
 
 [sources]
