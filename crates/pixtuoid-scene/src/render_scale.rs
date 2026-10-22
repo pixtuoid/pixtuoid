@@ -186,6 +186,7 @@ impl PixelFit {
 
     /// This fit over a surface `px` big: the scale stays, and the office takes
     /// as many units as the surface holds on each axis.
+    #[must_use]
     pub fn over(self, px: crate::layout::Size) -> Self {
         Self {
             logical: crate::layout::Size {

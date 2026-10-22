@@ -253,6 +253,7 @@ impl JsonlWatcher {
 
     /// Override the recency window a first-sight transcript must fall within to
     /// seed at EOF (default `DEFAULT_INITIAL_WINDOW`).
+    #[must_use]
     pub fn with_initial_window(mut self, window: Duration) -> Self {
         self.initial_window = window;
         self
@@ -269,6 +270,7 @@ impl JsonlWatcher {
     /// testable without waiting a [`DEFAULT_POLL_INTERVAL`] per tick.
     /// Production never calls this.
     #[doc(hidden)]
+    #[must_use]
     pub fn with_poll_interval(mut self, interval: Duration) -> Self {
         self.poll_interval = interval;
         self
@@ -278,6 +280,7 @@ impl JsonlWatcher {
     /// window so the negative-vouch exit path is testable. Production never
     /// calls this.
     #[doc(hidden)]
+    #[must_use]
     pub fn with_negative_vouch_min_span(mut self, span: Duration) -> Self {
         self.negative_vouch_min_span = span;
         self
@@ -287,6 +290,7 @@ impl JsonlWatcher {
     /// basename via [`LabelDeriver`]). Needed by the sources whose transcript
     /// PATH names the agent better than its cwd does — **CC** (subagents) and
     /// **omp** (subagents, named by the task they were dispatched under).
+    #[must_use]
     pub fn with_label_deriver(mut self, derive_label: LabelDeriver) -> Self {
         self.derive_label = derive_label;
         self
@@ -308,6 +312,7 @@ impl JsonlWatcher {
 
     /// Override the [`PathFilter`] the source's registry row supplies; no
     /// in-tree source needs it.
+    #[must_use]
     pub fn with_path_filter(mut self, path_filter: PathFilter) -> Self {
         self.path_filter = path_filter;
         self
@@ -316,6 +321,7 @@ impl JsonlWatcher {
     /// Attach a liveness probe (default: none) so the watcher gates first-sight
     /// seeding on a live-session check and drives ongoing liveness rather than
     /// transcript content.
+    #[must_use]
     pub fn with_liveness_probe(mut self, probe: LivenessProbe) -> Self {
         self.liveness_probe = Some(probe);
         self

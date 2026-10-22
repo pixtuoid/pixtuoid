@@ -108,11 +108,13 @@ impl FloorMeta {
     }
 
     /// This floor under `weather`.
+    #[must_use]
     pub fn with_weather(self, weather: crate::sky::WeatherPolicy) -> Self {
         Self { weather, ..self }
     }
 
     /// This floor moving as `motion` says.
+    #[must_use]
     pub fn with_motion(self, motion: crate::anim::Motion) -> Self {
         Self { motion, ..self }
     }

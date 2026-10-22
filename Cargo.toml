@@ -40,12 +40,14 @@ allow_attributes                = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks      = "warn"
 # Picked from `pedantic` for the failure each prevents: an overflowing
-# `(a + b) / 2`, a hand-rolled range check before a cast, and an undocumented
-# error or panic contract (the Rust API Guidelines' C-FAILURE).
+# `(a + b) / 2`, a hand-rolled range check before a cast, an undocumented
+# error or panic contract (the Rust API Guidelines' C-FAILURE), and an exported
+# method's dropped `Self`, which leaves a `Copy` or borrowed receiver unchanged.
 manual_midpoint                 = "warn"
 checked_conversions             = "warn"
 missing_errors_doc              = "warn"
 missing_panics_doc              = "warn"
+return_self_not_must_use        = "warn"
 # A widening cast as `T::from`, which can't go silently lossy if a type changes.
 cast_lossless                   = "warn"
 

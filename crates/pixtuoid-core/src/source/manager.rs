@@ -50,6 +50,7 @@ impl SourceManager {
     }
 
     /// Register one more `Source`. Builder-style — chain to add several.
+    #[must_use]
     pub fn with_source(mut self, source: Box<dyn DynSource>) -> Self {
         self.sources.push(source);
         self

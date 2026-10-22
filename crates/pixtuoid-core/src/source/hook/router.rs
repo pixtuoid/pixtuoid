@@ -73,12 +73,14 @@ impl HookRouter {
     }
 
     /// Wire the #246 child-end un-claim producer.
+    #[must_use]
     pub fn with_child_end_unclaims(mut self, unclaims: Option<ChildEndUnclaims>) -> Self {
         self.child_end_unclaims = unclaims;
         self
     }
 
     /// Wire the daemon-presence side channel.
+    #[must_use]
     pub fn with_presence_tx(mut self, presence_tx: Option<PresenceSender>) -> Self {
         self.presence_tx = presence_tx;
         self
