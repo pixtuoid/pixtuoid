@@ -48,8 +48,8 @@ jobs:
   codspeed:
     name: benchmarks (codspeed simulation + memory, advisory)
     if: ${{ !github.event.pull_request.draft }}
-    # One image for a PR's run and the main run it is diffed against, else the
-    # image's move shows up as a regression
+    # One Ubuntu release for a PR's run and the main run it is diffed against,
+    # else `-latest` moving to the next shows up as a regression
     # (codspeed.io/docs/instruments/cpu/regression-causes).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -65,7 +65,11 @@ jobs:
       # compat crate under one version, so the lockfile's pins both.
       - id: pins
         run: |
-          echo "toolchain=$(yq -p toml -oy '.workspace.package.rust-version' Cargo.toml)" >>"$GITHUB_OUTPUT"
+          toolchain="$(yq -p toml -oy '.workspace.package.rust-version' Cargo.toml)"
+          echo "toolchain=$toolchain" >>"$GITHUB_OUTPUT"
+          # rust-toolchain.toml's `stable` outranks the default setup-rust sets;
+          # this outranks the file (rust-lang.github.io/rustup/overrides.html).
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >>"$GITHUB_ENV"
           echo "codspeed=$(yq -p toml -oy '.package[] | select(.name == "codspeed-criterion-compat") | .version' Cargo.lock)" >>"$GITHUB_OUTPUT"
       - uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
