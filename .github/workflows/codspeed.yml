@@ -60,17 +60,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # One toolchain likewise: `stable` moves between the two runs.
-      - id: msrv
-        run: echo "toolchain=$(yq -p toml -oy '.workspace.package.rust-version' Cargo.toml)" >>"$GITHUB_OUTPUT"
+      # Likewise one toolchain and one cargo-codspeed, which `stable` and a bare
+      # install each move between the two runs; cargo-codspeed ships with the
+      # compat crate under one version, so the lockfile's pins both.
+      - id: pins
+        run: |
+          echo "toolchain=$(yq -p toml -oy '.workspace.package.rust-version' Cargo.toml)" >>"$GITHUB_OUTPUT"
+          echo "codspeed=$(yq -p toml -oy '.package[] | select(.name == "codspeed-criterion-compat") | .version' Cargo.lock)" >>"$GITHUB_OUTPUT"
       - uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: ${{ steps.msrv.outputs.toolchain }}
+          channel: ${{ steps.pins.outputs.toolchain }}
           # Its release-target cache was the repository's largest (1.46 GB of
           # the 10 GB quota), and a cache past the quota evicts the required
           # jobs' caches by last access; this advisory job builds cold instead.
           cache: false
-          bins: cargo-codspeed
+          bins: cargo-codspeed@${{ steps.pins.outputs.codspeed }}
       # Deliberately NOT continue-on-error: a bench that won't build is a
       # broken build, not a perf trend.
       # The binary's bench builds on its own with `just bench`'s features (no
