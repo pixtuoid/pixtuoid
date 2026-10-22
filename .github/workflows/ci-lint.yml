@@ -89,11 +89,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Every lint tool runs at its newest release, as the brew copies
+      # This job's tools run at their newest release, as the brew copies
       # `just lint` uses locally do. The Go ones build from source, so the
-      # cache is keyed on the releases they resolve to: a new one misses it.
-      # gitleaks is one of them: `just fixture-pii` is a REQUIRED gate, so a
-      # failed install must fail the job, which `go install` does.
+      # cache is keyed on the releases they resolve to and on this file, which
+      # holds the recipe: a new release or a changed recipe misses it.
       - name: Resolve the Go tools' newest releases
         id: go-latest
         run: |
@@ -107,10 +106,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ steps.go-latest.outputs.versions }}
+          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}-${{ steps.go-latest.outputs.versions }}
       - name: Expose Go tool binaries
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
-      - name: Install workflow lint + policy tools
+      - name: Install the Go-built tools
         if: steps.go-tools.outputs.cache-hit != 'true'
         env:
           VERSIONS: ${{ steps.go-latest.outputs.versions }}
@@ -119,6 +118,8 @@ jobs:
             case "$v" in
               mvdan.cc/sh/v3@*) go install "mvdan.cc/sh/v3/cmd/shfmt@${v#*@}" ;;
               github.com/rhysd/actionlint@*) go install "github.com/rhysd/actionlint/cmd/actionlint@${v#*@}" ;;
+              # gitleaks among them: `just fixture-pii` is a REQUIRED gate, so
+              # a failed install must fail the job, never soft-fail here.
               *) go install "$v" ;;
             esac
           done

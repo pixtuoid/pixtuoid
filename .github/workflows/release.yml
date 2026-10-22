@@ -273,9 +273,16 @@ jobs:
         with:
           node-version-file: .nvmrc
           # npm Trusted Publishing (#216) authenticates by OIDC only (no
-          # NODE_AUTH_TOKEN), which this triggers; it needs npm >= 11.5.1
-          # (docs.npmjs.com/trusted-publishers), which the newest Node bundles.
+          # NODE_AUTH_TOKEN), which this triggers.
           registry-url: https://registry.npmjs.org
+      # Trusted Publishing needs npm >= 11.5.1 (docs.npmjs.com/trusted-publishers);
+      # below it the publish fails unauthenticated, so the bundled npm is held
+      # to that floor here rather than trusted.
+      - name: Check the bundled npm can publish by OIDC
+        run: |
+          have="$(npm --version)"
+          [ "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -n1)" = 11.5.1 ] \
+            || { echo "::error title=npm too old for Trusted Publishing::npm $have < 11.5.1"; exit 1; }
       - uses: ./.github/actions/setup-just
 
       - name: Download build artifacts
