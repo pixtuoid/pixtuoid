@@ -67,7 +67,7 @@ updates:
 
   # rust-toolchain.toml's exact pin, so CodSpeed's base and head build on one
   # rustc and each release lands as its own PR; hawk and api-surface keep their
-  # own (`just toolchain-ceiling`).
+  # own, which `_toolchain-covers` holds at or past it.
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:

@@ -504,14 +504,16 @@ _hawk-toolchain:
 toolchain-ceiling: (_toolchain-covers HAWK_RUST "HAWK_RUST")
 
 # A dependency or API the pin admits must still build on `version`'s rustc.
-# Minors, not patches: a point release stabilizes nothing. A `1.N.0-nightly`
-# predates what 1.N stabilized after it was cut, so it covers only older minors.
+# Minors, not patches: a point release carries only accepted stable backports
+# (forge.rust-lang.org/release/backporting.html). A `1.N.0-nightly` is built
+# before 1.N branches to beta, so it lacks 1.N's later stabilizations and covers
+# only older minors (forge.rust-lang.org/release/process.html).
 [private]
 _toolchain-covers version name:
     #!/usr/bin/env bash
     set -euo pipefail
     pin="$(sed -n 's/^channel *= *"\(.*\)"$/\1/p' rust-toolchain.toml)"
-    [[ "$pin" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] \
+    [[ "$pin" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
         || { echo "error: rust-toolchain.toml's channel '$pin' is not an exact release" >&2; exit 1; }
     awk -v pin="$pin" -v have="{{ version }}" 'BEGIN { split(pin, p, "."); split(have, h, "."); n = have ~ /-nightly/; exit !(p[1] + 0 < h[1] + 0 || (p[1] + 0 == h[1] + 0 && (n ? p[2] + 0 < h[2] + 0 : p[2] + 0 <= h[2] + 0))) }' \
         || { echo "error: rust-toolchain.toml pins $pin, a newer Rust minor than {{ name }}'s rustc {{ version }} covers: move {{ name }} with it" >&2; exit 1; }
