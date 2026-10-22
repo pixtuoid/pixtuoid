@@ -5,21 +5,22 @@ inputs:
   directory:
     description: 'The project directory, holding package.json and package-lock.json'
     required: true
-  node-version:
-    description: 'The one authority for the project''s Node major (the default is the site''s); feeds setup-node and the output below'
-    default: '26'
+  node-version-file:
+    description: 'The file naming the project''s Node (the default is the repository''s); feeds setup-node and the output below'
+    default: '.nvmrc'
 
 outputs:
   node-version:
-    description: 'The Node major in effect — withastro/action runs its own Node setup and would otherwise pick a different major'
-    value: ${{ inputs.node-version }}
+    description: 'The Node in effect — withastro/action runs its own Node setup and would otherwise pick a different one'
+    value: ${{ steps.node.outputs.node-version }}
 
 runs:
   using: 'composite'
   steps:
-    - uses: actions/setup-node@v7
+    - id: node
+      uses: actions/setup-node@v7
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version-file: ${{ inputs.node-version-file }}
         cache: npm
         cache-dependency-path: ${{ inputs.directory }}/package-lock.json
     # A Node major's bundled npm can predate the complete allowScripts
