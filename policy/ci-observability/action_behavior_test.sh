@@ -376,7 +376,9 @@ for have in 11.5.1 11.20.0 12.2.1; do
         fail "the npm floor refused npm $have"
 done
 for have in 11.5.0 10.9.9; do
-    if FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" >/dev/null 2>&1; then
+    if said="$(FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" 2>&1)"; then
         fail "the npm floor let npm $have publish"
     fi
+    [[ "$said" == *"npm $have < 11.5.1"* ]] ||
+        fail "the npm floor refused npm $have without naming the 11.5.1 floor: $said"
 done
