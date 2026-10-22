@@ -57,8 +57,7 @@ API_PUBLIC_API := "0.52.0"
 
 # The cargo-hawk `hawk` runs, and the exact rustc it links (its
 # rust-toolchain.toml): hawk refuses any other, so a bump moves both, and the
-# installer's hash with them; a workspace `rust-version` past HAWK_RUST fails
-# `just hawk` until they move.
+# installer's hash with them.
 HAWK_VERSION := "0.1.15"
 HAWK_RUST := "1.99.0"
 HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3794f54111f"
@@ -294,6 +293,7 @@ lint:
     run machete just machete            & pids+=($!)
     run deny    just deny                & pids+=($!)
     run arch    just arch                & pids+=($!)
+    run ceiling just toolchain-ceiling   & pids+=($!)
     run shfmt   just shfmt-check         & pids+=($!)
     run shell   just shellcheck           & pids+=($!)
     run actions just actionlint          & pids+=($!)
@@ -372,7 +372,7 @@ check-windows:
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
-    rustup target list --toolchain stable --installed | grep -q x86_64-pc-windows-msvc \
+    rustup target list --installed | grep -q x86_64-pc-windows-msvc \
         || { echo "needs the target: rustup target add x86_64-pc-windows-msvc" >&2; exit 1; }
     cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
 
@@ -389,24 +389,6 @@ check-other-unix:
     target=x86_64-unknown-freebsd
     rustup target list --installed | grep -qx "$target" || rustup target add "$target"
     cargo clippy --workspace --all-targets --target "$target" --no-default-features --features pixtuoid/portable -- -D warnings
-
-# Catches a dep bump (or newer stdlib use) that silently raises the floor past
-# the version we advertise to crates.io consumers of pixtuoid-core. CI-only in
-# practice (installs a pinned toolchain + a full check), NOT in preflight.
-# Reads the version from Cargo.toml so there's one source of truth.
-[doc('Check the workspace builds on the declared MSRV (rust-version in Cargo.toml)')]
-[group('rust')]
-msrv:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    msrv="$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([0-9]+\.[0-9]+(\.[0-9]+)?)".*/\1/')"
-    echo "declared MSRV: $msrv"
-    rustup toolchain install "$msrv" --profile minimal --no-self-update >/dev/null 2>&1 || true
-    # Clear RUSTFLAGS so the default linker is used: this gate verifies
-    # COMPILATION on the floor and must not also require the lld that
-    # `.cargo/config.toml` pins for x86_64 Linux. (RUSTFLAGS env overrides
-    # target.*.rustflags wholesale.)
-    RUSTFLAGS="" rustup run "$msrv" cargo check --workspace
 
 # Reproduce release-plz's semver verdict LOCALLY. Not a gate and not in CI:
 # release-plz runs cargo-semver-checks itself on the release PR and RAISES the
@@ -477,9 +459,11 @@ _api-toolchain:
         exit 1
     fi
     command -v rustup >/dev/null || { echo "rustup not found — install {{ API_NIGHTLY }} manually for api-surface" >&2; exit 1; }
-    rustup toolchain list | grep -q '{{ API_NIGHTLY }}' && exit 0
-    echo "installing {{ API_NIGHTLY }} (api-surface needs nightly rustdoc JSON)…" >&2
-    rustup toolchain install {{ API_NIGHTLY }} --profile minimal
+    rustup toolchain list | grep -q '{{ API_NIGHTLY }}' || {
+        echo "installing {{ API_NIGHTLY }} (api-surface needs nightly rustdoc JSON)…" >&2
+        rustup toolchain install {{ API_NIGHTLY }} --profile minimal
+    }
+    just _toolchain-covers "$(rustup run {{ API_NIGHTLY }} rustc --version | cut -d' ' -f2)" API_NIGHTLY
 
 # `pixtuoid_web`'s `pub` surface is the wasm exports the site's JS calls,
 # outside the workspace: hawk's `--exclude-crate` case.
@@ -510,6 +494,21 @@ _hawk-toolchain:
     set -euo pipefail
     rustup toolchain list | grep -q '^{{ HAWK_RUST }}-' \
         || rustup toolchain install {{ HAWK_RUST }} --profile minimal --no-self-update >&2
+
+# Dependabot moves rust-toolchain.toml alone, while hawk builds on HAWK_RUST, so
+# this fails that bump's PR instead of a later one leaning on the new release.
+[doc('Fail when rust-toolchain.toml pins a newer rustc than HAWK_RUST')]
+[group('rust')]
+toolchain-ceiling: (_toolchain-covers HAWK_RUST "HAWK_RUST")
+
+# A dependency or API the pin admits must still build on `version`'s rustc.
+[private]
+_toolchain-covers version name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pin="$(sed -n 's/^channel *= *"\(.*\)"$/\1/p' rust-toolchain.toml)"
+    awk -v pin="$pin" -v have="{{ version }}" 'BEGIN { split(pin, p, "."); split(have, h, "."); exit !(p[1] + 0 < h[1] + 0 || (p[1] + 0 == h[1] + 0 && p[2] + 0 <= h[2] + 0)) }' \
+        || { echo "error: rust-toolchain.toml pins $pin, past {{ name }}'s rustc {{ version }}: move {{ name }} with it" >&2; exit 1; }
 
 # Doc-rendering gate. Two things `cargo build`/`clippy`/`nextest` can't see:
 # (1) build every item's docs, private ones included, with EVERY rustdoc
@@ -915,9 +914,9 @@ gen-wasm:
     [ "${have#wasm-bindgen }" = "$want" ] || { echo "needs wasm-bindgen-cli $want (Cargo.lock's), found ${have:-none}: cargo install wasm-bindgen-cli --locked --version $want"; exit 1; }
     command -v wasm-opt >/dev/null || { echo "needs wasm-opt: brew install binaryen"; exit 1; }
     command -v rustup >/dev/null || { echo "needs rustup (Homebrew rust has no wasm std)"; exit 1; }
-    rustup target list --toolchain stable --installed | grep -q wasm32-unknown-unknown \
+    rustup target list --installed | grep -q wasm32-unknown-unknown \
         || { echo "needs the wasm target: rustup target add wasm32-unknown-unknown"; exit 1; }
-    TB="$(dirname "$(rustup which --toolchain stable rustc)")"
+    TB="$(dirname "$(rustup which rustc)")"
     PATH="$TB:$PATH" "$TB/cargo" build -p pixtuoid-web --target wasm32-unknown-unknown --profile wasm-release
     wasm-bindgen --target web --out-dir site/public/wasm \
         target/wasm32-unknown-unknown/wasm-release/pixtuoid_web.wasm

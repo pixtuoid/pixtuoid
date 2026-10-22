@@ -28,6 +28,7 @@ on:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
       - ".github/workflows/codspeed.yml"
   pull_request:
     # ready_for_review: the job skips drafts, so a PR's first trend point
@@ -60,20 +61,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Likewise one toolchain and one cargo-codspeed, which `stable` and a bare
-      # install each move between the two runs; cargo-codspeed ships with the
-      # compat crate under one version, so the lockfile's pins both.
+      # Likewise one cargo-codspeed, which a bare install moves between the two
+      # runs; it ships with the compat crate under one version, so the
+      # lockfile's pins both. The toolchain is rust-toolchain.toml's exact pin.
       - id: pins
-        run: |
-          toolchain="$(yq -p toml -oy '.workspace.package.rust-version' Cargo.toml)"
-          echo "toolchain=$toolchain" >>"$GITHUB_OUTPUT"
-          # rust-toolchain.toml's `stable` outranks the default setup-rust sets;
-          # this outranks the file (rust-lang.github.io/rustup/overrides.html).
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >>"$GITHUB_ENV"
-          echo "codspeed=$(yq -p toml -oy '.package[] | select(.name == "codspeed-criterion-compat") | .version' Cargo.lock)" >>"$GITHUB_OUTPUT"
+        run: echo "codspeed=$(yq -p toml -oy '.package[] | select(.name == "codspeed-criterion-compat") | .version' Cargo.lock)" >>"$GITHUB_OUTPUT"
       - uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
         with:
-          channel: ${{ steps.pins.outputs.toolchain }}
           # Its release-target cache was the repository's largest (1.46 GB of
           # the 10 GB quota), and a cache past the quota evicts the required
           # jobs' caches by last access; this advisory job builds cold instead.
@@ -84,7 +78,7 @@ jobs:
       # The binary's bench builds on its own with `just bench`'s features (no
       # ALSA): built with the others, its features would unify into their
       # dependencies and shift their trend. A build clears only the packages
-      # it builds (cargo-codspeed 5.0.1 `build.rs:324-331`); the loop fails
+      # it builds (cargo-codspeed 6.0.0 `build.rs:324-331`); the loop fails
       # closed should a release clear the first build's suites too.
       - name: Build instrumented benchmarks
         run: |

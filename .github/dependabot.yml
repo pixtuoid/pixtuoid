@@ -65,6 +65,13 @@ updates:
       # cooldown's quarantine buys nothing.
       exclude: ["pixtuoid-lofi"]
 
+  # rust-toolchain.toml's exact pin, so every job and CodSpeed's base and head
+  # build on one rustc and each release lands as its own PR.
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+
   - package-ecosystem: github-actions
     # `directory: /` searches ONLY `.github/workflows` plus a root `action.yml`,
     # so composite actions need the second entry — and it must be

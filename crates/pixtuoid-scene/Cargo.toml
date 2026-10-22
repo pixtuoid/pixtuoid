@@ -6,7 +6,6 @@ description            = "Backend-agnostic render + simulation engine for pixtuo
 exclude                = ["tests/site_badge_colors.rs", "tests/readme_chart_palette.rs"]
 version.workspace      = true
 edition.workspace      = true
-rust-version.workspace = true
 # Fusion Pixel's two faces, embedded: fonts/.
 license                = "MIT AND OFL-1.1"
 repository.workspace   = true

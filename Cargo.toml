@@ -11,7 +11,6 @@ members  = [
 [workspace.package]
 version      = "0.20.0"
 edition      = "2024"
-rust-version = "1.98"
 license      = "MIT"
 repository   = "https://github.com/pixtuoid/pixtuoid"
 authors      = ["Ivan Wang <ivanwng97@icloud.com>"]
@@ -148,7 +147,7 @@ semver             = "1"
 # 0.61 to match the major tokio already pulls (via mio) on Windows — a second
 # windows-sys major would double-compile the bindings.
 windows-sys        = "0.61"
-criterion          = { package = "codspeed-criterion-compat", version = "5", default-features = false, features = ["cargo_bench_support"] }
+criterion          = { package = "codspeed-criterion-compat", version = "6", default-features = false, features = ["cargo_bench_support"] }
 insta              = "1"
 schemars           = "1"
 snapbox            = "1"

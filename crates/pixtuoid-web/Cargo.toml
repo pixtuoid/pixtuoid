@@ -6,7 +6,6 @@ description  = "WebAssembly canvas painter over the pixtuoid-scene engine — th
 publish     = false
 version.workspace      = true
 edition.workspace      = true
-rust-version.workspace = true
 # Links pixtuoid-scene, whose font is OFL-1.1.
 license                = "MIT AND OFL-1.1"
 repository.workspace   = true

@@ -3,7 +3,6 @@ name                   = "pixtuoid-core"
 description            = "Headless engine for pixtuoid — sources, state, sprites"
 version.workspace      = true
 edition.workspace      = true
-rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true

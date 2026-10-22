@@ -134,6 +134,7 @@ jobs:
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
           gitleaks version
       - uses: ./.github/actions/setup-just
+      - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
       - run: just actionlint
@@ -152,20 +153,6 @@ jobs:
       # `test` job instead of this job's one, and no toolchain in a lint job.
       - run: just fixture-pii
       - run: just fixture-pii-selftest
-
-  msrv:
-    name: msrv
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-alsa
-      # No rust-cache on purpose: it would key the runner's stable compiler,
-      # while the MSRV recipe installs the exact rust-version toolchain.
-      - uses: ./.github/actions/setup-just
-      - run: just msrv
 
   npm-gen:
     name: npm package generator
@@ -261,7 +248,7 @@ jobs:
     # This explicit manifest prevents a nested job deletion or rename from
     # silently shrinking the single protected ci-gate.
     if: ${{ always() }}
-    needs: [fmt, clippy, deny, machete, hygiene, msrv, npm-gen, generated, api-surface, docs]
+    needs: [fmt, clippy, deny, machete, hygiene, npm-gen, generated, api-surface, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
