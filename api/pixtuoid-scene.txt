@@ -8,7 +8,7 @@ impl pixtuoid_scene::floor::CoffeeState
 pub fn pixtuoid_scene::floor::CoffeeState::insert(&mut self, pixtuoid_core::id::AgentId, std::time::SystemTime)
 pub fn pixtuoid_scene::floor::CoffeeState::map(&self) -> &std::collections::hash::map::HashMap<pixtuoid_core::id::AgentId, std::time::SystemTime>
 impl core::default::Default for pixtuoid_scene::floor::CoffeeState
-pub fn pixtuoid_scene::floor::CoffeeState::default() -> pixtuoid_scene::floor::CoffeeState
+pub fn pixtuoid_scene::floor::CoffeeState::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::CoffeeState
 pub fn pixtuoid_scene::floor::CoffeeState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::CoffeeState
@@ -43,7 +43,7 @@ pub pixtuoid_scene::floor::FloorInputs::pack: &'a pixtuoid_scene::pack::OfficeAr
 pub pixtuoid_scene::floor::FloorInputs::pets: pixtuoid_scene::floor::PetInputs<'a>
 pub pixtuoid_scene::floor::FloorInputs::scene: &'a pixtuoid_core::state::SceneState
 impl<'a> core::clone::Clone for pixtuoid_scene::floor::FloorInputs<'a>
-pub fn pixtuoid_scene::floor::FloorInputs<'a>::clone(&self) -> pixtuoid_scene::floor::FloorInputs<'a>
+pub fn pixtuoid_scene::floor::FloorInputs<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::floor::FloorInputs<'a>
 pub fn pixtuoid_scene::floor::FloorInputs<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for pixtuoid_scene::floor::FloorInputs<'a>
@@ -67,7 +67,7 @@ pub fn pixtuoid_scene::floor::FloorMeta::ground() -> Self
 pub fn pixtuoid_scene::floor::FloorMeta::with_motion(self, crate::anim::Motion) -> Self
 pub fn pixtuoid_scene::floor::FloorMeta::with_weather(self, pixtuoid_scene::sky::WeatherPolicy) -> Self
 impl core::clone::Clone for pixtuoid_scene::floor::FloorMeta
-pub fn pixtuoid_scene::floor::FloorMeta::clone(&self) -> pixtuoid_scene::floor::FloorMeta
+pub fn pixtuoid_scene::floor::FloorMeta::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::FloorMeta
 pub fn pixtuoid_scene::floor::FloorMeta::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::floor::FloorMeta
@@ -84,7 +84,7 @@ impl pixtuoid_scene::floor::FloorSession
 pub fn pixtuoid_scene::floor::FloorSession::audio_frame(&mut self, &pixtuoid_core::state::SceneState, pixtuoid_scene::floor::FloorMeta, std::time::SystemTime) -> AudioFrame
 pub fn pixtuoid_scene::floor::FloorSession::board(&self, &pixtuoid_core::state::SceneState, crate::anim::Motion, std::time::SystemTime) -> crate::neon_sign::BoardModel
 pub fn pixtuoid_scene::floor::FloorSession::floor(&self) -> &pixtuoid_scene::floor::PerFloor
-pub fn pixtuoid_scene::floor::FloorSession::new(alloc::sync::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
+pub fn pixtuoid_scene::floor::FloorSession::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 pub fn pixtuoid_scene::floor::FloorSession::picture(&self) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'_>>
 pub fn pixtuoid_scene::floor::FloorSession::render(&mut self, pixtuoid_scene::look::Look, pixtuoid_scene::look::RenderInputs<'_>)
 pub fn pixtuoid_scene::floor::FloorSession::step(&mut self, pixtuoid_scene::floor::FloorInputs<'_>, pixtuoid_scene::layout::Size) -> core::option::Option<pixtuoid_scene::floor::SteppedFloor>
@@ -125,7 +125,7 @@ pub struct pixtuoid_scene::floor::PerFloor
 pub pixtuoid_scene::floor::PerFloor::ctx: pixtuoid_scene::floor::FloorCtx
 pub pixtuoid_scene::floor::PerFloor::raster: pixtuoid_scene::look::Raster
 impl pixtuoid_scene::floor::PerFloor
-pub fn pixtuoid_scene::floor::PerFloor::new(alloc::sync::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
+pub fn pixtuoid_scene::floor::PerFloor::new(alloc::rcs::arc::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::PerFloor
 pub fn pixtuoid_scene::floor::PerFloor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::PerFloor
@@ -142,7 +142,7 @@ impl pixtuoid_scene::floor::PerOffice
 pub fn pixtuoid_scene::floor::PerOffice::new() -> Self
 pub fn pixtuoid_scene::floor::PerOffice::stores(&mut self) -> pixtuoid_scene::floor::OfficeStores<'_>
 impl core::default::Default for pixtuoid_scene::floor::PerOffice
-pub fn pixtuoid_scene::floor::PerOffice::default() -> pixtuoid_scene::floor::PerOffice
+pub fn pixtuoid_scene::floor::PerOffice::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::floor::PerOffice
 pub fn pixtuoid_scene::floor::PerOffice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::PerOffice
@@ -156,9 +156,9 @@ pub struct pixtuoid_scene::floor::PetInputs<'a>
 pub pixtuoid_scene::floor::PetInputs::pet: core::option::Option<&'a pixtuoid_scene::pet::Pet>
 pub pixtuoid_scene::floor::PetInputs::petting: core::option::Option<&'a pixtuoid_scene::pet::PetState>
 impl<'a> core::clone::Clone for pixtuoid_scene::floor::PetInputs<'a>
-pub fn pixtuoid_scene::floor::PetInputs<'a>::clone(&self) -> pixtuoid_scene::floor::PetInputs<'a>
+pub fn pixtuoid_scene::floor::PetInputs<'a>::clone(&self) -> Self
 impl<'a> core::default::Default for pixtuoid_scene::floor::PetInputs<'a>
-pub fn pixtuoid_scene::floor::PetInputs<'a>::default() -> pixtuoid_scene::floor::PetInputs<'a>
+pub fn pixtuoid_scene::floor::PetInputs<'a>::default() -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::floor::PetInputs<'a>
 pub fn pixtuoid_scene::floor::PetInputs<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for pixtuoid_scene::floor::PetInputs<'a>
@@ -171,7 +171,7 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::floor::PetI
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::PetInputs<'a>
 pub struct pixtuoid_scene::floor::SteppedFloor
 pub pixtuoid_scene::floor::SteppedFloor::frame: pixtuoid_scene::sim::SimFrame
-pub pixtuoid_scene::floor::SteppedFloor::layout: alloc::sync::Arc<pixtuoid_scene::layout::SceneLayout>
+pub pixtuoid_scene::floor::SteppedFloor::layout: alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
 impl core::fmt::Debug for pixtuoid_scene::floor::SteppedFloor
 pub fn pixtuoid_scene::floor::SteppedFloor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::floor::SteppedFloor
@@ -208,10 +208,10 @@ pub pixtuoid_scene::layout::Facing::North
 pub pixtuoid_scene::layout::Facing::South
 pub pixtuoid_scene::layout::Facing::West
 impl core::clone::Clone for pixtuoid_scene::layout::Facing
-pub fn pixtuoid_scene::layout::Facing::clone(&self) -> pixtuoid_scene::layout::Facing
+pub fn pixtuoid_scene::layout::Facing::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Facing
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Facing
-pub fn pixtuoid_scene::layout::Facing::eq(&self, &pixtuoid_scene::layout::Facing) -> bool
+pub fn pixtuoid_scene::layout::Facing::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Facing
 pub fn pixtuoid_scene::layout::Facing::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Facing
@@ -273,10 +273,10 @@ pub pixtuoid_scene::layout::FixtureKind::Wall::item: usize
 pub pixtuoid_scene::layout::FixtureKind::Wall::kind: pixtuoid_scene::layout::WallDecor
 pub pixtuoid_scene::layout::FixtureKind::WaterCooler
 impl core::clone::Clone for pixtuoid_scene::layout::FixtureKind
-pub fn pixtuoid_scene::layout::FixtureKind::clone(&self) -> pixtuoid_scene::layout::FixtureKind
+pub fn pixtuoid_scene::layout::FixtureKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::FixtureKind
 impl core::cmp::PartialEq for pixtuoid_scene::layout::FixtureKind
-pub fn pixtuoid_scene::layout::FixtureKind::eq(&self, &pixtuoid_scene::layout::FixtureKind) -> bool
+pub fn pixtuoid_scene::layout::FixtureKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::FixtureKind
 pub fn pixtuoid_scene::layout::FixtureKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::FixtureKind
@@ -321,10 +321,10 @@ pub pixtuoid_scene::layout::Furniture::Tv
 pub pixtuoid_scene::layout::Furniture::VendingMachine
 pub pixtuoid_scene::layout::Furniture::Whiteboard
 impl core::clone::Clone for pixtuoid_scene::layout::Furniture
-pub fn pixtuoid_scene::layout::Furniture::clone(&self) -> pixtuoid_scene::layout::Furniture
+pub fn pixtuoid_scene::layout::Furniture::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Furniture
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Furniture
-pub fn pixtuoid_scene::layout::Furniture::eq(&self, &pixtuoid_scene::layout::Furniture) -> bool
+pub fn pixtuoid_scene::layout::Furniture::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Furniture
 pub fn pixtuoid_scene::layout::Furniture::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Furniture
@@ -344,10 +344,10 @@ pub pixtuoid_scene::layout::PlantKind::Flower
 pub pixtuoid_scene::layout::PlantKind::Succulent
 pub pixtuoid_scene::layout::PlantKind::Tall
 impl core::clone::Clone for pixtuoid_scene::layout::PlantKind
-pub fn pixtuoid_scene::layout::PlantKind::clone(&self) -> pixtuoid_scene::layout::PlantKind
+pub fn pixtuoid_scene::layout::PlantKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::PlantKind
 impl core::cmp::PartialEq for pixtuoid_scene::layout::PlantKind
-pub fn pixtuoid_scene::layout::PlantKind::eq(&self, &pixtuoid_scene::layout::PlantKind) -> bool
+pub fn pixtuoid_scene::layout::PlantKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::PlantKind
 pub fn pixtuoid_scene::layout::PlantKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::PlantKind
@@ -368,10 +368,10 @@ pub pixtuoid_scene::layout::PodDecor::StandingDesk
 pub pixtuoid_scene::layout::PodDecor::Tv
 pub pixtuoid_scene::layout::PodDecor::Whiteboard
 impl core::clone::Clone for pixtuoid_scene::layout::PodDecor
-pub fn pixtuoid_scene::layout::PodDecor::clone(&self) -> pixtuoid_scene::layout::PodDecor
+pub fn pixtuoid_scene::layout::PodDecor::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::PodDecor
 impl core::cmp::PartialEq for pixtuoid_scene::layout::PodDecor
-pub fn pixtuoid_scene::layout::PodDecor::eq(&self, &pixtuoid_scene::layout::PodDecor) -> bool
+pub fn pixtuoid_scene::layout::PodDecor::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::PodDecor
 pub fn pixtuoid_scene::layout::PodDecor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::PodDecor
@@ -391,10 +391,10 @@ pub pixtuoid_scene::layout::Station::Printer
 pub pixtuoid_scene::layout::Station::SnackShelf
 pub pixtuoid_scene::layout::Station::VendingMachine
 impl core::clone::Clone for pixtuoid_scene::layout::Station
-pub fn pixtuoid_scene::layout::Station::clone(&self) -> pixtuoid_scene::layout::Station
+pub fn pixtuoid_scene::layout::Station::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Station
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Station
-pub fn pixtuoid_scene::layout::Station::eq(&self, &pixtuoid_scene::layout::Station) -> bool
+pub fn pixtuoid_scene::layout::Station::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Station
 pub fn pixtuoid_scene::layout::Station::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Station
@@ -415,10 +415,10 @@ pub pixtuoid_scene::layout::WallDecor::ExitSign
 pub pixtuoid_scene::layout::WallDecor::MeetingScreen
 pub pixtuoid_scene::layout::WallDecor::Whiteboard
 impl core::clone::Clone for pixtuoid_scene::layout::WallDecor
-pub fn pixtuoid_scene::layout::WallDecor::clone(&self) -> pixtuoid_scene::layout::WallDecor
+pub fn pixtuoid_scene::layout::WallDecor::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::WallDecor
 impl core::cmp::PartialEq for pixtuoid_scene::layout::WallDecor
-pub fn pixtuoid_scene::layout::WallDecor::eq(&self, &pixtuoid_scene::layout::WallDecor) -> bool
+pub fn pixtuoid_scene::layout::WallDecor::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::WallDecor
 pub fn pixtuoid_scene::layout::WallDecor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::WallDecor
@@ -442,10 +442,10 @@ pub pixtuoid_scene::layout::WallSegment::Vertical::x: u16
 pub pixtuoid_scene::layout::WallSegment::Vertical::y0: u16
 pub pixtuoid_scene::layout::WallSegment::Vertical::y1: u16
 impl core::clone::Clone for pixtuoid_scene::layout::WallSegment
-pub fn pixtuoid_scene::layout::WallSegment::clone(&self) -> pixtuoid_scene::layout::WallSegment
+pub fn pixtuoid_scene::layout::WallSegment::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::WallSegment
 impl core::cmp::PartialEq for pixtuoid_scene::layout::WallSegment
-pub fn pixtuoid_scene::layout::WallSegment::eq(&self, &pixtuoid_scene::layout::WallSegment) -> bool
+pub fn pixtuoid_scene::layout::WallSegment::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::WallSegment
 pub fn pixtuoid_scene::layout::WallSegment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::WallSegment
@@ -473,10 +473,10 @@ pub pixtuoid_scene::layout::WaypointKind::VendingMachine
 impl pixtuoid_scene::layout::WaypointKind
 pub const pixtuoid_scene::layout::WaypointKind::ALL: &'static [pixtuoid_scene::layout::WaypointKind]
 impl core::clone::Clone for pixtuoid_scene::layout::WaypointKind
-pub fn pixtuoid_scene::layout::WaypointKind::clone(&self) -> pixtuoid_scene::layout::WaypointKind
+pub fn pixtuoid_scene::layout::WaypointKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::WaypointKind
 impl core::cmp::PartialEq for pixtuoid_scene::layout::WaypointKind
-pub fn pixtuoid_scene::layout::WaypointKind::eq(&self, &pixtuoid_scene::layout::WaypointKind) -> bool
+pub fn pixtuoid_scene::layout::WaypointKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::WaypointKind
 pub fn pixtuoid_scene::layout::WaypointKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::WaypointKind
@@ -496,10 +496,10 @@ pub pixtuoid_scene::layout::Bounds::width: u16
 pub pixtuoid_scene::layout::Bounds::x: u16
 pub pixtuoid_scene::layout::Bounds::y: u16
 impl core::clone::Clone for pixtuoid_scene::layout::Bounds
-pub fn pixtuoid_scene::layout::Bounds::clone(&self) -> pixtuoid_scene::layout::Bounds
+pub fn pixtuoid_scene::layout::Bounds::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Bounds
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Bounds
-pub fn pixtuoid_scene::layout::Bounds::eq(&self, &pixtuoid_scene::layout::Bounds) -> bool
+pub fn pixtuoid_scene::layout::Bounds::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Bounds
 pub fn pixtuoid_scene::layout::Bounds::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Bounds
@@ -516,10 +516,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::Bounds
 pub struct pixtuoid_scene::layout::FurnitureDef
 pub pixtuoid_scene::layout::FurnitureDef::visual: pixtuoid_scene::layout::Size
 impl core::clone::Clone for pixtuoid_scene::layout::FurnitureDef
-pub fn pixtuoid_scene::layout::FurnitureDef::clone(&self) -> pixtuoid_scene::layout::FurnitureDef
+pub fn pixtuoid_scene::layout::FurnitureDef::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::FurnitureDef
 impl core::cmp::PartialEq for pixtuoid_scene::layout::FurnitureDef
-pub fn pixtuoid_scene::layout::FurnitureDef::eq(&self, &pixtuoid_scene::layout::FurnitureDef) -> bool
+pub fn pixtuoid_scene::layout::FurnitureDef::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::FurnitureDef
 pub fn pixtuoid_scene::layout::FurnitureDef::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::FurnitureDef
@@ -537,10 +537,10 @@ pub pixtuoid_scene::layout::Lounge::fish_tank: core::option::Option<pixtuoid_sce
 pub pixtuoid_scene::layout::Lounge::floor_lamp: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Lounge::side_table: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::layout::Lounge
-pub fn pixtuoid_scene::layout::Lounge::clone(&self) -> pixtuoid_scene::layout::Lounge
+pub fn pixtuoid_scene::layout::Lounge::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Lounge
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Lounge
-pub fn pixtuoid_scene::layout::Lounge::eq(&self, &pixtuoid_scene::layout::Lounge) -> bool
+pub fn pixtuoid_scene::layout::Lounge::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Lounge
 pub fn pixtuoid_scene::layout::Lounge::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::Lounge
@@ -556,10 +556,10 @@ pub struct pixtuoid_scene::layout::MeetingRoom
 pub pixtuoid_scene::layout::MeetingRoom::bounds: pixtuoid_scene::layout::Bounds
 pub pixtuoid_scene::layout::MeetingRoom::trio: core::option::Option<pixtuoid_scene::layout::MeetingTrio>
 impl core::clone::Clone for pixtuoid_scene::layout::MeetingRoom
-pub fn pixtuoid_scene::layout::MeetingRoom::clone(&self) -> pixtuoid_scene::layout::MeetingRoom
+pub fn pixtuoid_scene::layout::MeetingRoom::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::MeetingRoom
 impl core::cmp::PartialEq for pixtuoid_scene::layout::MeetingRoom
-pub fn pixtuoid_scene::layout::MeetingRoom::eq(&self, &pixtuoid_scene::layout::MeetingRoom) -> bool
+pub fn pixtuoid_scene::layout::MeetingRoom::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::MeetingRoom
 pub fn pixtuoid_scene::layout::MeetingRoom::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::MeetingRoom
@@ -576,10 +576,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::MeetingRoo
 pub struct pixtuoid_scene::layout::MeetingTrio
 pub pixtuoid_scene::layout::MeetingTrio::table: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::layout::MeetingTrio
-pub fn pixtuoid_scene::layout::MeetingTrio::clone(&self) -> pixtuoid_scene::layout::MeetingTrio
+pub fn pixtuoid_scene::layout::MeetingTrio::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::MeetingTrio
 impl core::cmp::PartialEq for pixtuoid_scene::layout::MeetingTrio
-pub fn pixtuoid_scene::layout::MeetingTrio::eq(&self, &pixtuoid_scene::layout::MeetingTrio) -> bool
+pub fn pixtuoid_scene::layout::MeetingTrio::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::MeetingTrio
 pub fn pixtuoid_scene::layout::MeetingTrio::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::MeetingTrio
@@ -596,10 +596,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::MeetingTri
 pub struct pixtuoid_scene::layout::PantryRoom
 pub pixtuoid_scene::layout::PantryRoom::bounds: pixtuoid_scene::layout::Bounds
 impl core::clone::Clone for pixtuoid_scene::layout::PantryRoom
-pub fn pixtuoid_scene::layout::PantryRoom::clone(&self) -> pixtuoid_scene::layout::PantryRoom
+pub fn pixtuoid_scene::layout::PantryRoom::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::PantryRoom
 impl core::cmp::PartialEq for pixtuoid_scene::layout::PantryRoom
-pub fn pixtuoid_scene::layout::PantryRoom::eq(&self, &pixtuoid_scene::layout::PantryRoom) -> bool
+pub fn pixtuoid_scene::layout::PantryRoom::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::PantryRoom
 pub fn pixtuoid_scene::layout::PantryRoom::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::PantryRoom
@@ -617,10 +617,10 @@ pub struct pixtuoid_scene::layout::PlantItem
 pub pixtuoid_scene::layout::PlantItem::kind: pixtuoid_scene::layout::PlantKind
 pub pixtuoid_scene::layout::PlantItem::pos: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::layout::PlantItem
-pub fn pixtuoid_scene::layout::PlantItem::clone(&self) -> pixtuoid_scene::layout::PlantItem
+pub fn pixtuoid_scene::layout::PlantItem::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::PlantItem
 impl core::cmp::PartialEq for pixtuoid_scene::layout::PlantItem
-pub fn pixtuoid_scene::layout::PlantItem::eq(&self, &pixtuoid_scene::layout::PlantItem) -> bool
+pub fn pixtuoid_scene::layout::PlantItem::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::PlantItem
 pub fn pixtuoid_scene::layout::PlantItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::PlantItem
@@ -636,10 +636,10 @@ pub struct pixtuoid_scene::layout::PodDecorItem
 pub pixtuoid_scene::layout::PodDecorItem::kind: pixtuoid_scene::layout::PodDecor
 pub pixtuoid_scene::layout::PodDecorItem::pos: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::layout::PodDecorItem
-pub fn pixtuoid_scene::layout::PodDecorItem::clone(&self) -> pixtuoid_scene::layout::PodDecorItem
+pub fn pixtuoid_scene::layout::PodDecorItem::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::PodDecorItem
 impl core::cmp::PartialEq for pixtuoid_scene::layout::PodDecorItem
-pub fn pixtuoid_scene::layout::PodDecorItem::eq(&self, &pixtuoid_scene::layout::PodDecorItem) -> bool
+pub fn pixtuoid_scene::layout::PodDecorItem::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::PodDecorItem
 pub fn pixtuoid_scene::layout::PodDecorItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::PodDecorItem
@@ -655,10 +655,10 @@ pub struct pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Point::x: u16
 pub pixtuoid_scene::layout::Point::y: u16
 impl core::clone::Clone for pixtuoid_scene::layout::Point
-pub fn pixtuoid_scene::layout::Point::clone(&self) -> pixtuoid_scene::layout::Point
+pub fn pixtuoid_scene::layout::Point::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Point
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Point
-pub fn pixtuoid_scene::layout::Point::eq(&self, &pixtuoid_scene::layout::Point) -> bool
+pub fn pixtuoid_scene::layout::Point::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Point
 pub fn pixtuoid_scene::layout::Point::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Point
@@ -701,7 +701,7 @@ pub fn pixtuoid_scene::layout::SceneLayout::home_desk(&self, pixtuoid_core::stat
 pub fn pixtuoid_scene::layout::SceneLayout::is_walkable(&self, u16, u16) -> bool
 pub fn pixtuoid_scene::layout::SceneLayout::meeting_room_bounds(&self, usize) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 impl core::clone::Clone for pixtuoid_scene::layout::SceneLayout
-pub fn pixtuoid_scene::layout::SceneLayout::clone(&self) -> pixtuoid_scene::layout::SceneLayout
+pub fn pixtuoid_scene::layout::SceneLayout::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::layout::SceneLayout
 pub fn pixtuoid_scene::layout::SceneLayout::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::layout::SceneLayout
@@ -715,10 +715,10 @@ pub struct pixtuoid_scene::layout::Size
 pub pixtuoid_scene::layout::Size::h: u16
 pub pixtuoid_scene::layout::Size::w: u16
 impl core::clone::Clone for pixtuoid_scene::layout::Size
-pub fn pixtuoid_scene::layout::Size::clone(&self) -> pixtuoid_scene::layout::Size
+pub fn pixtuoid_scene::layout::Size::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Size
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Size
-pub fn pixtuoid_scene::layout::Size::eq(&self, &pixtuoid_scene::layout::Size) -> bool
+pub fn pixtuoid_scene::layout::Size::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Size
 pub fn pixtuoid_scene::layout::Size::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::layout::Size
@@ -736,10 +736,10 @@ pub struct pixtuoid_scene::layout::WallDecorItem
 pub pixtuoid_scene::layout::WallDecorItem::kind: pixtuoid_scene::layout::WallDecor
 pub pixtuoid_scene::layout::WallDecorItem::pos: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::layout::WallDecorItem
-pub fn pixtuoid_scene::layout::WallDecorItem::clone(&self) -> pixtuoid_scene::layout::WallDecorItem
+pub fn pixtuoid_scene::layout::WallDecorItem::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::WallDecorItem
 impl core::cmp::PartialEq for pixtuoid_scene::layout::WallDecorItem
-pub fn pixtuoid_scene::layout::WallDecorItem::eq(&self, &pixtuoid_scene::layout::WallDecorItem) -> bool
+pub fn pixtuoid_scene::layout::WallDecorItem::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::WallDecorItem
 pub fn pixtuoid_scene::layout::WallDecorItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::WallDecorItem
@@ -757,10 +757,10 @@ pub pixtuoid_scene::layout::Waypoint::kind: pixtuoid_scene::layout::WaypointKind
 pub pixtuoid_scene::layout::Waypoint::pos: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Waypoint::room_id: core::option::Option<usize>
 impl core::clone::Clone for pixtuoid_scene::layout::Waypoint
-pub fn pixtuoid_scene::layout::Waypoint::clone(&self) -> pixtuoid_scene::layout::Waypoint
+pub fn pixtuoid_scene::layout::Waypoint::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::layout::Waypoint
 impl core::cmp::PartialEq for pixtuoid_scene::layout::Waypoint
-pub fn pixtuoid_scene::layout::Waypoint::eq(&self, &pixtuoid_scene::layout::Waypoint) -> bool
+pub fn pixtuoid_scene::layout::Waypoint::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::layout::Waypoint
 pub fn pixtuoid_scene::layout::Waypoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::layout::Waypoint
@@ -793,10 +793,10 @@ pub pixtuoid_scene::look::Look::Cutaway
 pub pixtuoid_scene::look::Look::Cutaway::scale: pixtuoid_scene::render_scale::RenderScale
 pub pixtuoid_scene::look::Look::Cutaway::text: pixtuoid_scene::look::WorldText
 impl core::clone::Clone for pixtuoid_scene::look::Look
-pub fn pixtuoid_scene::look::Look::clone(&self) -> pixtuoid_scene::look::Look
+pub fn pixtuoid_scene::look::Look::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::look::Look
 impl core::cmp::PartialEq for pixtuoid_scene::look::Look
-pub fn pixtuoid_scene::look::Look::eq(&self, &pixtuoid_scene::look::Look) -> bool
+pub fn pixtuoid_scene::look::Look::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::look::Look
 pub fn pixtuoid_scene::look::Look::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::look::Look
@@ -817,7 +817,7 @@ pub fn pixtuoid_scene::look::Picture<'a>::flashes(&self) -> crate::screen::Flash
 pub fn pixtuoid_scene::look::Picture<'a>::hits(&self) -> core::option::Option<&'a pixtuoid_scene::look::Hits>
 pub fn pixtuoid_scene::look::Picture<'a>::pixels(&self) -> &'a pixtuoid_core::sprite::RgbBuffer
 impl<'a> core::clone::Clone for pixtuoid_scene::look::Picture<'a>
-pub fn pixtuoid_scene::look::Picture<'a>::clone(&self) -> pixtuoid_scene::look::Picture<'a>
+pub fn pixtuoid_scene::look::Picture<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::look::Picture<'a>
 pub fn pixtuoid_scene::look::Picture<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Freeze for pixtuoid_scene::look::Picture<'a>
@@ -831,10 +831,10 @@ pub enum pixtuoid_scene::look::WorldText
 pub pixtuoid_scene::look::WorldText::Baked
 pub pixtuoid_scene::look::WorldText::Host
 impl core::clone::Clone for pixtuoid_scene::look::WorldText
-pub fn pixtuoid_scene::look::WorldText::clone(&self) -> pixtuoid_scene::look::WorldText
+pub fn pixtuoid_scene::look::WorldText::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::look::WorldText
 impl core::cmp::PartialEq for pixtuoid_scene::look::WorldText
-pub fn pixtuoid_scene::look::WorldText::eq(&self, &pixtuoid_scene::look::WorldText) -> bool
+pub fn pixtuoid_scene::look::WorldText::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::look::WorldText
 pub fn pixtuoid_scene::look::WorldText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::look::WorldText
@@ -853,9 +853,9 @@ pub fn pixtuoid_scene::look::Dim::brightness(self) -> f32
 pub fn pixtuoid_scene::look::Dim::from_brightness(f32) -> Self
 pub fn pixtuoid_scene::look::Dim::of(self, pixtuoid_core::sprite::Rgb) -> pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::look::Dim
-pub fn pixtuoid_scene::look::Dim::clone(&self) -> pixtuoid_scene::look::Dim
+pub fn pixtuoid_scene::look::Dim::clone(&self) -> Self
 impl core::cmp::PartialEq for pixtuoid_scene::look::Dim
-pub fn pixtuoid_scene::look::Dim::eq(&self, &pixtuoid_scene::look::Dim) -> bool
+pub fn pixtuoid_scene::look::Dim::eq(&self, &Self) -> bool
 impl core::default::Default for pixtuoid_scene::look::Dim
 pub fn pixtuoid_scene::look::Dim::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::look::Dim
@@ -876,7 +876,7 @@ pub pixtuoid_scene::look::FloorPicture::hits: &'a pixtuoid_scene::look::Hits
 pub pixtuoid_scene::look::FloorPicture::pixels: &'a pixtuoid_core::sprite::RgbBuffer
 pub pixtuoid_scene::look::FloorPicture::text: core::option::Option<crate::display::HostText<'a>>
 impl<'a> core::clone::Clone for pixtuoid_scene::look::FloorPicture<'a>
-pub fn pixtuoid_scene::look::FloorPicture<'a>::clone(&self) -> pixtuoid_scene::look::FloorPicture<'a>
+pub fn pixtuoid_scene::look::FloorPicture<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::look::FloorPicture<'a>
 pub fn pixtuoid_scene::look::FloorPicture<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Freeze for pixtuoid_scene::look::FloorPicture<'a>
@@ -890,9 +890,9 @@ pub struct pixtuoid_scene::look::Hits
 impl pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::at(&self, pixtuoid_scene::layout::Bounds, core::option::Option<pixtuoid_scene::layout::Bounds>) -> core::option::Option<crate::hit::SceneHit<'_>>
 pub fn pixtuoid_scene::look::Hits::hovers(&self) -> &Hovers
-pub fn pixtuoid_scene::look::Hits::layout(&self) -> &alloc::sync::Arc<pixtuoid_scene::layout::SceneLayout>
+pub fn pixtuoid_scene::look::Hits::layout(&self) -> &alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
 impl core::clone::Clone for pixtuoid_scene::look::Hits
-pub fn pixtuoid_scene::look::Hits::clone(&self) -> pixtuoid_scene::look::Hits
+pub fn pixtuoid_scene::look::Hits::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::look::Hits
 pub fn pixtuoid_scene::look::Hits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::look::Hits
@@ -904,7 +904,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Hits
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::Hits
 pub struct pixtuoid_scene::look::OfficeRaster
 impl core::default::Default for pixtuoid_scene::look::OfficeRaster
-pub fn pixtuoid_scene::look::OfficeRaster::default() -> pixtuoid_scene::look::OfficeRaster
+pub fn pixtuoid_scene::look::OfficeRaster::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::look::OfficeRaster
 pub fn pixtuoid_scene::look::OfficeRaster::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::look::OfficeRaster
@@ -918,9 +918,9 @@ pub struct pixtuoid_scene::look::Place
 pub pixtuoid_scene::look::Place::floor: core::option::Option<crate::footer::FooterFloor>
 pub pixtuoid_scene::look::Place::gateway: core::option::Option<pixtuoid_core::state::DaemonState>
 impl core::clone::Clone for pixtuoid_scene::look::Place
-pub fn pixtuoid_scene::look::Place::clone(&self) -> pixtuoid_scene::look::Place
+pub fn pixtuoid_scene::look::Place::clone(&self) -> Self
 impl core::default::Default for pixtuoid_scene::look::Place
-pub fn pixtuoid_scene::look::Place::default() -> pixtuoid_scene::look::Place
+pub fn pixtuoid_scene::look::Place::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::look::Place
 pub fn pixtuoid_scene::look::Place::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::look::Place
@@ -952,7 +952,7 @@ pub pixtuoid_scene::look::RenderInputs::size: pixtuoid_scene::layout::Size
 pub pixtuoid_scene::look::RenderInputs::theme: &'static pixtuoid_scene::theme::Theme
 pub pixtuoid_scene::look::RenderInputs::world: pixtuoid_scene::floor::FloorInputs<'a>
 impl<'a> core::clone::Clone for pixtuoid_scene::look::RenderInputs<'a>
-pub fn pixtuoid_scene::look::RenderInputs<'a>::clone(&self) -> pixtuoid_scene::look::RenderInputs<'a>
+pub fn pixtuoid_scene::look::RenderInputs<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::look::RenderInputs<'a>
 pub fn pixtuoid_scene::look::RenderInputs<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for pixtuoid_scene::look::RenderInputs<'a>
@@ -965,7 +965,7 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Rende
 impl<'a> core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::RenderInputs<'a>
 pub struct pixtuoid_scene::look::Rendered
 impl pixtuoid_scene::look::Rendered
-pub fn pixtuoid_scene::look::Rendered::layout(&self) -> &alloc::sync::Arc<pixtuoid_scene::layout::SceneLayout>
+pub fn pixtuoid_scene::look::Rendered::layout(&self) -> &alloc::rcs::arc::Arc<pixtuoid_scene::layout::SceneLayout>
 pub fn pixtuoid_scene::look::Rendered::picture<'a>(&'a self, &'a pixtuoid_scene::look::Raster) -> core::option::Option<pixtuoid_scene::look::FloorPicture<'a>>
 impl core::fmt::Debug for pixtuoid_scene::look::Rendered
 pub fn pixtuoid_scene::look::Rendered::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -978,7 +978,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::look::Rendered
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::look::Rendered
 pub struct pixtuoid_scene::look::SlidePicture<'a>
 impl<'a> core::clone::Clone for pixtuoid_scene::look::SlidePicture<'a>
-pub fn pixtuoid_scene::look::SlidePicture<'a>::clone(&self) -> pixtuoid_scene::look::SlidePicture<'a>
+pub fn pixtuoid_scene::look::SlidePicture<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_scene::look::SlidePicture<'a>
 pub fn pixtuoid_scene::look::SlidePicture<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for pixtuoid_scene::look::SlidePicture<'a>
@@ -1023,10 +1023,10 @@ pub enum pixtuoid_scene::pack::Desk
 pub pixtuoid_scene::pack::Desk::North
 pub pixtuoid_scene::pack::Desk::South
 impl core::clone::Clone for pixtuoid_scene::pack::Desk
-pub fn pixtuoid_scene::pack::Desk::clone(&self) -> pixtuoid_scene::pack::Desk
+pub fn pixtuoid_scene::pack::Desk::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::pack::Desk
 impl core::cmp::PartialEq for pixtuoid_scene::pack::Desk
-pub fn pixtuoid_scene::pack::Desk::eq(&self, &pixtuoid_scene::pack::Desk) -> bool
+pub fn pixtuoid_scene::pack::Desk::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::pack::Desk
 pub fn pixtuoid_scene::pack::Desk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::pack::Desk
@@ -1050,10 +1050,10 @@ pub enum pixtuoid_scene::pack::DeskProp
 pub pixtuoid_scene::pack::DeskProp::Cup
 pub pixtuoid_scene::pack::DeskProp::Tower
 impl core::clone::Clone for pixtuoid_scene::pack::DeskProp
-pub fn pixtuoid_scene::pack::DeskProp::clone(&self) -> pixtuoid_scene::pack::DeskProp
+pub fn pixtuoid_scene::pack::DeskProp::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::pack::DeskProp
 impl core::cmp::PartialEq for pixtuoid_scene::pack::DeskProp
-pub fn pixtuoid_scene::pack::DeskProp::eq(&self, &pixtuoid_scene::pack::DeskProp) -> bool
+pub fn pixtuoid_scene::pack::DeskProp::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::pack::DeskProp
 pub fn pixtuoid_scene::pack::DeskProp::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::pack::DeskProp
@@ -1076,7 +1076,7 @@ impl pixtuoid_scene::pack::OfficeArt
 pub fn pixtuoid_scene::pack::OfficeArt::max_density_variant(&self) -> pixtuoid_core::sprite::format::Density
 pub fn pixtuoid_scene::pack::OfficeArt::piece(&self, pixtuoid_core::sprite::format::Piece) -> &pixtuoid_core::sprite::Sprite
 impl core::clone::Clone for pixtuoid_scene::pack::OfficeArt
-pub fn pixtuoid_scene::pack::OfficeArt::clone(&self) -> pixtuoid_scene::pack::OfficeArt
+pub fn pixtuoid_scene::pack::OfficeArt::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::pack::OfficeArt
 pub fn pixtuoid_scene::pack::OfficeArt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::pack::OfficeArt
@@ -1090,9 +1090,9 @@ pub fn pixtuoid_scene::pack::load_bundled_pack() -> core::result::Result<pixtuoi
 pub mod pixtuoid_scene::pathfind
 pub struct pixtuoid_scene::pathfind::AStarRouter
 impl core::clone::Clone for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::clone(&self) -> pixtuoid_scene::pathfind::AStarRouter
+pub fn pixtuoid_scene::pathfind::AStarRouter::clone(&self) -> Self
 impl core::default::Default for pixtuoid_scene::pathfind::AStarRouter
-pub fn pixtuoid_scene::pathfind::AStarRouter::default() -> pixtuoid_scene::pathfind::AStarRouter
+pub fn pixtuoid_scene::pathfind::AStarRouter::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::pathfind::AStarRouter
 pub fn pixtuoid_scene::pathfind::AStarRouter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl pixtuoid_scene::pathfind::Router for pixtuoid_scene::pathfind::AStarRouter
@@ -1124,10 +1124,10 @@ pub fn pixtuoid_scene::pet::PetKind::sit_anim(self) -> pixtuoid_core::sprite::fo
 pub fn pixtuoid_scene::pet::PetKind::sleep_anim(self) -> pixtuoid_core::sprite::format::Piece
 pub fn pixtuoid_scene::pet::PetKind::walk_anim(self) -> pixtuoid_core::sprite::format::Walk
 impl core::clone::Clone for pixtuoid_scene::pet::PetKind
-pub fn pixtuoid_scene::pet::PetKind::clone(&self) -> pixtuoid_scene::pet::PetKind
+pub fn pixtuoid_scene::pet::PetKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::pet::PetKind
 impl core::cmp::PartialEq for pixtuoid_scene::pet::PetKind
-pub fn pixtuoid_scene::pet::PetKind::eq(&self, &pixtuoid_scene::pet::PetKind) -> bool
+pub fn pixtuoid_scene::pet::PetKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::pet::PetKind
 pub fn pixtuoid_scene::pet::PetKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::pet::PetKind
@@ -1147,10 +1147,10 @@ pub pixtuoid_scene::pet::Pet::name: alloc::string::String
 impl pixtuoid_scene::pet::Pet
 pub fn pixtuoid_scene::pet::Pet::defaulted(pixtuoid_scene::pet::PetKind) -> Self
 impl core::clone::Clone for pixtuoid_scene::pet::Pet
-pub fn pixtuoid_scene::pet::Pet::clone(&self) -> pixtuoid_scene::pet::Pet
+pub fn pixtuoid_scene::pet::Pet::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::pet::Pet
 impl core::cmp::PartialEq for pixtuoid_scene::pet::Pet
-pub fn pixtuoid_scene::pet::Pet::eq(&self, &pixtuoid_scene::pet::Pet) -> bool
+pub fn pixtuoid_scene::pet::Pet::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::pet::Pet
 pub fn pixtuoid_scene::pet::Pet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_scene::pet::Pet
@@ -1183,9 +1183,9 @@ pub fn pixtuoid_scene::pose::PoseHistory::contains(&self, pixtuoid_core::id::Age
 pub fn pixtuoid_scene::pose::PoseHistory::new() -> Self
 pub fn pixtuoid_scene::pose::PoseHistory::recent(&self, pixtuoid_core::id::AgentId, u64, std::time::SystemTime) -> core::option::Option<pixtuoid_scene::layout::Point>
 impl core::clone::Clone for pixtuoid_scene::pose::PoseHistory
-pub fn pixtuoid_scene::pose::PoseHistory::clone(&self) -> pixtuoid_scene::pose::PoseHistory
+pub fn pixtuoid_scene::pose::PoseHistory::clone(&self) -> Self
 impl core::default::Default for pixtuoid_scene::pose::PoseHistory
-pub fn pixtuoid_scene::pose::PoseHistory::default() -> pixtuoid_scene::pose::PoseHistory
+pub fn pixtuoid_scene::pose::PoseHistory::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::pose::PoseHistory
 pub fn pixtuoid_scene::pose::PoseHistory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::pose::PoseHistory
@@ -1208,10 +1208,10 @@ pub fn pixtuoid_scene::render_scale::RenderScale::logical(self, u16) -> u16
 pub fn pixtuoid_scene::render_scale::RenderScale::new(u16) -> core::option::Option<Self>
 pub fn pixtuoid_scene::render_scale::RenderScale::to_buffer(self, u16) -> u16
 impl core::clone::Clone for pixtuoid_scene::render_scale::RenderScale
-pub fn pixtuoid_scene::render_scale::RenderScale::clone(&self) -> pixtuoid_scene::render_scale::RenderScale
+pub fn pixtuoid_scene::render_scale::RenderScale::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::render_scale::RenderScale
 impl core::cmp::PartialEq for pixtuoid_scene::render_scale::RenderScale
-pub fn pixtuoid_scene::render_scale::RenderScale::eq(&self, &pixtuoid_scene::render_scale::RenderScale) -> bool
+pub fn pixtuoid_scene::render_scale::RenderScale::eq(&self, &Self) -> bool
 impl core::convert::From<pixtuoid_core::sprite::format::Density> for pixtuoid_scene::render_scale::RenderScale
 pub fn pixtuoid_scene::render_scale::RenderScale::from(pixtuoid_core::sprite::format::Density) -> Self
 impl core::default::Default for pixtuoid_scene::render_scale::RenderScale
@@ -1236,7 +1236,7 @@ pub pixtuoid_scene::sim::CharacterPlacement::anim_name: pixtuoid_core::sprite::f
 pub pixtuoid_scene::sim::CharacterPlacement::frame_idx: usize
 pub pixtuoid_scene::sim::CharacterPlacement::top_left: pixtuoid_scene::layout::Point
 impl core::clone::Clone for pixtuoid_scene::sim::CharacterPlacement
-pub fn pixtuoid_scene::sim::CharacterPlacement::clone(&self) -> pixtuoid_scene::sim::CharacterPlacement
+pub fn pixtuoid_scene::sim::CharacterPlacement::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::sim::CharacterPlacement
 pub fn pixtuoid_scene::sim::CharacterPlacement::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::sim::CharacterPlacement
@@ -1250,7 +1250,7 @@ pub struct pixtuoid_scene::sim::SimFrame
 pub pixtuoid_scene::sim::SimFrame::agents: alloc::vec::Vec<pixtuoid_core::state::AgentSlot>
 pub pixtuoid_scene::sim::SimFrame::characters: alloc::vec::Vec<pixtuoid_scene::sim::CharacterPlacement>
 impl core::clone::Clone for pixtuoid_scene::sim::SimFrame
-pub fn pixtuoid_scene::sim::SimFrame::clone(&self) -> pixtuoid_scene::sim::SimFrame
+pub fn pixtuoid_scene::sim::SimFrame::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::sim::SimFrame
 pub fn pixtuoid_scene::sim::SimFrame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::sim::SimFrame
@@ -1271,10 +1271,10 @@ pub pixtuoid_scene::sky::Weather::Snow
 pub pixtuoid_scene::sky::Weather::Storm
 pub pixtuoid_scene::sky::Weather::Windy
 impl core::clone::Clone for pixtuoid_scene::sky::Weather
-pub fn pixtuoid_scene::sky::Weather::clone(&self) -> pixtuoid_scene::sky::Weather
+pub fn pixtuoid_scene::sky::Weather::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::sky::Weather
 impl core::cmp::PartialEq for pixtuoid_scene::sky::Weather
-pub fn pixtuoid_scene::sky::Weather::eq(&self, &pixtuoid_scene::sky::Weather) -> bool
+pub fn pixtuoid_scene::sky::Weather::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_scene::sky::Weather
 pub fn pixtuoid_scene::sky::Weather::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_scene::sky::Weather
@@ -1294,12 +1294,12 @@ pub pixtuoid_scene::sky::WeatherPolicy::Forced(pixtuoid_scene::sky::Weather)
 impl pixtuoid_scene::sky::WeatherPolicy
 pub fn pixtuoid_scene::sky::WeatherPolicy::from_name(core::option::Option<&str>) -> core::result::Result<Self, alloc::vec::Vec<&'static str>>
 impl core::clone::Clone for pixtuoid_scene::sky::WeatherPolicy
-pub fn pixtuoid_scene::sky::WeatherPolicy::clone(&self) -> pixtuoid_scene::sky::WeatherPolicy
+pub fn pixtuoid_scene::sky::WeatherPolicy::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::sky::WeatherPolicy
 impl core::cmp::PartialEq for pixtuoid_scene::sky::WeatherPolicy
-pub fn pixtuoid_scene::sky::WeatherPolicy::eq(&self, &pixtuoid_scene::sky::WeatherPolicy) -> bool
+pub fn pixtuoid_scene::sky::WeatherPolicy::eq(&self, &Self) -> bool
 impl core::default::Default for pixtuoid_scene::sky::WeatherPolicy
-pub fn pixtuoid_scene::sky::WeatherPolicy::default() -> pixtuoid_scene::sky::WeatherPolicy
+pub fn pixtuoid_scene::sky::WeatherPolicy::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::sky::WeatherPolicy
 pub fn pixtuoid_scene::sky::WeatherPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_scene::sky::WeatherPolicy
@@ -1319,7 +1319,7 @@ pub pixtuoid_scene::theme::LightingColors::moon_core: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::LightingColors::night_sky_a: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::LightingColors::night_sky_b: pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::LightingColors
-pub fn pixtuoid_scene::theme::LightingColors::clone(&self) -> pixtuoid_scene::theme::LightingColors
+pub fn pixtuoid_scene::theme::LightingColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::LightingColors
 pub fn pixtuoid_scene::theme::LightingColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::LightingColors
@@ -1336,7 +1336,7 @@ pub pixtuoid_scene::theme::OfficeColors::city_dark_window: pixtuoid_core::sprite
 pub pixtuoid_scene::theme::OfficeColors::city_lit_windows: [pixtuoid_core::sprite::Rgb; 3]
 pub pixtuoid_scene::theme::OfficeColors::neon_panel_bg: pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::OfficeColors
-pub fn pixtuoid_scene::theme::OfficeColors::clone(&self) -> pixtuoid_scene::theme::OfficeColors
+pub fn pixtuoid_scene::theme::OfficeColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::OfficeColors
 pub fn pixtuoid_scene::theme::OfficeColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::OfficeColors
@@ -1352,7 +1352,7 @@ pub pixtuoid_scene::theme::SourceColors::codex: pixtuoid_core::sprite::Rgb
 impl pixtuoid_scene::theme::SourceColors
 pub fn pixtuoid_scene::theme::SourceColors::by_prefix(&self, &str) -> core::option::Option<pixtuoid_core::sprite::Rgb>
 impl core::clone::Clone for pixtuoid_scene::theme::SourceColors
-pub fn pixtuoid_scene::theme::SourceColors::clone(&self) -> pixtuoid_scene::theme::SourceColors
+pub fn pixtuoid_scene::theme::SourceColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::SourceColors
 pub fn pixtuoid_scene::theme::SourceColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::SourceColors
@@ -1371,7 +1371,7 @@ pub pixtuoid_scene::theme::SurfaceColors::wall: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::SurfaceColors::wall_trim: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::SurfaceColors::window_frame: pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::SurfaceColors
-pub fn pixtuoid_scene::theme::SurfaceColors::clone(&self) -> pixtuoid_scene::theme::SurfaceColors
+pub fn pixtuoid_scene::theme::SurfaceColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::SurfaceColors
 pub fn pixtuoid_scene::theme::SurfaceColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::SurfaceColors
@@ -1392,7 +1392,7 @@ pub pixtuoid_scene::theme::Theme::ui: pixtuoid_scene::theme::UiColors
 impl pixtuoid_scene::theme::Theme
 pub fn pixtuoid_scene::theme::Theme::source_hue(&self, &str) -> pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::Theme
-pub fn pixtuoid_scene::theme::Theme::clone(&self) -> pixtuoid_scene::theme::Theme
+pub fn pixtuoid_scene::theme::Theme::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::Theme
 pub fn pixtuoid_scene::theme::Theme::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::Theme
@@ -1407,7 +1407,7 @@ pub pixtuoid_scene::theme::ToolGlowColors::agent: pixtuoid_core::sprite::Rgb
 impl pixtuoid_scene::theme::ToolGlowColors
 pub fn pixtuoid_scene::theme::ToolGlowColors::for_kind(&self, pixtuoid_core::state::ToolKind) -> pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::ToolGlowColors
-pub fn pixtuoid_scene::theme::ToolGlowColors::clone(&self) -> pixtuoid_scene::theme::ToolGlowColors
+pub fn pixtuoid_scene::theme::ToolGlowColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::ToolGlowColors
 pub fn pixtuoid_scene::theme::ToolGlowColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::ToolGlowColors
@@ -1428,7 +1428,7 @@ pub pixtuoid_scene::theme::UiColors::tooltip_dim: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_text: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_title: pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_scene::theme::UiColors
-pub fn pixtuoid_scene::theme::UiColors::clone(&self) -> pixtuoid_scene::theme::UiColors
+pub fn pixtuoid_scene::theme::UiColors::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::theme::UiColors
 pub fn pixtuoid_scene::theme::UiColors::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::theme::UiColors
@@ -1447,7 +1447,7 @@ pub fn pixtuoid_scene::token_meter::token_tier(u64) -> u8
 pub mod pixtuoid_scene::walk
 pub struct pixtuoid_scene::walk::WalkState
 impl core::clone::Clone for pixtuoid_scene::walk::WalkState
-pub fn pixtuoid_scene::walk::WalkState::clone(&self) -> pixtuoid_scene::walk::WalkState
+pub fn pixtuoid_scene::walk::WalkState::clone(&self) -> Self
 impl core::default::Default for pixtuoid_scene::walk::WalkState
 pub fn pixtuoid_scene::walk::WalkState::default() -> Self
 impl core::fmt::Debug for pixtuoid_scene::walk::WalkState
@@ -1461,7 +1461,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::walk::WalkState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::walk::WalkState
 pub struct pixtuoid_scene::walk::WanderState
 impl core::clone::Clone for pixtuoid_scene::walk::WanderState
-pub fn pixtuoid_scene::walk::WanderState::clone(&self) -> pixtuoid_scene::walk::WanderState
+pub fn pixtuoid_scene::walk::WanderState::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_scene::walk::WanderState
 pub fn pixtuoid_scene::walk::WanderState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_scene::walk::WanderState

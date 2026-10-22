@@ -65,8 +65,9 @@ updates:
       # cooldown's quarantine buys nothing.
       exclude: ["pixtuoid-lofi"]
 
-  # rust-toolchain.toml's exact pin, so every job and CodSpeed's base and head
-  # build on one rustc and each release lands as its own PR.
+  # rust-toolchain.toml's exact pin, so CodSpeed's base and head build on one
+  # rustc and each release lands as its own PR; hawk and api-surface keep their
+  # own (`just toolchain-ceiling`).
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:

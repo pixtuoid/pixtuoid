@@ -46,8 +46,9 @@ LINT_BREW_TOOLS := "shfmt actionlint shellcheck zizmor yq jq check-jsonschema gi
 LINT_CARGO_TOOLS := "cargo-machete cargo-deny lychee"
 
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
-# nightly-only). Provisioned by `_api-toolchain`.
-API_NIGHTLY := "nightly-2026-07-22"
+# nightly-only). Provisioned by `_api-toolchain`, which also fails while it
+# can't build what rust-toolchain.toml's release admits (`_toolchain-covers`).
+API_NIGHTLY := "nightly-2026-10-22"
 
 # The cargo-public-api the api/ goldens are reproducible against — tool-exact:
 # a different version rewrites them all. ci-lint.yml installs its own copy;
@@ -443,8 +444,9 @@ api-surface-check: (api-surface "check")
 
 # Both halves of the goldens' reproducibility contract: refuse a mismatched
 # cargo-public-api, then self-provision the pinned nightly (rustdoc JSON is
-# nightly-only) if it isn't already installed. The minimal profile carries
-# rustdoc (bundled with rustc), all cargo-public-api needs.
+# nightly-only) if it isn't already installed, and refuse one older than
+# rust-toolchain.toml's release. The minimal profile carries rustdoc (bundled
+# with rustc), all cargo-public-api needs.
 [private]
 _api-toolchain:
     #!/usr/bin/env bash
@@ -497,18 +499,22 @@ _hawk-toolchain:
 
 # Dependabot moves rust-toolchain.toml alone, while hawk builds on HAWK_RUST, so
 # this fails that bump's PR instead of a later one leaning on the new release.
-[doc('Fail when rust-toolchain.toml pins a newer rustc than HAWK_RUST')]
+[doc("Fail when rust-toolchain.toml pins a newer Rust minor than HAWK_RUST's")]
 [group('rust')]
 toolchain-ceiling: (_toolchain-covers HAWK_RUST "HAWK_RUST")
 
 # A dependency or API the pin admits must still build on `version`'s rustc.
+# Minors, not patches: a point release stabilizes nothing. A `1.N.0-nightly`
+# predates what 1.N stabilized after it was cut, so it covers only older minors.
 [private]
 _toolchain-covers version name:
     #!/usr/bin/env bash
     set -euo pipefail
     pin="$(sed -n 's/^channel *= *"\(.*\)"$/\1/p' rust-toolchain.toml)"
-    awk -v pin="$pin" -v have="{{ version }}" 'BEGIN { split(pin, p, "."); split(have, h, "."); exit !(p[1] + 0 < h[1] + 0 || (p[1] + 0 == h[1] + 0 && p[2] + 0 <= h[2] + 0)) }' \
-        || { echo "error: rust-toolchain.toml pins $pin, past {{ name }}'s rustc {{ version }}: move {{ name }} with it" >&2; exit 1; }
+    [[ "$pin" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] \
+        || { echo "error: rust-toolchain.toml's channel '$pin' is not an exact release" >&2; exit 1; }
+    awk -v pin="$pin" -v have="{{ version }}" 'BEGIN { split(pin, p, "."); split(have, h, "."); n = have ~ /-nightly/; exit !(p[1] + 0 < h[1] + 0 || (p[1] + 0 == h[1] + 0 && (n ? p[2] + 0 < h[2] + 0 : p[2] + 0 <= h[2] + 0))) }' \
+        || { echo "error: rust-toolchain.toml pins $pin, a newer Rust minor than {{ name }}'s rustc {{ version }} covers: move {{ name }} with it" >&2; exit 1; }
 
 # Doc-rendering gate. Two things `cargo build`/`clippy`/`nextest` can't see:
 # (1) build every item's docs, private ones included, with EVERY rustdoc

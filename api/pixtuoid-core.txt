@@ -18,36 +18,36 @@ impl<T> pixtuoid_core::grid::Grid<T>
 pub fn pixtuoid_core::grid::Grid<T>::height(&self) -> u16
 pub fn pixtuoid_core::grid::Grid<T>::width(&self) -> u16
 impl<T: core::clone::Clone> core::clone::Clone for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::clone(&self) -> pixtuoid_core::grid::Grid<T>
+pub fn pixtuoid_core::grid::Grid<T>::clone(&self) -> Self
 impl<T: core::cmp::Eq> core::cmp::Eq for pixtuoid_core::grid::Grid<T>
 impl<T: core::cmp::PartialEq> core::cmp::PartialEq for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::eq(&self, &pixtuoid_core::grid::Grid<T>) -> bool
+pub fn pixtuoid_core::grid::Grid<T>::eq(&self, &Self) -> bool
 impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for pixtuoid_core::grid::Grid<T>
 impl<T: core::default::Default> core::default::Default for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::default() -> pixtuoid_core::grid::Grid<T>
+pub fn pixtuoid_core::grid::Grid<T>::default() -> Self
 impl<T: core::fmt::Debug> core::fmt::Debug for pixtuoid_core::grid::Grid<T>
 pub fn pixtuoid_core::grid::Grid<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T> core::marker::Freeze for pixtuoid_core::grid::Grid<T>
-impl<T> core::marker::Send for pixtuoid_core::grid::Grid<T> where T: core::marker::Send
-impl<T> core::marker::Sync for pixtuoid_core::grid::Grid<T> where T: core::marker::Sync
-impl<T> core::marker::Unpin for pixtuoid_core::grid::Grid<T> where T: core::marker::Unpin
-impl<T> core::marker::UnsafeUnpin for pixtuoid_core::grid::Grid<T>
-impl<T> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::grid::Grid<T> where T: core::panic::unwind_safe::RefUnwindSafe
-impl<T> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::grid::Grid<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T> core::marker::Freeze for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Freeze
+impl<T> core::marker::Send for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Send
+impl<T> core::marker::Sync for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Sync
+impl<T> core::marker::Unpin for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::UnwindSafe
 pub mod pixtuoid_core::id
 pub struct pixtuoid_core::id::AgentId(_)
 impl pixtuoid_core::id::AgentId
 pub fn pixtuoid_core::id::AgentId::from_parts(&str, &str) -> Self
 pub fn pixtuoid_core::id::AgentId::raw(self) -> u64
 impl core::clone::Clone for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::clone(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::id::AgentId::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::id::AgentId
 impl core::cmp::Ord for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::cmp(&self, &pixtuoid_core::id::AgentId) -> core::cmp::Ordering
+pub fn pixtuoid_core::id::AgentId::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::eq(&self, &pixtuoid_core::id::AgentId) -> bool
+pub fn pixtuoid_core::id::AgentId::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::partial_cmp(&self, &pixtuoid_core::id::AgentId) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::id::AgentId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::id::AgentId
 pub fn pixtuoid_core::id::AgentId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for pixtuoid_core::id::AgentId
@@ -186,10 +186,10 @@ pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::SessionStarted
 impl pixtuoid_core::source::daemon::DaemonPresenceUpdate
 pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::armable_pid(&self) -> core::option::Option<i32>
 impl core::clone::Clone for pixtuoid_core::source::daemon::DaemonPresenceUpdate
-pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::clone(&self) -> pixtuoid_core::source::daemon::DaemonPresenceUpdate
+pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::daemon::DaemonPresenceUpdate
 impl core::cmp::PartialEq for pixtuoid_core::source::daemon::DaemonPresenceUpdate
-pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::eq(&self, &pixtuoid_core::source::daemon::DaemonPresenceUpdate) -> bool
+pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::daemon::DaemonPresenceUpdate
 pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::daemon::DaemonPresenceUpdate
@@ -206,14 +206,14 @@ pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::instance(&self) -> &pix
 pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::new(impl core::convert::Into<alloc::string::String>, pixtuoid_core::state::DaemonInstanceId) -> Self
 pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::source(&self) -> &str
 impl core::clone::Clone for pixtuoid_core::source::daemon::DaemonInstanceKey
-pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::clone(&self) -> pixtuoid_core::source::daemon::DaemonInstanceKey
+pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::daemon::DaemonInstanceKey
 impl core::cmp::Ord for pixtuoid_core::source::daemon::DaemonInstanceKey
-pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::cmp(&self, &pixtuoid_core::source::daemon::DaemonInstanceKey) -> core::cmp::Ordering
+pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::source::daemon::DaemonInstanceKey
-pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::eq(&self, &pixtuoid_core::source::daemon::DaemonInstanceKey) -> bool
+pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::source::daemon::DaemonInstanceKey
-pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::partial_cmp(&self, &pixtuoid_core::source::daemon::DaemonInstanceKey) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::source::daemon::DaemonInstanceKey
 pub fn pixtuoid_core::source::daemon::DaemonInstanceKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::source::daemon::DaemonInstanceKey
@@ -230,10 +230,10 @@ pub struct pixtuoid_core::source::daemon::DecodedPresence
 pub pixtuoid_core::source::daemon::DecodedPresence::instance: pixtuoid_core::state::DaemonInstanceId
 pub pixtuoid_core::source::daemon::DecodedPresence::updates: alloc::vec::Vec<pixtuoid_core::source::daemon::DaemonPresenceUpdate>
 impl core::clone::Clone for pixtuoid_core::source::daemon::DecodedPresence
-pub fn pixtuoid_core::source::daemon::DecodedPresence::clone(&self) -> pixtuoid_core::source::daemon::DecodedPresence
+pub fn pixtuoid_core::source::daemon::DecodedPresence::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::daemon::DecodedPresence
 impl core::cmp::PartialEq for pixtuoid_core::source::daemon::DecodedPresence
-pub fn pixtuoid_core::source::daemon::DecodedPresence::eq(&self, &pixtuoid_core::source::daemon::DecodedPresence) -> bool
+pub fn pixtuoid_core::source::daemon::DecodedPresence::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::daemon::DecodedPresence
 pub fn pixtuoid_core::source::daemon::DecodedPresence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::daemon::DecodedPresence
@@ -260,10 +260,10 @@ pub struct pixtuoid_core::source::daemon::PresenceMsg
 pub pixtuoid_core::source::daemon::PresenceMsg::delta: pixtuoid_core::source::daemon::DaemonPresenceUpdate
 pub pixtuoid_core::source::daemon::PresenceMsg::key: pixtuoid_core::source::daemon::DaemonInstanceKey
 impl core::clone::Clone for pixtuoid_core::source::daemon::PresenceMsg
-pub fn pixtuoid_core::source::daemon::PresenceMsg::clone(&self) -> pixtuoid_core::source::daemon::PresenceMsg
+pub fn pixtuoid_core::source::daemon::PresenceMsg::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::daemon::PresenceMsg
 impl core::cmp::PartialEq for pixtuoid_core::source::daemon::PresenceMsg
-pub fn pixtuoid_core::source::daemon::PresenceMsg::eq(&self, &pixtuoid_core::source::daemon::PresenceMsg) -> bool
+pub fn pixtuoid_core::source::daemon::PresenceMsg::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::daemon::PresenceMsg
 pub fn pixtuoid_core::source::daemon::PresenceMsg::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::daemon::PresenceMsg
@@ -276,10 +276,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::daemon::
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::daemon::PresenceMsg
 pub struct pixtuoid_core::source::daemon::PresenceTtl
 impl core::clone::Clone for pixtuoid_core::source::daemon::PresenceTtl
-pub fn pixtuoid_core::source::daemon::PresenceTtl::clone(&self) -> pixtuoid_core::source::daemon::PresenceTtl
+pub fn pixtuoid_core::source::daemon::PresenceTtl::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::daemon::PresenceTtl
 impl core::cmp::PartialEq for pixtuoid_core::source::daemon::PresenceTtl
-pub fn pixtuoid_core::source::daemon::PresenceTtl::eq(&self, &pixtuoid_core::source::daemon::PresenceTtl) -> bool
+pub fn pixtuoid_core::source::daemon::PresenceTtl::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::daemon::PresenceTtl
 pub fn pixtuoid_core::source::daemon::PresenceTtl::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::daemon::PresenceTtl
@@ -328,10 +328,10 @@ pub pixtuoid_core::source::decoder::TailActivity::At(u64)
 pub pixtuoid_core::source::decoder::TailActivity::SidecarOnly
 pub pixtuoid_core::source::decoder::TailActivity::Unknown
 impl core::clone::Clone for pixtuoid_core::source::decoder::TailActivity
-pub fn pixtuoid_core::source::decoder::TailActivity::clone(&self) -> pixtuoid_core::source::decoder::TailActivity
+pub fn pixtuoid_core::source::decoder::TailActivity::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::decoder::TailActivity
 impl core::cmp::PartialEq for pixtuoid_core::source::decoder::TailActivity
-pub fn pixtuoid_core::source::decoder::TailActivity::eq(&self, &pixtuoid_core::source::decoder::TailActivity) -> bool
+pub fn pixtuoid_core::source::decoder::TailActivity::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::decoder::TailActivity
 pub fn pixtuoid_core::source::decoder::TailActivity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::decoder::TailActivity
@@ -356,10 +356,10 @@ pub pixtuoid_core::source::drift::DriftKind::ShapeDrift
 pub pixtuoid_core::source::drift::DriftKind::UnknownDispatch
 pub pixtuoid_core::source::drift::DriftKind::UnknownEvent
 impl core::clone::Clone for pixtuoid_core::source::drift::DriftKind
-pub fn pixtuoid_core::source::drift::DriftKind::clone(&self) -> pixtuoid_core::source::drift::DriftKind
+pub fn pixtuoid_core::source::drift::DriftKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::drift::DriftKind
 impl core::cmp::PartialEq for pixtuoid_core::source::drift::DriftKind
-pub fn pixtuoid_core::source::drift::DriftKind::eq(&self, &pixtuoid_core::source::drift::DriftKind) -> bool
+pub fn pixtuoid_core::source::drift::DriftKind::eq(&self, &Self) -> bool
 impl core::convert::From<pixtuoid_core::source::drift::DriftKind> for &'static str
 pub fn &'static str::from(pixtuoid_core::source::drift::DriftKind) -> &'static str
 impl core::convert::TryFrom<&str> for pixtuoid_core::source::drift::DriftKind
@@ -383,10 +383,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::drift::D
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::drift::DriftKind
 pub struct pixtuoid_core::source::drift::UnknownDriftKind(_)
 impl core::clone::Clone for pixtuoid_core::source::drift::UnknownDriftKind
-pub fn pixtuoid_core::source::drift::UnknownDriftKind::clone(&self) -> pixtuoid_core::source::drift::UnknownDriftKind
+pub fn pixtuoid_core::source::drift::UnknownDriftKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::drift::UnknownDriftKind
 impl core::cmp::PartialEq for pixtuoid_core::source::drift::UnknownDriftKind
-pub fn pixtuoid_core::source::drift::UnknownDriftKind::eq(&self, &pixtuoid_core::source::drift::UnknownDriftKind) -> bool
+pub fn pixtuoid_core::source::drift::UnknownDriftKind::eq(&self, &Self) -> bool
 impl core::error::Error for pixtuoid_core::source::drift::UnknownDriftKind
 impl core::fmt::Debug for pixtuoid_core::source::drift::UnknownDriftKind
 pub fn pixtuoid_core::source::drift::UnknownDriftKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -484,10 +484,10 @@ pub pixtuoid_core::source::jsonl::TailActivity::At(u64)
 pub pixtuoid_core::source::jsonl::TailActivity::SidecarOnly
 pub pixtuoid_core::source::jsonl::TailActivity::Unknown
 impl core::clone::Clone for pixtuoid_core::source::decoder::TailActivity
-pub fn pixtuoid_core::source::decoder::TailActivity::clone(&self) -> pixtuoid_core::source::decoder::TailActivity
+pub fn pixtuoid_core::source::decoder::TailActivity::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::decoder::TailActivity
 impl core::cmp::PartialEq for pixtuoid_core::source::decoder::TailActivity
-pub fn pixtuoid_core::source::decoder::TailActivity::eq(&self, &pixtuoid_core::source::decoder::TailActivity) -> bool
+pub fn pixtuoid_core::source::decoder::TailActivity::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::decoder::TailActivity
 pub fn pixtuoid_core::source::decoder::TailActivity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::decoder::TailActivity
@@ -505,7 +505,7 @@ pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::new() -> Self
 pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::push(&self, pixtuoid_core::id::AgentId)
 pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::take_matching(&self, impl core::ops::function::FnMut(&pixtuoid_core::id::AgentId) -> bool) -> alloc::vec::Vec<pixtuoid_core::id::AgentId>
 impl core::clone::Clone for pixtuoid_core::source::jsonl::ChildEndUnclaims
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::clone(&self) -> pixtuoid_core::source::jsonl::ChildEndUnclaims
+pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::source::jsonl::ChildEndUnclaims
 pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::source::jsonl::ChildEndUnclaims
@@ -537,9 +537,9 @@ impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::Jso
 pub struct pixtuoid_core::source::jsonl::ProbeSnapshot
 pub pixtuoid_core::source::jsonl::ProbeSnapshot::pid_of: std::collections::hash::map::HashMap<alloc::string::String, i32>
 impl core::clone::Clone for pixtuoid_core::source::jsonl::ProbeSnapshot
-pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::clone(&self) -> pixtuoid_core::source::jsonl::ProbeSnapshot
+pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::source::jsonl::ProbeSnapshot
-pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::default() -> pixtuoid_core::source::jsonl::ProbeSnapshot
+pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::source::jsonl::ProbeSnapshot
 pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::source::jsonl::ProbeSnapshot
@@ -552,7 +552,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::Prob
 pub type pixtuoid_core::source::jsonl::IdDeriver = fn(&std::path::Path) -> alloc::string::String
 pub type pixtuoid_core::source::jsonl::LabelDeriver = fn(&std::path::Path, &str, &std::path::Path) -> alloc::string::String
 pub type pixtuoid_core::source::jsonl::LineDecoder = fn(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
-pub type pixtuoid_core::source::jsonl::LivenessProbe = alloc::sync::Arc<(dyn core::ops::function::Fn() -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot> + core::marker::Send + core::marker::Sync)>
+pub type pixtuoid_core::source::jsonl::LivenessProbe = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn() -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot> + core::marker::Send + core::marker::Sync)>
 pub type pixtuoid_core::source::jsonl::PathFilter = fn(&std::path::Path) -> bool
 pub type pixtuoid_core::source::jsonl::SessionEndChecker = fn(&[u8]) -> bool
 pub mod pixtuoid_core::source::kimi
@@ -564,10 +564,10 @@ pub pixtuoid_core::source::manager::SourceDeath::source: alloc::string::String
 impl pixtuoid_core::source::manager::SourceDeath
 pub fn pixtuoid_core::source::manager::SourceDeath::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for pixtuoid_core::source::manager::SourceDeath
-pub fn pixtuoid_core::source::manager::SourceDeath::clone(&self) -> pixtuoid_core::source::manager::SourceDeath
+pub fn pixtuoid_core::source::manager::SourceDeath::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::manager::SourceDeath
 impl core::cmp::PartialEq for pixtuoid_core::source::manager::SourceDeath
-pub fn pixtuoid_core::source::manager::SourceDeath::eq(&self, &pixtuoid_core::source::manager::SourceDeath) -> bool
+pub fn pixtuoid_core::source::manager::SourceDeath::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::manager::SourceDeath
 pub fn pixtuoid_core::source::manager::SourceDeath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::manager::SourceDeath
@@ -585,7 +585,7 @@ pub fn pixtuoid_core::source::manager::SourceManager::spawn(self, pixtuoid_core:
 pub fn pixtuoid_core::source::manager::SourceManager::spawn_with_health(self, pixtuoid_core::TaggedSender, tokio::sync::watch::Sender<alloc::vec::Vec<pixtuoid_core::source::manager::SourceDeath>>) -> alloc::vec::Vec<tokio::runtime::task::join::JoinHandle<()>>
 pub fn pixtuoid_core::source::manager::SourceManager::with_source(self, alloc::boxed::Box<dyn pixtuoid_core::source::DynSource>) -> Self
 impl core::default::Default for pixtuoid_core::source::manager::SourceManager
-pub fn pixtuoid_core::source::manager::SourceManager::default() -> pixtuoid_core::source::manager::SourceManager
+pub fn pixtuoid_core::source::manager::SourceManager::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::source::manager::SourceManager
 pub fn pixtuoid_core::source::manager::SourceManager::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::source::manager::SourceManager
@@ -668,10 +668,10 @@ pub pixtuoid_core::source::AgentEvent::Waiting::tool_use_id: core::option::Optio
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
-pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> pixtuoid_core::source::AgentEvent
+pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
 impl core::cmp::PartialEq for pixtuoid_core::source::AgentEvent
-pub fn pixtuoid_core::source::AgentEvent::eq(&self, &pixtuoid_core::source::AgentEvent) -> bool
+pub fn pixtuoid_core::source::AgentEvent::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::AgentEvent
@@ -694,10 +694,10 @@ impl pixtuoid_core::source::ToolDetail
 pub fn pixtuoid_core::source::ToolDetail::display(&self) -> &str
 pub fn pixtuoid_core::source::ToolDetail::is_task(&self) -> bool
 impl core::clone::Clone for pixtuoid_core::source::ToolDetail
-pub fn pixtuoid_core::source::ToolDetail::clone(&self) -> pixtuoid_core::source::ToolDetail
+pub fn pixtuoid_core::source::ToolDetail::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::ToolDetail
 impl core::cmp::PartialEq for pixtuoid_core::source::ToolDetail
-pub fn pixtuoid_core::source::ToolDetail::eq(&self, &pixtuoid_core::source::ToolDetail) -> bool
+pub fn pixtuoid_core::source::ToolDetail::eq(&self, &Self) -> bool
 impl core::convert::From<&str> for pixtuoid_core::source::ToolDetail
 pub fn pixtuoid_core::source::ToolDetail::from(&str) -> Self
 impl core::fmt::Debug for pixtuoid_core::source::ToolDetail
@@ -718,10 +718,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::ToolDetail
 pub pixtuoid_core::source::Transport::Hook
 pub pixtuoid_core::source::Transport::Jsonl
 impl core::clone::Clone for pixtuoid_core::source::Transport
-pub fn pixtuoid_core::source::Transport::clone(&self) -> pixtuoid_core::source::Transport
+pub fn pixtuoid_core::source::Transport::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::Transport
 impl core::cmp::PartialEq for pixtuoid_core::source::Transport
-pub fn pixtuoid_core::source::Transport::eq(&self, &pixtuoid_core::source::Transport) -> bool
+pub fn pixtuoid_core::source::Transport::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::Transport
 pub fn pixtuoid_core::source::Transport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::Transport
@@ -739,10 +739,10 @@ pub pixtuoid_core::source::PidIdentity::started: core::option::Option<u64>
 impl pixtuoid_core::source::PidIdentity
 pub fn pixtuoid_core::source::PidIdentity::new(i32, core::option::Option<u64>) -> Self
 impl core::clone::Clone for pixtuoid_core::source::PidIdentity
-pub fn pixtuoid_core::source::PidIdentity::clone(&self) -> pixtuoid_core::source::PidIdentity
+pub fn pixtuoid_core::source::PidIdentity::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::PidIdentity
 impl core::cmp::PartialEq for pixtuoid_core::source::PidIdentity
-pub fn pixtuoid_core::source::PidIdentity::eq(&self, &pixtuoid_core::source::PidIdentity) -> bool
+pub fn pixtuoid_core::source::PidIdentity::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::PidIdentity
 pub fn pixtuoid_core::source::PidIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::PidIdentity
@@ -808,10 +808,10 @@ pub pixtuoid_core::sprite::error::ColorError::Hex::value: alloc::string::String
 #[non_exhaustive] pub pixtuoid_core::sprite::error::ColorError::Prefix
 pub pixtuoid_core::sprite::error::ColorError::Prefix::value: alloc::string::String
 impl core::clone::Clone for pixtuoid_core::sprite::error::ColorError
-pub fn pixtuoid_core::sprite::error::ColorError::clone(&self) -> pixtuoid_core::sprite::error::ColorError
+pub fn pixtuoid_core::sprite::error::ColorError::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::error::ColorError
 impl core::cmp::PartialEq for pixtuoid_core::sprite::error::ColorError
-pub fn pixtuoid_core::sprite::error::ColorError::eq(&self, &pixtuoid_core::sprite::error::ColorError) -> bool
+pub fn pixtuoid_core::sprite::error::ColorError::eq(&self, &Self) -> bool
 impl core::error::Error for pixtuoid_core::sprite::error::ColorError
 impl core::fmt::Debug for pixtuoid_core::sprite::error::ColorError
 pub fn pixtuoid_core::sprite::error::ColorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -832,10 +832,10 @@ pub pixtuoid_core::sprite::error::KeySite::Palette
 pub pixtuoid_core::sprite::error::KeySite::Ramp
 pub pixtuoid_core::sprite::error::KeySite::RampBase
 impl core::clone::Clone for pixtuoid_core::sprite::error::KeySite
-pub fn pixtuoid_core::sprite::error::KeySite::clone(&self) -> pixtuoid_core::sprite::error::KeySite
+pub fn pixtuoid_core::sprite::error::KeySite::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::error::KeySite
 impl core::cmp::PartialEq for pixtuoid_core::sprite::error::KeySite
-pub fn pixtuoid_core::sprite::error::KeySite::eq(&self, &pixtuoid_core::sprite::error::KeySite) -> bool
+pub fn pixtuoid_core::sprite::error::KeySite::eq(&self, &Self) -> bool
 impl core::error::Error for pixtuoid_core::sprite::error::KeySite
 impl core::fmt::Debug for pixtuoid_core::sprite::error::KeySite
 pub fn pixtuoid_core::sprite::error::KeySite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -885,10 +885,10 @@ pub pixtuoid_core::sprite::error::LineError::TooWide::width: usize
 #[non_exhaustive] pub pixtuoid_core::sprite::error::LineError::UnknownKey
 pub pixtuoid_core::sprite::error::LineError::UnknownKey::key: char
 impl core::clone::Clone for pixtuoid_core::sprite::error::LineError
-pub fn pixtuoid_core::sprite::error::LineError::clone(&self) -> pixtuoid_core::sprite::error::LineError
+pub fn pixtuoid_core::sprite::error::LineError::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::error::LineError
 impl core::cmp::PartialEq for pixtuoid_core::sprite::error::LineError
-pub fn pixtuoid_core::sprite::error::LineError::eq(&self, &pixtuoid_core::sprite::error::LineError) -> bool
+pub fn pixtuoid_core::sprite::error::LineError::eq(&self, &Self) -> bool
 impl core::error::Error for pixtuoid_core::sprite::error::LineError
 impl core::fmt::Debug for pixtuoid_core::sprite::error::LineError
 pub fn pixtuoid_core::sprite::error::LineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1003,10 +1003,10 @@ pub pixtuoid_core::sprite::error::SpriteError::Line::kind: pixtuoid_core::sprite
 pub pixtuoid_core::sprite::error::SpriteError::Line::line: usize
 pub pixtuoid_core::sprite::error::SpriteError::NoFrames
 impl core::clone::Clone for pixtuoid_core::sprite::error::SpriteError
-pub fn pixtuoid_core::sprite::error::SpriteError::clone(&self) -> pixtuoid_core::sprite::error::SpriteError
+pub fn pixtuoid_core::sprite::error::SpriteError::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::error::SpriteError
 impl core::cmp::PartialEq for pixtuoid_core::sprite::error::SpriteError
-pub fn pixtuoid_core::sprite::error::SpriteError::eq(&self, &pixtuoid_core::sprite::error::SpriteError) -> bool
+pub fn pixtuoid_core::sprite::error::SpriteError::eq(&self, &Self) -> bool
 impl core::error::Error for pixtuoid_core::sprite::error::SpriteError
 impl core::fmt::Debug for pixtuoid_core::sprite::error::SpriteError
 pub fn pixtuoid_core::sprite::error::SpriteError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1025,14 +1025,14 @@ pub enum pixtuoid_core::sprite::format::CityPlane
 pub pixtuoid_core::sprite::format::CityPlane::Mid
 pub pixtuoid_core::sprite::format::CityPlane::Near
 impl core::clone::Clone for pixtuoid_core::sprite::format::CityPlane
-pub fn pixtuoid_core::sprite::format::CityPlane::clone(&self) -> pixtuoid_core::sprite::format::CityPlane
+pub fn pixtuoid_core::sprite::format::CityPlane::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::CityPlane
 impl core::cmp::Ord for pixtuoid_core::sprite::format::CityPlane
-pub fn pixtuoid_core::sprite::format::CityPlane::cmp(&self, &pixtuoid_core::sprite::format::CityPlane) -> core::cmp::Ordering
+pub fn pixtuoid_core::sprite::format::CityPlane::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::CityPlane
-pub fn pixtuoid_core::sprite::format::CityPlane::eq(&self, &pixtuoid_core::sprite::format::CityPlane) -> bool
+pub fn pixtuoid_core::sprite::format::CityPlane::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::sprite::format::CityPlane
-pub fn pixtuoid_core::sprite::format::CityPlane::partial_cmp(&self, &pixtuoid_core::sprite::format::CityPlane) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::sprite::format::CityPlane::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::sprite::format::CityPlane
 pub fn pixtuoid_core::sprite::format::CityPlane::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::format::CityPlane
@@ -1057,14 +1057,14 @@ pub pixtuoid_core::sprite::format::Material::Sign
 impl pixtuoid_core::sprite::format::Material
 pub const pixtuoid_core::sprite::format::Material::ALL: [pixtuoid_core::sprite::format::Material; 7]
 impl core::clone::Clone for pixtuoid_core::sprite::format::Material
-pub fn pixtuoid_core::sprite::format::Material::clone(&self) -> pixtuoid_core::sprite::format::Material
+pub fn pixtuoid_core::sprite::format::Material::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::Material
 impl core::cmp::Ord for pixtuoid_core::sprite::format::Material
-pub fn pixtuoid_core::sprite::format::Material::cmp(&self, &pixtuoid_core::sprite::format::Material) -> core::cmp::Ordering
+pub fn pixtuoid_core::sprite::format::Material::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::Material
-pub fn pixtuoid_core::sprite::format::Material::eq(&self, &pixtuoid_core::sprite::format::Material) -> bool
+pub fn pixtuoid_core::sprite::format::Material::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::sprite::format::Material
-pub fn pixtuoid_core::sprite::format::Material::partial_cmp(&self, &pixtuoid_core::sprite::format::Material) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::sprite::format::Material::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Material
 pub fn pixtuoid_core::sprite::format::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::format::Material
@@ -1147,14 +1147,14 @@ pub fn pixtuoid_core::sprite::format::Piece::name(self) -> &'static str
 pub fn pixtuoid_core::sprite::format::Piece::overlay_of(self) -> core::option::Option<pixtuoid_core::sprite::format::Piece>
 pub fn pixtuoid_core::sprite::format::Piece::walk(self) -> core::option::Option<pixtuoid_core::sprite::format::Walk>
 impl core::clone::Clone for pixtuoid_core::sprite::format::Piece
-pub fn pixtuoid_core::sprite::format::Piece::clone(&self) -> pixtuoid_core::sprite::format::Piece
+pub fn pixtuoid_core::sprite::format::Piece::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::Piece
 impl core::cmp::Ord for pixtuoid_core::sprite::format::Piece
-pub fn pixtuoid_core::sprite::format::Piece::cmp(&self, &pixtuoid_core::sprite::format::Piece) -> core::cmp::Ordering
+pub fn pixtuoid_core::sprite::format::Piece::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::Piece
-pub fn pixtuoid_core::sprite::format::Piece::eq(&self, &pixtuoid_core::sprite::format::Piece) -> bool
+pub fn pixtuoid_core::sprite::format::Piece::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::sprite::format::Piece
-pub fn pixtuoid_core::sprite::format::Piece::partial_cmp(&self, &pixtuoid_core::sprite::format::Piece) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::sprite::format::Piece::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::From<pixtuoid_core::sprite::format::Piece> for &'static str
 pub fn &'static str::from(pixtuoid_core::sprite::format::Piece) -> &'static str
 impl core::convert::TryFrom<&str> for pixtuoid_core::sprite::format::Piece
@@ -1189,10 +1189,10 @@ pub pixtuoid_core::sprite::format::PieceKind::Character
 pub pixtuoid_core::sprite::format::PieceKind::Creature
 pub pixtuoid_core::sprite::format::PieceKind::Furniture
 impl core::clone::Clone for pixtuoid_core::sprite::format::PieceKind
-pub fn pixtuoid_core::sprite::format::PieceKind::clone(&self) -> pixtuoid_core::sprite::format::PieceKind
+pub fn pixtuoid_core::sprite::format::PieceKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::PieceKind
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::PieceKind
-pub fn pixtuoid_core::sprite::format::PieceKind::eq(&self, &pixtuoid_core::sprite::format::PieceKind) -> bool
+pub fn pixtuoid_core::sprite::format::PieceKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::format::PieceKind
 pub fn pixtuoid_core::sprite::format::PieceKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::sprite::format::PieceKind
@@ -1214,10 +1214,10 @@ pub pixtuoid_core::sprite::format::Walk::WalkingCoffee
 impl pixtuoid_core::sprite::format::Walk
 pub fn pixtuoid_core::sprite::format::Walk::piece(self) -> pixtuoid_core::sprite::format::Piece
 impl core::clone::Clone for pixtuoid_core::sprite::format::Walk
-pub fn pixtuoid_core::sprite::format::Walk::clone(&self) -> pixtuoid_core::sprite::format::Walk
+pub fn pixtuoid_core::sprite::format::Walk::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::Walk
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::Walk
-pub fn pixtuoid_core::sprite::format::Walk::eq(&self, &pixtuoid_core::sprite::format::Walk) -> bool
+pub fn pixtuoid_core::sprite::format::Walk::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Walk
 pub fn pixtuoid_core::sprite::format::Walk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::format::Walk
@@ -1245,7 +1245,7 @@ pub fn pixtuoid_core::sprite::format::Building::size(&self) -> (u16, u16)
 pub fn pixtuoid_core::sprite::format::Building::stands_in(&self, pixtuoid_core::sprite::format::CityPlane) -> bool
 pub fn pixtuoid_core::sprite::format::Building::variant(&self, pixtuoid_core::sprite::format::Density) -> core::option::Option<&pixtuoid_core::sprite::format::BuildingArt>
 impl core::clone::Clone for pixtuoid_core::sprite::format::Building
-pub fn pixtuoid_core::sprite::format::Building::clone(&self) -> pixtuoid_core::sprite::format::Building
+pub fn pixtuoid_core::sprite::format::Building::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Building
 pub fn pixtuoid_core::sprite::format::Building::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::Building
@@ -1260,7 +1260,7 @@ impl pixtuoid_core::sprite::format::BuildingArt
 pub fn pixtuoid_core::sprite::format::BuildingArt::sprite(&self) -> &pixtuoid_core::sprite::Sprite
 pub fn pixtuoid_core::sprite::format::BuildingArt::windows(&self) -> &[alloc::vec::Vec<(u16, u16)>]
 impl core::clone::Clone for pixtuoid_core::sprite::format::BuildingArt
-pub fn pixtuoid_core::sprite::format::BuildingArt::clone(&self) -> pixtuoid_core::sprite::format::BuildingArt
+pub fn pixtuoid_core::sprite::format::BuildingArt::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::BuildingArt
 pub fn pixtuoid_core::sprite::format::BuildingArt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::BuildingArt
@@ -1274,7 +1274,7 @@ pub struct pixtuoid_core::sprite::format::CityMaterials(_)
 impl pixtuoid_core::sprite::format::CityMaterials
 pub fn pixtuoid_core::sprite::format::CityMaterials::key(&self, pixtuoid_core::sprite::format::Material) -> char
 impl core::clone::Clone for pixtuoid_core::sprite::format::CityMaterials
-pub fn pixtuoid_core::sprite::format::CityMaterials::clone(&self) -> pixtuoid_core::sprite::format::CityMaterials
+pub fn pixtuoid_core::sprite::format::CityMaterials::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::CityMaterials
 pub fn pixtuoid_core::sprite::format::CityMaterials::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::CityMaterials
@@ -1290,14 +1290,14 @@ pub const pixtuoid_core::sprite::format::Density::ONE: Self
 pub const fn pixtuoid_core::sprite::format::Density::get(self) -> u16
 pub const fn pixtuoid_core::sprite::format::Density::new(u16) -> core::option::Option<Self>
 impl core::clone::Clone for pixtuoid_core::sprite::format::Density
-pub fn pixtuoid_core::sprite::format::Density::clone(&self) -> pixtuoid_core::sprite::format::Density
+pub fn pixtuoid_core::sprite::format::Density::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::format::Density
 impl core::cmp::Ord for pixtuoid_core::sprite::format::Density
-pub fn pixtuoid_core::sprite::format::Density::cmp(&self, &pixtuoid_core::sprite::format::Density) -> core::cmp::Ordering
+pub fn pixtuoid_core::sprite::format::Density::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::sprite::format::Density
-pub fn pixtuoid_core::sprite::format::Density::eq(&self, &pixtuoid_core::sprite::format::Density) -> bool
+pub fn pixtuoid_core::sprite::format::Density::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::sprite::format::Density
-pub fn pixtuoid_core::sprite::format::Density::partial_cmp(&self, &pixtuoid_core::sprite::format::Density) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::sprite::format::Density::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Density
 pub fn pixtuoid_core::sprite::format::Density::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for pixtuoid_core::sprite::format::Density
@@ -1318,7 +1318,7 @@ impl pixtuoid_core::sprite::format::HairLayers
 pub fn pixtuoid_core::sprite::format::HairLayers::behind(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
 pub fn pixtuoid_core::sprite::format::HairLayers::over(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
 impl core::clone::Clone for pixtuoid_core::sprite::format::HairLayers
-pub fn pixtuoid_core::sprite::format::HairLayers::clone(&self) -> pixtuoid_core::sprite::format::HairLayers
+pub fn pixtuoid_core::sprite::format::HairLayers::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::HairLayers
 pub fn pixtuoid_core::sprite::format::HairLayers::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::HairLayers
@@ -1334,7 +1334,7 @@ pub fn pixtuoid_core::sprite::format::Hairstyle::density(&self) -> pixtuoid_core
 pub fn pixtuoid_core::sprite::format::Hairstyle::layers(&self, pixtuoid_core::sprite::HeadView) -> core::option::Option<&pixtuoid_core::sprite::format::HairLayers>
 pub fn pixtuoid_core::sprite::format::Hairstyle::name(&self) -> &str
 impl core::clone::Clone for pixtuoid_core::sprite::format::Hairstyle
-pub fn pixtuoid_core::sprite::format::Hairstyle::clone(&self) -> pixtuoid_core::sprite::format::Hairstyle
+pub fn pixtuoid_core::sprite::format::Hairstyle::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Hairstyle
 pub fn pixtuoid_core::sprite::format::Hairstyle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::Hairstyle
@@ -1349,7 +1349,7 @@ impl pixtuoid_core::sprite::format::IconArt
 pub fn pixtuoid_core::sprite::format::IconArt::screen(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
 pub fn pixtuoid_core::sprite::format::IconArt::world(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
 impl core::clone::Clone for pixtuoid_core::sprite::format::IconArt
-pub fn pixtuoid_core::sprite::format::IconArt::clone(&self) -> pixtuoid_core::sprite::format::IconArt
+pub fn pixtuoid_core::sprite::format::IconArt::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::IconArt
 pub fn pixtuoid_core::sprite::format::IconArt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::IconArt
@@ -1375,7 +1375,7 @@ pub fn pixtuoid_core::sprite::format::Pack::stride(&self, pixtuoid_core::sprite:
 pub fn pixtuoid_core::sprite::format::Pack::variants(&self) -> impl core::iter::traits::iterator::Iterator<Item = (pixtuoid_core::sprite::format::Piece, pixtuoid_core::sprite::format::Density, &pixtuoid_core::sprite::Sprite)>
 pub fn pixtuoid_core::sprite::format::Pack::variants_of(&self, pixtuoid_core::sprite::format::Piece) -> &alloc::collections::btree::map::BTreeMap<pixtuoid_core::sprite::format::Density, pixtuoid_core::sprite::Sprite>
 impl core::clone::Clone for pixtuoid_core::sprite::format::Pack
-pub fn pixtuoid_core::sprite::format::Pack::clone(&self) -> pixtuoid_core::sprite::format::Pack
+pub fn pixtuoid_core::sprite::format::Pack::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::format::Pack
 pub fn pixtuoid_core::sprite::format::Pack::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::format::Pack
@@ -1394,14 +1394,14 @@ pub pixtuoid_core::sprite::HeadView::Crown
 pub pixtuoid_core::sprite::HeadView::Front
 pub pixtuoid_core::sprite::HeadView::Side
 impl core::clone::Clone for pixtuoid_core::sprite::HeadView
-pub fn pixtuoid_core::sprite::HeadView::clone(&self) -> pixtuoid_core::sprite::HeadView
+pub fn pixtuoid_core::sprite::HeadView::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::HeadView
 impl core::cmp::Ord for pixtuoid_core::sprite::HeadView
-pub fn pixtuoid_core::sprite::HeadView::cmp(&self, &pixtuoid_core::sprite::HeadView) -> core::cmp::Ordering
+pub fn pixtuoid_core::sprite::HeadView::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::sprite::HeadView
-pub fn pixtuoid_core::sprite::HeadView::eq(&self, &pixtuoid_core::sprite::HeadView) -> bool
+pub fn pixtuoid_core::sprite::HeadView::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::sprite::HeadView
-pub fn pixtuoid_core::sprite::HeadView::partial_cmp(&self, &pixtuoid_core::sprite::HeadView) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::sprite::HeadView::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::sprite::HeadView
 pub fn pixtuoid_core::sprite::HeadView::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::HeadView
@@ -1421,9 +1421,9 @@ pub fn pixtuoid_core::sprite::Frame::from_pixels(u16, u16, alloc::vec::Vec<pixtu
 pub fn pixtuoid_core::sprite::Frame::mirror_horizontal(&self) -> Self
 pub fn pixtuoid_core::sprite::Frame::mirror_vertical(&self) -> Self
 impl core::clone::Clone for pixtuoid_core::sprite::Frame
-pub fn pixtuoid_core::sprite::Frame::clone(&self) -> pixtuoid_core::sprite::Frame
+pub fn pixtuoid_core::sprite::Frame::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::sprite::Frame
-pub fn pixtuoid_core::sprite::Frame::default() -> pixtuoid_core::sprite::Frame
+pub fn pixtuoid_core::sprite::Frame::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Frame
 pub fn pixtuoid_core::sprite::Frame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::deref::Deref for pixtuoid_core::sprite::Frame
@@ -1442,10 +1442,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::Frame
 pub pixtuoid_core::sprite::HeadMark::view: pixtuoid_core::sprite::HeadView
 pub pixtuoid_core::sprite::HeadMark::x: u16
 impl core::clone::Clone for pixtuoid_core::sprite::HeadMark
-pub fn pixtuoid_core::sprite::HeadMark::clone(&self) -> pixtuoid_core::sprite::HeadMark
+pub fn pixtuoid_core::sprite::HeadMark::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::HeadMark
 impl core::cmp::PartialEq for pixtuoid_core::sprite::HeadMark
-pub fn pixtuoid_core::sprite::HeadMark::eq(&self, &pixtuoid_core::sprite::HeadMark) -> bool
+pub fn pixtuoid_core::sprite::HeadMark::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::HeadMark
 pub fn pixtuoid_core::sprite::HeadMark::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::HeadMark
@@ -1465,10 +1465,10 @@ pub fn pixtuoid_core::sprite::Mark::name(&self) -> &str
 pub fn pixtuoid_core::sprite::Mark::x(&self) -> u16
 pub fn pixtuoid_core::sprite::Mark::y(&self) -> u16
 impl core::clone::Clone for pixtuoid_core::sprite::Mark
-pub fn pixtuoid_core::sprite::Mark::clone(&self) -> pixtuoid_core::sprite::Mark
+pub fn pixtuoid_core::sprite::Mark::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::Mark
 impl core::cmp::PartialEq for pixtuoid_core::sprite::Mark
-pub fn pixtuoid_core::sprite::Mark::eq(&self, &pixtuoid_core::sprite::Mark) -> bool
+pub fn pixtuoid_core::sprite::Mark::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::Mark
 pub fn pixtuoid_core::sprite::Mark::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::Mark
@@ -1485,9 +1485,9 @@ pub struct pixtuoid_core::sprite::Palette
 impl pixtuoid_core::sprite::Palette
 pub fn pixtuoid_core::sprite::Palette::get(&self, char) -> core::option::Option<pixtuoid_core::sprite::Pixel>
 impl core::clone::Clone for pixtuoid_core::sprite::Palette
-pub fn pixtuoid_core::sprite::Palette::clone(&self) -> pixtuoid_core::sprite::Palette
+pub fn pixtuoid_core::sprite::Palette::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::sprite::Palette
-pub fn pixtuoid_core::sprite::Palette::default() -> pixtuoid_core::sprite::Palette
+pub fn pixtuoid_core::sprite::Palette::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Palette
 pub fn pixtuoid_core::sprite::Palette::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::Palette
@@ -1502,7 +1502,7 @@ impl pixtuoid_core::sprite::RecolorableFrame<'_>
 pub fn pixtuoid_core::sprite::RecolorableFrame<'_>::drawn_in(&self, &[char]) -> alloc::vec::Vec<bool>
 pub fn pixtuoid_core::sprite::RecolorableFrame<'_>::recolored(&self, &[(char, pixtuoid_core::sprite::Pixel)]) -> pixtuoid_core::sprite::Frame
 impl<'a> core::clone::Clone for pixtuoid_core::sprite::RecolorableFrame<'a>
-pub fn pixtuoid_core::sprite::RecolorableFrame<'a>::clone(&self) -> pixtuoid_core::sprite::RecolorableFrame<'a>
+pub fn pixtuoid_core::sprite::RecolorableFrame<'a>::clone(&self) -> Self
 impl<'a> core::fmt::Debug for pixtuoid_core::sprite::RecolorableFrame<'a>
 pub fn pixtuoid_core::sprite::RecolorableFrame<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for pixtuoid_core::sprite::RecolorableFrame<'a>
@@ -1522,10 +1522,10 @@ pub fn pixtuoid_core::sprite::Rgb::lightness(self) -> f32
 pub fn pixtuoid_core::sprite::Rgb::mix(self, pixtuoid_core::sprite::Rgb, f32) -> pixtuoid_core::sprite::Rgb
 pub fn pixtuoid_core::sprite::Rgb::ramp(self, i8) -> pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_core::sprite::Rgb
-pub fn pixtuoid_core::sprite::Rgb::clone(&self) -> pixtuoid_core::sprite::Rgb
+pub fn pixtuoid_core::sprite::Rgb::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::Rgb
 impl core::cmp::PartialEq for pixtuoid_core::sprite::Rgb
-pub fn pixtuoid_core::sprite::Rgb::eq(&self, &pixtuoid_core::sprite::Rgb) -> bool
+pub fn pixtuoid_core::sprite::Rgb::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::Rgb
 pub fn pixtuoid_core::sprite::Rgb::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::Rgb
@@ -1552,7 +1552,7 @@ pub fn pixtuoid_core::sprite::RgbBuffer::put_checked(&mut self, u16, u16, pixtuo
 pub fn pixtuoid_core::sprite::RgbBuffer::resize_fill(&mut self, u16, u16, pixtuoid_core::sprite::Rgb)
 pub fn pixtuoid_core::sprite::RgbBuffer::written_in(&self, u16, u16, pixtuoid_core::sprite::WriteEpoch) -> bool
 impl core::clone::Clone for pixtuoid_core::sprite::RgbBuffer
-pub fn pixtuoid_core::sprite::RgbBuffer::clone(&self) -> pixtuoid_core::sprite::RgbBuffer
+pub fn pixtuoid_core::sprite::RgbBuffer::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::RgbBuffer
 pub fn pixtuoid_core::sprite::RgbBuffer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::deref::Deref for pixtuoid_core::sprite::RgbBuffer
@@ -1578,7 +1578,7 @@ pub fn pixtuoid_core::sprite::Sprite::recolorable_at(&self, usize) -> pixtuoid_c
 pub fn pixtuoid_core::sprite::Sprite::stride(&self) -> core::option::Option<core::num::nonzero::NonZeroU16>
 pub fn pixtuoid_core::sprite::Sprite::wrap(&self, usize) -> usize
 impl core::clone::Clone for pixtuoid_core::sprite::Sprite
-pub fn pixtuoid_core::sprite::Sprite::clone(&self) -> pixtuoid_core::sprite::Sprite
+pub fn pixtuoid_core::sprite::Sprite::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Sprite
 pub fn pixtuoid_core::sprite::Sprite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::Sprite
@@ -1590,10 +1590,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::sprite::Sprite
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::Sprite
 pub struct pixtuoid_core::sprite::WriteEpoch(_)
 impl core::clone::Clone for pixtuoid_core::sprite::WriteEpoch
-pub fn pixtuoid_core::sprite::WriteEpoch::clone(&self) -> pixtuoid_core::sprite::WriteEpoch
+pub fn pixtuoid_core::sprite::WriteEpoch::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::WriteEpoch
 impl core::cmp::PartialEq for pixtuoid_core::sprite::WriteEpoch
-pub fn pixtuoid_core::sprite::WriteEpoch::eq(&self, &pixtuoid_core::sprite::WriteEpoch) -> bool
+pub fn pixtuoid_core::sprite::WriteEpoch::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::WriteEpoch
 pub fn pixtuoid_core::sprite::WriteEpoch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::sprite::WriteEpoch
@@ -1615,7 +1615,7 @@ pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
 impl core::default::Default for pixtuoid_core::state::reducer::Reducer
-pub fn pixtuoid_core::state::reducer::Reducer::default() -> pixtuoid_core::state::reducer::Reducer
+pub fn pixtuoid_core::state::reducer::Reducer::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::state::reducer::Reducer
@@ -1628,17 +1628,17 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::reducer::Red
 pub const pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW: core::time::Duration
 pub enum pixtuoid_core::state::ActivityState
 pub pixtuoid_core::state::ActivityState::Active
-pub pixtuoid_core::state::ActivityState::Active::detail: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::state::ActivityState::Active::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::ActivityState::Active::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::state::ActivityState::Active::tool_use_id: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::state::ActivityState::Active::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::ActivityState::Idle
 pub pixtuoid_core::state::ActivityState::Waiting
-pub pixtuoid_core::state::ActivityState::Waiting::reason: alloc::sync::Arc<str>
+pub pixtuoid_core::state::ActivityState::Waiting::reason: alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
-pub fn pixtuoid_core::state::ActivityState::clone(&self) -> pixtuoid_core::state::ActivityState
+pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
 impl core::cmp::PartialEq for pixtuoid_core::state::ActivityState
-pub fn pixtuoid_core::state::ActivityState::eq(&self, &pixtuoid_core::state::ActivityState) -> bool
+pub fn pixtuoid_core::state::ActivityState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::ActivityState
@@ -1660,10 +1660,10 @@ pub pixtuoid_core::state::DaemonLiveness::Up::degraded: bool
 impl pixtuoid_core::state::DaemonLiveness
 pub const pixtuoid_core::state::DaemonLiveness::UP: pixtuoid_core::state::DaemonLiveness
 impl core::clone::Clone for pixtuoid_core::state::DaemonLiveness
-pub fn pixtuoid_core::state::DaemonLiveness::clone(&self) -> pixtuoid_core::state::DaemonLiveness
+pub fn pixtuoid_core::state::DaemonLiveness::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::DaemonLiveness
 impl core::cmp::PartialEq for pixtuoid_core::state::DaemonLiveness
-pub fn pixtuoid_core::state::DaemonLiveness::eq(&self, &pixtuoid_core::state::DaemonLiveness) -> bool
+pub fn pixtuoid_core::state::DaemonLiveness::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::DaemonLiveness
 pub fn pixtuoid_core::state::DaemonLiveness::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::state::DaemonLiveness
@@ -1685,10 +1685,10 @@ pub pixtuoid_core::state::DaemonState::Degraded
 pub pixtuoid_core::state::DaemonState::Down
 pub pixtuoid_core::state::DaemonState::Idle
 impl core::clone::Clone for pixtuoid_core::state::DaemonState
-pub fn pixtuoid_core::state::DaemonState::clone(&self) -> pixtuoid_core::state::DaemonState
+pub fn pixtuoid_core::state::DaemonState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::DaemonState
 impl core::cmp::PartialEq for pixtuoid_core::state::DaemonState
-pub fn pixtuoid_core::state::DaemonState::eq(&self, &pixtuoid_core::state::DaemonState) -> bool
+pub fn pixtuoid_core::state::DaemonState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::DaemonState
 pub fn pixtuoid_core::state::DaemonState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::state::DaemonState
@@ -1715,10 +1715,10 @@ impl pixtuoid_core::state::ToolKind
 pub fn pixtuoid_core::state::ToolKind::from_detail(&pixtuoid_core::source::ToolDetail) -> Self
 pub fn pixtuoid_core::state::ToolKind::from_display(&str) -> Self
 impl core::clone::Clone for pixtuoid_core::state::ToolKind
-pub fn pixtuoid_core::state::ToolKind::clone(&self) -> pixtuoid_core::state::ToolKind
+pub fn pixtuoid_core::state::ToolKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ToolKind
 impl core::cmp::PartialEq for pixtuoid_core::state::ToolKind
-pub fn pixtuoid_core::state::ToolKind::eq(&self, &pixtuoid_core::state::ToolKind) -> bool
+pub fn pixtuoid_core::state::ToolKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::ToolKind
 pub fn pixtuoid_core::state::ToolKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::state::ToolKind
@@ -1738,7 +1738,7 @@ pub struct pixtuoid_core::state::AgentSlot
 pub pixtuoid_core::state::AgentSlot::active_ms: u64
 pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::state::AgentSlot::created_at: std::time::SystemTime
-pub pixtuoid_core::state::AgentSlot::cwd: alloc::sync::Arc<std::path::Path>
+pub pixtuoid_core::state::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
 pub pixtuoid_core::state::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex
 pub pixtuoid_core::state::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::state::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
@@ -1746,19 +1746,19 @@ pub pixtuoid_core::state::AgentSlot::floor_idx: usize
 pub pixtuoid_core::state::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::state::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
-pub pixtuoid_core::state::AgentSlot::model: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::state::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::state::AgentSlot::pending_idle_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::state::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
-pub pixtuoid_core::state::AgentSlot::session_id: alloc::sync::Arc<str>
-pub pixtuoid_core::state::AgentSlot::source: alloc::sync::Arc<str>
+pub pixtuoid_core::state::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
+pub pixtuoid_core::state::AgentSlot::source: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::state::AgentSlot::state: pixtuoid_core::state::ActivityState
 pub pixtuoid_core::state::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::tokens_used: u64
 pub pixtuoid_core::state::AgentSlot::tool_call_count: u32
 pub pixtuoid_core::state::AgentSlot::unknown_cwd: bool
 impl core::clone::Clone for pixtuoid_core::state::AgentSlot
-pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> pixtuoid_core::state::AgentSlot
+pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for pixtuoid_core::state::AgentSlot
@@ -1777,14 +1777,14 @@ impl pixtuoid_core::state::DaemonInstanceId
 pub fn pixtuoid_core::state::DaemonInstanceId::as_str(&self) -> &str
 pub fn pixtuoid_core::state::DaemonInstanceId::new(impl core::convert::Into<alloc::string::String>) -> core::option::Option<Self>
 impl core::clone::Clone for pixtuoid_core::state::DaemonInstanceId
-pub fn pixtuoid_core::state::DaemonInstanceId::clone(&self) -> pixtuoid_core::state::DaemonInstanceId
+pub fn pixtuoid_core::state::DaemonInstanceId::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::DaemonInstanceId
 impl core::cmp::Ord for pixtuoid_core::state::DaemonInstanceId
-pub fn pixtuoid_core::state::DaemonInstanceId::cmp(&self, &pixtuoid_core::state::DaemonInstanceId) -> core::cmp::Ordering
+pub fn pixtuoid_core::state::DaemonInstanceId::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::state::DaemonInstanceId
-pub fn pixtuoid_core::state::DaemonInstanceId::eq(&self, &pixtuoid_core::state::DaemonInstanceId) -> bool
+pub fn pixtuoid_core::state::DaemonInstanceId::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::state::DaemonInstanceId
-pub fn pixtuoid_core::state::DaemonInstanceId::partial_cmp(&self, &pixtuoid_core::state::DaemonInstanceId) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::state::DaemonInstanceId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::TryFrom<alloc::string::String> for pixtuoid_core::state::DaemonInstanceId
 pub type pixtuoid_core::state::DaemonInstanceId::Error = &'static str
 pub fn pixtuoid_core::state::DaemonInstanceId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
@@ -1816,7 +1816,7 @@ pub pixtuoid_core::state::DaemonPresence::liveness: pixtuoid_core::state::Daemon
 impl pixtuoid_core::state::DaemonPresence
 pub fn pixtuoid_core::state::DaemonPresence::display_state(&self) -> pixtuoid_core::state::DaemonState
 impl core::clone::Clone for pixtuoid_core::state::DaemonPresence
-pub fn pixtuoid_core::state::DaemonPresence::clone(&self) -> pixtuoid_core::state::DaemonPresence
+pub fn pixtuoid_core::state::DaemonPresence::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::state::DaemonPresence
 pub fn pixtuoid_core::state::DaemonPresence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for pixtuoid_core::state::DaemonPresence
@@ -1832,14 +1832,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::DaemonPre
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::DaemonPresence
 #[non_exhaustive] pub struct pixtuoid_core::state::EffortObservation
 pub pixtuoid_core::state::EffortObservation::seen_at: std::time::SystemTime
-pub pixtuoid_core::state::EffortObservation::value: alloc::sync::Arc<str>
+pub pixtuoid_core::state::EffortObservation::value: alloc::rcs::arc::Arc<str>
 impl pixtuoid_core::state::EffortObservation
-pub fn pixtuoid_core::state::EffortObservation::new(alloc::sync::Arc<str>, std::time::SystemTime) -> Self
+pub fn pixtuoid_core::state::EffortObservation::new(alloc::rcs::arc::Arc<str>, std::time::SystemTime) -> Self
 impl core::clone::Clone for pixtuoid_core::state::EffortObservation
-pub fn pixtuoid_core::state::EffortObservation::clone(&self) -> pixtuoid_core::state::EffortObservation
+pub fn pixtuoid_core::state::EffortObservation::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::EffortObservation
 impl core::cmp::PartialEq for pixtuoid_core::state::EffortObservation
-pub fn pixtuoid_core::state::EffortObservation::eq(&self, &pixtuoid_core::state::EffortObservation) -> bool
+pub fn pixtuoid_core::state::EffortObservation::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::EffortObservation
 pub fn pixtuoid_core::state::EffortObservation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::EffortObservation
@@ -1856,14 +1856,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::EffortObs
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::EffortObservation
 pub struct pixtuoid_core::state::FloorLocalDeskIndex(pub usize)
 impl core::clone::Clone for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::cmp::Ord for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::cmp(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> core::cmp::Ordering
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::eq(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> bool
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::partial_cmp(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::state::FloorLocalDeskIndex
@@ -1881,14 +1881,14 @@ pub struct pixtuoid_core::state::GlobalDeskIndex(pub usize)
 impl pixtuoid_core::state::GlobalDeskIndex
 pub fn pixtuoid_core::state::GlobalDeskIndex::single_floor_local(self) -> pixtuoid_core::state::FloorLocalDeskIndex
 impl core::clone::Clone for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> pixtuoid_core::state::GlobalDeskIndex
+pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::GlobalDeskIndex
 impl core::cmp::Ord for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &pixtuoid_core::state::GlobalDeskIndex) -> core::cmp::Ordering
+pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &pixtuoid_core::state::GlobalDeskIndex) -> bool
+pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &pixtuoid_core::state::GlobalDeskIndex) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::state::GlobalDeskIndex
 pub fn pixtuoid_core::state::GlobalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::state::GlobalDeskIndex
@@ -1921,7 +1921,7 @@ pub fn pixtuoid_core::state::SceneState::next_free_desk(&self) -> core::option::
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState
-pub fn pixtuoid_core::state::SceneState::clone(&self) -> pixtuoid_core::state::SceneState
+pub fn pixtuoid_core::state::SceneState::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::SceneState
@@ -1939,9 +1939,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneStat
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
 pub struct pixtuoid_core::state::SlotLabel
 impl pixtuoid_core::state::SlotLabel
-pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::sync::Arc<str>
+pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::SlotLabel
-pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> pixtuoid_core::state::SlotLabel
+pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> Self
 impl core::convert::AsRef<str> for pixtuoid_core::state::SlotLabel
 pub fn pixtuoid_core::state::SlotLabel::as_ref(&self) -> &str
 impl core::convert::From<&str> for pixtuoid_core::state::SlotLabel
@@ -1972,10 +1972,10 @@ pub pixtuoid_core::state::UsageObservation::seen_at: std::time::SystemTime
 impl pixtuoid_core::state::UsageObservation
 pub fn pixtuoid_core::state::UsageObservation::new(u64, std::time::SystemTime) -> Self
 impl core::clone::Clone for pixtuoid_core::state::UsageObservation
-pub fn pixtuoid_core::state::UsageObservation::clone(&self) -> pixtuoid_core::state::UsageObservation
+pub fn pixtuoid_core::state::UsageObservation::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::UsageObservation
 impl core::cmp::PartialEq for pixtuoid_core::state::UsageObservation
-pub fn pixtuoid_core::state::UsageObservation::eq(&self, &pixtuoid_core::state::UsageObservation) -> bool
+pub fn pixtuoid_core::state::UsageObservation::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::UsageObservation
 pub fn pixtuoid_core::state::UsageObservation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::state::UsageObservation
@@ -2002,9 +2002,9 @@ pub fn pixtuoid_core::walkable::OccupancyOverlay::is_empty(&self) -> bool
 pub fn pixtuoid_core::walkable::OccupancyOverlay::new() -> Self
 pub fn pixtuoid_core::walkable::OccupancyOverlay::signature(&self) -> u64
 impl core::clone::Clone for pixtuoid_core::walkable::OccupancyOverlay
-pub fn pixtuoid_core::walkable::OccupancyOverlay::clone(&self) -> pixtuoid_core::walkable::OccupancyOverlay
+pub fn pixtuoid_core::walkable::OccupancyOverlay::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::walkable::OccupancyOverlay
-pub fn pixtuoid_core::walkable::OccupancyOverlay::default() -> pixtuoid_core::walkable::OccupancyOverlay
+pub fn pixtuoid_core::walkable::OccupancyOverlay::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::walkable::OccupancyOverlay
 pub fn pixtuoid_core::walkable::OccupancyOverlay::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::walkable::OccupancyOverlay
@@ -2017,17 +2017,17 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::walkable::Occupancy
 pub type pixtuoid_core::walkable::WalkableMask = pixtuoid_core::grid::Grid<bool>
 pub enum pixtuoid_core::ActivityState
 pub pixtuoid_core::ActivityState::Active
-pub pixtuoid_core::ActivityState::Active::detail: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::ActivityState::Active::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::ActivityState::Active::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::ActivityState::Active::tool_use_id: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::ActivityState::Active::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::ActivityState::Idle
 pub pixtuoid_core::ActivityState::Waiting
-pub pixtuoid_core::ActivityState::Waiting::reason: alloc::sync::Arc<str>
+pub pixtuoid_core::ActivityState::Waiting::reason: alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
-pub fn pixtuoid_core::state::ActivityState::clone(&self) -> pixtuoid_core::state::ActivityState
+pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
 impl core::cmp::PartialEq for pixtuoid_core::state::ActivityState
-pub fn pixtuoid_core::state::ActivityState::eq(&self, &pixtuoid_core::state::ActivityState) -> bool
+pub fn pixtuoid_core::state::ActivityState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::ActivityState
@@ -2084,10 +2084,10 @@ pub pixtuoid_core::AgentEvent::Waiting::tool_use_id: core::option::Option<alloc:
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
-pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> pixtuoid_core::source::AgentEvent
+pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
 impl core::cmp::PartialEq for pixtuoid_core::source::AgentEvent
-pub fn pixtuoid_core::source::AgentEvent::eq(&self, &pixtuoid_core::source::AgentEvent) -> bool
+pub fn pixtuoid_core::source::AgentEvent::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::AgentEvent
@@ -2110,10 +2110,10 @@ impl pixtuoid_core::source::ToolDetail
 pub fn pixtuoid_core::source::ToolDetail::display(&self) -> &str
 pub fn pixtuoid_core::source::ToolDetail::is_task(&self) -> bool
 impl core::clone::Clone for pixtuoid_core::source::ToolDetail
-pub fn pixtuoid_core::source::ToolDetail::clone(&self) -> pixtuoid_core::source::ToolDetail
+pub fn pixtuoid_core::source::ToolDetail::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::ToolDetail
 impl core::cmp::PartialEq for pixtuoid_core::source::ToolDetail
-pub fn pixtuoid_core::source::ToolDetail::eq(&self, &pixtuoid_core::source::ToolDetail) -> bool
+pub fn pixtuoid_core::source::ToolDetail::eq(&self, &Self) -> bool
 impl core::convert::From<&str> for pixtuoid_core::source::ToolDetail
 pub fn pixtuoid_core::source::ToolDetail::from(&str) -> Self
 impl core::fmt::Debug for pixtuoid_core::source::ToolDetail
@@ -2141,10 +2141,10 @@ impl pixtuoid_core::state::ToolKind
 pub fn pixtuoid_core::state::ToolKind::from_detail(&pixtuoid_core::source::ToolDetail) -> Self
 pub fn pixtuoid_core::state::ToolKind::from_display(&str) -> Self
 impl core::clone::Clone for pixtuoid_core::state::ToolKind
-pub fn pixtuoid_core::state::ToolKind::clone(&self) -> pixtuoid_core::state::ToolKind
+pub fn pixtuoid_core::state::ToolKind::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ToolKind
 impl core::cmp::PartialEq for pixtuoid_core::state::ToolKind
-pub fn pixtuoid_core::state::ToolKind::eq(&self, &pixtuoid_core::state::ToolKind) -> bool
+pub fn pixtuoid_core::state::ToolKind::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::state::ToolKind
 pub fn pixtuoid_core::state::ToolKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::state::ToolKind
@@ -2164,10 +2164,10 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ToolKind
 pub pixtuoid_core::Transport::Hook
 pub pixtuoid_core::Transport::Jsonl
 impl core::clone::Clone for pixtuoid_core::source::Transport
-pub fn pixtuoid_core::source::Transport::clone(&self) -> pixtuoid_core::source::Transport
+pub fn pixtuoid_core::source::Transport::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::Transport
 impl core::cmp::PartialEq for pixtuoid_core::source::Transport
-pub fn pixtuoid_core::source::Transport::eq(&self, &pixtuoid_core::source::Transport) -> bool
+pub fn pixtuoid_core::source::Transport::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::source::Transport
 pub fn pixtuoid_core::source::Transport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::source::Transport
@@ -2184,14 +2184,14 @@ impl pixtuoid_core::id::AgentId
 pub fn pixtuoid_core::id::AgentId::from_parts(&str, &str) -> Self
 pub fn pixtuoid_core::id::AgentId::raw(self) -> u64
 impl core::clone::Clone for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::clone(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::id::AgentId::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::id::AgentId
 impl core::cmp::Ord for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::cmp(&self, &pixtuoid_core::id::AgentId) -> core::cmp::Ordering
+pub fn pixtuoid_core::id::AgentId::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::eq(&self, &pixtuoid_core::id::AgentId) -> bool
+pub fn pixtuoid_core::id::AgentId::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::id::AgentId
-pub fn pixtuoid_core::id::AgentId::partial_cmp(&self, &pixtuoid_core::id::AgentId) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::id::AgentId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::id::AgentId
 pub fn pixtuoid_core::id::AgentId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for pixtuoid_core::id::AgentId
@@ -2215,7 +2215,7 @@ pub struct pixtuoid_core::AgentSlot
 pub pixtuoid_core::AgentSlot::active_ms: u64
 pub pixtuoid_core::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentSlot::created_at: std::time::SystemTime
-pub pixtuoid_core::AgentSlot::cwd: alloc::sync::Arc<std::path::Path>
+pub pixtuoid_core::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
 pub pixtuoid_core::AgentSlot::desk_index: pixtuoid_core::state::GlobalDeskIndex
 pub pixtuoid_core::AgentSlot::effort: core::option::Option<pixtuoid_core::state::EffortObservation>
 pub pixtuoid_core::AgentSlot::exiting_at: core::option::Option<std::time::SystemTime>
@@ -2223,19 +2223,19 @@ pub pixtuoid_core::AgentSlot::floor_idx: usize
 pub pixtuoid_core::AgentSlot::label: pixtuoid_core::state::SlotLabel
 pub pixtuoid_core::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
-pub pixtuoid_core::AgentSlot::model: core::option::Option<alloc::sync::Arc<str>>
+pub pixtuoid_core::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::AgentSlot::pending_idle_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
-pub pixtuoid_core::AgentSlot::session_id: alloc::sync::Arc<str>
-pub pixtuoid_core::AgentSlot::source: alloc::sync::Arc<str>
+pub pixtuoid_core::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
+pub pixtuoid_core::AgentSlot::source: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::AgentSlot::state: pixtuoid_core::state::ActivityState
 pub pixtuoid_core::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::tokens_used: u64
 pub pixtuoid_core::AgentSlot::tool_call_count: u32
 pub pixtuoid_core::AgentSlot::unknown_cwd: bool
 impl core::clone::Clone for pixtuoid_core::state::AgentSlot
-pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> pixtuoid_core::state::AgentSlot
+pub fn pixtuoid_core::state::AgentSlot::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for pixtuoid_core::state::AgentSlot
@@ -2251,14 +2251,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::AgentSlot
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::AgentSlot
 pub struct pixtuoid_core::FloorLocalDeskIndex(pub usize)
 impl core::clone::Clone for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> pixtuoid_core::state::FloorLocalDeskIndex
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::FloorLocalDeskIndex
 impl core::cmp::Ord for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::cmp(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> core::cmp::Ordering
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::eq(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> bool
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::state::FloorLocalDeskIndex
-pub fn pixtuoid_core::state::FloorLocalDeskIndex::partial_cmp(&self, &pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::state::FloorLocalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::state::FloorLocalDeskIndex
 pub fn pixtuoid_core::state::FloorLocalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::state::FloorLocalDeskIndex
@@ -2278,9 +2278,9 @@ pub fn pixtuoid_core::sprite::Frame::from_pixels(u16, u16, alloc::vec::Vec<pixtu
 pub fn pixtuoid_core::sprite::Frame::mirror_horizontal(&self) -> Self
 pub fn pixtuoid_core::sprite::Frame::mirror_vertical(&self) -> Self
 impl core::clone::Clone for pixtuoid_core::sprite::Frame
-pub fn pixtuoid_core::sprite::Frame::clone(&self) -> pixtuoid_core::sprite::Frame
+pub fn pixtuoid_core::sprite::Frame::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::sprite::Frame
-pub fn pixtuoid_core::sprite::Frame::default() -> pixtuoid_core::sprite::Frame
+pub fn pixtuoid_core::sprite::Frame::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Frame
 pub fn pixtuoid_core::sprite::Frame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::deref::Deref for pixtuoid_core::sprite::Frame
@@ -2299,14 +2299,14 @@ pub struct pixtuoid_core::GlobalDeskIndex(pub usize)
 impl pixtuoid_core::state::GlobalDeskIndex
 pub fn pixtuoid_core::state::GlobalDeskIndex::single_floor_local(self) -> pixtuoid_core::state::FloorLocalDeskIndex
 impl core::clone::Clone for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> pixtuoid_core::state::GlobalDeskIndex
+pub fn pixtuoid_core::state::GlobalDeskIndex::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::GlobalDeskIndex
 impl core::cmp::Ord for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &pixtuoid_core::state::GlobalDeskIndex) -> core::cmp::Ordering
+pub fn pixtuoid_core::state::GlobalDeskIndex::cmp(&self, &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &pixtuoid_core::state::GlobalDeskIndex) -> bool
+pub fn pixtuoid_core::state::GlobalDeskIndex::eq(&self, &Self) -> bool
 impl core::cmp::PartialOrd for pixtuoid_core::state::GlobalDeskIndex
-pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &pixtuoid_core::state::GlobalDeskIndex) -> core::option::Option<core::cmp::Ordering>
+pub fn pixtuoid_core::state::GlobalDeskIndex::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::fmt::Debug for pixtuoid_core::state::GlobalDeskIndex
 pub fn pixtuoid_core::state::GlobalDeskIndex::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::state::GlobalDeskIndex
@@ -2342,22 +2342,22 @@ impl<T> pixtuoid_core::grid::Grid<T>
 pub fn pixtuoid_core::grid::Grid<T>::height(&self) -> u16
 pub fn pixtuoid_core::grid::Grid<T>::width(&self) -> u16
 impl<T: core::clone::Clone> core::clone::Clone for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::clone(&self) -> pixtuoid_core::grid::Grid<T>
+pub fn pixtuoid_core::grid::Grid<T>::clone(&self) -> Self
 impl<T: core::cmp::Eq> core::cmp::Eq for pixtuoid_core::grid::Grid<T>
 impl<T: core::cmp::PartialEq> core::cmp::PartialEq for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::eq(&self, &pixtuoid_core::grid::Grid<T>) -> bool
+pub fn pixtuoid_core::grid::Grid<T>::eq(&self, &Self) -> bool
 impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for pixtuoid_core::grid::Grid<T>
 impl<T: core::default::Default> core::default::Default for pixtuoid_core::grid::Grid<T>
-pub fn pixtuoid_core::grid::Grid<T>::default() -> pixtuoid_core::grid::Grid<T>
+pub fn pixtuoid_core::grid::Grid<T>::default() -> Self
 impl<T: core::fmt::Debug> core::fmt::Debug for pixtuoid_core::grid::Grid<T>
 pub fn pixtuoid_core::grid::Grid<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T> core::marker::Freeze for pixtuoid_core::grid::Grid<T>
-impl<T> core::marker::Send for pixtuoid_core::grid::Grid<T> where T: core::marker::Send
-impl<T> core::marker::Sync for pixtuoid_core::grid::Grid<T> where T: core::marker::Sync
-impl<T> core::marker::Unpin for pixtuoid_core::grid::Grid<T> where T: core::marker::Unpin
-impl<T> core::marker::UnsafeUnpin for pixtuoid_core::grid::Grid<T>
-impl<T> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::grid::Grid<T> where T: core::panic::unwind_safe::RefUnwindSafe
-impl<T> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::grid::Grid<T> where T: core::panic::unwind_safe::UnwindSafe
+impl<T> core::marker::Freeze for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Freeze
+impl<T> core::marker::Send for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Send
+impl<T> core::marker::Sync for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Sync
+impl<T> core::marker::Unpin for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for pixtuoid_core::grid::Grid<T> where alloc::vec::Vec<T>: core::panic::unwind_safe::UnwindSafe
 pub struct pixtuoid_core::OccupancyOverlay
 impl pixtuoid_core::walkable::OccupancyOverlay
 pub fn pixtuoid_core::walkable::OccupancyOverlay::add(&mut self, u16, u16, u16, u16)
@@ -2367,9 +2367,9 @@ pub fn pixtuoid_core::walkable::OccupancyOverlay::is_empty(&self) -> bool
 pub fn pixtuoid_core::walkable::OccupancyOverlay::new() -> Self
 pub fn pixtuoid_core::walkable::OccupancyOverlay::signature(&self) -> u64
 impl core::clone::Clone for pixtuoid_core::walkable::OccupancyOverlay
-pub fn pixtuoid_core::walkable::OccupancyOverlay::clone(&self) -> pixtuoid_core::walkable::OccupancyOverlay
+pub fn pixtuoid_core::walkable::OccupancyOverlay::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::walkable::OccupancyOverlay
-pub fn pixtuoid_core::walkable::OccupancyOverlay::default() -> pixtuoid_core::walkable::OccupancyOverlay
+pub fn pixtuoid_core::walkable::OccupancyOverlay::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::walkable::OccupancyOverlay
 pub fn pixtuoid_core::walkable::OccupancyOverlay::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::walkable::OccupancyOverlay
@@ -2383,9 +2383,9 @@ pub struct pixtuoid_core::Palette
 impl pixtuoid_core::sprite::Palette
 pub fn pixtuoid_core::sprite::Palette::get(&self, char) -> core::option::Option<pixtuoid_core::sprite::Pixel>
 impl core::clone::Clone for pixtuoid_core::sprite::Palette
-pub fn pixtuoid_core::sprite::Palette::clone(&self) -> pixtuoid_core::sprite::Palette
+pub fn pixtuoid_core::sprite::Palette::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::sprite::Palette
-pub fn pixtuoid_core::sprite::Palette::default() -> pixtuoid_core::sprite::Palette
+pub fn pixtuoid_core::sprite::Palette::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Palette
 pub fn pixtuoid_core::sprite::Palette::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::Palette
@@ -2402,7 +2402,7 @@ pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
 impl core::default::Default for pixtuoid_core::state::reducer::Reducer
-pub fn pixtuoid_core::state::reducer::Reducer::default() -> pixtuoid_core::state::reducer::Reducer
+pub fn pixtuoid_core::state::reducer::Reducer::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::state::reducer::Reducer
@@ -2421,10 +2421,10 @@ pub fn pixtuoid_core::sprite::Rgb::lightness(self) -> f32
 pub fn pixtuoid_core::sprite::Rgb::mix(self, pixtuoid_core::sprite::Rgb, f32) -> pixtuoid_core::sprite::Rgb
 pub fn pixtuoid_core::sprite::Rgb::ramp(self, i8) -> pixtuoid_core::sprite::Rgb
 impl core::clone::Clone for pixtuoid_core::sprite::Rgb
-pub fn pixtuoid_core::sprite::Rgb::clone(&self) -> pixtuoid_core::sprite::Rgb
+pub fn pixtuoid_core::sprite::Rgb::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::Rgb
 impl core::cmp::PartialEq for pixtuoid_core::sprite::Rgb
-pub fn pixtuoid_core::sprite::Rgb::eq(&self, &pixtuoid_core::sprite::Rgb) -> bool
+pub fn pixtuoid_core::sprite::Rgb::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::Rgb
 pub fn pixtuoid_core::sprite::Rgb::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for pixtuoid_core::sprite::Rgb
@@ -2451,7 +2451,7 @@ pub fn pixtuoid_core::sprite::RgbBuffer::put_checked(&mut self, u16, u16, pixtuo
 pub fn pixtuoid_core::sprite::RgbBuffer::resize_fill(&mut self, u16, u16, pixtuoid_core::sprite::Rgb)
 pub fn pixtuoid_core::sprite::RgbBuffer::written_in(&self, u16, u16, pixtuoid_core::sprite::WriteEpoch) -> bool
 impl core::clone::Clone for pixtuoid_core::sprite::RgbBuffer
-pub fn pixtuoid_core::sprite::RgbBuffer::clone(&self) -> pixtuoid_core::sprite::RgbBuffer
+pub fn pixtuoid_core::sprite::RgbBuffer::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::RgbBuffer
 pub fn pixtuoid_core::sprite::RgbBuffer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::deref::Deref for pixtuoid_core::sprite::RgbBuffer
@@ -2479,7 +2479,7 @@ pub fn pixtuoid_core::state::SceneState::next_free_desk(&self) -> core::option::
 pub fn pixtuoid_core::state::SceneState::total_capacity(&self) -> usize
 pub fn pixtuoid_core::state::SceneState::uniform(usize) -> Self
 impl core::clone::Clone for pixtuoid_core::state::SceneState
-pub fn pixtuoid_core::state::SceneState::clone(&self) -> pixtuoid_core::state::SceneState
+pub fn pixtuoid_core::state::SceneState::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::state::SceneState
 pub fn pixtuoid_core::state::SceneState::default() -> Self
 impl core::fmt::Debug for pixtuoid_core::state::SceneState
@@ -2497,9 +2497,9 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SceneStat
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SceneState
 pub struct pixtuoid_core::SlotLabel
 impl pixtuoid_core::state::SlotLabel
-pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::sync::Arc<str>
+pub fn pixtuoid_core::state::SlotLabel::text(&self) -> alloc::rcs::arc::Arc<str>
 impl core::clone::Clone for pixtuoid_core::state::SlotLabel
-pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> pixtuoid_core::state::SlotLabel
+pub fn pixtuoid_core::state::SlotLabel::clone(&self) -> Self
 impl core::convert::AsRef<str> for pixtuoid_core::state::SlotLabel
 pub fn pixtuoid_core::state::SlotLabel::as_ref(&self) -> &str
 impl core::convert::From<&str> for pixtuoid_core::state::SlotLabel
@@ -2537,7 +2537,7 @@ pub fn pixtuoid_core::sprite::Sprite::recolorable_at(&self, usize) -> pixtuoid_c
 pub fn pixtuoid_core::sprite::Sprite::stride(&self) -> core::option::Option<core::num::nonzero::NonZeroU16>
 pub fn pixtuoid_core::sprite::Sprite::wrap(&self, usize) -> usize
 impl core::clone::Clone for pixtuoid_core::sprite::Sprite
-pub fn pixtuoid_core::sprite::Sprite::clone(&self) -> pixtuoid_core::sprite::Sprite
+pub fn pixtuoid_core::sprite::Sprite::clone(&self) -> Self
 impl core::fmt::Debug for pixtuoid_core::sprite::Sprite
 pub fn pixtuoid_core::sprite::Sprite::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for pixtuoid_core::sprite::Sprite
@@ -2549,10 +2549,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::sprite::Sprite
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::Sprite
 pub struct pixtuoid_core::WriteEpoch(_)
 impl core::clone::Clone for pixtuoid_core::sprite::WriteEpoch
-pub fn pixtuoid_core::sprite::WriteEpoch::clone(&self) -> pixtuoid_core::sprite::WriteEpoch
+pub fn pixtuoid_core::sprite::WriteEpoch::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::sprite::WriteEpoch
 impl core::cmp::PartialEq for pixtuoid_core::sprite::WriteEpoch
-pub fn pixtuoid_core::sprite::WriteEpoch::eq(&self, &pixtuoid_core::sprite::WriteEpoch) -> bool
+pub fn pixtuoid_core::sprite::WriteEpoch::eq(&self, &Self) -> bool
 impl core::fmt::Debug for pixtuoid_core::sprite::WriteEpoch
 pub fn pixtuoid_core::sprite::WriteEpoch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for pixtuoid_core::sprite::WriteEpoch
