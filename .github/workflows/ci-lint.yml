@@ -89,50 +89,50 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Keyed on this workflow file: a version bump edits it, so the cache can
-      # never serve a stale binary; any other ci-lint edit costs one cold
-      # reinstall. ~/go/bin is spelled, not derived: GOPATH is the runner
-      # default, and deriving it here while the cache stores a literal is how
-      # a hit could restore binaries to a directory that is not on PATH.
+      # The tools this job installs run at their newest release, as the brew
+      # copies `just lint` uses locally do. The Go ones build from source, so
+      # the cache is keyed on the releases they resolve to and on this file,
+      # which holds the recipe: a new release or a changed recipe misses it.
+      - name: Resolve the Go tools' newest releases
+        id: go-latest
+        run: |
+          versions="$(go list -m -f '{{.Path}}@{{.Version}}' mvdan.cc/sh/v3@latest github.com/rhysd/actionlint@latest github.com/mikefarah/yq/v4@latest github.com/zricethezav/gitleaks/v8@latest)"
+          echo "versions=${versions//$'\n'/ }" >>"$GITHUB_OUTPUT"
+      # ~/go/bin is spelled, not derived: GOPATH is the runner default, and
+      # deriving it here while the cache stores a literal is how a hit could
+      # restore binaries to a directory that is not on PATH.
       - name: Cache the Go-built tools
         id: go-tools
         uses: actions/cache@v6
         with:
           path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}
+          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}-${{ steps.go-latest.outputs.versions }}
       - name: Expose Go tool binaries
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
-      - name: Install workflow lint + policy tools
+      - name: Install the Go-built tools
         if: steps.go-tools.outputs.cache-hit != 'true'
+        env:
+          VERSIONS: ${{ steps.go-latest.outputs.versions }}
         run: |
-          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          go install github.com/mikefarah/yq/v4@v4.53.3
-      - name: Install the JSON Schema validator
-        run: pipx install check-jsonschema==0.37.4
-      # Lychee is not manifest-managed by install-action, so its documented
-      # cargo-binstall fallback installs our pinned version.
+          for v in $VERSIONS; do
+            case "$v" in
+              mvdan.cc/sh/v3@*) go install "mvdan.cc/sh/v3/cmd/shfmt@${v#*@}" ;;
+              github.com/rhysd/actionlint@*) go install "github.com/rhysd/actionlint/cmd/actionlint@${v#*@}" ;;
+              # gitleaks among them: `just fixture-pii` is a REQUIRED gate, so
+              # a failed install must fail the job, never soft-fail here.
+              *) go install "$v" ;;
+            esac
+          done
+      # From PyPI, which carries each one's newest release; install-action
+      # would serve the one in the manifest its pinned ref bundles.
+      - name: Install the Python-packaged tools
+        run: pipx install check-jsonschema zizmor shellcheck-py
+      # Lychee is not manifest-managed by install-action; its documented
+      # cargo-binstall fallback installs its newest release.
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          tool: lychee@0.24.2,zizmor@1.30.0
+          tool: lychee
           fallback: cargo-binstall
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: shellcheck@0.11.0
-          fallback: none
-      # `just fixture-pii` is a REQUIRED gate and cannot degrade — a missing
-      # gitleaks must fail the job, not silently scan nothing. Not via
-      # taiki-e/install-action: gitleaks is not in its TOOLS.md (checked).
-      - name: Install gitleaks
-        run: |
-          set -euo pipefail
-          ver=8.30.1
-          url="https://github.com/gitleaks/gitleaks/releases/download/v$ver/gitleaks_${ver}_linux_x64.tar.gz"
-          curl -fsSL "$url" -o /tmp/gitleaks.tar.gz
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
-          gitleaks version
       - uses: ./.github/actions/setup-just
       - run: just toolchain-ceiling
       - run: just shfmt-check
@@ -165,7 +165,7 @@ jobs:
       # Exercise the generator before release.yml uses it to publish.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: ./.github/actions/setup-just
       - run: just npm-check
 
@@ -182,7 +182,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: ./.github/actions/setup-just
       - uses: actions/setup-python@v7
         with:

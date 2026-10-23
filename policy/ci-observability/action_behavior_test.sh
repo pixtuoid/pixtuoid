@@ -384,3 +384,24 @@ if (cd "$bare" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 G
 fi
 ! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
     fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
+
+# ── release.yml: the npm publish refuses an npm below Trusted Publishing's floor ──
+npm_script="$(workflow_step_script .github/workflows/release.yml "Check the bundled npm can publish by OIDC")"
+npm_bin="$test_dir/npm-bin"
+mkdir -p "$npm_bin"
+cat >"$npm_bin/npm" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$FAKE_NPM"
+STUB
+chmod +x "$npm_bin/npm"
+for have in 11.5.1 11.20.0 12.2.1; do
+    FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" >/dev/null 2>&1 ||
+        fail "the npm floor refused npm $have"
+done
+for have in 11.5.0 10.9.9; do
+    if said="$(FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" 2>&1)"; then
+        fail "the npm floor let npm $have publish"
+    fi
+    [[ "$said" == *"npm $have < 11.5.1"* ]] ||
+        fail "the npm floor refused npm $have without naming the 11.5.1 floor: $said"
+done
