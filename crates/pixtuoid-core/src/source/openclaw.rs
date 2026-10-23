@@ -67,14 +67,7 @@ fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result
                 format_args!("must be a port in 1..=65535, got {raw}"),
             )
         })?;
-    instance_id(port.to_string())
-}
-
-/// [`DaemonInstanceId::new`] for an id that is statically non-empty. The `None` arm
-/// is unreachable, but production code must not `unwrap`, so it degrades to an error.
-fn instance_id(raw: String) -> Result<DaemonInstanceId> {
-    DaemonInstanceId::new(raw)
-        .ok_or_else(|| DecodeError::invalid(SOURCE_NAME, "gateway instance id", "blank"))
+    Ok(DaemonInstanceId::from_port(port))
 }
 
 /// Decode one OpenClaw plugin envelope into the sending gateway's identity plus its

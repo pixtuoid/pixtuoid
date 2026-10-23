@@ -14,8 +14,7 @@
 //! transcript path, and a tool-call id only on `SubagentStart`/`SubagentStop`
 //! (`internal/ext/hook/hook.go` Payload).
 //! It DOES carry `sessionId` — every recorded payload does — so
-//! that is the AgentId key, cwd only as the fallback for a build that omits it.
-//! Keying on the workspace instead would merge two sessions in ONE project into
+//! that is the AgentId key. Keying on the workspace instead would merge two sessions in ONE project into
 //! a single sprite (the Cursor lesson; `hermes.rs` states it too).
 //!
 //! Why no JSONL transport: v2 session files are FULL-REWRITTEN (tmp+rename)
@@ -85,11 +84,10 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks `event` or a non-empty `cwd`, or names an unregistered event.
-pub(crate) fn decode_rx_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+/// If the payload lacks `event`, a non-empty `cwd` or `sessionId`, or names an unregistered event.
+pub(crate) fn decode_rx_hook_payload(
+    obj: &serde_json::Map<String, Value>,
+) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("event")
         .and_then(|s| s.as_str())
@@ -100,18 +98,14 @@ pub(crate) fn decode_rx_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "cwd"))?;
-    // Merged on cwd, either session's end walks the shared sprite out.
     let key = obj
         .get("sessionId")
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            // The fallback is for OLD builds that carried no id, and an upstream
-            // RENAME is indistinguishable from one — but its blast radius is
-            // every session merging onto cwd, so it must not be silent.
+        .ok_or_else(|| {
             crate::source::drift::missing_field(SOURCE_NAME, event, "sessionId");
-            cwd
-        });
+            DecodeError::missing_in(SOURCE_NAME, event, "sessionId")
+        })?;
     let (key, parent) = session_of(key);
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let parent_id = parent.map(|p| AgentId::from_parts(SOURCE_NAME, p));
@@ -285,29 +279,25 @@ fn rx_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_rx_hook_payload(&v).expect("decodes")
+        decode_rx_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     fn decode(v: Value) -> AgentEvent {
         decode_all(v).pop().expect("at least one event")
     }
 
-    /// An absent `sessionId` is breadcrumbed, not merged in silence.
-    ///
-    /// The cwd fallback stays for old builds, but an upstream RENAME looks
-    /// identical to one and collapses every session in a workspace onto a
-    /// single sprite — so the drop has to say so.
+    /// An absent `sessionId` is breadcrumbed, not merged in silence: an upstream
+    /// RENAME looks identical to a build that omits it.
     #[test]
-    fn a_missing_session_id_breadcrumbs_before_falling_back_to_cwd() {
+    fn a_missing_session_id_breadcrumbs_and_is_malformed() {
         let payload = json!({"event": "SessionStart", "cwd": "/repo"});
-        let mut evs = 0;
         let logs = crate::test_capture::capture_logs(|| {
-            evs = decode_rx_hook_payload(&payload).expect("decodes").len();
+            assert!(decode_rx_hook_payload(test_obj(&payload)).is_err());
         });
-        assert!(evs > 0, "the fallback still decodes the event");
         assert!(
             logs.contains(crate::source::drift::TARGET),
             "an absent sessionId must breadcrumb; got {logs:?}"
@@ -315,7 +305,7 @@ mod tests {
 
         let with_id = json!({"event": "SessionStart", "cwd": "/repo", "sessionId": "s1"});
         let quiet = crate::test_capture::capture_logs(|| {
-            decode_rx_hook_payload(&with_id).expect("decodes");
+            decode_rx_hook_payload(test_obj(&with_id)).expect("decodes");
         });
         assert!(
             !quiet.contains(crate::source::drift::TARGET),
@@ -326,9 +316,9 @@ mod tests {
     #[test]
     fn two_sessions_in_one_workspace_stay_two_agents() {
         let ev = |sid: &str| {
-            decode_rx_hook_payload(&json!({
+            decode_rx_hook_payload(test_obj(&json!({
                 "event": "SessionStart", "cwd": "/repo", "sessionId": sid
-            }))
+            })))
             .expect("decodes")
             .remove(0)
         };
@@ -338,18 +328,10 @@ mod tests {
     }
 
     #[test]
-    fn a_build_without_a_session_id_still_keys_on_cwd() {
-        let ev = decode_rx_hook_payload(&json!({"event": "SessionStart", "cwd": "/repo"}))
-            .expect("decodes")
-            .remove(0);
-        assert_eq!(ev.agent_id(), AgentId::from_parts(SOURCE_NAME, "/repo"));
-    }
-
-    #[test]
-    fn session_start_falls_back_to_cwd_without_a_session_id() {
+    fn session_start_carries_source_cwd_and_the_session_key() {
         let ev = decode(json!({
             "event": "SessionStart",
-            "cwd": "/Users/dev/zirs"
+            "sessionId": "s", "cwd": "/Users/dev/zirs"
         }));
         match ev {
             AgentEvent::SessionStart {
@@ -360,10 +342,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(source, SOURCE_NAME);
-                assert_eq!(
-                    agent_id,
-                    AgentId::from_parts(SOURCE_NAME, "/Users/dev/zirs")
-                );
+                assert_eq!(agent_id, AgentId::from_parts(SOURCE_NAME, "s"));
                 assert_eq!(cwd, std::path::PathBuf::from("/Users/dev/zirs"));
                 assert_eq!(parent_id, None);
             }
@@ -375,18 +354,18 @@ mod tests {
     fn user_prompt_submit_is_the_resurrect_session_start() {
         let ev = decode(json!({
             "event": "UserPromptSubmit",
-            "cwd": "/Users/dev/zirs",
+            "sessionId": "s", "cwd": "/Users/dev/zirs",
             "prompt": "add a feature"
         }));
         assert!(matches!(ev, AgentEvent::SessionStart { agent_id, .. }
-                if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/zirs")));
+                if agent_id == AgentId::from_parts(SOURCE_NAME, "s")));
     }
 
     #[test]
     fn pre_tool_use_is_activity_start_with_no_tool_id() {
         let ev = decode(json!({
             "event": "PreToolUse",
-            "cwd": "/repo",
+            "sessionId": "s", "cwd": "/repo",
             "toolName": "read_file",
             "toolArgs": {"path": "src/main.go"}
         }));
@@ -406,7 +385,7 @@ mod tests {
     #[test]
     fn tool_target_uses_reasonix_arg_vocabulary() {
         let bash = decode(json!({
-            "event": "PreToolUse", "cwd": "/r",
+            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
             "toolName": "bash", "toolArgs": {"command": "go test ./..."}
         }));
         assert!(
@@ -414,7 +393,7 @@ mod tests {
             if d.display() == "bash: go test ./...")
         );
         let grep = decode(json!({
-            "event": "PreToolUse", "cwd": "/r",
+            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
             "toolName": "grep", "toolArgs": {"pattern": "TODO", "path": "src"}
         }));
         assert!(
@@ -427,7 +406,7 @@ mod tests {
     fn long_targets_are_truncated() {
         let long = "x".repeat(60);
         let ev = decode(json!({
-            "event": "PreToolUse", "cwd": "/r",
+            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
             "toolName": "bash", "toolArgs": {"command": long}
         }));
         match ev {
@@ -447,7 +426,7 @@ mod tests {
     fn long_tool_name_is_truncated_at_the_decode_boundary() {
         let long = "T".repeat(MAX_DECODED_FIELD_CHARS * 3);
         let ev = decode(json!({
-            "event": "PreToolUse", "cwd": "/r",
+            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
             "toolName": long, "toolArgs": {}
         }));
         match ev {
@@ -477,7 +456,7 @@ mod tests {
             "security_review",
         ] {
             let ev = decode(json!({
-                "event": "PreToolUse", "cwd": "/r",
+                "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
                 "toolName": tool, "toolArgs": {"prompt": "do a thing"}
             }));
             assert!(
@@ -490,7 +469,7 @@ mod tests {
             ("task", json!({"prompt": "do a thing"})),
         ] {
             let ev = decode(json!({
-                "event": "PreToolUse", "cwd": "/r", "toolName": tool, "toolArgs": args
+                "event": "PreToolUse", "sessionId": "s", "cwd": "/r", "toolName": tool, "toolArgs": args
             }));
             assert!(
                 matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()),
@@ -502,7 +481,7 @@ mod tests {
     #[test]
     fn post_tool_use_and_stop_are_activity_end() {
         for event in ["PostToolUse", "Stop"] {
-            let ev = decode(json!({"event": event, "cwd": "/r"}));
+            let ev = decode(json!({"event": event, "sessionId": "s", "cwd": "/r"}));
             assert!(
                 matches!(
                     &ev,
@@ -560,7 +539,7 @@ mod tests {
     fn notification_maps_to_waiting_with_message() {
         let ev = decode(json!({
             "event": "Notification",
-            "cwd": "/r",
+            "sessionId": "s", "cwd": "/r",
             "message": "approval needed: bash rm -rf ./build"
         }));
         assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
@@ -569,7 +548,7 @@ mod tests {
 
     #[test]
     fn session_end_maps_to_session_end() {
-        let ev = decode(json!({"event": "SessionEnd", "cwd": "/r"}));
+        let ev = decode(json!({"event": "SessionEnd", "sessionId": "s", "cwd": "/r"}));
         assert!(matches!(ev, AgentEvent::SessionEnd { .. }));
     }
 
@@ -577,7 +556,7 @@ mod tests {
     fn permission_request_maps_to_waiting_with_tool_and_subject() {
         let ev = decode(json!({
             "event": "PermissionRequest",
-            "cwd": "/r",
+            "sessionId": "s", "cwd": "/r",
             "toolName": "bash",
             "subject": "rm -rf ./build",
             "toolArgs": {"command": "rm -rf ./build"}
@@ -589,7 +568,7 @@ mod tests {
     #[test]
     fn permission_request_without_subject_uses_tool_only() {
         let ev = decode(json!({
-            "event": "PermissionRequest", "cwd": "/r", "toolName": "write_file"
+            "event": "PermissionRequest", "sessionId": "s", "cwd": "/r", "toolName": "write_file"
         }));
         assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
             if reason == "approval: write_file"));
@@ -597,7 +576,7 @@ mod tests {
 
     #[test]
     fn permission_request_without_tool_falls_back() {
-        let ev = decode(json!({"event": "PermissionRequest", "cwd": "/r"}));
+        let ev = decode(json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/r"}));
         assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
             if reason == "approval required"));
     }
@@ -606,7 +585,7 @@ mod tests {
     fn permission_request_reason_is_capped_at_the_decode_boundary() {
         let long = "é".repeat(MAX_DECODED_FIELD_CHARS * 10);
         let ev = decode(json!({
-            "event": "PermissionRequest", "cwd": "/r",
+            "event": "PermissionRequest", "sessionId": "s", "cwd": "/r",
             "toolName": "bash", "subject": long
         }));
         match &ev {
@@ -619,21 +598,21 @@ mod tests {
     }
 
     #[test]
-    fn without_a_session_id_one_cwd_is_still_one_agent() {
+    fn one_session_is_one_agent() {
         let events = [
-            json!({"event": "SessionStart", "cwd": "/Users/dev/p"}),
-            json!({"event": "UserPromptSubmit", "cwd": "/Users/dev/p"}),
-            json!({"event": "PreToolUse", "cwd": "/Users/dev/p", "toolName": "bash",
+            json!({"event": "SessionStart", "sessionId": "s", "cwd": "/Users/dev/p"}),
+            json!({"event": "UserPromptSubmit", "sessionId": "s", "cwd": "/Users/dev/p"}),
+            json!({"event": "PreToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash",
                    "toolArgs": {"command": "ls"}}),
-            json!({"event": "PostToolUse", "cwd": "/Users/dev/p", "toolName": "bash"}),
-            json!({"event": "PermissionRequest", "cwd": "/Users/dev/p", "toolName": "bash", "subject": "ls"}),
-            json!({"event": "Notification", "cwd": "/Users/dev/p", "message": "approval needed: bash ls"}),
-            json!({"event": "Stop", "cwd": "/Users/dev/p"}),
-            json!({"event": "SessionEnd", "cwd": "/Users/dev/p"}),
+            json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash"}),
+            json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash", "subject": "ls"}),
+            json!({"event": "Notification", "sessionId": "s", "cwd": "/Users/dev/p", "message": "approval needed: bash ls"}),
+            json!({"event": "Stop", "sessionId": "s", "cwd": "/Users/dev/p"}),
+            json!({"event": "SessionEnd", "sessionId": "s", "cwd": "/Users/dev/p"}),
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_rx_hook_payload(v).unwrap())
+            .flat_map(|v| decode_rx_hook_payload(test_obj(v)).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
@@ -642,11 +621,11 @@ mod tests {
     #[test]
     fn activity_arms_prepend_identity_with_the_session_key() {
         let payloads = [
-            json!({"event": "PreToolUse", "cwd": "/Users/dev/p", "toolName": "bash",
+            json!({"event": "PreToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash",
                    "toolArgs": {"command": "ls"}}),
-            json!({"event": "PostToolUse", "cwd": "/Users/dev/p", "toolName": "bash"}),
-            json!({"event": "Notification", "cwd": "/Users/dev/p", "message": "approval needed"}),
-            json!({"event": "PermissionRequest", "cwd": "/Users/dev/p", "toolName": "bash", "subject": "ls"}),
+            json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash"}),
+            json!({"event": "Notification", "sessionId": "s", "cwd": "/Users/dev/p", "message": "approval needed"}),
+            json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash", "subject": "ls"}),
         ];
         for payload in payloads {
             let name = payload["event"].clone();
@@ -660,12 +639,9 @@ mod tests {
                     cwd,
                     pid: None,
                 } => {
-                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "/Users/dev/p"));
+                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "s"));
                     assert_eq!(source, SOURCE_NAME);
-                    assert_eq!(
-                        session_id, "/Users/dev/p",
-                        "no sessionId on the wire, so cwd is the key"
-                    );
+                    assert_eq!(session_id, "s");
                     assert_eq!(
                         cwd.as_deref(),
                         Some(std::path::Path::new("/Users/dev/p")),
@@ -680,10 +656,10 @@ mod tests {
     #[test]
     fn stop_session_events_and_session_end_carry_no_identity() {
         for payload in [
-            json!({"event": "Stop", "cwd": "/r"}),
-            json!({"event": "SessionStart", "cwd": "/r"}),
-            json!({"event": "UserPromptSubmit", "cwd": "/r"}),
-            json!({"event": "SessionEnd", "cwd": "/r"}),
+            json!({"event": "Stop", "sessionId": "s", "cwd": "/r"}),
+            json!({"event": "SessionStart", "sessionId": "s", "cwd": "/r"}),
+            json!({"event": "UserPromptSubmit", "sessionId": "s", "cwd": "/r"}),
+            json!({"event": "SessionEnd", "sessionId": "s", "cwd": "/r"}),
         ] {
             let name = payload["event"].clone();
             let events = decode_all(payload);
@@ -697,35 +673,37 @@ mod tests {
 
     #[test]
     fn empty_or_missing_cwd_is_malformed() {
-        assert!(decode_rx_hook_payload(&json!({"event": "Stop", "cwd": ""})).is_err());
-        assert!(decode_rx_hook_payload(&json!({"event": "Stop"})).is_err());
+        assert!(
+            decode_rx_hook_payload(test_obj(
+                &json!({"event": "Stop", "sessionId": "s", "cwd": ""})
+            ))
+            .is_err()
+        );
+        assert!(decode_rx_hook_payload(test_obj(&json!({"event": "Stop"}))).is_err());
     }
 
     #[test]
     fn unknown_event_bails_loudly() {
         for ev in ["PostLLMCall", "PreCompact", "PostToolUseFailure", "Bogus"] {
             assert!(
-                decode_rx_hook_payload(&json!({"event": ev, "cwd": "/r"})).is_err(),
+                decode_rx_hook_payload(test_obj(
+                    &json!({"event": ev, "sessionId": "s", "cwd": "/r"})
+                ))
+                .is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );
         }
     }
 
     #[test]
-    fn non_object_payload_is_malformed() {
-        assert!(decode_rx_hook_payload(&json!("just a string")).is_err());
-        assert!(decode_rx_hook_payload(&json!(42)).is_err());
-    }
-
-    #[test]
     fn notification_without_message_falls_back_to_waiting() {
-        let ev = decode(json!({"event": "Notification", "cwd": "/r"}));
+        let ev = decode(json!({"event": "Notification", "sessionId": "s", "cwd": "/r"}));
         assert!(matches!(ev, AgentEvent::Waiting { reason, .. } if reason == "waiting"));
     }
 
     #[test]
     fn pre_tool_use_without_tool_name_displays_question_mark() {
-        let ev = decode(json!({"event": "PreToolUse", "cwd": "/r"}));
+        let ev = decode(json!({"event": "PreToolUse", "sessionId": "s", "cwd": "/r"}));
         assert!(
             matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
             if d.display() == "?")
@@ -735,7 +713,7 @@ mod tests {
     #[test]
     fn tool_args_spoofed_subagent_type_does_not_make_task() {
         let ev = decode(json!({
-            "event": "PreToolUse", "cwd": "/r",
+            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
             "toolName": "read_file",
             "toolArgs": {"path": "x.go", "subagent_type": null}
         }));
@@ -750,7 +728,7 @@ mod tests {
         let long = "é".repeat(MAX_DECODED_FIELD_CHARS * 10);
         let ev = decode(json!({
             "event": "Notification",
-            "cwd": "/r",
+            "sessionId": "s", "cwd": "/r",
             "message": long
         }));
         match &ev {

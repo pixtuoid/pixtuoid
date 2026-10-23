@@ -94,9 +94,7 @@ fn replace_atomically(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let mut f = std::fs::File::create_new(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
-        if let Ok(meta) = std::fs::metadata(file) {
-            std::fs::set_permissions(&tmp, meta.permissions())?;
-        }
+        std::fs::set_permissions(&tmp, std::fs::metadata(file)?.permissions())?;
         std::fs::rename(&tmp, file)
     })();
     if written.is_err() {
@@ -305,13 +303,10 @@ fn probe(
     at: &str,
     stamped: bool,
 ) -> usize {
-    let Some(node) = lines[i].pointer(at) else {
-        return 0;
-    };
-    let Some(neutral) = blank_of(node) else {
-        return 0;
-    };
-    let Some(slot) = lines[i].pointer_mut(at) else {
+    let slot = lines[i]
+        .pointer_mut(at)
+        .expect("`at` is a pointer into the line's own value");
+    let Some(neutral) = blank_of(slot) else {
         return 0;
     };
     let kept = std::mem::replace(slot, neutral);
@@ -327,9 +322,9 @@ fn probe(
             .collect(),
         _ => Vec::new(),
     };
-    if let Some(slot) = lines[i].pointer_mut(at) {
-        *slot = kept;
-    }
+    *lines[i]
+        .pointer_mut(at)
+        .expect("`at` is a pointer into the line's own value") = kept;
     children
         .iter()
         .map(|child| probe(source, drive, lines, base, i, child, stamped))

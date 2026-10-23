@@ -230,8 +230,8 @@ fn process_snapshot() -> std::collections::HashMap<u32, ProcRow> {
 /// `szExeFile` is a NUL-padded UTF-16 buffer; decode up to the first NUL.
 #[cfg(windows)]
 fn exe_name(raw: &[u16]) -> String {
-    let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
-    String::from_utf16_lossy(raw.get(..end).unwrap_or(raw))
+    let units: Vec<u16> = raw.iter().copied().take_while(|&c| c != 0).collect();
+    String::from_utf16_lossy(&units)
 }
 
 #[cfg(test)]

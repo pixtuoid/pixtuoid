@@ -5,7 +5,7 @@
 //! checklist bullet let three sources ship an unverified resolver (#880/#343/#342/#195).
 
 use crate::source::decoder::DecodeResult as Result;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::source::decoder::{
     CwdExtractor, IdDeriver, LineDecoder, ParentExtractor, PathFilter, accept_all_paths,
@@ -41,6 +41,9 @@ impl ToolIdKey {
     }
 }
 
+/// A hook payload, already proven an object by `decode_hook_payload`.
+pub type HookObject = Map<String, Value>;
+
 /// How a source's hook payloads decode. The source's own decoder runs FIRST,
 /// before any shared field requirement, so an alien envelope (no `session_id` at
 /// all) can still decode; TYPED by whether it may decline, so a
@@ -54,13 +57,13 @@ pub enum HookDecoding {
     Shared {
         /// The per-call tool id's wire name.
         tool_id_key: ToolIdKey,
-        extend: fn(&Value) -> Result<Option<Vec<AgentEvent>>>,
+        extend: fn(&HookObject) -> Result<Option<Vec<AgentEvent>>>,
     },
     /// CLAIMS every event: an alien-envelope source (no shared
     /// `hook_event_name`/`session_id` for the shared arms to key on) whose
     /// decoder handles EVERYTHING and constructs its own AgentIds. It can NOT
     /// decline, so a payload never silently falls through to the shared arms.
-    ClaimsAll(fn(&Value) -> Result<Vec<AgentEvent>>),
+    ClaimsAll(fn(&HookObject) -> Result<Vec<AgentEvent>>),
 }
 
 /// Reducer-facing capability flags — stable facts about the source's wire
@@ -1455,14 +1458,14 @@ mod tests {
         #[test]
         fn every_hook_and_presence_decoder_never_panics(v in arb_json()) {
             for d in REGISTRY {
-                match d.hook() {
-                    Some(HookDecoding::Shared { extend, .. }) => {
-                        let _ = extend(&v);
+                match (d.hook(), v.as_object()) {
+                    (Some(HookDecoding::Shared { extend, .. }), Some(obj)) => {
+                        let _ = extend(obj);
                     }
-                    Some(HookDecoding::ClaimsAll(f)) => {
-                        let _ = f(&v);
+                    (Some(HookDecoding::ClaimsAll(f)), Some(obj)) => {
+                        let _ = f(obj);
                     }
-                    None => {}
+                    _ => {}
                 }
                 if let Some(presence) = d.presence_decoder() {
                     let _ = presence(&v);

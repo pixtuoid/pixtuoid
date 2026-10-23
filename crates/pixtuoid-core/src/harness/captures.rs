@@ -429,12 +429,12 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
 ];
 
-fn id_patterns() -> std::io::Result<Vec<regex::Regex>> {
+static ID_PATTERNS: std::sync::LazyLock<Vec<regex::Regex>> = std::sync::LazyLock::new(|| {
     ID_FAMILIES
         .iter()
-        .map(|f| regex::Regex::new(f.pattern).map_err(std::io::Error::other))
+        .map(|f| regex::Regex::new(f.pattern).expect("every ID_FAMILIES pattern compiles"))
         .collect()
-}
+});
 
 /// `text` with each of its minted ids replaced by what `name` makes of its
 /// family's row and the token.
@@ -477,11 +477,10 @@ fn with_ids_named(
 ///
 /// # Errors
 ///
-/// If a file cannot be read, or a family's pattern does not compile.
+/// If a file cannot be read.
 pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, String)>>> {
-    let patterns = id_patterns()?;
     let masked = |text: &str| {
-        with_ids_named(text, &patterns, |row, _| {
+        with_ids_named(text, &ID_PATTERNS, |row, _| {
             format!("⟨{}⟩", ID_FAMILIES[row].name)
         })
     };
@@ -498,7 +497,7 @@ pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, Stri
     let mut seen: Vec<std::collections::HashMap<String, usize>> =
         ID_FAMILIES.iter().map(|_| Default::default()).collect();
     let mut numbered = |text: &str| {
-        with_ids_named(text, &patterns, |row, token| {
+        with_ids_named(text, &ID_PATTERNS, |row, token| {
             let next = seen[row].len();
             let n = *seen[row].entry(token.to_owned()).or_insert(next);
             format!("⟨{}#{n}⟩", ID_FAMILIES[row].name)
@@ -772,8 +771,7 @@ mod tests {
 
     #[test]
     fn each_family_renames_what_two_recordings_minted() {
-        let patterns = id_patterns().expect("every pattern compiles");
-        for (family, pattern) in ID_FAMILIES.iter().zip(&patterns) {
+        for (family, pattern) in ID_FAMILIES.iter().zip(ID_PATTERNS.iter()) {
             assert!(!family.renamed.is_empty(), "{}: no pair", family.name);
             for (was, now) in family.renamed {
                 assert!(
@@ -792,8 +790,7 @@ mod tests {
 
     #[test]
     fn every_id_family_is_carried_by_the_capture_it_cites() {
-        let patterns = id_patterns().expect("every pattern compiles");
-        for (family, pattern) in ID_FAMILIES.iter().zip(&patterns) {
+        for (family, pattern) in ID_FAMILIES.iter().zip(ID_PATTERNS.iter()) {
             let capture = crate::harness::sources_root().join(family.seen_in);
             let carried = jsonl_files_under(&capture).iter().any(|f| {
                 pattern.is_match(&slashed_under(&capture, f).expect("under"))

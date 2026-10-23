@@ -135,7 +135,10 @@ mod recorder {
         let mut notices = Vec::new();
         let (mut copied, mut files) = (0u64, 0usize);
         for file in files_under(from) {
-            let rel = redact_path(file.strip_prefix(from).unwrap_or(&file), needles);
+            let rel = redact_path(
+                file.strip_prefix(from).map_err(std::io::Error::other)?,
+                needles,
+            );
             let Ok(text) = std::fs::read_to_string(&file) else {
                 notices.push(format!("driver file {} left out: not text", rel.display()));
                 continue;
@@ -1222,8 +1225,8 @@ mod recorder {
     fn today() -> String {
         let secs = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .expect("clock is after 1970")
+            .as_secs();
         let days = secs / 86_400;
         let (mut y, mut d) = (1970i64, days as i64);
         loop {

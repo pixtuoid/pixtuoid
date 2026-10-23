@@ -54,15 +54,20 @@ impl ChildEndUnclaims {
         }
     }
 
+    /// Poison-tolerant like the other source locks: every critical section is a
+    /// plain Vec edit, so the Vec stays sound.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(AgentId, std::time::Instant)>> {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// Record a child id whose hook end was decoded. A repeated push (a
     /// multi-turn child ends once per turn) refreshes the entry's TTL clock
-    /// rather than duplicating it. A poisoned lock degrades to a dropped push —
-    /// the stale-sweep ladder still reaps, so never panic here.
+    /// rather than duplicating it.
     pub fn push(&self, id: AgentId) {
         let now = std::time::Instant::now();
-        let Ok(mut entries) = self.entries.lock() else {
-            return;
-        };
+        let mut entries = self.lock();
         entries.retain(|(_, at)| now.duration_since(*at) < self.ttl);
         match entries.iter_mut().find(|(eid, _)| *eid == id) {
             Some(entry) => entry.1 = now,
@@ -75,9 +80,7 @@ impl ChildEndUnclaims {
     /// source's watcher may be their owner.
     pub fn take_matching(&self, mut matched: impl FnMut(&AgentId) -> bool) -> Vec<AgentId> {
         let now = std::time::Instant::now();
-        let Ok(mut entries) = self.entries.lock() else {
-            return Vec::new();
-        };
+        let mut entries = self.lock();
         entries.retain(|(_, at)| now.duration_since(*at) < self.ttl);
         let mut out = Vec::new();
         entries.retain(|(id, _)| {
@@ -95,7 +98,7 @@ impl ChildEndUnclaims {
     /// holding only TTL-expired entries reads as non-empty — harmless, the full
     /// drain it admits prunes them; "empty" is never wrong.
     fn is_empty(&self) -> bool {
-        self.entries.lock().map(|e| e.is_empty()).unwrap_or(true)
+        self.lock().is_empty()
     }
 }
 

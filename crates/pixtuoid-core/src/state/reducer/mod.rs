@@ -978,9 +978,10 @@ impl Reducer {
         revive: bool,
         now: SystemTime,
     ) {
-        let Some(slot) = scene.agents.get_mut(&agent_id) else {
-            return;
-        };
+        let slot = scene
+            .agents
+            .get_mut(&agent_id)
+            .expect("Verdict::Enrich is returned only for an existing slot");
         let was_linked = slot.parent_id.is_some();
         if !was_linked && let Some(p) = parent_id {
             slot.parent_id = Some(p);
@@ -1389,11 +1390,10 @@ impl Reducer {
         // orphans; the skip below keeps `exiting_at` and the log write-once.
         for (id, age, threshold) in stale {
             {
-                // Unreachable today — nothing removes a slot between the passes
-                // — but kept against a refactor that mutates membership here.
-                let Some(slot) = scene.agents.get_mut(&id) else {
-                    continue;
-                };
+                let slot = scene
+                    .agents
+                    .get_mut(&id)
+                    .expect("cascade_exit only marks exiting; no slot leaves between the passes");
                 if slot.exiting_at.is_some() {
                     continue;
                 }

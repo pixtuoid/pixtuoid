@@ -122,7 +122,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scenario = p
         .scenario(&manifest.scenario)
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
-    let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
+    let scene = std::fs::read_to_string(dir.join(SCENE_LOG))?;
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
     let verdict = Verdict::new(findings);

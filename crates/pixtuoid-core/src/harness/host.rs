@@ -310,6 +310,10 @@ fn windows_owned(path: &Path) -> Option<bool> {
 /// Whether `key` (`HKLM\…` or `HKCU\…`, the 64-bit view) exists. One the
 /// process may not read counts as existing: a CLI under the same token could
 /// not read it either, but the run would not be shown to be hermetic.
+///
+/// # Panics
+///
+/// If `key` is under neither hive.
 #[cfg(windows)]
 pub fn registry_key_exists(key: &str) -> bool {
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
@@ -320,7 +324,7 @@ pub fn registry_key_exists(key: &str) -> bool {
     let (hive, sub) = match key.split_once('\\') {
         Some(("HKLM", sub)) => (HKEY_LOCAL_MACHINE, sub),
         Some(("HKCU", sub)) => (HKEY_CURRENT_USER, sub),
-        _ => return false,
+        _ => panic!("registry key {key:?} is not under HKLM or HKCU"),
     };
     let wide = nul_terminated(std::ffi::OsStr::new(sub));
     let mut opened: HKEY = std::ptr::null_mut();
@@ -586,7 +590,6 @@ mod tests {
         let deleted = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, wide.as_ptr()) };
         assert_eq!(deleted, ERROR_SUCCESS);
         assert!(!registry_key_exists(&key));
-        assert!(!registry_key_exists(r"HKXX\Software"), "an unknown hive");
         assert!(
             registry_key_exists(r"HKLM\SAM\SAM"),
             "SYSTEM's alone: unreadable here, so counted"

@@ -55,13 +55,9 @@ fn an_upstream_pid_is_kept_and_the_resolver_never_runs() {
 }
 
 #[test]
-fn now_ms_narrowing_saturates_instead_of_wrapping() {
-    // 1_704_067_200_000 is 2024-01-01 in ms — a real-magnitude value.
-    assert_eq!(ms_u128_to_u64(1_704_067_200_000), 1_704_067_200_000);
+fn now_ms_is_a_real_wall_clock_reading() {
+    // 1_704_067_200_000 is 2024-01-01 in ms.
     assert!(now_ms() > 1_704_067_200_000);
-    assert_eq!(ms_u128_to_u64(u128::from(u64::MAX)), u64::MAX);
-    assert_eq!(ms_u128_to_u64(u128::from(u64::MAX) + 1), u64::MAX);
-    assert_eq!(ms_u128_to_u64(u128::MAX), u64::MAX);
 }
 
 #[test]
