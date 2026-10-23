@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
         with:
-          tools: cargo-mutants cargo-binstall cargo-nextest
+          tools: cargo:cargo-mutants cargo-binstall aqua:nextest-rs/nextest/cargo-nextest
       # cargo-mutants builds its baseline with DEFAULT features — it needs
       # ALSA even where a reader assumes the flag-stripped release shape.
       - uses: ./.github/actions/setup-alsa

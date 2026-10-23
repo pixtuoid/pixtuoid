@@ -52,6 +52,11 @@ done
 [[ -n "$tools_words" ]] || fail "no setup-tools/setup-cargo-just caller passes tools"
 unknown_tools="$(comm -23 <(sort -u <<<"$tools_words") <(sort <<<"$mise_keys"))"
 [[ -z "$unknown_tools" ]] || fail "tools: words that are no mise.toml [tools] key: $unknown_tools"
+# The justfile reads `mise env` on every run, so a mise.toml that needs `mise
+# trust` (a `[tool_alias]` table does) breaks just in each fresh checkout.
+mkdir "$test_dir/untrusted" && cp mise.toml "$test_dir/untrusted/"
+(cd "$test_dir/untrusted" && MISE_TRUSTED_CONFIG_PATHS='' MISE_OFFLINE=1 mise env --paths >/dev/null 2>&1) ||
+    fail "mise.toml needs \`mise trust\`, so a fresh checkout's just fails"
 
 # ── wait-ci-gate.yml: both release paths wait for their own commit's ci-gate ──
 wait_workflow=.github/workflows/wait-ci-gate.yml
