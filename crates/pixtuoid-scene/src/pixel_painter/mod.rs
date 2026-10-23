@@ -14,7 +14,7 @@ use crate::display::{Badge, Hover, HoverTarget, Hovers, TextRun};
 #[cfg(test)]
 use crate::floor::VacancyDim;
 use crate::frame_cache::FrameCache;
-use crate::layout::{Depth, Facing, FixtureKind, Pivot, SceneLayout, Station};
+use crate::layout::{Depth, Facing, FixtureKind, Pivot, SceneLayout, StationArt};
 use crate::sim::pack_frame_size;
 use crate::walk::WalkState;
 
@@ -500,10 +500,9 @@ fn queue_fixtures<'a>(
                     sprite,
                     busy: frame.occupied_waypoints.contains(&waypoint),
                 };
-                match station {
-                    Station::PantryCounter => {
-                        let anim =
-                            crate::layout::pantry_counter_anim(layout.pantry_counter_size().w);
+                match station.art() {
+                    StationArt::PantryCounter => {
+                        let anim = crate::layout::pantry_counter_anim(f.visual.width);
                         DrawableKind::WaypointPantry {
                             pos: f.at,
                             anim,
@@ -514,11 +513,8 @@ fn queue_fixtures<'a>(
                             ),
                         }
                     }
-                    Station::VendingMachine => {
-                        appliance(pixtuoid_core::sprite::format::Piece::VendingMachine)
-                    }
-                    Station::Printer => appliance(pixtuoid_core::sprite::format::Piece::Printer),
-                    Station::SnackShelf => DrawableKind::SnackShelf { pos: f.at },
+                    StationArt::Appliance(sprite) => appliance(sprite),
+                    StationArt::SnackShelf => DrawableKind::SnackShelf { pos: f.at },
                 }
             }
             FixtureKind::Plant { kind, .. } => DrawableKind::Plant { kind, pos: f.at },

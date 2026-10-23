@@ -273,11 +273,7 @@ pub struct SimFrame {
 impl SimFrame {
     /// Desk `i`'s props this tick.
     pub(crate) fn desk(&self, i: FloorLocalDeskIndex) -> DeskProps {
-        debug_assert!(
-            i.0 < self.desks.len(),
-            "desk props are index-parallel to the home desks"
-        );
-        self.desks.get(i.0).cloned().unwrap_or_default()
+        self.desks[i.0].clone()
     }
 }
 
@@ -338,6 +334,9 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         {
             continue;
         }
+        let Some(origin) = layout.home_desk(agent.desk_index.single_floor_local()) else {
+            continue;
+        };
         let Some(pose) = pose::derive(agent, now, layout) else {
             continue;
         };
@@ -347,9 +346,6 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
             // Reserve the cell the agent actually stands on, NOT the
             // blocked furniture center — else another agent's A* routes
             // straight through the stander.
-            let origin = layout
-                .home_desk(agent.desk_index.single_floor_local())
-                .unwrap_or(w.pos);
             let stand = layout.stand_point(w.kind, w.pos, origin, w.facing);
             stores.overlay.add(
                 stand.x.saturating_sub(CHARACTER_SPRITE_W / 2),
@@ -532,7 +528,6 @@ fn pet_placement(
     let kind = kind?;
     let walk_anim = kind.walk_anim();
     let stride = pack.stride(walk_anim);
-    layout.corridor?;
     let walk = creatures
         .entry(CreatureKey::Pet(kind))
         .or_insert_with(|| CreatureWalk::at_home(layout, floor.floor_seed, now));

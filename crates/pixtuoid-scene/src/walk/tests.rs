@@ -212,10 +212,15 @@ impl<R: Router> WanderRig<R> {
     }
 
     fn advance(&mut self, now: SystemTime) {
+        let desk = self
+            .layout
+            .home_desk(self.slot.desk_index.single_floor_local())
+            .expect("the slot's desk exists in the standard layout");
         advance_wander(
             &self.slot,
             now,
             &self.layout,
+            desk,
             &mut self.route.router,
             &self.route.overlay,
             &mut self.route.walks,
@@ -811,7 +816,7 @@ fn back_profile_routes_to_the_jittered_desk_goal_the_render_uses() {
     let mut walk = WalkState::default();
     walk.wander.target.dest = Point { x: 40, y: 60 };
 
-    let _ = snapshot_back_profile(&slot, &walk, &l, &mut router, &overlay);
+    let _ = snapshot_back_profile(&slot, &walk, &l, l.home_desks[0], &mut router, &overlay);
 
     let (snap_to, _) = desk_leg_endpoint(l.home_desks[0], &l);
     assert_eq!(

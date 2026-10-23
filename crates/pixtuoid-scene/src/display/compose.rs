@@ -15,7 +15,7 @@ use crate::display::pen::{ArtPx, ArtRect, Pen};
 use crate::display::text::{Align, LABEL_GAP, TextRun};
 use crate::glass_weather::GlassWeather;
 use crate::layout::{
-    Bounds, DESK_H, Depth, Fixture, FixtureKind, Point, SceneLayout, Station, Tie,
+    Bounds, DESK_H, Depth, Fixture, FixtureKind, Point, SceneLayout, StationArt, Tie,
 };
 use crate::pack::NORTH_SOFA_SEAT_ROWS;
 use crate::render_scale::RenderScale;
@@ -343,29 +343,15 @@ fn lights(
     let pen = Pen::for_pack(scale, pack);
     // Each desk's lamp shines from the bulb its art draws, which the cutaway's
     // art stands on the side the desk faces; the model's is the classic's.
-    let lamps: Vec<crate::lighting::Emitter> = lights
-        .desks
+    let lamps: Vec<crate::lighting::Emitter> = layout
+        .home_desks
         .iter()
+        .zip(&lights.desks)
         .enumerate()
-        .map(|(i, d)| {
+        .map(|(i, (&at, d))| {
             let facing = layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i));
-            let bulb = layout
-                .home_desks
-                .get(i)
-                .map(|&at| bulb_at(at, Desk::facing(facing), pack, scale));
-            match (bulb, d.lamp.light) {
-                (Some(centre), crate::lighting::Light::Halo { radius, share, .. }) => {
-                    crate::lighting::Emitter {
-                        light: crate::lighting::Light::Halo {
-                            centre,
-                            radius,
-                            share,
-                        },
-                        ..d.lamp
-                    }
-                }
-                _ => d.lamp,
-            }
+            d.relit_at(bulb_at(at, Desk::facing(facing), pack, scale))
+                .lamp
         })
         .collect();
     let inputs = lights
@@ -679,9 +665,7 @@ fn push_fixture(
             Playback::Held,
         ),
         K::DeskChair(i) => {
-            let Some(&desk) = layout.home_desks.get(i.0) else {
-                return;
-            };
+            let desk = layout.home_desks[i.0];
             if carried.contains(&desk) {
                 return;
             }
@@ -690,44 +674,31 @@ fn push_fixture(
             }
         }
         K::Station { waypoint, station } => {
-            let Some(wp) = layout.waypoints.get(waypoint) else {
-                return;
+            let at = fixture.at;
+            let mut appliance = |sprite| {
+                let anim = pack.piece(sprite);
+                let busy = frame.occupied_waypoints.contains(&waypoint);
+                let art = Art {
+                    sprite,
+                    frame: crate::pack::appliance_frame_index(anim, busy, moment.timing.beat),
+                    flip: Flip::None,
+                };
+                push_art(order, pack, at, art, depth, Playback::Looping);
             };
-            match station {
-                Station::PantryCounter => {
-                    if let Some(pantry) = &layout.pantry {
-                        let sprite = crate::layout::pantry_counter_anim(pantry.counter_size.w);
-                        push_art(
-                            order,
-                            pack,
-                            wp.pos,
-                            Art::still(sprite),
-                            depth,
-                            Playback::Held,
-                        );
-                    }
+            match station.art() {
+                StationArt::PantryCounter => {
+                    let sprite = crate::layout::pantry_counter_anim(fixture.visual.width);
+                    push_art(order, pack, at, Art::still(sprite), depth, Playback::Held);
                 }
-                Station::SnackShelf => push_art(
+                StationArt::SnackShelf => push_art(
                     order,
                     pack,
-                    wp.pos,
+                    at,
                     Art::still(PackPiece::SnackShelf),
                     depth,
                     Playback::Held,
                 ),
-                Station::VendingMachine | Station::Printer => {
-                    let Some(sprite) = crate::pack::appliance_piece(wp.kind) else {
-                        return;
-                    };
-                    let anim = pack.piece(sprite);
-                    let busy = frame.occupied_waypoints.contains(&waypoint);
-                    let art = Art {
-                        sprite,
-                        frame: crate::pack::appliance_frame_index(anim, busy, moment.timing.beat),
-                        flip: Flip::None,
-                    };
-                    push_art(order, pack, wp.pos, art, depth, Playback::Looping);
-                }
+                StationArt::Appliance(sprite) => appliance(sprite),
             }
         }
         K::Plant { kind, .. } => push_art(
@@ -758,18 +729,9 @@ fn push_fixture(
         K::NoticeBoard { .. } => push_hung(order, pack, top_left, PackPiece::NoticeBoard, depth),
         // A back-view sofa splits into bands its sitter sorts between
         // ([`push_sofa`]), so it lays its own layers.
-        K::MeetingSofa {
-            room,
-            seat,
-            faces_away,
-        } => {
-            let sofa = layout
-                .meeting_rooms
-                .get(room)
-                .and_then(|r| r.trio)
-                .and_then(|t| t.sofas.get(seat).copied());
-            if let (Some(at), Some(tie)) = (sofa, tie_of(fixture)) {
-                push_sofa(order, pack, at, faces_away, tie);
+        K::MeetingSofa { faces_away, .. } => {
+            if let Some(tie) = tie_of(fixture) {
+                push_sofa(order, pack, fixture.at, faces_away, tie);
             }
             return;
         }
@@ -984,9 +946,7 @@ fn push_desk(
         theme,
         scale,
     } = office;
-    let Some(&d) = layout.home_desks.get(i.0) else {
-        return;
-    };
+    let d = layout.home_desks[i.0];
     let facing = layout.desk_facing(i);
     let desk = Desk::facing(facing);
     let props = frame.desk(i);
@@ -1173,9 +1133,7 @@ fn push_characters(
     let namesakes = crate::badge::Namesakes::of(&frame.agents);
     let mut carried = Vec::new();
     for c in &frame.characters {
-        let Some(agent) = frame.agents.get(c.agent_idx) else {
-            continue;
-        };
+        let agent = &frame.agents[c.agent_idx];
         let pose = crate::character::SpritePose::of(c, agent, theme);
         // The frame `paint_figure` draws: an animation's frames need not
         // share a size.

@@ -16,9 +16,7 @@
 
 use crate::layout::decor::GroundAlign;
 use crate::layout::mask::ground_rect;
-use crate::layout::{
-    Bounds, MeetingRoom, Pivot, Point, Size, WALL_BAND_TO_TOP_MARGIN, WallSegment, pct,
-};
+use crate::layout::{Bounds, MeetingRoom, Pivot, Point, Size, WallSegment, pct};
 use std::ops::Range;
 
 /// Walkable footprint (and render face height) of a horizontal (E-W) interior
@@ -312,7 +310,7 @@ pub(crate) fn wall_pieces(
     doorways: &[Doorway],
     top_margin: u16,
 ) -> Vec<WallPiece> {
-    let top_wall_h = top_margin.saturating_sub(WALL_BAND_TO_TOP_MARGIN);
+    let top_wall_h = crate::layout::wall_band_h(top_margin);
     room_walls
         .iter()
         .map(|&seg| match seg {
@@ -596,7 +594,7 @@ fn emit(req: &WallRequest, out: &mut Vec<WallSegment>, doorways: &mut Vec<Doorwa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::MeetingTrio;
+    use crate::layout::{MeetingTrio, WALL_BAND_TO_TOP_MARGIN};
 
     #[test]
     fn stitch_vertical_wall_connects_each_joint() {

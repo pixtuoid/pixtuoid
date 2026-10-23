@@ -459,10 +459,6 @@ const SYNODIC_DAYS: f32 = 29.530_588;
 /// lunation's offset from the mean into every phase.
 const NEW_MOON_EPOCH_UNIX_DAYS: f32 = 18_227.123;
 
-fn arc_progress(h: f32, rise: f32, set: f32) -> f32 {
-    ((h - rise) / (set - rise)).clamp(0.0, 1.0)
-}
-
 /// Whether the sky shows the SUN (not the moon) at hour-of-day `h` (0..24) — the
 /// ONE definition of the day/night boundary, so the sky body and any external
 /// consumer can't drift from a second hardcoded copy.
@@ -566,7 +562,7 @@ fn moon_arc(h: f32, age: f32) -> Option<f32> {
 /// The body the sky shows at local hour `h`, `nightfall` into the night.
 fn body_at(h: f32, nightfall: f32, moon_phase: f32, moon_age: f32) -> SkyBody {
     if hour_is_day(h) {
-        let t = arc_progress(h, SUN_RISE_H, SUN_SET_H);
+        let t = (h - SUN_RISE_H) / (SUN_SET_H - SUN_RISE_H);
         let altitude = (std::f32::consts::PI * t).sin();
         return SkyBody {
             kind: BodyKind::Sun,

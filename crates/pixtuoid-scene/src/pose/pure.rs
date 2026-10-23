@@ -45,7 +45,7 @@ pub(crate) fn typing_frame(slot: &AgentSlot, beat: crate::anim::Beat, anim: &Spr
     }
     let frames = anim.frames().len();
     let phase = crate::anim::epoch_ms(slot.state_started_at) / u64::from(anim.frame_ms().max(1));
-    let phase = usize::try_from(phase % frames as u64).unwrap_or(0);
+    let phase = (phase % frames as u64) as usize;
     (crate::pack::looping_frame_index(anim, beat) + phase) % frames
 }
 
@@ -329,17 +329,18 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Poin
         width: layout.cubicle_band.width,
         height: 10,
     };
-    let corridor_zone = layout.corridor.unwrap_or(layout.cubicle_aisle);
     let zones: [(Bounds, u16); 5] = [
         (window_strip, 30),
         (layout.pantry.map_or(window_strip, |p| p.bounds), 25),
-        (corridor_zone, 20),
+        (layout.corridor, 20),
         (layout.cubicle_band, 15),
         (layout.meeting_room_bounds(0).unwrap_or(window_strip), 10),
     ];
     let total: u16 = zones.iter().map(|(_, w)| *w).sum();
-    let mut roll = ((seed >> 32) as u16) % total.max(1);
-    let zone = zones
+    let mut roll = ((seed >> 32) as u16) % total;
+    // What `roll` has left after every zone but the last lands in the last.
+    let [rest @ .., last] = &zones;
+    let zone = rest
         .iter()
         .find_map(|(b, w)| {
             if roll < *w {
@@ -349,7 +350,7 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Poin
                 None
             }
         })
-        .unwrap_or(&zones[0].0);
+        .unwrap_or(&last.0);
     // ROUTABLE, not merely walkable — the same `reaches` filter every NAMED
     // destination gets via `approach_point`.
     let routable =
@@ -369,7 +370,7 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Poin
     // midline is NOT guaranteed open (the vending / printer footprints sit in
     // the cubicle_aisle band), so scan outward from it for the nearest walkable
     // cell — the contract is "returns a walkable pixel".
-    let c = corridor_zone;
+    let c = layout.corridor;
     let x_jitter = (seed as u16) % c.width.max(1);
     let base_x = c.x + x_jitter;
     let mid_y = c.y + c.height / 2;

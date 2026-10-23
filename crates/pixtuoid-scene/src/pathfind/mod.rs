@@ -140,8 +140,8 @@ fn path_clear_under(path: &[Point], overlay: &OccupancyOverlay) -> bool {
         let steps = dx.abs().max(dy.abs()).max(1) / 4;
         let n = steps.max(2);
         for i in 0..=n {
-            let x = (i32::from(a.x) + dx * i / n).max(0) as u16;
-            let y = (i32::from(a.y) + dy * i / n).max(0) as u16;
+            let x = (i32::from(a.x) + dx * i / n) as u16;
+            let y = (i32::from(a.y) + dy * i / n) as u16;
             if overlay.blocks(x, y) {
                 return false;
             }

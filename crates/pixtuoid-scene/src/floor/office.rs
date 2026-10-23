@@ -518,8 +518,7 @@ impl OfficeSession {
             }));
         }
         let current = self.nav.current();
-        self.views
-            .get(current)?
+        self.views[current]
             .picture(current, self.shown_changed)
             .map(crate::look::Picture::Floor)
     }
@@ -534,10 +533,8 @@ impl OfficeSession {
         office_floor: FloorMeta,
         now: SystemTime,
     ) -> AudioFrame {
-        let current = self.nav.current().min(self.n_floors - 1);
-        if let Some(view) = self.views.get_mut(current) {
-            view.forget();
-        }
+        let current = self.nav.current();
+        self.views[current].forget();
         // The empty floor's by construction, whatever the view still holds.
         let floor = floor_meta(office_floor, current, self.n_floors);
         self.office
@@ -560,7 +557,7 @@ impl OfficeSession {
         now: SystemTime,
     ) -> AudioFrame {
         // `nav` settles within `n_floors`, and a view is kept for each.
-        let current = self.nav.current().min(self.n_floors - 1);
+        let current = self.nav.current();
         let floor = floor_meta(office_floor, current, self.n_floors);
         self.views[current].audio_frame(&mut self.office, scene, floor, now)
     }
@@ -590,8 +587,6 @@ impl OfficeSession {
     /// (`both_painters_paint_one_frame_per_beat`), so a painter may sleep to the
     /// next beat only while this is false.
     pub fn moves_off_beat(&self) -> bool {
-        self.views
-            .get(self.nav.current())
-            .is_some_and(FloorView::moves_off_beat)
+        self.views[self.nav.current()].moves_off_beat()
     }
 }

@@ -1238,15 +1238,14 @@ impl Clouds {
             let gy = usize::from(cell.glass_offset.1);
             // The window resolved no sky behind `front`, so its cells are
             // neither averaged into a row's sky nor clouded.
-            if !clouded.get(gy).copied().unwrap_or(false) || front(cell).is_some() {
+            if !clouded[gy] || front(cell).is_some() {
                 return c;
             }
-            if let Some(acc) = row_sky.get_mut(gy) {
-                acc.0 += 1;
-                acc.1[0] += u32::from(c.r);
-                acc.1[1] += u32::from(c.g);
-                acc.1[2] += u32::from(c.b);
-            }
+            let acc = &mut row_sky[gy];
+            acc.0 += 1;
+            acc.1[0] += u32::from(c.r);
+            acc.1[1] += u32::from(c.g);
+            acc.1[2] += u32::from(c.b);
             c
         });
         let row_sky: Vec<Option<Rgb>> = row_sky
@@ -1269,7 +1268,7 @@ impl Clouds {
                 usize::from(cell.glass_offset.0),
                 usize::from(cell.glass_offset.1),
             );
-            let here = px.get(gy * cols + gx).copied().flatten();
+            let here = px[gy * cols + gx];
             if (bare && here.is_none()) || front(cell).is_some() {
                 return c;
             }
@@ -1287,7 +1286,7 @@ impl Clouds {
                     if let Some(lift) = self.flash_lift(m, x, y) {
                         tone = tone.mix(FLASH_TINT, lift);
                     }
-                    let sky = row_sky.get(gy).copied().flatten().unwrap_or(c);
+                    let sky = row_sky[gy].unwrap_or(c);
                     let key = (tone, sky, mass.layer);
                     match last_mix {
                         Some((k, mixed)) if k == key => mixed,
