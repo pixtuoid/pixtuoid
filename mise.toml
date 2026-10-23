@@ -1,0 +1,25 @@
+[tools]
+just = "latest"
+shfmt = "latest"
+"aqua:rhysd/actionlint" = "latest"
+shellcheck = "latest"
+zizmor = "latest"
+yq = "latest"
+jq = "latest"
+# `just fixture-pii` is a required gate with no weaker fallback.
+gitleaks = "latest"
+lychee = "latest"
+"pypi:check-jsonschema" = "latest"
+uv = "latest"
+cargo-binstall = "latest"
+cargo-deny = "latest"
+cargo-insta = "latest"
+"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+"aqua:taiki-e/cargo-llvm-cov" = "latest"
+"github:taiki-e/cargo-hack" = "latest"
+"github:bnjbvr/cargo-machete" = "latest"
+# Its releases lack a macos-arm64 asset, so `github:` fails there.
+"cargo:cargo-mutants" = "latest"
+# `cargo set-version --workspace` (docs/CONTRIBUTING.md#releasing).
+"cargo:cargo-edit" = "latest"
+"aqua:WebAssembly/binaryen" = "latest"

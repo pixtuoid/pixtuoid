@@ -27,7 +27,13 @@ set positional-arguments
 # recipes die on E0463 or `-Z` (a0d18c03e). A no-op on CI, where it is first.
 # An empty CARGO_HOME reads as unset, which `env`'s default alone does not.
 _cargo_home := env('CARGO_HOME', '')
-export PATH := (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
+
+# mise.toml's tools, ahead of ~/.cargo/bin (cargo resolves subcommands in PATH
+# order, and stale copies sit there). Directories, not shims: a shim errors
+# outside the repo, and the hermetic sandbox runs CLIs in temp dirs. A failing
+# `mise env` fails the evaluation; no mise skips it.
+_mise_paths := shell('command -v mise >/dev/null || exit 0; mise env --paths')
+export PATH := (if _mise_paths == '' { '' } else { replace(_mise_paths, "\n", PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
 # ── variables ─────────────────────────────────────────────────────
 # just evaluates these globally regardless of position; kept at the top so the
@@ -979,8 +985,8 @@ preflight mode="":
     *) echo "usage: just preflight [full]" >&2; exit 2 ;;
     esac
 
-# Install the dev tools every check + recipe relies on (idempotent). Prefers
-# cargo-binstall (prebuilt) and falls back to cargo install (compiles).
+# Install the dev tools every check + recipe relies on (idempotent): mise.toml's
+# through mise, then cargo-public-api at API_PUBLIC_API's tool-exact pin.
 [doc('Install the dev tools the checks + recipes need (idempotent)')]
 [group('meta')]
 setup-tools:
@@ -991,18 +997,8 @@ setup-tools:
     # skip it. CI runs every gate itself, so a skipped local hook still meets
     # them at merge.
     git config core.hooksPath .githooks
-    # cargo-public-api rides API_PUBLIC_API — the tool-exact story lives there.
-    # cargo-edit: `cargo set-version --workspace` raises a release PR's version
-    # by hand for a break cargo-semver-checks cannot see
-    # (docs/CONTRIBUTING.md#releasing).
-    tools=(cargo-nextest cargo-machete cargo-deny lychee cargo-hack cargo-edit cargo-insta cargo-public-api@{{ API_PUBLIC_API }})
-    if command -v cargo-binstall &>/dev/null; then
-        cargo binstall -y "${tools[@]}"
-    else
-        echo "cargo-binstall not found — compiling from source (slow)." >&2
-        echo "brew install cargo-binstall (or cargo install cargo-binstall) to grab prebuilt binaries instead." >&2
-        cargo install "${tools[@]}"
-    fi
+    command -v mise &>/dev/null || { echo "error: mise not found — brew install mise" >&2; exit 1; }
+    mise install
     # The rust-analyzer component powers the editor / AI-agent LSP (go-to-def,
     # find-references — the tool the "change all N keying sites in lockstep"
     # invariants depend on). rust-toolchain.toml pins only rustfmt+clippy, so
@@ -1012,27 +1008,8 @@ setup-tools:
     if command -v rustup &>/dev/null; then
         rustup component add rust-analyzer
     fi
-    # gitleaks is among the brew tools because `just fixture-pii` is a REQUIRED
-    # gate that does not degrade to a weaker scan without it (a weaker scan is
-    # what it replaced).
-    brew_tools=(shfmt actionlint shellcheck zizmor yq jq check-jsonschema gitleaks)
-    for t in "${brew_tools[@]}"; do
-        command -v "$t" &>/dev/null && continue
-        if command -v brew &>/dev/null; then
-            brew install "$t" || true
-        fi
-    done
-    # Re-verify AFTER the install attempts: a `brew install` that exits 0 without
-    # putting the binary on PATH (transient failure), or no brew at all, must be
-    # caught here — not silently pass as a successful setup.
-    missing=()
-    for t in "${brew_tools[@]}"; do
-        command -v "$t" &>/dev/null || missing+=("$t")
-    done
-    if (( ${#missing[@]} )); then
-        echo "error: ${missing[*]} still missing after setup — install via your package manager (e.g. brew install ${missing[*]}); \`just lint\` needs it." >&2
-        exit 1
-    fi
+    # `mise exec`: the PATH just computed predates the cargo-binstall mise installed above.
+    mise exec cargo-binstall -- cargo binstall -y cargo-public-api@{{ API_PUBLIC_API }}
 
 # The pixel comparator is the primitive under `gen-check` and
 # `gen-media-check`; an always-green comparator reports success for any render

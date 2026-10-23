@@ -1,7 +1,27 @@
-name: 'Setup Just'
-description: 'Installs the newest just'
+name: 'Setup Tools'
+description: 'Installs the newest just plus the given mise.toml tools via mise'
+
+inputs:
+  tools:
+    description: 'Space-separated mise.toml [tools] keys to install beside just'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
-    - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] the newest just, as `just lint` runs locally
+    # Limits mise to these tools: unlisted ones are never resolved, so a
+    # versions-host outage cannot burn the job token's API budget.
+    - shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: | # zizmor: ignore[github-env] the callers' `tools:` literals, never event data
+        set -euo pipefail
+        echo "MISE_ENABLE_TOOLS=just${TOOLS:+,${TOOLS// /,}}" >>"$GITHUB_ENV"
+    # Always names `just`: an empty install_args installs every tool.
+    - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      with:
+        install_args: just ${{ inputs.tools }}
+        # `latest` re-resolves every run, and a save per ref would fight
+        # only-main-saves-the-rust-cache's quota.
+        cache: false

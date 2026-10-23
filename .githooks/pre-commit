@@ -8,14 +8,20 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# No justfile has run yet, so its mise PATH can't supply just.
+just=(just)
 if ! command -v just &>/dev/null; then
-    # shellcheck disable=SC2016  # backticks are literal text, not expansion
-    printf '\033[31m[pre-commit] `just` not found — install it (brew install just)\033[0m\n' >&2
-    exit 1
+    if command -v mise &>/dev/null; then
+        just=(mise exec -- just)
+    else
+        # shellcheck disable=SC2016  # backticks are literal text, not expansion
+        printf '\033[31m[pre-commit] `just` not found — brew install mise, then `mise install`\033[0m\n' >&2
+        exit 1
+    fi
 fi
 
 printf '\033[36m[pre-commit] just fmt-check\033[0m\n' >&2
-just fmt-check || {
+"${just[@]}" fmt-check || {
     # shellcheck disable=SC2016  # backticks are literal text, not expansion
     printf '\033[31m[pre-commit] FAILED: run `just fmt` and recommit\033[0m\n' >&2
     exit 1

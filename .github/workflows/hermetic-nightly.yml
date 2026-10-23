@@ -98,13 +98,11 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
+          # `Package::UvLocked` profiles (hermes) sync their tag's lock with uv.
+          tools: uv
       - uses: ./.github/actions/setup-npm
         with:
           directory: crates/pixtuoid-core/tests/sources/hermetic/aimock
-      # `Package::UvLocked` profiles (hermes) sync their tag's lock with it.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: uv
       # The release every drift leg passed, not a `latest` published since.
       - env:
           SOURCE: ${{ matrix.source }}

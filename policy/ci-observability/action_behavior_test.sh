@@ -29,6 +29,18 @@ yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
     '(.queue_rules | length > 0) and all(.queue_rules[]; any(.queue_conditions[]; . == $c))' >/dev/null ||
     fail ".mergify.yml has a queue that admits release-plz's ${release_prefix}* PRs"
 
+# A `tools:` word that is no mise.toml key installs a second copy, or an
+# arbitrary `@latest`, with nothing red.
+mise_keys="$(yq -p toml -o=json '.tools | keys | .[]' mise.toml | jq -r '.')" || fail "mise.toml has no [tools]"
+tools_words="$(for f in .github/workflows/*.yml .github/actions/*/action.y*ml; do
+    yq -o=json '.' "$f" | jq -r '[.. | objects | select((.uses // "") | test("/setup-(cargo-)?just$"))
+        | (.with.tools // empty) | select(contains("${{") | not) | split(" ")[] | select(. != "")] | .[]' ||
+        fail "cannot read the tools: words of $f"
+done)"
+[[ -n "$tools_words" ]] || fail "no setup-just/setup-cargo-just caller passes tools"
+unknown_tools="$(comm -23 <(sort -u <<<"$tools_words") <(sort <<<"$mise_keys"))"
+[[ -z "$unknown_tools" ]] || fail "tools: words that are no mise.toml [tools] key: $unknown_tools"
+
 # ── wait-ci-gate.yml: both release paths wait for their own commit's ci-gate ──
 wait_workflow=.github/workflows/wait-ci-gate.yml
 wait_step="Wait for ci-gate on this commit"

@@ -18,6 +18,10 @@ inputs:
     description: 'Swatinem/rust-cache shared-key; empty keys the cache by job'
     required: false
     default: ''
+  tools:
+    description: 'Space-separated mise.toml [tools] keys to install beside just'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -40,3 +44,5 @@ runs:
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - uses: ./.github/actions/setup-just
+      with:
+        tools: ${{ inputs.tools }}

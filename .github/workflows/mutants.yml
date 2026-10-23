@@ -21,16 +21,12 @@ jobs:
           fetch-depth: 0 # `--in-diff` needs the merge base in history
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
+        with:
+          tools: cargo:cargo-mutants cargo-binstall aqua:nextest-rs/nextest/cargo-nextest
       # cargo-mutants builds its baseline with DEFAULT features — it needs
       # ALSA even where a reader assumes the flag-stripped release shape.
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-gpu
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-mutants
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-nextest
       # workflow_dispatch has no pull_request context, so MUTANTS_BASE is left
       # empty — `just mutants` falls back to its origin/main default.
       - name: Mutation-test the diff vs main (advisory, non-blocking)

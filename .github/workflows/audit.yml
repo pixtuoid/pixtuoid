@@ -20,10 +20,9 @@ jobs:
         with:
           persist-credentials: false
       # The same cargo-deny ci-lint installs, so one version judges deny.toml.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-deny
       - uses: ./.github/actions/setup-just
+        with:
+          tools: cargo-deny
       - run: just deny-advisories
 
   npm:

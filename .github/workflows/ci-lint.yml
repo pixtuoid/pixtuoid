@@ -47,10 +47,9 @@ jobs:
           persist-credentials: false
       # No setup-cargo-just: nothing compiles here, so the runner's preinstalled
       # cargo is enough — but cargo-deny DOES shell out to `cargo metadata`.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-deny
       - uses: ./.github/actions/setup-just
+        with:
+          tools: cargo-deny
       - run: just deny
       # Both verdicts show: a red deny must not hide arch.
       - if: ${{ !cancelled() }}
@@ -72,10 +71,9 @@ jobs:
         with:
           persist-credentials: false
       # cargo-machete parses manifests and does not need a Rust toolchain.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-machete
       - uses: ./.github/actions/setup-just
+        with:
+          tools: github:bnjbvr/cargo-machete
       - run: just machete
 
   # The `just lint` recipes no other job runs, so a skipped local preflight can't land their break.
@@ -89,49 +87,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # The tools this job installs run at their newest release, as the brew
-      # copies `just lint` uses locally do. The Go ones build from source, so
-      # the cache is keyed on the releases they resolve to and on this file,
-      # which holds the recipe: a new release or a changed recipe misses it.
-      - name: Resolve the Go tools' newest releases
-        id: go-latest
-        run: |
-          versions="$(go list -m -f '{{.Path}}@{{.Version}}' mvdan.cc/sh/v3@latest github.com/rhysd/actionlint@latest github.com/mikefarah/yq/v4@latest github.com/zricethezav/gitleaks/v8@latest)"
-          echo "versions=${versions//$'\n'/ }" >>"$GITHUB_OUTPUT"
-      # ~/go/bin is spelled, not derived: GOPATH is the runner default, and
-      # deriving it here while the cache stores a literal is how a hit could
-      # restore binaries to a directory that is not on PATH.
-      - name: Cache the Go-built tools
-        id: go-tools
-        uses: actions/cache@v6
-        with:
-          path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}-${{ steps.go-latest.outputs.versions }}
-      - name: Expose Go tool binaries
-        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
-      - name: Install the Go-built tools
-        if: steps.go-tools.outputs.cache-hit != 'true'
-        env:
-          VERSIONS: ${{ steps.go-latest.outputs.versions }}
-        run: |
-          for v in $VERSIONS; do
-            case "$v" in
-              mvdan.cc/sh/v3@*) go install "mvdan.cc/sh/v3/cmd/shfmt@${v#*@}" ;;
-              github.com/rhysd/actionlint@*) go install "github.com/rhysd/actionlint/cmd/actionlint@${v#*@}" ;;
-              *) go install "$v" ;;
-            esac
-          done
-      # From PyPI, which carries each one's newest release; install-action
-      # would serve the one in the manifest its pinned ref bundles.
-      - name: Install the Python-packaged tools
-        run: pipx install check-jsonschema zizmor shellcheck-py
-      # Lychee is not manifest-managed by install-action; its documented
-      # cargo-binstall fallback installs its newest release.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: lychee
-          fallback: cargo-binstall
       - uses: ./.github/actions/setup-just
+        with:
+          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
@@ -218,10 +176,9 @@ jobs:
         with:
           prefix-key: v1-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-binstall
       - uses: ./.github/actions/setup-just
+        with:
+          tools: cargo-binstall
       - name: Install cargo-public-api (pinned to match the committed goldens)
         run: cargo binstall -y "cargo-public-api@$(just --evaluate API_PUBLIC_API)"
       - run: just api-surface-check
