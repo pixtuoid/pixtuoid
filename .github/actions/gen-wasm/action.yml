@@ -25,7 +25,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        ver="$(yq -e -p toml -oy '.tools.binaryen' mise.toml)"
+        ver="$(yq -e -p toml -oy '.tools["aqua:WebAssembly/binaryen"]' mise.toml)"
         [[ "$ver" =~ ^[0-9]+$ ]] || { echo "error: mise.toml has no single binaryen version" >&2; exit 1; }
         url="https://github.com/WebAssembly/binaryen/releases/download/version_$ver/binaryen-version_${ver}-x86_64-linux.tar.gz"
         curl -fsSL --retry 5 --retry-all-errors "$url" -o /tmp/binaryen.tar.gz

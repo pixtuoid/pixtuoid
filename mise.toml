@@ -3,41 +3,28 @@ min_version = "2026.10.11"
 [tools]
 just = "latest"
 shfmt = "latest"
-actionlint = "latest"
+# The registry's actionlint entry is deprecated.
+"aqua:rhysd/actionlint" = "latest"
 shellcheck = "latest"
 zizmor = "latest"
 yq = "latest"
 jq = "latest"
 gitleaks = "latest"
 lychee = "latest"
-check-jsonschema = "latest"
+"pypi:check-jsonschema" = "latest"
 uv = "latest"
 cargo-binstall = "latest"
 cargo-deny = "latest"
 cargo-insta = "latest"
-cargo-nextest = "latest"
-cargo-llvm-cov = "latest"
-cargo-hack = "latest"
-cargo-machete = "latest"
-cargo-semver-checks = "latest"
-cargo-mutants = "latest"
-# `cargo set-version --workspace` (docs/CONTRIBUTING.md#releasing).
-cargo-edit = "latest"
-# The version gen-wasm's sha256 check covers.
-binaryen = "133"
-
-# Backend-qualified here so `[tools]` and every `tools:` input use plain names.
-[tool_alias]
-# The registry's actionlint entry is deprecated.
-actionlint = "aqua:rhysd/actionlint"
-check-jsonschema = "pypi:check-jsonschema"
-cargo-nextest = "aqua:nextest-rs/nextest/cargo-nextest"
-cargo-llvm-cov = "aqua:taiki-e/cargo-llvm-cov"
-cargo-hack = "github:taiki-e/cargo-hack"
-cargo-machete = "github:bnjbvr/cargo-machete"
-cargo-semver-checks = "cargo:cargo-semver-checks"
+"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+"aqua:taiki-e/cargo-llvm-cov" = "latest"
+"github:taiki-e/cargo-hack" = "latest"
+"github:bnjbvr/cargo-machete" = "latest"
+"cargo:cargo-semver-checks" = "latest"
 # v27.1.0 ships no aarch64-apple-darwin asset, so `github:` fails on Apple
 # silicon (https://github.com/sourcefrog/cargo-mutants/releases/tag/v27.1.0).
-cargo-mutants = "cargo:cargo-mutants"
-cargo-edit = "cargo:cargo-edit"
-binaryen = "aqua:WebAssembly/binaryen"
+"cargo:cargo-mutants" = "latest"
+# `cargo set-version --workspace` (docs/CONTRIBUTING.md#releasing).
+"cargo:cargo-edit" = "latest"
+# The version gen-wasm's sha256 check covers.
+"aqua:WebAssembly/binaryen" = "133"
