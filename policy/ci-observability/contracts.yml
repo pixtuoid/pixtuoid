@@ -276,50 +276,65 @@
 
 # ── The merge gate
 
-- id: group-required-judges-every-job
+- id: aggregators-judge-every-job
+  file:
+    - .github/workflows/ci.yml
+    - .github/workflows/hermetic.yml
+  why: >-
+    `gate` is the only CI check branch protection requires, and hermetic's
+    group is all full-tier jobs, so its `required` is what keeps the call from
+    reading skipped. A job skipped because a job it needs failed reports
+    "Success" and does not block a merge
+    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions),
+    so each aggregator must run on `always()`, need every other job, and judge
+    them all through require-jobs, which counts skipped and cancelled as red.
+  assert: |
+    (.jobs.gate // .jobs.required) as $agg
+    | ((.jobs | keys) - ["gate", "required", "tier"]) == ($agg.needs | sort)
+      and $agg.if == "${{ always() }}"
+      and ($agg | has("continue-on-error") | not)
+      and ([$agg.steps[]
+            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
+            | select(.with.results == "${{ toJSON(needs) }}")
+            | select((has("if") or has("continue-on-error")) | not)]
+           | length == 1)
+  break:
+    - '.jobs.unlisted = {"uses": "./.github/workflows/unlisted.yml"}'
+    - (.jobs.gate // .jobs.required).if = "${{ success() }}"
+    - (.jobs.gate // .jobs.required).needs |= .[1:]
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "{}" else . end)
+    - (.jobs.gate // .jobs.required)["continue-on-error"] = true
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
+
+- id: group-jobs-skip-only-by-tier-or-scope
   file:
     - .github/workflows/ci-lint.yml
     - .github/workflows/ci-builds.yml
     - .github/workflows/ci-tests.yml
     - .github/workflows/site.yml
     - .github/workflows/raycast.yml
-    - .github/workflows/hermetic.yml
   why: >-
-    ci.yml's gate sees a group only through the call's result, and GitHub does
-    not document how a called workflow's jobs roll up into it. The `required`
-    job is what judges each one — through require-jobs, which counts skipped
-    and cancelled as red — so it must need every other job, and must run even
-    when one of them fails.
+    These groups have no aggregator: ci.yml's gate judges each through the
+    call's result, where a skipped job reads as success. So a job may skip only
+    as a light-tier full-only job or on its own path scope, never through
+    `needs` on a job that failed.
   assert: |
-    .jobs.required as $required
-    | (.jobs | keys - ["required"]) == ($required.needs | sort)
-      and $required.if == "${{ always() }}"
-      and ($required | has("continue-on-error") | not)
-      and ([$required.steps[]
-            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
-            | select(.with.results == "${{ toJSON(needs) }}")
-            | select((has("if") or has("continue-on-error")) | not)]
-           | length == 1)
+    all(.jobs[];
+      (.needs == null and (.if == null or .if == "${{ inputs.full }}"))
+      or (.needs == "scope" and .if == "needs.scope.outputs.changed == 'true'"))
   break:
-    - '.jobs.unlisted = {"runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
-    - del(.jobs.required.if)
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "{}" else . end)
-    - .jobs.required["continue-on-error"] = true
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
+    - '.jobs.extra = {"needs": "x", "runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
+    - '.jobs.extra = {"if": "${{ !inputs.full }}", "runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
 
 - id: only-the-light-tier-passes-skipped-jobs
-  file:
-    - .github/workflows/ci-builds.yml
-    - .github/workflows/ci-tests.yml
-    - .github/workflows/site.yml
-    - .github/workflows/hermetic.yml
+  file: .github/workflows/hermetic.yml
   why: >-
     A PR's light tier skips its full-only jobs by design and must still pass
     ci-gate to enter the queue; the full tier judges the same jobs on the
@@ -350,39 +365,6 @@
       .jobs.tier.steps |= map(if .id == "tier" then .env.FULL = "${{ github.event_name != 'pull_request' || (startsWith(github.head_ref, 'mergify/') && github.event.pull_request.head.repo.full_name == github.repository) }}" else . end)
     - |
       .jobs.tier.steps |= map(if .id == "tier" then .env.FULL = "true" else . end)
-
-- id: ci-gate-judges-every-group
-  file: .github/workflows/ci.yml
-  why: >-
-    `gate` is the only CI check branch protection requires. A job skipped
-    because a job it needs failed reports "Success" and does not block a merge
-    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions),
-    so `gate` must run on `always()`; it must also need every group call and
-    judge them all through require-jobs, or a group left out is free to fail.
-  assert: |
-    .jobs.gate as $gate
-    | ([.jobs | to_entries[] | select(.value | has("uses")) | .key] | sort) == ($gate.needs | sort)
-      and $gate.if == "${{ always() }}"
-      and ($gate | has("continue-on-error") | not)
-      and ([$gate.steps[]
-            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
-            | select(.with.results == "${{ toJSON(needs) }}")
-            | select((has("if") or has("continue-on-error")) | not)]
-           | length == 1)
-  break:
-    - .jobs.gate.if = "${{ success() }}"
-    - '.jobs.extra = {"uses": "./.github/workflows/ci-extra.yml"}'
-    - .jobs.gate.needs |= map(select(. != "tests"))
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "${{ toJSON(needs.lint) }}" else . end)
-    - .jobs.gate["continue-on-error"] = true
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
 
 # ── Publishing
 

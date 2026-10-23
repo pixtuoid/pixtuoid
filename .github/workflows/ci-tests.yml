@@ -89,20 +89,3 @@ jobs:
           report_path: target/nextest/ci/junit.xml
           job_name: ${{ matrix.platform }}-test
           test_step_outcome: ${{ steps.tests.outcome }}
-
-  required:
-    name: required-test-jobs
-    permissions:
-      contents: read
-    # Explicit membership keeps a deleted or renamed nested job from letting the
-    # single protected ci-gate silently lose coverage.
-    if: ${{ always() }}
-    needs: [test]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: pixtuoid/.github/.github/actions/require-jobs@main
-        with:
-          results: ${{ toJSON(needs) }}
-          label: "Required test job failed"
-          allow-skipped: ${{ !inputs.full }}

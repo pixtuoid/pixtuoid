@@ -65,16 +65,3 @@ jobs:
       # skips every check below it (#846/#848).
       - if: steps.lockfile.outputs.changed == 'true'
         run: npm run audit
-
-  required:
-    name: required-raycast-jobs
-    if: ${{ always() }}
-    needs: [scope, check]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: pixtuoid/.github/.github/actions/require-jobs@main
-        with:
-          results: ${{ toJSON(needs) }}
-          label: "Required raycast job failed"
-          allow-skipped: 'true'

@@ -108,16 +108,3 @@ jobs:
           retention-days: 7
           include-hidden-files: true
           if-no-files-found: error
-
-  required:
-    name: required-site-jobs
-    if: ${{ always() }}
-    needs: [check, lint]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: pixtuoid/.github/.github/actions/require-jobs@main
-        with:
-          results: ${{ toJSON(needs) }}
-          label: "Required site job failed"
-          allow-skipped: ${{ !inputs.full }}
