@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           report="$(npx playwright install-deps --dry-run chromium chromium-headless-shell 2>&1)" || true
-          missing="$(sed -n 's/^  \([^ ]\+\)$/\1/p' <<<"$report" | tr '\n' ' ')"
+          missing="$(sed -n -E 's/^  ([^ ]+)$/\1/p' <<<"$report" | tr '\n' ' ')"
           if [[ -z "$missing" ]] && ! grep -qx 'All system dependencies are installed.' <<<"$report"; then
             echo "::error title=Playwright's dependency report was unreadable::$report"
             exit 1

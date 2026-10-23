@@ -405,3 +405,30 @@ for have in 11.5.0 10.9.9; do
     [[ "$said" == *"npm $have < 11.5.1"* ]] ||
         fail "the npm floor refused npm $have without naming the 11.5.1 floor: $said"
 done
+
+# ── site.yml: Playwright's dry run hands apt-install exactly its missing
+# packages, and a report naming none that does not say all are installed
+# fails rather than skip them.
+pw_script="$(workflow_step_script .github/workflows/site.yml "Find Chromium's missing system packages")"
+pw_bin="$test_dir/pw-bin"
+mkdir -p "$pw_bin"
+cat >"$pw_bin/npx" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$FAKE_REPORT"
+exit "${FAKE_STATUS:-0}"
+STUB
+chmod +x "$pw_bin/npx"
+pw_run() {
+    : >"$test_dir/pw.out"
+    FAKE_REPORT="$1" FAKE_STATUS="$2" GITHUB_OUTPUT="$test_dir/pw.out" PATH="$pw_bin:$PATH" \
+        bash -c "$pw_script" >/dev/null 2>&1
+}
+pw_run 'All system dependencies are installed.' 0 || fail "the Playwright step failed with nothing missing"
+[[ "$(<"$test_dir/pw.out")" == "packages=" ]] || fail "nothing missing still asked apt-install for: $(<"$test_dir/pw.out")"
+pw_run $'Missing system dependencies (2):\n  libasound2t64\n  libnss3' 1 ||
+    fail "the Playwright step failed on a report naming missing packages"
+[[ "$(<"$test_dir/pw.out")" == "packages=libasound2t64 libnss3 " ]] ||
+    fail "the Playwright step handed apt-install: $(<"$test_dir/pw.out")"
+if pw_run "Error: 'apt-get install -s' exited with code 100" 1; then
+    fail "the Playwright step passed a report that named no package and no clean install"
+fi
