@@ -453,7 +453,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::HookR
 pub struct pixtuoid_core::source::hook::HookSocketListener
 impl pixtuoid_core::source::hook::HookSocketListener
 pub async fn pixtuoid_core::source::hook::HookSocketListener::bind(impl core::convert::Into<std::path::PathBuf>) -> anyhow::Result<Self>
-pub fn pixtuoid_core::source::hook::HookSocketListener::path(&self) -> &std::path::Path
 pub async fn pixtuoid_core::source::hook::HookSocketListener::run(self, pixtuoid_core::TaggedSender) -> anyhow::Result<()>
 impl core::fmt::Debug for pixtuoid_core::source::hook::HookSocketListener
 pub fn pixtuoid_core::source::hook::HookSocketListener::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

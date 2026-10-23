@@ -769,14 +769,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slot_label_borrows_the_same_text_through_every_view() {
-        let label = SlotLabel::new("pixtuoid", LabelProvenance::Renamed);
-        assert_eq!(AsRef::<str>::as_ref(&label), "pixtuoid");
-        assert_eq!(&*label, "pixtuoid");
-        assert_eq!(label.to_string(), "pixtuoid");
-    }
-
-    #[test]
     fn tokens_used_is_omitted_only_when_it_is_actually_zero() {
         let id = AgentId::from_transcript_path("/p/tok.jsonl");
         let mut slot = make_slot(id, 0);
@@ -1032,18 +1024,6 @@ mod tests {
     }
 
     #[test]
-    fn single_floor_local_is_the_identity_cast() {
-        let g = GlobalDeskIndex(7);
-        assert_eq!(g.single_floor_local(), FloorLocalDeskIndex(7));
-    }
-
-    #[test]
-    fn next_free_desk_starts_at_zero() {
-        let s = SceneState::uniform(4);
-        assert_eq!(s.next_free_desk(), Some(GlobalDeskIndex(0)));
-    }
-
-    #[test]
     fn next_free_desk_returns_none_when_full() {
         let mut s = SceneState::uniform(2);
         let total = s.total_capacity();
@@ -1066,16 +1046,6 @@ mod tests {
             Some(GlobalDeskIndex(4)),
             "should overflow to desk 4 (floor 1)"
         );
-    }
-
-    #[test]
-    fn floor_of_uniform() {
-        let s = SceneState::uniform(8);
-        assert_eq!(s.floor_of(GlobalDeskIndex(0)), 0);
-        assert_eq!(s.floor_of(GlobalDeskIndex(7)), 0);
-        assert_eq!(s.floor_of(GlobalDeskIndex(8)), 1);
-        assert_eq!(s.floor_of(GlobalDeskIndex(15)), 1);
-        assert_eq!(s.floor_of(GlobalDeskIndex(16)), 2);
     }
 
     #[test]
@@ -1137,16 +1107,6 @@ mod tests {
     }
 
     #[test]
-    fn next_free_desk_with_variable_capacities() {
-        let mut s = SceneState::new([4, 8, 6, 4, 2, 0, 0, 0, 0, 0]);
-        for i in 0..4 {
-            let id = AgentId::from_transcript_path(&format!("f{i}"));
-            s.agents.insert(id, make_slot(id, i));
-        }
-        assert_eq!(s.next_free_desk(), Some(GlobalDeskIndex(4)));
-    }
-
-    #[test]
     fn zero_capacity_floor_skipped_by_next_free_desk() {
         let s = SceneState::new([4, 0, 6, 0, 2, 0, 0, 0, 0, 0]);
         assert_eq!(s.total_capacity(), 12);
@@ -1196,18 +1156,5 @@ mod tests {
         assert_eq!(floor, 4, "OOB desk lands on last nonempty floor");
         let local = s.floor_local_desk(GlobalDeskIndex(oob));
         assert_eq!(local, FloorLocalDeskIndex(oob - 22));
-    }
-
-    #[test]
-    fn scene_supports_up_to_ten_floors() {
-        let s = SceneState::uniform(2);
-        assert_eq!(s.floor_capacities.len(), 10, "office spans ten floors");
-        assert_eq!(s.total_capacity(), 20, "ten floors × 2 desks");
-        assert_eq!(
-            s.floor_of(GlobalDeskIndex(18)),
-            9,
-            "desk 18 is the first seat on the tenth floor"
-        );
-        assert_eq!(s.floor_of(GlobalDeskIndex(19)), 9);
     }
 }

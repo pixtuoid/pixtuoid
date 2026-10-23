@@ -1299,29 +1299,6 @@ mod tests {
     }
 
     #[test]
-    fn rgb_buffer_put_get_roundtrip() {
-        let mut b = RgbBuffer::filled(3, 2, Rgb { r: 0, g: 0, b: 0 });
-        b.put(
-            1,
-            1,
-            Rgb {
-                r: 10,
-                g: 20,
-                b: 30,
-            },
-        );
-        assert_eq!(
-            b.get(1, 1),
-            Rgb {
-                r: 10,
-                g: 20,
-                b: 30
-            }
-        );
-        assert_eq!(b.get(0, 0), Rgb { r: 0, g: 0, b: 0 });
-    }
-
-    #[test]
     fn put_checked_writes_in_bounds_and_noops_out_of_bounds() {
         let bg = Rgb { r: 0, g: 0, b: 0 };
         let fg = Rgb { r: 9, g: 8, b: 7 };

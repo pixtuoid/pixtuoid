@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
@@ -67,7 +67,6 @@ impl std::error::Error for SocketBusy {}
 #[derive(Debug)]
 pub struct HookSocketListener {
     inner: imp::Listener,
-    path: PathBuf,
     pid_watch: Option<HookPidWatch>,
     presence_tx: Option<PresenceSender>,
 }
@@ -86,15 +85,9 @@ impl HookSocketListener {
         let inner = imp::Listener::bind(&path).await?;
         Ok(Self {
             inner,
-            path,
             pid_watch: None,
             presence_tx: None,
         })
-    }
-
-    /// The bound socket/pipe path.
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     /// Attach a [`HookPidWatch`] so hook payloads carrying a `_pid` register a

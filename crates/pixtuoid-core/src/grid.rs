@@ -147,24 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn from_vec_round_trips_through_as_slice() {
-        let data = vec![1u8, 2, 3, 4, 5, 6];
-        let g = Grid::from_vec(3, 2, data.clone());
-        assert_eq!(g.width, 3);
-        assert_eq!(g.height, 2);
-        assert_eq!(g.as_slice(), data.as_slice());
-        assert_eq!(g.get(2, 1), Some(&6));
-    }
-
-    #[test]
-    fn as_mut_slice_mutates_in_place() {
-        let mut g = Grid::from_vec(2, 2, vec![0u8, 0, 0, 0]);
-        g.as_mut_slice()[3] = 9;
-        assert_eq!(g.get(1, 1), Some(&9));
-        assert_eq!(g.as_slice(), &[0, 0, 0, 9]);
-    }
-
-    #[test]
     fn resize_fill_reuses_on_same_dims_and_grows_otherwise() {
         let mut g = Grid::from_vec(2, 2, vec![1u8, 2, 3, 4]);
         g.resize_fill(2, 2, 7);

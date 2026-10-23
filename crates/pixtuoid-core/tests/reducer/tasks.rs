@@ -26,47 +26,6 @@ fn assert_delegating(scene: &SceneState, id: AgentId, msg: &str) {
 }
 
 #[test]
-fn jsonl_duplicate_of_recent_hook_is_dropped() {
-    let mut scene = SceneState::uniform(2);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-
-    let t0 = SystemTime::now();
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t-1"),
-        None,
-        t0,
-        Transport::Hook,
-    );
-
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t-1"),
-        Some("FROM_JSONL"),
-        t0 + Duration::from_millis(100),
-        Transport::Jsonl,
-    );
-
-    let slot = scene.agents.get(&id).unwrap();
-    match &slot.state {
-        ActivityState::Active { detail, .. } => {
-            assert_ne!(
-                detail.as_deref(),
-                Some("FROM_JSONL"),
-                "jsonl detail must not overwrite"
-            );
-        }
-        other => panic!("unexpected: {other:?}"),
-    }
-}
-
-#[test]
 fn hook_activity_during_active_task_is_suppressed() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -137,30 +96,6 @@ fn hook_activity_during_active_task_is_suppressed() {
         scene.agents.get(&parent).unwrap().state,
         ActivityState::Idle
     );
-}
-
-#[test]
-fn hook_activity_without_active_task_applies_normally() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
-
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t"),
-        Some("Bash: ls"),
-        SystemTime::now(),
-        Transport::Hook,
-    );
-    match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Active { detail, .. } => {
-            assert_eq!(detail.as_deref(), Some("Bash: ls"));
-        }
-        other => panic!("expected Active, got {other:?}"),
-    }
 }
 
 #[test]

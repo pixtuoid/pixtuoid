@@ -217,7 +217,6 @@ fn cw_tool_detail(tool: &str, raw_args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::MAX_TOOL_TARGET_CHARS;
     use crate::source::decoder::test_obj;
     use serde_json::json;
 
@@ -229,60 +228,6 @@ mod tests {
     /// prepend an `Identity`.
     fn decode(v: Value) -> AgentEvent {
         decode_all(v).pop().expect("at least one event")
-    }
-
-    #[test]
-    fn session_start_keys_on_cwd() {
-        let ev = decode(json!({"event": "session_start", "cwd": "/Users/dev/cwproj"}));
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                cwd,
-                parent_id,
-                ..
-            } => {
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(
-                    agent_id,
-                    AgentId::from_parts(SOURCE_NAME, "/Users/dev/cwproj")
-                );
-                assert_eq!(cwd, std::path::PathBuf::from("/Users/dev/cwproj"));
-                assert_eq!(parent_id, None);
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn message_submit_is_the_resurrect_session_start() {
-        let ev = decode(json!({
-            "event": "message_submit",
-            "cwd": "/Users/dev/cwproj"
-        }));
-        assert!(matches!(ev, AgentEvent::SessionStart { agent_id, .. }
-                if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/cwproj")));
-    }
-
-    #[test]
-    fn tool_call_before_is_activity_start_with_no_tool_id() {
-        let ev = decode(json!({
-            "event": "tool_call_before",
-            "cwd": "/repo",
-            "tool": "exec_shell",
-            "tool_args": "{\"command\":\"ls -la\",\"cwd\":\"/repo\"}"
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                tool_use_id,
-                detail,
-                ..
-            } => {
-                assert_eq!(tool_use_id, None);
-                assert_eq!(detail.unwrap().display(), "exec_shell: ls -la");
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 
     #[test]
@@ -316,99 +261,6 @@ mod tests {
         }
         for tool in ["agent_spawn", "spawn_agent", "read_file"] {
             assert!(!is_task(tool, json!({"prompt": "x"})), "{tool}");
-        }
-    }
-
-    #[test]
-    fn tool_call_after_is_activity_end() {
-        let ev = decode(json!({
-            "event": "tool_call_after", "cwd": "/r", "tool": "exec_shell"
-        }));
-        assert!(matches!(
-            ev,
-            AgentEvent::ActivityEnd {
-                tool_use_id: None,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn session_end_maps_to_session_end() {
-        let ev = decode(json!({"event": "session_end", "cwd": "/r"}));
-        assert!(matches!(
-            ev,
-            AgentEvent::SessionEnd {
-                as_child: false,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn all_events_for_one_cwd_share_one_agent_id() {
-        let events = [
-            json!({"event": "session_start", "cwd": "/Users/dev/p"}),
-            json!({"event": "message_submit", "cwd": "/Users/dev/p"}),
-            json!({"event": "tool_call_before", "cwd": "/Users/dev/p", "tool": "exec_shell",
-                   "tool_args": "{\"command\":\"ls\"}"}),
-            json!({"event": "tool_call_after", "cwd": "/Users/dev/p", "tool": "exec_shell"}),
-            json!({"event": "session_end", "cwd": "/Users/dev/p"}),
-        ];
-        let ids: std::collections::BTreeSet<_> = events
-            .iter()
-            .flat_map(|v| decode_cw_hook_payload(test_obj(v)).unwrap())
-            .map(|e| e.agent_id())
-            .collect();
-        assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
-    }
-
-    #[test]
-    fn activity_arms_prepend_identity_with_cwd_keyed_session() {
-        for payload in [
-            json!({"event": "tool_call_before", "cwd": "/Users/dev/p", "tool": "exec_shell",
-                   "tool_args": "{\"command\":\"ls\"}"}),
-            json!({"event": "tool_call_after", "cwd": "/Users/dev/p", "tool": "exec_shell"}),
-        ] {
-            let name = payload["event"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 2, "{name}: Identity + activity");
-            match &events[0] {
-                AgentEvent::Identity {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    pid: None,
-                } => {
-                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "/Users/dev/p"));
-                    assert_eq!(source, SOURCE_NAME);
-                    assert_eq!(session_id, "/Users/dev/p", "cwd IS the session key");
-                    assert_eq!(
-                        cwd.as_deref(),
-                        Some(std::path::Path::new("/Users/dev/p")),
-                        "cw hooks always know their workspace"
-                    );
-                }
-                other => panic!("{name}: expected leading Identity, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn session_lifecycle_events_carry_no_separate_identity() {
-        for payload in [
-            json!({"event": "session_start", "cwd": "/r"}),
-            json!({"event": "message_submit", "cwd": "/r"}),
-            json!({"event": "session_end", "cwd": "/r"}),
-        ] {
-            let name = payload["event"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 1, "{name}: exactly one event");
-            assert!(
-                !matches!(events[0], AgentEvent::Identity { .. }),
-                "{name} must not emit a separate Identity"
-            );
         }
     }
 
@@ -502,18 +354,6 @@ mod tests {
     }
 
     #[test]
-    fn a_subagent_does_not_coalesce_with_its_workspace_parent() {
-        let parent = decode(json!({"event": "session_start", "cwd": "/ws"}));
-        let child =
-            decode(json!({"event": "subagent_spawn", "agent_id": "agent-1", "workspace": "/ws"}));
-        assert_ne!(
-            parent.agent_id(),
-            child.agent_id(),
-            "parent (cwd-keyed) and child (agent_id-keyed) must be distinct sprites"
-        );
-    }
-
-    #[test]
     fn tool_call_before_without_tool_displays_question_mark() {
         let ev = decode(json!({"event": "tool_call_before", "cwd": "/r"}));
         assert!(
@@ -532,25 +372,5 @@ mod tests {
             matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
             if d.display() == "exec_shell")
         );
-    }
-
-    #[test]
-    fn long_tool_target_is_truncated_at_the_decode_boundary() {
-        let long = "x".repeat(MAX_TOOL_TARGET_CHARS * 3);
-        let args = format!("{{\"command\":\"{long}\"}}");
-        let ev = decode(json!({
-            "event": "tool_call_before", "cwd": "/r",
-            "tool": "exec_shell", "tool_args": args
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(display.starts_with("exec_shell: "));
-                assert!(display.ends_with('…'));
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 }

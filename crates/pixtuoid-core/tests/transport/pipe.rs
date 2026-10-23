@@ -219,14 +219,6 @@ async fn listener_drops_slow_connection_via_timeout() {
 }
 
 #[tokio::test]
-async fn listener_path_accessor_returns_bound_path() {
-    let name = pipe_name("path");
-    let path = std::path::PathBuf::from(&name);
-    let listener = HookSocketListener::bind(path.clone()).await.unwrap();
-    assert_eq!(listener.path(), path.as_path());
-}
-
-#[tokio::test]
 async fn clients_reconnect_after_open_close_churn() {
     let name = pipe_name("churn");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);

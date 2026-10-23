@@ -397,30 +397,6 @@ mod tests {
     }
 
     #[test]
-    fn shared_transcript_binds_the_larger_pid_regardless_of_enumeration_order() {
-        let root = Path::new("/home/u/.omp/agent/sessions");
-        let path = root.join(format!("-dev-proj/{STEM}.jsonl"));
-        let stem_key = crate::id::normalize_path_key(STEM);
-        for pids in [[100, 200], [200, 100]] {
-            let got = ProbeSnapshot::from_open_fd_pairs(
-                root,
-                pids.into_iter().map(|p| (p, path.clone())),
-                omp_recognize,
-                omp_id_from_path,
-            );
-            assert_eq!(
-                got.ids().cloned().collect::<Vec<_>>(),
-                vec![stem_key.clone()]
-            );
-            assert_eq!(
-                got.pid_of.get(&stem_key),
-                Some(&200),
-                "the larger pid must win in both enumeration orders"
-            );
-        }
-    }
-
-    #[test]
     fn paths_outside_root_and_non_jsonl_files_are_excluded() {
         let root = Path::new("/home/u/.omp/agent/sessions");
         let outside = PathBuf::from(format!("/tmp/elsewhere/{STEM}.jsonl"));

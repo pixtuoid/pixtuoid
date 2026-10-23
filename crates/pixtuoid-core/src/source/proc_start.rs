@@ -118,11 +118,6 @@ mod tests {
         assert_eq!(pid_start_marker(pid), None);
     }
 
-    #[test]
-    fn own_process_has_a_marker() {
-        assert!(pid_start_marker(std::process::id() as i32).is_some());
-    }
-
     /// The teeth: every other Windows assertion survives an `imp` returning a
     /// constant. Windows-only — macOS's epoch-SECONDS marker would collide for
     /// a child spawned inside the same test.

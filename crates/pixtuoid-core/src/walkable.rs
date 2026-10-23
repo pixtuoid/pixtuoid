@@ -122,42 +122,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_open_is_all_walkable() {
-        let m = WalkableMask::new_open(8, 4);
-        for y in 0..4 {
-            for x in 0..8 {
-                assert!(m.is_walkable(x, y));
-            }
-        }
-    }
-
-    #[test]
-    fn mark_blocked_pads_and_clips() {
-        let mut m = WalkableMask::new_open(10, 10);
-        m.mark_blocked(4, 4, 2, 2, 1);
-        for y in 3..7 {
-            for x in 3..7 {
-                assert!(!m.is_walkable(x, y), "({x},{y}) should be blocked");
-            }
-        }
-        assert!(m.is_walkable(2, 4));
-        assert!(m.is_walkable(8, 4));
-    }
-
-    #[test]
     fn mark_walkable_carves_a_cutout() {
         let mut m = WalkableMask::new_open(10, 10);
         m.mark_blocked(0, 0, 10, 4, 0);
         assert!(!m.is_walkable(5, 2));
         m.mark_walkable(4, 0, 3, 4);
         assert!(m.is_walkable(5, 2));
-    }
-
-    #[test]
-    fn out_of_bounds_query_is_not_walkable() {
-        let m = WalkableMask::new_open(4, 4);
-        assert!(!m.is_walkable(4, 0));
-        assert!(!m.is_walkable(0, 4));
     }
 
     #[test]

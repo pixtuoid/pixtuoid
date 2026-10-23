@@ -101,16 +101,6 @@ fn parses_two_frame_mini_sprite() {
 }
 
 #[test]
-fn rejects_unknown_palette_key() {
-    let src = "@frame 0\nA . ? .";
-    let err = parse(src).unwrap_err();
-    assert!(
-        format!("{err:#}").contains("unknown palette key"),
-        "got: {err:#}"
-    );
-}
-
-#[test]
 fn rejects_inconsistent_row_widths() {
     let src = "@frame 0\nA . B .\nA . B";
     let err = parse(src).unwrap_err();

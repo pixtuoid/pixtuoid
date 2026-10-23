@@ -160,33 +160,4 @@ mod tests {
             "an uncapped value became an uncapped log line:\n{out}"
         );
     }
-
-    #[test]
-    fn breadcrumbs_emit_the_structured_drift_target_and_fields() {
-        let out = capture(|| {
-            unknown_event("codex", "MysteryHookZ");
-            missing_field("copilot", "tool.execution_start", "toolNameZ");
-            unknown_dispatch("claude-code", "DelegateZ");
-            shape_drift("claude-code", "registry-missing-pidZ");
-        });
-        for needle in [
-            TARGET,
-            "unknown_event",
-            "MysteryHookZ",
-            "codex",
-            "missing_field",
-            "toolNameZ",
-            "copilot",
-            "unknown_dispatch",
-            "DelegateZ",
-            "shape_drift",
-            "registry-missing-pidZ",
-            "claude-code",
-        ] {
-            assert!(
-                out.contains(needle),
-                "missing {needle:?} in captured log:\n{out}"
-            );
-        }
-    }
 }

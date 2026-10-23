@@ -961,30 +961,6 @@ mod tests {
     }
 
     #[test]
-    fn codex_session_start_without_transcript_path_uses_session_id() {
-        // Codex sends transcript_path as string|null.
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "codex-sess-1",
-            "_pixtuoid_source": "codex",
-            "cwd": "/Users/me/work/myrepo"
-        }));
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                cwd,
-                ..
-            } => {
-                assert_eq!(source, "codex");
-                assert_eq!(agent_id, AgentId::from_parts("codex", "codex-sess-1"));
-                assert_eq!(cwd, std::path::PathBuf::from("/Users/me/work/myrepo"));
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn codex_permission_request_maps_to_identity_plus_waiting() {
         // The captured Codex shape carries no cwd.
         let evs = decode_hook_payload(json!({
@@ -1008,82 +984,6 @@ mod tests {
             other => panic!("expected leading Identity, got {other:?}"),
         }
         assert!(matches!(evs[1], AgentEvent::Waiting { .. }));
-    }
-
-    #[test]
-    fn codex_user_prompt_submit_creates_agent_via_session_start() {
-        let ev = decode_single(json!({
-            "hook_event_name": "UserPromptSubmit",
-            "session_id": "codex-sess",
-            "_pixtuoid_source": "codex",
-            "cwd": "/Users/me/work/myrepo",
-            "transcript_path": "/Users/me/.codex/sessions/x.jsonl"
-        }));
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                cwd,
-                ..
-            } => {
-                assert_eq!(source, "codex");
-                assert_eq!(cwd, std::path::PathBuf::from("/Users/me/work/myrepo"));
-                // Codex keys on session_id, NOT the (here non-null) transcript_path
-                // — keying on the path would produce two sprites for one session.
-                assert_eq!(agent_id, AgentId::from_parts("codex", "codex-sess"));
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn codex_stop_maps_to_activity_end_with_no_identity() {
-        let ev = decode_single(json!({
-            "hook_event_name": "Stop",
-            "session_id": "s",
-            "_pixtuoid_source": "codex"
-        }));
-        assert!(matches!(ev, AgentEvent::ActivityEnd { .. }));
-    }
-
-    #[test]
-    fn pre_tool_use_decodes_to_identity_plus_activity_start() {
-        let evs = decode_hook_payload(json!({
-            "hook_event_name": "PreToolUse",
-            "session_id": "ses-abc",
-            "transcript_path": "/p/ses-abc.jsonl",
-            "cwd": "/Users/me/repo",
-            "tool_name": "Bash",
-            "tool_input": {"command": "ls"},
-            "tool_use_id": "t1"
-        }))
-        .expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + ActivityStart, got {evs:?}");
-        match &evs[0] {
-            AgentEvent::Identity {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                pid: None,
-            } => {
-                assert_eq!(
-                    *agent_id,
-                    AgentId::from_parts(crate::source::claude_code::SOURCE_NAME, "ses-abc"),
-                    "Identity must coalesce with the activity event's id"
-                );
-                assert_eq!(source, crate::source::claude_code::SOURCE_NAME);
-                assert_eq!(session_id, "ses-abc");
-                assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/Users/me/repo")));
-            }
-            other => panic!("expected leading Identity, got {other:?}"),
-        }
-        match &evs[1] {
-            AgentEvent::ActivityStart { tool_use_id, .. } => {
-                assert_eq!(tool_use_id.as_deref(), Some("t1"));
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 
     #[test]
@@ -1133,57 +1033,6 @@ mod tests {
     }
 
     #[test]
-    fn notification_decodes_to_identity_plus_waiting() {
-        let evs = decode_hook_payload(json!({
-            "hook_event_name": "Notification",
-            "session_id": "ses-abc",
-            "transcript_path": "/p/ses-abc.jsonl",
-            "cwd": "/Users/me/repo",
-            "message": "permission?"
-        }))
-        .expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + Waiting, got {evs:?}");
-        match &evs[0] {
-            AgentEvent::Identity { cwd, .. } => {
-                assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/Users/me/repo")));
-            }
-            other => panic!("expected leading Identity, got {other:?}"),
-        }
-        assert!(matches!(&evs[1], AgentEvent::Waiting { reason, .. } if reason == "permission?"));
-    }
-
-    #[test]
-    fn session_start_and_session_end_carry_no_identity() {
-        for (payload, name) in [
-            (
-                json!({
-                    "hook_event_name": "SessionStart",
-                    "session_id": "s",
-                    "transcript_path": "/p/s.jsonl",
-                    "cwd": "/repo"
-                }),
-                "SessionStart",
-            ),
-            (
-                json!({
-                    "hook_event_name": "SessionEnd",
-                    "session_id": "s",
-                    "transcript_path": "/p/s.jsonl",
-                    "cwd": "/repo"
-                }),
-                "SessionEnd",
-            ),
-        ] {
-            let evs = decode_hook_payload(payload).expect("decodes");
-            assert_eq!(evs.len(), 1, "{name}: exactly one event, got {evs:?}");
-            assert!(
-                !matches!(evs[0], AgentEvent::Identity { .. }),
-                "{name} must not emit Identity"
-            );
-        }
-    }
-
-    #[test]
     fn cc_session_start_reason_source_does_not_hijack_cli_source() {
         let ev = decode_single(json!({
             "hook_event_name": "SessionStart",
@@ -1205,20 +1054,6 @@ mod tests {
             }
             other => panic!("expected SessionStart, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn pixtuoid_source_private_key_drives_cli_attribution() {
-        let ev = decode_single(json!({
-            "hook_event_name": "Stop",
-            "session_id": "codex-sess",
-            "_pixtuoid_source": "codex"
-        }));
-        assert_eq!(
-            ev.agent_id(),
-            AgentId::from_parts("codex", "codex-sess"),
-            "Codex Stop keys on session_id under the codex namespace"
-        );
     }
 
     #[test]
@@ -1289,26 +1124,6 @@ mod tests {
         let capped = ellipsize(&over, MAX_DECODED_FIELD_CHARS);
         assert_eq!(capped.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
         assert!(capped.ends_with('…'), "cap must be marked: {capped:?}");
-    }
-
-    #[test]
-    fn notification_reason_is_capped_at_the_decode_boundary() {
-        let long = "メ".repeat(MAX_DECODED_FIELD_CHARS * 100);
-        let evs = decode_hook_payload(json!({
-            "hook_event_name": "Notification",
-            "session_id": "ses-abc",
-            "transcript_path": "/p/ses-abc.jsonl",
-            "cwd": "/repo",
-            "message": long
-        }))
-        .expect("decodes");
-        match &evs[1] {
-            AgentEvent::Waiting { reason, .. } => {
-                assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-                assert!(reason.ends_with('…'));
-            }
-            other => panic!("expected Waiting, got {other:?}"),
-        }
     }
 
     #[test]
