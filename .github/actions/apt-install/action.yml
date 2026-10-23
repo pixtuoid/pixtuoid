@@ -24,6 +24,7 @@ runs:
         RECOMMENDS: ${{ inputs.recommends }}
         ATTEMPTS: '3'
         ATTEMPT_TIMEOUT: '120'
+        APT_MIRRORS: /etc/apt/apt-mirrors.txt
       run: |
         set -euo pipefail
         read -ra names <<< "$PACKAGES"
@@ -33,12 +34,18 @@ runs:
         # The runner's mirror list moves past a mirror only when it fails
         # (actions/runner-images configure-apt-sources.sh), and either mirror
         # can trickle or stall without failing (runner-images#14823, #15040),
-        # so each attempt puts the other first, archive.ubuntu.com's first.
-        mirrors=/etc/apt/apt-mirrors.txt
-        first=('archive\.ubuntu\.com' 'azure\.archive\.ubuntu\.com')
+        # so each attempt leads with the next. Azure's trickle is the open one
+        # that failed setup-gpu here, so it goes second.
+        rotation=(archive.ubuntu.com azure.archive.ubuntu.com)
         for ((attempt = 1; ; attempt++)); do
-          if [[ -f "$mirrors" ]]; then
-            sudo sed -i -E "s#^(https?://([a-z]+\.)?archive\.ubuntu\.com/ubuntu/\tpriority:)[0-9]+#\12#; s#^(https?://${first[(attempt - 1) % 2]}/ubuntu/\tpriority:)[0-9]+#\11#" "$mirrors"
+          if [[ -f "$APT_MIRRORS" ]]; then
+            ranked="$(mktemp)"
+            awk -v lead="${rotation[(attempt - 1) % ${#rotation[@]}]}" -v hosts="${rotation[*]}" '
+              BEGIN { FS = OFS = "\t"; split(hosts, h, " "); for (i in h) rotates[h[i]] = 1 }
+              { split($1, url, "/"); if (url[3] in rotates) $2 = "priority:" (url[3] == lead ? 1 : 2) }
+              1' "$APT_MIRRORS" >"$ranked"
+            sudo cp "$ranked" "$APT_MIRRORS"
+            rm -f "$ranked"
           fi
           if timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" update &&
             timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" install "${install_opts[@]}" --download-only "${names[@]}"; then
