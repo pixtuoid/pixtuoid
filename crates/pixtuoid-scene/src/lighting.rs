@@ -424,14 +424,30 @@ impl DeskLights {
         Self {
             lamp: Emitter {
                 kind: EmitterKind::DeskLamp,
-                light: Light::Halo {
-                    centre: bulb,
-                    radius: DESK_LAMP_RADIUS,
-                    share: DESK_LAMP_MAX,
-                },
+                light: Self::halo(bulb),
                 strength: level,
             },
             screen_idle,
+        }
+    }
+
+    /// These lights with the lamp's pool centred on `centre`, where the art the
+    /// painter draws hangs its bulb.
+    pub(crate) fn relit_at(self, centre: Point) -> Self {
+        Self {
+            lamp: Emitter {
+                light: Self::halo(centre),
+                ..self.lamp
+            },
+            ..self
+        }
+    }
+
+    fn halo(centre: Point) -> Light {
+        Light::Halo {
+            centre,
+            radius: DESK_LAMP_RADIUS,
+            share: DESK_LAMP_MAX,
         }
     }
 }

@@ -335,7 +335,7 @@ impl PaneSky<'_> {
         let (p, glass_dy) = ((unit(g.0), unit(g.1)), unit(glass_dy));
         let share = crate::atmosphere::sky_share(glass_dy, self.glass_h);
         let band = crate::dither::nearest(share * (SKY_BANDS - 1) as f32, g.0, g.1);
-        let i = usize::from(band).min(SKY_BANDS - 1);
+        let i = usize::from(band);
         match v
             .disc
             .filter(|_| self.hosts_disc)
@@ -348,7 +348,7 @@ impl PaneSky<'_> {
                 // be all the ring there is.
                 let k = (f * f32::from(FALLOFF_TONES)).round() as u8;
                 if k > 0 {
-                    return v.halo[i][usize::from(k.min(FALLOFF_TONES)) - 1];
+                    return v.halo[i][usize::from(k) - 1];
                 }
             }
             None => {}
@@ -372,6 +372,18 @@ mod tests {
     use super::*;
     use crate::atmosphere::Moment;
     use crate::display::pen::test_density;
+
+    /// `colour` indexes its bands by the dithered stop count, which the horizon
+    /// (the deepest share) must not carry past the last band at any phase.
+    #[test]
+    fn the_horizon_dithers_no_deeper_than_the_last_band() {
+        for y in 0..crate::dither::PERIOD {
+            for x in 0..crate::dither::PERIOD {
+                let band = crate::dither::nearest((SKY_BANDS - 1) as f32, x, y);
+                assert!(usize::from(band) < SKY_BANDS, "({x}, {y}) -> {band}");
+            }
+        }
+    }
 
     /// A star turns only on a Full beat, and the field's cycles span every
     /// beat count from the base to the base plus the span.

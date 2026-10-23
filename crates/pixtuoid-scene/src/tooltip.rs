@@ -347,11 +347,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
     }
     // Fresh agents show no active-% meter — the % is noise before ~5s of accounting.
     if kind == RungKind::Active && session_secs >= 5 {
-        let pct = (agent.active_ms / 1000)
-            .checked_mul(100)
-            .and_then(|n| n.checked_div(session_secs))
-            .map(|p| p.min(100))
-            .unwrap_or(0);
+        let pct = ((agent.active_ms / 1000) * 100 / session_secs).min(100);
         let filled = (pct as usize * 5).div_ceil(100).min(5);
         let meter: String = "\u{25ae}".repeat(filled) + &"\u{25af}".repeat(5 - filled);
         stats.push_str(&format!(" \u{b7} {meter} {pct}%"));

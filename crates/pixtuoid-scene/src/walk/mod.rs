@@ -270,6 +270,7 @@ pub(crate) fn advance_wander(
     slot: &AgentSlot,
     now: SystemTime,
     layout: &SceneLayout,
+    desk: Point,
     router: &mut dyn Router,
     overlay: &OccupancyOverlay,
     walks: &mut HashMap<AgentId, WalkState>,
@@ -342,15 +343,11 @@ pub(crate) fn advance_wander(
                 } else {
                     // The origin must match pose::pure::idle_pose's `desk` so the
                     // stateless/stateful destinations stay in lockstep.
-                    let desk_pt = layout.home_desk(slot.desk_index.single_floor_local());
-                    let origin = desk_pt.unwrap_or(Point { x: 0, y: 0 });
-                    let target =
-                        pick_wander_dest(id, walk.wander.cycle_n, layout, origin, &claimed);
+                    let target = pick_wander_dest(id, walk.wander.cycle_n, layout, desk, &claimed);
                     walk.wander.target = target;
                     let dest = target.dest;
                     let seat = target.kind.seat();
 
-                    let desk = desk_pt.unwrap_or(dest);
                     let (from, chair_settle) = desk_leg_endpoint(desk, layout);
                     walk.wander.phase = WanderPhase::WalkingOut(snapshot_leg_profile(
                         router,
@@ -380,7 +377,7 @@ pub(crate) fn advance_wander(
                 WalkLegStatus::Arrived { walk_total } => {
                     // Snapshot the walk-back profile now — the overlay may differ
                     // by the time the dwell ends.
-                    let back = snapshot_back_profile(slot, walk, layout, router, overlay);
+                    let back = snapshot_back_profile(slot, walk, layout, desk, router, overlay);
                     walk.wander.phase = WanderPhase::AtWaypoint(back);
                     advance_phase_clock(walk, walk_total, now);
                     (WanderPhase::AtWaypoint(back), LegProgress::ZERO)
@@ -575,12 +572,10 @@ fn snapshot_back_profile(
     slot: &AgentSlot,
     walk: &WalkState,
     layout: &SceneLayout,
+    desk: Point,
     router: &mut dyn Router,
     overlay: &OccupancyOverlay,
 ) -> WalkProfile {
-    let desk = layout
-        .home_desk(slot.desk_index.single_floor_local())
-        .unwrap_or(walk.wander.target.dest);
     let (snap_to, chair_settle) = desk_leg_endpoint(desk, layout);
     snapshot_leg_profile(
         router,

@@ -204,24 +204,6 @@ pub(crate) fn drawn_in(art: &super::DenseFrame<'_>, keys: &[char]) -> Vec<bool> 
     art.recolorable.drawn_in(keys)
 }
 
-/// The art a corridor appliance at a `kind` waypoint is drawn from; `None`
-/// for a waypoint no appliance stands at.
-pub(crate) fn appliance_piece(kind: crate::layout::WaypointKind) -> Option<Piece> {
-    use crate::layout::WaypointKind as K;
-    match kind {
-        K::VendingMachine => Some(Piece::VendingMachine),
-        K::Printer => Some(Piece::Printer),
-        K::Couch
-        | K::Pantry
-        | K::PhoneBooth
-        | K::StandingDesk
-        | K::MeetingSofa
-        | K::MeetingChair
-        | K::Island
-        | K::SnackShelf => None,
-    }
-}
-
 /// The frames an appliance's art opens with that stand still: it shows them
 /// idle, and loops the rest while busy.
 pub(crate) const APPLIANCE_IDLE_FRAMES: usize = 1;
