@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
       # No setup-cargo-just: nothing compiles here, so the runner's preinstalled
       # cargo is enough — but cargo-deny DOES shell out to `cargo metadata`.
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
         with:
           tools: cargo-deny
       - run: just deny
@@ -71,9 +71,9 @@ jobs:
         with:
           persist-credentials: false
       # cargo-machete parses manifests and does not need a Rust toolchain.
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
         with:
-          tools: github:bnjbvr/cargo-machete
+          tools: cargo-machete
       - run: just machete
 
   # The `just lint` recipes no other job runs, so a skipped local preflight can't land their break.
@@ -87,9 +87,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
         with:
-          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv
+          tools: shfmt actionlint shellcheck zizmor yq jq gitleaks lychee check-jsonschema uv
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
@@ -122,7 +122,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
       - run: just npm-check
 
   # Generated-file freshness is formatter-class, so every PR push runs it
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
       - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
@@ -176,11 +176,11 @@ jobs:
         with:
           prefix-key: v1-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
         with:
           tools: cargo-binstall
       - name: Install cargo-public-api (pinned to match the committed goldens)
-        run: cargo binstall -y "cargo-public-api@$(just --evaluate API_PUBLIC_API)"
+        run: just _install-public-api
       - run: just api-surface-check
 
   # rustdoc warnings and doctests are invisible to clippy and nextest.

@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # The same cargo-deny ci-lint installs, so one version judges deny.toml.
-      - uses: ./.github/actions/setup-just
+      # The same mise.toml key ci-lint's deny job installs: one version judges deny.toml.
+      - uses: ./.github/actions/setup-tools
         with:
           tools: cargo-deny
       - run: just deny-advisories

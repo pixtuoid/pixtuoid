@@ -51,28 +51,40 @@ check "git's own list carries no transport/identity vars to over-strip" \
 # `cargo fmt`; drop it from this list the moment it fans out to anything else.
 hooks_exempt_from_scrub="pre-commit"
 
-# What the hook hands `just` at its `exec`, given the GIT_DIR a LINKED
-# worktree's push exports. Stubbing `just` asserts the env contract alone — no
-# toolchain, no network, no push, which is why CI can run this at all.
-hook_hands_just() {
-    local hook="$1" s
-    s=$(mktemp -d "$root/hookXXXX")
-    mkdir -p "$s/bin" "$s/repo"
-    git init -q "$s/repo"
+# What the hook hands `stub` (the command it runs for just) at its `exec`,
+# given the GIT_DIR a LINKED worktree's push exports. Stubbing asserts the env
+# contract alone — no toolchain, no network, no push, which is why CI can run
+# this at all. `inherit` keeps the caller's PATH behind the stub; `bare` leaves
+# only the system dirs, where no just is. Leaves the run's dir in `hook_run`.
+hook_hands() {
+    local hook="$1" stub="$2" path_mode="$3" path
+    hook_run=$(mktemp -d "$root/hookXXXX")
+    mkdir -p "$hook_run/bin" "$hook_run/repo"
+    git init -q "$hook_run/repo"
     # Reports EVERY local-env-var still set, not just GIT_DIR: a scrub narrowed
     # to GIT_DIR alone leaves GIT_INDEX_FILE relocating the index, which is half
     # of what outranks `git -C <dir>` in #893, and would otherwise pass here.
-    # shellcheck disable=SC2016  # the stub's own script text, not expansion
-    printf '#!/usr/bin/env bash\nfor v in $(git rev-parse --local-env-vars); do [ -n "${!v:-}" ] && printf "%%s " "$v"; done >"%s/seen"\nexit 0\n' "$s" >"$s/bin/just"
-    chmod +x "$s/bin/just"
-    (cd "$s/repo" && PATH="$s/bin:$PATH" GIT_DIR="$s/repo/.git" \
-        GIT_INDEX_FILE="$s/repo/.git/index" GIT_WORK_TREE="$s/repo" \
+    cat >"$hook_run/bin/$stub" <<STUB
+#!/usr/bin/env bash
+printf '%s ' "\$@" >"$hook_run/argv"
+for v in \$(git rev-parse --local-env-vars); do [ -n "\${!v:-}" ] && printf '%s ' "\$v"; done >"$hook_run/seen"
+exit 0
+STUB
+    chmod +x "$hook_run/bin/$stub"
+    path="$hook_run/bin:/usr/bin:/bin"
+    [ "$path_mode" = inherit ] && path="$hook_run/bin:$PATH"
+    (cd "$hook_run/repo" && PATH="$path" GIT_DIR="$hook_run/repo/.git" \
+        GIT_INDEX_FILE="$hook_run/repo/.git/index" GIT_WORK_TREE="$hook_run/repo" \
         bash "$hook" origin y </dev/null) >/dev/null 2>&1
+}
+
+hook_hands_just() {
+    hook_hands "$1" just inherit
     # Two channels: stdout is the leak list; the exit status (cat's own) says
     # whether the hook reached `exec` at all. Folding "died before exec" into
     # stdout as a sentinel would satisfy the control's `-n` and flip its
     # diagnosis when the harness itself is broken.
-    cat "$s/seen" 2>/dev/null
+    cat "$hook_run/seen" 2>/dev/null
 }
 
 # The hook reached its `exec` AND handed the child no repo-relocating env.
@@ -105,6 +117,39 @@ for hook in "$repo"/.githooks/*; do
     case " $hooks_exempt_from_scrub " in *" $name "*) continue ;; esac
     check "$name reaches its exec with no repo-relocating git env" \
         hook_scrubs_clean "$hook"
+done
+
+# --- the just lookup: no just on PATH, so the hook asks mise for it ----------
+bare_path_has_no_just() {
+    ! PATH=/usr/bin:/bin command -v just >/dev/null
+}
+check "the system PATH the fallback cases run on has no just" \
+    bare_path_has_no_just
+
+# `want` is what the stub mise must be called with, so the hook neither skips
+# the fallback nor runs another recipe; a hook that pushes also gets no
+# repo-relocating env.
+hook_falls_back_to_mise() {
+    local hook="$1" want="$2" scrubbed="$3"
+    hook_hands "$hook" mise bare
+    [ "$(cat "$hook_run/argv" 2>/dev/null)" = "$want " ] || return 1
+    [ "$scrubbed" = no ] || [ -z "$(cat "$hook_run/seen" 2>/dev/null)" ]
+}
+check "pre-push falls back to mise exec -- just preflight with a scrubbed env" \
+    hook_falls_back_to_mise "$repo/.githooks/pre-push" "exec -- just preflight" yes
+check "pre-commit falls back to mise exec -- just fmt-check" \
+    hook_falls_back_to_mise "$repo/.githooks/pre-commit" "exec -- just fmt-check" no
+
+hook_fails_with_hint_without_just_or_mise() {
+    local hook="$1" s out
+    s=$(mktemp -d "$root/hookXXXX")
+    git init -q "$s"
+    ! out=$(cd "$s" && PATH=/usr/bin:/bin bash "$hook" origin y </dev/null 2>&1) &&
+        grep -qF 'brew install mise' <<<"$out"
+}
+for name in pre-commit pre-push; do
+    check "$name exits 1 with the install hint when neither just nor mise exists" \
+        hook_fails_with_hint_without_just_or_mise "$repo/.githooks/$name"
 done
 
 if [ "$fails" -eq 0 ]; then

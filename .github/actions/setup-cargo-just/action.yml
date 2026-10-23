@@ -1,5 +1,5 @@
 name: 'Setup Cargo & Just'
-description: 'Sets up Rust toolchain, rust-cache, and just'
+description: 'Sets up the Rust toolchain, rust-cache, and just plus the given mise.toml tools'
 
 inputs:
   components:
@@ -43,6 +43,6 @@ runs:
         # main's full-tier entries out.
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
-    - uses: ./.github/actions/setup-just
+    - uses: ./.github/actions/setup-tools
       with:
         tools: ${{ inputs.tools }}

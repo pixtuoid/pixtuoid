@@ -1,25 +1,40 @@
 [tools]
 just = "latest"
 shfmt = "latest"
-"aqua:rhysd/actionlint" = "latest"
+actionlint = "latest"
 shellcheck = "latest"
 zizmor = "latest"
 yq = "latest"
 jq = "latest"
-# `just fixture-pii` is a required gate with no weaker fallback.
 gitleaks = "latest"
 lychee = "latest"
-"pypi:check-jsonschema" = "latest"
+check-jsonschema = "latest"
 uv = "latest"
 cargo-binstall = "latest"
 cargo-deny = "latest"
 cargo-insta = "latest"
-"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
-"aqua:taiki-e/cargo-llvm-cov" = "latest"
-"github:taiki-e/cargo-hack" = "latest"
-"github:bnjbvr/cargo-machete" = "latest"
-# Its releases lack a macos-arm64 asset, so `github:` fails there.
-"cargo:cargo-mutants" = "latest"
+cargo-nextest = "latest"
+cargo-llvm-cov = "latest"
+cargo-hack = "latest"
+cargo-machete = "latest"
+cargo-semver-checks = "latest"
+cargo-mutants = "latest"
 # `cargo set-version --workspace` (docs/CONTRIBUTING.md#releasing).
-"cargo:cargo-edit" = "latest"
-"aqua:WebAssembly/binaryen" = "latest"
+cargo-edit = "latest"
+# The version gen-wasm's sha256 check covers.
+binaryen = "133"
+
+# Backend-qualified here so `[tools]` and every `tools:` input use plain names.
+[tool_alias]
+# The registry's actionlint entry is deprecated.
+actionlint = "aqua:rhysd/actionlint"
+check-jsonschema = "pypi:check-jsonschema"
+cargo-nextest = "aqua:nextest-rs/nextest/cargo-nextest"
+cargo-llvm-cov = "aqua:taiki-e/cargo-llvm-cov"
+cargo-hack = "github:taiki-e/cargo-hack"
+cargo-machete = "github:bnjbvr/cargo-machete"
+cargo-semver-checks = "cargo:cargo-semver-checks"
+# Its releases lack a macos-arm64 asset, so `github:` fails there.
+cargo-mutants = "cargo:cargo-mutants"
+cargo-edit = "cargo:cargo-edit"
+binaryen = "aqua:WebAssembly/binaryen"

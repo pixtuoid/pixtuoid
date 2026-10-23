@@ -6,6 +6,10 @@
 #   git config core.hooksPath .githooks
 set -euo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=SCRIPTDIR/../scripts/lib/hook-just.sh
+source "$here/../scripts/lib/hook-just.sh"
+
 # Resolved before the scrub drops GIT_DIR: when the hook's CWD is outside the
 # worktree (`git --git-dir=… push` from elsewhere) that is the only locator.
 toplevel=$(git rev-parse --show-toplevel)
@@ -26,16 +30,6 @@ unset $scrub
 
 cd "$toplevel"
 
-# No justfile has run yet, so its mise PATH can't supply just.
-just=(just)
-if ! command -v just &>/dev/null; then
-    if command -v mise &>/dev/null; then
-        just=(mise exec -- just)
-    else
-        # shellcheck disable=SC2016  # backticks are literal text, not expansion
-        printf '\033[31m[pre-push] `just` not found — brew install mise, then `mise install`\033[0m\n' >&2
-        exit 1
-    fi
-fi
+resolve_just pre-push
 
 exec "${just[@]}" preflight

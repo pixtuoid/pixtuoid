@@ -34,7 +34,7 @@ jobs:
           # Full history for the tag-on-main ancestry check below.
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
       - name: Validate tag commit is on main
         # A release tag pushed at an arbitrary (unreviewed) commit must not build +
         # publish (#215). Pre-release tester tags are exempt — they test pre-merge,
@@ -99,7 +99,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
 
       - name: Install cross
         if: matrix.cross
@@ -168,7 +168,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-tools
 
       - name: Install cross
         if: matrix.cross

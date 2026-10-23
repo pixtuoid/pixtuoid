@@ -18,10 +18,11 @@ runs:
       run: | # zizmor: ignore[github-env] the callers' `tools:` literals, never event data
         set -euo pipefail
         echo "MISE_ENABLE_TOOLS=just${TOOLS:+,${TOOLS// /,}}" >>"$GITHUB_ENV"
-    # Always names `just`: an empty install_args installs every tool.
     - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
       with:
-        install_args: just ${{ inputs.tools }}
+        # It exports the tool dirs itself; a shim errors outside the repo, and
+        # the hermetic sandbox runs CLIs in temp dirs.
+        add_shims_to_path: false
         # `latest` re-resolves every run, and a save per ref would fight
         # only-main-saves-the-rust-cache's quota.
         cache: false

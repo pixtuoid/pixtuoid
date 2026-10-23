@@ -432,6 +432,23 @@
     - '.["cache-mode"] = "read"'
     - '.jobs.release["cache-mode"] = "write"'
 
+- id: release-workflows-install-only-just-from-mise
+  file:
+    - .github/workflows/release.yml
+    - .github/workflows/release-plz.yml
+  why: >-
+    These jobs build and publish with the release tokens in scope (see
+    release-workflows-restore-no-cache), and mise.toml's tools are unpinned
+    `latest`: past just, nothing it downloads runs here. cross and cargo-deb
+    stay on install-action's checksum-pinned manifest.
+  assert: |
+    all(.jobs[].steps[]?;
+        ((.uses // "") | test("/(setup-tools|setup-cargo-just)$") | not)
+        or ((.with // {}) | has("tools") | not))
+  break:
+    - '(.jobs[].steps[]? | select((.uses // "") | test("/(setup-tools|setup-cargo-just)$"))) |= (.with = ((.with // {}) + {tools: "uv"}))'
+    - 'limit(1; .jobs[].steps[]? | select((.uses // "") | test("/(setup-tools|setup-cargo-just)$"))) |= (.with = ((.with // {}) + {tools: "uv"}))'
+
 - id: release-publishes-after-ci-gate
   file: .github/workflows/release-plz.yml
   why: >-

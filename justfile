@@ -24,14 +24,13 @@ set positional-arguments
 
 # A Homebrew cargo ahead of the rustup proxy ignores rust-toolchain.toml and
 # RUSTUP_TOOLCHAIN and ships only the host std: `--target` and nightly
-# recipes die on E0463 or `-Z` (a0d18c03e). A no-op on CI, where it is first.
+# recipes die on E0463 or `-Z` (a0d18c03e).
 # An empty CARGO_HOME reads as unset, which `env`'s default alone does not.
 _cargo_home := env('CARGO_HOME', '')
 
 # mise.toml's tools, ahead of ~/.cargo/bin (cargo resolves subcommands in PATH
 # order, and stale copies sit there). Directories, not shims: a shim errors
-# outside the repo, and the hermetic sandbox runs CLIs in temp dirs. A failing
-# `mise env` fails the evaluation; no mise skips it.
+# outside the repo, and the hermetic sandbox runs CLIs in temp dirs.
 _mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths')
 export PATH := (if _mise_paths == '' { '' } else { replace_regex(_mise_paths, '\r?\n', PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
@@ -89,7 +88,7 @@ default:
 
 # Format check only — fast, gates pre-commit. The justfile has a canonical
 # format too (`just --fmt`), so it is checked with the Rust; just gives its
-# formatter no cross-version guarantee, and `setup-just` installs the newest
+# formatter no cross-version guarantee, and `setup-tools` installs the newest
 # just, so a release that reformats fails this until `just --fmt`'s output lands.
 [group('rust')]
 fmt-check:
@@ -118,7 +117,7 @@ shfmt-fix:
 [doc('Run shellcheck over repository shell sources')]
 [group('rust')]
 shellcheck:
-    shellcheck {{ SHELL_SOURCES }}
+    shellcheck -x {{ SHELL_SOURCES }}
 
 # Lint the GitHub Actions workflows (actionlint): YAML schema, expression types,
 # action input/output names, runner labels, AND shellcheck over every `run:`
@@ -354,7 +353,7 @@ check-other-unix: (_targets "x86_64-unknown-freebsd")
 # release-plz runs cargo-semver-checks itself on the release PR and RAISES the
 # bump when it finds a break, so this exists only so a human can see the same
 # answer before dispatching. Needs network for the baseline crates, and
-# cargo-semver-checks on PATH (`cargo binstall cargo-semver-checks`).
+# cargo-semver-checks on PATH.
 [doc("Reproduce release-plz's semver verdict for the published crates (local, not a gate)")]
 [group('rust')]
 semver:
@@ -414,6 +413,10 @@ _api-toolchain:
         rustup toolchain install {{ API_NIGHTLY }} --profile minimal
     }
     just _toolchain-covers "$(rustup run {{ API_NIGHTLY }} rustc --version | cut -d' ' -f2)" API_NIGHTLY
+
+[private]
+_install-public-api:
+    cargo binstall -y cargo-public-api@{{ API_PUBLIC_API }}
 
 # `pixtuoid_web`'s `pub` surface is the wasm exports the site's JS calls,
 # outside the workspace: hawk's `--exclude-crate` case.
@@ -1008,8 +1011,7 @@ setup-tools:
     if command -v rustup &>/dev/null; then
         rustup component add rust-analyzer
     fi
-    # `mise exec`: the PATH just computed predates the cargo-binstall mise installed above.
-    mise exec cargo-binstall -- cargo binstall -y cargo-public-api@{{ API_PUBLIC_API }}
+    just _install-public-api
 
 # The pixel comparator is the primitive under `gen-check` and
 # `gen-media-check`; an always-green comparator reports success for any render
