@@ -30,18 +30,21 @@ runs:
         apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
         install_opts=(-y)
         [[ "$RECOMMENDS" == true ]] || install_opts+=(--no-install-recommends)
+        # The runner's mirror list moves past a mirror only when it fails
+        # (actions/runner-images configure-apt-sources.sh), and either mirror
+        # can trickle or stall without failing (runner-images#14823, #15040),
+        # so each attempt puts the other first, archive.ubuntu.com's first.
+        mirrors=/etc/apt/apt-mirrors.txt
+        first=('archive\.ubuntu\.com' 'azure\.archive\.ubuntu\.com')
         for ((attempt = 1; ; attempt++)); do
+          if [[ -f "$mirrors" ]]; then
+            sudo sed -i -E "s#^(https?://([a-z]+\.)?archive\.ubuntu\.com/ubuntu/\tpriority:)[0-9]+#\12#; s#^(https?://${first[(attempt - 1) % 2]}/ubuntu/\tpriority:)[0-9]+#\11#" "$mirrors"
+          fi
           if timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" update &&
             timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" install "${install_opts[@]}" --download-only "${names[@]}"; then
             break
           fi
           ((attempt < ATTEMPTS)) || { echo "::error title=apt download failed::$PACKAGES after $ATTEMPTS attempts"; exit 1; }
           echo "::warning title=apt download retried::attempt $attempt of $ATTEMPTS"
-          # The runner's mirror list passes over a mirror only when it fails,
-          # and a trickling one never does, so retries skip its first, Azure's
-          # (actions/runner-images configure-apt-sources.sh).
-          if [[ -f /etc/apt/apt-mirrors.txt ]]; then
-            sudo sed -i '\|//azure\.archive\.ubuntu\.com/|d' /etc/apt/apt-mirrors.txt
-          fi
         done
         sudo apt-get "${apt_opts[@]}" install "${install_opts[@]}" --no-download "${names[@]}"
