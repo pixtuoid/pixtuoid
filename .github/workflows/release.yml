@@ -37,7 +37,8 @@ jobs:
       - uses: ./.github/actions/setup-just
       - name: Validate tag commit is on main
         # A release tag pushed at an arbitrary (unreviewed) commit must not build +
-        # publish (#215). Pre-release tester tags are exempt — they test pre-merge.
+        # publish (#215). Pre-release tester tags are exempt — they test pre-merge,
+        # on a commit whose PR run gave it a ci-gate.
         if: ${{ !contains(github.ref_name, '-') }}
         run: |
           git fetch origin main --quiet
@@ -57,7 +58,7 @@ jobs:
             exit 1
           fi
 
-  # Ancestry alone admits a commit whose CI failed or has not finished.
+  # Neither check above proves the commit's CI passed.
   ci-passed:
     needs: check
     permissions:

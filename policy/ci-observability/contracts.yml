@@ -457,9 +457,10 @@
 - id: release-builds-wait-for-ci-gate
   file: .github/workflows/release.yml
   why: >-
-    A tag is checked only for being an ancestor of main, so a commit whose CI
+    A tag is checked only for its ancestry and version, so a commit whose CI
     failed or has not finished would build and publish to npm and the GitHub
-    release; every build waits for that commit's own ci-gate.
+    release; every build waits for that commit's own ci-gate, a tester tag's
+    included.
   assert: |
     .jobs["ci-passed"].uses == "./.github/workflows/wait-ci-gate.yml"
       and (.jobs["ci-passed"] | has("if") | not)
@@ -472,6 +473,22 @@
     - del(.jobs["ci-passed"].permissions.checks)
     - del(.jobs.build.needs)
     - .jobs.deb.needs = "check"
+
+- id: the-ci-gate-wait-cannot-pass-unwaited
+  file: .github/workflows/wait-ci-gate.yml
+  why: >-
+    Both release paths proceed on this call's success, so neither its job nor
+    its step may skip or swallow a wait that went red or timed out.
+  assert: |
+    (.jobs | length == 1)
+      and all(.jobs[]; ((has("if") or has("continue-on-error")) | not)
+                       and all(.steps[]; (has("if") or has("continue-on-error")) | not))
+  break:
+    - .jobs.wait["continue-on-error"] = true
+    - .jobs.wait.if = "${{ false }}"
+    - .jobs.wait.steps[0].if = "${{ false }}"
+    - .jobs.wait.steps[0]["continue-on-error"] = true
+    - .jobs.extra = .jobs.wait
 
 - id: every-main-push-gets-its-ci-gate
   file: .github/workflows/ci.yml
@@ -572,7 +589,7 @@
       (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
       = "../pixtuoid/fonts/*.txt"
 
-- id: queue-restates-branch-protection
+- id: queue-merges-on-the-full-tier
   file: .mergify.yml
   why: >-
     Branch protection is not injected (the bots never review the queue's draft

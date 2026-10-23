@@ -487,16 +487,9 @@ doc-check: (_targets DOC_TARGETS)
     doc --workspace --examples
     cargo test --doc --workspace
 
-# Checks first: `rustup target add` goes to the network even for an installed
-# target.
 [private]
 _targets +targets:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    installed="$(rustup target list --installed)"
-    for target in {{ targets }}; do
-        grep -qx "$target" <<<"$installed" || rustup target add "$target"
-    done
+    rustup target add {{ targets }}
 
 [doc('Coverage + JUnit XML — ci-tests.yml runs it on every tier, the full one uploading it (needs llvm-cov + nextest)')]
 [group('rust')]
