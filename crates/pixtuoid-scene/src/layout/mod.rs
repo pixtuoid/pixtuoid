@@ -318,8 +318,8 @@ pub struct SceneLayout {
     /// band (and its carpet apron).
     pub top_margin: u16,
     /// The full-width horizontal corridor below the desk pods — the A\* router's
-    /// preferred zone and the pet/mascot path; `None` when it doesn't fit.
-    pub(crate) corridor: Option<Bounds>,
+    /// preferred zone and the pet/mascot path.
+    pub(crate) corridor: Bounds,
     /// Per-pixel walkability mask — the ground footprint every obstacle stamps,
     /// the surface routing runs over.
     pub walkable: WalkableMask,
@@ -346,10 +346,15 @@ const TIGHT_PAD_PX: u16 = 1;
 
 /// The north wall+window band's visual bottom sits this many px ABOVE
 /// `top_margin`; the rows in between render as carpet apron, not wall, so the
-/// mask blocks only down to the band bottom. The renderer derives
-/// `top_wall_h = top_margin - this`, so the mask and the visual MUST read this
-/// one source or they drift.
+/// mask blocks only down to the band bottom. The mask and the visual read it
+/// through [`top_wall_h`], or they drift.
 pub(crate) const WALL_BAND_TO_TOP_MARGIN: u16 = 4;
+
+/// The visible north wall band's height in px for a `top_margin`. Saturates
+/// because the mask's bare test layouts pass a zero margin.
+pub(crate) const fn top_wall_h(top_margin: u16) -> u16 {
+    top_margin.saturating_sub(WALL_BAND_TO_TOP_MARGIN)
+}
 
 /// How many pixels of the pantry counter actually sit on the floor: only the
 /// southern base contacts the ground, the receding cabinet tops + backsplash
@@ -571,11 +576,10 @@ impl SceneLayout {
         self.desk_facings.get(i.0).copied().unwrap_or(Facing::South)
     }
 
-    /// The visible top window-wall band height in px (`compute` names the same
-    /// quantity `top_wall_h`). Post-construction render sites read it here so
-    /// the derivation lives once.
+    /// The visible top window-wall band height in px: [`top_wall_h`] of this
+    /// layout's margin, for the render sites that only hold the layout.
     pub(crate) fn wall_band_h(&self) -> u16 {
-        self.top_margin.saturating_sub(WALL_BAND_TO_TOP_MARGIN)
+        top_wall_h(self.top_margin)
     }
 
     /// The bounds of meeting room `room_id` — the id IS the

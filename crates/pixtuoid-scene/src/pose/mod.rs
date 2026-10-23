@@ -417,14 +417,21 @@ pub(crate) fn derive_with_routing(
         }
 
         // A per-frame snapshot, so the arms below never re-borrow `rctx.walks`.
-        let wf = advance_wander(slot, now, layout, rctx.router, rctx.overlay, rctx.walks);
+        let wf = advance_wander(
+            slot,
+            now,
+            layout,
+            desk,
+            rctx.router,
+            rctx.overlay,
+            rctx.walks,
+        );
 
         match wf.phase {
             WanderPhase::WalkingOut(_) => {
-                let desk_point = layout.home_desk(slot.desk_index.single_floor_local())?;
                 let dest = wf.dest;
                 let seat = wf.kind.seat();
-                let (from, chair_settle) = desk_leg_endpoint(desk_point, layout);
+                let (from, chair_settle) = desk_leg_endpoint(desk, layout);
                 let settle = Settle::from_pair(chair_settle, seat);
                 return Some(route_walking_pose(
                     slot,
@@ -450,10 +457,9 @@ pub(crate) fn derive_with_routing(
                 return Some(pose);
             }
             WanderPhase::WalkingBack(_) => {
-                let desk_point = layout.home_desk(slot.desk_index.single_floor_local())?;
                 let carrying_coffee = wf.kind.carries_coffee();
                 let seat = wf.kind.seat();
-                let (snap_target, chair_settle) = desk_leg_endpoint(desk_point, layout);
+                let (snap_target, chair_settle) = desk_leg_endpoint(desk, layout);
                 let settle = Settle::from_pair(seat, chair_settle);
                 return Some(route_walking_pose(
                     slot,

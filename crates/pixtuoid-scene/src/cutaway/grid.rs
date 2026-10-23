@@ -300,15 +300,13 @@ fn paint_cell_glyph(
     if let (Some(c), None) = (chars.next(), chars.next())
         && let Some(rows) = text::ruled(c)
     {
-        for py in 0..ch {
-            let row = rows
-                .get(usize::try_from(py * i32::from(LINE_H) / ch).unwrap_or(0))
-                .copied()
-                .unwrap_or(0);
-            for px in 0..cw {
-                let gx = u32::try_from(px * i32::from(ADVANCE) / cw).unwrap_or(0);
-                if row & WORLD_LEFTMOST.checked_shr(gx).unwrap_or(0) != 0 {
-                    canvas.set(at.0 + px, at.1 + py, ink);
+        let (w, h) = (u32::from(cell.w), u32::from(cell.h));
+        for py in 0..cell.h {
+            let row = rows[(u32::from(py) * u32::from(LINE_H) / h) as usize];
+            for px in 0..cell.w {
+                let gx = u32::from(px) * u32::from(ADVANCE) / w;
+                if row & (WORLD_LEFTMOST >> gx) != 0 {
+                    canvas.set(at.0 + i32::from(px), at.1 + i32::from(py), ink);
                 }
             }
         }

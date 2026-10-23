@@ -535,9 +535,7 @@ impl OfficeSession {
         now: SystemTime,
     ) -> AudioFrame {
         let current = self.nav.current().min(self.n_floors - 1);
-        if let Some(view) = self.views.get_mut(current) {
-            view.forget();
-        }
+        self.views[current].forget();
         // The empty floor's by construction, whatever the view still holds.
         let floor = floor_meta(office_floor, current, self.n_floors);
         self.office
@@ -590,8 +588,6 @@ impl OfficeSession {
     /// (`both_painters_paint_one_frame_per_beat`), so a painter may sleep to the
     /// next beat only while this is false.
     pub fn moves_off_beat(&self) -> bool {
-        self.views
-            .get(self.nav.current())
-            .is_some_and(FloorView::moves_off_beat)
+        self.views[self.nav.current()].moves_off_beat()
     }
 }

@@ -78,8 +78,8 @@ impl OneShotPool {
 /// holding the Arc would double the bed RAM.
 #[derive(Debug)]
 pub struct AssetBank {
-    keystrokes: Vec<Arc<Vec<f32>>>,
-    drops: Vec<Arc<Vec<f32>>>,
+    keystrokes: [Arc<Vec<f32>>; KEYSTROKE_POOL],
+    drops: [Arc<Vec<f32>>; DROP_POOL],
     door_chime: Arc<Vec<f32>>,
     printer_whir: Arc<Vec<f32>>,
     vending_drop: Arc<Vec<f32>>,
@@ -88,12 +88,8 @@ pub struct AssetBank {
 impl AssetBank {
     pub(crate) fn build(rng: &mut NoiseStream) -> Self {
         Self {
-            keystrokes: (0..KEYSTROKE_POOL)
-                .map(|_| Arc::new(foley::keystroke(rng)))
-                .collect(),
-            drops: (0..DROP_POOL)
-                .map(|_| Arc::new(foley::rain_drop(rng)))
-                .collect(),
+            keystrokes: std::array::from_fn(|_| Arc::new(foley::keystroke(rng))),
+            drops: std::array::from_fn(|_| Arc::new(foley::rain_drop(rng))),
             door_chime: Arc::new(foley::door_chime()),
             printer_whir: Arc::new(foley::printer_whir(rng)),
             vending_drop: Arc::new(foley::vending_drop(rng)),
@@ -109,9 +105,9 @@ impl AssetBank {
         printer_whir: Arc<Vec<f32>>,
         vending_drop: Arc<Vec<f32>>,
     ) -> Option<Self> {
-        (keystrokes.len() == KEYSTROKE_POOL && drops.len() == DROP_POOL).then_some(Self {
-            keystrokes,
-            drops,
+        Some(Self {
+            keystrokes: keystrokes.try_into().ok()?,
+            drops: drops.try_into().ok()?,
             door_chime,
             printer_whir,
             vending_drop,
@@ -133,16 +129,13 @@ impl AssetBank {
     /// Resolve an engine-emitted `(pool, index)` play to its buffer, `index`
     /// taken modulo the pool's size.
     pub fn sample(&self, pool: OneShotPool, index: usize) -> Arc<Vec<f32>> {
-        let size = match pool {
-            OneShotPool::Keystroke => self.keystrokes.len(),
-            OneShotPool::Drop => self.drops.len(),
-            OneShotPool::DoorChime | OneShotPool::PrinterWhir | OneShotPool::VendingDrop => 1,
-        };
-        // `build` and `adopt` fill every pool; an empty one would play silence.
-        index
-            .checked_rem(size)
-            .and_then(|i| self.get(pool, i))
-            .map_or_else(Default::default, Arc::clone)
+        Arc::clone(match pool {
+            OneShotPool::Keystroke => &self.keystrokes[index % KEYSTROKE_POOL],
+            OneShotPool::Drop => &self.drops[index % DROP_POOL],
+            OneShotPool::DoorChime => &self.door_chime,
+            OneShotPool::PrinterWhir => &self.printer_whir,
+            OneShotPool::VendingDrop => &self.vending_drop,
+        })
     }
 }
 

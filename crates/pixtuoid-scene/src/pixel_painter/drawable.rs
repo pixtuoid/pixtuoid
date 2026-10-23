@@ -149,8 +149,7 @@ pub(super) enum DrawableKind<'a> {
         kind: crate::layout::WallDecor,
         pos: Point,
     },
-    /// A corridor appliance: its pack art ([`crate::pack::appliance_piece`]), centred at
-    /// `pos`.
+    /// A corridor appliance: its pack art, centred at `pos`.
     Appliance {
         pos: Point,
         sprite: Piece,

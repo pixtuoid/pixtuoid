@@ -189,6 +189,8 @@ fn star_twinkle(px: u16, py: u16, beat: crate::anim::Beat) -> bool {
 
 /// The flat bands the window sky steps through from zenith to horizon.
 const SKY_BANDS: usize = 4;
+// `nearest` adds half a stop, so a seam under half keeps its top at `SKY_BANDS - 1`.
+const _: () = assert!(crate::dither::SEAM < 0.5);
 
 /// A colour for each band of the sky, zenith first.
 type Bands = [Rgb; SKY_BANDS];
@@ -335,7 +337,7 @@ impl PaneSky<'_> {
         let (p, glass_dy) = ((unit(g.0), unit(g.1)), unit(glass_dy));
         let share = crate::atmosphere::sky_share(glass_dy, self.glass_h);
         let band = crate::dither::nearest(share * (SKY_BANDS - 1) as f32, g.0, g.1);
-        let i = usize::from(band).min(SKY_BANDS - 1);
+        let i = usize::from(band);
         match v
             .disc
             .filter(|_| self.hosts_disc)
@@ -348,7 +350,7 @@ impl PaneSky<'_> {
                 // be all the ring there is.
                 let k = (f * f32::from(FALLOFF_TONES)).round() as u8;
                 if k > 0 {
-                    return v.halo[i][usize::from(k.min(FALLOFF_TONES)) - 1];
+                    return v.halo[i][usize::from(k) - 1];
                 }
             }
             None => {}

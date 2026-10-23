@@ -509,7 +509,7 @@ impl SceneLayout {
                 self.clock_pos()
                     .map(|at| backdrop(FixtureKind::Clock, boxed(at, CLOCK))),
             )
-            .chain(corridor.map(|b| backdrop(FixtureKind::Runner, b)))
+            .chain(std::iter::once(backdrop(FixtureKind::Runner, *corridor)))
             .chain(rooms.clone().filter_map(move |(room, r, _)| {
                 self.doormat(r)
                     .map(|b| backdrop(FixtureKind::Doormat { room }, b))
@@ -525,7 +525,7 @@ impl SceneLayout {
             .chain(desk_fixtures(home_desks, *buf_h))
             .chain(rooms.clone().filter_map(move |(room, _, trio)| {
                 // Off the corridor runner a south room's floor runs into.
-                let rug = trio?.0.rug(corridor.map_or(*buf_h, |c| c.y));
+                let rug = trio?.0.rug(corridor.y);
                 Some(Fixture {
                     kind: FixtureKind::MeetingRug { room },
                     at: top_left(rug),
@@ -821,7 +821,7 @@ impl SceneLayout {
             p.counter_rect(),
             p.snack_shelf_rect(),
             p.trash_bin_rect(),
-            self.corridor,
+            Some(self.corridor),
         ]
         .into_iter()
         .flatten()

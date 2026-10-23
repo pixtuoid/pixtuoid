@@ -44,13 +44,12 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
     c
 }
 
-/// Per-floor [`StateCounts`], bucketed by `AgentSlot.floor_idx` (clamped to the
-/// last floor). Computed from the FULL scene, deliberately distinct from
+/// Per-floor [`StateCounts`], bucketed by `AgentSlot.floor_idx`. Computed from the FULL scene, deliberately distinct from
 /// `scene_stats` on the projected floor — don't derive one from the other.
 pub fn per_floor_counts(scene: &SceneState) -> [StateCounts; MAX_FLOORS] {
     let mut floors = [StateCounts::default(); MAX_FLOORS];
     for slot in scene.agents.values() {
-        bucket_slot(&mut floors[slot.floor_idx.min(MAX_FLOORS - 1)], slot);
+        bucket_slot(&mut floors[slot.floor_idx], slot);
     }
     floors
 }

@@ -227,7 +227,7 @@ impl FloorCtx {
                 l
             }
         };
-        self.router.set_preferred_zone(layout.corridor);
+        self.router.set_preferred_zone(Some(layout.corridor));
         Some(layout)
     }
 

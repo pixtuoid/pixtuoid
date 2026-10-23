@@ -765,13 +765,13 @@ impl GroundAlign {
     /// The pixel offset from the visual box's low edge for a `footprint`-long span
     /// inside a `visual`-long box. `Center` is `floor(v/2) − floor(f/2)`, NOT
     /// `floor((v−f)/2)` — the two differ by 1px at opposite parity, which lifts the
-    /// floor lamp's block off its disc. `saturating_sub` keeps a (malformed)
-    /// footprint-larger-than-visual row at offset 0 rather than wrapping.
+    /// floor lamp's block off its disc. A `footprint` longer than `visual` is
+    /// not a ground span of the box, and underflows.
     pub(crate) const fn offset(self, visual: u16, footprint: u16) -> u16 {
         match self {
             GroundAlign::Start => 0,
-            GroundAlign::Center => (visual / 2).saturating_sub(footprint / 2),
-            GroundAlign::End => visual.saturating_sub(footprint),
+            GroundAlign::Center => visual / 2 - footprint / 2,
+            GroundAlign::End => visual - footprint,
         }
     }
 }

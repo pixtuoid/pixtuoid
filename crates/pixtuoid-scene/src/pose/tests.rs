@@ -421,7 +421,7 @@ fn wander_derive_is_idempotent_within_a_frame() {
     slot.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
 
     for i in 0..200u64 {
         let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
@@ -1134,15 +1134,12 @@ fn max_top_left_step(
     use crate::sim::anchors::character_top_left;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
 
-    let ob = l
-        .corridor
-        .map(|c| Point {
-            x: c.x + c.width / 2,
-            y: c.y + 2,
-        })
-        .unwrap_or(Point { x: 40, y: 50 });
+    let ob = Point {
+        x: l.corridor.x + l.corridor.width / 2,
+        y: l.corridor.y + 2,
+    };
 
     let mut prev: Option<Point> = None;
     let mut max_step = 0i32;
@@ -1307,7 +1304,7 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
     slot.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
 
     let (mut saw_out, mut saw_back) = (false, false);
     let mut seen_ends: Vec<(Point, Point)> = Vec::new();
@@ -1459,7 +1456,7 @@ fn wander_interrupted_by_active_does_not_teleport() {
     idle.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
     // The desk's seated top-left, on throwaway stores — the "far from desk" reference.
     let seated = crate::sim::anchors::character_top_left(
         &idle,
@@ -1532,7 +1529,7 @@ fn floor_offscreen_then_resume_does_not_replay() {
     slot.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
 
     for i in 0..60u64 {
         let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
@@ -1580,7 +1577,7 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
     idle.last_event_at = old;
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
 
     let seat = character_top_left(
         &idle,
@@ -2193,7 +2190,7 @@ fn multiple_agents_share_overlay_without_teleport() {
         .collect();
 
     let mut rig = RouteRig::new(AStarRouter::new());
-    rig.router.set_preferred_zone(l.corridor);
+    rig.router.set_preferred_zone(Some(l.corridor));
     let mut prev: HashMap<AgentId, Point> = HashMap::new();
     let mut max_step = 0i32;
 
