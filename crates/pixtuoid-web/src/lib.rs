@@ -1316,6 +1316,8 @@ mod tests {
             .collect();
         assert!(!want.is_empty(), "premise: agents are drawn");
         assert_eq!(got, want);
+        // The site slices the marker off the label by one UTF-16 code unit.
+        assert_eq!(pixtuoid_scene::badge::BADGE_MARKER.len_utf16(), 1);
     }
 
     #[test]
