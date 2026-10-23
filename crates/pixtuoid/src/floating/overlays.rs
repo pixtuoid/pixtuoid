@@ -176,7 +176,7 @@ pub fn panel_preview(
         theme,
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
         std::path::PathBuf::new(),
-        None,
+        crate::run_log::LogLocation::absent(),
         crate::doctor::DriftSeen::default(),
     );
     match name {
@@ -505,7 +505,7 @@ mod tests {
             theme,
             crate::panels::welcome::WelcomeUi::from_detected(&[]),
             tmp.path().join("sock"),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         );
         let now = std::time::SystemTime::UNIX_EPOCH;
@@ -595,7 +595,7 @@ mod tests {
                 pixtuoid_scene::theme::ALL_THEMES[0],
                 crate::panels::welcome::WelcomeUi::from_detected(&[]),
                 std::path::PathBuf::new(),
-                None,
+                crate::run_log::LogLocation::absent(),
                 crate::doctor::DriftSeen::default(),
             );
             if popup {

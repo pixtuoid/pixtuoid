@@ -176,9 +176,7 @@ impl OfficeRenderer {
         let unit = unit_at(cursor, at);
         // The slop in this window's units, at least one.
         let slop_px = DRAG_SLOP_DIP * pressing.scale_factor;
-        let units = (slop_px / f64::from(at.scale().get().max(1)))
-            .ceil()
-            .max(1.0) as u16;
+        let units = (slop_px / f64::from(at.scale().get())).ceil().max(1.0) as u16;
         let slop = pixtuoid_scene::interact::Slop { x: units, y: units };
         let down = self
             .pointer
@@ -407,7 +405,7 @@ pub(super) fn unit_in(cursor: (f64, f64), at: PixelFit) -> Option<pixtuoid_scene
 /// The layout unit a frame drawn at `at` shows at `cursor` (physical px).
 fn unit_at(cursor: (f64, f64), at: PixelFit) -> pixtuoid_scene::layout::Point {
     let unit = |px: f64| {
-        (px.max(0.0) as u32 / u32::from(at.scale().get().max(1))).min(u32::from(u16::MAX)) as u16
+        (px.max(0.0) as u32 / u32::from(at.scale().get())).min(u32::from(u16::MAX)) as u16
     };
     pixtuoid_scene::layout::Point {
         x: unit(cursor.0),

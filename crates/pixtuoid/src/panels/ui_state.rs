@@ -94,15 +94,15 @@ pub(crate) struct UiState {
     /// nowhere else.
     fake_now: Option<(Instant, SystemTime)>,
     /// Theme picker: `Some(preview index)` while open; `saved_theme_idx` is
-    /// the committed selection the quit/cancel paths revert to.
+    /// the committed selection the cancel path reverts to.
     pub(crate) theme_picker: Option<usize>,
     pub(crate) saved_theme_idx: usize,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
     drift: crate::doctor::DriftSeen,
     socket_path: std::path::PathBuf,
-    /// Where the warn-floor log lives, for the Sources panel (`None` = no log).
-    log: Option<crate::run_log::LogLocation>,
+    /// Where the warn-floor log lives, for the Sources panel.
+    log: crate::run_log::LogLocation,
 }
 
 /// The version popup's notices: what they are measured against, and what it
@@ -124,7 +124,7 @@ pub(crate) struct Boot<'a> {
     pub(crate) first_run: bool,
     pub(crate) config_path: &'a std::path::Path,
     pub(crate) socket_path: std::path::PathBuf,
-    pub(crate) log: Option<crate::run_log::LogLocation>,
+    pub(crate) log: crate::run_log::LogLocation,
     pub(crate) drift: crate::doctor::DriftSeen,
     /// The sources connected at boot, for the notices a version popup opens
     /// with.
@@ -200,14 +200,14 @@ impl UiState {
         boot_theme: &'static theme::Theme,
         onboarding_ui: WelcomeUi,
         socket_path: std::path::PathBuf,
-        log: Option<crate::run_log::LogLocation>,
+        log: crate::run_log::LogLocation,
         drift: crate::doctor::DriftSeen,
     ) -> Self {
         let onboarding_opened_at = (!onboarding_ui.is_empty()).then(Instant::now);
         let saved_theme_idx = theme::ALL_THEMES
             .iter()
             .position(|t| std::ptr::eq(*t, boot_theme))
-            .unwrap_or(0);
+            .expect("the boot theme is one of ALL_THEMES");
         Self {
             onboarding_ui,
             onboarding_opened_at,
@@ -238,7 +238,6 @@ impl UiState {
             dashboard_open: self.dashboard.open,
             connection_open: self.connection.open,
             connection_confirm: self.connection.confirm.is_some(),
-            n_themes: theme::ALL_THEMES.len(),
         }
     }
 
@@ -494,8 +493,6 @@ impl UiState {
         // after actions, NOT per frame, because it does FS reads. Only the LIVE
         // facet + socket line recompute here.
         let connection_frame = if self.connection.open {
-            self.connection.selected =
-                connection::move_selection(&self.connection.rows, self.connection.selected, 0);
             let live = connection::live_view(now, &self.connection.rows, scene, health);
             // NOT "(listening)": a second pixtuoid instance loses the hook plane
             // to the lock-holding owner, so THIS process may own no socket at
@@ -556,7 +553,7 @@ impl UiState {
     /// The Sources panel's cached rows carry a per-source HEALTH summary that
     /// scans the retained logs, so read them fresh at each (infrequent) rebuild.
     pub(crate) fn read_conn_log(&self) -> String {
-        self.log.as_ref().map(|at| at.read().0).unwrap_or_default()
+        self.log.read().0
     }
 }
 
@@ -569,7 +566,7 @@ impl UiState {
             &theme::NORMAL,
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::new(),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         );
         let decision = crate::version::boot_decision(current, Some(previous));
@@ -607,7 +604,7 @@ mod tests {
             ALL_THEMES[0],
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::from("/tmp/sock"),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         )
     }
@@ -657,7 +654,6 @@ mod tests {
                 && !m.connection_confirm,
             "everything closed at boot (no detected CLIs, no version popup)"
         );
-        assert_eq!(m.n_themes, ALL_THEMES.len());
 
         ui.toggle_help();
         assert!(ui.modal().help_open);
@@ -697,7 +693,7 @@ mod tests {
             ALL_THEMES[0],
             WelcomeUi::from_detected(&["codex"]),
             std::path::PathBuf::from("sock"),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         );
         assert!(ui.dim_moving(), "the open ramp");
@@ -722,7 +718,7 @@ mod tests {
             ALL_THEMES[0],
             WelcomeUi::from_detected(&["codex", "claude-code"]),
             std::path::PathBuf::from("/tmp/sock"),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         );
         assert!(ui.modal().onboarding_open, "a roster opens the overlay");
@@ -775,7 +771,7 @@ mod tests {
                 first_run: false,
                 config_path: path,
                 socket_path: path.with_extension("sock"),
-                log: None,
+                log: crate::run_log::LogLocation::absent(),
                 drift: crate::doctor::DriftSeen::default(),
                 connected,
                 terminal_cutaway,

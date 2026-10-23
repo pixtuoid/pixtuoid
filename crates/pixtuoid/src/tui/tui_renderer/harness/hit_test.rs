@@ -383,7 +383,7 @@ where
         normal_theme(),
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
         std::path::PathBuf::from("/tmp/sock"),
-        None,
+        crate::run_log::LogLocation::absent(),
         crate::doctor::DriftSeen::default(),
     );
     let cell = |r: &TuiRenderer<B>, hits: &dyn Fn(&SceneHit<'_>) -> bool| {

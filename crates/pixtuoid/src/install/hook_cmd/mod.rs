@@ -44,15 +44,6 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
     #[cfg(unix)]
     {
-        // `source` is interpolated UNQUOTED into the `/bin/sh -c` env-prefix, so
-        // it must be a plain identifier or it could inject a command
-        // (`x; rm -rf ~`). The path is always single-quoted.
-        if let Some(bad) = source
-            .chars()
-            .find(|c| !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_'))
-        {
-            anyhow::bail!("internal: hook source {source:?} has a shell-unsafe character {bad:?}");
-        }
         Ok(format!(
             "PIXTUOID_SOURCE={source} {}",
             unix::shell_single_quote(path)
@@ -71,15 +62,6 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
 ///   is unverified; the bare form is the safest for any splitter and mirrors the
 ///   Codex/Reasonix Windows form.
 pub(crate) fn exec_hook_command(path: &str, source: &str) -> Result<String> {
-    // `source` becomes a bare argv token; keep it a plain identifier so it can't
-    // inject a second one. The Windows arm applies its own cmd-safety check, so
-    // this covers only the Unix arm's interpolation.
-    if let Some(bad) = source
-        .chars()
-        .find(|c| !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_'))
-    {
-        anyhow::bail!("internal: hook source {source:?} has an unsafe character {bad:?}");
-    }
     #[cfg(windows)]
     {
         windows::windows_bare_hook_command(path, source)
@@ -110,13 +92,6 @@ mod tests {
     }
 
     #[test]
-    fn exec_form_rejects_a_shell_unsafe_source_name() {
-        for bad in ["x; rm -rf ~", "a b", "a$x", "a&b"] {
-            assert!(exec_hook_command("/opt/bin/pixtuoid-hook", bad).is_err());
-        }
-    }
-
-    #[test]
     fn valid_source_keeps_the_env_prefix_form_byte_for_byte() {
         assert_eq!(
             shell_hook_command("/opt/bin/pixtuoid-hook", "codex").unwrap(),
@@ -127,29 +102,26 @@ mod tests {
             "PIXTUOID_SOURCE=claude-code '/opt/bin/pixtuoid-hook'"
         );
     }
-
-    #[test]
-    fn rejects_a_shell_unsafe_source_name() {
-        for bad in [
-            "codex; rm -rf ~",
-            "x`id`",
-            "a b",
-            "a$x",
-            "a&b",
-            "a|b",
-            "a(b)",
-        ] {
-            assert!(
-                shell_hook_command("/opt/bin/pixtuoid-hook", bad).is_err(),
-                "source {bad:?} must be rejected"
-            );
-        }
-    }
 }
 
 #[cfg(test)]
 mod parity {
     use super::{EVENT_FLAG, HOOK_EVENT_FLAG, SOURCE_FLAG};
+
+    /// The hook writers splice the source name unquoted into a shell or cmd.exe
+    /// command line.
+    #[test]
+    fn every_registered_source_name_is_a_plain_identifier() {
+        for name in pixtuoid_core::source::registry::registered_source_names() {
+            assert!(
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_')),
+                "{name:?} is no safe command-line token"
+            );
+        }
+    }
 
     #[test]
     fn the_shim_spells_every_flag_and_stamp_as_its_writers_do() {

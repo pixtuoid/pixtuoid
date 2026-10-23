@@ -25,20 +25,15 @@ use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_core::{AgentEvent, SceneState, Transport};
 use tokio::sync::{mpsc, watch};
-use tokio::task::JoinHandle;
 
 use super::ConnectedSources;
 use super::driver::{build_source_set, reducer_task};
 
-/// The live pipeline's caller-facing handles. The spawned source tasks are kept
-/// alive by the caller's tokio RUNTIME, not by `_source_handles` — dropping a
-/// tokio `JoinHandle` DETACHES the task, it doesn't stop it. The field is a
-/// harmless anchor that also lets a future caller `.abort()`/join the sources.
+/// The live pipeline's caller-facing handles.
 pub(crate) struct Pipeline {
     pub(crate) scene_rx: watch::Receiver<Arc<SceneState>>,
     pub(crate) health_rx: watch::Receiver<Vec<SourceDeath>>,
     pub(crate) floor_caps: Arc<[AtomicUsize; MAX_FLOORS]>,
-    pub(crate) _source_handles: Vec<JoinHandle<()>>,
 }
 
 /// Wire and spawn the whole live pipeline: presence channel + exit watch →
@@ -78,12 +73,11 @@ pub(crate) fn spawn_pipeline(
     for src in sources {
         manager = manager.with_source(src);
     }
-    let _source_handles = manager.spawn_with_health(tx, health_tx);
+    manager.spawn_with_health(tx, health_tx);
 
     Pipeline {
         scene_rx,
         health_rx,
         floor_caps,
-        _source_handles,
     }
 }

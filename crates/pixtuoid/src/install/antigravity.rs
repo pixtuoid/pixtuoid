@@ -53,10 +53,9 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn merge_install(content: &str, base_cmd: &str) -> Result<MergeOutcome> {
-    merge::flat_json_merge_outcome_install(content, "hooks.json", |doc| {
-        let mut root = doc.as_object().cloned().unwrap_or_default();
+    merge::flat_json_merge_outcome_install(content, "hooks.json", |mut root| {
         root.insert(HOOK_NAME.into(), hook_set(base_cmd));
-        Value::Object(root)
+        root
     })
 }
 
@@ -172,6 +171,17 @@ mod tests {
             } else {
                 assert!(set[event][0].get("hooks").is_none(), "{event} is flat");
             }
+        }
+    }
+
+    #[test]
+    fn a_null_root_installs_the_full_hook_set() {
+        let doc = installed("null", CMD);
+        for &(event, grouped) in AG_EVENTS {
+            assert!(
+                installed_command(&doc[HOOK_NAME], event, grouped).is_some(),
+                "{event}"
+            );
         }
     }
 

@@ -631,10 +631,8 @@ impl AudioHandle {
     }
 
     pub(crate) fn set_volume(&self, volume: f32) {
-        self.volume.store(
-            volume.clamp(0.0, 1.0).to_bits(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        self.volume
+            .store(volume.to_bits(), std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(crate) fn volume(&self) -> f32 {

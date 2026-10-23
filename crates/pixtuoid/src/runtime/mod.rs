@@ -43,8 +43,8 @@ pub(crate) struct RunConfig {
     /// source's events are dropped + its sprites evicted.
     pub(crate) connected: HashSet<String>,
     /// Where the warn-floor log lives, which the Sources panel reads for each
-    /// source's drift history. `None` = no log.
-    pub(crate) log: Option<crate::run_log::LogLocation>,
+    /// source's drift history.
+    pub(crate) log: crate::run_log::LogLocation,
     /// The sources this run's decode drift has named, for the footer nudge.
     pub(crate) drift: crate::doctor::DriftSeen,
     /// Nothing is connected over a config that loaded (`sources::is_first_run`) —

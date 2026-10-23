@@ -209,6 +209,12 @@ impl LogLocation {
         runs_under(&std::env::temp_dir())
     }
 
+    /// A file nothing ever wrote, which reads as an empty log: for a panel
+    /// preview or a test, which has no run.
+    pub(crate) fn absent() -> Self {
+        LogLocation::File(std::env::temp_dir().join("pixtuoid-no-such-run.log"))
+    }
+
     pub(crate) fn path(&self) -> &std::path::Path {
         match self {
             Self::File(p) | Self::Runs(p) => p,

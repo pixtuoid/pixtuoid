@@ -172,7 +172,6 @@ pub(crate) struct ModalState {
     pub(crate) connection_open: bool,
     /// A disconnect is armed on the Sources panel, awaiting y/n.
     pub(crate) connection_confirm: bool,
-    pub(crate) n_themes: usize,
 }
 
 impl ModalState {
@@ -187,7 +186,6 @@ impl ModalState {
             dashboard_open: false,
             connection_open: false,
             connection_confirm: false,
-            n_themes: pixtuoid_scene::theme::ALL_THEMES.len(),
         }
     }
 
@@ -203,7 +201,6 @@ impl ModalState {
             dashboard_open,
             connection_open,
             connection_confirm: _,
-            n_themes: _,
         } = self;
         onboarding_open
             || help_open
@@ -555,7 +552,7 @@ pub(crate) fn dispatch_key(
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
             (KeyCode::Up | KeyCode::Char('k'), _) => KeyAction::ThemePreview(idx.saturating_sub(1)),
             (KeyCode::Down | KeyCode::Char('j'), _) => {
-                KeyAction::ThemePreview((idx + 1).min(modal.n_themes.saturating_sub(1)))
+                KeyAction::ThemePreview((idx + 1).min(theme::ALL_THEMES.len().saturating_sub(1)))
             }
             (KeyCode::Enter, _) => KeyAction::ThemeCommit(idx),
             (KeyCode::Esc, _) => KeyAction::ThemeCancel,
@@ -794,10 +791,7 @@ mod dispatch_tests {
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 
     fn modal() -> ModalState {
-        ModalState {
-            n_themes: 6,
-            ..ModalState::closed()
-        }
+        ModalState::closed()
     }
 
     fn nav() -> FloorNav {
@@ -1157,13 +1151,12 @@ mod dispatch_tests {
             KeyAction::ThemePreview(0)
         );
         let hi = ModalState {
-            theme_picker: Some(5),
-            n_themes: 6,
+            theme_picker: Some(pixtuoid_scene::theme::ALL_THEMES.len() - 1),
             ..modal()
         };
         assert_eq!(
             dispatch_key(KeyCode::Down, NONE, hi, nav()),
-            KeyAction::ThemePreview(5)
+            KeyAction::ThemePreview(pixtuoid_scene::theme::ALL_THEMES.len() - 1)
         );
     }
 
@@ -1563,7 +1556,7 @@ mod dispatch_tests {
             pixtuoid_scene::theme::ALL_THEMES[0],
             crate::panels::welcome::WelcomeUi::from_detected(&[]),
             std::path::PathBuf::from("/tmp/sock"),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         );
         assert!(!ui.modal().connection_open, "panel starts closed");
@@ -1609,7 +1602,7 @@ mod mouse_tests {
             &pixtuoid_scene::theme::NORMAL,
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::new(),
-            None,
+            crate::run_log::LogLocation::absent(),
             crate::doctor::DriftSeen::default(),
         )
     }

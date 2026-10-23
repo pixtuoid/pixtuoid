@@ -34,8 +34,13 @@ impl WelcomeUi {
             .iter()
             .map(|&sid| WelcomeRow {
                 source_id: sid,
-                label_prefix: descriptor_for(sid).map_or("??", |d| d.label_prefix),
-                display_name: by_source(sid).map_or(sid, |t| t.display_name).to_string(),
+                label_prefix: descriptor_for(sid)
+                    .expect("detected ids come from the registry")
+                    .label_prefix,
+                display_name: by_source(sid)
+                    .expect("detected ids have an install target")
+                    .display_name
+                    .to_string(),
                 checked: true,
             })
             .collect();

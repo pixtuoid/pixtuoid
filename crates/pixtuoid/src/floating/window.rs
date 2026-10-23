@@ -128,7 +128,7 @@ impl Stop {
 pub(crate) struct Settings {
     pub(crate) config_path: PathBuf,
     pub(crate) audio: config::AudioConfig,
-    pub(crate) log: Option<crate::run_log::LogLocation>,
+    pub(crate) log: crate::run_log::LogLocation,
     pub(crate) first_run: bool,
 }
 

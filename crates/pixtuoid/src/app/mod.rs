@@ -244,7 +244,7 @@ fn build_run_config(
         theme,
         pets,
         connected,
-        log: Some(crate::run_log::LogLocation::from_env()),
+        log: crate::run_log::LogLocation::from_env(),
         drift,
         first_run,
         audio: config::resolve_audio(&cfg),
@@ -289,17 +289,13 @@ fn warn_broken_installs(connected: &std::collections::HashSet<String>) {
             continue;
         }
         let diag = doctor::diagnose(t.core_source, "", None);
-        if diag.is_broken() {
-            let issues = diag
-                .install
-                .as_ref()
-                .map(|v| v.issues.join("; "))
-                .unwrap_or_default();
+        if let Some(broken) = diag.broken_install() {
             let _ = writeln!(
                 std::io::stderr(),
-                "⚠ pixtuoid: {} hooks are installed but BROKEN: {issues} — \
+                "⚠ pixtuoid: {} hooks are installed but BROKEN: {} — \
                  reconnect in the Sources panel (press s)",
-                t.core_source
+                t.core_source,
+                broken.issues.join("; ")
             );
         }
     }

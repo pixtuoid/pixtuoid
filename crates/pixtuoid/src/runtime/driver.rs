@@ -112,12 +112,11 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
         crate::graphics::terminal_cells,
     );
     // The shared spine — ONE authority with `floating::run`. The tasks live on
-    // this fn's runtime; `_source_handles` is an inert anchor (see Pipeline's doc).
+    // this fn's runtime.
     let super::pipeline::Pipeline {
         scene_rx,
         health_rx,
         floor_caps,
-        _source_handles,
     } = super::pipeline::spawn_pipeline(socket_path.clone(), connected.clone(), boot_caps);
 
     match tui {

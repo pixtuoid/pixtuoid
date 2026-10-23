@@ -76,12 +76,14 @@ impl MusicProducer {
         }
         let free = self.frames.slots();
         let was_empty = free == self.frames.buffer().capacity();
-        if let Ok(mut chunk) = self.frames.write_chunk(free) {
-            let (first, second) = chunk.as_mut_slices();
-            performance.render(first);
-            performance.render(second);
-            chunk.commit_all();
-        }
+        let mut chunk = self
+            .frames
+            .write_chunk(free)
+            .expect("the sole producer just read `free` slots, which only the consumer grows");
+        let (first, second) = chunk.as_mut_slices();
+        performance.render(first);
+        performance.render(second);
+        chunk.commit_all();
         if was_empty {
             // What the device played while an empty ring filled was the
             // silence before the music, never a dropout.
