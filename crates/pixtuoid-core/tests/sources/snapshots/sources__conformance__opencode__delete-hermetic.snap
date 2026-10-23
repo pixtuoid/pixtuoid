@@ -3,52 +3,52 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     source: opencode
-    session_id: ses_e9c1d1822ffehjq79OSOO4RV0W
+    session_id: ses_e970912f5ffev3puE3ERmMbl1u
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     source: opencode
-    session_id: ses_e9c1d1822ffehjq79OSOO4RV0W
+    session_id: ses_e970912f5ffev3puE3ERmMbl1u
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     source: opencode
-    session_id: ses_e9c1d1822ffehjq79OSOO4RV0W
+    session_id: ses_e970912f5ffev3puE3ERmMbl1u
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 7554064415512822951
-    tool_use_id: call_y7N0FMcMGcrpuHFK
+    agent_id: 15302167102773164551
+    tool_use_id: call_v6aPoBfNPXv3A06G
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     source: opencode
-    session_id: ses_e9c1d1822ffehjq79OSOO4RV0W
+    session_id: ses_e970912f5ffev3puE3ERmMbl1u
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 7554064415512822951
-    tool_use_id: call_y7N0FMcMGcrpuHFK
+    agent_id: 15302167102773164551
+    tool_use_id: call_v6aPoBfNPXv3A06G
 - Identity:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     source: opencode
-    session_id: ses_e9c1d1822ffehjq79OSOO4RV0W
+    session_id: ses_e970912f5ffev3puE3ERmMbl1u
     cwd: ~
 - ActivityEnd:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 7554064415512822951
+    agent_id: 15302167102773164551
     as_child: false
