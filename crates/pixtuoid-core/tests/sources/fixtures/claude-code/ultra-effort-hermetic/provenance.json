@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.308 (Claude Code)",
-  "captured": "2026-10-22",
+  "version": "2.1.309 (Claude Code)",
+  "captured": "2026-10-23",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 360
+    "blanked": 361
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/ultra-effort.json",
