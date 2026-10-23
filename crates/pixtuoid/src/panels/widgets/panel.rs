@@ -27,7 +27,7 @@ const RESERVED_FOOTER_ROWS: u16 = crate::panels::FOOTER_ROWS;
 
 /// Inner content `Rect`: `outer` inset by `PANEL_PAD_*` with the title row (when
 /// present) dropped; the raw area when `outer` is too small to inset. Both
-/// `borderless_panel` (returns it) and [`PanelGeometry::inner`] (holds it) go
+/// `borderless_panel` (returns it) and [`PanelGeometry::inner`] (reads it) go
 /// through here, so the painted rect and any geometry query cannot drift.
 fn inner_rect(outer: Rect, has_title: bool) -> Rect {
     if outer.width <= PANEL_PAD_X * 2 || outer.height <= PANEL_PAD_Y * 2 {
@@ -52,8 +52,8 @@ fn inner_rect(outer: Rect, has_title: bool) -> Rect {
 /// arithmetic test. Painter and click-target read the SAME value, so they cannot
 /// drift.
 pub(crate) struct PanelGeometry {
-    pub(crate) outer: Rect,
-    pub(crate) inner: Rect,
+    outer: Rect,
+    inner: Rect,
 }
 
 impl PanelGeometry {
@@ -89,6 +89,14 @@ impl PanelGeometry {
         })
     }
 
+    pub(crate) fn outer(&self) -> Rect {
+        self.outer
+    }
+
+    pub(crate) fn inner(&self) -> Rect {
+        self.inner
+    }
+
     /// Map a content cell — `row` below the title, `col`/`len` chars within
     /// `inner` — to a clipped screen `Rect`.
     pub(crate) fn cell_rect(&self, row: u16, col: u16, len: u16) -> Option<Rect> {
@@ -113,7 +121,7 @@ impl PanelGeometry {
 
 /// The inner content WIDTH alone — height-independent, so a width-dependent row
 /// builder (word-wrap, marquee) can size before the row count is known. Pinned to
-/// agree with `compute(..).inner().width` by a test.
+/// agree with `compute(..)`'s `inner().width` by a test.
 fn panel_inner_width(bounds: Rect, content_w: u16, scale: f32) -> Option<u16> {
     let scale = scale.clamp(0.0, 1.0);
     let full_w = content_w.saturating_add(2 * PANEL_PAD_X).min(bounds.width);
@@ -266,7 +274,7 @@ impl Panel<'_> {
         else {
             return;
         };
-        let inner = borderless_panel(f, geom.outer, title, theme);
+        let inner = borderless_panel(f, geom.outer(), title, theme);
 
         let viewport = (inner.height as usize).saturating_sub(above.len() + below.len());
         let win = match &overflow {
@@ -503,7 +511,7 @@ mod tests {
         let b = Rect::new(0, 0, 40, 20);
         let tall = PanelGeometry::compute(b, 30, 100, Some("t"), 1.0)
             .expect("renders")
-            .outer;
+            .outer();
         // Asserted against the FOOTER's own authority: `== b.bottom() -
         // RESERVED_FOOTER_ROWS` restates the constant under test and can't fail.
         let footer_row = b.bottom() - crate::panels::FOOTER_ROWS;
@@ -513,7 +521,7 @@ mod tests {
         );
         let fits = PanelGeometry::compute(b, 30, 5, Some("t"), 1.0)
             .expect("renders")
-            .outer;
+            .outer();
         assert_eq!(
             fits.y,
             (b.height - fits.height) / 2,
@@ -526,18 +534,18 @@ mod tests {
     fn geometry_inner_is_padded_and_drops_the_title_row() {
         let b = Rect::new(0, 0, 100, 50);
         let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0).expect("renders");
-        assert_eq!(g.outer, Rect::new(38, 21, 24, 8));
-        assert_eq!(g.inner, Rect::new(40, 23, 20, 5));
+        assert_eq!(g.outer(), Rect::new(38, 21, 24, 8));
+        assert_eq!(g.inner(), Rect::new(40, 23, 20, 5));
         let u = PanelGeometry::compute(b, 20, 5, None, 1.0).expect("renders");
-        assert_eq!(u.outer, Rect::new(38, 21, 24, 7));
-        assert_eq!(u.inner, Rect::new(40, 22, 20, 5));
+        assert_eq!(u.outer(), Rect::new(38, 21, 24, 7));
+        assert_eq!(u.inner(), Rect::new(40, 22, 20, 5));
     }
 
     #[test]
     fn geometry_scale_centers_off_the_scaled_dims() {
         let b = Rect::new(0, 0, 100, 50);
         let g = PanelGeometry::compute(b, 40, 10, Some("t"), 0.5).expect("renders");
-        assert_eq!(g.outer, Rect::new(39, 21, 22, 7));
+        assert_eq!(g.outer(), Rect::new(39, 21, 22, 7));
     }
 
     #[test]
@@ -560,7 +568,7 @@ mod tests {
                 // `content_rows` tall enough that the height guard passes at
                 // every scale, so the only difference is height-independence.
                 let inner_w =
-                    PanelGeometry::compute(b, cw, 20, Some("t"), s).map(|g| g.inner.width);
+                    PanelGeometry::compute(b, cw, 20, Some("t"), s).map(|g| g.inner().width);
                 assert_eq!(panel_inner_width(b, cw, s), inner_w, "cw={cw} scale={s}");
             }
         }

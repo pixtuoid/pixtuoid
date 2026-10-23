@@ -77,7 +77,7 @@ fn notice_rows(bounds: Rect, notices: &[String]) -> Vec<String> {
         return Vec::new();
     }
     // The tallest inner the bounds allow: the content rows saturate to it.
-    let Some(PanelGeometry { inner, .. }) = version_geometry(bounds, 1.0, usize::MAX) else {
+    let Some(inner) = version_geometry(bounds, 1.0, usize::MAX).map(|g| g.inner()) else {
         return Vec::new();
     };
     let width = usize::from(inner.width).saturating_sub(INDENT.len());
@@ -172,11 +172,10 @@ pub(crate) fn paint_version_popup(
 ) {
     let scale = scale.clamp(0.0, 1.0);
     let rows = notice_rows(bounds, &popup.notices);
-    let Some(PanelGeometry { outer, inner, .. }) = version_geometry(bounds, scale, rows.len())
-    else {
+    let Some(geom) = version_geometry(bounds, scale, rows.len()) else {
         return;
     };
-    let inner_w = inner.width;
+    let inner_w = geom.inner().width;
 
     let notice = Style::default().fg(to_color(theme.ui.tooltip_text));
     let mut items = vec![Line::from("")];
@@ -205,9 +204,9 @@ pub(crate) fn paint_version_popup(
     ]);
 
     let title = version_title(version, popup.upgraded, inner_w as usize);
-    // `borderless_panel(outer)` returns the SAME rect `inner` and `cell_rect`
+    // `borderless_panel(outer)` returns the SAME rect `geom.inner()` and `cell_rect`
     // derive from, so paint and click agree.
-    let painted = borderless_panel(f, outer, Some(&title), theme);
+    let painted = borderless_panel(f, geom.outer(), Some(&title), theme);
     f.render_widget(Paragraph::new(items), painted);
 }
 
@@ -241,7 +240,7 @@ mod tests {
     fn inner_width(bounds: Rect) -> usize {
         version_geometry(bounds, 1.0, 0)
             .expect("renders")
-            .inner
+            .inner()
             .width as usize
     }
 
@@ -292,7 +291,7 @@ mod tests {
 
     #[test]
     fn link_click_rect_is_the_painted_link_cell() {
-        let inner = version_geometry(wide(), 1.0, 0).expect("renders").inner;
+        let inner = version_geometry(wide(), 1.0, 0).expect("renders").inner();
         let expected = Rect::new(
             inner.x + INDENT.len() as u16,
             inner.y + FRAME_ROWS - 1,
@@ -316,7 +315,7 @@ mod tests {
     #[test]
     fn the_popup_renders_whole_on_a_narrow_terminal() {
         let bounds = Rect::new(0, 0, 32, 31);
-        let inner = version_geometry(bounds, 1.0, 0).expect("renders").inner;
+        let inner = version_geometry(bounds, 1.0, 0).expect("renders").inner();
         let row = body_row("1.2.3", inner.width as usize);
         assert!(
             row.chars().count() + INDENT.len() <= inner.width as usize,

@@ -166,7 +166,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn merge_install(content: &str, base_cmd: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, |doc| toml_merge_install(doc, base_cmd))
+    crate::install::merge::toml_merge_outcome(content, |root| toml_merge_install(root, base_cmd))
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {

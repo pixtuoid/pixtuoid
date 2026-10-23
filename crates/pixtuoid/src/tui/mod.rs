@@ -1163,7 +1163,7 @@ mod apply_key_action_tests {
                     &theme::NORMAL,
                     crate::panels::welcome::WelcomeUi::from_detected(&[]),
                     tmp.path().join("sock"),
-                    crate::run_log::LogLocation::absent(),
+                    None,
                     crate::doctor::DriftSeen::default(),
                 ),
                 renderer: TuiRenderer::new(
@@ -1239,7 +1239,7 @@ mod apply_key_action_tests {
                 &theme::NORMAL,
                 welcome,
                 h._tmp.path().join("sock"),
-                crate::run_log::LogLocation::absent(),
+                None,
                 crate::doctor::DriftSeen::default(),
             );
             h
@@ -1248,8 +1248,7 @@ mod apply_key_action_tests {
 
     #[test]
     fn skipping_onboarding_writes_nothing() {
-        let mut h =
-            Harness::onboarding(crate::panels::welcome::WelcomeUi::from_detected(&["codex"]));
+        let mut h = Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["codex"]));
         assert!(h.ui.onboarding_open());
         h.apply(KeyAction::OnboardingSkip);
         assert!(!h.ui.onboarding_open());

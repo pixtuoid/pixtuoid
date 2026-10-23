@@ -344,24 +344,21 @@ pub(crate) struct DoctorSourceRow {
 /// year is no breaking major.
 const CALVER_MIN_MAJOR: u64 = 1000;
 
-/// Installed-vs-verified comparison, `None` when either side can't parse or
-/// there is no anchor.
-pub(crate) fn version_cmp(
-    installed: Option<&str>,
+/// Installed-vs-verified comparison, `None` when there is no parseable anchor.
+fn version_cmp(
+    installed: &semver::Version,
     verified: &str,
     hyphen: Hyphen,
 ) -> Option<std::cmp::Ordering> {
-    let installed = installed.and_then(|s| registry::parse_version(s, hyphen))?;
     Some(installed.cmp_precedence(&registry::parse_version(verified, hyphen)?))
 }
 
 /// The version a skew verdict compared — for the `versions` category, where
 /// showing the two COMPARED values beats echoing a raw banner.
-fn parsed_version_display(s: &str, hyphen: Hyphen) -> Option<String> {
-    registry::parse_version(s, hyphen).map(|mut v| {
-        v.build = semver::BuildMetadata::EMPTY;
-        v.to_string()
-    })
+fn compared_version(installed: &semver::Version) -> String {
+    let mut v = installed.clone();
+    v.build = semver::BuildMetadata::EMPTY;
+    v.to_string()
 }
 
 /// A broken install outranks drift (✗ vs !); the two quiet
@@ -1011,14 +1008,9 @@ fn sources_category(rows: &[DoctorSourceRow], ink: &Ink) -> Category {
 /// Whether the installed MAJOR is below the verified one: only the latest
 /// release is supported, and a new major is where a wire breaks. A CalVer
 /// year is no major.
-fn below_verified_major(installed: Option<&str>, verified: &str, hyphen: Hyphen) -> bool {
-    match (
-        installed.and_then(|s| registry::parse_version(s, hyphen)),
-        registry::parse_version(verified, hyphen),
-    ) {
-        (Some(i), Some(v)) => i.major < v.major && v.major < CALVER_MIN_MAJOR,
-        _ => false,
-    }
+fn below_verified_major(installed: &semver::Version, verified: &str, hyphen: Hyphen) -> bool {
+    registry::parse_version(verified, hyphen)
+        .is_some_and(|v| installed.major < v.major && v.major < CALVER_MIN_MAJOR)
 }
 
 /// Two skews are worth an alarm: an older major, which is unsupported, and a
@@ -1026,24 +1018,23 @@ fn below_verified_major(installed: Option<&str>, verified: &str, hyphen: Hyphen)
 /// (its wire format may have moved). An older minor or patch stays silent —
 /// that comparison is derivable, not actionable.
 fn versions_category(rows: &[DoctorSourceRow]) -> Category {
-    let older: Vec<&DoctorSourceRow> = rows
+    let parsed: Vec<(&DoctorSourceRow, semver::Version)> = rows
         .iter()
-        .filter(|r| {
-            below_verified_major(
-                r.installed_version.as_deref(),
-                r.desc.verified_version,
-                r.desc.version_hyphen,
-            )
+        .filter_map(|r| {
+            let installed =
+                registry::parse_version(r.installed_version.as_deref()?, r.desc.version_hyphen)?;
+            Some((r, installed))
         })
         .collect();
-    let newer: Vec<&DoctorSourceRow> = rows
+    let older: Vec<_> = parsed
         .iter()
-        .filter(|r| {
-            version_cmp(
-                r.installed_version.as_deref(),
-                r.desc.verified_version,
-                r.desc.version_hyphen,
-            ) == Some(std::cmp::Ordering::Greater)
+        .filter(|(r, v)| below_verified_major(v, r.desc.verified_version, r.desc.version_hyphen))
+        .collect();
+    let newer: Vec<_> = parsed
+        .iter()
+        .filter(|(r, v)| {
+            version_cmp(v, r.desc.verified_version, r.desc.version_hyphen)
+                == Some(std::cmp::Ordering::Greater)
         })
         .collect();
     if older.is_empty() && newer.is_empty() {
@@ -1054,22 +1045,18 @@ fn versions_category(rows: &[DoctorSourceRow]) -> Category {
             details: Vec::new(),
         };
     }
-    let row = |r: &DoctorSourceRow, tail: String| {
-        let inst = r
-            .installed_version
-            .as_deref()
-            .and_then(|s| parsed_version_display(s, r.desc.version_hyphen))
-            .expect("both buckets compared a parsed installed side");
+    let row = |(r, installed): &(&DoctorSourceRow, semver::Version), tail: String| {
         format!(
-            "{DETAIL_INDENT}{:<15} {inst} installed \u{b7} {} verified{tail}",
+            "{DETAIL_INDENT}{:<15} {} installed \u{b7} {} verified{tail}",
             format!("{}\u{b7}{}", r.desc.label_prefix, r.desc.name),
+            compared_version(installed),
             r.desc.verified_version
         )
     };
     let details = older
         .iter()
-        .map(|r| row(r, format!(" — unsupported, upgrade {}", r.desc.name)))
-        .chain(newer.iter().map(|r| row(r, String::new())))
+        .map(|&r| row(r, format!(" — unsupported, upgrade {}", r.0.desc.name)))
+        .chain(newer.iter().map(|&r| row(r, String::new())))
         .collect();
     let clis = |n: usize| format!("{n} {}", if n == 1 { "CLI" } else { "CLIs" });
     let summary: Vec<String> = [
@@ -1598,6 +1585,14 @@ mod tests {
         v.to_string()
     }
 
+    /// The pin's own major at its lowest precedence: `x.0.0-0` sorts below every
+    /// `x.y.z` release.
+    fn lowest_of_major(v: &mut semver::Version) {
+        v.minor = 0;
+        v.patch = 0;
+        v.pre = semver::Prerelease::new("0").unwrap();
+    }
+
     /// Installed AT the verified pin, so the row raises no version skew.
     fn summary_row(id: &str) -> DoctorSourceRow {
         let desc = registered(id);
@@ -1903,7 +1898,7 @@ mod tests {
         let newer_v = skewed("copilot", |v| v.patch += 1);
         let mut newer = summary_row("copilot");
         newer.installed_version = Some(format!("GitHub Copilot CLI {newer_v}."));
-        let older_v = skewed("hermes", |v| v.patch -= 1);
+        let older_v = skewed("hermes", lowest_of_major);
         let mut older = summary_row("hermes");
         older.installed_version = Some(format!("v{older_v}"));
         let out = render(&summary_report(vec![newer, older]));
@@ -1938,7 +1933,7 @@ mod tests {
         let mut v1 = summary_row("opencode");
         v1.installed_version = Some(v1_v.clone());
         let mut older_minor = summary_row("copilot");
-        older_minor.installed_version = Some(skewed("copilot", |v| v.patch -= 1));
+        older_minor.installed_version = Some(skewed("copilot", lowest_of_major));
         let mut calver = summary_row("openclaw");
         calver.installed_version = Some("OpenClaw 2025.12.1".into());
         let out = render(&summary_report(vec![v1, older_minor, calver]));
@@ -2520,7 +2515,10 @@ mod tests {
     #[test]
     fn version_cmp_compares_only_with_a_known_anchor() {
         use std::cmp::Ordering;
-        let cmp = |installed, verified| version_cmp(installed, verified, Hyphen::Prerelease);
+        let cmp = |installed: Option<&str>, verified| {
+            let installed = registry::parse_version(installed?, Hyphen::Prerelease)?;
+            version_cmp(&installed, verified, Hyphen::Prerelease)
+        };
         assert_eq!(cmp(Some("3.4.5"), "unknown"), None);
         assert_eq!(cmp(Some("1.1.0"), "1.0.62"), Some(Ordering::Greater));
         assert_eq!(cmp(Some("1.0.0"), "1.0.62"), Some(Ordering::Less));
@@ -2541,15 +2539,13 @@ mod tests {
 
     #[test]
     fn the_versions_row_shows_only_what_was_compared() {
+        let shown = |s, hyphen| compared_version(&registry::parse_version(s, hyphen).unwrap());
         assert_eq!(
-            parsed_version_display("2026.10.02-abc1234", Hyphen::Build).as_deref(),
-            Some("2026.10.2"),
+            shown("2026.10.02-abc1234", Hyphen::Build),
+            "2026.10.2",
             "a build id no comparison reads is not shown"
         );
-        assert_eq!(
-            parsed_version_display("0.2.0-rc.3", Hyphen::Prerelease).as_deref(),
-            Some("0.2.0-rc.3")
-        );
+        assert_eq!(shown("0.2.0-rc.3", Hyphen::Prerelease), "0.2.0-rc.3");
     }
 
     #[test]
@@ -2561,7 +2557,11 @@ mod tests {
             "2026.09.18-0123456",
         ] {
             assert_eq!(
-                version_cmp(Some(installed), "2026.09.18", Hyphen::Build),
+                version_cmp(
+                    &registry::parse_version(installed, Hyphen::Build).unwrap(),
+                    "2026.09.18",
+                    Hyphen::Build
+                ),
                 Some(Ordering::Equal),
                 "{installed}"
             );

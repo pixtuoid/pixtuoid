@@ -1556,7 +1556,7 @@ mod dispatch_tests {
             pixtuoid_scene::theme::ALL_THEMES[0],
             crate::panels::welcome::WelcomeUi::from_detected(&[]),
             std::path::PathBuf::from("/tmp/sock"),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         );
         assert!(!ui.modal().connection_open, "panel starts closed");
@@ -1602,7 +1602,7 @@ mod mouse_tests {
             &pixtuoid_scene::theme::NORMAL,
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::new(),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         )
     }

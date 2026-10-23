@@ -92,7 +92,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, |doc| toml_merge_install(doc, hook_cmd))
+    crate::install::merge::toml_merge_outcome(content, |root| toml_merge_install(root, hook_cmd))
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {

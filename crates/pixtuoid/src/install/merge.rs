@@ -51,7 +51,7 @@ pub(crate) fn parse_toml_or_empty(content: &str) -> anyhow::Result<toml::Table> 
 
 /// Edit `parent[key]` as an object in place; an absent or wrongly-typed value
 /// starts empty. Taken out and put back, so the key keeps its position.
-pub(crate) fn with_json_object(
+fn with_json_object(
     parent: &mut Map<String, Value>,
     key: &str,
     edit: impl FnOnce(&mut Map<String, Value>),
@@ -66,11 +66,7 @@ pub(crate) fn with_json_object(
 }
 
 /// [`with_json_object`] for an array.
-pub(crate) fn with_json_array(
-    parent: &mut Map<String, Value>,
-    key: &str,
-    edit: impl FnOnce(&mut Vec<Value>),
-) {
+fn with_json_array(parent: &mut Map<String, Value>, key: &str, edit: impl FnOnce(&mut Vec<Value>)) {
     let slot = parent.entry(key).or_insert(Value::Null);
     let mut arr = match slot.take() {
         Value::Array(a) => a,

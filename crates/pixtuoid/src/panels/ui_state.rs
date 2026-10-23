@@ -101,8 +101,9 @@ pub(crate) struct UiState {
     pub(crate) connection: ConnectionUi,
     drift: crate::doctor::DriftSeen,
     socket_path: std::path::PathBuf,
-    /// Where the warn-floor log lives, for the Sources panel.
-    log: crate::run_log::LogLocation,
+    /// Where the warn-floor log lives, for the Sources panel; `None` for a
+    /// preview, which has no run.
+    log: Option<crate::run_log::LogLocation>,
 }
 
 /// The version popup's notices: what they are measured against, and what it
@@ -155,7 +156,7 @@ impl UiState {
     /// new to the config at `boot.config_path`.
     pub(crate) fn boot(boot: Boot<'_>) -> Self {
         let detected = if boot.first_run {
-            crate::sources::detect()
+            crate::sources::detect_targets()
         } else {
             Vec::new()
         };
@@ -184,7 +185,7 @@ impl UiState {
             boot.theme,
             onboarding_ui,
             boot.socket_path,
-            boot.log,
+            Some(boot.log),
             boot.drift,
         );
         ui.notices.versions = decision.versions;
@@ -200,7 +201,7 @@ impl UiState {
         boot_theme: &'static theme::Theme,
         onboarding_ui: WelcomeUi,
         socket_path: std::path::PathBuf,
-        log: crate::run_log::LogLocation,
+        log: Option<crate::run_log::LogLocation>,
         drift: crate::doctor::DriftSeen,
     ) -> Self {
         let onboarding_opened_at = (!onboarding_ui.is_empty()).then(Instant::now);
@@ -553,7 +554,7 @@ impl UiState {
     /// The Sources panel's cached rows carry a per-source HEALTH summary that
     /// scans the retained logs, so read them fresh at each (infrequent) rebuild.
     pub(crate) fn read_conn_log(&self) -> String {
-        self.log.read().0
+        self.log.as_ref().map(|at| at.read().0).unwrap_or_default()
     }
 }
 
@@ -566,7 +567,7 @@ impl UiState {
             &theme::NORMAL,
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::new(),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         );
         let decision = crate::version::boot_decision(current, Some(previous));
@@ -604,7 +605,7 @@ mod tests {
             ALL_THEMES[0],
             WelcomeUi::from_detected(&[]),
             std::path::PathBuf::from("/tmp/sock"),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         )
     }
@@ -691,9 +692,9 @@ mod tests {
         use std::time::Duration;
         let mut ui = UiState::new(
             ALL_THEMES[0],
-            WelcomeUi::from_detected(&["codex"]),
+            WelcomeUi::from_ids(&["codex"]),
             std::path::PathBuf::from("sock"),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         );
         assert!(ui.dim_moving(), "the open ramp");
@@ -716,9 +717,9 @@ mod tests {
 
         let mut ui = UiState::new(
             ALL_THEMES[0],
-            WelcomeUi::from_detected(&["codex", "claude-code"]),
+            WelcomeUi::from_ids(&["codex", "claude-code"]),
             std::path::PathBuf::from("/tmp/sock"),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         );
         assert!(ui.modal().onboarding_open, "a roster opens the overlay");
@@ -771,7 +772,7 @@ mod tests {
                 first_run: false,
                 config_path: path,
                 socket_path: path.with_extension("sock"),
-                log: crate::run_log::LogLocation::absent(),
+                log: crate::run_log::LogLocation::File(path.with_extension("log")),
                 drift: crate::doctor::DriftSeen::default(),
                 connected,
                 terminal_cutaway,
@@ -805,7 +806,7 @@ mod tests {
 
         let path = tmp.path().join("onboarding.toml");
         crate::config::save_version(&path, "0.0.1").expect("seed an old version");
-        assert!(!boot(&path, WelcomeUi::from_detected(&["codex"])));
+        assert!(!boot(&path, WelcomeUi::from_ids(&["codex"])));
         assert_eq!(stamped(&path).as_deref(), Some(env!("CARGO_PKG_VERSION")));
     }
 
@@ -914,11 +915,7 @@ mod tests {
             WelcomeUi::from_detected(&[])
         ));
         assert!(
-            upgraded(
-                "held.toml",
-                Some("0.19.0"),
-                WelcomeUi::from_detected(&["codex"])
-            ),
+            upgraded("held.toml", Some("0.19.0"), WelcomeUi::from_ids(&["codex"])),
             "the onboarding held the popup back"
         );
         assert!(

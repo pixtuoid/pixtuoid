@@ -86,8 +86,8 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    merge::flat_json_merge_outcome_install(content, "hooks.json", |doc| {
-        json_merge_install(doc, hook_cmd)
+    merge::flat_json_merge_outcome_install(content, "hooks.json", |root| {
+        json_merge_install(root, hook_cmd)
     })
 }
 

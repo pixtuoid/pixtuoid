@@ -263,7 +263,7 @@ mod tests {
                     theme,
                     crate::panels::welcome::WelcomeUi::from_detected(&[]),
                     tmp.path().join("sock"),
-                    crate::run_log::LogLocation::absent(),
+                    None,
                     crate::doctor::DriftSeen::default(),
                 ),
                 renderer: OfficeRenderer::new(std::sync::Arc::new(
@@ -323,7 +323,7 @@ mod tests {
             pixtuoid_scene::theme::ALL_THEMES[0],
             crate::panels::welcome::WelcomeUi::from_detected(&[]),
             k._tmp.path().join("sock"),
-            crate::run_log::LogLocation::absent(),
+            None,
             crate::doctor::DriftSeen::default(),
         );
         k.ui.open_version_popup(&std::collections::HashSet::new(), &[]);

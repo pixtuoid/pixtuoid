@@ -37,6 +37,9 @@ pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
 /// - **Windows**: BARE exec form `<path> --source <source>` — cmd.exe can't
 ///   express the env-prefix, so the source rides the shim's `--source` flag and a
 ///   space/metacharacter path falls back to its DOS 8.3 short name.
+///
+/// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
+/// pins it shell/cmd-safe, so it splices unquoted.
 pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     #[cfg(windows)]
     {
@@ -61,6 +64,9 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
 /// - **Windows**: BARE `<path> --source <source>`. Hermes's Windows arg-splitting
 ///   is unverified; the bare form is the safest for any splitter and mirrors the
 ///   Codex/Reasonix Windows form.
+///
+/// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
+/// pins it shell/cmd-safe, so it splices unquoted.
 pub(crate) fn exec_hook_command(path: &str, source: &str) -> Result<String> {
     #[cfg(windows)]
     {
