@@ -501,7 +501,7 @@ fn queue_fixtures<'a>(
                     busy: frame.occupied_waypoints.contains(&waypoint),
                 };
                 match station.art() {
-                    StationArt::Counter => {
+                    StationArt::PantryCounter => {
                         let anim = crate::layout::pantry_counter_anim(f.visual.width);
                         DrawableKind::WaypointPantry {
                             pos: f.at,

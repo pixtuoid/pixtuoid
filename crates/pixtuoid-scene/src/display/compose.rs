@@ -686,7 +686,7 @@ fn push_fixture(
                 push_art(order, pack, at, art, depth, Playback::Looping);
             };
             match station.art() {
-                StationArt::Counter => {
+                StationArt::PantryCounter => {
                     let sprite = crate::layout::pantry_counter_anim(fixture.visual.width);
                     push_art(order, pack, at, Art::still(sprite), depth, Playback::Held);
                 }
