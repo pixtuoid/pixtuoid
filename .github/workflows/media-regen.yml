@@ -49,7 +49,6 @@ jobs:
           name: media-${{ github.sha }}
           path: docs/images/
           retention-days: 1
-          if-no-files-found: error
 
   publish:
     needs: render

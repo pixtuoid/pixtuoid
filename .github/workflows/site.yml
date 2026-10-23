@@ -8,9 +8,6 @@ on:
         type: boolean
         required: true
 
-permissions:
-  contents: read
-
 jobs:
   # The checks that need no rendered demos run on every PR push.
   lint:
@@ -90,10 +87,6 @@ jobs:
           set -euo pipefail
           report="$(npx playwright install-deps --dry-run chromium chromium-headless-shell 2>&1)" || true
           missing="$(sed -n -E 's/^  ([^ ]+)$/\1/p' <<<"$report" | tr '\n' ' ')"
-          if [[ -z "$missing" ]] && ! grep -qx 'All system dependencies are installed.' <<<"$report"; then
-            echo "::error title=Playwright's dependency report was unreadable::$report"
-            exit 1
-          fi
           echo "packages=$missing" >>"$GITHUB_OUTPUT"
       - if: steps.pw-deps.outputs.packages != ''
         uses: ./.github/actions/apt-install

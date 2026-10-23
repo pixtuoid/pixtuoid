@@ -27,7 +27,6 @@ git_tag_name = "v{{ version }}"
 # Only a merged PR whose head branch carries `pr_branch_prefix` (the release
 # PR, or a hand-made branch for a bot-less release) may tag. A hand-made branch with ONE commit squashes to
 # that commit's title, so title it like `pr_name` below or the changelog lists it.
-# The release-plz-publishes-only-release-prs CI contract pins this key.
 release_always = false
 # release-plz's own default, declared because four mechanisms key on it: the
 # tag gate above, the recovery path in CONTRIBUTING.md#releasing, the merge

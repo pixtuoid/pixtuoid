@@ -50,19 +50,21 @@ fn sock_path(tag: &str) -> SockPath {
 }
 
 /// Generic over the arg type so the non-UTF-8-argv test can pass raw `OsStr`
-/// bytes.
-fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
+/// bytes. `stdio` makes the shim's stdout and stderr: null, or piped for the
+/// one test that asserts them.
+fn run_shim_with<S: AsRef<std::ffi::OsStr>>(
     socket: &std::path::Path,
     source: Option<&str>,
     args: &[S],
     stdin: &[u8],
-) -> std::process::ExitStatus {
+    stdio: fn() -> Stdio,
+) -> std::process::Output {
     let mut cmd = Command::new(BIN);
     cmd.env("PIXTUOID_SOCKET", socket)
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(stdio())
+        .stderr(stdio());
     match source {
         Some(s) => {
             cmd.env("PIXTUOID_SOURCE", s);
@@ -79,7 +81,16 @@ fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
         .write_all(stdin)
         .expect("write stdin");
     // stdin dropped here → EOF, so the shim's read_to_string returns.
-    child.wait().expect("wait shim")
+    child.wait_with_output().expect("wait shim")
+}
+
+fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
+    socket: &std::path::Path,
+    source: Option<&str>,
+    args: &[S],
+    stdin: &[u8],
+) -> std::process::ExitStatus {
+    run_shim_with(socket, source, args, stdin, Stdio::null).status
 }
 
 fn run_shim(
@@ -249,10 +260,23 @@ fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
 fn missing_socket_exits_zero_without_blocking() {
     let path = sock_path("nosock");
     let start = Instant::now();
-    let status = run_shim(&path, None, br#"{"hook_event_name":"Stop"}"#);
+    let out = run_shim_with::<&str>(
+        &path,
+        None,
+        &[],
+        br#"{"hook_event_name":"Stop"}"#,
+        Stdio::piped,
+    );
     assert!(
-        status.success(),
-        "must exit 0 even with no listener; got {status:?}"
+        out.status.success(),
+        "must exit 0 even with no listener; got {:?}",
+        out.status
+    );
+    assert!(
+        out.stdout.is_empty() && out.stderr.is_empty(),
+        "must stay silent: stdout {:?}, stderr {:?}",
+        out.stdout,
+        out.stderr
     );
     // A missing socket makes `connect()` return ConnectionRefused in
     // microseconds, so this guards a regression that adds a blocking

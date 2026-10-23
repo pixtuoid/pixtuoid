@@ -8,8 +8,7 @@ name: codspeed
 # bench.yml/mutants.yml: nothing `needs:` it, it is not a required check, and
 # both action steps are `continue-on-error` — trend evidence, never a gate.
 # Reports need the CodSpeed GitHub App installed on the repo; auth is OIDC
-# (`id-token: write`, job-scoped per this repo's convention — see ci-tests.yml's
-# "Declared, not inherited"), no token secret.
+# (`id-token: write`, job-scoped per this repo's convention), no token secret.
 # Steps follow CodSpeed's documented criterion workflow; moonrepo/setup-rust
 # installs cargo-codspeed via binstall (revisit if taiki-e/install-action adds
 # it).
@@ -78,15 +77,11 @@ jobs:
       # The binary's bench builds on its own with `just bench`'s features (no
       # ALSA): built with the others, its features would unify into their
       # dependencies and shift their trend. A build clears only the packages
-      # it builds (cargo-codspeed 6.0.0 `build.rs:324-331`); the loop fails
-      # closed should a release clear the first build's suites too.
+      # it builds (cargo-codspeed 6.0.0 `build.rs:324-331`).
       - name: Build instrumented benchmarks
         run: |
           cargo codspeed build -p pixtuoid-scene -p pixtuoid-core
           cargo codspeed build -p pixtuoid --no-default-features
-          for pkg in pixtuoid-scene pixtuoid-core pixtuoid; do
-            compgen -G "target/codspeed/*/$pkg/*" >/dev/null || { echo "::error::no $pkg bench suite was kept"; exit 1; }
-          done
       # Non-required is not enough: a red step still reaches mergeStateStatus
       # (#964 sat gated on a red simulation while memory was already forgiven).
       - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0

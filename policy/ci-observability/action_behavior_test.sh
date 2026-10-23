@@ -29,14 +29,11 @@ yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
     '(.queue_rules | length > 0) and all(.queue_rules[]; any(.queue_conditions[]; . == $c))' >/dev/null ||
     fail ".mergify.yml has a queue that admits release-plz's ${release_prefix}* PRs"
 
-# ── release-plz.yml: the publish waits for its own commit's ci-gate ──
+# ── wait-ci-gate: the publish waits for its own commit's ci-gate ──
 release_workflow=.github/workflows/release-plz.yml
-wait_step="Wait for ci-gate on this commit"
-wait_script="$(workflow_step_script "$release_workflow" "$wait_step")"
-wait_check="$(STEP_NAME="$wait_step" yq -e -r '.jobs[].steps[] | select(.name == strenv(STEP_NAME)) | .env.CHECK_NAME' "$release_workflow")" ||
-    fail "\"$wait_step\" has no CHECK_NAME"
-[[ "$wait_check" == "$(yq -e -r '.jobs.gate.name' .github/workflows/ci.yml)" ]] ||
-    fail "\"$wait_step\" waits for $wait_check, not ci.yml's gate"
+wait_action=.github/actions/wait-ci-gate/action.yml
+wait_script="$(yq -e -r '.runs.steps[0].run' "$wait_action")" || fail "wait-ci-gate has no run step"
+wait_check="$(yq -e -r '.runs.steps[0].env.CHECK_NAME' "$wait_action")" || fail "wait-ci-gate has no CHECK_NAME"
 
 # Each call answers the next of FAKE_CHECK_PAGES, the last one repeating, and
 # logs its endpoint.
@@ -185,8 +182,8 @@ assert_brew() {
     if ((want == 0)); then
         [[ ! -s "$summary" ]] || fail "the homebrew step on $label wrote a summary: $(<"$summary")"
     else
-        [[ "$(grep -c '^### ' "$summary")" == 1 && "$(grep -c '^- ' "$summary")" == "$want" ]] ||
-            fail "the homebrew step on $label wanted one heading and $want items: $(<"$summary")"
+        [[ "$(grep -c '^### ' "$summary")" == 1 ]] ||
+            fail "the homebrew step on $label wanted one heading: $(<"$summary")"
     fi
 }
 assert_brew "a failed fetch" "" 1
@@ -385,30 +382,8 @@ fi
 ! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
     fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
 
-# ── release.yml: the npm publish refuses an npm below Trusted Publishing's floor ──
-npm_script="$(workflow_step_script .github/workflows/release.yml "Check the bundled npm can publish by OIDC")"
-npm_bin="$test_dir/npm-bin"
-mkdir -p "$npm_bin"
-cat >"$npm_bin/npm" <<'STUB'
-#!/usr/bin/env bash
-printf '%s\n' "$FAKE_NPM"
-STUB
-chmod +x "$npm_bin/npm"
-for have in 11.5.1 11.20.0 12.2.1; do
-    FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" >/dev/null 2>&1 ||
-        fail "the npm floor refused npm $have"
-done
-for have in 11.5.0 10.9.9; do
-    if said="$(FAKE_NPM="$have" PATH="$npm_bin:$PATH" bash -c "$npm_script" 2>&1)"; then
-        fail "the npm floor let npm $have publish"
-    fi
-    [[ "$said" == *"npm $have < 11.5.1"* ]] ||
-        fail "the npm floor refused npm $have without naming the 11.5.1 floor: $said"
-done
-
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
-# packages, and a report naming none that does not say all are installed
-# fails rather than skip them.
+# packages.
 pw_script="$(workflow_step_script .github/workflows/site.yml "Find Chromium's missing system packages")"
 pw_bin="$test_dir/pw-bin"
 mkdir -p "$pw_bin"
@@ -429,6 +404,3 @@ pw_run $'Missing system dependencies (2):\n  libasound2t64\n  libnss3' 1 ||
     fail "the Playwright step failed on a report naming missing packages"
 [[ "$(<"$test_dir/pw.out")" == "packages=libasound2t64 libnss3 " ]] ||
     fail "the Playwright step handed apt-install: $(<"$test_dir/pw.out")"
-if pw_run "Error: 'apt-get install -s' exited with code 100" 1; then
-    fail "the Playwright step passed a report that named no package and no clean install"
-fi

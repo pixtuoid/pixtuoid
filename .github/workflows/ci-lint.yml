@@ -91,8 +91,7 @@ jobs:
           persist-credentials: false
       # The tools this job installs run at their newest release, as the brew
       # copies `just lint` uses locally do. The Go ones build from source, so
-      # the cache is keyed on the releases they resolve to and on this file,
-      # which holds the recipe: a new release or a changed recipe misses it.
+      # the cache is keyed on the releases they resolve to.
       - name: Resolve the Go tools' newest releases
         id: go-latest
         run: |
@@ -106,7 +105,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}-${{ steps.go-latest.outputs.versions }}
+          key: go-tools-${{ runner.os }}-${{ steps.go-latest.outputs.versions }}
       - name: Expose Go tool binaries
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Install the Go-built tools
@@ -118,8 +117,6 @@ jobs:
             case "$v" in
               mvdan.cc/sh/v3@*) go install "mvdan.cc/sh/v3/cmd/shfmt@${v#*@}" ;;
               github.com/rhysd/actionlint@*) go install "github.com/rhysd/actionlint/cmd/actionlint@${v#*@}" ;;
-              # gitleaks among them: `just fixture-pii` is a REQUIRED gate, so
-              # a failed install must fail the job, never soft-fail here.
               *) go install "$v" ;;
             esac
           done
@@ -193,11 +190,11 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install -r requirements-dev.txt
-      - name: Generated sprites, icons and banner, README sections, the comparator
-        run: just gen-readme-check gen-art-check gen-banner-check gen-icons-check compare-selftest
+      - name: Generated-file drift
+        run: just gen-check
       # gen-icons-check's overlays.
       - name: Upload drift overlays
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: generated-drift-diffs
@@ -223,11 +220,9 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-binstall
-      # The justfile's API_PUBLIC_API is the authority; api-surface-check
-      # asserts this copy against it before reading a golden.
-      - name: Install cargo-public-api (pinned to match the committed goldens)
-        run: cargo binstall -y cargo-public-api@0.52.0
       - uses: ./.github/actions/setup-just
+      - name: Install cargo-public-api (pinned to match the committed goldens)
+        run: cargo binstall -y "cargo-public-api@$(just --evaluate API_PUBLIC_API)"
       - run: just api-surface-check
 
   # rustdoc warnings and doctests are invisible to clippy and nextest.

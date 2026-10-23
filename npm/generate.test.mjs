@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Tests for generate.mjs — the per-platform package generator. Wired as a
-// pre-step of release.yml's npm job, so a broken generator fails the release
-// BEFORE anything is published.
+// Tests for generate.mjs — the per-platform package generator; ci-lint.yml's
+// `npm-gen` job runs them via `just npm-check`.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
