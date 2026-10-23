@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn from_detected_pre_checks_every_row_and_resolves_badges() {
-    let ui = WelcomeUi::from_detected(&["codex"]);
+    let ui = WelcomeUi::from_ids(&["codex"]);
     assert_eq!(ui.rows.len(), 1);
     let row = &ui.rows[0];
     assert_eq!(row.source_id, "codex");
@@ -28,7 +28,7 @@ fn empty_detected_is_empty() {
 
 #[test]
 fn navigation_clamps_at_both_ends() {
-    let mut ui = WelcomeUi::from_detected(&["codex", "claude-code", "cursor"]);
+    let mut ui = WelcomeUi::from_ids(&["codex", "claude-code", "cursor"]);
     assert_eq!(ui.selected, 0);
     ui.move_up();
     assert_eq!(ui.selected, 0);
@@ -102,7 +102,7 @@ fn the_close_fade_continues_from_the_dim_it_was_interrupted_at() {
 
 #[test]
 fn toggle_flips_only_the_selected_row_and_feeds_checked() {
-    let mut ui = WelcomeUi::from_detected(&["codex", "claude-code"]);
+    let mut ui = WelcomeUi::from_ids(&["codex", "claude-code"]);
     ui.move_down();
     ui.toggle_selected();
     assert_eq!(

@@ -3,8 +3,8 @@
 //! The typewriter/boot timing is elapsed-driven in the painter
 //! (`widgets/welcome.rs`), so this model holds no clock — only interactive state.
 
-use crate::install::target::by_source;
-use pixtuoid_core::source::registry::descriptor_for;
+use crate::install::target::Target;
+use pixtuoid_core::source::registry::SourceDescriptor;
 
 #[cfg(test)]
 mod tests;
@@ -26,20 +26,35 @@ pub(crate) struct WelcomeUi {
 }
 
 impl WelcomeUi {
-    /// Build the roster from detected (present) CLI source ids, all PRE-CHECKED:
+    /// Build the roster from detected (present) CLIs, all PRE-CHECKED:
     /// the office is empty by definition on a first run, so "connect everything I
     /// have" is the friendly default and the user unchecks what they don't want.
-    pub(crate) fn from_detected(detected: &[&'static str]) -> Self {
+    pub(crate) fn from_detected(detected: &[(&'static SourceDescriptor, &'static Target)]) -> Self {
         let rows = detected
             .iter()
-            .map(|&sid| WelcomeRow {
-                source_id: sid,
-                label_prefix: descriptor_for(sid).map_or("??", |d| d.label_prefix),
-                display_name: by_source(sid).map_or(sid, |t| t.display_name).to_string(),
+            .map(|&(desc, target)| WelcomeRow {
+                source_id: desc.name,
+                label_prefix: desc.label_prefix,
+                display_name: target.display_name.to_string(),
                 checked: true,
             })
             .collect();
         Self { rows, selected: 0 }
+    }
+
+    /// [`Self::from_detected`] of registered, target-bearing `ids`.
+    #[cfg(test)]
+    pub(crate) fn from_ids(ids: &[&str]) -> Self {
+        let detected: Vec<_> = ids
+            .iter()
+            .map(|id| {
+                (
+                    pixtuoid_core::source::registry::descriptor_for(id).expect("a registered id"),
+                    crate::install::target::by_source(id).expect("a target-bearing id"),
+                )
+            })
+            .collect();
+        Self::from_detected(&detected)
     }
 
     pub(crate) fn is_empty(&self) -> bool {

@@ -695,10 +695,17 @@ pub(crate) fn status(cfg: &Path, log: &str) -> Vec<SourceStatus> {
 
 /// Which agent CLIs are installed on this machine (target-bearing + probed
 /// present) — the "offer to connect these" set for first-run onboarding.
-pub(crate) fn detect() -> Vec<&'static str> {
-    registry::registered_source_names()
-        .filter(|sid| by_source(sid).is_some_and(|t| (t.presence_probe)()))
+pub(crate) fn detect_targets() -> Vec<(&'static registry::SourceDescriptor, &'static Target)> {
+    registry::REGISTRY
+        .iter()
+        .filter_map(|d| by_source(d.name).map(|t| (d, t)))
+        .filter(|(_, t)| (t.presence_probe)())
         .collect()
+}
+
+/// [`detect_targets`]'s source ids.
+pub(crate) fn detect() -> Vec<&'static str> {
+    detect_targets().into_iter().map(|(d, _)| d.name).collect()
 }
 
 #[cfg(test)]

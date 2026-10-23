@@ -252,19 +252,19 @@ impl Jank {
         let mut sorted = self.micros;
         let window = &mut sorted[..self.len];
         window.sort_unstable();
-        let at =
-            |q: usize| window.get((window.len() * q / 100).min(window.len().saturating_sub(1)));
-        let ms = |us: Option<&u32>| us.map_or(0.0, |&us| f64::from(us) / 1000.0);
-        let (p50, p99, max) = (ms(at(50)), ms(at(99)), ms(window.last()));
+        let (Some(&max), Some(since)) = (window.last(), self.since) else {
+            return;
+        };
+        let at = |q: usize| window[window.len() * q / 100];
+        let ms = |us: u32| f64::from(us) / 1000.0;
+        let (p50, p99, max) = (ms(at(50)), ms(at(99)), ms(max));
         let frames = self.len;
         let janks = self.janks;
         let over = self.over;
         let hitch_ms = self.hitch.as_secs_f64() * 1000.0;
         let scheduled = self.scheduled;
         let interval_ms = self.interval.as_secs_f64() * 1000.0;
-        let span_ms = self.since.map_or(0.0, |since| {
-            now.saturating_duration_since(since).as_secs_f64() * 1000.0
-        });
+        let span_ms = now.saturating_duration_since(since).as_secs_f64() * 1000.0;
         let Painter {
             look,
             scale,

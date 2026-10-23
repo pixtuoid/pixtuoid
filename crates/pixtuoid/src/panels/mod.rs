@@ -158,7 +158,7 @@ pub(crate) trait Host {
     fn redraw(&mut self) -> anyhow::Result<()>;
 }
 
-/// Which overlay (if any) currently owns input, plus the one count the picker needs.
+/// Which overlay (if any) currently owns input.
 /// An open overlay swallows keys and the normal-scene bindings are suspended; the
 /// precedence chain itself lives in [`dispatch_key`], and a host's own key reads
 /// [`Self::any_open`] to defer the same way.
@@ -172,7 +172,6 @@ pub(crate) struct ModalState {
     pub(crate) connection_open: bool,
     /// A disconnect is armed on the Sources panel, awaiting y/n.
     pub(crate) connection_confirm: bool,
-    pub(crate) n_themes: usize,
 }
 
 impl ModalState {
@@ -187,7 +186,6 @@ impl ModalState {
             dashboard_open: false,
             connection_open: false,
             connection_confirm: false,
-            n_themes: pixtuoid_scene::theme::ALL_THEMES.len(),
         }
     }
 
@@ -203,7 +201,6 @@ impl ModalState {
             dashboard_open,
             connection_open,
             connection_confirm: _,
-            n_themes: _,
         } = self;
         onboarding_open
             || help_open
@@ -555,7 +552,7 @@ pub(crate) fn dispatch_key(
             _ if is_quit_chord(code, mods) => KeyAction::Quit,
             (KeyCode::Up | KeyCode::Char('k'), _) => KeyAction::ThemePreview(idx.saturating_sub(1)),
             (KeyCode::Down | KeyCode::Char('j'), _) => {
-                KeyAction::ThemePreview((idx + 1).min(modal.n_themes.saturating_sub(1)))
+                KeyAction::ThemePreview((idx + 1).min(theme::ALL_THEMES.len().saturating_sub(1)))
             }
             (KeyCode::Enter, _) => KeyAction::ThemeCommit(idx),
             (KeyCode::Esc, _) => KeyAction::ThemeCancel,
@@ -794,10 +791,7 @@ mod dispatch_tests {
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 
     fn modal() -> ModalState {
-        ModalState {
-            n_themes: 6,
-            ..ModalState::closed()
-        }
+        ModalState::closed()
     }
 
     fn nav() -> FloorNav {
@@ -1157,13 +1151,12 @@ mod dispatch_tests {
             KeyAction::ThemePreview(0)
         );
         let hi = ModalState {
-            theme_picker: Some(5),
-            n_themes: 6,
+            theme_picker: Some(pixtuoid_scene::theme::ALL_THEMES.len() - 1),
             ..modal()
         };
         assert_eq!(
             dispatch_key(KeyCode::Down, NONE, hi, nav()),
-            KeyAction::ThemePreview(5)
+            KeyAction::ThemePreview(pixtuoid_scene::theme::ALL_THEMES.len() - 1)
         );
     }
 

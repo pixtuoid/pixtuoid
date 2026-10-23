@@ -92,7 +92,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    crate::install::merge::toml_merge_outcome(content, |doc| toml_merge_install(doc, hook_cmd))
+    crate::install::merge::toml_merge_outcome(content, |root| toml_merge_install(root, hook_cmd))
 }
 
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
@@ -137,27 +137,17 @@ fn managed_entry(event: &str, hook_cmd: &str) -> toml::Value {
     toml::Value::Table(t)
 }
 
-fn toml_merge_install(doc: toml::Value, hook_cmd: &str) -> toml::Value {
-    let mut root = doc.as_table().cloned().unwrap_or_default();
-    let arr = root
-        .entry("hooks".to_string())
-        .or_insert_with(|| toml::Value::Array(vec![]));
-    if !arr.is_array() {
-        *arr = toml::Value::Array(vec![]);
-    }
-    if let Some(arr) = arr.as_array_mut() {
+fn toml_merge_install(mut root: Table, hook_cmd: &str) -> Table {
+    crate::install::merge::with_toml_array(&mut root, "hooks", |arr| {
         arr.retain(|e| !is_managed_entry(e));
         for ev in KIMI_EVENTS {
             arr.push(managed_entry(ev, hook_cmd));
         }
-    }
-    toml::Value::Table(root)
+    });
+    root
 }
 
-fn toml_merge_uninstall(mut doc: toml::Value) -> toml::Value {
-    let Some(root) = doc.as_table_mut() else {
-        return doc;
-    };
+fn toml_merge_uninstall(mut root: Table) -> Table {
     if let Some(arr) = root.get_mut("hooks").and_then(|h| h.as_array_mut()) {
         arr.retain(|e| !is_managed_entry(e));
     }
@@ -168,7 +158,7 @@ fn toml_merge_uninstall(mut doc: toml::Value) -> toml::Value {
     {
         root.remove("hooks");
     }
-    doc
+    root
 }
 
 /// Install-schema verification: every `KIMI_EVENTS` event still has a managed

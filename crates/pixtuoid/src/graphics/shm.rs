@@ -129,9 +129,6 @@ fn create(bytes: &[u8]) -> io::Result<String> {
 fn fill(fd: &OwnedFd, bytes: &[u8]) -> io::Result<()> {
     use rustix::mm::{MapFlags, ProtFlags};
     rustix::fs::ftruncate(fd, u64::try_from(bytes.len()).map_err(io::Error::other)?)?;
-    if bytes.is_empty() {
-        return Ok(());
-    }
     // SAFETY: maps `bytes.len()` bytes of the object just sized to that length.
     let map = unsafe {
         rustix::mm::mmap(

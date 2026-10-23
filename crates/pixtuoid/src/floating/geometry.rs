@@ -98,7 +98,7 @@ impl Zoom {
         let d = i32::from(density.get());
         let moved =
             i32::from(zoom_scale(size, density, self)) - i32::from(auto_scale(size, density));
-        Self(i8::try_from(moved / d).unwrap_or(self.0))
+        Self(i8::try_from(moved / d).expect("a zoom reads back within its own i8 steps"))
     }
 }
 

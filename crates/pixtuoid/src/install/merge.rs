@@ -41,47 +41,95 @@ pub(crate) fn hook_path_str(p: &std::path::Path) -> anyhow::Result<&str> {
         .ok_or_else(|| anyhow!("pixtuoid-hook path is non-UTF-8: {}", p.display()))
 }
 
-pub(crate) fn parse_toml_or_empty(content: &str) -> anyhow::Result<toml::Value> {
+pub(crate) fn parse_toml_or_empty(content: &str) -> anyhow::Result<toml::Table> {
     if content.trim().is_empty() {
-        return Ok(toml::Value::Table(toml::value::Table::new()));
+        return Ok(toml::Table::new());
     }
     use anyhow::Context;
     toml::from_str(content).context("not valid TOML — refusing to overwrite")
 }
 
-/// Merge managed hook entries into `doc`: for each `event`, drop any prior
+/// Edit `parent[key]` as an object in place; an absent or wrongly-typed value
+/// starts empty. Taken out and put back, so the key keeps its position.
+fn with_json_object(
+    parent: &mut Map<String, Value>,
+    key: &str,
+    edit: impl FnOnce(&mut Map<String, Value>),
+) {
+    let slot = parent.entry(key).or_insert(Value::Null);
+    let mut obj = match slot.take() {
+        Value::Object(m) => m,
+        _ => Map::new(),
+    };
+    edit(&mut obj);
+    *slot = Value::Object(obj);
+}
+
+/// [`with_json_object`] for an array.
+fn with_json_array(parent: &mut Map<String, Value>, key: &str, edit: impl FnOnce(&mut Vec<Value>)) {
+    let slot = parent.entry(key).or_insert(Value::Null);
+    let mut arr = match slot.take() {
+        Value::Array(a) => a,
+        _ => Vec::new(),
+    };
+    edit(&mut arr);
+    *slot = Value::Array(arr);
+}
+
+/// [`with_json_object`] for a TOML table.
+pub(crate) fn with_toml_table(
+    parent: &mut toml::Table,
+    key: &str,
+    edit: impl FnOnce(&mut toml::Table),
+) {
+    let slot = parent
+        .entry(key)
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let mut table = match std::mem::replace(slot, toml::Value::Boolean(false)) {
+        toml::Value::Table(t) => t,
+        _ => toml::Table::new(),
+    };
+    edit(&mut table);
+    *slot = toml::Value::Table(table);
+}
+
+/// [`with_json_object`] for a TOML array.
+pub(crate) fn with_toml_array(
+    parent: &mut toml::Table,
+    key: &str,
+    edit: impl FnOnce(&mut Vec<toml::Value>),
+) {
+    let slot = parent
+        .entry(key)
+        .or_insert_with(|| toml::Value::Array(Vec::new()));
+    let mut arr = match std::mem::replace(slot, toml::Value::Boolean(false)) {
+        toml::Value::Array(a) => a,
+        _ => Vec::new(),
+    };
+    edit(&mut arr);
+    *slot = toml::Value::Array(arr);
+}
+
+/// Merge managed hook entries into `root`: for each `event`, drop any prior
 /// managed entry (keyed on `sentinel`) and push a fresh one built by
 /// `make_entry`. The entry SHAPE stays the caller's — the merge treats the entry
 /// opaquely, keying only on the sentinel.
 pub(crate) fn flat_json_merge_install(
-    doc: Value,
+    mut root: Map<String, Value>,
     events: &[&str],
     sentinel: &str,
     make_entry: impl Fn(&str) -> Value,
     hook_command: &str,
-) -> Value {
-    let mut root: Map<String, Value> = doc.as_object().cloned().unwrap_or_default();
-    let hooks = root
-        .entry("hooks".to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if !hooks.is_object() {
-        *hooks = Value::Object(Map::new());
-    }
-    if let Value::Object(hooks_obj) = hooks {
+) -> Map<String, Value> {
+    with_json_object(&mut root, "hooks", |hooks| {
         for ev in events {
-            let list = hooks_obj
-                .entry((*ev).to_string())
-                .or_insert_with(|| Value::Array(vec![]));
-            if !list.is_array() {
-                *list = Value::Array(vec![]);
-            }
-            if let Value::Array(arr) = list {
+            with_json_array(hooks, ev, |arr| {
                 arr.retain(|entry| !is_flat_managed(entry, sentinel));
                 arr.push(make_entry(hook_command));
-            }
+            });
         }
-    }
-    Value::Object(root)
+    });
+    root
 }
 
 /// Drop `key` from `parent` when it is an EMPTY object/array. Anything with
@@ -138,21 +186,23 @@ pub(crate) fn is_flat_managed(entry: &Value, sentinel: &str) -> bool {
     entry.get(sentinel).and_then(|v| v.as_bool()) == Some(true)
 }
 
-/// Parse flat-JSON `content`, REFUSE a valid-but-non-object root (which
-/// `flat_json_merge_install` would silently coerce to `{}`, dropping the user's
-/// document), run `mutate`, and package a `MergeOutcome` whose `changed` is a
-/// SEMANTIC parsed-doc diff — a byte diff would churn the user's formatting.
+/// Parse flat-JSON `content`, REFUSE a valid-but-non-object root (which would
+/// otherwise be coerced to `{}`, dropping the user's document), run `mutate` on
+/// its object (`null` reads as `{}`), and package a `MergeOutcome` whose `changed`
+/// is a SEMANTIC parsed-doc diff — a byte diff would churn the user's formatting.
 /// The guard lives HERE, once, so a future flat-JSON target cannot forget it.
 pub(crate) fn flat_json_merge_outcome_install(
     content: &str,
     what: &str,
-    mutate: impl FnOnce(Value) -> Value,
+    mutate: impl FnOnce(Map<String, Value>) -> Map<String, Value>,
 ) -> anyhow::Result<MergeOutcome> {
     let doc = parse_json_or_empty(content)?;
-    if !doc.is_object() && !doc.is_null() {
-        anyhow::bail!("{what} is valid JSON but not an object — refusing to overwrite");
-    }
-    let merged = mutate(doc.clone());
+    let root = match doc.clone() {
+        Value::Object(m) => m,
+        Value::Null => Map::new(),
+        _ => anyhow::bail!("{what} is valid JSON but not an object — refusing to overwrite"),
+    };
+    let merged = Value::Object(mutate(root));
     let changed = merged != doc;
     Ok(MergeOutcome {
         content: serde_json::to_string_pretty(&merged)?,
@@ -185,16 +235,17 @@ pub(crate) fn flat_json_merge_outcome_uninstall(
 
 /// The TOML analog. No non-object guard — a TOML root is always a table.
 ///
-/// `mutate` merges on the plain value; the result is written back onto the
+/// `mutate` merges on the plain table; the result is written back onto the
 /// user's own [`toml_edit::DocumentMut`], so every key, table and array-of-tables
 /// entry the merge left equal keeps its comments and layout — the file is
 /// another CLI's, and its owner's notes in it are not ours to drop.
 pub(crate) fn toml_merge_outcome(
     content: &str,
-    mutate: impl FnOnce(toml::Value) -> toml::Value,
+    mutate: impl FnOnce(toml::Table) -> toml::Table,
 ) -> anyhow::Result<MergeOutcome> {
-    let doc = parse_toml_or_empty(content)?;
-    let merged = mutate(doc.clone());
+    let table = parse_toml_or_empty(content)?;
+    let merged = toml::Value::Table(mutate(table.clone()));
+    let doc = toml::Value::Table(table);
     let changed = merged != doc;
     let mut edit: toml_edit::DocumentMut = content.parse()?;
     apply_toml(edit.as_item_mut(), &doc, &merged)?;
@@ -309,7 +360,7 @@ mod tests {
 
     #[test]
     fn toml_merge_writes_the_merged_order_and_keeps_empty_arrays() {
-        let reorder = toml_merge_outcome("[[a]]\nx = 1\n\n[[a]]\nx = 2\n", |mut d: toml::Value| {
+        let reorder = toml_merge_outcome("[[a]]\nx = 1\n\n[[a]]\nx = 2\n", |mut d: toml::Table| {
             d["a"].as_array_mut().unwrap().reverse();
             d
         })
@@ -321,7 +372,7 @@ mod tests {
             .map(|t| t["x"].as_integer().unwrap())
             .collect();
         assert_eq!(xs, [2, 1], "{}", reorder.content);
-        let between = toml_merge_outcome("[[a]]\nx = 1\n\n[[a]]\nx = 2\n", |mut d: toml::Value| {
+        let between = toml_merge_outcome("[[a]]\nx = 1\n\n[[a]]\nx = 2\n", |mut d: toml::Table| {
             let a = d["a"].as_array_mut().unwrap();
             a.insert(
                 1,
@@ -337,8 +388,8 @@ mod tests {
             .map(|t| t["x"].as_integer().unwrap())
             .collect();
         assert_eq!(xs, [1, 9, 2], "{}", between.content);
-        let emptied = toml_merge_outcome("[[a]]\nx = 1\n", |mut d: toml::Value| {
-            d["a"] = toml::Value::Array(vec![]);
+        let emptied = toml_merge_outcome("[[a]]\nx = 1\n", |mut d: toml::Table| {
+            d.insert("a".into(), toml::Value::Array(vec![]));
             d
         })
         .unwrap();
@@ -366,8 +417,8 @@ mod tests {
 
     #[test]
     fn a_crlf_file_stays_crlf() {
-        let out = toml_merge_outcome("# note\r\na = 1\r\n", |mut d: toml::Value| {
-            d.as_table_mut().unwrap().insert("b".into(), 2.into());
+        let out = toml_merge_outcome("# note\r\na = 1\r\n", |mut d: toml::Table| {
+            d.insert("b".into(), 2.into());
             d
         })
         .unwrap();
@@ -387,7 +438,7 @@ model = \"o3\" # inline note
 [[hooks.Stop]]
 command = \"notify-send done\" # theirs
 ";
-        let add = |mut d: toml::Value| {
+        let add = |mut d: toml::Table| {
             let stop = d["hooks"]["Stop"].as_array_mut().unwrap();
             stop.push(toml::Value::Table(toml::Table::from_iter([(
                 "command".to_string(),
@@ -410,7 +461,7 @@ command = \"notify-send done\" # theirs
             );
         }
         assert!(out.content.contains("\"ours\""), "{}", out.content);
-        let back = toml_merge_outcome(&out.content, |mut d: toml::Value| {
+        let back = toml_merge_outcome(&out.content, |mut d: toml::Table| {
             d["hooks"]["Stop"].as_array_mut().unwrap().pop();
             d
         })
@@ -438,6 +489,20 @@ command = \"notify-send done\" # theirs
     }
 
     #[test]
+    fn flat_json_merge_outcome_install_reads_a_null_root_as_an_empty_object() {
+        let out = flat_json_merge_outcome_install("null", "settings", |mut d| {
+            d.insert("k".into(), json!(1));
+            d
+        })
+        .unwrap();
+        assert!(out.changed);
+        assert_eq!(
+            serde_json::from_str::<Value>(&out.content).unwrap(),
+            json!({"k": 1})
+        );
+    }
+
+    #[test]
     fn flat_json_merge_outcome_uninstall_is_a_clean_noop_on_a_non_object_root() {
         let out = flat_json_merge_outcome_uninstall("[1, 2, 3]", |d| d).unwrap();
         assert!(!out.changed);
@@ -448,9 +513,7 @@ command = \"notify-send done\" # theirs
         let noop = toml_merge_outcome("a = 1\n", |d| d).unwrap();
         assert!(!noop.changed, "identity mutate must be a semantic no-op");
         let changed = toml_merge_outcome("a = 1\n", |mut d| {
-            if let toml::Value::Table(t) = &mut d {
-                t.insert("b".into(), toml::Value::Integer(2));
-            }
+            d.insert("b".into(), toml::Value::Integer(2));
             d
         })
         .unwrap();

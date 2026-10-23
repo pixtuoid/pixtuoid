@@ -82,12 +82,12 @@ pub(crate) fn detect_installed() -> bool {
 /// the to_string_lossy dead-hook).
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     let p = merge::hook_path_str(resolved)?;
-    crate::install::hook_cmd::shell_hook_command(p, "cursor")
+    crate::install::hook_cmd::shell_hook_command(p, pixtuoid_core::source::cursor::SOURCE_NAME)
 }
 
 pub(crate) fn merge_install(content: &str, hook_cmd: &str) -> Result<MergeOutcome> {
-    merge::flat_json_merge_outcome_install(content, "hooks.json", |doc| {
-        json_merge_install(doc, hook_cmd)
+    merge::flat_json_merge_outcome_install(content, "hooks.json", |root| {
+        json_merge_install(root, hook_cmd)
     })
 }
 
@@ -124,13 +124,12 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     parse
 }
 
-fn json_merge_install(doc: Value, hook_command: &str) -> Value {
+fn json_merge_install(mut root: Map<String, Value>, hook_command: &str) -> Map<String, Value> {
     // Cursor requires a `version`; set it if absent, preserve a user's value.
-    let mut root: Map<String, Value> = doc.as_object().cloned().unwrap_or_default();
     root.entry("version".to_string())
         .or_insert_with(|| json!(1));
     merge::flat_json_merge_install(
-        Value::Object(root),
+        root,
         CURSOR_EVENTS,
         SENTINEL_KEY,
         managed_entry,
@@ -141,6 +140,13 @@ fn json_merge_install(doc: Value, hook_command: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn install_into(doc: Value, hook_command: &str) -> Value {
+        Value::Object(json_merge_install(
+            doc.as_object().cloned().unwrap(),
+            hook_command,
+        ))
+    }
 
     #[test]
     fn config_dir_honors_cursor_config_dir_then_xdg_on_linux_else_dot_cursor() {
@@ -179,7 +185,7 @@ mod tests {
 
     #[test]
     fn install_creates_flat_entries_for_all_events_with_version() {
-        let doc = json_merge_install(json!({}), "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'");
+        let doc = install_into(json!({}), "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'");
         assert_eq!(doc["version"], json!(1), "Cursor requires a version field");
         let hooks = doc.get("hooks").and_then(|v| v.as_object()).unwrap();
         for ev in CURSOR_EVENTS {
@@ -200,7 +206,7 @@ mod tests {
 
     #[test]
     fn install_preserves_existing_version() {
-        let doc = json_merge_install(json!({"version": 2}), "/x");
+        let doc = install_into(json!({"version": 2}), "/x");
         assert_eq!(
             doc["version"],
             json!(2),
@@ -210,10 +216,10 @@ mod tests {
 
     #[test]
     fn install_is_idempotent_and_replaces_across_paths() {
-        let a = json_merge_install(json!({}), "PIXTUOID_SOURCE=cursor '/opt/a/pixtuoid-hook'");
-        let b = json_merge_install(a.clone(), "PIXTUOID_SOURCE=cursor '/opt/a/pixtuoid-hook'");
+        let a = install_into(json!({}), "PIXTUOID_SOURCE=cursor '/opt/a/pixtuoid-hook'");
+        let b = install_into(a.clone(), "PIXTUOID_SOURCE=cursor '/opt/a/pixtuoid-hook'");
         assert_eq!(a, b, "same command re-install is a no-op");
-        let c = json_merge_install(a, "PIXTUOID_SOURCE=cursor '/opt/b/pixtuoid-hook'");
+        let c = install_into(a, "PIXTUOID_SOURCE=cursor '/opt/b/pixtuoid-hook'");
         for ev in CURSOR_EVENTS {
             assert_eq!(
                 c["hooks"][*ev].as_array().unwrap().len(),
@@ -230,7 +236,7 @@ mod tests {
             "hooks": {"preToolUse": [ { "command": "my-guard.sh" } ]},
             "other": "setting"
         });
-        let merged = json_merge_install(initial, "/x");
+        let merged = install_into(initial, "/x");
         let arr = merged["hooks"]["preToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["command"], json!("my-guard.sh"));
@@ -239,7 +245,7 @@ mod tests {
 
     #[test]
     fn uninstall_removes_only_managed_entries_and_empty_maps() {
-        let installed = json_merge_install(
+        let installed = install_into(
             json!({"hooks": {"preToolUse": [ { "command": "my-guard.sh" } ]}}),
             "/x",
         );
@@ -258,7 +264,7 @@ mod tests {
 
     #[test]
     fn uninstall_all_managed_drops_hooks_but_keeps_version() {
-        let installed = json_merge_install(json!({}), "/x");
+        let installed = install_into(json!({}), "/x");
         let cleaned = json_merge_uninstall(installed);
         assert!(cleaned.get("hooks").is_none(), "got {cleaned}");
         assert_eq!(cleaned["version"], json!(1), "got {cleaned}");
@@ -266,7 +272,7 @@ mod tests {
 
     #[test]
     fn uninstall_preserves_a_users_version_only_file() {
-        let installed = json_merge_install(json!({"version": 3}), "/x");
+        let installed = install_into(json!({"version": 3}), "/x");
         let cleaned = json_merge_uninstall(installed);
         assert_eq!(
             cleaned,
@@ -277,8 +283,7 @@ mod tests {
 
     #[test]
     fn verify_schema_flags_a_missing_version_and_passes_full_install() {
-        let installed =
-            json_merge_install(json!({}), "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'");
+        let installed = install_into(json!({}), "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'");
         let sound = verify_schema(&installed.to_string());
         assert!(sound.issues.is_empty(), "{:?}", sound.issues);
 
@@ -329,9 +334,9 @@ mod tests {
 
     #[test]
     fn install_coerces_non_object_hooks_and_non_array_events() {
-        let doc = json_merge_install(json!({"hooks": "garbage"}), "/x");
+        let doc = install_into(json!({"hooks": "garbage"}), "/x");
         assert!(doc["hooks"].is_object());
-        let doc = json_merge_install(json!({"hooks": {"stop": 42}}), "/x");
+        let doc = install_into(json!({"hooks": {"stop": 42}}), "/x");
         assert_eq!(doc["hooks"]["stop"].as_array().unwrap().len(), 1);
     }
 

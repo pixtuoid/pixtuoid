@@ -94,14 +94,15 @@ pub(crate) struct UiState {
     /// nowhere else.
     fake_now: Option<(Instant, SystemTime)>,
     /// Theme picker: `Some(preview index)` while open; `saved_theme_idx` is
-    /// the committed selection the quit/cancel paths revert to.
+    /// the committed selection the cancel path reverts to.
     pub(crate) theme_picker: Option<usize>,
     pub(crate) saved_theme_idx: usize,
     pub(crate) dashboard: DashboardUi,
     pub(crate) connection: ConnectionUi,
     drift: crate::doctor::DriftSeen,
     socket_path: std::path::PathBuf,
-    /// Where the warn-floor log lives, for the Sources panel (`None` = no log).
+    /// Where the warn-floor log lives, for the Sources panel; `None` for a
+    /// preview, which has no run.
     log: Option<crate::run_log::LogLocation>,
 }
 
@@ -124,7 +125,7 @@ pub(crate) struct Boot<'a> {
     pub(crate) first_run: bool,
     pub(crate) config_path: &'a std::path::Path,
     pub(crate) socket_path: std::path::PathBuf,
-    pub(crate) log: Option<crate::run_log::LogLocation>,
+    pub(crate) log: crate::run_log::LogLocation,
     pub(crate) drift: crate::doctor::DriftSeen,
     /// The sources connected at boot, for the notices a version popup opens
     /// with.
@@ -155,7 +156,7 @@ impl UiState {
     /// new to the config at `boot.config_path`.
     pub(crate) fn boot(boot: Boot<'_>) -> Self {
         let detected = if boot.first_run {
-            crate::sources::detect()
+            crate::sources::detect_targets()
         } else {
             Vec::new()
         };
@@ -184,7 +185,7 @@ impl UiState {
             boot.theme,
             onboarding_ui,
             boot.socket_path,
-            boot.log,
+            Some(boot.log),
             boot.drift,
         );
         ui.notices.versions = decision.versions;
@@ -207,7 +208,7 @@ impl UiState {
         let saved_theme_idx = theme::ALL_THEMES
             .iter()
             .position(|t| std::ptr::eq(*t, boot_theme))
-            .unwrap_or(0);
+            .expect("the boot theme is one of ALL_THEMES");
         Self {
             onboarding_ui,
             onboarding_opened_at,
@@ -238,7 +239,6 @@ impl UiState {
             dashboard_open: self.dashboard.open,
             connection_open: self.connection.open,
             connection_confirm: self.connection.confirm.is_some(),
-            n_themes: theme::ALL_THEMES.len(),
         }
     }
 
@@ -460,8 +460,7 @@ impl UiState {
 
     /// Compute this frame's renderer mirrors from the live scene + health
     /// snapshot. Mutates the pieces that are themselves per-frame state: the
-    /// throttled drift re-scan, the dashboard reanchor/scroll clamp, the
-    /// connection selection clamp, and the onboarding close-fade expiry.
+    /// dashboard reanchor/scroll clamp and the onboarding close-fade expiry.
     pub(crate) fn build_frames(
         &mut self,
         now: SystemTime,
@@ -494,8 +493,6 @@ impl UiState {
         // after actions, NOT per frame, because it does FS reads. Only the LIVE
         // facet + socket line recompute here.
         let connection_frame = if self.connection.open {
-            self.connection.selected =
-                connection::move_selection(&self.connection.rows, self.connection.selected, 0);
             let live = connection::live_view(now, &self.connection.rows, scene, health);
             // NOT "(listening)": a second pixtuoid instance loses the hook plane
             // to the lock-holding owner, so THIS process may own no socket at
@@ -657,7 +654,6 @@ mod tests {
                 && !m.connection_confirm,
             "everything closed at boot (no detected CLIs, no version popup)"
         );
-        assert_eq!(m.n_themes, ALL_THEMES.len());
 
         ui.toggle_help();
         assert!(ui.modal().help_open);
@@ -695,7 +691,7 @@ mod tests {
         use std::time::Duration;
         let mut ui = UiState::new(
             ALL_THEMES[0],
-            WelcomeUi::from_detected(&["codex"]),
+            WelcomeUi::from_ids(&["codex"]),
             std::path::PathBuf::from("sock"),
             None,
             crate::doctor::DriftSeen::default(),
@@ -720,7 +716,7 @@ mod tests {
 
         let mut ui = UiState::new(
             ALL_THEMES[0],
-            WelcomeUi::from_detected(&["codex", "claude-code"]),
+            WelcomeUi::from_ids(&["codex", "claude-code"]),
             std::path::PathBuf::from("/tmp/sock"),
             None,
             crate::doctor::DriftSeen::default(),
@@ -775,7 +771,7 @@ mod tests {
                 first_run: false,
                 config_path: path,
                 socket_path: path.with_extension("sock"),
-                log: None,
+                log: crate::run_log::LogLocation::File(path.with_extension("log")),
                 drift: crate::doctor::DriftSeen::default(),
                 connected,
                 terminal_cutaway,
@@ -809,7 +805,7 @@ mod tests {
 
         let path = tmp.path().join("onboarding.toml");
         crate::config::save_version(&path, "0.0.1").expect("seed an old version");
-        assert!(!boot(&path, WelcomeUi::from_detected(&["codex"])));
+        assert!(!boot(&path, WelcomeUi::from_ids(&["codex"])));
         assert_eq!(stamped(&path).as_deref(), Some(env!("CARGO_PKG_VERSION")));
     }
 
@@ -918,11 +914,7 @@ mod tests {
             WelcomeUi::from_detected(&[])
         ));
         assert!(
-            upgraded(
-                "held.toml",
-                Some("0.19.0"),
-                WelcomeUi::from_detected(&["codex"])
-            ),
+            upgraded("held.toml", Some("0.19.0"), WelcomeUi::from_ids(&["codex"])),
             "the onboarding held the popup back"
         );
         assert!(
