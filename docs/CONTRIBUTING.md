@@ -12,11 +12,11 @@ comments on the lines it governs, before changing it.
 
 ## Build & test
 
-Requires a recent stable Rust toolchain and [`mise`](https://mise.jdx.dev)
-(`brew install mise`, then `mise install`: `just` and the other dev tools). On Linux you also need `lld`, `pkg-config` and the ALSA
-headers (`apt install lld pkg-config libasound2-dev`), and, with no GPU driver,
-Mesa's software Vulkan for the GPU tests (`apt install mesa-vulkan-drivers`).
-The git hooks and most CI jobs call `justfile` recipes.
+Requires a recent stable Rust toolchain and [`mise`](https://mise.jdx.dev),
+[activated](https://mise.jdx.dev/getting-started.html#activate-mise), whose `mise install`
+brings `just` and the other dev tools. On Linux you also need `lld`, `pkg-config`
+and the ALSA headers (`apt install lld pkg-config libasound2-dev`), and, with no GPU
+driver, Mesa's software Vulkan for the GPU tests (`apt install mesa-vulkan-drivers`).
 
 ```bash
 just              # list recipes
