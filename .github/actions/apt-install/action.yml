@@ -37,5 +37,11 @@ runs:
           fi
           ((attempt < ATTEMPTS)) || { echo "::error title=apt download failed::$PACKAGES after $ATTEMPTS attempts"; exit 1; }
           echo "::warning title=apt download retried::attempt $attempt of $ATTEMPTS"
+          # The runner's mirror list passes over a mirror only when it fails,
+          # and a trickling one never does, so retries skip its first, Azure's
+          # (actions/runner-images configure-apt-sources.sh).
+          if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+            sudo sed -i '\|//azure\.archive\.ubuntu\.com/|d' /etc/apt/apt-mirrors.txt
+          fi
         done
         sudo apt-get "${apt_opts[@]}" install "${install_opts[@]}" --no-download "${names[@]}"
