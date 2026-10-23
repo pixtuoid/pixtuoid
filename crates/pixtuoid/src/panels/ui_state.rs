@@ -460,8 +460,8 @@ impl UiState {
 
     /// Compute this frame's renderer mirrors from the live scene + health
     /// snapshot. Mutates the pieces that are themselves per-frame state: the
-    /// throttled drift re-scan, the dashboard reanchor/scroll clamp, the
-    /// connection selection clamp, and the onboarding close-fade expiry.
+    /// throttled drift re-scan, the dashboard reanchor/scroll clamp, and the
+    /// onboarding close-fade expiry.
     pub(crate) fn build_frames(
         &mut self,
         now: SystemTime,

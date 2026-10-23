@@ -29,6 +29,8 @@ fn first_cmd_unsafe_char(p: &str) -> Option<char> {
 /// UNQUOTED because a quoted one can't survive `cmd /C` (the host's argv-quoting
 /// escapes `"`→`\"`, which cmd then mangles), so cmd PARSES the path and any
 /// cmd-special char in it would truncate or inject — hence the 8.3 substitution.
+/// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
+/// pins it shell/cmd-safe, so it splices unquoted.
 #[cfg(windows)]
 pub(super) fn windows_bare_hook_command(resolved_path: &str, source: &str) -> Result<String> {
     resolve_windows_command(resolved_path, source, short_path_windows)

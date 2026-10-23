@@ -35,7 +35,7 @@ use window::{FloatingApp, FloatingEvent};
 /// `winit`'s event loop must own the main thread, so the source pipeline runs on a
 /// background tokio runtime (spawned, NEVER `block_on` — that would stall the window),
 /// and scene changes reach the loop via an `EventLoopProxy`. BLOCKS until the window
-/// closes; the runtime + source handles are held alive across the call.
+/// closes; `rt`, which the source tasks run on, lives across the call.
 ///
 /// # Errors
 ///

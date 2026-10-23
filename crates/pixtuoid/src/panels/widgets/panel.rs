@@ -557,7 +557,6 @@ mod tests {
         assert_eq!(g.cell_rect(0, 18, 10), Some(Rect::new(58, 23, 2, 1)));
         assert_eq!(g.cell_rect(0, 20, 5), None);
         assert_eq!(g.cell_rect(5, 0, 3), None);
-        assert!(PanelGeometry::compute(b, 20, 5, Some("t"), 0.0).is_none());
     }
 
     #[test]

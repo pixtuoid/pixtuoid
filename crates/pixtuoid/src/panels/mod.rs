@@ -158,7 +158,7 @@ pub(crate) trait Host {
     fn redraw(&mut self) -> anyhow::Result<()>;
 }
 
-/// Which overlay (if any) currently owns input, plus the one count the picker needs.
+/// Which overlay (if any) currently owns input.
 /// An open overlay swallows keys and the normal-scene bindings are suspended; the
 /// precedence chain itself lives in [`dispatch_key`], and a host's own key reads
 /// [`Self::any_open`] to defer the same way.

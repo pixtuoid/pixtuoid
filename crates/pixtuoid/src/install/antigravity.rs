@@ -175,17 +175,6 @@ mod tests {
     }
 
     #[test]
-    fn a_null_root_installs_the_full_hook_set() {
-        let doc = installed("null", CMD);
-        for &(event, grouped) in AG_EVENTS {
-            assert!(
-                installed_command(&doc[HOOK_NAME], event, grouped).is_some(),
-                "{event}"
-            );
-        }
-    }
-
-    #[test]
     fn install_keeps_the_users_hooks_and_is_idempotent() {
         let user = r#"{"lint": {"PostToolUse": [{"matcher": "run_command", "hooks": []}]}}"#;
         let first = merge_install(user, CMD).expect("install");

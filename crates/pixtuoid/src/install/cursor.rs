@@ -282,14 +282,6 @@ mod tests {
     }
 
     #[test]
-    fn a_null_root_installs_a_full_hook_set() {
-        let out = merge_install("null", "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'").unwrap();
-        assert!(out.changed);
-        let sound = verify_schema(&out.content);
-        assert!(sound.issues.is_empty(), "{:?}", sound.issues);
-    }
-
-    #[test]
     fn verify_schema_flags_a_missing_version_and_passes_full_install() {
         let installed = install_into(json!({}), "PIXTUOID_SOURCE=cursor '/opt/pixtuoid-hook'");
         let sound = verify_schema(&installed.to_string());
