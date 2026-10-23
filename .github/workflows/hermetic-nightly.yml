@@ -230,8 +230,8 @@ jobs:
             fi
             reports=(*/report.md)
           fi
-          gh label create hermetic --color FBCA04 \
-            --description "A hermetic run's verdict on an agent CLI's latest release" 2>/dev/null || true
+          gh label create hermetic --color FBCA04 --force \
+            --description "A hermetic run's verdict on an agent CLI's latest release"
           # The orchestrator owns the title, as each uploaded leg's report H1
           # naming its OS and shard, and they carry the disposition: retitle on the dedup
           # path too. A leg whose runs hold no report.md never finished its run

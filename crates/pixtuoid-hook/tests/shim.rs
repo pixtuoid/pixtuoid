@@ -56,13 +56,13 @@ fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
     source: Option<&str>,
     args: &[S],
     stdin: &[u8],
-) -> std::process::ExitStatus {
+) -> std::process::Output {
     let mut cmd = Command::new(BIN);
     cmd.env("PIXTUOID_SOCKET", socket)
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     match source {
         Some(s) => {
             cmd.env("PIXTUOID_SOURCE", s);
@@ -79,7 +79,7 @@ fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
         .write_all(stdin)
         .expect("write stdin");
     // stdin dropped here → EOF, so the shim's read_to_string returns.
-    child.wait().expect("wait shim")
+    child.wait_with_output().expect("wait shim")
 }
 
 fn run_shim(
@@ -87,7 +87,7 @@ fn run_shim(
     source: Option<&str>,
     stdin: &[u8],
 ) -> std::process::ExitStatus {
-    run_shim_inner::<&str>(socket, source, &[], stdin)
+    run_shim_inner::<&str>(socket, source, &[], stdin).status
 }
 
 fn run_shim_args(
@@ -95,7 +95,7 @@ fn run_shim_args(
     args: &[&str],
     stdin: &[u8],
 ) -> std::process::ExitStatus {
-    run_shim_inner(socket, None, args, stdin)
+    run_shim_inner(socket, None, args, stdin).status
 }
 
 fn recv_delivered_json(listener: &UnixListener) -> serde_json::Value {
@@ -249,10 +249,17 @@ fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
 fn missing_socket_exits_zero_without_blocking() {
     let path = sock_path("nosock");
     let start = Instant::now();
-    let status = run_shim(&path, None, br#"{"hook_event_name":"Stop"}"#);
+    let out = run_shim_inner::<&str>(&path, None, &[], br#"{"hook_event_name":"Stop"}"#);
     assert!(
-        status.success(),
-        "must exit 0 even with no listener; got {status:?}"
+        out.status.success(),
+        "must exit 0 even with no listener; got {:?}",
+        out.status
+    );
+    assert!(
+        out.stdout.is_empty() && out.stderr.is_empty(),
+        "must stay silent: stdout {:?}, stderr {:?}",
+        out.stdout,
+        out.stderr
     );
     // A missing socket makes `connect()` return ConnectionRefused in
     // microseconds, so this guards a regression that adds a blocking
@@ -322,7 +329,8 @@ fn non_utf8_argv_exits_zero() {
             OsStr::from_bytes(b"\xff\xfe not utf8"),
         ],
         br#"{"hook_event_name":"Stop"}"#,
-    );
+    )
+    .status;
     assert!(
         status.success(),
         "non-UTF-8 argv must not panic the shim; got {status:?}"

@@ -22,14 +22,23 @@ fn run_shim_args(
     args: &[&str],
     stdin_json: &str,
 ) -> (std::process::ExitStatus, Duration) {
+    let (out, elapsed) = run_shim_output(pipe_name, args, stdin_json);
+    (out.status, elapsed)
+}
+
+fn run_shim_output(
+    pipe_name: &str,
+    args: &[&str],
+    stdin_json: &str,
+) -> (std::process::Output, Duration) {
     let started = Instant::now();
     let mut child = Command::new(shim_bin())
         .env("PIXTUOID_SOCKET", pipe_name)
         .env_remove("PIXTUOID_SOURCE")
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn shim");
     child
@@ -38,8 +47,8 @@ fn run_shim_args(
         .expect("stdin")
         .write_all(stdin_json.as_bytes())
         .expect("write stdin");
-    let status = child.wait().expect("wait shim");
-    (status, started.elapsed())
+    let out = child.wait_with_output().expect("wait shim");
+    (out, started.elapsed())
 }
 
 #[tokio::test]
@@ -216,8 +225,14 @@ async fn codex_cmd_c_invocation_of_hook_command_stamps_source() {
 
 #[test]
 fn missing_pipe_exits_zero_without_blocking() {
-    let (status, elapsed) = run_shim(r"\\.\pipe\pixtuoid-test-nonexistent", "{}");
-    assert!(status.success(), "exit 0 on missing daemon");
+    let (out, elapsed) = run_shim_output(r"\\.\pipe\pixtuoid-test-nonexistent", &[], "{}");
+    assert!(out.status.success(), "exit 0 on missing daemon");
+    assert!(
+        out.stdout.is_empty() && out.stderr.is_empty(),
+        "must stay silent: stdout {:?}, stderr {:?}",
+        out.stdout,
+        out.stderr
+    );
     // NotFound is the fast path; 2s is generous CI margin but well under any hang.
     assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
 }

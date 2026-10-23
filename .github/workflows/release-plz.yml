@@ -33,6 +33,11 @@ on:
 # dispatch-from-main `if` alone, and nothing bounds what runs inside either.
 permissions: {}
 
+# A restored cache is written by any main run, so it would reach a build that
+# holds a credential (zizmor cache-poisoning):
+# https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode
+cache-mode: none
+
 # Push runs go one at a time, in order: a push merged while a release run waits
 # for CI would otherwise check the tag before that release creates it.
 concurrency:
@@ -51,9 +56,6 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: read
-    concurrency:
-      group: release-plz-pr
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,11 +65,7 @@ jobs:
       - uses: ./.github/actions/setup-alsa
       # cargo-semver-checks builds the baseline and the current tree, and the
       # default `audio` feature reaches alsa-sys — hence the ALSA step above.
-      # No restored cache in a job holding a write credential: a cache any
-      # main run can write would reach this one (zizmor cache-poisoning).
       - uses: ./.github/actions/setup-cargo-just
-        with:
-          enable-cache: 'false'
       # homebrew-core's `test do` runs against every release on its autobump,
       # and the owner was told to release before updating it
       # (CONTRIBUTING.md#releasing), so a miss can't hold the release: it names
@@ -191,46 +189,11 @@ jobs:
   # merge push's own; release-plz's documented gate is a check before
   # `release` in the publishing workflow (release-plz.dev/docs/github/advanced).
   ci-passed:
-    name: ci-gate passed at this commit
     needs: release-merge
     if: needs.release-merge.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    # Outlasts ci.yml's slowest job and its runner queue; a timeout skips the
-    # publish like a failure does.
-    timeout-minutes: 90
     permissions:
       checks: read
-    steps:
-      - name: Wait for ci-gate on this commit
-        env:
-          CHECK_NAME: ci-gate
-          GH_TOKEN: ${{ github.token }}
-          POLL_SECONDS: 30
-          REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          while :; do
-            # Actions' run alone, as branch protection requires: another app
-            # can post a check by the same name.
-            if ! verdict="$(gh api "repos/$REPOSITORY/commits/$SHA/check-runs?check_name=$CHECK_NAME&filter=latest" \
-              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | max_by(.started_at)
-                | if . == null then "absent" elif .status != "completed" then "pending" else .conclusion end')"; then
-              echo "::warning::could not read $CHECK_NAME at ${SHA::7}; retrying"
-              verdict=pending
-            fi
-            case "$verdict" in
-            success)
-              echo "$CHECK_NAME passed at ${SHA::7}"
-              exit 0
-              ;;
-            absent | pending) sleep "$POLL_SECONDS" ;;
-            *)
-              echo "::error::$CHECK_NAME concluded $verdict at ${SHA::7}, so nothing is published. Re-run this workflow once a ci.yml re-run passes"
-              exit 1
-              ;;
-            esac
-          done
+    uses: ./.github/workflows/wait-ci-gate.yml
 
   release:
     name: publish and tag a merged release PR
@@ -257,11 +220,7 @@ jobs:
       - uses: ./.github/actions/setup-alsa
       # `cargo publish` BUILDS each crate to verify it, and the default `audio`
       # feature reaches alsa-sys — hence the ALSA step above.
-      # No restored cache in a job holding a write credential: a cache any
-      # main run can write would reach this one (zizmor cache-poisoning).
       - uses: ./.github/actions/setup-cargo-just
-        with:
-          enable-cache: 'false'
       - uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5.142
         with:
           command: release

@@ -67,4 +67,9 @@ fn main() {
     if !driven.panics.is_empty() {
         std::process::exit(1);
     }
+    // An empty corpus tested nothing, yet would exit 0 as "never-panic verified".
+    if driven.lines == 0 {
+        eprintln!("decoder_fuzz: no lines on stdin — nothing was fuzzed");
+        std::process::exit(1);
+    }
 }

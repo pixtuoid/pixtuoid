@@ -8,29 +8,20 @@ contracts_path=${1:-policy/ci-observability/contracts.yml}
 contracts=$(yq -o=json '.' "$contracts_path")
 # A second document here would reach the loop's arithmetic as two counts, which
 # bash rejects without tripping `set -e`: every contract would go unrun.
-if [[ $(jq -s 'length' <<<"$contracts") != 1 ]]; then
-    echo "error: $contracts_path must be one YAML document" >&2
+if ! jq -s -e 'length == 1 and (.[0] | length > 0)' <<<"$contracts" >/dev/null; then
+    echo "error: $contracts_path must be one non-empty YAML document" >&2
     exit 1
 fi
 
-# Shape first: an entry with no usable break, a misspelled key or a reused id
-# would otherwise pass without proving anything.
+# A misspelled key (`expect:`) is read as absent, so its contract would pass
+# without the value it was written to carry; a break YAML reads as a map (an
+# unquoted `: `) fires on its own text, proving nothing.
 shape=$(jq -r '
     def text: type == "string" and length > 0;
-    def texts: text or (type == "array" and length > 0 and all(.[]; text));
-    if type != "array" or length == 0 then "it holds no contracts"
-    else
-        (map(.id) | group_by(.)[] | select(length > 1) | "duplicate id \(.[0])"),
-        (.[] | (.id // "?") as $id
-            | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"),
-              ((["id", "file", "why", "assert", "break"] - keys)[] | "\($id): missing `\(.)`"),
-              (select((.id | text) and (.why | text) and (.assert | text) | not)
-                  | "\($id): id, why and assert must be non-empty strings"),
-              (select(.file | texts | not) | "\($id): file must be a path or a non-empty list of paths"),
-              (select(.break | texts | not) | "\($id): break must be a jq edit or a non-empty list of them"),
-              (select(has("expected") and (.expected | type) != "string") | "\($id): expected must be a string"),
-              (select(has("covers") and (.covers | text | not)) | "\($id): covers must be a non-empty string"))
-    end' <<<"$contracts")
+    .[] | (.id // "?") as $id
+    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"),
+      (select(.break | text or (type == "array" and length > 0 and all(.[]; text)) | not)
+          | "\($id): break must be a jq edit or a non-empty list of them")' <<<"$contracts")
 if [[ -n $shape ]]; then
     printf 'error: %s: %s\n' "$contracts_path" "$shape" >&2
     exit 1

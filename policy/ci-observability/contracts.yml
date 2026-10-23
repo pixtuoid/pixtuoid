@@ -56,7 +56,7 @@
   assert: |
     ([.jobs.publish.steps[] | .run // ""] | join("\n")) as $publish
     | .permissions == {}
-      and ([.jobs | to_entries[] | select(.key != "publish") | .value | tostring | test("secrets\\.")] | any | not)
+      and ([.jobs | to_entries[] | select(.key != "publish") | .value | tostring | test("secrets")] | any | not)
       and .jobs.publish.permissions == {}
       and ([.jobs.publish.steps[] | .uses // empty | sub("@.*"; "")] - ["actions/checkout", "actions/download-artifact", "actions/create-github-app-token", "peter-evans/create-pull-request"]) == []
       and ([.jobs.publish.steps[] | select((.uses // "") | startswith("actions/checkout@")) | .with["persist-credentials"]] | all(. == false))
@@ -64,6 +64,9 @@
       and ($publish | test("\\bgit\\s+(add|commit|push)\\b") | not)
   break:
     - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets.BOT_APP_KEY }}"}, "run": "true"}]}'
+    - '.jobs.extra = {"uses": "./.github/workflows/x.yml", "secrets": "inherit"}'
+    - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"ALL": "${{ toJSON(secrets) }}"}, "run": "true"}]}'
+    - '.jobs.extra = {"runs-on": "ubuntu-latest", "steps": [{"env": {"T": "${{ secrets[\"BOT_APP_KEY\"] }}"}, "run": "true"}]}'
     - '.permissions = {"contents": "write"}'
     - '.jobs.publish.permissions = {"contents": "write"}'
     - '.jobs.publish.steps += [{"run": "cargo build"}]'
@@ -72,29 +75,15 @@
     - '.jobs.publish.steps[0].with["persist-credentials"] = true'
     - '.jobs.publish.steps += [{"run": "bash scripts/x.sh"}]'
 
-- id: media-regen-commits-only-the-readme-media
+- id: media-render-job-only-reads
   file: .github/workflows/media-regen.yml
   why: >-
-    Beside `bot-publish-runs-no-tree-code`: render only reads, and the one thing
-    publish commits is the README's media, from main.
+    Beside `bot-publish-runs-no-tree-code`: the render job runs the tree's code,
+    so it only reads.
   assert: |
     .jobs.render.permissions == {"contents": "read"}
-    and ([.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/create-pull-request@")) | .with["add-paths"]] == ["docs/images"])
-    and ((.on | keys) - ["push", "workflow_dispatch"]) == []
   break:
     - '.jobs.render.permissions.contents = "write"'
-    - '(.jobs.publish.steps[] | select((.uses // "") | startswith("peter-evans/")) | .with["add-paths"]) = "."'
-    - .on.pull_request = {}
-
-- id: hermetic-publish-only-on-main
-  file: .github/workflows/hermetic-nightly.yml
-  why: >-
-    Beside `bot-publish-runs-no-tree-code`: a dispatch on a branch is a
-    pre-merge proof, so only main's nightly opens bump PRs.
-  assert: |
-    .jobs.publish.if | test("github\\.ref == 'refs/heads/main'")
-  break:
-    - '.jobs.publish.if = "${{ true }}"'
 
 - id: nightly-files-issues-from-a-job-that-runs-no-tree-code
   file: .github/workflows/hermetic-nightly.yml
@@ -282,56 +271,73 @@
                  and (.permissions["id-token"] != "write"
                       or any(.steps[]?; .uses == "pixtuoid/.github/.github/actions/upload-codecov@main")))
   break:
-    - del(.jobs.smoke.permissions)
-    - .jobs.smoke.permissions["id-token"] = "write"
+    - del(.jobs.test.permissions)
     - .jobs.test.steps |= map(select(.uses != "pixtuoid/.github/.github/actions/upload-codecov@main"))
 
 # ── The merge gate
 
-- id: group-required-judges-every-job
+- id: aggregators-judge-every-job
+  file:
+    - .github/workflows/ci.yml
+    - .github/workflows/hermetic.yml
+  why: >-
+    `gate` is the only CI check branch protection requires; hermetic's jobs are
+    all full-tier, and how a call whose every job skipped reports is
+    undocumented, so its `required` is the job that always runs. A job skipped because a job it needs failed reports
+    "Success" and does not block a merge
+    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions),
+    so each aggregator must run on `always()`, need every other job, and judge
+    them all through require-jobs, which counts skipped and cancelled as red.
+  assert: |
+    (.jobs.gate // .jobs.required) as $agg
+    | ((.jobs | keys) - ["gate", "required", "tier"]) == ($agg.needs | sort)
+      and $agg.if == "${{ always() }}"
+      and ($agg | has("continue-on-error") | not)
+      and ([$agg.steps[]
+            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
+            | select(.with.results == "${{ toJSON(needs) }}")
+            | select((has("if") or has("continue-on-error")) | not)]
+           | length == 1)
+  break:
+    - '.jobs.unlisted = {"uses": "./.github/workflows/unlisted.yml"}'
+    - (.jobs.gate // .jobs.required).if = "${{ success() }}"
+    - (.jobs.gate // .jobs.required).needs |= .[1:]
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "{}" else . end)
+    - (.jobs.gate // .jobs.required)["continue-on-error"] = true
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
+    - |
+      (.jobs.gate // .jobs.required).steps |= map(
+        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
+
+- id: group-jobs-skip-only-by-tier-or-scope
   file:
     - .github/workflows/ci-lint.yml
     - .github/workflows/ci-builds.yml
     - .github/workflows/ci-tests.yml
     - .github/workflows/site.yml
     - .github/workflows/raycast.yml
-    - .github/workflows/hermetic.yml
   why: >-
-    ci.yml's gate sees a group only through the call's result, and GitHub does
-    not document how a called workflow's jobs roll up into it. The `required`
-    job is what judges each one — through require-jobs, which counts skipped
-    and cancelled as red — so it must need every other job, and must run even
-    when one of them fails.
+    A group's own aggregator reaches ci-gate only through the call's result, as
+    its jobs do, so it adds nothing for a failed job; what it judged was a skip,
+    which reads as success
+    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions).
+    So these groups have none, and a job may skip only as a light-tier
+    full-only job or on its own path scope, never through `needs` on a job
+    that failed.
   assert: |
-    .jobs.required as $required
-    | (.jobs | keys - ["required"]) == ($required.needs | sort)
-      and $required.if == "${{ always() }}"
-      and ($required | has("continue-on-error") | not)
-      and ([$required.steps[]
-            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
-            | select(.with.results == "${{ toJSON(needs) }}")
-            | select((has("if") or has("continue-on-error")) | not)]
-           | length == 1)
+    all(.jobs[];
+      (.needs == null and (.if == null or .if == "${{ inputs.full }}"))
+      or (.needs == "scope" and .if == "needs.scope.outputs.changed == 'true'"))
   break:
-    - '.jobs.unlisted = {"runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
-    - del(.jobs.required.if)
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "{}" else . end)
-    - .jobs.required["continue-on-error"] = true
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
-    - |
-      .jobs.required.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
+    - '.jobs.extra = {"needs": "x", "runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
+    - '.jobs.extra = {"if": "${{ !inputs.full }}", "runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}'
 
 - id: only-the-light-tier-passes-skipped-jobs
-  file:
-    - .github/workflows/ci-builds.yml
-    - .github/workflows/ci-tests.yml
-    - .github/workflows/site.yml
-    - .github/workflows/hermetic.yml
+  file: .github/workflows/hermetic.yml
   why: >-
     A PR's light tier skips its full-only jobs by design and must still pass
     ci-gate to enter the queue; the full tier judges the same jobs on the
@@ -362,39 +368,6 @@
       .jobs.tier.steps |= map(if .id == "tier" then .env.FULL = "${{ github.event_name != 'pull_request' || (startsWith(github.head_ref, 'mergify/') && github.event.pull_request.head.repo.full_name == github.repository) }}" else . end)
     - |
       .jobs.tier.steps |= map(if .id == "tier" then .env.FULL = "true" else . end)
-
-- id: ci-gate-judges-every-group
-  file: .github/workflows/ci.yml
-  why: >-
-    `gate` is the only CI check branch protection requires. A job skipped
-    because a job it needs failed reports "Success" and does not block a merge
-    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions),
-    so `gate` must run on `always()`; it must also need every group call and
-    judge them all through require-jobs, or a group left out is free to fail.
-  assert: |
-    .jobs.gate as $gate
-    | ([.jobs | to_entries[] | select(.value | has("uses")) | .key] | sort) == ($gate.needs | sort)
-      and $gate.if == "${{ always() }}"
-      and ($gate | has("continue-on-error") | not)
-      and ([$gate.steps[]
-            | select(.uses == "pixtuoid/.github/.github/actions/require-jobs@main")
-            | select(.with.results == "${{ toJSON(needs) }}")
-            | select((has("if") or has("continue-on-error")) | not)]
-           | length == 1)
-  break:
-    - .jobs.gate.if = "${{ success() }}"
-    - '.jobs.extra = {"uses": "./.github/workflows/ci-extra.yml"}'
-    - .jobs.gate.needs |= map(select(. != "tests"))
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .with.results = "${{ toJSON(needs.lint) }}" else . end)
-    - .jobs.gate["continue-on-error"] = true
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .if = "${{ success() }}" else . end)
-    - |
-      .jobs.gate.steps |= map(
-        if .uses == "pixtuoid/.github/.github/actions/require-jobs@main" then .["continue-on-error"] = true else . end)
 
 # ── Publishing
 
@@ -438,53 +411,26 @@
     - (.jobs[] | select(has("environment")) | .environment) = "staging"
     - del(.jobs[].permissions["id-token"])
 
-- id: credential-jobs-restore-no-cache
-  file: .github/workflows/release-plz.yml
-  why: >-
-    Both release-plz jobs compile with RELEASE_PLZ_TOKEN in scope, and
-    `release` with the publish OIDC claim too; a restored cache is written by
-    any main run, so it would hand that code to a credential-holding build
-    (zizmor cache-poisoning).
-  assert: |
-    [.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just")]
-    | length > 0 and all(.[]; (.with["enable-cache"] // "") == "false")
-  break:
-    - (.jobs.release.steps[] | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with) |= del(.["enable-cache"])
-    - (.jobs["release-pr"].steps[] | select((.uses // "") == "./.github/actions/setup-cargo-just") | .with["enable-cache"]) = "true"
-    - .jobs |= map_values(.steps |= map(select((.uses // "") != "./.github/actions/setup-cargo-just")))
-
-- id: release-builds-restore-no-cache
-  file: .github/workflows/release.yml
+- id: release-workflows-restore-no-cache
+  file:
+    - .github/workflows/release.yml
+    - .github/workflows/release-plz.yml
   why: >-
     A tag's run restores main's caches ("Workflow runs can restore caches
     created in either the current branch or the default branch",
     docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
-    into the builds whose binaries are attested and published. zizmor's
-    cache-poisoning audit reads only a job's own steps, never a local
+    into builds that are attested and published, and release-plz's jobs compile
+    with RELEASE_PLZ_TOKEN in scope, `release` with the publish OIDC claim too.
+    zizmor's cache-poisoning audit reads only a job's own steps, never a local
     composite's (zizmorcore/zizmor v1.30.0
     crates/zizmor/src/audit/cache_poisoning.rs:796-813), and setup-cargo-just
-    restores by default.
+    restores by default; only `cache-mode` scopes the token under it.
   assert: |
-    all(.jobs[].steps[]? | select((.uses // "") == "./.github/actions/setup-cargo-just");
-        (.with["enable-cache"] // "") == "false")
+    .["cache-mode"] == "none" and all(.jobs[]; (.["cache-mode"] // "none") == "none")
   break:
-    - '.jobs.build.steps += [{"uses": "./.github/actions/setup-cargo-just"}]'
-    - '.jobs.build.steps += [{"uses": "./.github/actions/setup-cargo-just", "with": {"enable-cache": "true"}}]'
-
-- id: release-attests-before-publishing
-  file: .github/workflows/release.yml
-  why: >-
-    softprops publishes the draft once its assets are attached, so an
-    attestation after it can fail with the release already public and its
-    binaries unattested.
-  assert: |
-    .jobs.release.steps as $steps
-    | ([$steps | to_entries[] | select((.value.uses // "") | startswith("actions/attest")) | .key] | min) as $attest
-    | ([$steps | to_entries[] | select((.value.uses // "") | startswith("softprops/action-gh-release@")) | .key] | min) as $publish
-    | $attest != null and $attest < $publish
-  break:
-    - .jobs.release.steps |= ([.[] | select((.uses // "") | startswith("actions/attest") | not)] + [.[] | select((.uses // "") | startswith("actions/attest"))])
-    - .jobs.release.steps |= map(select((.uses // "") | startswith("actions/attest") | not))
+    - del(.["cache-mode"])
+    - '.["cache-mode"] = "read"'
+    - '.jobs.release["cache-mode"] = "write"'
 
 - id: release-publishes-after-ci-gate
   file: .github/workflows/release-plz.yml
@@ -501,41 +447,66 @@
                                        and .with.command == "release"))] as $publishers
     | ($publishers | length == 1)
       and (($publishers[0].if // "") | test("always\\(|failure\\(|cancelled\\(") | not)
-      and ([$publishers[0].needs] | flatten | any(.[]; . as $need | $jobs[$need]
-            | (has("continue-on-error") | not)
-              and any(.steps[]; .env.CHECK_NAME == "ci-gate" and .env.SHA == "${{ github.sha }}"
-                                and ((has("if") or has("continue-on-error")) | not))))
+      and ([$publishers[0].needs] | flatten | any(.[]; $jobs[.].uses == "./.github/workflows/wait-ci-gate.yml"))
   break:
     - del(.jobs.release.needs)
     - .jobs.release.if += " || always()"
-    - .jobs["ci-passed"]["continue-on-error"] = true
-    - .jobs["ci-passed"].steps[0].env.SHA = "${{ github.event.before }}"
-    - .jobs["ci-passed"].steps[0].env.CHECK_NAME = "lint"
-    - .jobs["ci-passed"].steps[0]["continue-on-error"] = true
-    - .jobs["ci-passed"].steps[0].if = "${{ false }}"
+    - .jobs["ci-passed"].uses = "./.github/workflows/other.yml"
     - .jobs.dup = .jobs.release
+
+- id: release-builds-wait-for-ci-gate
+  file: .github/workflows/release.yml
+  why: >-
+    A tag is checked only for its ancestry and version, so a commit whose CI
+    failed or has not finished would build and publish to npm and the GitHub
+    release; every build waits for that commit's own ci-gate, a tester tag's
+    included.
+  assert: |
+    .jobs["ci-passed"].uses == "./.github/workflows/wait-ci-gate.yml"
+      and (.jobs["ci-passed"] | has("if") | not)
+      and .jobs["ci-passed"].permissions.checks == "read"
+      and .jobs.build.needs == "ci-passed"
+      and .jobs.deb.needs == "ci-passed"
+  break:
+    - .jobs["ci-passed"].uses = "./.github/workflows/other.yml"
+    - .jobs["ci-passed"].if = "${{ false }}"
+    - del(.jobs["ci-passed"].permissions.checks)
+    - del(.jobs.build.needs)
+    - .jobs.deb.needs = "check"
+
+- id: the-ci-gate-wait-cannot-pass-unwaited
+  file: .github/workflows/wait-ci-gate.yml
+  why: >-
+    Both release paths proceed on this call's success, so neither its job nor
+    its step may skip or swallow a wait that went red or timed out.
+  assert: |
+    all(.jobs[]; ((has("if") or has("continue-on-error")) | not)
+                 and all(.steps[]; (has("if") or has("continue-on-error")) | not))
+  break:
+    - .jobs.wait["continue-on-error"] = true
+    - .jobs.wait.if = "${{ false }}"
+    - .jobs.wait.steps[0].if = "${{ false }}"
+    - .jobs.wait.steps[0]["continue-on-error"] = true
 
 - id: every-main-push-gets-its-ci-gate
   file: .github/workflows/ci.yml
   why: >-
     The release waits for ci-gate on its own merge commit, and a concurrency
-    group's newer run replaces its pending one unless the group queues
+    group's newer run replaces its pending one
     (docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency),
     so a release commit whose run was replaced never gets one and the publish
-    times out. A main push therefore owns its group or queues in it, and a run
-    already in progress is never cancelled.
+    times out. A main push therefore owns its group, and a run already in
+    progress is never cancelled.
   expected: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   assert: |
-    .concurrency as $c
-    | (($c.group == $expected)
-        or ($c.queue == "max" and ($c["cancel-in-progress"] // false | tostring) == "false"))
-      and (($c["cancel-in-progress"] // false | tostring) as $cancel
-           | $cancel == "false" or $cancel == "${{ github.event_name == 'pull_request' }}")
+    .concurrency.group == $expected
+      and (.concurrency["cancel-in-progress"] | tostring) == "${{ github.event_name == 'pull_request' }}"
   break:
     - .concurrency.group = "ci-${{ github.ref }}"
     - .concurrency.group = "ci-${{ github.event_name == 'push' && github.ref || github.sha }}"
     - .concurrency["cancel-in-progress"] = true
     - .concurrency["cancel-in-progress"] = "${{ github.event_name != 'workflow_dispatch' }}"
+    - del(.concurrency["cancel-in-progress"])
 
 - id: release-wait-only-for-a-release-merge
   file: .github/workflows/release-plz.yml
@@ -549,7 +520,7 @@
     .jobs as $jobs
     | [$jobs | to_entries[] | select(any(.value.steps[]?; .env.PR_BRANCH_PREFIX != null
                                          and ((.run // "") | contains("/commits/$SHA/pulls"))))] as $detectors
-    | [$jobs[] | select(any(.steps[]?; .env.CHECK_NAME == "ci-gate"))] as $waits
+    | [$jobs[] | select(.uses == "./.github/workflows/wait-ci-gate.yml")] as $waits
     | [$jobs[] | select(any(.steps[]?; (.run // "") | contains("just workspace-version")))] as $tagged
     | ($detectors | length == 1)
       and ($waits | length == 1)
@@ -565,19 +536,6 @@
     - .jobs["version-tagged"].if = "${{ !cancelled() && needs.release-merge.outputs.release == 'true' }}"
     - .jobs.dup = .jobs["ci-passed"]
     - .jobs.dup = .jobs["version-tagged"]
-
-- id: release-plz-publishes-only-release-prs
-  file: release-plz.toml
-  why: >-
-    release-plz's default releases every unpublished package on every run
-    (release-plz.dev/docs/config#the-release_always-field), and the release
-    job's own gate is a copy of release-plz's test, so without this key a gate
-    that stopped testing would ship a version bump that lands outside a release
-    PR to crates.io with no human decision.
-  assert: .workspace.release_always == false
-  break:
-    - del(.workspace.release_always)
-    - .workspace.release_always = true
 
 - id: release-archives-stage-every-notice
   file: .github/workflows/release.yml
@@ -629,24 +587,12 @@
       (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
       = "../pixtuoid/fonts/*.txt"
 
-- id: queue-restates-branch-protection
+- id: queue-merge-conditions-are-ci-gate
   file: .mergify.yml
   why: >-
     Branch protection is not injected (the bots never review the queue's draft
-    PR), so the queue admits a PR only on the checks restated here; one missing
-    lets a PR queue without it, and the merge then stalls on GitHub's own rule.
-    The draft PR is judged on the full tier's ci-gate alone.
+    PR), so its full-tier ci-gate is the only check that judges the draft.
   assert: |
-    all(.queue_rules[];
-      .branch_protection_injection_mode == "none"
-      and (.merge_bot_account // "" | length > 0)
-      and ((["check-success = ci-gate", "check-success = GitGuardian Security Checks",
-             {or: ["check-success = claude-review / claude-review", "check-skipped = claude-review / claude-review"]},
-             "#review-threads-unresolved = 0"] - .queue_conditions) == [])
-      and .merge_conditions == ["check-success = ci-gate"])
+    all(.queue_rules[]; .merge_conditions == ["check-success = ci-gate"])
   break:
-    - .queue_rules[0].queue_conditions |= map(select(type != "object"))
-    - .queue_rules[0].queue_conditions |= map(select(. != "#review-threads-unresolved = 0"))
-    - .queue_rules[0].branch_protection_injection_mode = "queue"
-    - del(.queue_rules[0].merge_bot_account)
     - .queue_rules[0].merge_conditions = []

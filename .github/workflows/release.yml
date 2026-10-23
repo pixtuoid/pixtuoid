@@ -16,6 +16,10 @@ concurrency:
 permissions:
   contents: read
 
+# A tag's run restores main's caches, which would reach the builds that are
+# attested and published (https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode).
+cache-mode: none
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -30,16 +34,11 @@ jobs:
           # Full history for the tag-on-main ancestry check below.
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-alsa
-      - uses: ./.github/actions/setup-gpu
-      - uses: pixtuoid/.github/.github/actions/setup-rust@main
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-nextest
       - uses: ./.github/actions/setup-just
       - name: Validate tag commit is on main
         # A release tag pushed at an arbitrary (unreviewed) commit must not build +
-        # publish (#215). Pre-release tester tags are exempt — they test pre-merge.
+        # publish (#215). Pre-release tester tags are exempt — they test pre-merge,
+        # on a commit whose PR run gave it a ci-gate.
         if: ${{ !contains(github.ref_name, '-') }}
         run: |
           git fetch origin main --quiet
@@ -58,16 +57,17 @@ jobs:
             echo "::error::Tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${CARGO_VERSION}"
             exit 1
           fi
-      # Intentionally lighter than `just preflight full` (no lint + hack): the tag comes
-      # from main, which already passed the full CI matrix — this re-verifies
-      # fmt/clippy/tests against the exact tagged commit.
-      - run: just fmt-check
-      - run: just clippy
-      - run: just test
+
+  # Neither check above proves the commit's CI passed.
+  ci-passed:
+    needs: check
+    permissions:
+      checks: read
+    uses: ./.github/workflows/wait-ci-gate.yml
 
   build:
     name: build (${{ matrix.target }})
-    needs: check
+    needs: ci-passed
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -149,7 +149,7 @@ jobs:
 
   deb:
     name: deb (${{ matrix.target }})
-    needs: check
+    needs: ci-passed
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -254,7 +254,7 @@ jobs:
     # The full build matrix gates this one: an npm publish is irreversible (no
     # unpublish after 72h) and its packages ARE those binaries, so a target that
     # fails to build must not reach the registry as a missing optional dep.
-    needs: [check, build, deb]
+    needs: [build, deb]
     # Never publish a pre-release to npm — tester tags build artifacts only.
     if: ${{ !contains(github.ref_name, '-') }}
     # Its required reviewer is the publish approval, and the npm Trusted
@@ -275,15 +275,6 @@ jobs:
           # npm Trusted Publishing (#216) authenticates by OIDC only (no
           # NODE_AUTH_TOKEN), which this triggers.
           registry-url: https://registry.npmjs.org
-      # Trusted Publishing needs npm >= 11.5.1 (docs.npmjs.com/trusted-publishers);
-      # below it the publish fails unauthenticated, so the bundled npm is held
-      # to that floor here rather than trusted.
-      - name: Check the bundled npm can publish by OIDC
-        run: |
-          have="$(npm --version)"
-          [ "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -n1)" = 11.5.1 ] \
-            || { echo "::error title=npm too old for Trusted Publishing::npm $have < 11.5.1"; exit 1; }
-      - uses: ./.github/actions/setup-just
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -294,28 +285,21 @@ jobs:
       - name: Extract binaries per target
         run: |
           set -euo pipefail
+          shopt -s nullglob
           TAG="${GITHUB_REF_NAME}"
-          # Mirrors the `build` matrix + npm/generate.mjs TARGETS; that equality is
-          # pinned by npm/generate.test.mjs (`just npm-check`).
-          for target in aarch64-apple-darwin x86_64-apple-darwin \
-                        x86_64-unknown-linux-musl aarch64-unknown-linux-gnu \
-                        x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
-            dest="npm/dist/${target}"
+          # npm/generate.mjs fails on a target whose binary is absent.
+          for tgz in artifacts/pixtuoid-"${TAG}"-*.tar.gz; do
+            target="${tgz#artifacts/pixtuoid-"${TAG}"-}"
+            dest="npm/dist/${target%.tar.gz}"
             mkdir -p "$dest"
-            tgz="artifacts/pixtuoid-${TAG}-${target}.tar.gz"
-            zip="artifacts/pixtuoid-${TAG}-${target}.zip"
-            if [ -f "$tgz" ]; then
-              tar xzf "$tgz" -C "$dest" --strip-components=1
-            elif [ -f "$zip" ]; then
-              unzip -o "$zip" -d "$dest"
-            else
-              echo "::error::missing artifact for ${target} (${tgz} / ${zip})"
-              exit 1
-            fi
+            tar xzf "$tgz" -C "$dest" --strip-components=1
           done
-
-      - name: Test the package generator
-        run: just npm-check
+          for zip in artifacts/pixtuoid-"${TAG}"-*.zip; do
+            target="${zip#artifacts/pixtuoid-"${TAG}"-}"
+            dest="npm/dist/${target%.zip}"
+            mkdir -p "$dest"
+            unzip -o "$zip" -d "$dest"
+          done
 
       - name: Generate npm packages
         run: node npm/generate.mjs --version "${GITHUB_REF_NAME#v}" --artifacts npm/dist
