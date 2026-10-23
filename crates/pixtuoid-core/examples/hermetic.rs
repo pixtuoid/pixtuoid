@@ -1162,17 +1162,37 @@ mod run {
         let fetch = |name: &str, dest: &Path| curl_download(&format!("{base}/{name}"), dest);
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
-        fetch(asset, to)?;
+        let payload = to.with_file_name("payload");
+        fetch(asset, &payload)?;
         if !digest::vouches(
             &std::fs::read_to_string(&listed)?,
             asset,
-            &std::fs::read(to)?,
+            &std::fs::read(&payload)?,
         ) {
             return Err(std::io::Error::other(format!(
                 "{asset} does not match v{version}'s {sums}"
             )));
         }
+        install_release_payload(asset, &payload, to)
+    }
+
+    fn install_release_payload(asset: &str, payload: &Path, to: &Path) -> std::io::Result<()> {
+        if let Some(member) = asset.strip_suffix(".tar.gz") {
+            extract_binary(payload, member, to)?;
+        } else {
+            std::fs::rename(payload, to)?;
+        }
         make_executable(to)
+    }
+
+    fn extract_binary(payload: &Path, member: &str, to: &Path) -> std::io::Result<()> {
+        let mut untar = tool(TAR);
+        untar
+            .args(["-xOzf"])
+            .arg(payload)
+            .arg(member)
+            .stdout(std::fs::File::create(to)?);
+        succeed(untar)
     }
 
     fn make_executable(path: &Path) -> std::io::Result<()> {
@@ -1314,15 +1334,7 @@ mod run {
                         )));
                     }
                     if build.url.ends_with(".tar.gz") {
-                        let mut untar = tool(TAR);
-                        untar
-                            .arg("-xzf")
-                            .arg(&payload)
-                            .arg("-C")
-                            .arg(dir)
-                            .arg(member);
-                        succeed(untar)?;
-                        std::fs::rename(dir.join(member), &program)?;
+                        extract_binary(&payload, member, &program)?;
                     } else {
                         std::fs::rename(&payload, &program)?;
                     }
@@ -3519,6 +3531,34 @@ mod run {
             ] {
                 assert_eq!(latest_tag(bad), None, "{bad:?}");
             }
+        }
+
+        #[test]
+        fn release_payload_installs_raw_binaries_and_only_the_named_archive_member() {
+            let dir = tempfile::tempdir().expect("sandbox");
+            let payload = dir.path().join("payload");
+            let program = dir.path().join("installed");
+            std::fs::write(&payload, b"raw executable").unwrap();
+            install_release_payload("cli.exe", &payload, &program).unwrap();
+            assert_eq!(std::fs::read(&program).unwrap(), b"raw executable");
+
+            let member = "cli-macos-aarch64";
+            std::fs::write(dir.path().join(member), b"archived executable").unwrap();
+            std::fs::write(dir.path().join("unrelated"), b"must not be unpacked").unwrap();
+            let mut pack = tool(TAR);
+            pack.arg("-czf")
+                .arg(&payload)
+                .arg("-C")
+                .arg(dir.path())
+                .args([member, "unrelated"]);
+            succeed(pack).unwrap();
+            std::fs::remove_file(dir.path().join(member)).unwrap();
+            std::fs::remove_file(dir.path().join("unrelated")).unwrap();
+            install_release_payload("cli-macos-aarch64.tar.gz", &payload, &program).unwrap();
+            assert_eq!(std::fs::read(&program).unwrap(), b"archived executable");
+            assert!(!dir.path().join(member).exists());
+            assert!(!dir.path().join("unrelated").exists());
+            assert!(install_release_payload("absent.tar.gz", &payload, &program).is_err());
         }
 
         /// Each OS leg of the tier runs every profile on its own host.

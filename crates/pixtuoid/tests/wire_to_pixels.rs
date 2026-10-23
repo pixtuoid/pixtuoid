@@ -260,6 +260,13 @@ fn agent_cases() -> Vec<WireCase> {
             must_reach: &[Reach::Active],
         },
         WireCase {
+            name: "jcode",
+            source: "jcode",
+            fixture: "fixtures/jcode/tool-run-hermetic/hook-payloads.jsonl",
+            wire: Wire::Hooks,
+            must_reach: &[Reach::Active],
+        },
+        WireCase {
             name: "opencode",
             source: "opencode",
             fixture: "fixtures/opencode/session-recorded/hook-payloads.jsonl",
@@ -429,6 +436,55 @@ fn reasonix_hook_envelope_renders_a_painted_sprite() {
 #[test]
 fn codewhale_hook_envelope_renders_a_painted_sprite() {
     assert_renders_a_sprite(&agent_case("codewhale"));
+}
+
+#[test]
+fn jcode_hook_envelope_renders_a_painted_sprite_and_native_identifier() {
+    let case = agent_case("jcode");
+    assert_renders_a_sprite(&case);
+    let lines = read_nonblank_lines(&core_fixtures_root().join(case.fixture));
+    let live = lines.into_iter().take_while(|line| {
+        serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] != "session_end"
+    });
+    let driven = Drive::hooks().at(t0()).lines(live);
+    driven.assert_clean("Jcode's live window");
+    let slot = driven
+        .scene
+        .agents
+        .values()
+        .next()
+        .expect("recorded Jcode session");
+    let native_name = slot
+        .session_id
+        .strip_prefix("session_")
+        .and_then(|id| id.split('_').next())
+        .expect("native session name");
+    assert_eq!(&*slot.label, format!("jc·{native_name}"));
+    let mut renderer = new_renderer(120, 44);
+    renderer
+        .render(&driven.scene, &pack(), t0() + Duration::from_secs(1))
+        .unwrap();
+    let text: String = renderer
+        .terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(
+        text.contains(native_name),
+        "the composed terminal frame must retain its English name: {:?}",
+        renderer
+            .terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(120)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .filter(|row| row.contains("🐣"))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

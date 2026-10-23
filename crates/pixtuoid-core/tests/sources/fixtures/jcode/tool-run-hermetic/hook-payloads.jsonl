@@ -1,0 +1,6 @@
+{"event":"session_start","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","model":"hermetic","_shim_ts_ms":1792631959279,"_pixtuoid_source":"jcode"}
+{"event":"turn_start","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","model":"hermetic","_shim_ts_ms":1792631959289,"_pixtuoid_source":"jcode"}
+{"event":"pre_tool","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","tool_name":"read","_shim_ts_ms":1792631959316,"_pixtuoid_source":"jcode"}
+{"event":"post_tool","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","tool_name":"","_shim_ts_ms":1792631959323,"_pixtuoid_source":"jcode"}
+{"event":"turn_end","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","model":"hermetic","_shim_ts_ms":1792631959331,"_pixtuoid_source":"jcode"}
+{"event":"session_end","session_id":"session_macaque_1792631959254_39469b413fdd3297","cwd":"/private/tmp/pixtuoid-capture/proj","model":"","_shim_ts_ms":1792631959333,"_pixtuoid_source":"jcode"}

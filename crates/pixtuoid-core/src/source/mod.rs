@@ -422,6 +422,7 @@ pub mod hermes;
 #[cfg(feature = "native")]
 /// The shared hook socket listener + router every CLI's hook shim connects to.
 pub mod hook;
+pub mod jcode;
 #[cfg(feature = "native")]
 /// The JSONL transcript watcher: tails per-session `.jsonl` files with the
 /// first-sight gate + liveness probe ladder.

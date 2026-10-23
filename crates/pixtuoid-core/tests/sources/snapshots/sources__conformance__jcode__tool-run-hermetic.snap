@@ -1,0 +1,77 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 7191791799597382602
+    source: jcode
+    session_id: session_macaque_1792631959254_39469b413fdd3297
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Rename:
+    agent_id: 7191791799597382602
+    label: jc·macaque
+- ModelInfo:
+    agent_id: 7191791799597382602
+    model: hermetic
+    effort: ~
+- SessionStart:
+    agent_id: 7191791799597382602
+    source: jcode
+    session_id: session_macaque_1792631959254_39469b413fdd3297
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Rename:
+    agent_id: 7191791799597382602
+    label: jc·macaque
+- ModelInfo:
+    agent_id: 7191791799597382602
+    model: hermetic
+    effort: ~
+- ActivityStart:
+    agent_id: 7191791799597382602
+    tool_use_id: ~
+    detail: ~
+- Identity:
+    agent_id: 7191791799597382602
+    source: jcode
+    session_id: session_macaque_1792631959254_39469b413fdd3297
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Rename:
+    agent_id: 7191791799597382602
+    label: jc·macaque
+- ActivityStart:
+    agent_id: 7191791799597382602
+    tool_use_id: ~
+    detail:
+      Generic:
+        display: read
+- Identity:
+    agent_id: 7191791799597382602
+    source: jcode
+    session_id: session_macaque_1792631959254_39469b413fdd3297
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Rename:
+    agent_id: 7191791799597382602
+    label: jc·macaque
+- ActivityEnd:
+    agent_id: 7191791799597382602
+    tool_use_id: ~
+- Identity:
+    agent_id: 7191791799597382602
+    source: jcode
+    session_id: session_macaque_1792631959254_39469b413fdd3297
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Rename:
+    agent_id: 7191791799597382602
+    label: jc·macaque
+- ModelInfo:
+    agent_id: 7191791799597382602
+    model: hermetic
+    effort: ~
+- ActivityEnd:
+    agent_id: 7191791799597382602
+    tool_use_id: ~
+- SessionEnd:
+    agent_id: 7191791799597382602
+    as_child: false

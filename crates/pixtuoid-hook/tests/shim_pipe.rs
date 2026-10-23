@@ -223,6 +223,68 @@ async fn codex_cmd_c_invocation_of_hook_command_stamps_source() {
     assert!(status.success(), "cmd.exe wrapper exits 0");
 }
 
+#[tokio::test]
+async fn jcode_env_mode_ignores_stdin_and_forwards_only_identity_metadata() {
+    let name = format!(r"\\.\pipe\pixtuoid-test-jcode-{}", std::process::id());
+    let mut server = ServerOptions::new()
+        .first_pipe_instance(true)
+        .pipe_mode(PipeMode::Byte)
+        .create(&name)
+        .unwrap();
+    let shim = std::thread::spawn(move || {
+        let mut child = Command::new(shim_bin())
+            .args(["--source", "jcode", "--pixtuoid-managed"])
+            .env("PIXTUOID_SOCKET", &name)
+            .env("PIXTUOID_SOURCE", "codex")
+            .env("JCODE_HOOK_EVENT", "pre_tool")
+            .env("JCODE_HOOK_SESSION_ID", "session_fox_1791936000000_abc")
+            .env("JCODE_HOOK_CWD", r"C:\repo\jcode-test")
+            .env("JCODE_HOOK_TOOL_NAME", "read")
+            .env("JCODE_HOOK_MODEL", "test-model")
+            .env("JCODE_HOOK_PAYLOAD", "private-payload")
+            .env("JCODE_HOOK_TOOL_INPUT", "private-arguments")
+            .env("JCODE_HOOK_LAST_ASSISTANT_TEXT", "private-reply")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let output = child.wait_with_output().unwrap();
+        drop(stdin);
+        output
+    });
+    tokio::time::timeout(Duration::from_secs(3), server.connect())
+        .await
+        .expect("Jcode hooks must not wait for stdin EOF")
+        .unwrap();
+    let mut bytes = Vec::new();
+    server.read_to_end(&mut bytes).await.unwrap();
+    let mut payload: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("_shim_ts_ms")
+            .is_some()
+    );
+    assert_eq!(
+        payload,
+        serde_json::json!({
+            "_pixtuoid_source": "jcode",
+            "event": "pre_tool",
+            "session_id": "session_fox_1791936000000_abc",
+            "cwd": r"C:\repo\jcode-test",
+            "tool_name": "read",
+            "model": "test-model"
+        })
+    );
+    let output = shim.join().unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 #[test]
 fn missing_pipe_exits_zero_without_blocking() {
     let (out, elapsed) = run_shim_output(r"\\.\pipe\pixtuoid-test-nonexistent", &[], "{}");

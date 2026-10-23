@@ -478,6 +478,8 @@ impl core::marker::Unpin for pixtuoid_core::source::hook::SocketBusy
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::hook::SocketBusy
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::SocketBusy
+pub mod pixtuoid_core::source::jcode
+pub const pixtuoid_core::source::jcode::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::jsonl
 #[non_exhaustive] pub enum pixtuoid_core::source::jsonl::TailActivity
 pub pixtuoid_core::source::jsonl::TailActivity::At(u64)

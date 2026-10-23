@@ -327,6 +327,7 @@ pub struct SourceColors {
     pub(crate) kimi: Rgb,
     /// DeepSeek Harness badge hue.
     pub(crate) dsh: Rgb,
+    pub(crate) jcode: Rgb,
 }
 
 impl SourceColors {
@@ -334,7 +335,7 @@ impl SourceColors {
     /// guard and the count-pin test share, so a new source can't silently escape
     /// the per-theme distinctness check.
     #[cfg(test)]
-    pub(crate) fn all(&self) -> [Rgb; 14] {
+    pub(crate) fn all(&self) -> [Rgb; 15] {
         [
             self.claude_code,
             self.codex,
@@ -350,6 +351,7 @@ impl SourceColors {
             self.grok,
             self.kimi,
             self.dsh,
+            self.jcode,
         ]
     }
 
@@ -372,6 +374,7 @@ impl SourceColors {
             "gk" => self.grok,
             "km" => self.kimi,
             "ds" => self.dsh,
+            "jc" => self.jcode,
             _ => return None,
         })
     }

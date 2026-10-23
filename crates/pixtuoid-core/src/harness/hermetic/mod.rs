@@ -70,7 +70,8 @@ pub enum Package {
         /// redirects only until it is reused
         /// (docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository).
         repo: &'static str,
-        /// Each platform's binary, as `(OS, ARCH, asset)` in
+        /// Each platform's executable or `.tar.gz` containing one named as
+        /// the asset without that suffix, as `(OS, ARCH, asset)` in
         /// [`std::env::consts`]' spelling.
         assets: &'static [(&'static str, &'static str, &'static str)],
         /// The release's file that must vouch for the download
@@ -484,6 +485,7 @@ pub const PROFILES: &[Profile] = &[
     profiles::hermes::PROFILE,
     profiles::antigravity::PROFILE,
     profiles::openclaw::PROFILE,
+    profiles::jcode::PROFILE,
 ];
 
 /// Every registered source without a profile, and why.
@@ -511,7 +513,15 @@ pub const SHARDS: &[&[&str]] = &[
         "claude-code",
         "opencode",
     ],
-    &["hermes", "dsh", "copilot", "omp", "reasonix", "antigravity"],
+    &[
+        "hermes",
+        "dsh",
+        "copilot",
+        "omp",
+        "reasonix",
+        "antigravity",
+        "jcode",
+    ],
 ];
 
 /// Where each profile's scenario scripts live, as `<source>/<name>.json`, and

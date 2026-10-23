@@ -13,7 +13,7 @@ use crate::source::decoder::{
 };
 use crate::source::{
     AgentEvent, antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes,
-    kimi, omp, openclaw, opencode, reasonix,
+    jcode, kimi, omp, openclaw, opencode, reasonix,
 };
 
 /// The wire NAME of the per-call tool id in this source's hook envelope, read by
@@ -382,6 +382,7 @@ pub const REGISTRY: &[SourceDescriptor] = &[
     OPENCLAW,
     GROK,
     KIMI,
+    JCODE,
 ];
 
 /// Linear scan — a handful of entries; a map would cost more ceremony than it
@@ -661,6 +662,27 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
             child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
+    },
+};
+
+const JCODE: SourceDescriptor = SourceDescriptor {
+    name: jcode::SOURCE_NAME,
+    label_prefix: "jc",
+    verified_version: "0.99.0",
+    version_probe: Some(&["jcode", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(jcode::decode_jcode_hook_payload)),
+        caps: SourceCaps {
+            has_exit_signal: true,
+            resurrects_on_prompt: true,
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
+        },
+        focus: FocusChannel::Unsupported,
     },
 };
 
@@ -1167,7 +1189,8 @@ mod tests {
         assert_eq!(GROK.name, grok::SOURCE_NAME);
         assert_eq!(KIMI.name, kimi::SOURCE_NAME);
         assert_eq!(DSH.name, dsh::SOURCE_NAME);
-        assert_eq!(REGISTRY.len(), 14, "new row? add its name-pin assert above");
+        assert_eq!(JCODE.name, jcode::SOURCE_NAME);
+        assert_eq!(REGISTRY.len(), 15, "new row? add its name-pin assert above");
     }
 
     #[test]

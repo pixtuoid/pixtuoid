@@ -8,6 +8,7 @@ pub(crate) mod hermes;
 mod hook_cmd;
 pub(crate) mod host_plugin;
 pub(crate) mod io;
+pub(crate) mod jcode;
 pub(crate) mod kimi;
 pub(crate) use io::{nonempty_abs_env, owner_only_create};
 pub(crate) mod dsh;

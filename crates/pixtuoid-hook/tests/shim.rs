@@ -275,6 +275,67 @@ fn missing_socket_exits_zero_without_blocking() {
 }
 
 #[test]
+fn jcode_env_mode_ignores_stdin_and_forwards_only_identity_metadata() {
+    let path = sock_path("jcode-env");
+    let listener = UnixListener::bind(&path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut child = Command::new(BIN)
+        .args(["--source", "jcode", "--pixtuoid-managed"])
+        .env("PIXTUOID_SOCKET", &path)
+        .env("PIXTUOID_SOURCE", "codex")
+        .env("JCODE_HOOK_EVENT", "pre_tool")
+        .env("JCODE_HOOK_SESSION_ID", "session_fox_1791936000000_abc")
+        .env("JCODE_HOOK_CWD", "/repo/jcode-test")
+        .env("JCODE_HOOK_TOOL_NAME", "read")
+        .env("JCODE_HOOK_MODEL", "test-model")
+        .env("JCODE_HOOK_PAYLOAD", "private-payload")
+        .env("JCODE_HOOK_TOOL_INPUT", "private-arguments")
+        .env("JCODE_HOOK_LAST_ASSISTANT_TEXT", "private-reply")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("Jcode hooks must not wait for stdin EOF");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    let mut payload = recv_delivered_json(&listener);
+    assert!(
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("_shim_ts_ms")
+            .is_some()
+    );
+    assert_eq!(
+        payload,
+        serde_json::json!({
+            "_pixtuoid_source": "jcode",
+            "event": "pre_tool",
+            "session_id": "session_fox_1791936000000_abc",
+            "cwd": "/repo/jcode-test",
+            "tool_name": "read",
+            "model": "test-model"
+        })
+    );
+}
+
+#[test]
 fn stalled_listener_shim_exits_zero_within_watchdog_bound() {
     // A wedged accept loop with a saturated backlog is the one Unix path where
     // `connect()` itself can park forever (#167). Kernel-dependent: Linux

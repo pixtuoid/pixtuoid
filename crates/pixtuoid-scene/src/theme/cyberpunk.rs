@@ -529,6 +529,11 @@ pub static CYBERPUNK: Theme = Theme {
             g: 0x46,
             b: 0xfe,
         },
+        jcode: Rgb {
+            r: 0x60,
+            g: 0xc0,
+            b: 0x80,
+        },
         dsh: Rgb {
             r: 0x4d,
             g: 0x6b,

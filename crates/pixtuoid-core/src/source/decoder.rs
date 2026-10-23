@@ -1504,8 +1504,8 @@ mod tests {
     #[test]
     fn every_agent_decoder_caps_its_tool_display() {
         use crate::source::{
-            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, kimi,
-            omp, opencode, reasonix, registry,
+            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, jcode,
+            kimi, omp, opencode, reasonix, registry,
         };
         use serde_json::json;
         use std::collections::HashSet;
@@ -1581,6 +1581,14 @@ mod tests {
                             {"type":"toolCall","id":"t1","name":name,"arguments":{"command":tgt}}]}}),
                     )
                     .expect("omp decodes")
+                }),
+            ),
+            (
+                jcode::SOURCE_NAME,
+                Box::new(|| {
+                    jcode::decode_jcode_hook_payload(&json!({
+                        "event":"pre_tool","session_id":"session_fox_123_a","tool_name":name}))
+                    .expect("jcode decodes")
                 }),
             ),
             (
@@ -1707,8 +1715,8 @@ mod tests {
     #[test]
     fn every_agent_decoder_caps_its_waiting_reason() {
         use crate::source::{
-            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, kimi,
-            omp, opencode, reasonix, registry,
+            antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, jcode,
+            kimi, omp, opencode, reasonix, registry,
         };
         use serde_json::json;
         use std::collections::HashSet;
@@ -1834,6 +1842,16 @@ mod tests {
                         "event":"tool_call_before","cwd":"/r","tool":"bash",
                         "tool_args":"{}","message":raw}))
                     .expect("codewhale decodes")
+                }),
+            ),
+            (
+                jcode::SOURCE_NAME,
+                ReasonKind::NoWaiting,
+                Box::new(|| {
+                    jcode::decode_jcode_hook_payload(&json!({
+                        "event":"pre_tool","session_id":"session_fox_123_a",
+                        "tool_name":"bash","message":raw}))
+                    .expect("jcode decodes")
                 }),
             ),
             (

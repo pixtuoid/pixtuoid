@@ -269,6 +269,14 @@ mod tests {
     }
 
     #[test]
+    fn jcode_source_hue_is_registered_in_every_theme() {
+        for theme in crate::theme::ALL_THEMES {
+            let hue = theme.source.by_prefix("jc").expect("Jcode badge hue");
+            assert_eq!(badge_hue("jc·chipmunk", theme), Some(hue));
+        }
+    }
+
+    #[test]
     fn badge_hue_is_none_for_a_bare_prefix_without_separator() {
         assert_eq!(badge_hue("cx", &crate::theme::NORMAL), None);
     }

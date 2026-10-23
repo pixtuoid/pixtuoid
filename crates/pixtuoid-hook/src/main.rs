@@ -60,15 +60,24 @@ fn main() {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
 
-    let mut payload: Value = match event_from_argv(&args) {
+    let source = source_from_argv(&args)
+        .or_else(|| std::env::var_os("PIXTUOID_SOURCE").and_then(|v| v.into_string().ok()));
+    let jcode = source.as_deref() == Some("jcode");
+    let mut payload: Value = match (jcode, event_from_argv(&args)) {
+        (true, _) => {
+            let Some(payload) = jcode_payload() else {
+                return;
+            };
+            Value::Object(payload)
+        }
         // CodeWhale env-mode: identity arrives as `DEEPSEEK_*` env vars with
         // `--event <name>` baked into the registered command. Critically,
         // CodeWhale does NOT pipe stdin for these events, so the hook child
         // inherits the TUI's terminal stdin and a blind `read_to_string` would
         // BLOCK (freezing the synchronous tool call until the hook timeout) —
         // when `--event` is present we never touch stdin.
-        Some(event) => Value::Object(env_payload(&event)),
-        None => {
+        (false, Some(event)) => Value::Object(env_payload(&event)),
+        (false, None) => {
             let mut buf = String::new();
             if std::io::stdin()
                 .take(STDIN_CAP)
@@ -96,9 +105,10 @@ fn main() {
         // form) wins over the `PIXTUOID_SOURCE` env var (the Unix env-prefix
         // form; grok delivers the same var via its handler `env` map, so this arm
         // serves both). `--event` is orthogonal and never implies a source.
-        let source = source_from_argv(&args)
-            .or_else(|| std::env::var_os("PIXTUOID_SOURCE").and_then(|v| v.into_string().ok()));
-        enrich_payload(map, source, hook_event_from_argv(&args), now_ms(), cli_pid);
+        // Jcode's shared server can own many sessions, so its PID cannot name one.
+        enrich_payload(map, source, hook_event_from_argv(&args), now_ms(), || {
+            (!jcode).then(cli_pid).flatten()
+        });
     }
 
     // Best-effort send, hard-bounded so a stuck daemon can never block CC's
@@ -106,6 +116,27 @@ fn main() {
     let mut line = serde_json::to_vec(&payload).unwrap_or_default();
     line.push(b'\n');
     transport::send_line(&bound, &socket, &line);
+}
+
+fn jcode_payload() -> Option<serde_json::Map<String, Value>> {
+    let mut map = serde_json::Map::new();
+    // Observers have null stdin; pre_tool stdin is arguments, not an envelope.
+    // The full JCODE_HOOK_PAYLOAD also contains replies and tool input.
+    for (env_key, field) in [
+        ("JCODE_HOOK_EVENT", "event"),
+        ("JCODE_HOOK_SESSION_ID", "session_id"),
+        ("JCODE_HOOK_CWD", "cwd"),
+        ("JCODE_HOOK_TOOL_NAME", "tool_name"),
+        ("JCODE_HOOK_MODEL", "model"),
+    ] {
+        if let Some(value) = std::env::var_os(env_key).filter(|value| !value.is_empty()) {
+            map.insert(
+                field.into(),
+                Value::from(cap_env_field(value.to_string_lossy().into_owned())),
+            );
+        }
+    }
+    (map.contains_key("event") && map.contains_key("session_id")).then_some(map)
 }
 
 /// CodeWhale env-mode: synthesize the hook envelope from `DEEPSEEK_*` env vars.

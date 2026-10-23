@@ -489,6 +489,28 @@ pub(crate) const OPENCLAW: Target = Target {
     consumes: crate::install::openclaw::OPENCLAW_VERDICT_EVENTS,
 };
 
+pub(crate) const JCODE: Target = Target {
+    name: "jcode",
+    core_source: pixtuoid_core::source::jcode::SOURCE_NAME,
+    display_name: "Jcode",
+    default_config_path: crate::install::jcode::default_config_path,
+    hook_command: crate::install::jcode::hook_command,
+    primary: Primary::Config {
+        merge_install: crate::install::jcode::merge_install,
+        merge_uninstall: crate::install::jcode::merge_uninstall,
+        verify_schema: crate::install::jcode::verify_schema,
+        beside: None,
+    },
+    binary_strategy: BinaryStrategy::EmbedAbsolute,
+    presence_probe: crate::install::jcode::detect_installed,
+    post_install_hint: None,
+    host: None,
+    #[cfg(test)]
+    consumes: &[],
+    #[cfg(test)]
+    registers: || crate::install::jcode::JCODE_EVENTS.to_vec(),
+};
+
 pub(crate) const KIMI: Target = Target {
     name: "kimi",
     core_source: pixtuoid_core::source::kimi::SOURCE_NAME,
@@ -612,6 +634,7 @@ pub(crate) const TARGETS: &[&Target] = &[
     &OMP,
     &DSH,
     &ANTIGRAVITY,
+    &JCODE,
 ];
 
 // No prod caller: prod joins on the source id via `by_source`. Kept for the

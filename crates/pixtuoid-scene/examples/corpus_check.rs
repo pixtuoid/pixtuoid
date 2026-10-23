@@ -330,6 +330,7 @@ mod tests {
                 "openclaw\thook",
                 "grok\ttranscript",
                 "kimi\thook",
+                "jcode\thook",
             ],
             "the --roster columns are indexed POSITIONALLY by \
              `just corpus-all`. Update it in the same change, then this pin."

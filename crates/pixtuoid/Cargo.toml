@@ -141,6 +141,8 @@ x11rb = "0.13"
 # cmd.exe /C can invoke it.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
+    "Win32_UI_Shell",
+    "Win32_System_Com",
     "Win32_Storage_FileSystem",
     # focus/windows.rs: Toolhelp32 ancestor walk + EnumWindows/SetForegroundWindow
     "Win32_System_Diagnostics_ToolHelp",

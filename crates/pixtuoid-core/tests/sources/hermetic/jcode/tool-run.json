@@ -1,0 +1,15 @@
+{
+  "fixtures": [
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [ { "name": "read", "arguments": { "file_path": "NOTE.txt" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    }
+  ]
+}

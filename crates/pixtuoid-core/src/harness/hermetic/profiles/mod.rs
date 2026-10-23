@@ -12,6 +12,7 @@ pub(super) mod copilot;
 pub(super) mod dsh;
 pub(super) mod grok;
 pub(super) mod hermes;
+pub(super) mod jcode;
 pub(super) mod kimi;
 pub(super) mod omp;
 pub(super) mod openclaw;
