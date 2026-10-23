@@ -85,8 +85,7 @@ impl Rgb {
             *memo.entry((self, level)).or_insert_with(|| {
                 self.ramp_run(level > 0)
                     .take(usize::from(level.unsigned_abs()))
-                    .last()
-                    .unwrap_or(self)
+                    .fold(self, |_, step| step)
             })
         })
     }

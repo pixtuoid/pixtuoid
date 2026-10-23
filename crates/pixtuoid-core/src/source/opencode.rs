@@ -28,6 +28,7 @@ use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
@@ -89,12 +90,9 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
 ///
 /// # Errors
 ///
-/// If the payload is not an object or lacks `type`, or a mapped event lacks a
+/// If the payload lacks `type`, or a mapped event lacks a
 /// non-empty `data.sessionID`.
-pub(crate) fn decode_oc_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("type")
         .and_then(Value::as_str)
@@ -255,9 +253,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::source::decoder::test_obj;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_oc_hook_payload(&v).expect("decodes")
+        decode_oc_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     /// The payload's MAIN event: the last decoded, after any Identity.
@@ -279,7 +278,7 @@ mod tests {
         let decoded = |ev: &str, data: &Value| {
             format!(
                 "{:?}",
-                decode_oc_hook_payload(&json!({"type": ev, "data": data}))
+                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": data})))
             )
         };
         for path in DECODED_DATA_FIELDS {
@@ -506,15 +505,15 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors_not_panics() {
-        assert!(decode_oc_hook_payload(&json!("x")).is_err());
-        assert!(decode_oc_hook_payload(&json!({"data": {"sessionID": "s"}})).is_err());
+        assert!(decode_oc_hook_payload(test_obj(&json!({"data": {"sessionID": "s"}}))).is_err());
         for ev in DECODED_EVENTS {
             assert!(
-                decode_oc_hook_payload(&json!({"type": ev, "data": {}})).is_err(),
+                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {}}))).is_err(),
                 "{ev} without a sessionID"
             );
             assert!(
-                decode_oc_hook_payload(&json!({"type": ev, "data": {"sessionID": ""}})).is_err(),
+                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {"sessionID": ""}})))
+                    .is_err(),
                 "{ev} with an empty sessionID"
             );
         }

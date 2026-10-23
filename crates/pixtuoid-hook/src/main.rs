@@ -37,16 +37,10 @@ const STAMP_HEADROOM: u64 = 256;
 /// stall→watchdog→drop, never a block of CC.
 const STDIN_CAP: u64 = (1 << 20) - STAMP_HEADROOM;
 
-/// Saturating `u128 → u64` narrowing: a truncating `as` cast would wrap anything
-/// above `u64::MAX` to a small number.
-fn ms_u128_to_u64(ms: u128) -> u64 {
-    u64::try_from(ms).unwrap_or(u64::MAX)
-}
-
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| ms_u128_to_u64(d.as_millis()))
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn main() {

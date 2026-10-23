@@ -409,7 +409,6 @@ pub fn pixtuoid_core::source::drift::unknown_dispatch(&str, &str)
 pub fn pixtuoid_core::source::drift::unknown_event(&str, &str)
 pub mod pixtuoid_core::source::dsh
 pub const pixtuoid_core::source::dsh::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::dsh::decode_dsh_payload(&serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
 pub mod pixtuoid_core::source::grok
 pub struct pixtuoid_core::source::grok::GrokSource
 pub pixtuoid_core::source::grok::GrokSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
@@ -621,7 +620,6 @@ pub fn pixtuoid_core::source::omp::omp_profile_sessions_dirs() -> alloc::vec::Ve
 pub fn pixtuoid_core::source::omp::omp_sessions_dir() -> std::path::PathBuf
 pub mod pixtuoid_core::source::openclaw
 pub const pixtuoid_core::source::openclaw::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(&serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<pixtuoid_core::source::daemon::DecodedPresence>
 pub mod pixtuoid_core::source::opencode
 pub const pixtuoid_core::source::opencode::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::reasonix
@@ -1775,6 +1773,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::AgentSlot
 pub struct pixtuoid_core::state::DaemonInstanceId(_)
 impl pixtuoid_core::state::DaemonInstanceId
 pub fn pixtuoid_core::state::DaemonInstanceId::as_str(&self) -> &str
+pub fn pixtuoid_core::state::DaemonInstanceId::from_port(core::num::nonzero::NonZeroU16) -> Self
 pub fn pixtuoid_core::state::DaemonInstanceId::new(impl core::convert::Into<alloc::string::String>) -> core::option::Option<Self>
 impl core::clone::Clone for pixtuoid_core::state::DaemonInstanceId
 pub fn pixtuoid_core::state::DaemonInstanceId::clone(&self) -> Self

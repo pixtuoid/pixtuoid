@@ -608,9 +608,8 @@ mod imp {
             let handles: Vec<_> = std::iter::once(wake)
                 .chain(watched.iter().map(|(_, h)| h.as_raw_handle()))
                 .collect();
-            let Ok(count) = u32::try_from(handles.len()) else {
-                return;
-            };
+            // `watched` is capped at `CAP`, so this is at most `MAXIMUM_WAIT_OBJECTS`.
+            let count = handles.len() as u32;
             // SAFETY: every handle is live through the wait: the event for
             // `shared`'s life, each process handle while `watched` owns it.
             let signaled =

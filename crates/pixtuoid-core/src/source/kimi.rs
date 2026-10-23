@@ -30,6 +30,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, registry};
 
 /// The Kimi CLI source's registry name (its `SourceDescriptor.name`).
@@ -45,10 +46,7 @@ pub const SOURCE_NAME: &str = "kimi";
 ///   on an already-idle slot.
 /// - `StopFailure` — a failed turn end; settle to idle like `Stop`, with NO
 ///   Identity (an end proves nothing worth registering).
-pub(crate) fn decode_kimi_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     match obj.get("hook_event_name").and_then(|s| s.as_str()) {
         Some("PostToolUseFailure") => {
             let session_id = kimi_session_id(obj)?;
@@ -106,17 +104,18 @@ fn kimi_session_id(obj: &Map<String, Value>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     #[test]
     fn post_tool_use_failure_closes_activity_with_identity() {
-        let evs = decode_kimi_hook_custom(&json!({
+        let evs = decode_kimi_hook_custom(test_obj(&json!({
             "hook_event_name": "PostToolUseFailure",
             "session_id": "session_abc",
             "cwd": "/Users/dev/proj",
             "tool_name": "Bash",
             "tool_call_id": "t1"
-        }))
+        })))
         .expect("decodes")
         .expect("claims the event");
         assert_eq!(evs.len(), 2, "Identity + ActivityEnd, got {evs:?}");
@@ -152,12 +151,12 @@ mod tests {
 
     #[test]
     fn post_tool_use_failure_without_cwd_has_none_cwd() {
-        let evs = decode_kimi_hook_custom(&json!({
+        let evs = decode_kimi_hook_custom(test_obj(&json!({
             "hook_event_name": "PostToolUseFailure",
             "session_id": "s",
             "cwd": "",
             "tool_name": "Read"
-        }))
+        })))
         .unwrap()
         .unwrap();
         match &evs[0] {
@@ -170,10 +169,10 @@ mod tests {
 
     #[test]
     fn stop_failure_is_activity_end_without_identity() {
-        let evs = decode_kimi_hook_custom(&json!({
+        let evs = decode_kimi_hook_custom(test_obj(&json!({
             "hook_event_name": "StopFailure",
             "session_id": "s"
-        }))
+        })))
         .unwrap()
         .unwrap();
         assert_eq!(evs.len(), 1);
@@ -198,11 +197,11 @@ mod tests {
             "UserPromptSubmit",
             "SubagentStart",
         ] {
-            let out = decode_kimi_hook_custom(&json!({
+            let out = decode_kimi_hook_custom(test_obj(&json!({
                 "hook_event_name": ev,
                 "session_id": "s",
                 "cwd": "/repo"
-            }))
+            })))
             .expect("decodes");
             assert!(
                 out.is_none(),
@@ -215,21 +214,20 @@ mod tests {
     fn claimed_failure_event_without_session_id_errs() {
         for ev in ["PostToolUseFailure", "StopFailure"] {
             assert!(
-                decode_kimi_hook_custom(&json!({ "hook_event_name": ev, "cwd": "/repo" })).is_err(),
+                decode_kimi_hook_custom(test_obj(
+                    &json!({ "hook_event_name": ev, "cwd": "/repo" })
+                ))
+                .is_err(),
                 "{ev} with no session_id must err"
             );
             assert!(
-                decode_kimi_hook_custom(&json!({ "hook_event_name": ev, "session_id": "" }))
-                    .is_err(),
+                decode_kimi_hook_custom(test_obj(
+                    &json!({ "hook_event_name": ev, "session_id": "" })
+                ))
+                .is_err(),
                 "{ev} with empty session_id must err"
             );
         }
-    }
-
-    #[test]
-    fn non_object_payload_errs() {
-        assert!(decode_kimi_hook_custom(&json!("a string")).is_err());
-        assert!(decode_kimi_hook_custom(&json!(42)).is_err());
     }
 
     #[test]

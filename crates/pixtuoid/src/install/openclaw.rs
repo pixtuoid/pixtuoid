@@ -705,7 +705,7 @@ mod tests {
         );
         for ev in OPENCLAW_EVENTS {
             let payload = json!({ "type": ev, "gatewayPort": 18789 });
-            let decoded = decode_openclaw_hook_payload(&payload).unwrap();
+            let decoded = decode_openclaw_hook_payload(payload.as_object().unwrap()).unwrap();
             assert!(
                 !decoded.updates.is_empty(),
                 "decode_openclaw_hook_payload has no arm for registered event `{ev}`"

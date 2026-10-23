@@ -25,6 +25,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
@@ -94,11 +95,8 @@ fn resolve_hermes_home(
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks `hook_event_name`, carries neither `session_id` nor `cwd`, or names an unregistered event.
-pub(crate) fn decode_hermes_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+/// If the payload lacks `hook_event_name`, carries neither `session_id` nor `cwd`, or names an unregistered event.
+pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())
@@ -249,10 +247,11 @@ fn hermes_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_hermes_hook_payload(&v).expect("decodes")
+        decode_hermes_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     fn decode(v: Value) -> AgentEvent {
@@ -406,9 +405,9 @@ mod tests {
             "on_session_end",
         ] {
             evs.extend(
-                decode_hermes_hook_payload(
+                decode_hermes_hook_payload(test_obj(
                     &json!({"hook_event_name": name, "session_id": sid, "cwd": "/r"}),
-                )
+                ))
                 .expect("decodes"),
             );
         }
@@ -435,7 +434,7 @@ mod tests {
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_hermes_hook_payload(v).unwrap())
+            .flat_map(|v| decode_hermes_hook_payload(test_obj(v)).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
@@ -492,7 +491,8 @@ mod tests {
     fn unknown_event_bails_loudly() {
         for ev in ["subagent_stop", "pre_message", "on_error", "Bogus"] {
             assert!(
-                decode_hermes_hook_payload(&json!({"hook_event_name": ev, "cwd": "/r"})).is_err(),
+                decode_hermes_hook_payload(test_obj(&json!({"hook_event_name": ev, "cwd": "/r"})))
+                    .is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );
         }
@@ -500,9 +500,10 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors() {
-        assert!(decode_hermes_hook_payload(&json!("just a string")).is_err());
-        assert!(decode_hermes_hook_payload(&json!(42)).is_err());
-        assert!(decode_hermes_hook_payload(&json!({"hook_event_name": "on_session_end"})).is_err());
+        assert!(
+            decode_hermes_hook_payload(test_obj(&json!({"hook_event_name": "on_session_end"})))
+                .is_err()
+        );
     }
 
     /// An UNSET `HERMES_HOME` must never be blamed for a relative default: the

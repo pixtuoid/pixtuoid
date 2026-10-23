@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, make_tool_detail};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -61,10 +62,7 @@ const PARENT_THREAD_ID: &str = "parent_thread_id";
 /// `SubagentStart`/`SubagentStop`, and any other event a child fires. A
 /// `spawn_agent` call's start is a Task wherever it fires; every other root
 /// event falls through (`Ok(None)`) to the shared arms.
-pub(crate) fn decode_codex_hook_custom(v: &Value) -> Result<Option<Vec<AgentEvent>>> {
-    let Some(obj) = v.as_object() else {
-        return Ok(None); // shared path reports the malformed payload
-    };
+pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())
@@ -423,6 +421,7 @@ fn resolve_codex_home(codex_home_env: Option<PathBuf>, home: PathBuf) -> PathBuf
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
 
     #[test]
     fn codex_home_uses_env_when_it_points_at_an_existing_dir() {
@@ -538,12 +537,12 @@ mod tests {
         for event in ["SubagentStart", "SubagentStop"] {
             let no_session = json!({"hook_event_name": event, "agent_id": "child"});
             assert!(
-                decode_codex_hook_custom(&no_session).is_err(),
+                decode_codex_hook_custom(test_obj(&no_session)).is_err(),
                 "{event} without session_id must Err (claim-fully), not fall through"
             );
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
-                decode_codex_hook_custom(&empty_child).is_err(),
+                decode_codex_hook_custom(test_obj(&empty_child)).is_err(),
                 "{event} with empty agent_id must Err — a phantom child never coalesces"
             );
         }
@@ -552,8 +551,10 @@ mod tests {
     #[test]
     fn a_roots_events_fall_through_to_shared_arms() {
         let stop = json!({"hook_event_name": "Stop", "session_id": "s"});
-        assert!(matches!(decode_codex_hook_custom(&stop), Ok(None)));
-        assert!(matches!(decode_codex_hook_custom(&json!("nope")), Ok(None)));
+        assert!(matches!(
+            decode_codex_hook_custom(test_obj(&stop)),
+            Ok(None)
+        ));
     }
 
     const ROOT: &str = "01a14e36-774b-7a43-a766-5159e4eb32f6";
@@ -674,7 +675,10 @@ mod tests {
             "reason": "other",
             "_pixtuoid_source": SOURCE_NAME,
         });
-        assert!(matches!(decode_codex_hook_custom(&payload), Ok(None)));
+        assert!(matches!(
+            decode_codex_hook_custom(test_obj(&payload)),
+            Ok(None)
+        ));
         let events = crate::source::decoder::decode_hook_payload(payload).unwrap();
         let expected = AgentId::from_parts(SOURCE_NAME, "019e7762-9ded-7e33-be41-946ecf105bf4");
         assert!(

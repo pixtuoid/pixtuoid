@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -64,11 +65,8 @@ const XAI_HOOK_EXECUTION: &str = "hook_execution";
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
-pub(crate) fn decode_grok_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+/// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
+pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("hookEventName")
         .and_then(|s| s.as_str())
@@ -594,6 +592,7 @@ fn resolve_grok_home(grok_home_env: Option<PathBuf>, home: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
 
     #[test]
     fn grok_home_takes_env_unconditionally_even_when_missing() {
@@ -613,7 +612,7 @@ mod tests {
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_grok_hook_payload(&v).expect("decodes")
+        decode_grok_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     /// The payload's MAIN event is the LAST decoded one — activity arms
@@ -1001,7 +1000,7 @@ mod tests {
     fn subagent_events_without_subagent_id_are_malformed() {
         for event in ["subagent_start", "subagent_stop"] {
             assert!(
-                decode_grok_hook_payload(&envelope(event)).is_err(),
+                decode_grok_hook_payload(test_obj(&envelope(event))).is_err(),
                 "{event} without subagentId must bail"
             );
         }
@@ -1028,7 +1027,7 @@ mod tests {
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_grok_hook_payload(v).unwrap())
+            .flat_map(|v| decode_grok_hook_payload(test_obj(v)).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all root events must coalesce to one AgentId");
@@ -1047,15 +1046,14 @@ mod tests {
 
     #[test]
     fn nothing_to_key_on_is_malformed() {
-        assert!(decode_grok_hook_payload(&json!({"hookEventName": "stop"})).is_err());
+        assert!(decode_grok_hook_payload(test_obj(&json!({"hookEventName": "stop"}))).is_err());
         assert!(
-            decode_grok_hook_payload(
+            decode_grok_hook_payload(test_obj(
                 &json!({"hookEventName": "stop", "cwd": "", "workspaceRoot": ""})
-            )
+            ))
             .is_err()
         );
-        assert!(decode_grok_hook_payload(&json!("just a string")).is_err());
-        assert!(decode_grok_hook_payload(&json!({"sessionId": "s"})).is_err());
+        assert!(decode_grok_hook_payload(test_obj(&json!({"sessionId": "s"}))).is_err());
     }
 
     #[test]
@@ -1063,7 +1061,7 @@ mod tests {
         // pre/post_compact are deliberately unregistered.
         for ev in ["pre_compact", "post_compact", "PreToolUse", "bogus"] {
             assert!(
-                decode_grok_hook_payload(&envelope(ev)).is_err(),
+                decode_grok_hook_payload(test_obj(&envelope(ev))).is_err(),
                 "{ev} must bail"
             );
         }

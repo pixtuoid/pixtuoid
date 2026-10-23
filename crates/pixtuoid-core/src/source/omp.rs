@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -839,10 +840,7 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 /// # Errors
 ///
 /// Never: a malformed or unknown payload decodes to `vec![]`; the `Result` is the hook-decoder signature.
-pub(crate) fn decode_omp_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
-    };
+pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
         crate::source::drift::missing_field(SOURCE_NAME, "hook", "type");
         return Ok(vec![]);
@@ -979,6 +977,7 @@ fn omp_approval_reason(obj: &serde_json::Map<String, Value>, tool: &str) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     const ROOT: &str = "/home/u/.omp/agent/sessions/-dev-proj/2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000001.jsonl";
@@ -2425,7 +2424,7 @@ mod tests {
     }
 
     fn hook(v: serde_json::Value) -> Vec<AgentEvent> {
-        decode_omp_hook_payload(&v).unwrap()
+        decode_omp_hook_payload(test_obj(&v)).unwrap()
     }
 
     #[test]

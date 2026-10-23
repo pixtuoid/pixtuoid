@@ -473,6 +473,12 @@ impl DaemonInstanceId {
         (!raw.trim().is_empty()).then_some(Self(raw))
     }
 
+    /// The id of a daemon listening on `port`; a port always renders digits, so
+    /// there is no blank case to refuse.
+    pub fn from_port(port: std::num::NonZeroU16) -> Self {
+        Self(port.to_string())
+    }
+
     /// The id as its wire/display string (an OpenClaw gateway port, `"18789"`).
     pub fn as_str(&self) -> &str {
         &self.0
