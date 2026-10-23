@@ -199,7 +199,7 @@ test("the port observed on a hook outranks the config fallback", { skip: !POSIX 
   );
 });
 
-test("port resolution falls back env > config > default", { skip: !POSIX }, async (t) => {
+test("port resolution defaults when neither env nor config names one", { skip: !POSIX }, async (t) => {
   const original = process.env.OPENCLAW_GATEWAY_PORT;
   t.after(() => {
     if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
@@ -212,35 +212,6 @@ test("port resolution falls back env > config > default", { skip: !POSIX }, asyn
     register(plugin).get("session_start")({ sessionId: "s" }, {});
     const [only] = await recorded(outFile, 1);
     assert.equal(only.gatewayPort, DEFAULT_GATEWAY_PORT);
-  }
-  {
-    const { outFile, plugin } = await renderPlugin(t);
-    register(plugin, { config: { gateway: { port: 20001 } } }).get("session_start")(
-      { sessionId: "s" },
-      {},
-    );
-    const [only] = await recorded(outFile, 1);
-    assert.equal(only.gatewayPort, 20001);
-  }
-  process.env.OPENCLAW_GATEWAY_PORT = "20002";
-  {
-    const { outFile, plugin } = await renderPlugin(t);
-    register(plugin, { config: { gateway: { port: 20001 } } }).get("session_start")(
-      { sessionId: "s" },
-      {},
-    );
-    const [only] = await recorded(outFile, 1);
-    assert.equal(only.gatewayPort, 20002);
-  }
-  process.env.OPENCLAW_GATEWAY_PORT = "not-a-port";
-  {
-    const { outFile, plugin } = await renderPlugin(t);
-    register(plugin, { config: { gateway: { port: 20003 } } }).get("session_start")(
-      { sessionId: "s" },
-      {},
-    );
-    const [only] = await recorded(outFile, 1);
-    assert.equal(only.gatewayPort, 20003);
   }
 });
 

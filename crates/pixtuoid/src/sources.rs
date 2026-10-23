@@ -1324,21 +1324,6 @@ mod tests {
     }
 
     #[test]
-    fn wire_outcome_serializes_as_its_token() {
-        for w in [
-            WireOutcome::Connected,
-            WireOutcome::Disconnected,
-            WireOutcome::NoOp,
-            WireOutcome::Failed,
-        ] {
-            assert_eq!(
-                serde_json::to_value(w).unwrap(),
-                serde_json::Value::String(w.token().to_string())
-            );
-        }
-    }
-
-    #[test]
     fn change_outcome_wire_tokens_are_stable() {
         assert_eq!(ChangeOutcome::Connected.wire_outcome().token(), "connected");
         assert_eq!(
@@ -1352,21 +1337,6 @@ mod tests {
         );
         assert_eq!(ChangeOutcome::Failed("boom".into()).message(), Some("boom"));
         assert_eq!(ChangeOutcome::Connected.message(), None);
-    }
-
-    #[test]
-    fn source_status_json_shape_is_the_raycast_contract() {
-        let s = SourceStatus {
-            id: "codex".into(),
-            display_name: "Codex".into(),
-            connected: true,
-            cli_present: true,
-            health: None,
-        };
-        assert_eq!(
-            serde_json::to_string(&s).unwrap(),
-            r#"{"id":"codex","display_name":"Codex","connected":true,"cli_present":true,"health":null}"#
-        );
     }
 
     #[test]

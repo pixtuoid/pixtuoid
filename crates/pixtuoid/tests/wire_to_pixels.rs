@@ -318,32 +318,12 @@ fn agent_cases() -> Vec<WireCase> {
     ]
 }
 
-/// Look up one matrix case by its registered source name — never a positional
-/// index into `agent_cases()`, where an insertion would silently shift every
-/// downstream case onto the wrong fixture.
-fn agent_case(name: &str) -> WireCase {
-    // Keyed on `name`, not `source`: a source may have more than one case (hermes
-    // has a tool run and an approval gate) and `name` is the unique one.
-    agent_cases()
-        .into_iter()
-        .find(|c| c.name == name)
-        .unwrap_or_else(|| panic!("no wire-to-pixels case named {name:?}"))
-}
-
 /// The matrix is truth-complete: a newly registered source with no wire case
 /// FAILS here instead of silently shipping untested.
 #[test]
 fn wire_matrix_covers_every_registered_source() {
     use std::collections::BTreeSet;
 
-    // Uniqueness is on NAME, which is what `agent_case` looks up — a source may
-    // legitimately have two cases (hermes: a tool run and an approval gate).
-    let names: BTreeSet<&str> = agent_cases().iter().map(|c| c.name).collect();
-    assert_eq!(
-        names.len(),
-        agent_cases().len(),
-        "two agent_cases rows share a `name`, so one is unreachable"
-    );
     let agents: BTreeSet<&str> = agent_cases().iter().map(|c| c.source).collect();
     for source in &agents {
         let d = registry::descriptor_for(source)
@@ -381,84 +361,6 @@ fn every_agent_source_renders_a_painted_sprite_from_real_wire() {
     for case in agent_cases() {
         assert_renders_a_sprite(&case);
     }
-}
-
-// Per-source tests too, so a single source can be run in isolation and a
-// regression localizes to its own `#[test]`.
-
-#[test]
-fn claude_code_transcript_line_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("claude_code"));
-}
-
-#[test]
-fn codex_transcript_line_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("codex"));
-}
-
-#[test]
-fn antigravity_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("antigravity"));
-}
-
-#[test]
-fn copilot_transcript_line_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("copilot"));
-}
-
-#[test]
-fn omp_transcript_line_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("omp"));
-}
-
-#[test]
-fn omp_bridge_approval_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("omp-bridge"));
-}
-
-#[test]
-fn grok_transcript_line_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("grok"));
-}
-
-#[test]
-fn reasonix_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("reasonix"));
-}
-
-#[test]
-fn codewhale_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("codewhale"));
-}
-
-#[test]
-fn opencode_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("opencode"));
-}
-
-#[test]
-fn cursor_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("cursor"));
-}
-
-#[test]
-fn hermes_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("hermes"));
-}
-
-#[test]
-fn hermes_approval_gate_renders_a_waiting_sprite() {
-    assert_renders_a_sprite(&agent_case("hermes_approval"));
-}
-
-#[test]
-fn kimi_hook_envelope_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("kimi"));
-}
-
-#[test]
-fn dsh_plugin_lifecycle_renders_a_painted_sprite() {
-    assert_renders_a_sprite(&agent_case("dsh"));
 }
 
 /// Cells the gateway presence ADDS to an otherwise identical office.

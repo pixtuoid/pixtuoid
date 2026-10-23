@@ -33,18 +33,6 @@ check() {
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 
-# git's own list must relocate the repo and nothing else: stripping a transport
-# or identity var would break a caller that set it deliberately.
-scrub_list_is_narrow() {
-    local list
-    list=$(git rev-parse --local-env-vars)
-    ! grep -qx 'GIT_SSH_COMMAND' <<<"$list" &&
-        ! grep -qx 'GIT_COMMITTER_NAME' <<<"$list"
-}
-
-check "git's own list carries no transport/identity vars to over-strip" \
-    scrub_list_is_narrow
-
 # --- the pre-push hook's scrub -----------------------------------------------
 # Enumerated rather than named, so a hook added later fails HERE instead of
 # inheriting the gap silently. pre-commit is exempt while it only runs

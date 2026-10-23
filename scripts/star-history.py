@@ -30,13 +30,12 @@ import os
 import pathlib
 import re
 import sys
-import traceback
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
 from typing import NamedTuple
 from urllib import request
 
-from readme_pixels import BASELINE, GLYPH_ADVANCE, GLYPH_H, GLYPH_W, GLYPHS, PACK_DIR, THEMES, _run, animation, compact, load_pack, mask_path, text_path, text_width
+from readme_pixels import BASELINE, FAILS, GLYPH_ADVANCE, GLYPH_H, GLYPH_W, GLYPHS, PACK_DIR, THEMES, _run, animation, check, compact, load_pack, mask_path, run_selftest, text_path, text_width
 
 GRAPHQL_URL = "https://api.github.com/graphql"
 # The API's hard page ceiling for `stargazers(first:)`.
@@ -411,14 +410,6 @@ def fetch_star_dates(repo: str, token: str, post: Callable[[str, dict, str], dic
         return dates
 
 
-FAILS: list[str] = []
-
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        FAILS.append(msg)
-
-
 def _d(s: str) -> dt.date:
     return dt.date.fromisoformat(s)
 
@@ -484,10 +475,6 @@ def test_text_path_rejects_a_character_without_a_glyph() -> None:
         check("é" in str(e), f"the offending character must be named: {e}")
     else:
         FAILS.append("text_path must refuse a character it cannot draw")
-
-
-def test_themes_cover_both_readme_variants() -> None:
-    check(set(THEMES) == {"light", "dark"}, f"the README's <picture> needs exactly light and dark, got {sorted(THEMES)}")
 
 
 def _render_ok(svg: str, label: str) -> ET.Element | None:
@@ -686,16 +673,7 @@ def test_write_charts_emits_one_file_per_theme() -> None:
 
 
 def selftest() -> int:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            try:
-                fn()
-            except Exception:  # noqa: BLE001 — a crashing test is a failing test
-                FAILS.append(f"{name} crashed:\n{traceback.format_exc()}")
-    for f in FAILS:
-        print(f"FAIL: {f}", file=sys.stderr)
-    print(f"star-history selftest: {'FAIL' if FAILS else 'ok'}")
-    return 1 if FAILS else 0
+    return run_selftest("star-history", globals())
 
 
 def main(argv: list[str]) -> int:

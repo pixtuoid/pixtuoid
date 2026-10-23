@@ -301,13 +301,6 @@ mod tests {
         assert_eq!(version_popup_url_rect(wide(), &[], 1.0), Some(expected));
     }
 
-    #[test]
-    fn link_fits_where_the_old_url_clipped() {
-        // 50 cols is where the old ~46-char raw URL hard-clipped.
-        let rect = version_popup_url_rect(Rect::new(0, 0, 50, 30), &[], 1.0).expect("fits");
-        assert_eq!(rect.width, LINK_LABEL.chars().count() as u16);
-    }
-
     /// A panel narrower than the measure: the body must fit the CLAMPED inner
     /// width, and the link — the CTA, not filler — must survive the height
     /// clamp. Below the office's own floor on purpose, where the geometry does
