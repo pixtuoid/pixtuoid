@@ -5,9 +5,8 @@ on:
   workflow_call:
 
 jobs:
-  # A PR that leaves the extension and its contract inputs alone skips `check`
-  # (a skip `required` accepts); path-changed treats a push or dispatch run as
-  # unchanged.
+  # A PR that leaves the extension and its contract inputs alone skips `check`;
+  # path-changed treats a push or dispatch run as unchanged.
   scope:
     name: raycast in scope
     runs-on: ubuntu-latest

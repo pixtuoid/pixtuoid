@@ -27,12 +27,7 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
-    # Outlasts ci.yml's slowest job and its runner queue, as release-plz.yml's
-    # ci-passed does.
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      checks: read
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,11 +45,6 @@ jobs:
             echo "::error::Tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not an ancestor of origin/main — release tags must be cut from main"
             exit 1
           fi
-      # Ancestry alone admits a main commit whose CI failed or has not finished.
-      - if: ${{ !contains(github.ref_name, '-') }}
-        uses: ./.github/actions/wait-ci-gate
-        with:
-          sha: ${{ github.sha }}
       - name: Validate tag matches Cargo.toml version
         run: |
           # A pre-release suffix is release-channel metadata, not a Cargo version,
@@ -67,9 +57,16 @@ jobs:
             exit 1
           fi
 
+  # Ancestry alone admits a commit whose CI failed or has not finished.
+  ci-passed:
+    needs: check
+    permissions:
+      checks: read
+    uses: ./.github/workflows/wait-ci-gate.yml
+
   build:
     name: build (${{ matrix.target }})
-    needs: check
+    needs: ci-passed
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -151,7 +148,7 @@ jobs:
 
   deb:
     name: deb (${{ matrix.target }})
-    needs: check
+    needs: ci-passed
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:

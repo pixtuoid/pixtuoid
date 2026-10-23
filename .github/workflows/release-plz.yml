@@ -189,24 +189,11 @@ jobs:
   # merge push's own; release-plz's documented gate is a check before
   # `release` in the publishing workflow (release-plz.dev/docs/github/advanced).
   ci-passed:
-    name: ci-gate passed at this commit
     needs: release-merge
     if: needs.release-merge.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    # Outlasts ci.yml's slowest job and its runner queue; a timeout skips the
-    # publish like a failure does.
-    timeout-minutes: 90
     permissions:
-      contents: read
       checks: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          sparse-checkout: .github/actions/wait-ci-gate
-      - uses: ./.github/actions/wait-ci-gate
-        with:
-          sha: ${{ github.sha }}
+    uses: ./.github/workflows/wait-ci-gate.yml
 
   release:
     name: publish and tag a merged release PR

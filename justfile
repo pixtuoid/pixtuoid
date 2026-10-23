@@ -25,7 +25,9 @@ set positional-arguments
 # A Homebrew cargo ahead of the rustup proxy ignores rust-toolchain.toml and
 # RUSTUP_TOOLCHAIN and ships only the host std: `--target` and nightly
 # recipes die on E0463 or `-Z` (a0d18c03e). A no-op on CI, where it is first.
-export PATH := env('CARGO_HOME', home_directory() / '.cargo') / 'bin' + PATH_VAR_SEP + env('PATH')
+# An empty CARGO_HOME reads as unset, which `env`'s default alone does not.
+_cargo_home := env('CARGO_HOME', '')
+export PATH := (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
 # ── variables ─────────────────────────────────────────────────────
 # just evaluates these globally regardless of position; kept at the top so the
@@ -44,11 +46,6 @@ PUBLISHED_CRATES := "pixtuoid-core pixtuoid-scene"
 # `actionlint-composites`. Both are shellcheck-only — shfmt cannot rewrite a
 # scalar in place — so adding a file here is not enough for embedded shell.
 SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh"
-
-# The tools `lint` runs: `setup-tools` brew-installs the first list and
-# cargo-installs the second.
-LINT_BREW_TOOLS := "shfmt actionlint shellcheck zizmor yq jq check-jsonschema gitleaks"
-LINT_CARGO_TOOLS := "cargo-machete cargo-deny lychee"
 
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
 # nightly-only). Provisioned by `_api-toolchain`, which also fails while it
@@ -332,17 +329,11 @@ hack:
     cargo clippy -p pixtuoid-scene --no-default-features --all-targets -- -D warnings
     just test -p pixtuoid-scene --no-default-features
 
-# The explicit target check owns the genuinely-missing case with an accurate
-# message: the compiler's own E0463 advice is wrong there. It catches
-# cfg(windows)-only compile and lint errors locally; a string path assert still
-# fails only in `windows-test`.
+# It catches cfg(windows)-only compile and lint errors locally; a string path
+# assert still fails only in `windows-test`.
 [doc('Cross-lint the workspace for x86_64-pc-windows-msvc via clippy (no linking; ubuntu runner suffices)')]
 [group('rust')]
-check-windows:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    rustup target list --installed | grep -q x86_64-pc-windows-msvc \
-        || { echo "needs the target: rustup target add x86_64-pc-windows-msvc" >&2; exit 1; }
+check-windows: (_targets "x86_64-pc-windows-msvc")
     cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
 
 # The other-unix arms compile on none of the OSes release.yml ships, so only this
@@ -350,12 +341,8 @@ check-windows:
 # script can't probe a cross target.
 [doc('Cross-lint the workspace for x86_64-unknown-freebsd, the stand-in for every other unix (no linking)')]
 [group('rust')]
-check-other-unix:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    target=x86_64-unknown-freebsd
-    rustup target list --installed | grep -qx "$target" || rustup target add "$target"
-    cargo clippy --workspace --all-targets --target "$target" --no-default-features --features pixtuoid/portable -- -D warnings
+check-other-unix: (_targets "x86_64-unknown-freebsd")
+    cargo clippy --workspace --all-targets --target x86_64-unknown-freebsd --no-default-features --features pixtuoid/portable -- -D warnings
 
 # Reproduce release-plz's semver verdict LOCALLY. Not a gate and not in CI:
 # release-plz runs cargo-semver-checks itself on the release PR and RAISES the
@@ -413,7 +400,7 @@ _api-toolchain:
     set -euo pipefail
     have="$(cargo public-api --version | awk '{print $NF}')"
     if [ "$have" != "{{ API_PUBLIC_API }}" ]; then
-        echo "error: cargo-public-api ${have:-none} installed, goldens need {{ API_PUBLIC_API }} (just setup-tools)" >&2
+        echo "error: cargo-public-api $have installed, goldens need {{ API_PUBLIC_API }} (just setup-tools)" >&2
         exit 1
     fi
     rustup toolchain list | grep -q '{{ API_NIGHTLY }}' || {
@@ -485,7 +472,7 @@ _toolchain-covers version name:
 # nextest does not.
 [doc('Doc gate: cargo doc (private items, bin, examples, DOC_TARGETS) with -D warnings + the doctests nextest skips (CI-only)')]
 [group('rust')]
-doc-check: _doc-targets
+doc-check: (_targets DOC_TARGETS)
     #!/usr/bin/env bash
     set -euo pipefail
     doc() { RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items "$@"; }
@@ -500,12 +487,14 @@ doc-check: _doc-targets
     doc --workspace --examples
     cargo test --doc --workspace
 
+# Checks first: `rustup target add` goes to the network even for an installed
+# target.
 [private]
-_doc-targets:
+_targets +targets:
     #!/usr/bin/env bash
     set -euo pipefail
     installed="$(rustup target list --installed)"
-    for target in {{ DOC_TARGETS }}; do
+    for target in {{ targets }}; do
         grep -qx "$target" <<<"$installed" || rustup target add "$target"
     done
 
@@ -664,7 +653,6 @@ hermetic-bump source release out: (hermetic "--cli" release "--record" source)
 # Compile the workspace; extra args are forwarded:
 #   just build                                # debug
 #   just build --release                      # release
-#   just build --release --bins --examples    # what ci-tests.yml's test job builds
 [doc('Compile the workspace; forwards args (e.g. --release --bins --examples)')]
 [group('rust')]
 build *args:
@@ -841,11 +829,9 @@ _wasm-bindgen-version:
 # The output is gitignored; CI builds it through .github/actions/gen-wasm.
 [doc('Build pixtuoid-web (wasm) + JS glue into site/public/wasm/')]
 [group('site')]
-gen-wasm:
+gen-wasm: (_targets "wasm32-unknown-unknown")
     #!/usr/bin/env bash
     set -eu
-    rustup target list --installed | grep -q wasm32-unknown-unknown \
-        || { echo "needs the wasm target: rustup target add wasm32-unknown-unknown"; exit 1; }
     cargo build -p pixtuoid-web --target wasm32-unknown-unknown --profile wasm-release
     wasm-bindgen --target web --out-dir site/public/wasm \
         target/wasm32-unknown-unknown/wasm-release/pixtuoid_web.wasm
@@ -1007,11 +993,16 @@ preflight mode="":
 setup-tools:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Activate the local pre-push gate (dormant by default in a fresh clone, so CI
+    # would otherwise be the only gate), first so a failed install below cannot
+    # skip it. CI runs every gate itself, so a skipped local hook still meets
+    # them at merge.
+    git config core.hooksPath .githooks
     # cargo-public-api rides API_PUBLIC_API — the tool-exact story lives there.
     # cargo-edit: `cargo set-version --workspace` raises a release PR's version
     # by hand for a break cargo-semver-checks cannot see
     # (docs/CONTRIBUTING.md#releasing).
-    tools=(cargo-nextest {{ LINT_CARGO_TOOLS }} cargo-hack cargo-edit cargo-insta cargo-public-api@{{ API_PUBLIC_API }})
+    tools=(cargo-nextest cargo-machete cargo-deny lychee cargo-hack cargo-edit cargo-insta cargo-public-api@{{ API_PUBLIC_API }})
     if command -v cargo-binstall &>/dev/null; then
         cargo binstall -y "${tools[@]}"
     else
@@ -1028,10 +1019,11 @@ setup-tools:
     if command -v rustup &>/dev/null; then
         rustup component add rust-analyzer
     fi
-    # `LINT_BREW_TOOLS`, via brew. gitleaks is among them because `just
-    # fixture-pii` is a REQUIRED gate that does not degrade to a weaker scan
-    # without it (a weaker scan is what it replaced).
-    for t in {{ LINT_BREW_TOOLS }}; do
+    # gitleaks is among the brew tools because `just fixture-pii` is a REQUIRED
+    # gate that does not degrade to a weaker scan without it (a weaker scan is
+    # what it replaced).
+    brew_tools=(shfmt actionlint shellcheck zizmor yq jq check-jsonschema gitleaks)
+    for t in "${brew_tools[@]}"; do
         command -v "$t" &>/dev/null && continue
         if command -v brew &>/dev/null; then
             brew install "$t" || true
@@ -1041,17 +1033,13 @@ setup-tools:
     # putting the binary on PATH (transient failure), or no brew at all, must be
     # caught here — not silently pass as a successful setup.
     missing=()
-    for t in {{ LINT_BREW_TOOLS }}; do
+    for t in "${brew_tools[@]}"; do
         command -v "$t" &>/dev/null || missing+=("$t")
     done
     if (( ${#missing[@]} )); then
         echo "error: ${missing[*]} still missing after setup — install via your package manager (e.g. brew install ${missing[*]}); \`just lint\` needs it." >&2
         exit 1
     fi
-    # Activate the local pre-push gate (dormant by default in a fresh clone, so CI
-    # would otherwise be the only gate). Idempotent. CI runs every gate itself,
-    # so a skipped local hook still meets them at merge.
-    git config core.hooksPath .githooks
 
 # The pixel comparator is the primitive under `gen-check` and
 # `gen-media-check`; an always-green comparator reports success for any render

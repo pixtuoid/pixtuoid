@@ -22,17 +22,14 @@ fn run_shim_args(
     args: &[&str],
     stdin_json: &str,
 ) -> (std::process::ExitStatus, Duration) {
-    let (out, elapsed) = run_shim_with(pipe_name, args, stdin_json, Stdio::null);
+    let (out, elapsed) = run_shim_output(pipe_name, args, stdin_json);
     (out.status, elapsed)
 }
 
-/// `stdio` makes the shim's stdout and stderr: null, or piped for the one test
-/// that asserts them.
-fn run_shim_with(
+fn run_shim_output(
     pipe_name: &str,
     args: &[&str],
     stdin_json: &str,
-    stdio: fn() -> Stdio,
 ) -> (std::process::Output, Duration) {
     let started = Instant::now();
     let mut child = Command::new(shim_bin())
@@ -40,8 +37,8 @@ fn run_shim_with(
         .env_remove("PIXTUOID_SOURCE")
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(stdio())
-        .stderr(stdio())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn shim");
     child
@@ -228,12 +225,7 @@ async fn codex_cmd_c_invocation_of_hook_command_stamps_source() {
 
 #[test]
 fn missing_pipe_exits_zero_without_blocking() {
-    let (out, elapsed) = run_shim_with(
-        r"\\.\pipe\pixtuoid-test-nonexistent",
-        &[],
-        "{}",
-        Stdio::piped,
-    );
+    let (out, elapsed) = run_shim_output(r"\\.\pipe\pixtuoid-test-nonexistent", &[], "{}");
     assert!(out.status.success(), "exit 0 on missing daemon");
     assert!(
         out.stdout.is_empty() && out.stderr.is_empty(),

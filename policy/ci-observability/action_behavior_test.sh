@@ -29,11 +29,15 @@ yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
     '(.queue_rules | length > 0) and all(.queue_rules[]; any(.queue_conditions[]; . == $c))' >/dev/null ||
     fail ".mergify.yml has a queue that admits release-plz's ${release_prefix}* PRs"
 
-# ── wait-ci-gate: the publish waits for its own commit's ci-gate ──
-release_workflow=.github/workflows/release-plz.yml
-wait_action=.github/actions/wait-ci-gate/action.yml
-wait_script="$(yq -e -r '.runs.steps[0].run' "$wait_action")" || fail "wait-ci-gate has no run step"
-wait_check="$(yq -e -r '.runs.steps[0].env.CHECK_NAME' "$wait_action")" || fail "wait-ci-gate has no CHECK_NAME"
+# ── wait-ci-gate.yml: both release paths wait for their own commit's ci-gate ──
+wait_workflow=.github/workflows/wait-ci-gate.yml
+wait_step="Wait for ci-gate on this commit"
+wait_script="$(workflow_step_script "$wait_workflow" "$wait_step")"
+wait_env() { STEP_NAME="$wait_step" yq -e -r ".jobs[].steps[] | select(.name == strenv(STEP_NAME)) | .env.$1" "$wait_workflow"; }
+wait_check="$(wait_env CHECK_NAME)" || fail "\"$wait_step\" has no CHECK_NAME"
+[[ "$wait_check" == "$(yq -e -r '.jobs.gate.name' .github/workflows/ci.yml)" ]] ||
+    fail "\"$wait_step\" waits for $wait_check, not ci.yml's gate"
+[[ "$(wait_env SHA)" == "\${{ github.sha }}" ]] || fail "\"$wait_step\" waits on another commit than its caller's"
 
 # Each call answers the next of FAKE_CHECK_PAGES, the last one repeating, and
 # logs its endpoint.
@@ -87,6 +91,7 @@ assert_wait fail "a skipped ci-gate" "$(check_page github-actions completed skip
 assert_wait fail "another app's passing check of that name" "$(check_page impostor completed success)"
 
 # ── release-plz.yml: only a merged release PR waits for CI and publishes ──
+release_workflow=.github/workflows/release-plz.yml
 detect_step="Detect a merged release PR; refuse a stale one"
 detect_script="$(workflow_step_script "$release_workflow" "$detect_step")"
 detect_prefix="$(STEP_NAME="$detect_step" yq -e -r '.jobs[].steps[] | select(.name == strenv(STEP_NAME)) | .env.PR_BRANCH_PREFIX' "$release_workflow")" ||

@@ -281,9 +281,9 @@
     - .github/workflows/ci.yml
     - .github/workflows/hermetic.yml
   why: >-
-    `gate` is the only CI check branch protection requires, and hermetic's
-    group is all full-tier jobs, so its `required` is what keeps the call from
-    reading skipped. A job skipped because a job it needs failed reports
+    `gate` is the only CI check branch protection requires; hermetic's jobs are
+    all full-tier, and how a call whose every job skipped reports is
+    undocumented, so its `required` is the job that always runs. A job skipped because a job it needs failed reports
     "Success" and does not block a merge
     (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions),
     so each aggregator must run on `always()`, need every other job, and judge
@@ -321,10 +321,13 @@
     - .github/workflows/site.yml
     - .github/workflows/raycast.yml
   why: >-
-    These groups have no aggregator: ci.yml's gate judges each through the
-    call's result, where a skipped job reads as success. So a job may skip only
-    as a light-tier full-only job or on its own path scope, never through
-    `needs` on a job that failed.
+    A group's own aggregator reaches ci-gate only through the call's result, as
+    its jobs do, so it adds nothing for a failed job; what it judged was a skip,
+    which reads as success
+    (docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions).
+    So these groups have none, and a job may skip only as a light-tier
+    full-only job or on its own path scope, never through `needs` on a job
+    that failed.
   assert: |
     all(.jobs[];
       (.needs == null and (.if == null or .if == "${{ inputs.full }}"))
@@ -444,18 +447,11 @@
                                        and .with.command == "release"))] as $publishers
     | ($publishers | length == 1)
       and (($publishers[0].if // "") | test("always\\(|failure\\(|cancelled\\(") | not)
-      and ([$publishers[0].needs] | flatten | any(.[]; . as $need | $jobs[$need]
-            | (has("continue-on-error") | not)
-              and any(.steps[]; .uses == "./.github/actions/wait-ci-gate" and .with.sha == "${{ github.sha }}"
-                                and ((has("if") or has("continue-on-error")) | not))))
+      and ([$publishers[0].needs] | flatten | any(.[]; $jobs[.].uses == "./.github/workflows/wait-ci-gate.yml"))
   break:
     - del(.jobs.release.needs)
     - .jobs.release.if += " || always()"
-    - .jobs["ci-passed"]["continue-on-error"] = true
-    - (.jobs["ci-passed"].steps[] | select(.uses == "./.github/actions/wait-ci-gate") | .with.sha) = "${{ github.event.before }}"
-    - (.jobs["ci-passed"].steps[] | select(.uses == "./.github/actions/wait-ci-gate") | ."continue-on-error") = true
-    - (.jobs["ci-passed"].steps[] | select(.uses == "./.github/actions/wait-ci-gate") | .if) = "${{ false }}"
-    - .jobs["ci-passed"].steps |= map(select(.uses != "./.github/actions/wait-ci-gate"))
+    - .jobs["ci-passed"].uses = "./.github/workflows/other.yml"
     - .jobs.dup = .jobs.release
 
 - id: release-builds-wait-for-ci-gate
@@ -463,28 +459,19 @@
   why: >-
     A tag is checked only for being an ancestor of main, so a commit whose CI
     failed or has not finished would build and publish to npm and the GitHub
-    release; the stable path waits for that commit's own ci-gate before any
-    build job starts. A pre-release tag tests pre-merge and is exempt.
+    release; every build waits for that commit's own ci-gate.
   assert: |
-    [.jobs.check.steps[] | select(.uses == "./.github/actions/wait-ci-gate")] as $waits
-    | ($waits | length == 1)
-      and $waits[0].with.sha == "${{ github.sha }}"
-      and $waits[0].if == "${{ !contains(github.ref_name, '-') }}"
-      and (($waits[0] | has("continue-on-error")) | not)
-      and (.jobs.check | has("continue-on-error") | not)
-      and .jobs.check.permissions.checks == "read"
-      and .jobs.build.needs == "check"
-      and .jobs.deb.needs == "check"
+    .jobs["ci-passed"].uses == "./.github/workflows/wait-ci-gate.yml"
+      and (.jobs["ci-passed"] | has("if") | not)
+      and .jobs["ci-passed"].permissions.checks == "read"
+      and .jobs.build.needs == "ci-passed"
+      and .jobs.deb.needs == "ci-passed"
   break:
-    - .jobs.check.steps |= map(select(.uses != "./.github/actions/wait-ci-gate"))
-    - (.jobs.check.steps[] | select(.uses == "./.github/actions/wait-ci-gate") | .with.sha) = "${{ github.event.before }}"
-    - (.jobs.check.steps[] | select(.uses == "./.github/actions/wait-ci-gate") | .if) = "${{ false }}"
-    - (.jobs.check.steps[] | select(.uses == "./.github/actions/wait-ci-gate") | .if) = "${{ contains(github.ref_name, '-') }}"
-    - (.jobs.check.steps[] | select(.uses == "./.github/actions/wait-ci-gate") | ."continue-on-error") = true
-    - .jobs.check["continue-on-error"] = true
-    - del(.jobs.check.permissions.checks)
+    - .jobs["ci-passed"].uses = "./.github/workflows/other.yml"
+    - .jobs["ci-passed"].if = "${{ false }}"
+    - del(.jobs["ci-passed"].permissions.checks)
     - del(.jobs.build.needs)
-    - .jobs.deb.needs = "build"
+    - .jobs.deb.needs = "check"
 
 - id: every-main-push-gets-its-ci-gate
   file: .github/workflows/ci.yml
@@ -518,7 +505,7 @@
     .jobs as $jobs
     | [$jobs | to_entries[] | select(any(.value.steps[]?; .env.PR_BRANCH_PREFIX != null
                                          and ((.run // "") | contains("/commits/$SHA/pulls"))))] as $detectors
-    | [$jobs[] | select(any(.steps[]?; .uses == "./.github/actions/wait-ci-gate"))] as $waits
+    | [$jobs[] | select(.uses == "./.github/workflows/wait-ci-gate.yml")] as $waits
     | [$jobs[] | select(any(.steps[]?; (.run // "") | contains("just workspace-version")))] as $tagged
     | ($detectors | length == 1)
       and ($waits | length == 1)

@@ -14,11 +14,16 @@ if ! jq -s -e 'length == 1 and (.[0] | length > 0)' <<<"$contracts" >/dev/null; 
 fi
 
 # A misspelled key (`expect:`) is read as absent, so its contract would pass
-# without the value it was written to carry.
-unknown=$(jq -r '.[] | (.id // "?") as $id
-    | (keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"' <<<"$contracts")
-if [[ -n $unknown ]]; then
-    printf 'error: %s: %s\n' "$contracts_path" "$unknown" >&2
+# without the value it was written to carry; a break YAML reads as a map (an
+# unquoted `: `) fires on its own text, proving nothing.
+shape=$(jq -r '
+    def text: type == "string" and length > 0;
+    .[] | (.id // "?") as $id
+    | ((keys - ["id", "file", "why", "assert", "break", "expected", "covers"])[] | "\($id): unknown key `\(.)`"),
+      (select(.break | text or (type == "array" and length > 0 and all(.[]; text)) | not)
+          | "\($id): break must be a jq edit or a non-empty list of them")' <<<"$contracts")
+if [[ -n $shape ]]; then
+    printf 'error: %s: %s\n' "$contracts_path" "$shape" >&2
     exit 1
 fi
 count=$(jq 'length' <<<"$contracts")

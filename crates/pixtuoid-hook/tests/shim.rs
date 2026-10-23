@@ -50,21 +50,19 @@ fn sock_path(tag: &str) -> SockPath {
 }
 
 /// Generic over the arg type so the non-UTF-8-argv test can pass raw `OsStr`
-/// bytes. `stdio` makes the shim's stdout and stderr: null, or piped for the
-/// one test that asserts them.
-fn run_shim_with<S: AsRef<std::ffi::OsStr>>(
+/// bytes.
+fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
     socket: &std::path::Path,
     source: Option<&str>,
     args: &[S],
     stdin: &[u8],
-    stdio: fn() -> Stdio,
 ) -> std::process::Output {
     let mut cmd = Command::new(BIN);
     cmd.env("PIXTUOID_SOCKET", socket)
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(stdio())
-        .stderr(stdio());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     match source {
         Some(s) => {
             cmd.env("PIXTUOID_SOURCE", s);
@@ -84,21 +82,12 @@ fn run_shim_with<S: AsRef<std::ffi::OsStr>>(
     child.wait_with_output().expect("wait shim")
 }
 
-fn run_shim_inner<S: AsRef<std::ffi::OsStr>>(
-    socket: &std::path::Path,
-    source: Option<&str>,
-    args: &[S],
-    stdin: &[u8],
-) -> std::process::ExitStatus {
-    run_shim_with(socket, source, args, stdin, Stdio::null).status
-}
-
 fn run_shim(
     socket: &std::path::Path,
     source: Option<&str>,
     stdin: &[u8],
 ) -> std::process::ExitStatus {
-    run_shim_inner::<&str>(socket, source, &[], stdin)
+    run_shim_inner::<&str>(socket, source, &[], stdin).status
 }
 
 fn run_shim_args(
@@ -106,7 +95,7 @@ fn run_shim_args(
     args: &[&str],
     stdin: &[u8],
 ) -> std::process::ExitStatus {
-    run_shim_inner(socket, None, args, stdin)
+    run_shim_inner(socket, None, args, stdin).status
 }
 
 fn recv_delivered_json(listener: &UnixListener) -> serde_json::Value {
@@ -260,13 +249,7 @@ fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
 fn missing_socket_exits_zero_without_blocking() {
     let path = sock_path("nosock");
     let start = Instant::now();
-    let out = run_shim_with::<&str>(
-        &path,
-        None,
-        &[],
-        br#"{"hook_event_name":"Stop"}"#,
-        Stdio::piped,
-    );
+    let out = run_shim_inner::<&str>(&path, None, &[], br#"{"hook_event_name":"Stop"}"#);
     assert!(
         out.status.success(),
         "must exit 0 even with no listener; got {:?}",
@@ -346,7 +329,8 @@ fn non_utf8_argv_exits_zero() {
             OsStr::from_bytes(b"\xff\xfe not utf8"),
         ],
         br#"{"hook_event_name":"Stop"}"#,
-    );
+    )
+    .status;
     assert!(
         status.success(),
         "non-UTF-8 argv must not panic the shim; got {status:?}"

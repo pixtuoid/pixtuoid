@@ -1,0 +1,49 @@
+name: wait for ci-gate
+
+# The one wait both release paths run, so the check it reads and the bound it
+# holds have one copy; `github.sha` is the caller's commit.
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  wait:
+    name: ci-gate passed at this commit
+    runs-on: ubuntu-latest
+    # Outlasts ci.yml's slowest job and its runner queue; a timeout skips every
+    # job that needs the call, like a failure does.
+    timeout-minutes: 90
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for ci-gate on this commit
+        env:
+          CHECK_NAME: ci-gate
+          GH_TOKEN: ${{ github.token }}
+          POLL_SECONDS: 30
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          while :; do
+            # Actions' run alone, as branch protection requires: another app
+            # can post a check by the same name.
+            if ! verdict="$(gh api "repos/$REPOSITORY/commits/$SHA/check-runs?check_name=$CHECK_NAME&filter=latest" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | max_by(.started_at)
+                | if . == null then "absent" elif .status != "completed" then "pending" else .conclusion end')"; then
+              echo "::warning::could not read $CHECK_NAME at ${SHA::7}; retrying"
+              verdict=pending
+            fi
+            case "$verdict" in
+            success)
+              echo "$CHECK_NAME passed at ${SHA::7}"
+              exit 0
+              ;;
+            absent | pending) sleep "$POLL_SECONDS" ;;
+            *)
+              echo "::error::$CHECK_NAME concluded $verdict at ${SHA::7}, so nothing is published. Re-run the calling workflow once a ci.yml re-run passes"
+              exit 1
+              ;;
+            esac
+          done

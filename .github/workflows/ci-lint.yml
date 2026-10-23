@@ -91,7 +91,8 @@ jobs:
           persist-credentials: false
       # The tools this job installs run at their newest release, as the brew
       # copies `just lint` uses locally do. The Go ones build from source, so
-      # the cache is keyed on the releases they resolve to.
+      # the cache is keyed on the releases they resolve to and on this file,
+      # which holds the recipe: a new release or a changed recipe misses it.
       - name: Resolve the Go tools' newest releases
         id: go-latest
         run: |
@@ -105,7 +106,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/go/bin
-          key: go-tools-${{ runner.os }}-${{ steps.go-latest.outputs.versions }}
+          key: go-tools-${{ runner.os }}-${{ hashFiles('.github/workflows/ci-lint.yml') }}-${{ steps.go-latest.outputs.versions }}
       - name: Expose Go tool binaries
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: Install the Go-built tools
