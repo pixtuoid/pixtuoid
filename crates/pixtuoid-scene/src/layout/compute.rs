@@ -100,8 +100,7 @@ const _: () = assert!(MIN_LAYOUT_W >= super::NEON_DOOR_WALL_W);
 // The shortest wall band's windows stand as tall as the door, so every office
 // that lays out has one.
 const _: () = assert!(
-    super::wall_trim_row(super::MIN_TOP_MARGIN - super::WALL_BAND_TO_TOP_MARGIN)
-        - super::WINDOW_TOP
+    super::wall_trim_row(super::wall_band_h(super::MIN_TOP_MARGIN)) - super::WINDOW_TOP
         >= super::ELEVATOR_H
 );
 pub(super) const MIN_LAYOUT_H: u16 = min_layout_h();
@@ -389,7 +388,7 @@ pub(super) fn compute_with_seed(
 
     // Elevator door — in the window wall's last slot; above the lounge gate so
     // that gate can check couch↔door clearance.
-    let top_wall_h = super::top_wall_h(plan.top_margin);
+    let top_wall_h = super::wall_band_h(plan.top_margin);
     let door = Point {
         x: super::door_x(buf_w),
         // Its bottom row is the band's trim row, so it stands on the floor

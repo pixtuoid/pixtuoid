@@ -39,6 +39,7 @@ pub(crate) use rooms::walls::Doorway;
 pub(crate) use rooms::walls::{WALL_THICK_H, WALL_THICK_V, WallPiece};
 pub use rooms::{MeetingRoom, MeetingTrio, PantryRoom};
 pub use roster::Station;
+pub(crate) use roster::StationArt;
 pub(crate) use roster::{
     CLOCK, Depth, Fixture, NEON_PANEL, NEON_PANEL_BORDER, Tie, desk_chair_fixtures,
     desk_chair_sort_row, desk_chair_top_left, desk_fixtures, pod_decor_fixtures,
@@ -347,13 +348,12 @@ const TIGHT_PAD_PX: u16 = 1;
 /// The north wall+window band's visual bottom sits this many px ABOVE
 /// `top_margin`; the rows in between render as carpet apron, not wall, so the
 /// mask blocks only down to the band bottom. The mask and the visual read it
-/// through [`top_wall_h`], or they drift.
+/// through [`wall_band_h`], or they drift.
 pub(crate) const WALL_BAND_TO_TOP_MARGIN: u16 = 4;
 
-/// The visible north wall band's height in px for a `top_margin`. Saturates
-/// because the mask's bare test layouts pass a zero margin.
-pub(crate) const fn top_wall_h(top_margin: u16) -> u16 {
-    top_margin.saturating_sub(WALL_BAND_TO_TOP_MARGIN)
+/// The visible north wall band's height in px for a `top_margin`.
+pub(crate) const fn wall_band_h(top_margin: u16) -> u16 {
+    top_margin - WALL_BAND_TO_TOP_MARGIN
 }
 
 /// How many pixels of the pantry counter actually sit on the floor: only the
@@ -576,10 +576,10 @@ impl SceneLayout {
         self.desk_facings.get(i.0).copied().unwrap_or(Facing::South)
     }
 
-    /// The visible top window-wall band height in px: [`top_wall_h`] of this
+    /// The visible top window-wall band height in px: [`wall_band_h`] of this
     /// layout's margin, for the render sites that only hold the layout.
     pub(crate) fn wall_band_h(&self) -> u16 {
-        top_wall_h(self.top_margin)
+        wall_band_h(self.top_margin)
     }
 
     /// The bounds of meeting room `room_id` — the id IS the

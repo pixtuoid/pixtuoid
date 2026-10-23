@@ -765,8 +765,8 @@ impl GroundAlign {
     /// The pixel offset from the visual box's low edge for a `footprint`-long span
     /// inside a `visual`-long box. `Center` is `floor(v/2) − floor(f/2)`, NOT
     /// `floor((v−f)/2)` — the two differ by 1px at opposite parity, which lifts the
-    /// floor lamp's block off its disc. A `footprint` longer than `visual` is
-    /// not a ground span of the box, and underflows.
+    /// floor lamp's block off its disc. Needs `footprint <= visual`, which
+    /// `furniture_def_invariants_hold_for_every_row` pins for every row.
     pub(crate) const fn offset(self, visual: u16, footprint: u16) -> u16 {
         match self {
             GroundAlign::Start => 0,
@@ -1211,7 +1211,7 @@ mod tests {
             let dx = def.ground_x.offset(def.visual.w, fp.w);
             let dy = def.ground_y.offset(def.visual.h, fp.h);
             assert!(
-                dx + fp.w <= def.visual.w.max(fp.w) && dy + fp.h <= def.visual.h.max(fp.h),
+                dx + fp.w <= def.visual.w && dy + fp.h <= def.visual.h,
                 "{kind:?}: blocked rect must not poke past the visual box"
             );
             let center_exception =

@@ -189,8 +189,6 @@ fn star_twinkle(px: u16, py: u16, beat: crate::anim::Beat) -> bool {
 
 /// The flat bands the window sky steps through from zenith to horizon.
 const SKY_BANDS: usize = 4;
-// `nearest` adds half a stop, so a seam under half keeps its top at `SKY_BANDS - 1`.
-const _: () = assert!(crate::dither::SEAM < 0.5);
 
 /// A colour for each band of the sky, zenith first.
 type Bands = [Rgb; SKY_BANDS];
@@ -374,6 +372,18 @@ mod tests {
     use super::*;
     use crate::atmosphere::Moment;
     use crate::display::pen::test_density;
+
+    /// `colour` indexes its bands by the dithered stop count, which the horizon
+    /// (the deepest share) must not carry past the last band at any phase.
+    #[test]
+    fn the_horizon_dithers_no_deeper_than_the_last_band() {
+        for y in 0..crate::dither::PERIOD {
+            for x in 0..crate::dither::PERIOD {
+                let band = crate::dither::nearest((SKY_BANDS - 1) as f32, x, y);
+                assert!(usize::from(band) < SKY_BANDS, "({x}, {y}) -> {band}");
+            }
+        }
+    }
 
     /// A star turns only on a Full beat, and the field's cycles span every
     /// beat count from the base to the base plus the span.

@@ -100,7 +100,7 @@ impl MaskObstacles<'_> {
         Self {
             buf_w,
             buf_h,
-            top_margin: 0,
+            top_margin: super::WALL_BAND_TO_TOP_MARGIN,
             home_desks: &[],
             meeting_rooms: &[],
             kitchen_island: None,
@@ -152,7 +152,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
     // To the WALL VISUAL bottom, not the full top_margin: the rows between are
     // carpet apron, and blocking them pushed the walkable boundary south of the
     // visible wall base (invariant #6).
-    mask.mark_blocked(0, 0, buf_w, super::top_wall_h(top_margin), 0);
+    mask.mark_blocked(0, 0, buf_w, super::wall_band_h(top_margin), 0);
     const BASEBOARD_H: u16 = 3;
 
     let baseboard_top = buf_h.saturating_sub(BASEBOARD_H);

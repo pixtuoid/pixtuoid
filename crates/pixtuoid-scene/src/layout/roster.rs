@@ -120,6 +120,28 @@ pub enum Station {
     SnackShelf,
 }
 
+/// How a painter draws a [`Station`]: the one mapping both painters read.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum StationArt {
+    /// The pantry counter, sized by its fixture.
+    Counter,
+    SnackShelf,
+    /// A corridor appliance, drawn from this piece.
+    Appliance(pixtuoid_core::sprite::format::Piece),
+}
+
+impl Station {
+    pub(crate) fn art(self) -> StationArt {
+        use pixtuoid_core::sprite::format::Piece;
+        match self {
+            Station::PantryCounter => StationArt::Counter,
+            Station::SnackShelf => StationArt::SnackShelf,
+            Station::VendingMachine => StationArt::Appliance(Piece::VendingMachine),
+            Station::Printer => StationArt::Appliance(Piece::Printer),
+        }
+    }
+}
+
 /// Every kind of fixture. Consumers match it exhaustively, so a new kind is a
 /// compile error in each until it decides how to hover and clear it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

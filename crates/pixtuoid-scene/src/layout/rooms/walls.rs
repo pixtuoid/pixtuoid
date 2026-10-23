@@ -310,7 +310,7 @@ pub(crate) fn wall_pieces(
     doorways: &[Doorway],
     top_margin: u16,
 ) -> Vec<WallPiece> {
-    let top_wall_h = crate::layout::top_wall_h(top_margin);
+    let top_wall_h = crate::layout::wall_band_h(top_margin);
     room_walls
         .iter()
         .map(|&seg| match seg {

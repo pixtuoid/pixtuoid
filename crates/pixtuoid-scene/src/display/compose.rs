@@ -15,7 +15,7 @@ use crate::display::pen::{ArtPx, ArtRect, Pen};
 use crate::display::text::{Align, LABEL_GAP, TextRun};
 use crate::glass_weather::GlassWeather;
 use crate::layout::{
-    Bounds, DESK_H, Depth, Fixture, FixtureKind, Point, SceneLayout, Station, Tie,
+    Bounds, DESK_H, Depth, Fixture, FixtureKind, Point, SceneLayout, StationArt, Tie,
 };
 use crate::pack::NORTH_SOFA_SEAT_ROWS;
 use crate::render_scale::RenderScale;
@@ -685,12 +685,12 @@ fn push_fixture(
                 };
                 push_art(order, pack, at, art, depth, Playback::Looping);
             };
-            match station {
-                Station::PantryCounter => {
-                    let sprite = crate::layout::pantry_counter_anim(layout.pantry_counter_size().w);
+            match station.art() {
+                StationArt::Counter => {
+                    let sprite = crate::layout::pantry_counter_anim(fixture.visual.width);
                     push_art(order, pack, at, Art::still(sprite), depth, Playback::Held);
                 }
-                Station::SnackShelf => push_art(
+                StationArt::SnackShelf => push_art(
                     order,
                     pack,
                     at,
@@ -698,8 +698,7 @@ fn push_fixture(
                     depth,
                     Playback::Held,
                 ),
-                Station::VendingMachine => appliance(PackPiece::VendingMachine),
-                Station::Printer => appliance(PackPiece::Printer),
+                StationArt::Appliance(sprite) => appliance(sprite),
             }
         }
         K::Plant { kind, .. } => push_art(
