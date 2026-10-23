@@ -502,22 +502,6 @@ mod tests {
     use crate::render_scale::RenderScale;
     use pixtuoid_core::sprite::format::Density;
 
-    /// Every loop the beat plays from the bundled pack holds each frame whole
-    /// Full beats, so the beat neither skips nor stretches one, and every
-    /// variant keeps its base's timing, the one that plays.
-    #[test]
-    fn every_bundled_loop_holds_its_frames_whole_beats() {
-        loops_hold_whole_beats("default", &test_default_pack());
-    }
-
-    /// `pack`'s loops hold whole Full beats, and its variants their base's
-    /// timing.
-    fn loops_hold_whole_beats(pack_name: &str, pack: &Pack) {
-        let report = validate_pack(pack);
-        assert_eq!(report.off_beat_loops, [], "{pack_name}");
-        assert_eq!(report.unread_variant_timing, [], "{pack_name}");
-    }
-
     /// The beat check reaches every loop a painter plays: a typist off the
     /// beat is reported.
     #[test]

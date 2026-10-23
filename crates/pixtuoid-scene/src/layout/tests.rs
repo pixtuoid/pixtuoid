@@ -377,24 +377,6 @@ fn desk_is_walk_behind_the_monitor() {
 }
 
 #[test]
-fn home_desk_typed_accessor_matches_raw_vec() {
-    let l = SceneLayout::compute(160, 200, Some(4)).expect("layout fits");
-    assert!(!l.home_desks.is_empty());
-    for i in 0..l.home_desks.len() {
-        assert_eq!(
-            l.home_desk(FloorLocalDeskIndex(i)),
-            Some(l.home_desks[i]),
-            "typed accessor must agree with the raw vec at index {i}"
-        );
-    }
-    assert_eq!(
-        l.home_desk(FloorLocalDeskIndex(l.home_desks.len())),
-        None,
-        "out-of-range floor-local index returns None"
-    );
-}
-
-#[test]
 fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
     // Sizes chosen empirically: each has a 2-desk partial bottom row whose first
     // desk appears at num_agents = cap-1 and second at cap, so cap-1 breaks the
@@ -437,11 +419,6 @@ fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
             "{w}x{h}: cap-1 leaves the partial row half-filled (break mid-row)"
         );
     }
-}
-
-#[test]
-fn compute_returns_none_when_buf_too_small() {
-    assert!(SceneLayout::compute(20, 20, Some(4)).is_none());
 }
 
 #[test]

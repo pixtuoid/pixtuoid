@@ -3,6 +3,12 @@ disallowed-methods = [
     { path = "std::env::vars", reason = "it panics on a non-UTF-8 entry; use `std::env::vars_os`" },
     { path = "open::with", reason = "it blocks the event loop until the launcher exits, as `open::that` does; call `open_url` (crate root), which detaches" },
     { path = "open::that", reason = "it blocks the event loop until the launcher exits (`xdg-open` on Linux waits for the browser); call `open_url` (crate root), which detaches" },
+    { path = "chrono::TimeZone::with_ymd_and_hms", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
+    { path = "chrono::TimeZone::from_local_datetime", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
+    { path = "chrono::TimeZone::timestamp", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
+    { path = "chrono::TimeZone::timestamp_opt", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
+    { path = "chrono::TimeZone::timestamp_millis_opt", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
+    { path = "chrono::NaiveDateTime::and_local_timezone", reason = "builds a LOCAL instant from `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails in another zone; build it through `pixtuoid_scene::localclock`, or a UTC one with `NaiveDateTime::and_utc`" },
 ]
 disallowed-macros = [
     { path = "snapbox::file", reason = "it resolves against the outermost Cargo.toml, so in a nested worktree it reads and overwrites the main checkout's golden; use `snapbox::Data::read_from` on a `CARGO_MANIFEST_DIR` path" },

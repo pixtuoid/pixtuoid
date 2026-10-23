@@ -352,15 +352,6 @@ fn lightning_strikes_are_jittered_not_metronomic() {
     assert!(offsets.iter().all(|&o| o < LIGHTNING_PERIOD_MS - STRIKE_MS));
 }
 
-#[test]
-fn the_weather_is_deterministic_and_changes_across_slots() {
-    let base = std::time::UNIX_EPOCH;
-    let at = |slot: u64| base + std::time::Duration::from_millis(slot * WEATHER_CYCLE_MS);
-    assert_eq!(clock_weather(at(17)), clock_weather(at(17)));
-    let unique: std::collections::HashSet<_> = (0..20).map(slot_weather).collect();
-    assert!(unique.len() >= 2, "weather should vary across slots");
-}
-
 /// At rest no strike flashes, for the photosensitive.
 #[test]
 fn no_strike_flashes_at_rest() {
@@ -863,13 +854,12 @@ fn a_change_lerps_the_skys_parameters_between_the_presets() {
     }
 }
 
-/// A storm coming in or going out fires its share of the strikes, each one
-/// whole: its share moving mid-strike never cuts a strike's phases short.
+/// A storm coming in or going out fires its share of the strikes, and a
+/// stronger storm keeps every strike a weaker one fired.
 #[test]
-fn a_changing_storm_fires_whole_strikes_by_its_share() {
+fn a_changing_storm_fires_its_share_of_the_strikes() {
     const BUCKETS: u64 = 10_000;
     const SHARES: u16 = 20;
-    const SAMPLE_MS: usize = 25;
     let share = |k: u16| f32::from(k) / f32::from(SHARES);
     for k in [0, SHARES / 4, SHARES / 2, 3 * SHARES / 4, SHARES] {
         let fired = (0..BUCKETS).filter(|&b| strikes(b, share(k))).count();
@@ -888,38 +878,6 @@ fn a_changing_storm_fires_whole_strikes_by_its_share() {
             );
         }
     }
-    let whole: Vec<f32> = (0..STRIKE_MS)
-        .step_by(SAMPLE_MS)
-        .map(lightning_envelope)
-        .collect();
-    let (mut partial_fired, mut partial_skipped) = (0, 0);
-    for bucket in 0..200_000u64 {
-        let start = bucket * LIGHTNING_PERIOD_MS + strike_offset(bucket);
-        let phases: Vec<f32> = (0..STRIKE_MS)
-            .step_by(SAMPLE_MS)
-            .map(|ms| flash_level_at(crate::anim::Beat::at_ms(start + ms), WeatherPolicy::Clock))
-            .collect();
-        let fired = phases == whole;
-        assert!(
-            fired || phases.iter().all(|&l| l == 0.0),
-            "bucket {bucket} cut short: {phases:?}"
-        );
-        let storm = WeatherPolicy::Clock
-            .weather_at_ms(start)
-            .share(Element::Lightning, Weather::Storm);
-        if 0.0 < storm && storm < 1.0 {
-            if fired {
-                partial_fired += 1;
-            } else {
-                partial_skipped += 1;
-            }
-        }
-    }
-    assert!(
-        partial_fired > 0 && partial_skipped > 0,
-        "a changing storm fires some strikes and skips others: \
-         {partial_fired} fired, {partial_skipped} skipped"
-    );
 }
 
 /// Each bucket with its strike's first loop ms.

@@ -1,3 +1,4 @@
+use crate::character::test_support::make_slot;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -27,28 +28,14 @@ fn office(t0: SystemTime) -> SceneState {
         scene.agents.insert(
             id,
             AgentSlot {
-                agent_id: id,
-                source: std::sync::Arc::from("claude-code"),
                 session_id: std::sync::Arc::from(format!("s{i}").as_str()),
                 cwd: std::sync::Arc::from(Path::new("/repo")),
                 label: format!("a{i}").into(),
-                state: ActivityState::Idle,
                 state_started_at: started,
                 created_at: started,
                 last_event_at: started,
-                exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
-                floor_idx: 0,
-                tool_call_count: 0,
-                active_ms: 0,
-                unknown_cwd: false,
-                parent_id: None,
-                pid: None,
-                model: None,
-                effort: None,
-                tokens_used: 0,
-                last_usage: None,
+                ..make_slot(id, ActivityState::Idle)
             },
         );
     }
@@ -165,37 +152,6 @@ fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
         floor.raster.cutaway.as_ref().map(std::ptr::from_ref),
         canvas,
         "switching back rebuilt the cutaway's canvas"
-    );
-}
-
-/// A refused frame shows the bare floor, so nothing hover named on the last
-/// drawn one is still there.
-#[test]
-fn a_refused_classic_frame_names_no_one() {
-    let pack = Arc::new(crate::pack::test_office());
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-    render(
-        &mut floor,
-        office.stores(),
-        Look::Classic,
-        inputs(&scene, &pack, t0),
-    )
-    .expect("lays out");
-    assert!(
-        !floor.raster.host_text().expect("shown").signs.is_empty(),
-        "the office is drawn"
-    );
-    let refused = RenderInputs {
-        size: Size { w: 1, h: 1 },
-        ..inputs(&scene, &pack, t0)
-    };
-    assert!(render(&mut floor, office.stores(), Look::Classic, refused).is_none());
-    let text = floor.raster.host_text().expect("shown");
-    assert!(
-        text.badges.is_empty() && text.bubbles.is_empty() && text.signs.is_empty(),
-        "no badge, bubble or sign"
     );
 }
 

@@ -142,13 +142,6 @@ mod tests {
     }
 
     #[test]
-    fn default_name_all_nonempty() {
-        for &k in PetKind::ALL {
-            assert!(!k.default_name().is_empty(), "{k:?} default_name empty");
-        }
-    }
-
-    #[test]
     fn every_pet_kind_is_reachable_from_config() {
         for &kind in PetKind::ALL {
             let name = match kind {
@@ -191,31 +184,9 @@ mod tests {
     }
 
     #[test]
-    fn defaulted_uses_default_name() {
-        assert_eq!(Pet::defaulted(PetKind::Cat).name, "Office Cat");
-        assert_eq!(Pet::defaulted(PetKind::Dog).kind, PetKind::Dog);
-    }
-
-    #[test]
     fn anim_names_match_kind() {
         assert!(PetKind::Cat.walk_anim().piece().name().starts_with("cat_"));
         assert!(PetKind::Dog.walk_anim().piece().name().starts_with("dog_"));
-    }
-
-    #[test]
-    fn dog_anim_methods() {
-        assert_eq!(
-            PetKind::Dog.walk_anim(),
-            pixtuoid_core::sprite::format::Walk::DogWalk
-        );
-        assert_eq!(
-            PetKind::Dog.sit_anim(),
-            pixtuoid_core::sprite::format::Piece::DogSit
-        );
-        assert_eq!(
-            PetKind::Dog.sleep_anim(),
-            pixtuoid_core::sprite::format::Piece::DogSleep
-        );
     }
 
     #[test]

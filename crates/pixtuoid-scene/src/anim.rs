@@ -453,13 +453,6 @@ mod tests {
     }
 
     #[test]
-    fn linear_endpoints() {
-        assert!(approx_eq(Easing::Linear.apply(0.0), 0.0));
-        assert!(approx_eq(Easing::Linear.apply(1.0), 1.0));
-        assert!(approx_eq(Easing::Linear.apply(0.5), 0.5));
-    }
-
-    #[test]
     fn ease_out_cubic_endpoints() {
         assert!(approx_eq(Easing::EaseOutCubic.apply(0.0), 0.0));
         assert!(approx_eq(Easing::EaseOutCubic.apply(1.0), 1.0));

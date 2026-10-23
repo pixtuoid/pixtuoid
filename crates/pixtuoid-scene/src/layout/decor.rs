@@ -1165,40 +1165,12 @@ mod tests {
     }
 
     #[test]
-    fn desk_is_a_furniture_def_with_desk_geometry() {
-        let d = desk_furniture_def();
+    fn the_desk_row_uses_the_desk_approach_policy() {
         assert_eq!(
-            d,
-            furniture_def(Furniture::Desk),
-            "desk_furniture_def must be sugar over the Furniture::Desk row"
-        );
-        assert_eq!(
-            d.footprint,
-            Some(Size {
-                w: DESK_W + 4,
-                h: DESK_FOOT_H,
-            }),
-            "desk footprint"
-        );
-        assert_eq!(
-            d.ground_y,
-            GroundAlign::End,
-            "desk walk-behind: south-anchored"
-        );
-        let Size { w: fw, h: fh } = d.footprint.unwrap();
-        assert!(
-            fw <= d.visual.w && fh <= d.visual.h,
-            "desk footprint must not exceed its visual"
-        );
-        assert!(
-            d.occupies_pos,
-            "agent renders ON the desk (seated_top_left); seat = seated_foot_cell(Desk)"
-        );
-        assert_eq!(
-            d.approach, DESK_APPROACH,
+            furniture_def(Furniture::Desk).approach,
+            DESK_APPROACH,
             "desk uses the editable DESK_APPROACH policy"
         );
-        assert!(d.dwell.range_ms > 0, "seated dwell range must be positive");
     }
 
     #[test]

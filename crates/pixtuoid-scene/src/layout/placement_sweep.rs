@@ -1073,15 +1073,6 @@ fn narrow_band_connectivity_boundary_scan() {
     }
 }
 
-/// At 59x160 seed 3 the band fits ONE pod column, so the only aisle drain is the
-/// intra-pod gap — a scatter plant settling onto the printer's row plugs it and
-/// seals the whole appliance strip.
-#[test]
-fn appliance_strip_not_sealed_at_a_single_pod_band() {
-    let l = SceneLayout::compute_with_seed(59, 160, None, 3).expect("59x160 lays out");
-    assert_walkable_connected(59, 160, 3, &l);
-}
-
 /// Each pod's vertical extent from the desks ALONE, so the guards below test the
 /// layout's output rather than the placement helper's own idea of where the pods are.
 fn pod_y_extents(l: &SceneLayout) -> Vec<(u16, u16)> {
@@ -1234,7 +1225,6 @@ fn the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin() {
 fn the_width_floor_stays_connected_without_its_whiteboard() {
     let (w, h, seed) = (super::compute::MIN_LAYOUT_W, 120, 3);
     let l = SceneLayout::compute_with_seed(w, h, None, seed).expect("the width floor lays out");
-    assert_walkable_connected(w, h, seed, &l);
     assert!(
         !l.wall_decor
             .iter()

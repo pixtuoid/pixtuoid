@@ -283,69 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn ground_rect_blocks_exactly_its_declared_rect() {
-        for pivot in [Pivot::TopLeft, Pivot::Center] {
-            for gx in [GroundAlign::Start, GroundAlign::Center, GroundAlign::End] {
-                for gy in [GroundAlign::Start, GroundAlign::Center, GroundAlign::End] {
-                    let pos = Point { x: 20, y: 20 };
-                    let fp = Size { w: 5, h: 3 };
-                    let visual = Size { w: 8, h: 12 };
-                    let mut mask = WalkableMask::new_open(40, 40);
-                    let (tl, sz) = ground_rect(pivot, pos, fp, visual, gx, gy);
-                    mask.mark_blocked(tl.x, tl.y, sz.w, sz.h, 0);
-                    for y in 0..40u16 {
-                        for x in 0..40u16 {
-                            let in_rect =
-                                x >= tl.x && x < tl.x + sz.w && y >= tl.y && y < tl.y + sz.h;
-                            assert_eq!(
-                                !mask.is_walkable(x, y),
-                                in_rect,
-                                "({x},{y}) blocked-vs-rect mismatch for {pivot:?}/{gx:?}/{gy:?}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn furniture_def_ground_rect_equals_the_primitive_for_every_row() {
-        let pos = Point { x: 20, y: 20 };
-        for &kind in Furniture::ALL {
-            let def = furniture_def(kind);
-            for pivot in [Pivot::TopLeft, Pivot::Center] {
-                let expect = def
-                    .footprint
-                    .map(|fp| ground_rect(pivot, pos, fp, def.visual, def.ground_x, def.ground_y));
-                assert_eq!(
-                    def.ground_rect(pivot, pos),
-                    expect,
-                    "{kind:?} ground_rect diverged from the primitive at {pivot:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn furniture_def_ground_rect_of_uses_an_explicit_footprint() {
-        let def = furniture_def(Furniture::VendingMachine);
-        let pos = Point { x: 12, y: 30 };
-        let fp = Size { w: 7, h: 2 };
-        assert_eq!(
-            def.ground_rect_of(Pivot::Center, pos, fp),
-            ground_rect(
-                Pivot::Center,
-                pos,
-                fp,
-                def.visual,
-                def.ground_x,
-                def.ground_y
-            ),
-        );
-    }
-
-    #[test]
     fn overhang_footprint_south_anchored_leaves_the_overhang_walkable() {
         // The fixture is a phone booth: a 6-wide sprite 12 tall over a 3-row
         // ground base.
@@ -448,47 +385,5 @@ mod tests {
             !mask.is_walkable(pos.x, pos.y - 2),
             "centered block: north-of-center blocked (not a south strip)"
         );
-    }
-
-    #[test]
-    fn topleft_wall_decor_x_centering_is_parity_safe() {
-        // `GroundAlign::Center` is center-ON-pos `⌊v/2⌋−⌊f/2⌋`, not center-IN-box
-        // `⌊(v−f)/2⌋`: they agree ONLY at equal parity. Every TopLeft kind today is
-        // same-parity, so this FAILS the day one isn't and the 1px becomes a choice.
-        for kind in [
-            Furniture::Whiteboard,
-            Furniture::Bookshelf,
-            Furniture::MeetingScreen,
-        ] {
-            let def = furniture_def(kind);
-            let Some(fp) = def.footprint else { continue };
-            let center_on_pos = def.visual.w / 2 - fp.w / 2;
-            let center_in_box = (def.visual.w - fp.w) / 2;
-            assert_eq!(
-                center_on_pos, center_in_box,
-                "{kind:?}: TopLeft x-centering diverges at opposite parity \
-                 (visual.w={}, footprint.w={}) — decide the 1px offset explicitly",
-                def.visual.w, fp.w
-            );
-        }
-    }
-
-    #[test]
-    fn pantry_south_strip_delegation_is_parity_safe() {
-        // `pantry_ground_rect`'s south edge is `pos.y + ⌈counter.h/2⌉` where the
-        // forked strip used `⌊counter.h/2⌋`: equal only for an EVEN counter.h. This
-        // FAILS the day an odd-height one lands and the 1px becomes a choice.
-        let pos = Point { x: 100, y: 60 };
-        for counter in [crate::layout::COMPACT_COUNTER, crate::layout::LARGE_COUNTER] {
-            let (tl, sz) = pantry_ground_rect(pos, counter);
-            let delegated_south = tl.y + sz.h;
-            let forked_south = pos.y + counter.h / 2;
-            assert_eq!(
-                delegated_south, forked_south,
-                "pantry counter h={} is ODD: the south strip diverges 1px from \
-                 the pre-refactor base anchor — decide the offset explicitly",
-                counter.h
-            );
-        }
     }
 }

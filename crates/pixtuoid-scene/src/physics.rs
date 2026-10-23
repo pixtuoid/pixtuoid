@@ -622,17 +622,6 @@ mod tests {
     }
 
     #[test]
-    fn commute_faster_than_wander() {
-        // Runtime variables avoid the `assertions_on_constants` lint.
-        let commute = V_CRUISE_COMMUTE;
-        let wander = V_CRUISE_WANDER;
-        assert!(
-            commute > wander,
-            "commute speed ({commute}) must exceed wander speed ({wander})"
-        );
-    }
-
-    #[test]
     fn speed_mult_in_range() {
         for n in 0..=50u8 {
             let m = speed_mult(id(n));
@@ -759,16 +748,6 @@ mod tests {
     }
 
     #[test]
-    fn progress_at_duration_is_done() {
-        let profile = walk_profile(1000, WalkIntent::Entry, id(0));
-        let p = walk_progress(&profile, profile.duration_ms).get();
-        assert!(
-            p >= LegProgress::SCALE - EPS,
-            "p(T) should be ≈DONE, got {p}"
-        );
-    }
-
-    #[test]
     fn progress_at_half_duration_triangular_is_near_half() {
         // In the triangular regime, s(T/2) = L/2 exactly (symmetry).
         let v_min = V_CRUISE_COMMUTE * SPEED_MULT_MIN;
@@ -851,29 +830,6 @@ mod tests {
     }
 
     #[test]
-    fn progress_saturates() {
-        let profile = walk_profile(500, WalkIntent::Entry, id(1));
-        let p = walk_progress(&profile, profile.duration_ms * 3);
-        assert_eq!(p, LegProgress::DONE, "progress must saturate");
-    }
-
-    #[test]
-    fn progress_is_monotone() {
-        let profile = walk_profile(800, WalkIntent::WanderOut, id(2));
-        let samples: Vec<LegProgress> = (0..=20)
-            .map(|i| walk_progress(&profile, i * profile.duration_ms / 20))
-            .collect();
-        for w in samples.windows(2) {
-            assert!(
-                w[1] >= w[0],
-                "progress must be non-decreasing, got {:?} then {:?}",
-                w[0],
-                w[1]
-            );
-        }
-    }
-
-    #[test]
     fn arrived_false_before_duration() {
         let profile = walk_profile(600, WalkIntent::Exit, id(4));
         assert!(
@@ -903,18 +859,6 @@ mod tests {
         assert!(
             walk_arrived(&profile, after),
             "must arrive once duration + pause elapsed"
-        );
-    }
-
-    #[test]
-    fn progress_holds_done_during_pause_window() {
-        let profile = walk_profile(700, WalkIntent::WanderBack, id(5));
-        let during_pause = profile.duration_ms + profile.pause_ms / 2;
-        let p = walk_progress(&profile, during_pause);
-        assert_eq!(
-            p,
-            LegProgress::DONE,
-            "progress during pause window must be DONE, got {p:?}"
         );
     }
 

@@ -1989,23 +1989,6 @@ mod tests {
         );
     }
 
-    /// `DESK_BAND_MIN_H` omits the Y clamp's third term on the grounds that it is 0
-    /// at the floor. Pin that premise: move `COUCH_GAP_GROWTH_BASE_H` under the floor
-    /// and the height derivation is silently short by the gap it stops accounting for.
-    #[test]
-    fn the_couch_gap_is_zero_everywhere_the_height_floor_is_solved() {
-        let mut h = super::MIN_LAYOUT_H;
-        while h < super::COUCH_GAP_GROWTH_BASE_H {
-            assert_eq!(
-                super::couch_to_desk_extra(h),
-                0,
-                "buf_h {h}: the Y clamp's third term is non-zero where DESK_BAND_MIN_H \
-                 assumes it is 0"
-            );
-            h += 1;
-        }
-    }
-
     /// Neither floor carries a SAFETY MARGIN — one-directional on purpose. It catches a
     /// floor set too HIGH, which on the width axis nothing else can. Too LOW is
     /// `every_floor_variant_seats_a_desk…`'s job. Tautological

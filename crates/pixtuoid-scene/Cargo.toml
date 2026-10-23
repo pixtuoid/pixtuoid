@@ -55,7 +55,6 @@ pixtuoid-core = { path = "../pixtuoid-core", version = "0.20.0", default-feature
 serde_json = { workspace = true }
 proptest   = { workspace = true }
 snapbox    = { workspace = true }
-tempfile   = { workspace = true }
 # tests/model_boundary.rs parses the source.
 syn         = { workspace = true }
 proc-macro2 = { workspace = true }

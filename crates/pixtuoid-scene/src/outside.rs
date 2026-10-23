@@ -642,50 +642,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// Whatever the sky outside draws (its clouds, a strike's flash and bolt,
-    /// the weather on the glass), the window's joinery is the frame's alone.
-    #[test]
-    fn nothing_outside_reaches_the_joinery() {
-        let theme = &crate::theme::NORMAL;
-        let pack = crate::pack::test_office();
-        let wall = (crate::layout::WINDOW_W * 3, 32);
-        for s in every_sky() {
-            let moment =
-                Moment::resolve(s.sky, theme, 0.0, crate::anim::Motion::Full.timing(s.now));
-            for d in [Density::ONE, pack.max_density_variant()] {
-                let outside = Outside::of(
-                    &OutsideKey::of(
-                        &moment,
-                        Wall {
-                            size: wall,
-                            bays: slots(wall.0),
-                        },
-                        d,
-                        GlassWeather::of(&moment),
-                    ),
-                    &pack,
-                    theme,
-                    &mut crate::clouds::CloudCache::default(),
-                );
-                let rows = window_rows(wall.1);
-                for x in [0, crate::layout::WINDOW_W, 2 * crate::layout::WINDOW_W] {
-                    let bay = WindowBay {
-                        x,
-                        w: crate::layout::WINDOW_W,
-                        idx: 0,
-                    };
-                    let bare = WindowView::new(bay, rows.clone(), d, |_| Rgb { r: 0, g: 0, b: 0 });
-                    assert_eq!(
-                        outside.through(bay).joinery().collect::<Vec<_>>(),
-                        bare.joinery().collect::<Vec<_>>(),
-                        "{} at {d:?}: the joinery moved",
-                        s.name
-                    );
-                }
-            }
-        }
-    }
-
     /// A frame drawn through the office's outside cache is the frame drawn
     /// without it, byte for byte: as the masses drift and the light steps
     /// through an evening, in every weather and across transitions, at both

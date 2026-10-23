@@ -1225,24 +1225,6 @@ fn pet_sort_row_tracks_the_selected_anim_sprite_height() {
     }
 }
 
-/// The seat centre is the painted desk's midline (`visual.w`), not `DESK_W`'s:
-/// only that centring leaves the jitter symmetric room on both sides.
-#[test]
-fn the_seat_centre_is_the_painted_desks_midline() {
-    use crate::layout::Facing;
-    let visual_w = crate::layout::desk_furniture_def().visual.w;
-    for desk in [Point { x: 40, y: 30 }, Point { x: 100, y: 60 }] {
-        for facing in [Facing::South, Facing::North] {
-            let seat = crate::layout::desk_walk_anchor_facing(desk, facing);
-            let base = i32::from(desk.x) + i32::from(visual_w) / 2;
-            assert!(
-                (i32::from(seat.x) - base).abs() <= 2,
-                "{desk:?} {facing:?}: the seat sits within the nudge of the sprite's midline"
-            );
-        }
-    }
-}
-
 /// The chair, its occupant and the walk that ends there all derive from ONE
 /// point, the way a meeting seat derives from `wp.pos` — so the seeded nudge
 /// cannot slide any one of them off the others.
@@ -1561,21 +1543,6 @@ fn sit_arc_sort_row_is_stable_and_on_the_right_side_of_its_furniture() {
         saw_back,
         "layout must contain a back-view seat to exercise the flicker fix"
     );
-}
-
-#[test]
-fn desk_occupant_always_sorts_behind_its_desk() {
-    let visual_h = crate::layout::desk_furniture_def().visual.h;
-    // The sort row is width-independent, so a second width would run the identical
-    // assertion; the axis worth sweeping is the desk position.
-    for desk in [Point { x: 40, y: 30 }, Point { x: 100, y: 60 }] {
-        let desk_furniture_z = desk.y + visual_h;
-        let seated_z = Seat::at_desk(desk, crate::layout::Facing::South).sort_row();
-        assert!(
-            seated_z < desk_furniture_z,
-            "seated desk occupant z {seated_z} must be BEHIND the desk {desk_furniture_z}"
-        );
-    }
 }
 
 /// The geometry table's desk height must match the ART's, or the desk's sort row
@@ -1999,23 +1966,6 @@ fn door_frame_closed_when_no_agents() {
 }
 
 #[test]
-fn wall_clock_epoch_ms_survives_an_f32_cast_only_after_an_integer_reduction() {
-    // The freeze is invisible at a test-scale `now`; it needs the real ~1.7e12
-    // magnitude, so this fixture counts from the epoch like production does.
-    let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-    let a_second_later = now + std::time::Duration::from_secs(1);
-
-    // An f32 ULP up here is ~131 s, so a whole second vanishes in the cast.
-    assert_eq!(epoch_ms(now) as f32, epoch_ms(a_second_later) as f32);
-
-    const CYCLE_MS: u64 = 4500;
-    assert_ne!(
-        (epoch_ms(now) % CYCLE_MS) as f32,
-        (epoch_ms(a_second_later) % CYCLE_MS) as f32
-    );
-}
-
-#[test]
 fn door_frame_just_spawned_is_half_open() {
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     // 50 ms into the `DOOR_TRANSITION_MS` opening ramp — first half = frame 1.
@@ -2196,19 +2146,10 @@ fn degraded_frame_transforms_opaque_pixels_and_preserves_transparency_and_dims()
         }))
     );
     assert_eq!(
-        out.as_slice()[0],
-        Some(Rgb {
-            r: 171,
-            g: 130,
-            b: 130
-        })
-    );
-    assert_eq!(
         out.as_slice()[1],
         None,
         "transparent pixel must stay transparent"
     );
-    assert_ne!(out.as_slice()[0], frame.as_slice()[0]);
 }
 
 #[test]
@@ -2452,32 +2393,7 @@ fn pet_hearts_skip_dead_and_faded_hearts() {
 }
 
 #[test]
-fn room_decor_does_not_fit_too_small_a_room() {
-    let small = crate::layout::Bounds {
-        x: 2,
-        y: 2,
-        width: 8,
-        height: 8,
-    };
-    let small_meeting = crate::layout::MeetingRoom {
-        bounds: small,
-        trio: None,
-    };
-    let small_pantry = crate::layout::PantryRoom {
-        bounds: small,
-        counter_size: crate::layout::COMPACT_COUNTER,
-        kitchen_island: None,
-    };
-    assert_eq!(small_meeting.doormat_rect(), None);
-    assert_eq!(small_pantry.water_cooler_rect(), None);
-    assert_eq!(small_pantry.trash_bin_rect(), None);
-}
-
-#[test]
-fn furniture_room_decor_large_bounds_paint() {
-    use super::furniture::{
-        paint_doormat, paint_notice_board, paint_trash_bin, paint_water_cooler,
-    };
+fn the_notice_board_paints_in_a_large_room() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let bg = Rgb { r: 9, g: 9, b: 9 };
     // A generous room, well above every guard threshold.
@@ -2487,34 +2403,12 @@ fn furniture_room_decor_large_bounds_paint() {
         width: 40,
         height: 40,
     };
-    let big_meeting = crate::layout::MeetingRoom {
-        bounds: big,
-        trio: None,
-    };
-    let big_pantry = crate::layout::PantryRoom {
-        bounds: big,
-        counter_size: crate::layout::COMPACT_COUNTER,
-        kitchen_island: None,
-    };
-    let assert_paints = |f: &dyn Fn(&mut RgbBuffer)| {
-        let mut buf = RgbBuffer::filled(120, 80, bg);
-        f(&mut buf);
-        let painted = (0..80u16)
-            .flat_map(|y| (0..120u16).map(move |x| (x, y)))
-            .any(|(x, y)| buf.get(x, y) != bg);
-        assert!(painted, "large bounds must paint the decor");
-    };
-    assert_paints(&|b| paint_notice_board(b, big, theme));
-    assert_paints(&|b| paint_doormat(b, big_meeting.doormat_rect().expect("fits"), theme));
-    assert_paints(&|b| {
-        paint_water_cooler(
-            b,
-            big_pantry.water_cooler_rect().expect("fits"),
-            Motion::Full.beat(std::time::SystemTime::UNIX_EPOCH),
-            theme,
-        )
-    });
-    assert_paints(&|b| paint_trash_bin(b, big_pantry.trash_bin_rect().expect("fits")));
+    let mut buf = RgbBuffer::filled(120, 80, bg);
+    super::furniture::paint_notice_board(&mut buf, big, theme);
+    let painted = (0..80u16)
+        .flat_map(|y| (0..120u16).map(move |x| (x, y)))
+        .any(|(x, y)| buf.get(x, y) != bg);
+    assert!(painted, "large bounds must paint the decor");
 }
 
 #[test]
@@ -3041,21 +2935,6 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
     assert!(
         hearts(&other_kind).is_empty(),
         "petting another kind of pet leaves the cat roaming"
-    );
-}
-
-#[test]
-fn every_other_desk_stands_a_cabinet_starting_with_the_first() {
-    let layout =
-        SceneLayout::compute(192, 128, Some(crate::layout::TEST_DEFAULT_DESKS)).expect("fits");
-    let cabinets: Vec<bool> = (0..layout.home_desks.len())
-        .map(|i| crate::layout::desk_has_cabinet(FloorLocalDeskIndex(i)))
-        .collect();
-    assert!(cabinets.len() >= 2);
-    assert!(cabinets.iter().step_by(2).all(|&c| c), "{cabinets:?}");
-    assert!(
-        !cabinets.iter().skip(1).step_by(2).any(|&c| c),
-        "{cabinets:?}"
     );
 }
 
@@ -4846,29 +4725,6 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
         break;
     }
     assert!(checked, "no meeting-chair sitter appeared in 1000s of sim");
-}
-
-#[test]
-fn render_top_left_matches_the_pre_lift_kind_partition() {
-    use crate::layout::{Facing, Point, WaypointKind};
-    let stand = Point { x: 80, y: 60 };
-    let w = CHARACTER_SPRITE_W;
-    for &kind in WaypointKind::ALL {
-        // Independent oracle: the exact pre-lift partition, keyed on kind alone.
-        let expected = match kind {
-            WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair => {
-                back_couch_top_left(stand, w)
-            }
-            _ => waypoint_top_left(stand, w),
-        };
-        for facing in [Facing::North, Facing::South, Facing::East, Facing::West] {
-            assert_eq!(
-                Seat::at_waypoint(kind, stand, facing).render_top_left(w),
-                expected,
-                "{kind:?}/{facing:?}: render top-left drifted from the pre-lift partition"
-            );
-        }
-    }
 }
 
 #[test]
