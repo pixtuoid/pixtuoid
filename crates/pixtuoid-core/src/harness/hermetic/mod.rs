@@ -503,15 +503,16 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
 /// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
 /// selects the `n`th: whole sources, split for about equal run time.
 pub const SHARDS: &[&[&str]] = &[
+    &["openclaw", "codex", "omp", "dsh", "antigravity"],
     &[
-        "openclaw",
-        "codex",
-        "kimi",
         "grok",
-        "claude-code",
+        "copilot",
+        "hermes",
         "opencode",
+        "claude-code",
+        "reasonix",
+        "kimi",
     ],
-    &["hermes", "dsh", "copilot", "omp", "reasonix", "antigravity"],
 ];
 
 /// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
