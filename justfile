@@ -32,8 +32,8 @@ _cargo_home := env('CARGO_HOME', '')
 # order, and stale copies sit there). Directories, not shims: a shim errors
 # outside the repo, and the hermetic sandbox runs CLIs in temp dirs. A failing
 # `mise env` fails the evaluation; no mise skips it.
-_mise_paths := shell('command -v mise >/dev/null || exit 0; mise env --paths')
-export PATH := (if _mise_paths == '' { '' } else { replace(_mise_paths, "\n", PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
+_mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths')
+export PATH := (if _mise_paths == '' { '' } else { replace_regex(_mise_paths, '\r?\n', PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
 # ── variables ─────────────────────────────────────────────────────
 # just evaluates these globally regardless of position; kept at the top so the
