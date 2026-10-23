@@ -550,6 +550,7 @@ mod tests {
         for ev in REASONIX_EVENTS {
             let payload = serde_json::json!({
                 "event": ev,
+                "sessionId": "s",
                 "cwd": "/repo",
                 "_pixtuoid_source": "reasonix",
             });

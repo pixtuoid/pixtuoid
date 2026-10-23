@@ -288,6 +288,12 @@ pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
         .unwrap_or(crate::source::claude_code::SOURCE_NAME)
 }
 
+/// A test payload as the object every hook decoder is handed.
+#[cfg(test)]
+pub(crate) fn test_obj(v: &Value) -> &crate::source::registry::HookObject {
+    v.as_object().expect("a test payload is an object")
+}
+
 /// Envelopes that decode to NOTHING, quietly. A DAEMON source's payloads ride the
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
 /// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT and fires the
@@ -323,12 +329,12 @@ fn decodes_to_nothing(
 /// through to the shared CC-shaped arms; a `ClaimsAll` decoder cannot.
 fn source_owned_arms(
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
-    v: &Value,
+    obj: &crate::source::registry::HookObject,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
     use crate::source::registry::HookDecoding;
     match desc.and_then(|d| d.hook()) {
-        Some(HookDecoding::ClaimsAll(decode)) => decode(v).map(Some),
-        Some(HookDecoding::Shared { extend, .. }) => extend(v),
+        Some(HookDecoding::ClaimsAll(decode)) => decode(obj).map(Some),
+        Some(HookDecoding::Shared { extend, .. }) => extend(obj),
         None => Ok(None),
     }
 }
@@ -414,7 +420,7 @@ pub fn decode_hook_payload(v: Value) -> DecodeResult<Vec<AgentEvent>> {
     if decodes_to_nothing(source, obj, desc) {
         return Ok(vec![]);
     }
-    if let Some(evs) = source_owned_arms(desc, &v)? {
+    if let Some(evs) = source_owned_arms(desc, obj)? {
         return Ok(evs);
     }
     shared_hook_arms(obj, source, desc)
@@ -1234,12 +1240,13 @@ mod tests {
         let ev = decode_hook_payload(json!({
             "_pixtuoid_source": "reasonix",
             "event": "PreCompact",
-            "cwd": "/repo"
+            "cwd": "/repo",
+            "sessionId": "s"
         }));
         let msg = ev.expect_err("unknown rx event must bail").to_string();
         assert!(
-            msg.contains("reasonix"),
-            "error must come from the rx decoder (claimed fully), got: {msg}"
+            msg.contains("reasonix") && msg.contains("PreCompact") && !msg.contains("sessionId"),
+            "error must be the rx decoder's unknown-event bail, got: {msg}"
         );
     }
 
@@ -1586,61 +1593,61 @@ mod tests {
             (
                 reasonix::SOURCE_NAME,
                 Box::new(|| {
-                    reasonix::decode_rx_hook_payload(&json!({
-                        "event":"PreToolUse","cwd":"/r","toolName":name,"toolArgs":{"command":tgt}}))
+                    reasonix::decode_rx_hook_payload(test_obj(&json!({
+                        "event":"PreToolUse","sessionId":"s","cwd":"/r","toolName":name,"toolArgs":{"command":tgt}})))
                     .expect("reasonix decodes")
                 }),
             ),
             (
                 dsh::SOURCE_NAME,
                 Box::new(|| {
-                    dsh::decode_dsh_payload(&json!({
-                        "type":"tool_call","sessionId":"s1","callId":"c1","toolName":name}))
+                    dsh::decode_dsh_payload(test_obj(&json!({
+                        "type":"tool_call","sessionId":"s1","callId":"c1","toolName":name})))
                     .expect("dsh decodes")
                 }),
             ),
             (
                 codewhale::SOURCE_NAME,
                 Box::new(|| {
-                    codewhale::decode_cw_hook_payload(&json!({
-                        "event":"tool_call_before","cwd":"/r","tool":name,"tool_args":cw_args}))
+                    codewhale::decode_cw_hook_payload(test_obj(&json!({
+                        "event":"tool_call_before","cwd":"/r","tool":name,"tool_args":cw_args})))
                     .expect("codewhale decodes")
                 }),
             ),
             (
                 opencode::SOURCE_NAME,
                 Box::new(|| {
-                    opencode::decode_oc_hook_payload(&json!({
+                    opencode::decode_oc_hook_payload(test_obj(&json!({
                         "type":"session.tool.input.started",
-                        "data":{"sessionID":"ses-1","id":"c1","name":name}}))
+                        "data":{"sessionID":"ses-1","id":"c1","name":name}})))
                     .expect("opencode decodes")
                 }),
             ),
             (
                 cursor::SOURCE_NAME,
                 Box::new(|| {
-                    cursor::decode_cursor_hook_payload(&json!({
+                    cursor::decode_cursor_hook_payload(test_obj(&json!({
                         "hook_event_name":"preToolUse","session_id":"s",
-                        "tool_name":name,"tool_input":{"command":tgt}}))
+                        "tool_name":name,"tool_input":{"command":tgt}})))
                     .expect("cursor decodes")
                 }),
             ),
             (
                 hermes::SOURCE_NAME,
                 Box::new(|| {
-                    hermes::decode_hermes_hook_payload(&json!({
+                    hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_tool_call","session_id":"s","cwd":"/r",
-                        "tool_name":name,"tool_input":{"command":tgt}}))
+                        "tool_name":name,"tool_input":{"command":tgt}})))
                     .expect("hermes decodes")
                 }),
             ),
             (
                 grok::SOURCE_NAME,
                 Box::new(|| {
-                    grok::decode_grok_hook_payload(&json!({
+                    grok::decode_grok_hook_payload(test_obj(&json!({
                         "hookEventName":"pre_tool_use","sessionId":"s","cwd":"/r",
                         "workspaceRoot":"/r","toolName":name,"toolUseId":"c1",
-                        "toolInput":{"command":tgt},"toolInputTruncated":false}))
+                        "toolInput":{"command":tgt},"toolInputTruncated":false})))
                     .expect("grok decodes")
                 }),
             ),
@@ -1788,9 +1795,9 @@ mod tests {
                 reasonix::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    reasonix::decode_rx_hook_payload(
-                        &json!({"event":"Notification","cwd":"/r","message":raw}),
-                    )
+                    reasonix::decode_rx_hook_payload(test_obj(
+                        &json!({"event":"Notification","sessionId":"s","cwd":"/r","message":raw}),
+                    ))
                     .expect("reasonix decodes")
                 }),
             ),
@@ -1798,8 +1805,8 @@ mod tests {
                 dsh::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    dsh::decode_dsh_payload(&json!({
-                        "type":"approval_asked","sessionId":"s1","toolName":"bash","reason":raw}))
+                    dsh::decode_dsh_payload(test_obj(&json!({
+                        "type":"approval_asked","sessionId":"s1","toolName":"bash","reason":raw})))
                     .expect("dsh decodes")
                 }),
             ),
@@ -1807,9 +1814,9 @@ mod tests {
                 opencode::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    opencode::decode_oc_hook_payload(&json!({
+                    opencode::decode_oc_hook_payload(test_obj(&json!({
                         "type":"permission.asked",
-                        "data":{"sessionID":"ses-1","action":raw}}))
+                        "data":{"sessionID":"ses-1","action":raw}})))
                     .expect("opencode decodes")
                 }),
             ),
@@ -1817,10 +1824,10 @@ mod tests {
                 grok::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    grok::decode_grok_hook_payload(&json!({
+                    grok::decode_grok_hook_payload(test_obj(&json!({
                         "hookEventName":"notification","sessionId":"s","cwd":"/r",
                         "workspaceRoot":"/r","notificationType":"permission_prompt",
-                        "message":raw}))
+                        "message":raw})))
                     .expect("grok decodes")
                 }),
             ),
@@ -1830,9 +1837,9 @@ mod tests {
                 codewhale::SOURCE_NAME,
                 ReasonKind::NoWaiting,
                 Box::new(|| {
-                    codewhale::decode_cw_hook_payload(&json!({
+                    codewhale::decode_cw_hook_payload(test_obj(&json!({
                         "event":"tool_call_before","cwd":"/r","tool":"bash",
-                        "tool_args":"{}","message":raw}))
+                        "tool_args":"{}","message":raw})))
                     .expect("codewhale decodes")
                 }),
             ),
@@ -1840,9 +1847,9 @@ mod tests {
                 cursor::SOURCE_NAME,
                 ReasonKind::NoWaiting,
                 Box::new(|| {
-                    cursor::decode_cursor_hook_payload(&json!({
+                    cursor::decode_cursor_hook_payload(test_obj(&json!({
                         "hook_event_name":"preToolUse","session_id":"s",
-                        "tool_name":"Shell","tool_input":{"command":"ls"},"message":raw}))
+                        "tool_name":"Shell","tool_input":{"command":"ls"},"message":raw})))
                     .expect("cursor decodes")
                 }),
             ),
@@ -1852,9 +1859,9 @@ mod tests {
                 hermes::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    hermes::decode_hermes_hook_payload(&json!({
+                    hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_approval_request","session_id":"s","cwd":"/r",
-                        "extra":{"description":raw}}))
+                        "extra":{"description":raw}})))
                     .expect("hermes decodes")
                 }),
             ),

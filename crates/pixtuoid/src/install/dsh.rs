@@ -410,7 +410,7 @@ mod tests {
                 "outcome": "allowed-once", "model": "m",
                 "inputTokens": 1, "outputTokens": 1,
             });
-            let evs = decode_dsh_payload(&payload).expect("decodes");
+            let evs = decode_dsh_payload(payload.as_object().expect("an object")).expect("decodes");
             assert!(
                 !evs.is_empty(),
                 "{ty} decodes to nothing — a dead wire name"

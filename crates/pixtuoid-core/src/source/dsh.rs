@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// Stable source id; MUST equal the registry row's `name`.
@@ -76,10 +77,10 @@ fn field<'v>(obj: &'v serde_json::Map<String, Value>, key: &str) -> Option<&'v s
 /// # Errors
 ///
 /// Never: the `Result` is the `HookDecoding::ClaimsAll` decoder signature, and a malformed payload decodes to `vec![]`.
-pub fn decode_dsh_payload(v: &Value) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-    let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
-    };
+#[doc(hidden)]
+pub fn decode_dsh_payload(
+    obj: &HookObject,
+) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
     let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
         crate::source::drift::missing_field(SOURCE_NAME, "plugin", "type");
         return Ok(vec![]);
@@ -237,12 +238,13 @@ pub fn decode_dsh_payload(v: &Value) -> crate::source::decoder::DecodeResult<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     const SID: &str = "01b00000-0000-7000-8000-000000000001";
 
     fn decode(v: Value) -> Vec<AgentEvent> {
-        decode_dsh_payload(&v).unwrap()
+        decode_dsh_payload(test_obj(&v)).unwrap()
     }
 
     fn id() -> AgentId {
@@ -501,7 +503,6 @@ mod tests {
         let quiet = crate::test_capture::capture_logs(|| {
             assert!(decode(json!({"type": "mystery_event", "sessionId": SID})).is_empty());
             assert!(decode(json!({"type": "tool_call"})).is_empty());
-            assert!(decode(json!("bare string")).is_empty());
         });
         assert!(
             quiet.contains("unknown_event") && quiet.contains("mystery_event"),

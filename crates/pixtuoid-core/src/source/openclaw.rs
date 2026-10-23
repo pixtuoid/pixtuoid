@@ -23,6 +23,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::source::daemon::{DaemonPresenceUpdate, DecodedPresence};
+use crate::source::registry::HookObject;
 use crate::state::DaemonInstanceId;
 
 /// The OpenClaw daemon source's registry name (its `SourceDescriptor.name`).
@@ -67,14 +68,7 @@ fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result
                 format_args!("must be a port in 1..=65535, got {raw}"),
             )
         })?;
-    instance_id(port.to_string())
-}
-
-/// [`DaemonInstanceId::new`] for an id that is statically non-empty. The `None` arm
-/// is unreachable, but production code must not `unwrap`, so it degrades to an error.
-fn instance_id(raw: String) -> Result<DaemonInstanceId> {
-    DaemonInstanceId::new(raw)
-        .ok_or_else(|| DecodeError::invalid(SOURCE_NAME, "gateway instance id", "blank"))
+    Ok(DaemonInstanceId::from_port(port))
 }
 
 /// Decode one OpenClaw plugin envelope into the sending gateway's identity plus its
@@ -84,11 +78,9 @@ fn instance_id(raw: String) -> Result<DaemonInstanceId> {
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks `type`, or carries a `gatewayPort` that is not a non-zero `u16` port.
-pub fn decode_openclaw_hook_payload(v: &Value) -> Result<DecodedPresence> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+/// If the payload lacks `type`, or carries a `gatewayPort` that is not a non-zero `u16` port.
+#[doc(hidden)]
+pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence> {
     let event = obj
         .get("type")
         .and_then(|s| s.as_str())
@@ -148,6 +140,7 @@ pub fn decode_openclaw_hook_payload(v: &Value) -> Result<DecodedPresence> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     const TEST_PORT: u64 = 18789;
@@ -156,7 +149,7 @@ mod tests {
         if let Some(o) = v.as_object_mut() {
             o.entry(GATEWAY_PORT_FIELD).or_insert(json!(TEST_PORT));
         }
-        decode_openclaw_hook_payload(&v).expect("decodes")
+        decode_openclaw_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     fn decode(v: Value) -> Vec<DaemonPresenceUpdate> {
@@ -379,10 +372,8 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors_not_panics() {
-        assert!(decode_openclaw_hook_payload(&json!("a string")).is_err());
-        assert!(decode_openclaw_hook_payload(&json!(42)).is_err());
         assert!(
-            decode_openclaw_hook_payload(&json!({"_pid": 1})).is_err(),
+            decode_openclaw_hook_payload(test_obj(&json!({"_pid": 1}))).is_err(),
             "missing type"
         );
     }
@@ -431,7 +422,7 @@ mod tests {
         ] {
             let v = json!({"type": "gateway_start", "gatewayPort": bad, "_pid": 5});
             assert!(
-                decode_openclaw_hook_payload(&v).is_err(),
+                decode_openclaw_hook_payload(test_obj(&v)).is_err(),
                 "gatewayPort {bad} must be rejected"
             );
         }
@@ -441,7 +432,7 @@ mod tests {
     fn a_rejected_gateway_port_is_display_safe_in_the_error() {
         let bad = json!("18\u{202e}78\u{7f}9");
         let v = json!({"type": "gateway_start", "gatewayPort": bad, "_pid": 5});
-        let msg = decode_openclaw_hook_payload(&v)
+        let msg = decode_openclaw_hook_payload(test_obj(&v))
             .expect_err("an unusable port is rejected")
             .to_string();
         assert!(
@@ -453,8 +444,9 @@ mod tests {
 
     #[test]
     fn a_port_less_envelope_is_rejected() {
-        let err = decode_openclaw_hook_payload(&json!({"type": "gateway_start", "_pid": 7}))
-            .expect_err("no gateway to key it on");
+        let err =
+            decode_openclaw_hook_payload(test_obj(&json!({"type": "gateway_start", "_pid": 7})))
+                .expect_err("no gateway to key it on");
         assert!(
             matches!(err, DecodeError::Missing { field, .. } if field == GATEWAY_PORT_FIELD),
             "got: {err:?}"
@@ -464,8 +456,10 @@ mod tests {
     #[test]
     fn a_valid_port_breadcrumbs_nothing() {
         let logs = crate::test_capture::capture_logs(|| {
-            decode_openclaw_hook_payload(&json!({"type": "gateway_start", "gatewayPort": 18789}))
-                .expect("decodes");
+            decode_openclaw_hook_payload(test_obj(
+                &json!({"type": "gateway_start", "gatewayPort": 18789}),
+            ))
+            .expect("decodes");
         });
         assert!(
             !logs.contains("missing_field"),

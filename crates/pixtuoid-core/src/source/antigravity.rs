@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::AgentEvent;
 use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
+use crate::source::registry::HookObject;
 
 #[cfg(feature = "native")]
 mod native;
@@ -157,12 +158,9 @@ fn decode_ag_tool_call(
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks the event stamp or `conversationId`,
+/// If the payload lacks the event stamp or `conversationId`,
 /// or fires an event the installer never registers.
-pub(crate) fn decode_ag_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get(EVENT_STAMP)
         .and_then(Value::as_str)
@@ -285,6 +283,7 @@ fn ag_tool_target(args: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::test_obj;
 
     #[test]
     fn negative_step_index_is_skipped_not_minted() {
@@ -437,7 +436,8 @@ mod tests {
 
     #[test]
     fn a_hook_keys_on_the_conversation_whose_transcript_the_watcher_walks() {
-        let out = decode_ag_hook_payload(&hook("SessionStart", serde_json::json!({}))).unwrap();
+        let out =
+            decode_ag_hook_payload(test_obj(&hook("SessionStart", serde_json::json!({})))).unwrap();
         let key = ag_id_from_path(&Path::new(LOGS).join(TRANSCRIPT));
         assert_eq!(key, "c1");
         match out.as_slice() {
@@ -464,20 +464,20 @@ mod tests {
             "stepIdx": 2,
             "toolCall": { "name": "view_file", "args": { "AbsolutePath": "/repo/NOTE.txt" } },
         });
-        let start = decode_ag_hook_payload(&hook("PreToolUse", call.clone())).unwrap();
+        let start = decode_ag_hook_payload(test_obj(&hook("PreToolUse", call.clone()))).unwrap();
         assert!(
             start.iter().any(|e| matches!(e,
                 AgentEvent::ActivityStart { tool_use_id: Some(t), detail: Some(d), .. }
                     if t == "ag-2" && d.display() == "view_file: /repo/NOTE.txt")),
             "{start:?}"
         );
-        let end = decode_ag_hook_payload(&hook("PostToolUse", call)).unwrap();
+        let end = decode_ag_hook_payload(test_obj(&hook("PostToolUse", call))).unwrap();
         assert!(
             end.iter().any(|e| matches!(e,
                 AgentEvent::ActivityEnd { tool_use_id: Some(t), .. } if t == "ag-2")),
             "{end:?}"
         );
-        let stop = decode_ag_hook_payload(&hook("Stop", serde_json::json!({}))).unwrap();
+        let stop = decode_ag_hook_payload(test_obj(&hook("Stop", serde_json::json!({})))).unwrap();
         assert!(
             matches!(
                 stop.as_slice(),
@@ -496,7 +496,7 @@ mod tests {
             "stepIdx": 4,
             "toolCall": { "name": "ask_question", "args": {} },
         });
-        let out = decode_ag_hook_payload(&hook("PreToolUse", ask)).unwrap();
+        let out = decode_ag_hook_payload(test_obj(&hook("PreToolUse", ask))).unwrap();
         assert!(
             out.iter().any(|e| matches!(e,
                 AgentEvent::Waiting { tool_use_id: Some(t), .. } if t == "ag-4")),
@@ -517,18 +517,22 @@ mod tests {
         };
         for app in ["antigravity", "antigravity-ide"] {
             assert!(
-                decode_ag_hook_payload(&at(app)).unwrap().is_empty(),
+                decode_ag_hook_payload(test_obj(&at(app)))
+                    .unwrap()
+                    .is_empty(),
                 "{app}"
             );
         }
         assert!(
-            !decode_ag_hook_payload(&at(CLI_APP_DATA_DIR))
+            !decode_ag_hook_payload(test_obj(&at(CLI_APP_DATA_DIR)))
                 .unwrap()
                 .is_empty()
         );
         let blanked = hook("SessionStart", serde_json::json!({ "transcriptPath": "" }));
         assert!(
-            !decode_ag_hook_payload(&blanked).unwrap().is_empty(),
+            !decode_ag_hook_payload(test_obj(&blanked))
+                .unwrap()
+                .is_empty(),
             "a recording blanks the unread path, and still decodes"
         );
     }
@@ -536,7 +540,10 @@ mod tests {
     #[test]
     fn an_unregistered_hook_event_is_a_breadcrumbed_error() {
         let logs = crate::test_capture::capture_logs(|| {
-            assert!(decode_ag_hook_payload(&hook("PreInvocation", serde_json::json!({}))).is_err());
+            assert!(
+                decode_ag_hook_payload(test_obj(&hook("PreInvocation", serde_json::json!({}))))
+                    .is_err()
+            );
         });
         assert!(
             logs.contains("unknown_event") && logs.contains("PreInvocation"),

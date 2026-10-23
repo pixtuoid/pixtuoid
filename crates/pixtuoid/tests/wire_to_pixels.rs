@@ -503,8 +503,10 @@ fn openclaw_state(scenario: &str, stop_at: &[&str]) -> pixtuoid_core::state::Dae
         if stop_at.contains(&ty) {
             break;
         }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(&v)
-            .expect("decode_openclaw_hook_payload");
+        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
+            v.as_object().expect("an object"),
+        )
+        .expect("decode_openclaw_hook_payload");
         let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
             pixtuoid_core::source::openclaw::SOURCE_NAME,
             decoded.instance.clone(),
@@ -567,8 +569,10 @@ fn openclaw_presence_envelope_renders_a_lobster() {
         if ty == "session_end" || ty == "gateway_stop" {
             break;
         }
-        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(&v)
-            .expect("decode_openclaw_hook_payload");
+        let decoded = pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
+            v.as_object().expect("an object"),
+        )
+        .expect("decode_openclaw_hook_payload");
         let key = pixtuoid_core::source::daemon::DaemonInstanceKey::new(
             pixtuoid_core::source::openclaw::SOURCE_NAME,
             decoded.instance.clone(),

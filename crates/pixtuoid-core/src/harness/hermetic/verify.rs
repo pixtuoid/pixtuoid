@@ -113,8 +113,8 @@ fn invalid(message: String) -> std::io::Error {
 ///
 /// # Errors
 ///
-/// If the manifest or a capture file cannot be read, or the manifest names no
-/// profiled scenario.
+/// If the manifest, a capture file or the scene log cannot be read, or the
+/// manifest names no profiled scenario.
 pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let manifest: Manifest = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
     let p = profile(&manifest.source)
@@ -122,7 +122,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scenario = p
         .scenario(&manifest.scenario)
         .ok_or_else(|| invalid(format!("{}: no scenario {}", p.source, manifest.scenario)))?;
-    let scene = std::fs::read_to_string(dir.join(SCENE_LOG)).unwrap_or_default();
+    let scene = std::fs::read_to_string(dir.join(SCENE_LOG))?;
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
     let verdict = Verdict::new(findings);

@@ -35,6 +35,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The CodeWhale CLI source's registry name (its `SourceDescriptor.name`).
@@ -79,11 +80,8 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 ///
 /// # Errors
 ///
-/// If the payload is not an object, lacks `event`, names an unhandled event, or lacks a non-empty `cwd` (a subagent event needs a non-empty `agent_id` instead).
-pub(crate) fn decode_cw_hook_payload(v: &Value) -> Result<Vec<AgentEvent>> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| DecodeError::not_an_object(SOURCE_NAME))?;
+/// If the payload lacks `event`, names an unhandled event, or lacks a non-empty `cwd` (a subagent event needs a non-empty `agent_id` instead).
+pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("event")
         .and_then(|s| s.as_str())
@@ -220,10 +218,11 @@ fn cw_tool_detail(tool: &str, raw_args: Option<&Value>) -> ToolDetail {
 mod tests {
     use super::*;
     use crate::source::decoder::MAX_TOOL_TARGET_CHARS;
+    use crate::source::decoder::test_obj;
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_cw_hook_payload(&v).expect("decodes")
+        decode_cw_hook_payload(test_obj(&v)).expect("decodes")
     }
 
     /// The payload's MAIN event: the LAST decoded one, since activity arms
@@ -358,7 +357,7 @@ mod tests {
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_cw_hook_payload(v).unwrap())
+            .flat_map(|v| decode_cw_hook_payload(test_obj(v)).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
@@ -415,15 +414,17 @@ mod tests {
 
     #[test]
     fn empty_or_missing_cwd_is_malformed() {
-        assert!(decode_cw_hook_payload(&json!({"event": "session_end", "cwd": ""})).is_err());
-        assert!(decode_cw_hook_payload(&json!({"event": "session_end"})).is_err());
+        assert!(
+            decode_cw_hook_payload(test_obj(&json!({"event": "session_end", "cwd": ""}))).is_err()
+        );
+        assert!(decode_cw_hook_payload(test_obj(&json!({"event": "session_end"}))).is_err());
     }
 
     #[test]
     fn unknown_event_bails_loudly() {
         for ev in ["turn_end", "mode_change", "on_error", "shell_env", "Bogus"] {
             assert!(
-                decode_cw_hook_payload(&json!({"event": ev, "cwd": "/r"})).is_err(),
+                decode_cw_hook_payload(test_obj(&json!({"event": ev, "cwd": "/r"}))).is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );
         }
@@ -492,9 +493,12 @@ mod tests {
     #[test]
     fn subagent_event_without_agent_id_is_malformed() {
         assert!(
-            decode_cw_hook_payload(&json!({"event": "subagent_spawn", "workspace": "/r"})).is_err()
+            decode_cw_hook_payload(test_obj(
+                &json!({"event": "subagent_spawn", "workspace": "/r"})
+            ))
+            .is_err()
         );
-        assert!(decode_cw_hook_payload(&json!({"event": "subagent_complete"})).is_err());
+        assert!(decode_cw_hook_payload(test_obj(&json!({"event": "subagent_complete"}))).is_err());
     }
 
     #[test]
@@ -507,12 +511,6 @@ mod tests {
             child.agent_id(),
             "parent (cwd-keyed) and child (agent_id-keyed) must be distinct sprites"
         );
-    }
-
-    #[test]
-    fn non_object_payload_is_malformed() {
-        assert!(decode_cw_hook_payload(&json!("just a string")).is_err());
-        assert!(decode_cw_hook_payload(&json!(42)).is_err());
     }
 
     #[test]

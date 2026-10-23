@@ -2,6 +2,7 @@ use super::hook_event_name;
 use crate::harness::hermetic::{
     ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
 };
+use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
 
 /// Claude Code's TUI. Manual mode asks before a non-read-only Bash call
@@ -62,8 +63,14 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         windows: &[
             HostConfig::Path(r"C:\Program Files\ClaudeCode"),
-            HostConfig::Registry(r"HKLM\SOFTWARE\Policies\ClaudeCode"),
-            HostConfig::Registry(r"HKCU\SOFTWARE\Policies\ClaudeCode"),
+            HostConfig::Registry {
+                hive: Hive::Hklm,
+                sub: r"SOFTWARE\Policies\ClaudeCode",
+            },
+            HostConfig::Registry {
+                hive: Hive::Hkcu,
+                sub: r"SOFTWARE\Policies\ClaudeCode",
+            },
         ],
     },
     // Memory files up to `/`, and AGENTS.md where none is found

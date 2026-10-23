@@ -666,11 +666,8 @@ impl Office {
     /// past one full loop is re-anchored instead of replayed N times.
     fn advance_script(&mut self, now: SystemTime) {
         let mut epoch = *self.epoch.get_or_insert(now);
-        let mut elapsed = now
-            .duration_since(epoch)
-            .unwrap_or_default()
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64;
+        let mut elapsed = u64::try_from(now.duration_since(epoch).unwrap_or_default().as_millis())
+            .unwrap_or(u64::MAX);
 
         // A long-hidden tab: skip whole missed loops, keep the phase — the
         // replayed SessionStarts of the kept phase re-seat the cast.

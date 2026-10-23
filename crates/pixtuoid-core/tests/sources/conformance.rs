@@ -289,7 +289,10 @@ fn all_source_fixtures_decode_and_coalesce() {
                     .iter()
                     .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
                     .filter_map(|v| {
-                        pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(&v).ok()
+                        pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
+                            v.as_object()?,
+                        )
+                        .ok()
                     })
                     .collect();
                 assert!(
