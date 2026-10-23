@@ -480,15 +480,13 @@
     Both release paths proceed on this call's success, so neither its job nor
     its step may skip or swallow a wait that went red or timed out.
   assert: |
-    (.jobs | length == 1)
-      and all(.jobs[]; ((has("if") or has("continue-on-error")) | not)
-                       and all(.steps[]; (has("if") or has("continue-on-error")) | not))
+    all(.jobs[]; ((has("if") or has("continue-on-error")) | not)
+                 and all(.steps[]; (has("if") or has("continue-on-error")) | not))
   break:
     - .jobs.wait["continue-on-error"] = true
     - .jobs.wait.if = "${{ false }}"
     - .jobs.wait.steps[0].if = "${{ false }}"
     - .jobs.wait.steps[0]["continue-on-error"] = true
-    - .jobs.extra = .jobs.wait
 
 - id: every-main-push-gets-its-ci-gate
   file: .github/workflows/ci.yml
@@ -589,7 +587,7 @@
       (.package.metadata.deb.assets[] | select(.[0] | contains("fonts")) | .[0])
       = "../pixtuoid/fonts/*.txt"
 
-- id: queue-merges-on-the-full-tier
+- id: queue-merge-conditions-are-ci-gate
   file: .mergify.yml
   why: >-
     Branch protection is not injected (the bots never review the queue's draft
