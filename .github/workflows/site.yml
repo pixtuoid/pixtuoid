@@ -80,9 +80,27 @@ jobs:
       # Only e2e needs Playwright's Chromium (lighthouse rides chrome-launcher's
       # system Chrome) and the diagram renders in-process, so Chromium lands here,
       # not in the composite pages.yml also runs.
-      # --with-deps runs its own apt-get update and install
-      # (playwright-core registry/dependencies.ts), outside apt-install's bound.
-      - run: npx playwright install --with-deps chromium chromium-headless-shell
+      # --with-deps would run its own apt-get update and install
+      # (playwright-core registry/dependencies.ts), outside apt-install's bound
+      # and mirror rotation; its dry run only names what is missing, which
+      # apt-install then fetches.
+      - name: Find Chromium's missing system packages
+        id: pw-deps
+        run: |
+          set -euo pipefail
+          report="$(npx playwright install-deps --dry-run chromium chromium-headless-shell 2>&1)" || true
+          missing="$(sed -n 's/^  \([^ ]\+\)$/\1/p' <<<"$report" | tr '\n' ' ')"
+          if [[ -z "$missing" ]] && ! grep -qx 'All system dependencies are installed.' <<<"$report"; then
+            echo "::error title=Playwright's dependency report was unreadable::$report"
+            exit 1
+          fi
+          echo "packages=$missing" >>"$GITHUB_OUTPUT"
+      - if: steps.pw-deps.outputs.packages != ''
+        uses: ./.github/actions/apt-install
+        with:
+          packages: ${{ steps.pw-deps.outputs.packages }}
+          recommends: 'false'
+      - run: npx playwright install chromium chromium-headless-shell
         timeout-minutes: 10
       - run: npm run e2e
       - run: npm run lighthouse
