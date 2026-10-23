@@ -24,13 +24,30 @@ runs:
         RECOMMENDS: ${{ inputs.recommends }}
         ATTEMPTS: '3'
         ATTEMPT_TIMEOUT: '120'
+        APT_MIRRORS: /etc/apt/apt-mirrors.txt
       run: |
         set -euo pipefail
         read -ra names <<< "$PACKAGES"
         apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
         install_opts=(-y)
         [[ "$RECOMMENDS" == true ]] || install_opts+=(--no-install-recommends)
+        # The runner's mirror list moves past a mirror only when it fails
+        # (actions/runner-images configure-apt-sources.sh), and either mirror
+        # can trickle or stall without failing, so each attempt leads with the
+        # next; Azure's, whose archive downloads trickle (runner-images#14823),
+        # goes second, and archive.ubuntu.com's stalls after a failover
+        # (runner-images#15040).
+        rotation=(archive.ubuntu.com azure.archive.ubuntu.com)
         for ((attempt = 1; ; attempt++)); do
+          if [[ -f "$APT_MIRRORS" ]]; then
+            ranked="$(mktemp)"
+            awk -v lead="${rotation[(attempt - 1) % ${#rotation[@]}]}" -v hosts="${rotation[*]}" '
+              BEGIN { FS = OFS = "\t"; split(hosts, h, " "); for (i in h) rotates[h[i]] = 1 }
+              { split($1, url, "/"); if (url[3] in rotates) $2 = "priority:" (url[3] == lead ? 1 : 2) }
+              1' "$APT_MIRRORS" >"$ranked"
+            sudo cp "$ranked" "$APT_MIRRORS"
+            rm -f "$ranked"
+          fi
           if timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" update &&
             timeout -k 10 "$ATTEMPT_TIMEOUT" sudo apt-get "${apt_opts[@]}" install "${install_opts[@]}" --download-only "${names[@]}"; then
             break

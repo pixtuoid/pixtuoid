@@ -226,17 +226,27 @@ mkdir -p "$apt_dir/bin"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "timeout %s\n" "$*" >>"$APT_LOG"; while [[ "$1" == -* ]]; do shift 2; done; shift; "$@"' >"$apt_dir/bin/timeout"
 # shellcheck disable=SC2016
 printf '%s\n' '#!/usr/bin/env bash' '"$@"' >"$apt_dir/bin/sudo"
-# Fails the first APT_FAILS calls of the kind APT_FAIL_ON names.
-# shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' 'printf "apt-get %s\n" "$*" >>"$APT_LOG"' \
-    'case " $* " in *" update "*) kind=update ;; *" --download-only "*) kind=download ;; *) exit 0 ;; esac' \
-    '[[ "$kind" == "$APT_FAIL_ON" ]] || exit 0' \
-    'n=$(($(cat "$APT_LOG.n" 2>/dev/null || echo 0) + 1)); echo $n >"$APT_LOG.n"; ((n > APT_FAILS))' >"$apt_dir/bin/apt-get"
+# Fails the first APT_FAILS calls of the kind APT_FAIL_ON names, and logs the
+# mirror each update leads with.
+cat >"$apt_dir/bin/apt-get" <<'STUB'
+#!/usr/bin/env bash
+printf 'apt-get %s\n' "$*" >>"$APT_LOG"
+case " $* " in *" update "*) kind=update ;; *" --download-only "*) kind=download ;; *) exit 0 ;; esac
+[[ "$kind" == update ]] && awk -F '\t' '$2 == "priority:1" { print "lead " $1 }' "$APT_MIRRORS" >>"$APT_LOG"
+[[ "$kind" == "$APT_FAIL_ON" ]] || exit 0
+n=$(($(cat "$APT_LOG.n" 2>/dev/null || echo 0) + 1))
+echo $n >"$APT_LOG.n"
+((n > APT_FAILS))
+STUB
 chmod +x "$apt_dir/bin/"*
+# The runner image's list (actions/runner-images configure-apt-sources.sh).
+printf 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n' >"$apt_dir/mirrors.image"
 run_apt() {
     rm -f "$apt_dir/log" "$apt_dir/log.n"
+    cp "$apt_dir/mirrors.image" "$apt_dir/mirrors"
     PATH="$apt_dir/bin:$PATH" APT_LOG="$apt_dir/log" APT_FAIL_ON="$1" APT_FAILS="$2" PACKAGES="pkg-a pkg-b" \
-        RECOMMENDS="${3:-true}" ATTEMPTS="$apt_attempts" ATTEMPT_TIMEOUT="$apt_bound" bash -c "$apt_script" >/dev/null 2>&1
+        RECOMMENDS="${3:-true}" ATTEMPTS="$apt_attempts" ATTEMPT_TIMEOUT="$apt_bound" APT_MIRRORS="$apt_dir/mirrors" \
+        bash -c "$apt_script" >/dev/null 2>&1
 }
 apt_count() { grep -c -e "$1" "$apt_dir/log" || true; }
 run_apt none 0 || fail "apt-install failed with a healthy mirror"
@@ -254,6 +264,19 @@ for kind in update download; do
     run_apt "$kind" "$apt_attempts" && fail "apt-install passed after every $kind failed"
     [[ "$(apt_count '--no-download')" == 0 ]] || fail "apt-install installed after every $kind failed"
 done
+# Each attempt leads with the next mirror, and the rest of the list keeps its
+# place.
+run_apt update $((apt_attempts - 1)) || fail "apt-install did not recover from failed updates"
+want=""
+for ((i = 0; i < apt_attempts; i++)); do
+    if ((i % 2 == 0)); then want+="https://archive.ubuntu.com/ubuntu/ "; else want+="http://azure.archive.ubuntu.com/ubuntu/ "; fi
+done
+leads="$(grep '^lead ' "$apt_dir/log" | cut -d' ' -f2 | tr '\n' ' ')"
+[[ "$leads" == "$want" ]] || fail "apt-install's attempts led with \"$leads\", not \"$want\""
+if [[ "$(grep -c . "$apt_dir/mirrors")" != 3 ]] ||
+    ! grep -q $'^https://security\.ubuntu\.com/ubuntu/\tpriority:3$' "$apt_dir/mirrors"; then
+    fail "apt-install's rotation touched lines outside it: $(<"$apt_dir/mirrors")"
+fi
 run_apt none 0 false || fail "apt-install failed without recommends"
 [[ "$(apt_count '^apt-get .*install -y --no-install-recommends')" == 2 ]] ||
     fail "apt-install did not drop recommends from both the download and the install: $(<"$apt_dir/log")"
