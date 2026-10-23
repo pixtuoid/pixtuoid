@@ -41,6 +41,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The Cursor CLI source's registry name (its `SourceDescriptor.name`).
@@ -58,9 +59,7 @@ pub const SOURCE_NAME: &str = "cursor";
 /// # Errors
 ///
 /// If the payload lacks `hook_event_name` or `session_id`, or names an unregistered event.
-pub(crate) fn decode_cursor_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())

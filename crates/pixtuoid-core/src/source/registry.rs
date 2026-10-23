@@ -41,7 +41,7 @@ impl ToolIdKey {
     }
 }
 
-/// A hook payload, already proven an object by `decode_hook_payload`.
+/// The JSON object a hook or presence decoder reads, so none re-checks its shape.
 pub type HookObject = Map<String, Value>;
 
 /// How a source's hook payloads decode. The source's own decoder runs FIRST,
@@ -503,7 +503,7 @@ pub(crate) fn path_filter_for(source: &str) -> PathFilter {
 /// A daemon source's wire decoder: its envelope → the sending INSTANCE's
 /// identity plus its presence deltas. Handed to the `HookRouter` demux, which
 /// therefore never learns what makes two instances of a daemon different.
-pub(crate) type PresenceDecoder = fn(&Value) -> Result<crate::source::daemon::DecodedPresence>;
+pub(crate) type PresenceDecoder = fn(&HookObject) -> Result<crate::source::daemon::DecodedPresence>;
 
 /// The presence decoder for a daemon source, or `None` for an agent source.
 #[cfg(any(feature = "native", feature = "harness"))]
@@ -1467,8 +1467,8 @@ mod tests {
                     }
                     _ => {}
                 }
-                if let Some(presence) = d.presence_decoder() {
-                    let _ = presence(&v);
+                if let (Some(presence), Some(obj)) = (d.presence_decoder(), v.as_object()) {
+                    let _ = presence(obj);
                 }
             }
             let _ = crate::source::decoder::decode_hook_payload(v.clone());

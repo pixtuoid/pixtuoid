@@ -30,6 +30,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, registry};
 
 /// The Kimi CLI source's registry name (its `SourceDescriptor.name`).
@@ -45,9 +46,7 @@ pub const SOURCE_NAME: &str = "kimi";
 ///   on an already-idle slot.
 /// - `StopFailure` — a failed turn end; settle to idle like `Stop`, with NO
 ///   Identity (an end proves nothing worth registering).
-pub(crate) fn decode_kimi_hook_custom(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Option<Vec<AgentEvent>>> {
+pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     match obj.get("hook_event_name").and_then(|s| s.as_str()) {
         Some("PostToolUseFailure") => {
             let session_id = kimi_session_id(obj)?;

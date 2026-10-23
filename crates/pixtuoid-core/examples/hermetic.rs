@@ -1932,11 +1932,12 @@ mod run {
                 path.exists().then(|| path.display().to_string())
             }
             #[cfg(windows)]
-            HostConfig::Registry(key) => {
-                pixtuoid_core::harness::host::registry_key_exists(key).then(|| (*key).to_owned())
+            HostConfig::Registry { hive, sub } => {
+                pixtuoid_core::harness::host::registry_key_exists(*hive, sub)
+                    .then(|| format!(r"{}\{sub}", hive.name()))
             }
             #[cfg(not(windows))]
-            HostConfig::Registry(_) => None,
+            HostConfig::Registry { .. } => None,
         }
     }
 
@@ -2552,12 +2553,19 @@ mod run {
         #[cfg(windows)]
         #[test]
         fn a_registry_row_is_config_outside_the_sandbox_while_its_key_exists() {
-            let present = HostConfig::Registry(r"HKCU\Software");
+            use pixtuoid_core::harness::host::Hive;
+            let present = HostConfig::Registry {
+                hive: Hive::Hkcu,
+                sub: "Software",
+            };
             assert_eq!(
                 host_config_found(&present, None).as_deref(),
                 Some(r"HKCU\Software")
             );
-            let absent = HostConfig::Registry(r"HKCU\Software\pixtuoid-absent-row");
+            let absent = HostConfig::Registry {
+                hive: Hive::Hkcu,
+                sub: r"Software\pixtuoid-absent-row",
+            };
             assert_eq!(host_config_found(&absent, None), None);
         }
 

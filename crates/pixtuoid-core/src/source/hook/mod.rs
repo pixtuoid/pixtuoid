@@ -278,13 +278,13 @@ pub(crate) async fn handle_conn(
                 // here: `presence_decoder_for` returns `None` for every agent
                 // source, and a daemon's payloads decode to presence deltas on
                 // the sibling channel instead of `AgentEvent`s.
-                if let (Some(ptx), Some(src)) = (
-                    presence_tx.as_ref(),
-                    v.get("_pixtuoid_source")
-                        .and_then(serde_json::Value::as_str),
-                ) && let Some(decode) = crate::source::registry::presence_decoder_for(src)
+                if let (Some(ptx), Some(obj)) = (presence_tx.as_ref(), v.as_object())
+                    && let Some(src) = obj
+                        .get("_pixtuoid_source")
+                        .and_then(serde_json::Value::as_str)
+                    && let Some(decode) = crate::source::registry::presence_decoder_for(src)
                 {
-                    match decode(&v) {
+                    match decode(obj) {
                         Ok(decoded) => {
                             let key = crate::source::daemon::DaemonInstanceKey::new(
                                 src,

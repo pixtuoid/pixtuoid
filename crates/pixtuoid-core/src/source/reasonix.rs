@@ -7,15 +7,15 @@
 //! `_pixtuoid_source: "reasonix"` in Reasonix's own envelope, NOT the CC shape:
 //!
 //! ```json
-//! {"event":"PreToolUse","cwd":"/repo","toolName":"bash","toolArgs":{"command":"ls"}}
+//! {"event":"PreToolUse","sessionId":"s1","cwd":"/repo","toolName":"bash","toolArgs":{"command":"ls"}}
 //! ```
 //!
 //! camelCase fields, `event` discriminator (not `hook_event_name`), no
 //! transcript path, and a tool-call id only on `SubagentStart`/`SubagentStop`
 //! (`internal/ext/hook/hook.go` Payload).
-//! It DOES carry `sessionId` — every recorded payload does — so
-//! that is the AgentId key. Keying on the workspace instead would merge two sessions in ONE project into
-//! a single sprite (the Cursor lesson; `hermes.rs` states it too).
+//! It DOES carry `sessionId` — every recorded payload does — so that is the
+//! AgentId key. Keying on the workspace instead would merge two sessions in ONE
+//! project into a single sprite (the Cursor lesson; `hermes.rs` states it too).
 //!
 //! Why no JSONL transport: v2 session files are FULL-REWRITTEN (tmp+rename)
 //! once per turn — zero mid-turn writes, so a tail watcher shows nothing while
@@ -28,6 +28,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The Reasonix CLI source's registry name (its `SourceDescriptor.name`).
@@ -85,9 +86,7 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 /// # Errors
 ///
 /// If the payload lacks `event`, a non-empty `cwd` or `sessionId`, or names an unregistered event.
-pub(crate) fn decode_rx_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("event")
         .and_then(|s| s.as_str())
@@ -290,8 +289,8 @@ mod tests {
         decode_all(v).pop().expect("at least one event")
     }
 
-    /// An absent `sessionId` is breadcrumbed, not merged in silence: an upstream
-    /// RENAME looks identical to a build that omits it.
+    /// An absent `sessionId` is a breadcrumbed decode error: an upstream RENAME
+    /// looks identical to a build that omits it.
     #[test]
     fn a_missing_session_id_breadcrumbs_and_is_malformed() {
         let payload = json!({"event": "SessionStart", "cwd": "/repo"});

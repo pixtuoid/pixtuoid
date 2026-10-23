@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -839,9 +840,7 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 /// # Errors
 ///
 /// Never: a malformed or unknown payload decodes to `vec![]`; the `Result` is the hook-decoder signature.
-pub(crate) fn decode_omp_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
         crate::source::drift::missing_field(SOURCE_NAME, "hook", "type");
         return Ok(vec![]);

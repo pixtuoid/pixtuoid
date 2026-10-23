@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::harness::CaptureRecord;
+use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
 use crate::source::registry;
 
@@ -55,8 +56,13 @@ pub enum HostConfig {
     /// A path; a Unix one may spell [`Placeholder::User`], a Windows one start
     /// with a placeholder [`crate::harness::host::known_folders_expanded`] resolves.
     Path(&'static str),
-    /// A Windows registry key, `HKLM\…` or `HKCU\…`.
-    Registry(&'static str),
+    /// A Windows registry key.
+    Registry {
+        /// The hive it lives under.
+        hive: Hive,
+        /// The key below the hive.
+        sub: &'static str,
+    },
 }
 
 /// How users install the CLI, so the tier runs the artifact they run.
@@ -832,11 +838,7 @@ mod tests {
                             p.source
                         );
                     }
-                    HostConfig::Registry(key) => assert!(
-                        ["HKLM\\", "HKCU\\"].iter().any(|h| key.starts_with(h)),
-                        "{}: {key} names no hive",
-                        p.source
-                    ),
+                    HostConfig::Registry { .. } => {}
                 }
             }
             for name in p.ancestor_config {

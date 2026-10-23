@@ -28,6 +28,7 @@ use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
@@ -91,7 +92,7 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
 ///
 /// If the payload lacks `type`, or a mapped event lacks a
 /// non-empty `data.sessionID`.
-pub(crate) fn decode_oc_hook_payload(obj: &Map<String, Value>) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("type")
         .and_then(Value::as_str)

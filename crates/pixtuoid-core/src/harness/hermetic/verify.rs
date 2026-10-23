@@ -113,8 +113,8 @@ fn invalid(message: String) -> std::io::Error {
 ///
 /// # Errors
 ///
-/// If the manifest or a capture file cannot be read, or the manifest names no
-/// profiled scenario.
+/// If the manifest, a capture file or the scene log cannot be read, or the
+/// manifest names no profiled scenario.
 pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let manifest: Manifest = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
     let p = profile(&manifest.source)

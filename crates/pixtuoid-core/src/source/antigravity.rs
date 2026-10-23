@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::AgentEvent;
 use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
+use crate::source::registry::HookObject;
 
 #[cfg(feature = "native")]
 mod native;
@@ -159,9 +160,7 @@ fn decode_ag_tool_call(
 ///
 /// If the payload lacks the event stamp or `conversationId`,
 /// or fires an event the installer never registers.
-pub(crate) fn decode_ag_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get(EVENT_STAMP)
         .and_then(Value::as_str)

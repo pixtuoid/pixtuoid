@@ -290,7 +290,7 @@ pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
 
 /// A test payload as the object every hook decoder is handed.
 #[cfg(test)]
-pub(crate) fn test_obj(v: &Value) -> &serde_json::Map<String, Value> {
+pub(crate) fn test_obj(v: &Value) -> &crate::source::registry::HookObject {
     v.as_object().expect("a test payload is an object")
 }
 
@@ -329,7 +329,7 @@ fn decodes_to_nothing(
 /// through to the shared CC-shaped arms; a `ClaimsAll` decoder cannot.
 fn source_owned_arms(
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
-    obj: &serde_json::Map<String, Value>,
+    obj: &crate::source::registry::HookObject,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
     use crate::source::registry::HookDecoding;
     match desc.and_then(|d| d.hook()) {

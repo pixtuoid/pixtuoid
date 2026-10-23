@@ -219,8 +219,9 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
     let presence = lines
         .iter()
         .map(|line| {
-            let src = line.get("_pixtuoid_source")?.as_str()?;
-            registry::presence_decoder_for(src)?(line).ok()
+            let obj = line.as_object()?;
+            let src = obj.get("_pixtuoid_source")?.as_str()?;
+            registry::presence_decoder_for(src)?(obj).ok()
         })
         .collect();
     let failures = |f: &[LineFailure]| f.iter().map(|x| format!("{x:?}")).collect::<Vec<_>>();

@@ -10,6 +10,7 @@ use crate::source::decoder::{
 
 use crate::AgentId;
 use crate::source::AgentEvent;
+use crate::source::registry::HookObject;
 
 #[cfg(feature = "native")]
 mod native;
@@ -55,9 +56,7 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// falls through (`Ok(None)`). Needed despite JSONL registration: a
 /// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
 /// so without `SubagentStop` they hold desks until the stale sweep.
-pub(crate) fn decode_cc_hook_custom(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Option<Vec<AgentEvent>>> {
+pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())

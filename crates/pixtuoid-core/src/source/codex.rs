@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, make_tool_detail};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -61,9 +62,7 @@ const PARENT_THREAD_ID: &str = "parent_thread_id";
 /// `SubagentStart`/`SubagentStop`, and any other event a child fires. A
 /// `spawn_agent` call's start is a Task wherever it fires; every other root
 /// event falls through (`Ok(None)`) to the shared arms.
-pub(crate) fn decode_codex_hook_custom(
-    obj: &Map<String, Value>,
-) -> Result<Option<Vec<AgentEvent>>> {
+pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())

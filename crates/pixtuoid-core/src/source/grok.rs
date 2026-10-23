@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -65,9 +66,7 @@ const XAI_HOOK_EXECUTION: &str = "hook_execution";
 /// # Errors
 ///
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
-pub(crate) fn decode_grok_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("hookEventName")
         .and_then(|s| s.as_str())

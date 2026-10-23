@@ -307,24 +307,39 @@ fn windows_owned(path: &Path) -> Option<bool> {
     owned
 }
 
-/// Whether `key` (`HKLM\…` or `HKCU\…`, the 64-bit view) exists. One the
-/// process may not read counts as existing: a CLI under the same token could
-/// not read it either, but the run would not be shown to be hermetic.
-///
-/// # Panics
-///
-/// If `key` is under neither hive.
+/// A registry hive a CLI reads policy from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hive {
+    /// `HKEY_LOCAL_MACHINE`.
+    Hklm,
+    /// `HKEY_CURRENT_USER`.
+    Hkcu,
+}
+
+impl Hive {
+    /// The hive's short name, the prefix a key is written under.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Hklm => "HKLM",
+            Self::Hkcu => "HKCU",
+        }
+    }
+}
+
+/// Whether `sub` (the 64-bit view) exists under `hive`. One the process may not
+/// read counts as existing: a CLI under the same token could not read it
+/// either, but the run would not be shown to be hermetic.
 #[cfg(windows)]
-pub fn registry_key_exists(key: &str) -> bool {
+pub fn registry_key_exists(hive: Hive, sub: &str) -> bool {
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, RegCloseKey, RegOpenKeyExW,
     };
 
-    let (hive, sub) = match key.split_once('\\') {
-        Some(("HKLM", sub)) => (HKEY_LOCAL_MACHINE, sub),
-        Some(("HKCU", sub)) => (HKEY_CURRENT_USER, sub),
-        _ => panic!("registry key {key:?} is not under HKLM or HKCU"),
+    let hive = match hive {
+        Hive::Hklm => HKEY_LOCAL_MACHINE,
+        Hive::Hkcu => HKEY_CURRENT_USER,
     };
     let wide = nul_terminated(std::ffi::OsStr::new(sub));
     let mut opened: HKEY = std::ptr::null_mut();
@@ -563,8 +578,7 @@ mod tests {
         };
 
         let sub = format!(r"Software\pixtuoid-test-{}", std::process::id());
-        let key = format!(r"HKCU\{sub}");
-        assert!(!registry_key_exists(&key));
+        assert!(!registry_key_exists(Hive::Hkcu, &sub));
         let wide = nul_terminated(std::ffi::OsStr::new(&sub));
         let mut made: HKEY = std::ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; every other pointer is a live
@@ -585,13 +599,13 @@ mod tests {
         assert_eq!(rc, ERROR_SUCCESS);
         // SAFETY: created above, closed once.
         unsafe { RegCloseKey(made) };
-        assert!(registry_key_exists(&key));
+        assert!(registry_key_exists(Hive::Hkcu, &sub));
         // SAFETY: `wide` is NUL-terminated.
         let deleted = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, wide.as_ptr()) };
         assert_eq!(deleted, ERROR_SUCCESS);
-        assert!(!registry_key_exists(&key));
+        assert!(!registry_key_exists(Hive::Hkcu, &sub));
         assert!(
-            registry_key_exists(r"HKLM\SAM\SAM"),
+            registry_key_exists(Hive::Hklm, r"SAM\SAM"),
             "SYSTEM's alone: unreadable here, so counted"
         );
     }

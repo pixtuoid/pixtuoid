@@ -35,6 +35,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The CodeWhale CLI source's registry name (its `SourceDescriptor.name`).
@@ -80,9 +81,7 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 /// # Errors
 ///
 /// If the payload lacks `event`, names an unhandled event, or lacks a non-empty `cwd` (a subagent event needs a non-empty `agent_id` instead).
-pub(crate) fn decode_cw_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("event")
         .and_then(|s| s.as_str())

@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// Stable source id; MUST equal the registry row's `name`.
@@ -76,8 +77,9 @@ fn field<'v>(obj: &'v serde_json::Map<String, Value>, key: &str) -> Option<&'v s
 /// # Errors
 ///
 /// Never: the `Result` is the `HookDecoding::ClaimsAll` decoder signature, and a malformed payload decodes to `vec![]`.
+#[doc(hidden)]
 pub fn decode_dsh_payload(
-    obj: &serde_json::Map<String, Value>,
+    obj: &HookObject,
 ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
     let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
         crate::source::drift::missing_field(SOURCE_NAME, "plugin", "type");

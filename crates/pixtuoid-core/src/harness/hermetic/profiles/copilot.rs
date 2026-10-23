@@ -5,6 +5,7 @@ use super::AIMOCK_V1;
 use crate::harness::hermetic::{
     HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn,
 };
+use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
 
 pub(crate) const PROFILE: Profile = Profile {
@@ -38,8 +39,14 @@ pub(crate) const PROFILE: Profile = Profile {
             HostConfig::Path("/etc/github-copilot/policy.d"),
         ],
         windows: &[
-            HostConfig::Registry(r"HKLM\SOFTWARE\Policies\GitHubCopilot"),
-            HostConfig::Registry(r"HKLM\Software\Policies\GitHub\Copilot"),
+            HostConfig::Registry {
+                hive: Hive::Hklm,
+                sub: r"SOFTWARE\Policies\GitHubCopilot",
+            },
+            HostConfig::Registry {
+                hive: Hive::Hklm,
+                sub: r"Software\Policies\GitHub\Copilot",
+            },
             HostConfig::Path(r"{FOLDERID_ProgramData}\GitHub\Copilot\policy.d"),
         ],
     },

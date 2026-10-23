@@ -667,7 +667,7 @@ impl Office {
     fn advance_script(&mut self, now: SystemTime) {
         let mut epoch = *self.epoch.get_or_insert(now);
         let mut elapsed = u64::try_from(now.duration_since(epoch).unwrap_or_default().as_millis())
-            .expect("both instants are u64 ms past the epoch");
+            .unwrap_or(u64::MAX);
 
         // A long-hidden tab: skip whole missed loops, keep the phase — the
         // replayed SessionStarts of the kept phase re-seat the cast.

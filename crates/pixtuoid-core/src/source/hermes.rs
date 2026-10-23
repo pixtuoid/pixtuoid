@@ -25,6 +25,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
@@ -95,9 +96,7 @@ fn resolve_hermes_home(
 /// # Errors
 ///
 /// If the payload lacks `hook_event_name`, carries neither `session_id` nor `cwd`, or names an unregistered event.
-pub(crate) fn decode_hermes_hook_payload(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("hook_event_name")
         .and_then(|s| s.as_str())
