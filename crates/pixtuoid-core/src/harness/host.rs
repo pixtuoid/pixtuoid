@@ -318,6 +318,7 @@ pub enum Hive {
 
 impl Hive {
     /// The hive's short name, the prefix a key is written under.
+    #[cfg(windows)]
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
