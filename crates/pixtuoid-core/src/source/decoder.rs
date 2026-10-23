@@ -1240,12 +1240,13 @@ mod tests {
         let ev = decode_hook_payload(json!({
             "_pixtuoid_source": "reasonix",
             "event": "PreCompact",
-            "cwd": "/repo"
+            "cwd": "/repo",
+            "sessionId": "s"
         }));
         let msg = ev.expect_err("unknown rx event must bail").to_string();
         assert!(
-            msg.contains("reasonix"),
-            "error must come from the rx decoder (claimed fully), got: {msg}"
+            msg.contains("reasonix") && msg.contains("PreCompact") && !msg.contains("sessionId"),
+            "error must be the rx decoder's unknown-event bail, got: {msg}"
         );
     }
 

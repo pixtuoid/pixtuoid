@@ -188,7 +188,7 @@ pub(crate) fn hero_gateway() -> pixtuoid_core::source::daemon::DaemonInstanceKey
 }
 
 /// OpenClaw's documented default gateway port — the hero's single instance id.
-const HERO_GATEWAY_PORT: std::num::NonZeroU16 = std::num::NonZeroU16::new(18789).unwrap();
+const HERO_GATEWAY_PORT: std::num::NonZeroU16 = std::num::NonZeroU16::new(18789).expect("nonzero");
 
 /// The lobster's loop: the OpenClaw mascot scuttles in mid-loop, shuttles
 /// through two busy runs, and walks out before the wrap — so every loop
