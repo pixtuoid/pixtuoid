@@ -31,7 +31,7 @@ _cargo_home := env('CARGO_HOME', '')
 # mise.toml's tools, ahead of ~/.cargo/bin (cargo resolves subcommands in PATH
 # order, and stale copies sit there). Directories, not shims: a shim errors
 # outside the repo, and the hermetic sandbox runs CLIs in temp dirs.
-_mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths')
+_mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths || { echo "error: mise env --paths failed; needs the mise named by min_version in mise.toml (brew upgrade mise)" >&2; exit 1; }')
 export PATH := (if _mise_paths == '' { '' } else { replace_regex(_mise_paths, '\r?\n', PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
 # ── variables ─────────────────────────────────────────────────────

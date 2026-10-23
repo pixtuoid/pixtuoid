@@ -51,11 +51,17 @@ check "git's own list carries no transport/identity vars to over-strip" \
 # `cargo fmt`; drop it from this list the moment it fans out to anything else.
 hooks_exempt_from_scrub="pre-commit"
 
+# The PATH for the cases that need neither just nor mise, whatever the
+# machine keeps in its system dirs: only what the hooks and stubs run.
+sysbin="$root/sysbin"
+mkdir -p "$sysbin"
+for b in bash git dirname; do ln -s "$(command -v "$b")" "$sysbin/$b"; done
+
 # What the hook hands `stub` (the command it runs for just) at its `exec`,
 # given the GIT_DIR a LINKED worktree's push exports. Stubbing asserts the env
 # contract alone — no toolchain, no network, no push, which is why CI can run
 # this at all. `inherit` keeps the caller's PATH behind the stub; `bare` leaves
-# only the system dirs, where no just is. Leaves the run's dir in `hook_run`.
+# only `$sysbin`. Leaves the run's dir in `hook_run`.
 hook_hands() {
     local hook="$1" stub="$2" path_mode="$3" path
     hook_run=$(mktemp -d "$root/hookXXXX")
@@ -71,7 +77,7 @@ for v in \$(git rev-parse --local-env-vars); do [ -n "\${!v:-}" ] && printf '%s 
 exit 0
 STUB
     chmod +x "$hook_run/bin/$stub"
-    path="$hook_run/bin:/usr/bin:/bin"
+    path="$hook_run/bin:$sysbin"
     [ "$path_mode" = inherit ] && path="$hook_run/bin:$PATH"
     (cd "$hook_run/repo" && PATH="$path" GIT_DIR="$hook_run/repo/.git" \
         GIT_INDEX_FILE="$hook_run/repo/.git/index" GIT_WORK_TREE="$hook_run/repo" \
@@ -120,11 +126,6 @@ for hook in "$repo"/.githooks/*; do
 done
 
 # --- the just lookup: no just on PATH, so the hook asks mise for it ----------
-bare_path_has_no_just() {
-    ! PATH=/usr/bin:/bin command -v just >/dev/null
-}
-check "the system PATH the fallback cases run on has no just" \
-    bare_path_has_no_just
 
 # `want` is what the stub mise must be called with, so the hook neither skips
 # the fallback nor runs another recipe; a hook that pushes also gets no
@@ -144,7 +145,7 @@ hook_fails_with_hint_without_just_or_mise() {
     local hook="$1" s out
     s=$(mktemp -d "$root/hookXXXX")
     git init -q "$s"
-    ! out=$(cd "$s" && PATH=/usr/bin:/bin bash "$hook" origin y </dev/null 2>&1) &&
+    ! out=$(cd "$s" && PATH="$sysbin" bash "$hook" origin y </dev/null 2>&1) &&
         grep -qF 'brew install mise' <<<"$out"
 }
 for name in pre-commit pre-push; do

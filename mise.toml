@@ -1,3 +1,5 @@
+min_version = "2026.10.11"
+
 [tools]
 just = "latest"
 shfmt = "latest"
@@ -34,7 +36,8 @@ cargo-llvm-cov = "aqua:taiki-e/cargo-llvm-cov"
 cargo-hack = "github:taiki-e/cargo-hack"
 cargo-machete = "github:bnjbvr/cargo-machete"
 cargo-semver-checks = "cargo:cargo-semver-checks"
-# Its releases lack a macos-arm64 asset, so `github:` fails there.
+# v27.1.0 ships no aarch64-apple-darwin asset, so `github:` fails on Apple
+# silicon (https://github.com/sourcefrog/cargo-mutants/releases/tag/v27.1.0).
 cargo-mutants = "cargo:cargo-mutants"
 cargo-edit = "cargo:cargo-edit"
 binaryen = "aqua:WebAssembly/binaryen"

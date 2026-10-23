@@ -29,8 +29,8 @@ yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
     '(.queue_rules | length > 0) and all(.queue_rules[]; any(.queue_conditions[]; . == $c))' >/dev/null ||
     fail ".mergify.yml has a queue that admits release-plz's ${release_prefix}* PRs"
 
-# A `tools:` word that is no mise.toml key installs a second copy, or an
-# arbitrary `@latest`, with nothing red. A computed value would escape that
+# A `tools:` word that is no mise.toml key is dropped by MISE_ENABLE_TOOLS and
+# installs nothing, so the job runs whatever the runner has, or fails late. A computed value would escape that
 # check, and setup-tools writes it to GITHUB_ENV, so only setup-cargo-just's
 # own forwarding of its input may carry an expression.
 mise_keys="$(yq -p toml -o=json '.tools | keys | .[]' mise.toml | jq -r '.')" || fail "mise.toml has no [tools]"
