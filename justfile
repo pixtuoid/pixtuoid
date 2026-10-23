@@ -573,7 +573,7 @@ corpus-all:
     #!/usr/bin/env bash
     set -uo pipefail
     cc=target/release/examples/corpus_check
-    cargo build --release -q --example corpus_check -p pixtuoid-scene
+    cargo build --release -q --example corpus_check -p pixtuoid-scene || exit 2
     # Read the roster BEFORE the loop: as a process substitution its exit status
     # is unobservable, so a roster that dies would feed an empty loop and the
     # census would report "everything clean" having censused nothing.
