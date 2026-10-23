@@ -33,9 +33,9 @@ runs:
         [[ "$RECOMMENDS" == true ]] || install_opts+=(--no-install-recommends)
         # The runner's mirror list moves past a mirror only when it fails
         # (actions/runner-images configure-apt-sources.sh), and either mirror
-        # can trickle or stall without failing (runner-images#14823, #15040),
-        # so each attempt leads with the next. Azure's trickle is the open one
-        # that failed setup-gpu here, so it goes second.
+        # can trickle or stall without failing, so each attempt leads with the
+        # next; Azure's, whose archive downloads trickle (runner-images#14823),
+        # goes second, and archive.ubuntu.com's stalls after a failover (#15040).
         rotation=(archive.ubuntu.com azure.archive.ubuntu.com)
         for ((attempt = 1; ; attempt++)); do
           if [[ -f "$APT_MIRRORS" ]]; then

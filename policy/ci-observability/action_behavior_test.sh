@@ -264,8 +264,8 @@ for kind in update download; do
     run_apt "$kind" "$apt_attempts" && fail "apt-install passed after every $kind failed"
     [[ "$(apt_count '--no-download')" == 0 ]] || fail "apt-install installed after every $kind failed"
 done
-# Each attempt leads with the next mirror, archive.ubuntu.com's first, and the
-# rest of the list keeps its place.
+# Each attempt leads with the next mirror, and the rest of the list keeps its
+# place.
 run_apt update $((apt_attempts - 1)) || fail "apt-install did not recover from failed updates"
 want=""
 for ((i = 0; i < apt_attempts; i++)); do
