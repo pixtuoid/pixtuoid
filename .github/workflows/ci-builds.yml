@@ -43,7 +43,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           components: clippy
-          tools: cargo-hack cargo-nextest
+          tools: github:taiki-e/cargo-hack aqua:nextest-rs/nextest/cargo-nextest
       - run: just hack
 
   windows-check:

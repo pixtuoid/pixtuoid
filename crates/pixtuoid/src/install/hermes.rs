@@ -66,7 +66,7 @@ pub(crate) fn detect_installed() -> bool {
 
 pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     let p = crate::install::merge::hook_path_str(resolved)?;
-    crate::install::hook_cmd::exec_hook_command(p, "hermes")
+    crate::install::hook_cmd::exec_hook_command(p, pixtuoid_core::source::hermes::SOURCE_NAME)
 }
 
 fn ystr(s: &str) -> YamlOwned {

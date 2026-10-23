@@ -52,19 +52,20 @@ fn inner_rect(outer: Rect, has_title: bool) -> Rect {
 /// arithmetic test. Painter and click-target read the SAME value, so they cannot
 /// drift.
 pub(crate) struct PanelGeometry {
-    outer: Option<Rect>,
-    inner: Option<Rect>,
+    outer: Rect,
+    inner: Rect,
 }
 
 impl PanelGeometry {
     /// `content_rows` is the content BELOW the title; the title row is added here.
+    /// `None` when the scaled envelope is under the minimum.
     pub(crate) fn compute(
         bounds: Rect,
         content_w: u16,
         content_rows: u16,
         title: Option<&str>,
         scale: f32,
-    ) -> Self {
+    ) -> Option<Self> {
         let scale = scale.clamp(0.0, 1.0);
         let full_w = content_w.saturating_add(2 * PANEL_PAD_X).min(bounds.width);
         let full_h = content_rows
@@ -74,10 +75,7 @@ impl PanelGeometry {
         let w = (f32::from(full_w) * scale).round() as u16;
         let h = (f32::from(full_h) * scale).round() as u16;
         if w < PANEL_MIN_W || h < PANEL_MIN_H {
-            return Self {
-                outer: None,
-                inner: None,
-            };
+            return None;
         }
         let outer = Rect {
             x: bounds.x + bounds.width.saturating_sub(w) / 2,
@@ -85,24 +83,24 @@ impl PanelGeometry {
             width: w,
             height: h,
         };
-        Self {
-            outer: Some(outer),
-            inner: Some(inner_rect(outer, title.is_some())),
-        }
+        Some(Self {
+            outer,
+            inner: inner_rect(outer, title.is_some()),
+        })
     }
 
-    pub(crate) fn outer(&self) -> Option<Rect> {
+    pub(crate) fn outer(&self) -> Rect {
         self.outer
     }
 
-    pub(crate) fn inner(&self) -> Option<Rect> {
+    pub(crate) fn inner(&self) -> Rect {
         self.inner
     }
 
     /// Map a content cell — `row` below the title, `col`/`len` chars within
     /// `inner` — to a clipped screen `Rect`.
     pub(crate) fn cell_rect(&self, row: u16, col: u16, len: u16) -> Option<Rect> {
-        let inner = self.inner?;
+        let inner = self.inner;
         let x = inner.x + col;
         let y = inner.y + row;
         if x >= inner.right() || y >= inner.bottom() {
@@ -123,7 +121,7 @@ impl PanelGeometry {
 
 /// The inner content WIDTH alone — height-independent, so a width-dependent row
 /// builder (word-wrap, marquee) can size before the row count is known. Pinned to
-/// agree with `compute(..).inner().width` by a test.
+/// agree with `compute(..)`'s `inner().width` by a test.
 fn panel_inner_width(bounds: Rect, content_w: u16, scale: f32) -> Option<u16> {
     let scale = scale.clamp(0.0, 1.0);
     let full_w = content_w.saturating_add(2 * PANEL_PAD_X).min(bounds.width);
@@ -271,11 +269,12 @@ impl Panel<'_> {
         };
         let list_size_rows = cap.map_or(list.len(), |c| list.len().min(c as usize));
         let content_rows = (above.len() + list_size_rows + below.len()) as u16;
-        let geom = PanelGeometry::compute(bounds, content_w, content_rows, title, Self::SCALE);
-        let Some(outer) = geom.outer() else {
+        let Some(geom) =
+            PanelGeometry::compute(bounds, content_w, content_rows, title, Self::SCALE)
+        else {
             return;
         };
-        let inner = borderless_panel(f, outer, title, theme);
+        let inner = borderless_panel(f, geom.outer(), title, theme);
 
         let viewport = (inner.height as usize).saturating_sub(above.len() + below.len());
         let win = match &overflow {
@@ -500,29 +499,19 @@ mod tests {
     #[test]
     fn geometry_guard_trips_below_min_and_at_zero_scale() {
         let b = Rect::new(0, 0, 100, 50);
-        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0);
-        assert!(g.outer().is_some() && g.inner().is_some());
+        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0).expect("renders");
         assert!(g.cell_rect(0, 0, 3).is_some());
-        let z = PanelGeometry::compute(b, 20, 5, Some("t"), 0.0);
-        assert!(z.outer().is_none() && z.inner().is_none() && z.cell_rect(0, 0, 3).is_none());
-        assert!(
-            PanelGeometry::compute(Rect::new(0, 0, 3, 50), 20, 5, Some("t"), 1.0)
-                .outer()
-                .is_none()
-        );
-        assert!(
-            PanelGeometry::compute(Rect::new(0, 0, 100, 2), 20, 5, Some("t"), 1.0)
-                .outer()
-                .is_none()
-        );
+        assert!(PanelGeometry::compute(b, 20, 5, Some("t"), 0.0).is_none());
+        assert!(PanelGeometry::compute(Rect::new(0, 0, 3, 50), 20, 5, Some("t"), 1.0).is_none());
+        assert!(PanelGeometry::compute(Rect::new(0, 0, 100, 2), 20, 5, Some("t"), 1.0).is_none());
     }
 
     #[test]
     fn a_too_tall_panel_stops_one_row_short_of_the_footer() {
         let b = Rect::new(0, 0, 40, 20);
         let tall = PanelGeometry::compute(b, 30, 100, Some("t"), 1.0)
-            .outer()
-            .expect("renders");
+            .expect("renders")
+            .outer();
         // Asserted against the FOOTER's own authority: `== b.bottom() -
         // RESERVED_FOOTER_ROWS` restates the constant under test and can't fail.
         let footer_row = b.bottom() - crate::panels::FOOTER_ROWS;
@@ -531,8 +520,8 @@ mod tests {
             "a clamped panel must leave the footer row (y={footer_row}) free, got {tall:?}"
         );
         let fits = PanelGeometry::compute(b, 30, 5, Some("t"), 1.0)
-            .outer()
-            .expect("renders");
+            .expect("renders")
+            .outer();
         assert_eq!(
             fits.y,
             (b.height - fits.height) / 2,
@@ -544,34 +533,30 @@ mod tests {
     #[test]
     fn geometry_inner_is_padded_and_drops_the_title_row() {
         let b = Rect::new(0, 0, 100, 50);
-        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0);
-        assert_eq!(g.outer(), Some(Rect::new(38, 21, 24, 8)));
-        assert_eq!(g.inner(), Some(Rect::new(40, 23, 20, 5)));
-        let u = PanelGeometry::compute(b, 20, 5, None, 1.0);
-        assert_eq!(u.outer(), Some(Rect::new(38, 21, 24, 7)));
-        assert_eq!(u.inner(), Some(Rect::new(40, 22, 20, 5)));
+        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0).expect("renders");
+        assert_eq!(g.outer(), Rect::new(38, 21, 24, 8));
+        assert_eq!(g.inner(), Rect::new(40, 23, 20, 5));
+        let u = PanelGeometry::compute(b, 20, 5, None, 1.0).expect("renders");
+        assert_eq!(u.outer(), Rect::new(38, 21, 24, 7));
+        assert_eq!(u.inner(), Rect::new(40, 22, 20, 5));
     }
 
     #[test]
     fn geometry_scale_centers_off_the_scaled_dims() {
         let b = Rect::new(0, 0, 100, 50);
-        let g = PanelGeometry::compute(b, 40, 10, Some("t"), 0.5);
-        assert_eq!(g.outer(), Some(Rect::new(39, 21, 22, 7)));
+        let g = PanelGeometry::compute(b, 40, 10, Some("t"), 0.5).expect("renders");
+        assert_eq!(g.outer(), Rect::new(39, 21, 22, 7));
     }
 
     #[test]
     fn geometry_cell_rect_maps_and_clips() {
         let b = Rect::new(0, 0, 100, 50);
-        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0);
+        let g = PanelGeometry::compute(b, 20, 5, Some("t"), 1.0).expect("renders");
         assert_eq!(g.cell_rect(0, 0, 5), Some(Rect::new(40, 23, 5, 1)));
         assert_eq!(g.cell_rect(2, 3, 4), Some(Rect::new(43, 25, 4, 1)));
         assert_eq!(g.cell_rect(0, 18, 10), Some(Rect::new(58, 23, 2, 1)));
         assert_eq!(g.cell_rect(0, 20, 5), None);
         assert_eq!(g.cell_rect(5, 0, 3), None);
-        assert_eq!(
-            PanelGeometry::compute(b, 20, 5, Some("t"), 0.0).cell_rect(0, 0, 3),
-            None
-        );
     }
 
     #[test]
@@ -581,9 +566,8 @@ mod tests {
             for &s in &[1.0f32, 0.9, 0.5] {
                 // `content_rows` tall enough that the height guard passes at
                 // every scale, so the only difference is height-independence.
-                let inner_w = PanelGeometry::compute(b, cw, 20, Some("t"), s)
-                    .inner()
-                    .map(|r| r.width);
+                let inner_w =
+                    PanelGeometry::compute(b, cw, 20, Some("t"), s).map(|g| g.inner().width);
                 assert_eq!(panel_inner_width(b, cw, s), inner_w, "cw={cw} scale={s}");
             }
         }

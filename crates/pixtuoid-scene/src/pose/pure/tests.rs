@@ -790,7 +790,7 @@ fn cycle_after_a_suppressed_release_walks_out_from_its_beginning() {
 #[test]
 fn aimless_fallback_scans_the_midline_for_a_walkable_cell() {
     let mut l = layout();
-    let c = l.corridor.unwrap_or(l.cubicle_aisle);
+    let c = l.corridor;
     let mid_y = c.y + c.height / 2;
     const POCKET_PX: u16 = 12;
     let open = Point {

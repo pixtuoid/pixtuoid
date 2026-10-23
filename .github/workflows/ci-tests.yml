@@ -60,7 +60,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           components: llvm-tools-preview
-          tools: cargo-nextest cargo-llvm-cov
+          tools: aqua:nextest-rs/nextest/cargo-nextest aqua:taiki-e/cargo-llvm-cov
       # Both tiers run the instrumented suite: rust-cache keys a job's cache on
       # the job and toolchain, not the build, and a PR restores what main's full
       # tier saved, so a plain PR build recompiled the whole graph.

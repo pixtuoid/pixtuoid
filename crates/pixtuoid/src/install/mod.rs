@@ -353,8 +353,10 @@ fn missing_artifact_issue(missing: &[PathBuf]) -> Vec<String> {
     let [first, rest @ ..] = missing else {
         return Vec::new();
     };
-    let dir = first.parent();
-    if !rest.is_empty() && dir.is_some() && rest.iter().all(|p| p.parent() == dir) {
+    if let Some(dir) = first.parent()
+        && !rest.is_empty()
+        && rest.iter().all(|p| p.parent() == Some(dir))
+    {
         let names: Vec<String> = missing
             .iter()
             .filter_map(|p| p.file_name())
@@ -363,7 +365,7 @@ fn missing_artifact_issue(missing: &[PathBuf]) -> Vec<String> {
         return vec![format!(
             "{} plugin artifacts missing from {}: {}",
             missing.len(),
-            crate::display_path(dir.unwrap_or(first)),
+            crate::display_path(dir),
             crate::strip_control_chars(&names.join(", "))
         )];
     }

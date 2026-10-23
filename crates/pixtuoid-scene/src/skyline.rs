@@ -213,11 +213,11 @@ fn beacon_cells(frame: &Frame, origin: (i32, i32), grow: u16, side: u16) -> Vec<
 /// The rows at the top of glass `glass_h` tall that no building reaches: the
 /// sky the sun, the moon and the stars always have.
 pub(crate) fn clear_sky_rows(glass_h: u16) -> u16 {
-    Plane::ALL
-        .into_iter()
-        .map(|p| p.band(glass_h, 0.0))
-        .max()
-        .map_or(glass_h, |band| glass_h - band)
+    glass_h
+        - Plane::ALL
+            .into_iter()
+            .map(|p| p.band(glass_h, 0.0))
+            .fold(0, u16::max)
 }
 
 /// One building standing in a plane, its top-left in logical units from the

@@ -25,8 +25,8 @@ pub(crate) use lookup::MONITOR_KEYS;
 pub(crate) use lookup::{
     CLOCK_FACE_KEY, COOLER_WATER, DESK_BEZEL_RAISE, DESK_BULB_KEY, ICON_INK_KEY,
     NORTH_SOFA_SEAT_ROWS, PropMark, SCREEN_GLASS_KEY, SCREEN_TEXT_KEY, appliance_frame_index,
-    appliance_overrides, appliance_piece, desk_art, desk_art_top, desk_mark, desk_prop_overrides,
-    drawn_in, fixture_overrides, looping_frame_index, prop_left,
+    appliance_overrides, desk_art, desk_art_top, desk_mark, desk_prop_overrides, drawn_in,
+    fixture_overrides, looping_frame_index, prop_left,
 };
 
 /// Which desk art a seat faces: only a back-turned seat needs its own, since

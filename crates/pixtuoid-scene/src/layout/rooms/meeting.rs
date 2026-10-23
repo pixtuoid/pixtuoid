@@ -209,7 +209,7 @@ mod tests {
                 else {
                     continue;
                 };
-                let ground_end = layout.corridor.map_or(layout.buf_h, |c| c.y);
+                let ground_end = layout.corridor.y;
                 for f in layout.fixtures() {
                     let crate::layout::FixtureKind::MeetingRug { room } = f.kind else {
                         continue;

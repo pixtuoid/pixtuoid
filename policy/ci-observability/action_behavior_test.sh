@@ -52,6 +52,19 @@ done
 [[ -n "$tools_words" ]] || fail "no setup-tools/setup-cargo-just caller passes tools"
 unknown_tools="$(comm -23 <(sort -u <<<"$tools_words") <(sort <<<"$mise_keys"))"
 [[ -z "$unknown_tools" ]] || fail "tools: words that are no mise.toml [tools] key: $unknown_tools"
+# The justfile reads `mise env` on every run, so a mise.toml that needs `mise
+# trust` (a `[tool_alias]` table does) breaks just in each fresh checkout.
+# A clean env: mise trusts every file under CI=true, and a caller's mise
+# config or state could trust it too.
+mise_untrusted() {
+    mkdir -p "$test_dir/$1/home" && cp "$2" "$test_dir/$1/mise.toml"
+    (cd "$test_dir/$1" && env -i PATH="$PATH" HOME="$test_dir/$1/home" MISE_OFFLINE=1 mise env --paths >/dev/null 2>&1)
+}
+mise_untrusted untrusted mise.toml ||
+    fail "mise.toml needs \`mise trust\`, so a fresh checkout's just fails"
+{ cat mise.toml && printf '\n[tool_alias]\nprobe = "aqua:jqlang/jq"\n'; } >"$test_dir/aliased.toml"
+! mise_untrusted aliased "$test_dir/aliased.toml" ||
+    fail "the untrusted-mise probe passes a [tool_alias] table, so it cannot fire"
 
 # ── wait-ci-gate.yml: both release paths wait for their own commit's ci-gate ──
 wait_workflow=.github/workflows/wait-ci-gate.yml

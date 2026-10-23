@@ -93,9 +93,8 @@ pub(crate) fn transmit(image: &TileImage, origin: Position) -> Vec<u8> {
         sixels.resize(colours.len() * width, 0);
         for (y, row) in band.iter().enumerate() {
             for (x, &colour) in row.iter().enumerate() {
-                if let Some(m) = slot[colour] {
-                    sixels[m * width + x] |= 1 << y;
-                }
+                let m = slot[colour].expect("the band's colours were all slotted above");
+                sixels[m * width + x] |= 1 << y;
             }
         }
         for (m, (&colour, line)) in colours.iter().zip(sixels.chunks(width.max(1))).enumerate() {

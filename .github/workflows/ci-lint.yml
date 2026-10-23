@@ -73,7 +73,7 @@ jobs:
       # cargo-machete parses manifests and does not need a Rust toolchain.
       - uses: ./.github/actions/setup-tools
         with:
-          tools: cargo-machete
+          tools: github:bnjbvr/cargo-machete
       - run: just machete
 
   # The `just lint` recipes no other job runs, so a skipped local preflight can't land their break.
@@ -89,7 +89,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-tools
         with:
-          tools: shfmt actionlint shellcheck zizmor yq jq gitleaks lychee check-jsonschema uv
+          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck

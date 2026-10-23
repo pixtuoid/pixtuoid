@@ -35,7 +35,7 @@ use window::{FloatingApp, FloatingEvent};
 /// `winit`'s event loop must own the main thread, so the source pipeline runs on a
 /// background tokio runtime (spawned, NEVER `block_on` — that would stall the window),
 /// and scene changes reach the loop via an `EventLoopProxy`. BLOCKS until the window
-/// closes; the runtime + source handles are held alive across the call.
+/// closes; `rt`, which the source tasks run on, lives across the call.
 ///
 /// # Errors
 ///
@@ -156,9 +156,6 @@ pub(crate) struct LivePipeline {
         std::sync::Arc<[std::sync::atomic::AtomicUsize; pixtuoid_core::state::MAX_FLOORS]>,
     health_rx: tokio::sync::watch::Receiver<Vec<pixtuoid_core::source::manager::SourceDeath>>,
     drift: crate::doctor::DriftSeen,
-    /// Inert anchor — the tasks are kept alive by the RUNTIME, not by these
-    /// handles (dropping a tokio `JoinHandle` detaches). See `Pipeline`'s doc.
-    _source_handles: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl LivePipeline {
@@ -194,7 +191,6 @@ impl PipelineBoot {
             scene_rx,
             health_rx,
             floor_caps,
-            _source_handles,
         } = crate::runtime::pipeline::spawn_pipeline(self.socket_path, self.connected, boot_caps);
 
         {
@@ -237,7 +233,6 @@ impl PipelineBoot {
             floor_caps,
             health_rx,
             drift: self.drift,
-            _source_handles,
         }
     }
 }

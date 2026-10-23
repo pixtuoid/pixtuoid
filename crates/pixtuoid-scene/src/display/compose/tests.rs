@@ -1,5 +1,6 @@
 use super::*;
 use crate::anim::Motion;
+use crate::layout::Station;
 use crate::pack::test_office;
 
 /// The wall board of an empty office, which no clock moves: for frames

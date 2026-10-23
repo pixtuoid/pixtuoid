@@ -77,7 +77,7 @@ fn notice_rows(bounds: Rect, notices: &[String]) -> Vec<String> {
         return Vec::new();
     }
     // The tallest inner the bounds allow: the content rows saturate to it.
-    let Some(inner) = version_geometry(bounds, 1.0, usize::MAX).and_then(|g| g.inner()) else {
+    let Some(inner) = version_geometry(bounds, 1.0, usize::MAX).map(|g| g.inner()) else {
         return Vec::new();
     };
     let width = usize::from(inner.width).saturating_sub(INDENT.len());
@@ -137,15 +137,13 @@ fn content_rows(notice_count: usize) -> u16 {
 fn version_geometry(bounds: Rect, scale: f32, notice_count: usize) -> Option<PanelGeometry> {
     // The title TEXT is irrelevant to geometry — only the reserved title row
     // (is_some) matters here; the painter draws the real title into it.
-    let geom = PanelGeometry::compute(
+    PanelGeometry::compute(
         bounds,
         VERSION_POPUP_W,
         content_rows(notice_count),
         Some(""),
         scale,
-    );
-    geom.inner()?;
-    Some(geom)
+    )
 }
 
 /// The popup's title, sized to the panel's real inner width. The dismiss hint
@@ -177,13 +175,7 @@ pub(crate) fn paint_version_popup(
     let Some(geom) = version_geometry(bounds, scale, rows.len()) else {
         return;
     };
-    let outer = geom
-        .outer()
-        .expect("version_geometry guarantees a rendered geom");
-    let inner_w = geom
-        .inner()
-        .expect("version_geometry guarantees a rendered geom")
-        .width;
+    let inner_w = geom.inner().width;
 
     let notice = Style::default().fg(to_color(theme.ui.tooltip_text));
     let mut items = vec![Line::from("")];
@@ -212,10 +204,10 @@ pub(crate) fn paint_version_popup(
     ]);
 
     let title = version_title(version, popup.upgraded, inner_w as usize);
-    // `borderless_panel(outer)` returns the SAME rect `geom.inner()` and
-    // `cell_rect` derive from, so paint and click agree.
-    let inner = borderless_panel(f, outer, Some(&title), theme);
-    f.render_widget(Paragraph::new(items), inner);
+    // `borderless_panel(outer)` returns the SAME rect `geom.inner()` and `cell_rect`
+    // derive from, so paint and click agree.
+    let painted = borderless_panel(f, geom.outer(), Some(&title), theme);
+    f.render_widget(Paragraph::new(items), painted);
 }
 
 /// The screen rect of the clickable link, or `None` when it isn't
@@ -247,8 +239,8 @@ mod tests {
     /// a second derivation of it.
     fn inner_width(bounds: Rect) -> usize {
         version_geometry(bounds, 1.0, 0)
-            .and_then(|g| g.inner())
             .expect("renders")
+            .inner()
             .width as usize
     }
 
@@ -299,8 +291,7 @@ mod tests {
 
     #[test]
     fn link_click_rect_is_the_painted_link_cell() {
-        let geom = version_geometry(wide(), 1.0, 0).expect("renders");
-        let inner = geom.inner().expect("rendered ⇒ inner Some");
+        let inner = version_geometry(wide(), 1.0, 0).expect("renders").inner();
         let expected = Rect::new(
             inner.x + INDENT.len() as u16,
             inner.y + FRAME_ROWS - 1,
@@ -324,8 +315,7 @@ mod tests {
     #[test]
     fn the_popup_renders_whole_on_a_narrow_terminal() {
         let bounds = Rect::new(0, 0, 32, 31);
-        let geom = version_geometry(bounds, 1.0, 0).expect("renders");
-        let inner = geom.inner().expect("rendered ⇒ inner Some");
+        let inner = version_geometry(bounds, 1.0, 0).expect("renders").inner();
         let row = body_row("1.2.3", inner.width as usize);
         assert!(
             row.chars().count() + INDENT.len() <= inner.width as usize,

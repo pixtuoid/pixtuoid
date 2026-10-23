@@ -10,12 +10,12 @@ fn straight_line_when_unobstructed() {
     let l = make_layout();
     let overlay = OccupancyOverlay::new();
     let from = Point {
-        x: l.corridor.unwrap().x + 10,
-        y: l.corridor.unwrap().y + 2,
+        x: l.corridor.x + 10,
+        y: l.corridor.y + 2,
     };
     let to = Point {
-        x: l.corridor.unwrap().x + 60,
-        y: l.corridor.unwrap().y + 2,
+        x: l.corridor.x + 60,
+        y: l.corridor.y + 2,
     };
     let path = find_path(&l.walkable, &overlay, None, from, to).expect("path");
     assert!(path.len() >= 2);
@@ -445,7 +445,7 @@ fn path_clear_under_misses_obstacle_returns_true() {
 fn snap_to_walkable_returns_cell_when_already_walkable() {
     let l = make_layout();
     let overlay = OccupancyOverlay::new();
-    let corridor = l.corridor.unwrap();
+    let corridor = l.corridor;
     let cell_w = l.buf_w / 4;
     let cell_h = l.buf_h / 4;
     let cx = (corridor.x + corridor.width / 2) / 4;
@@ -696,7 +696,7 @@ fn snap_point_to_walkable_returns_walkable_cell() {
         snapped.x,
         snapped.y
     );
-    let c = l.corridor.unwrap();
+    let c = l.corridor;
     let open_p = Point {
         x: c.x + c.width / 2,
         y: c.y + c.height / 2,

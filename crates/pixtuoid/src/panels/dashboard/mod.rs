@@ -85,56 +85,48 @@ impl DashboardFolds {
 /// subtree, and nesting deeper than two levels is walked too, so nothing is
 /// ever silently dropped.
 pub fn build_dashboard_rows(scene: &SceneState, folds: &DashboardFolds) -> Vec<DashboardRow> {
-    let mut children: HashMap<AgentId, Vec<AgentId>> = HashMap::new();
-    for (id, slot) in &scene.agents {
+    let mut children: HashMap<AgentId, Vec<&AgentSlot>> = HashMap::new();
+    for slot in scene.agents.values() {
         if let Some(parent) = slot.parent_id
             && scene.agents.contains_key(&parent)
         {
-            children.entry(parent).or_default().push(*id);
+            children.entry(parent).or_default().push(slot);
         }
     }
 
-    let mut roots: Vec<AgentId> = scene
+    let mut roots: Vec<&AgentSlot> = scene
         .agents
-        .iter()
-        .filter(|(_, s)| s.parent_id.is_none_or(|p| !scene.agents.contains_key(&p)))
-        .map(|(id, _)| *id)
+        .values()
+        .filter(|s| s.parent_id.is_none_or(|p| !scene.agents.contains_key(&p)))
         .collect();
-    roots.sort_by_key(|id| scene.agents[id].desk_index);
+    roots.sort_by_key(|s| s.desk_index);
 
     let mut rows = Vec::new();
     for root in roots {
-        push_subtree(scene, &children, folds, root, 0, None, &mut rows);
+        push_subtree(&children, folds, root, 0, None, &mut rows);
     }
     rows
 }
 
 fn push_subtree(
-    scene: &SceneState,
-    children: &HashMap<AgentId, Vec<AgentId>>,
+    children: &HashMap<AgentId, Vec<&AgentSlot>>,
     folds: &DashboardFolds,
-    node: AgentId,
+    node: &AgentSlot,
     depth: u8,
     parent_id: Option<AgentId>,
     rows: &mut Vec<DashboardRow>,
 ) {
-    let empty: Vec<AgentId> = Vec::new();
-    let kids = children.get(&node).unwrap_or(&empty);
+    let mut kids = children.get(&node.agent_id).cloned().unwrap_or_default();
     let child_count = kids.len();
-    let collapsed = depth == 0 && folds.is_collapsed(node, child_count);
-
-    let Some(slot) = scene.agents.get(&node) else {
-        return;
-    };
-    rows.push(row_for(slot, parent_id, depth, child_count, collapsed));
+    let collapsed = depth == 0 && folds.is_collapsed(node.agent_id, child_count);
+    rows.push(row_for(node, parent_id, depth, child_count, collapsed));
     if collapsed {
         return;
     }
 
-    let mut kids = kids.clone();
-    kids.sort_by_key(|id| scene.agents.get(id).map(|a| a.desk_index));
+    kids.sort_by_key(|s| s.desk_index);
     for kid in kids {
-        push_subtree(scene, children, folds, kid, depth + 1, Some(node), rows);
+        push_subtree(children, folds, kid, depth + 1, Some(node.agent_id), rows);
     }
 }
 

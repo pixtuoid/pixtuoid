@@ -254,9 +254,9 @@ impl Painter {
 
     /// `bytes`, BGRA rows `w` wide, into layer `id`'s texture at `(x, y)`.
     fn write(&self, id: LayerId, (x, y): (u32, u32), (w, h): (u32, u32), bytes: &[u8]) {
-        let Some(texture) = &self.textures[id.index()] else {
-            return;
-        };
+        let texture = self.textures[id.index()]
+            .as_ref()
+            .expect("upload ensures a layer's texture before writing it");
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture.tex,
@@ -304,9 +304,12 @@ impl Painter {
         for layer in &c.layers {
             let (tw, th) = layer.pixels.size();
             let empty = tw == 0 || th == 0 || layer.extent.0 == 0 || layer.extent.1 == 0;
-            if empty || self.textures[layer.id.index()].is_none() {
+            if empty {
                 continue;
             }
+            let texture = self.textures[layer.id.index()]
+                .as_ref()
+                .expect("upload ensures a layer's texture before drawing it");
             let s = f32::from(layer.scale.max(1));
             let (x, y) = (layer.origin.0 as f32, layer.origin.1 as f32);
             let (w, h) = (layer.extent.0 as f32, layer.extent.1 as f32);
@@ -319,7 +322,7 @@ impl Painter {
                 x0, y0, 0.0, 0.0, x1, y0, u1, 0.0, x0, y1, 0.0, v1, //
                 x0, y1, 0.0, v1, x1, y0, u1, 0.0, x1, y1, u1, v1,
             ]);
-            drawn.push(layer.id);
+            drawn.push(texture);
         }
         let bytes: Vec<u8> = floats.iter().flat_map(|f| f.to_ne_bytes()).collect();
         if !bytes.is_empty() {
@@ -345,12 +348,10 @@ impl Painter {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_vertex_buffer(0, self.verts.slice(..));
-            for (quad, id) in (0u32..).zip(drawn) {
-                if let Some(texture) = &self.textures[id.index()] {
-                    pass.set_bind_group(0, &texture.bind, &[]);
-                    let first = quad * QUAD_VERTICES;
-                    pass.draw(first..first + QUAD_VERTICES, 0..1);
-                }
+            for (quad, texture) in (0u32..).zip(drawn) {
+                pass.set_bind_group(0, &texture.bind, &[]);
+                let first = quad * QUAD_VERTICES;
+                pass.draw(first..first + QUAD_VERTICES, 0..1);
             }
         }
         self.queue.submit([encoder.finish()]);

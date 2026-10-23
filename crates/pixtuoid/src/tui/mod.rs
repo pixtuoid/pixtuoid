@@ -111,12 +111,10 @@ impl FloorCapacitySweep {
             if let Some(cap) = desk_cap {
                 capacity = capacity.min(cap);
             }
-            if capacity > 0 {
-                // `fetch_max` keeps capacity monotone: a shrink would shift the
-                // cumulative offsets and remap floor-1+ agents onto the wrong
-                // desks (they go invisible).
-                cap_slot.fetch_max(capacity, std::sync::atomic::Ordering::Relaxed);
-            }
+            // `fetch_max` keeps capacity monotone: a shrink would shift the
+            // cumulative offsets and remap floor-1+ agents onto the wrong
+            // desks (they go invisible).
+            cap_slot.fetch_max(capacity, std::sync::atomic::Ordering::Relaxed);
         }
         true
     }
@@ -379,7 +377,7 @@ pub(crate) struct TuiSession {
     /// the reducer task's reconciler observes (gate + graceful evict).
     pub connected: crate::runtime::ConnectedSources,
     /// Where the warn-floor log lives, for the Sources panel's drift history.
-    pub log: Option<crate::run_log::LogLocation>,
+    pub log: crate::run_log::LogLocation,
     /// The sources this run's decode drift has named, for the footer nudge.
     pub drift: crate::doctor::DriftSeen,
     /// The persisted mute/volume, handed whole to `AudioController::new`.
@@ -588,9 +586,6 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                             },
                         );
                         if quit {
-                            if ui.theme_picker.is_some() {
-                                renderer.set_theme(theme::ALL_THEMES[ui.saved_theme_idx]);
-                            }
                             break;
                         }
                     }
@@ -1237,12 +1232,12 @@ mod apply_key_action_tests {
     }
 
     impl Harness {
-        /// Onboarding open on `detected`, as a first run shows it.
-        fn onboarding(detected: &[&'static str]) -> Self {
+        /// Onboarding open on `welcome`, as a first run shows it.
+        fn onboarding(welcome: crate::panels::welcome::WelcomeUi) -> Self {
             let mut h = Self::new();
             h.ui = super::ui_state::UiState::new(
                 &theme::NORMAL,
-                crate::panels::welcome::WelcomeUi::from_detected(detected),
+                welcome,
                 h._tmp.path().join("sock"),
                 None,
                 crate::doctor::DriftSeen::default(),
@@ -1253,17 +1248,27 @@ mod apply_key_action_tests {
 
     #[test]
     fn skipping_onboarding_writes_nothing() {
-        let mut h = Harness::onboarding(&["copilot"]);
+        let mut h = Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["codex"]));
         assert!(h.ui.onboarding_open());
         h.apply(KeyAction::OnboardingSkip);
         assert!(!h.ui.onboarding_open());
         assert!(!h.config_path.exists(), "skip must not touch the config");
-        assert!(!h.connected.is_connected("copilot"));
+        assert!(!h.connected.is_connected("codex"));
     }
 
     #[test]
     fn confirming_onboarding_connects_the_checked_rows_and_opens_their_gate() {
-        let mut h = Harness::onboarding(&["copilot"]);
+        // A flag-only row: connecting a target-bearing source would install into the
+        // real CLI config.
+        let mut h = Harness::onboarding(crate::panels::welcome::WelcomeUi {
+            rows: vec![crate::panels::welcome::WelcomeRow {
+                source_id: "copilot",
+                label_prefix: "cp",
+                display_name: "Copilot".into(),
+                checked: true,
+            }],
+            selected: 0,
+        });
         h.apply(KeyAction::OnboardingConfirm);
         assert!(!h.ui.onboarding_open());
         assert!(h.connected.is_connected("copilot"));

@@ -29,6 +29,8 @@ fn first_cmd_unsafe_char(p: &str) -> Option<char> {
 /// UNQUOTED because a quoted one can't survive `cmd /C` (the host's argv-quoting
 /// escapes `"`→`\"`, which cmd then mangles), so cmd PARSES the path and any
 /// cmd-special char in it would truncate or inject — hence the 8.3 substitution.
+/// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
+/// pins it shell/cmd-safe, so it splices unquoted.
 #[cfg(windows)]
 pub(super) fn windows_bare_hook_command(resolved_path: &str, source: &str) -> Result<String> {
     resolve_windows_command(resolved_path, source, short_path_windows)
@@ -43,13 +45,6 @@ fn resolve_windows_command(
     source: &str,
     short_path: impl FnOnce(&str) -> Option<String>,
 ) -> Result<String> {
-    // Defense-in-depth: `source` is a hardcoded literal at every call site today,
-    // but screen it too so this command string can never be made injectable.
-    if let Some(bad) = first_cmd_unsafe_char(source) {
-        anyhow::bail!(
-            "internal: hook source name {source:?} contains a cmd-unsafe character {bad:?}"
-        );
-    }
     let Some(bad) = first_cmd_unsafe_char(path) else {
         return Ok(format!("{path}{}{source}", super::SOURCE_FLAG));
     };
@@ -155,14 +150,6 @@ mod tests {
                 "{path:?} must reject, never write a silently-truncating bare form"
             );
         }
-    }
-
-    #[test]
-    fn windows_command_rejects_a_cmd_unsafe_source() {
-        let c = resolve_windows_command(r"C:\tools\hook.exe", "co&dex", |_| {
-            panic!("must reject on source before touching the short-path resolver")
-        });
-        assert!(c.unwrap_err().to_string().contains("source name"));
     }
 
     // With 8.3 disabled the API returns the long path — still `Some` — so this can

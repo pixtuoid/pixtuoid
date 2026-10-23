@@ -65,34 +65,17 @@ impl Emission {
         let w = usize::from(self.w);
         for y in ys {
             let row = usize::from(y) * w;
-            if let Some(cells) = self
-                .glow
-                .get_mut(row + usize::from(xs.start)..row + usize::from(xs.end))
-            {
-                cells.fill(Glow::Lit);
-            }
+            self.glow[row + usize::from(xs.start)..row + usize::from(xs.end)].fill(Glow::Lit);
         }
     }
 
     pub(crate) fn set(&mut self, x: u16, y: u16, glow: Glow) {
-        if x < self.w
-            && let Some(g) = self
-                .glow
-                .get_mut(usize::from(y) * usize::from(self.w) + usize::from(x))
-        {
-            *g = glow;
-        }
+        self.glow[usize::from(y) * usize::from(self.w) + usize::from(x)] = glow;
     }
 
     #[cfg(test)]
     pub(crate) fn get(&self, x: u16, y: u16) -> Glow {
-        if x >= self.w {
-            return Glow::Lit;
-        }
-        self.glow
-            .get(usize::from(y) * usize::from(self.w) + usize::from(x))
-            .copied()
-            .unwrap_or(Glow::Lit)
+        self.glow[usize::from(y) * usize::from(self.w) + usize::from(x)]
     }
 }
 
@@ -149,11 +132,6 @@ pub(crate) fn net_pass(
     let bx1 = bx0.saturating_add(pen.buffer(rect.w).0);
     let by1 = by0.saturating_add(pen.buffer(rect.h).0);
     let bw = usize::from(buf.width());
-    debug_assert_eq!(
-        emission.glow.len(),
-        bw * usize::from(buf.height()),
-        "one class per pixel"
-    );
     for (by, first, row) in buf.writable_rows_mut() {
         if !(by0..by1).contains(&by) {
             continue;
@@ -164,20 +142,12 @@ pub(crate) fn net_pass(
                 continue;
             }
             let a = art_row + usize::from(pen.art_of_buffer(BufferPx(bx)).0 - rect.x.0);
-            // A miss is a pen-arithmetic bug: loud in tests, a skipped pixel in release.
-            debug_assert!(
-                a < lift.len() && a < tint.len(),
-                "art pixel {a} outside the rect"
-            );
-            let (Some(&lift), Some(&tint)) = (lift.get(a), tint.get(a)) else {
-                continue;
-            };
+            let (lift, tint) = (lift[a], tint[a]);
             if lift == 0 && ambient.steps() == 0 && flash.steps() == 0 {
                 continue;
             }
             let i = usize::from(by) * bw + usize::from(bx);
-            let glow = emission.glow.get(i).copied().unwrap_or(Glow::Lit);
-            *px = memo.of(*px, glow, lift, tint, (ambient, flash));
+            *px = memo.of(*px, emission.glow[i], lift, tint, (ambient, flash));
         }
     }
 }

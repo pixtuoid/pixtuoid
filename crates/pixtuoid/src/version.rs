@@ -7,17 +7,6 @@ use semver::Version;
 
 use crate::install::target::{self, Target};
 
-fn is_newer_version(current: &str, last_seen: &str) -> bool {
-    matches!(
-        (Version::parse(current), Version::parse(last_seen)),
-        (Ok(c), Ok(l)) if c > l
-    )
-}
-
-fn is_valid_version(s: &str) -> bool {
-    Version::parse(s).is_ok()
-}
-
 pub(crate) struct BootDecision {
     pub(crate) should_show_popup: bool,
     pub(crate) should_persist: bool,
@@ -38,18 +27,14 @@ pub(crate) struct Versions {
 /// UNPARSEABLE recorded version — overwrite to recover, else a corrupted or
 /// hand-edited value silently disables the popup forever.
 pub(crate) fn boot_decision(current_ver: &str, last_seen: Option<&str>) -> BootDecision {
-    let last_seen_parseable = last_seen.is_some_and(is_valid_version);
-    let should_show_popup = match last_seen {
-        Some(last) if last_seen_parseable => is_newer_version(current_ver, last),
-        _ => false,
-    };
-    let should_persist = should_show_popup || last_seen.is_none() || !last_seen_parseable;
+    let current = Version::parse(current_ver).ok();
+    let previous = last_seen.and_then(|v| Version::parse(v).ok());
+    let should_show_popup = matches!((&current, &previous), (Some(c), Some(p)) if c > p);
     BootDecision {
         should_show_popup,
-        should_persist,
-        versions: last_seen
-            .and_then(|v| Version::parse(v).ok())
-            .zip(Version::parse(current_ver).ok())
+        should_persist: should_show_popup || previous.is_none(),
+        versions: previous
+            .zip(current)
             .map(|(previous, current)| Versions { previous, current }),
     }
 }
@@ -168,6 +153,10 @@ pub(crate) fn due(versions: Option<&Versions>, facts: &Facts<'_>) -> Vec<String>
 mod tests {
     use super::*;
 
+    fn is_newer_version(current: &str, last_seen: &str) -> bool {
+        boot_decision(current, Some(last_seen)).should_show_popup
+    }
+
     #[test]
     fn newer_version_detected() {
         assert!(is_newer_version("0.2.0", "0.1.0"));
@@ -261,33 +250,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn is_valid_version_accepts_well_formed() {
-        assert!(is_valid_version("0.4.0"));
-        assert!(is_valid_version("1.2.3"));
-        assert!(is_valid_version("0.5.0-rc1"));
-    }
-
-    #[test]
-    fn is_valid_version_rejects_corrupted() {
-        assert!(!is_valid_version("v0.4.0"), "leading v is not semver");
-        assert!(!is_valid_version("0.5"), "semver needs the patch");
-        assert!(!is_valid_version("garbage"));
-        assert!(!is_valid_version(""));
-    }
-
     // `v0.4.0` is the git-tag spelling — the corruption a hand-edit actually hits.
     #[test]
     fn boot_decision_overwrites_corrupted_last_seen() {
-        let d = boot_decision("0.4.1", Some("v0.4.0"));
-        assert!(
-            !d.should_show_popup,
-            "can't show popup when comparison fails"
-        );
-        assert!(
-            d.should_persist,
-            "corrupted last_seen must be overwritten to recover"
-        );
+        for corrupted in ["v0.4.0", "0.5", "garbage", ""] {
+            let d = boot_decision("0.4.1", Some(corrupted));
+            assert!(
+                !d.should_show_popup,
+                "can't show popup when comparison fails: {corrupted:?}"
+            );
+            assert!(
+                d.should_persist,
+                "corrupted last_seen must be overwritten to recover: {corrupted:?}"
+            );
+        }
     }
 
     #[test]
