@@ -3,69 +3,69 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ActivityStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
 - ModelInfo:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     model: gpt-5.5
     effort: high
 - ActivityStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
     detail:
       Generic:
         display: apply_patch
 - ActivityEnd:
-    agent_id: 3468463874348028355
-    tool_use_id: call_IsRUCIHmtikU3w-K
+    agent_id: 343160842670398086
+    tool_use_id: call_pD-dgyzqtxsDGzB8
 - ActivityStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     fresh_tokens: 19
 - ActivityStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     fresh_tokens: 19
 - ActivityEnd:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
 - SessionStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     source: codex
-    session_id: 01a15847-a67e-75e3-817a-fc5e58cde2bc
+    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     source: codex
-    session_id: 01a15847-a67e-75e3-817a-fc5e58cde2bc
+    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     source: codex
-    session_id: 01a15847-a67e-75e3-817a-fc5e58cde2bc
+    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 3468463874348028355
-    tool_use_id: call_IsRUCIHmtikU3w-K
+    agent_id: 343160842670398086
+    tool_use_id: call_pD-dgyzqtxsDGzB8
     detail:
       Generic:
         display: apply_patch
 - ActivityEnd:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 3468463874348028355
+    agent_id: 343160842670398086
     as_child: false

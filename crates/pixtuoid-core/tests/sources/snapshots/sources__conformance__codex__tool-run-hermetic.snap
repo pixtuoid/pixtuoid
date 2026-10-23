@@ -3,73 +3,73 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ActivityStart:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     tool_use_id: ~
     detail: ~
 - ModelInfo:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     model: gpt-5.5
     effort: high
 - ActivityStart:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     tool_use_id: ~
     detail:
       Generic:
         display: exec_command
 - ActivityEnd:
-    agent_id: 5476723989331738087
-    tool_use_id: call_hVAp5U25J0igfFUl
+    agent_id: 16776226614969337505
+    tool_use_id: call_Vg1LSU3uZQohij0Q
 - ActivityStart:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     fresh_tokens: 19
 - Usage:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     fresh_tokens: 19
 - ActivityEnd:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     tool_use_id: ~
 - SessionStart:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     source: codex
-    session_id: 01a15847-82b1-7343-a0ff-4986056655b8
+    session_id: 01a168f4-f477-79a0-aca1-729bee7c9d0c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     source: codex
-    session_id: 01a15847-82b1-7343-a0ff-4986056655b8
+    session_id: 01a168f4-f477-79a0-aca1-729bee7c9d0c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     source: codex
-    session_id: 01a15847-82b1-7343-a0ff-4986056655b8
+    session_id: 01a168f4-f477-79a0-aca1-729bee7c9d0c
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 5476723989331738087
-    tool_use_id: call_hVAp5U25J0igfFUl
+    agent_id: 16776226614969337505
+    tool_use_id: call_Vg1LSU3uZQohij0Q
     detail:
       Generic:
         display: "Bash: cat NOTE.txt"
 - Identity:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     source: codex
-    session_id: 01a15847-82b1-7343-a0ff-4986056655b8
+    session_id: 01a168f4-f477-79a0-aca1-729bee7c9d0c
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 5476723989331738087
-    tool_use_id: call_hVAp5U25J0igfFUl
+    agent_id: 16776226614969337505
+    tool_use_id: call_Vg1LSU3uZQohij0Q
 - ActivityEnd:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 5476723989331738087
+    agent_id: 16776226614969337505
     as_child: false

@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.163.0",
-  "captured": "2026-10-20",
+  "version": "codex-cli 0.164.0",
+  "captured": "2026-10-23",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
