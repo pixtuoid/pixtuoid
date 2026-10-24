@@ -2,7 +2,7 @@
 
 Shared by `star-history.py` (the star chart), `bmc-button.py` (the Buy Me a
 Coffee button), `gen-banner.py` (the README banner) and `gen-pix-icons.py` (the
-README's pix icons); their selftests exercise it, and `run_selftest` runs them.
+README's pix icons); their selftests exercise it, and `run_selftest` runs the first three's.
 """
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ def run_selftest(label: str, namespace: dict[str, object]) -> int:
         if name.startswith("test_") and callable(fn):
             try:
                 fn()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 FAILS.append(f"{name} crashed:\n{traceback.format_exc()}")
     for f in FAILS:
         print(f"FAIL: {f}", file=sys.stderr)

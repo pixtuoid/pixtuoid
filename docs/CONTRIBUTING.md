@@ -258,7 +258,7 @@ before re-litigating.
 
 The registration steps (4–7, 9) and step 11's roster literals are test-forced —
 skipping one fails `just test`. Step 8 is forced only for hook-only sources;
-step 10 by the theme guards; steps 1–3 and step 11's `#[test]` are on you.
+step 10 by the theme guards; steps 1–3 are on you.
 
 1. **Verify the wire format against the CLI's actual source/releases first** —
    transcript location, line shape, hooks, session identity; pin every fact
