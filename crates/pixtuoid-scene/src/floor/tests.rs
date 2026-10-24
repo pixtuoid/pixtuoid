@@ -1304,6 +1304,23 @@ fn neon_a_starved_tube_flashes_inside_its_windows_and_only_there() {
     }
 }
 
+/// Calm plays every loop slower, the stutter too: an empty, dimmed sign
+/// repainted at Calm's cadence flashes within one stutter cycle of its loop
+/// time.
+#[test]
+fn neon_a_starved_tube_stutters_at_the_calm_pace() {
+    use crate::anim::{CALM_TICK_MS, FULL_TICK_MS};
+    let mut neon = NeonState::new();
+    let repaints = NeonState::STUTTER_MS / FULL_TICK_MS;
+    let flashed = (0..=repaints)
+        .map(|n| {
+            let at = in_stutter_cycle(0) + Duration::from_millis(n * CALM_TICK_MS);
+            neon.tick(neon_mood(0, 0, 0), ROOM_DIMMED, Motion::Calm.timing(at))
+        })
+        .any(|levels| levels == NeonLevels::FLASH);
+    assert!(flashed, "the stutter never played at Calm");
+}
+
 /// On every moving tier, ticked at a live painter's [`FRAME`], a starved tube
 /// catches on exactly the frames whose loop time lies in a window, and each
 /// catch and each dark between, timed in loop time from its first frame to

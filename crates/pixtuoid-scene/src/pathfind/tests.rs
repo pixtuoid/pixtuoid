@@ -472,7 +472,7 @@ fn snap_to_walkable_finds_nearby_cell_when_blocked() {
 
 #[test]
 fn heuristic_straight_horizontal() {
-    assert_eq!(heuristic((0, 0), (3, 0)), 30);
+    assert_eq!(heuristic((5, 5), (8, 5)), 30);
 }
 
 #[test]

@@ -2393,10 +2393,9 @@ fn pet_hearts_skip_dead_and_faded_hearts() {
 }
 
 #[test]
-fn the_notice_board_paints_in_a_large_room() {
+fn the_notice_board_paints_its_box() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let bg = Rgb { r: 9, g: 9, b: 9 };
-    // Large enough to clear the board's size guard.
     let big = crate::layout::Bounds {
         x: 4,
         y: 4,
@@ -2408,7 +2407,7 @@ fn the_notice_board_paints_in_a_large_room() {
     let painted = (0..80u16)
         .flat_map(|y| (0..120u16).map(move |x| (x, y)))
         .any(|(x, y)| buf.get(x, y) != bg);
-    assert!(painted, "large bounds must paint the decor");
+    assert!(painted, "the notice board must paint its box");
 }
 
 #[test]

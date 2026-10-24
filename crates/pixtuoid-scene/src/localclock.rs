@@ -27,10 +27,9 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     resolve(date, h, m)
 }
 
-/// The one construction of a local instant, which `clippy.toml` bans elsewhere.
 #[expect(
     clippy::disallowed_methods,
-    reason = "the sanctioned site of the ban on building a local instant"
+    reason = "the one sanctioned TimeZone construction clippy.toml bans elsewhere"
 )]
 fn resolve(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
     let local = chrono::Local.from_local_datetime(&date.and_hms_opt(h, m, 0)?);

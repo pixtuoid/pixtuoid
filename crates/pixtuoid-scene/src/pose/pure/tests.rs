@@ -240,11 +240,15 @@ fn dwell_ms_varies_across_agents() {
 }
 
 #[test]
-fn seated_dwell_is_within_range() {
+fn seated_dwell_and_est_cycle_are_consistent() {
     for i in 0..128 {
         let id = aid(i);
         let sd = seated_dwell_ms(id);
         assert!((15_000..30_000).contains(&sd), "seated dwell {sd}");
+        assert_eq!(
+            est_wander_cycle_ms(id),
+            sd + 2 * WANDER_WALK_EST_MS + WANDER_DWELL_EST_MS
+        );
     }
 }
 

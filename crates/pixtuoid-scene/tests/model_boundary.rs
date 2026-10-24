@@ -64,8 +64,8 @@ impl<'ast> Visit<'ast> for RasterizerPaths {
         syn::visit::visit_path(self, path);
     }
 
-    /// One edge per item a `use` imports from under a rasterizer, so an item
-    /// added to an existing group moves the count.
+    /// One entry per item a `use` imports from under a rasterizer, so the
+    /// failure names each.
     fn visit_use_tree(&mut self, tree: &'ast syn::UseTree) {
         fn leaves(tree: &syn::UseTree, rooted: bool, out: &mut Vec<String>) {
             match tree {
@@ -167,7 +167,7 @@ fn a_rasterizer_path_is_named_but_its_word_is_not() {
     assert_eq!(
         RasterizerPaths::of("use crate::pixel_painter::{a, b as c, d::*};").len(),
         3,
-        "each item a rasterizer group imports is its own edge"
+        "each item a rasterizer group imports is its own entry"
     );
 }
 
