@@ -3,89 +3,89 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: ~
     effort: ultrathink
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: ~
     effort: ultra
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     fresh_tokens: 19
 - ActivityStart:
-    agent_id: 717547136124618749
-    tool_use_id: toolu_cyWg3_nNiHSfoWC8
+    agent_id: 10069590440663639286
+    tool_use_id: toolu_gAaRdv_qtLyfIbsd
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ActivityEnd:
-    agent_id: 717547136124618749
-    tool_use_id: toolu_cyWg3_nNiHSfoWC8
+    agent_id: 10069590440663639286
+    tool_use_id: toolu_gAaRdv_qtLyfIbsd
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     fresh_tokens: 19
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: ~
     effort: ultra_exit
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     fresh_tokens: 19
 - SessionStart:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     source: claude-code
-    session_id: 9eae8377-306f-4639-8eac-fe6d9a4d8a20
+    session_id: 7b4355db-b652-4e42-84c3-c921cb7721b7
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     source: claude-code
-    session_id: 9eae8377-306f-4639-8eac-fe6d9a4d8a20
+    session_id: 7b4355db-b652-4e42-84c3-c921cb7721b7
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 717547136124618749
-    tool_use_id: toolu_cyWg3_nNiHSfoWC8
+    agent_id: 10069590440663639286
+    tool_use_id: toolu_gAaRdv_qtLyfIbsd
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: ~
     effort: xhigh
 - Identity:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     source: claude-code
-    session_id: 9eae8377-306f-4639-8eac-fe6d9a4d8a20
+    session_id: 7b4355db-b652-4e42-84c3-c921cb7721b7
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 717547136124618749
-    tool_use_id: toolu_cyWg3_nNiHSfoWC8
+    agent_id: 10069590440663639286
+    tool_use_id: toolu_gAaRdv_qtLyfIbsd
 - ModelInfo:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     model: ~
     effort: xhigh
 - SessionEnd:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     as_child: false
 - SessionStart:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     source: claude-code
-    session_id: 9eae8377-306f-4639-8eac-fe6d9a4d8a20
+    session_id: 7b4355db-b652-4e42-84c3-c921cb7721b7
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionEnd:
-    agent_id: 717547136124618749
+    agent_id: 10069590440663639286
     as_child: false
