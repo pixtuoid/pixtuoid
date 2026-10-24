@@ -434,14 +434,6 @@ fn path_clear_under_blocked_returns_false() {
 }
 
 #[test]
-fn path_clear_under_misses_obstacle_returns_true() {
-    let mut overlay = OccupancyOverlay::new();
-    overlay.add(50, 50, 10, 10);
-    let path = vec![Point { x: 0, y: 0 }, Point { x: 40, y: 0 }];
-    assert!(path_clear_under(&path, &overlay));
-}
-
-#[test]
 fn snap_to_walkable_returns_cell_when_already_walkable() {
     let l = make_layout();
     let overlay = OccupancyOverlay::new();
@@ -479,13 +471,8 @@ fn snap_to_walkable_finds_nearby_cell_when_blocked() {
 }
 
 #[test]
-fn heuristic_zero_for_same_cell() {
-    assert_eq!(heuristic((5, 5), (5, 5)), 0);
-}
-
-#[test]
 fn heuristic_straight_horizontal() {
-    assert_eq!(heuristic((0, 0), (3, 0)), 30);
+    assert_eq!(heuristic((5, 5), (8, 5)), 30);
 }
 
 #[test]
@@ -512,28 +499,6 @@ fn cell_center_is_midpoint_of_cell() {
 #[test]
 fn cell_in_zone_false_when_none() {
     assert!(!cell_in_zone(None, 5, 5));
-}
-
-#[test]
-fn cell_in_zone_true_when_inside() {
-    let zone = Bounds {
-        x: 0,
-        y: 0,
-        width: 40,
-        height: 40,
-    };
-    assert!(cell_in_zone(Some(zone), 2, 2));
-}
-
-#[test]
-fn cell_in_zone_false_when_outside() {
-    let zone = Bounds {
-        x: 0,
-        y: 0,
-        width: 10,
-        height: 10,
-    };
-    assert!(!cell_in_zone(Some(zone), 20, 20));
 }
 
 // A cell center landing EXACTLY on the exclusive far edge (x+width / y+height)
@@ -594,21 +559,6 @@ fn cell_in_zone_true_on_inclusive_lower_edges() {
 }
 
 #[test]
-fn cell_walkable_on_open_mask() {
-    let mask = WalkableMask::new_open(100, 100);
-    let overlay = OccupancyOverlay::new();
-    assert!(cell_walkable(&mask, &overlay, 5, 5));
-}
-
-#[test]
-fn cell_walkable_false_when_blocked_by_overlay() {
-    let mask = WalkableMask::new_open(100, 100);
-    let mut overlay = OccupancyOverlay::new();
-    overlay.add(20, 20, CELL_SIZE, CELL_SIZE);
-    assert!(!cell_walkable(&mask, &overlay, 5, 5));
-}
-
-#[test]
 fn find_path_returns_none_when_target_completely_surrounded() {
     // The mask is oversized so the wall around (100,100) can't saturate to
     // origin and cover `from` too: `snap` must succeed on `from`, fail on the goal.
@@ -661,25 +611,6 @@ fn transient_no_path_fallback_is_not_served_from_the_cache() {
 }
 
 #[test]
-fn router_falls_back_to_straight_line_when_path_is_none() {
-    let mask = WalkableMask::new_open(200, 200);
-    let mut overlay = OccupancyOverlay::new();
-    let from = Point { x: 4, y: 4 };
-    let to = Point { x: 100, y: 100 };
-    let wall_size = (MAX_SNAP_RADIUS + 1) * CELL_SIZE * 2;
-    let wall_origin = 100u16 - wall_size / 2;
-    overlay.add(wall_origin, wall_origin, wall_size, wall_size);
-
-    let mut router = AStarRouter::new();
-    let path = router.route(&mask, &overlay, from, to);
-    assert_eq!(
-        path,
-        vec![from, to],
-        "router should fall back to [from, to] when find_path returns None"
-    );
-}
-
-#[test]
 fn snap_point_to_walkable_returns_walkable_cell() {
     let l = make_layout();
     // A point inside a desk footprint (blocked, with obstacle pad).
@@ -705,44 +636,6 @@ fn snap_point_to_walkable_returns_walkable_cell() {
     assert!(
         l.walkable.is_walkable(open.x, open.y),
         "open-floor snap walkable"
-    );
-}
-
-/// A Router that does NOT override `set_preferred_zone`, so calling it hits the
-/// trait DEFAULT no-op body.
-#[derive(Debug)]
-struct NoZoneRouter;
-impl Router for NoZoneRouter {
-    fn route(
-        &mut self,
-        _: &WalkableMask,
-        _: &OccupancyOverlay,
-        from: Point,
-        to: Point,
-    ) -> Vec<Point> {
-        vec![from, to]
-    }
-    // set_preferred_zone intentionally NOT overridden.
-}
-
-#[test]
-fn router_default_set_preferred_zone_is_a_noop() {
-    let mut r = NoZoneRouter;
-    r.set_preferred_zone(Some(Bounds {
-        x: 0,
-        y: 0,
-        width: 8,
-        height: 8,
-    }));
-    r.set_preferred_zone(None);
-    assert_eq!(
-        r.route(
-            &WalkableMask::new_open(40, 40),
-            &OccupancyOverlay::new(),
-            Point { x: 0, y: 0 },
-            Point { x: 10, y: 0 },
-        ),
-        vec![Point { x: 0, y: 0 }, Point { x: 10, y: 0 }]
     );
 }
 

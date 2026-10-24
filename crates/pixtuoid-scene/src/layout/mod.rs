@@ -49,7 +49,7 @@ pub use roster::{
     NEON_PANEL_W,
 };
 #[cfg(test)]
-pub(crate) use roster::{NEON_PANEL_H, coffee_machine_cols, desk_has_cabinet};
+pub(crate) use roster::{NEON_PANEL_H, coffee_machine_cols};
 // Painter tests tile walls no `SceneLayout` has.
 pub(crate) use windows::{
     NEON_DOOR_WALL_W, WINDOW_TOP, WindowBay, door_x, glass_rows, wall_trim_row, window_frame,

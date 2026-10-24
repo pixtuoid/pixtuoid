@@ -24,6 +24,14 @@ const BASE: (i32, u32, u32) = (2026, 1, 1);
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     let date = chrono::NaiveDate::from_ymd_opt(BASE.0, BASE.1, BASE.2)?
         .checked_add_days(chrono::Days::new(u64::from(day)))?;
+    resolve(date, h, m)
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the one sanctioned TimeZone construction clippy.toml bans elsewhere"
+)]
+fn resolve(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
     let local = chrono::Local.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
     local.single().map(Into::into)
 }
@@ -35,9 +43,11 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
 /// Local `h:m` on `day`'s own local date, not the reference day: a run on
 /// today's sky. `None` where that local time doesn't exist.
 pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
-    let date = chrono::DateTime::<chrono::Local>::from(day).date_naive();
-    let local = chrono::Local.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
-    local.single().map(Into::into)
+    resolve(
+        chrono::DateTime::<chrono::Local>::from(day).date_naive(),
+        h,
+        m,
+    )
 }
 
 /// Local `h:00` on the reference day.
@@ -106,130 +116,6 @@ mod tests {
         assert_eq!(
             noon.duration_since(night).expect("noon is after midnight"),
             std::time::Duration::from_secs(12 * 3600)
-        );
-    }
-}
-
-/// `name:line` for every local-instant construction under `root`, this module
-/// excepted.
-#[cfg(test)]
-fn bypasses_in(root: &std::path::Path) -> Vec<String> {
-    // `Local.timestamp` is receiver-qualified and rustfmt breaks a chain before the
-    // `.`, so the scan below reads a two-line window, not one physical line.
-    const FORMS: [&str; 4] = [
-        "with_ymd_and_hms",
-        "from_local_datetime",
-        "and_local_timezone",
-        "Local.timestamp",
-    ];
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let path = e.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if path.extension().is_none_or(|x| x != "rs")
-                || path.file_name().is_some_and(|n| n == "localclock.rs")
-            {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let lines: Vec<&str> = text.lines().collect();
-            let squashed = |s: &str| -> String { s.split_whitespace().collect() };
-            let hits = |s: &str| FORMS.iter().any(|f| s.contains(f));
-            for (i, line) in lines.iter().enumerate() {
-                if line.trim_start().starts_with("//") {
-                    continue;
-                }
-                let next = lines.get(i + 1).copied().unwrap_or("");
-                // Report the line the form STARTS on: whole-on-this-line, or split
-                // across the break with neither half whole (rustfmt's chain wrap).
-                let split = !hits(&squashed(line))
-                    && !hits(&squashed(next))
-                    && hits(&squashed(&[*line, next].concat()));
-                if hits(&squashed(line)) || split {
-                    out.push(format!("{name}:{}", i + 1));
-                }
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
-/// Every tree whose code can build a local instant: the library and its benches.
-#[cfg(test)]
-fn crate_roots() -> [std::path::PathBuf; 2] {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    [root.join("src"), root.join("benches")]
-}
-
-#[cfg(test)]
-mod sweep {
-    /// The recurrence gate: a helper nobody is forced to use gets re-invented as
-    /// a SECOND hand-rolled local instant. The epoch-offset form that actually
-    /// broke UTC-6 is not statically detectable — this pins the half that is.
-    #[test]
-    fn nothing_outside_this_module_builds_a_local_instant() {
-        let found: Vec<String> = super::crate_roots()
-            .iter()
-            .flat_map(|root| super::bypasses_in(root))
-            .collect();
-        assert!(
-            found.is_empty(),
-            "a TEST building a local instant goes through `localclock` (production reads the clock): {found:?}"
-        );
-    }
-
-    /// The gate above passing means nothing until the scan is shown to FIND one.
-    #[test]
-    fn the_sweep_finds_a_planted_bypass() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(dir.path().join("deep")).expect("mkdir");
-        std::fs::write(
-            dir.path().join("deep/planted.rs"),
-            "fn f() {\n    chrono::Local.with_ymd_and_hms(2026, 1, 1, 0, 0, 0);\n}\n",
-        )
-        .expect("write");
-        assert_eq!(
-            super::bypasses_in(dir.path()),
-            vec!["planted.rs:2".to_string()],
-            "the scan must reach a nested file and report its line"
-        );
-        // rustfmt breaks a chain before the `.` once it exceeds width, which a
-        // single-line scan would not see.
-        std::fs::write(
-            dir.path().join("deep/planted.rs"),
-            "fn f() {\n    chrono::Local\n        .timestamp_opt(0, 0);\n}\n",
-        )
-        .expect("write");
-        assert_eq!(
-            super::bypasses_in(dir.path()),
-            vec!["planted.rs:2".to_string()],
-            "the RECEIVER-qualified form split by rustfmt is one bypass, reported once"
-        );
-        // And it must not fire on the same form inside a comment.
-        std::fs::write(
-            dir.path().join("deep/planted.rs"),
-            "fn f() {\n    // with_ymd_and_hms is what this replaces\n}\n",
-        )
-        .expect("write");
-        assert!(
-            super::bypasses_in(dir.path()).is_empty(),
-            "prose naming the form is not a bypass"
         );
     }
 }

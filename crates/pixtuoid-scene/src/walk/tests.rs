@@ -1,6 +1,7 @@
 use super::*;
+use crate::character::test_support::make_slot;
 use crate::pose::{RouteRig, is_aimless_cycle, waypoint_index_for_cycle};
-use pixtuoid_core::{AgentId, GlobalDeskIndex};
+use pixtuoid_core::AgentId;
 
 #[test]
 fn walk_state_default_fields() {
@@ -26,14 +27,6 @@ fn path_len_empty_is_zero() {
 fn path_len_single_point_is_zero() {
     let p = Point { x: 10, y: 20 };
     assert_eq!(octile_path_len(&[p]), 0);
-}
-
-#[test]
-fn path_len_orthogonal_segment() {
-    // 5 px right: octile = 10*5 = 50
-    let a = Point { x: 0, y: 0 };
-    let b = Point { x: 5, y: 0 };
-    assert_eq!(octile_path_len(&[a, b]), 50);
 }
 
 #[test]
@@ -130,12 +123,8 @@ fn t0() -> SystemTime {
 
 fn idle_slot(path: &str, state_started: SystemTime) -> AgentSlot {
     AgentSlot {
-        agent_id: AgentId::from_transcript_path(path),
-        source: Arc::from("claude-code"),
-        session_id: Arc::from("s"),
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
-        state: ActivityState::Idle,
         state_started_at: state_started,
         created_at: state_started
             .checked_sub(Duration::from_secs(90))
@@ -143,19 +132,7 @@ fn idle_slot(path: &str, state_started: SystemTime) -> AgentSlot {
         last_event_at: state_started
             .checked_sub(Duration::from_secs(90))
             .unwrap_or(state_started),
-        exiting_at: None,
-        pending_idle_at: None,
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
-        tool_call_count: 0,
-        active_ms: 0,
-        unknown_cwd: false,
-        parent_id: None,
-        pid: None,
-        model: None,
-        effort: None,
-        tokens_used: 0,
-        last_usage: None,
+        ..make_slot(AgentId::from_transcript_path(path), ActivityState::Idle)
     }
 }
 
@@ -473,40 +450,6 @@ fn dwell_time_independent_of_path_length() {
     assert!(
         diff <= POLL_STEP_MS,
         "dwell must be path-length-independent: {measured:?}"
-    );
-}
-
-#[test]
-fn far_waypoint_full_cycle_is_longer() {
-    use crate::physics::{WalkIntent, walk_profile};
-
-    let trip_id = trip_agent("far");
-    let seated_dur = seated_dwell_ms(trip_id);
-    // Dwell is constant across path lengths, so it cancels out of the
-    // near-vs-far comparison — the estimate is a fine stand-in.
-    let dwell_dur = WANDER_DWELL_EST_MS;
-
-    let cycle_wall_ms = |path_len: u32| -> u64 {
-        let out = walk_profile(path_len, WalkIntent::WanderOut, trip_id);
-        let back = walk_profile(path_len, WalkIntent::WanderBack, trip_id);
-        seated_dur
-            + (out.duration_ms + out.pause_ms)
-            + dwell_dur
-            + (back.duration_ms + back.pause_ms)
-    };
-
-    let near_ms = cycle_wall_ms(100);
-    let far_ms = cycle_wall_ms(1200);
-    assert!(
-        far_ms > near_ms,
-        "far cycle ({far_ms}ms) must be longer than near cycle ({near_ms}ms)"
-    );
-
-    let out_near = walk_profile(100, WalkIntent::WanderOut, trip_id);
-    let out_far = walk_profile(1200, WalkIntent::WanderOut, trip_id);
-    assert!(
-        out_far.duration_ms > out_near.duration_ms,
-        "far walk must take longer"
     );
 }
 

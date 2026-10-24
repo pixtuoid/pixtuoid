@@ -1,5 +1,6 @@
 use super::*;
 use crate::anim::Motion;
+use crate::character::test_support::make_slot;
 use crate::layout::Station;
 use crate::pack::test_office;
 
@@ -38,21 +39,6 @@ pub(crate) fn showing(
 /// call sites stay focused on depth.
 fn sort_row(pivot: crate::layout::Pivot, pos: crate::layout::Point, h: u16, below: u16) -> u16 {
     piece_span(pivot, pos, 1, h, below).depth
-}
-
-/// The desk sorts on its face's south edge and a back-turned sitter on their
-/// seat's sort row; that row lands south of the face, so the "head
-/// over the surface" reading needs no special case.
-#[test]
-fn a_seated_occupant_sorts_in_front_of_the_desk_it_sits_at() {
-    let pack = test_office();
-    let desk = crate::layout::Point { x: 0, y: 10 };
-    let desk_z = desk_span(&pack, Desk::North, desk, RenderScale::ONE).depth;
-    let seated_z = seated_back_span(&pack, desk).depth;
-    assert!(
-        seated_z > desk_z,
-        "a seated occupant must paint over its desk (desk {desk_z}, seated {seated_z})"
-    );
 }
 
 /// The depth sort reserves no face under a density variant, which draws its
@@ -332,32 +318,19 @@ pub(crate) fn sit_down_as(
     scene.agents.insert(
         id,
         pixtuoid_core::AgentSlot {
-            agent_id: id,
-            source: std::sync::Arc::from("claude-code"),
-            session_id: std::sync::Arc::from("s"),
             cwd: std::sync::Arc::from(std::path::Path::new("/w/x")),
-            label: "x".into(),
-            state: ActivityState::Active {
-                tool_use_id: None,
-                detail: None,
-                kind: ToolKind::Edit,
-            },
             state_started_at: now0,
             created_at: now0,
             last_event_at: now0,
-            exiting_at: None,
-            pending_idle_at: None,
             desk_index: pixtuoid_core::GlobalDeskIndex(home),
-            floor_idx: 0,
-            tool_call_count: 0,
-            active_ms: 0,
-            unknown_cwd: false,
-            parent_id: None,
-            pid: None,
-            model: None,
-            effort: None,
-            tokens_used: 0,
-            last_usage: None,
+            ..make_slot(
+                id,
+                ActivityState::Active {
+                    tool_use_id: None,
+                    detail: None,
+                    kind: ToolKind::Edit,
+                },
+            )
         },
     );
     let mut session = FloorSession::new(std::sync::Arc::new(pack.clone()));

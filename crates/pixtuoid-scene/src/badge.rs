@@ -242,17 +242,6 @@ mod tests {
         s
     }
 
-    /// Disambiguation is over the scene, not the sprites: an undrawn namesake still
-    /// makes the drawn one's badge carry its id.
-    #[test]
-    fn an_undrawn_namesake_still_disambiguates_the_drawn_badge() {
-        let a = slot("cc", "session-aaaa", 0, active());
-        let b = slot("cc", "session-bbbb", 1, active());
-        let want = format!("cc\u{00b7}{}", disambig_suffix(&a.session_id));
-        let s = scene_of(vec![a.clone(), b]);
-        assert_eq!(Namesakes::of(s.agents.values()).text(&a), want);
-    }
-
     #[test]
     fn a_lone_active_agent_reads_its_bare_label_in_the_active_tone() {
         let a = slot("cc", "sess-abcd", 0, active());

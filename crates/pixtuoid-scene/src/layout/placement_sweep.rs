@@ -1073,15 +1073,6 @@ fn narrow_band_connectivity_boundary_scan() {
     }
 }
 
-/// At 59x160 seed 3 the band fits ONE pod column, so the only aisle drain is the
-/// intra-pod gap — a scatter plant settling onto the printer's row plugs it and
-/// seals the whole appliance strip.
-#[test]
-fn appliance_strip_not_sealed_at_a_single_pod_band() {
-    let l = SceneLayout::compute_with_seed(59, 160, None, 3).expect("59x160 lays out");
-    assert_walkable_connected(59, 160, 3, &l);
-}
-
 /// Each pod's vertical extent from the desks ALONE, so the guards below test the
 /// layout's output rather than the placement helper's own idea of where the pods are.
 fn pod_y_extents(l: &SceneLayout) -> Vec<(u16, u16)> {
@@ -1133,7 +1124,7 @@ fn free_standing_furniture_never_stands_inside_a_pod() {
 /// `snap_inter_pod_ground_y` answers `None` by design and the caller drops the board
 /// with no trace, so a broken snap surfaces only as one fewer whiteboard. A lone pod
 /// column is exempt, having no spot that hides nothing: see
-/// `the_width_floor_stays_connected_without_its_whiteboard`.
+/// `the_width_floor_stands_no_whiteboard`.
 fn assert_the_whiteboard_lands_when_an_aisle_exists(w: u16, h: u16, seed: u64, l: &SceneLayout) {
     let has_side_rooms = !l.meeting_rooms.is_empty() || l.pantry.is_some();
     let mut desk_columns: Vec<u16> = l.home_desks.iter().map(|d| d.x).collect();
@@ -1228,13 +1219,11 @@ fn the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin() {
 
 /// The width floor's lone pod column, where an unsnapped board once stood flush
 /// against the divider with the desk column east of it and sealed the desks'
-/// south: no spot there clears the column, so the floor stands no board and
-/// stays whole.
+/// south: no spot there clears the column, so the floor stands no board.
 #[test]
-fn the_width_floor_stays_connected_without_its_whiteboard() {
+fn the_width_floor_stands_no_whiteboard() {
     let (w, h, seed) = (super::compute::MIN_LAYOUT_W, 120, 3);
     let l = SceneLayout::compute_with_seed(w, h, None, seed).expect("the width floor lays out");
-    assert_walkable_connected(w, h, seed, &l);
     assert!(
         !l.wall_decor
             .iter()

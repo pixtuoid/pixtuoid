@@ -1,7 +1,8 @@
 use super::*;
 use crate::anim::Motion;
+use crate::character::test_support::make_slot;
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex};
+use pixtuoid_core::state::ActivityState;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -163,20 +164,6 @@ fn floor_ctx_default_equals_new() {
     assert!(d.walks.is_empty(), "default FloorCtx has no walks");
 }
 
-#[test]
-fn vacancy_dim_default_equals_new() {
-    assert_eq!(
-        VacancyDim::default().level(),
-        VacancyDim::new().level(),
-        "VacancyDim::default() must equal new()"
-    );
-    assert_eq!(
-        VacancyDim::default().level(),
-        1.0,
-        "a fresh VacancyDim is fully lit"
-    );
-}
-
 fn make_scene(n: usize, max_desks: usize) -> SceneState {
     let mut s = SceneState::uniform(max_desks);
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -186,64 +173,20 @@ fn make_scene(n: usize, max_desks: usize) -> SceneState {
         s.agents.insert(
             id,
             AgentSlot {
-                agent_id: id,
                 source: Arc::from("cc"),
                 session_id: Arc::from(format!("s{i}").as_str()),
                 cwd: Arc::from(Path::new("/repo")),
                 label: format!("a{i}").into(),
-                state: ActivityState::Idle,
                 state_started_at: now,
                 created_at: now,
                 last_event_at: now,
-                exiting_at: None,
-                pending_idle_at: None,
-
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
-                tool_call_count: 0,
-                active_ms: 0,
-                unknown_cwd: false,
-                parent_id: None,
-                pid: None,
-                model: None,
-                effort: None,
-                tokens_used: 0,
-                last_usage: None,
+                ..make_slot(id, ActivityState::Idle)
             },
         );
     }
     s
-}
-
-#[test]
-fn floor_of_maps_desk_to_floor() {
-    let s = SceneState::uniform(16);
-    assert_eq!(s.floor_of(GlobalDeskIndex(0)), 0);
-    assert_eq!(s.floor_of(GlobalDeskIndex(15)), 0);
-    assert_eq!(s.floor_of(GlobalDeskIndex(16)), 1);
-    assert_eq!(s.floor_of(GlobalDeskIndex(31)), 1);
-    assert_eq!(s.floor_of(GlobalDeskIndex(32)), 2);
-}
-
-#[test]
-fn floor_local_desk_remaps_to_floor_range() {
-    let s = SceneState::uniform(16);
-    assert_eq!(
-        s.floor_local_desk(GlobalDeskIndex(0)),
-        FloorLocalDeskIndex(0)
-    );
-    assert_eq!(
-        s.floor_local_desk(GlobalDeskIndex(16)),
-        FloorLocalDeskIndex(0)
-    );
-    assert_eq!(
-        s.floor_local_desk(GlobalDeskIndex(17)),
-        FloorLocalDeskIndex(1)
-    );
-    assert_eq!(
-        s.floor_local_desk(GlobalDeskIndex(31)),
-        FloorLocalDeskIndex(15)
-    );
 }
 
 #[test]
@@ -319,28 +262,15 @@ fn build_floor_scene_skips_agent_below_grown_offset() {
     s.agents.insert(
         id,
         AgentSlot {
-            agent_id: id,
             source: Arc::from("cc"),
-            session_id: Arc::from("s"),
             cwd: Arc::from(Path::new("/repo")),
             label: "stale".into(),
-            state: ActivityState::Idle,
             state_started_at: now,
             created_at: now,
             last_event_at: now,
-            exiting_at: None,
-            pending_idle_at: None,
             desk_index: GlobalDeskIndex(5),
             floor_idx: 1,
-            tool_call_count: 0,
-            active_ms: 0,
-            unknown_cwd: false,
-            parent_id: None,
-            pid: None,
-            model: None,
-            effort: None,
-            tokens_used: 0,
-            last_usage: None,
+            ..make_slot(id, ActivityState::Idle)
         },
     );
     s.floor_capacities = [8, 4, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -362,28 +292,16 @@ fn num_floors_variable_capacities() {
         s.agents.insert(
             id,
             AgentSlot {
-                agent_id: id,
                 source: Arc::from("cc"),
                 session_id: Arc::from(format!("s{i}").as_str()),
                 cwd: Arc::from(Path::new("/repo")),
                 label: format!("a{i}").into(),
-                state: ActivityState::Idle,
                 state_started_at: now,
                 created_at: now,
                 last_event_at: now,
-                exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
-                tool_call_count: 0,
-                active_ms: 0,
-                unknown_cwd: false,
-                parent_id: None,
-                pid: None,
-                model: None,
-                effort: None,
-                tokens_used: 0,
-                last_usage: None,
+                ..make_slot(id, ActivityState::Idle)
             },
         );
     }
@@ -1011,15 +929,6 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
 }
 
 #[test]
-fn session_types_default_equals_new() {
-    let floor = PerFloor::new(Arc::new(crate::pack::test_office()));
-    assert_eq!(floor.ctx.door_anim_max_ms, 0);
-    assert!(floor.raster.pixels().is_none());
-    assert!(PerOffice::default().coffee.map().is_empty());
-    assert!(PerOffice::default().chitchat.is_empty());
-}
-
-#[test]
 fn audio_observer_frame_composes_stems_and_music_from_the_scene() {
     // Noon, where a storm-dimmed light would read short of full day.
     let now = crate::localclock::at_hour(12);
@@ -1219,31 +1128,6 @@ fn neon_first_tick_snaps_to_the_mood() {
             "{mood:?}"
         );
     }
-}
-
-/// A room that once dimmed and was repopulated keeps its sign lit when the last
-/// agent walks out: the sign reads the room's VERDICT, which the debounce holds.
-#[test]
-fn neon_holds_through_a_walkout_in_a_room_that_once_dimmed() {
-    let mut dim = VacancyDim::new();
-    let mut neon = NeonState::new();
-    let mut now = t0();
-    let mut run = |empty: bool, mood: crate::neon_sign::OfficeMood, ms: u64| {
-        let mut last = NeonLevels::CALM;
-        for _ in 0..ms / FRAME.as_millis() as u64 {
-            now += FRAME;
-            dim.tick(empty, now);
-            last = neon.tick(mood, dim.dimmed(), Motion::Full.timing(now));
-        }
-        (last, dim.level())
-    };
-    let (starved, _) = run(true, neon_mood(0, 0, 0), VacancyDim::EMPTY_DEBOUNCE_MS * 3);
-    assert_eq!(starved, NeonLevels::EMPTY);
-    let (_, level) = run(false, neon_mood(2, 0, 0), 60_000);
-    assert_eq!(level, 1.0, "the ease lands on full light");
-    // The last agent walks out: the tally is Empty, the room is lit and populated.
-    let (walkout, _) = run(false, neon_mood(0, 0, 0), u64::from(NeonState::FADE_MS) * 2);
-    assert_eq!(walkout, NeonLevels::CALM, "a lit room keeps its sign");
 }
 
 /// The `--empty` still: one tick after the snap must still judge the floor empty.

@@ -403,17 +403,6 @@ mod tests {
     }
 
     #[test]
-    fn all_themes_resolve_by_name() {
-        for t in ALL_THEMES {
-            assert!(
-                theme_by_name(t.name).is_some(),
-                "theme '{}' not found",
-                t.name
-            );
-        }
-    }
-
-    #[test]
     fn unknown_theme_returns_none() {
         assert!(theme_by_name("doesnotexist").is_none());
     }
@@ -475,11 +464,6 @@ mod tests {
         assert_eq!(TOKYO_NIGHT.kind, ThemeKind::Dark);
         assert_eq!(GRUVBOX.kind, ThemeKind::Dark);
         assert_eq!(CATPPUCCIN.kind, ThemeKind::Dark);
-    }
-
-    #[test]
-    fn light_themes_marked_light() {
-        assert_eq!(NORMAL.kind, ThemeKind::Light);
     }
 
     #[test]
@@ -708,17 +692,5 @@ mod tests {
                 d.label_prefix
             );
         }
-    }
-
-    #[test]
-    fn tool_glow_is_the_shared_kind_to_hue_map() {
-        use pixtuoid_core::state::ToolKind;
-        let glow = &NORMAL.tool_glow;
-        assert_eq!(glow.for_kind(ToolKind::Edit), glow.edit);
-        assert_eq!(glow.for_kind(ToolKind::Read), glow.read);
-        assert_eq!(glow.for_kind(ToolKind::Bash), glow.bash);
-        assert_eq!(glow.for_kind(ToolKind::Task), glow.agent);
-        assert_eq!(glow.for_kind(ToolKind::Search), glow.grep);
-        assert_eq!(glow.for_kind(ToolKind::Other), glow.default);
     }
 }

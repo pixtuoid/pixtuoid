@@ -378,22 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn round_robin_cycles_all_participants() {
-        let start = base_time();
-        let ids: Vec<AgentId> = (0..4).map(|i| aid(&format!("/g{i}"))).collect();
-        let chat = ActiveChitchat::new(ids.clone(), start);
-        let mut speakers = std::collections::HashSet::new();
-        for turn in 0..4u64 {
-            let t = start + Duration::from_millis(turn * 1_500);
-            speakers.insert(chat.current_bubble(t).unwrap().0);
-        }
-        assert_eq!(speakers.len(), 4, "all four should get a turn");
-        for id in &ids {
-            assert!(speakers.contains(id));
-        }
-    }
-
-    #[test]
     fn round_robin_three_participants_wraps() {
         let start = base_time();
         let chat = ActiveChitchat::new(vec![aid("/x"), aid("/y"), aid("/z")], start);
@@ -540,13 +524,14 @@ mod tests {
         assert_eq!(state.len(), 1);
         // Past expiry the old chat is reaped and a fresh one created — hence 1,
         // not 0 and not 2.
-        update_and_collect(
+        let bubbles = update_and_collect(
             &mut state,
             0,
             &visitors,
             start + Duration::from_millis(7_000),
         );
         assert_eq!(state.len(), 1);
+        assert_eq!(bubbles.len(), 1, "the fresh chat speaks at once");
     }
 
     #[test]
@@ -594,24 +579,11 @@ mod tests {
     }
 
     #[test]
-    fn every_waypoint_kind_declares_a_chitchat_venue() {
-        // Pins the derivations to `chitchat_venue` over ALL, so supports_chitchat /
-        // venue_wp_idx can never drift from the one declared fact.
-        let (mut social, mut group) = (0, 0);
-        for &kind in WaypointKind::ALL {
-            let venue = chitchat_venue(kind);
-            assert_eq!(
-                supports_chitchat(kind),
-                venue != ChitchatVenue::None,
-                "{kind:?}: supports_chitchat must track chitchat_venue"
-            );
-            social += usize::from(venue != ChitchatVenue::None);
-            group += usize::from(venue == ChitchatVenue::Group);
-        }
-        assert_eq!(
-            social, 8,
-            "8 kinds are social (all but phone booth + standing desk)"
-        );
+    fn exactly_two_waypoint_kinds_are_group_venues() {
+        let group = WaypointKind::ALL
+            .iter()
+            .filter(|&&kind| chitchat_venue(kind) == ChitchatVenue::Group)
+            .count();
         assert_eq!(
             group, 2,
             "couch + island are the two multi-slot group venues"

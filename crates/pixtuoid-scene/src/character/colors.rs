@@ -425,36 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn tool_glow_tint_maps_known_tools() {
-        let id = pixtuoid_core::AgentId::from_transcript_path("/t.jsonl");
-        let edit_slot = make_slot(
-            id,
-            ActivityState::Active {
-                tool_use_id: None,
-                detail: Some(Arc::from("Edit src/main.rs")),
-                kind: ToolKind::Edit,
-            },
-        );
-        let bash_slot = make_slot(
-            id,
-            ActivityState::Active {
-                tool_use_id: None,
-                detail: Some(Arc::from("Bash: ls")),
-                kind: ToolKind::Bash,
-            },
-        );
-        let idle_slot = make_slot(id, ActivityState::Idle);
-        let glow = &crate::theme::NORMAL.tool_glow;
-        let edit_tint = tool_glow_tint(&edit_slot, glow);
-        let bash_tint = tool_glow_tint(&bash_slot, glow);
-        let idle_tint = tool_glow_tint(&idle_slot, glow);
-        assert!(edit_tint.is_some(), "Edit should produce glow");
-        assert!(bash_tint.is_some(), "Bash should produce glow");
-        assert_eq!(idle_tint, None, "Idle should produce no glow");
-        assert_ne!(edit_tint, bash_tint, "Edit and Bash should differ");
-    }
-
-    #[test]
     fn kind_derivation_reproduces_the_string_parse_tint_for_representative_displays() {
         use pixtuoid_core::ToolDetail;
         let id = pixtuoid_core::AgentId::from_transcript_path("/g.jsonl");

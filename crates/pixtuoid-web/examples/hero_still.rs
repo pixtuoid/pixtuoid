@@ -13,7 +13,6 @@
 
 use std::process::ExitCode;
 
-use chrono::TimeZone;
 use pixtuoid_web::Office;
 
 const USAGE: &str = "usage: hero_still <out.png> [--width W] [--height H] \
@@ -73,10 +72,9 @@ fn arg<T: std::str::FromStr>(args: &[String], name: &str) -> Option<T> {
 /// the same hour because the gen pipeline pins the process to `TZ=UTC`.
 fn hour_to_t0_ms(hour: u32) -> Option<f64> {
     let (y, m, d) = T0_REFERENCE_YMD;
-    chrono::Utc
-        .with_ymd_and_hms(y, m, d, hour, 0, 0)
-        .single()
-        .map(|dt| dt.timestamp_millis() as f64)
+    chrono::NaiveDate::from_ymd_opt(y, m, d)?
+        .and_hms_opt(hour, 0, 0)
+        .map(|dt| dt.and_utc().timestamp_millis() as f64)
 }
 
 fn main() -> ExitCode {

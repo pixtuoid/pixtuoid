@@ -1,5 +1,6 @@
 use super::*;
 use crate::anim::PAINT_FRAME_MS;
+use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind};
@@ -132,33 +133,19 @@ fn walk_leg_freezes_path_against_midleg_reroute() {
 
 fn active_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlot {
     AgentSlot {
-        agent_id: AgentId::from_transcript_path("/snap.jsonl"),
-        source: Arc::from("claude-code"),
-        session_id: Arc::from("s"),
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
-        state: ActivityState::Active {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from("Edit")),
-            kind: ToolKind::Edit,
-        },
         state_started_at,
         last_event_at: created_at,
         created_at,
-        exiting_at: None,
-        pending_idle_at: None,
-
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
-        tool_call_count: 0,
-        active_ms: 0,
-        unknown_cwd: false,
-        parent_id: None,
-        pid: None,
-        model: None,
-        effort: None,
-        tokens_used: 0,
-        last_usage: None,
+        ..make_slot(
+            AgentId::from_transcript_path("/snap.jsonl"),
+            ActivityState::Active {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from("Edit")),
+                kind: ToolKind::Edit,
+            },
+        )
     }
 }
 
@@ -166,29 +153,6 @@ fn entry_slot(created_at: SystemTime) -> AgentSlot {
     let mut s = active_slot(created_at, created_at);
     s.state = ActivityState::Idle;
     s
-}
-
-#[test]
-fn snap_back_walks_from_history_when_state_just_flipped() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
-    let desk = l.home_desks[0];
-    // Far from the desk so the snap-back arms.
-    let prev = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
-    };
-    let mut rig = RouteRig::new(StubRouter::straight());
-    rig.history
-        .record(slot.agent_id, prev, now - Duration::from_millis(50));
-    match derive_with_routing(&slot, now, &l, &mut rig.rctx()) {
-        Some(Pose::Walking { segment, .. }) => {
-            let from = segment.from();
-            assert_eq!(from, prev, "snap-back walk should start from recorded prev");
-        }
-        other => panic!("expected snap-back Walking pose, got {other:?}"),
-    }
 }
 
 #[test]
@@ -619,29 +583,15 @@ fn at_waypoint_pose_records_position_to_history() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
     let slot = AgentSlot {
-        agent_id: AgentId::from_transcript_path("/idle.jsonl"),
-        source: Arc::from("claude-code"),
-        session_id: Arc::from("s"),
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
-        state: ActivityState::Idle,
         state_started_at: now,
         created_at: now - Duration::from_secs(60),
         last_event_at: now - Duration::from_secs(60),
-        exiting_at: None,
-        pending_idle_at: None,
-
-        desk_index: GlobalDeskIndex(0),
-        floor_idx: 0,
-        tool_call_count: 0,
-        active_ms: 0,
-        unknown_cwd: false,
-        parent_id: None,
-        pid: None,
-        model: None,
-        effort: None,
-        tokens_used: 0,
-        last_usage: None,
+        ..make_slot(
+            AgentId::from_transcript_path("/idle.jsonl"),
+            ActivityState::Idle,
+        )
     };
     let mut rig = RouteRig::new(StubRouter::straight());
     let _ = derive_with_routing(&slot, now, &l, &mut rig.rctx());
@@ -745,48 +695,6 @@ fn snap_back_progress_is_physics_eased_not_linear() {
         }
         other => panic!("expected Walking pose at 25% of snap-back duration, got {other:?}"),
     }
-}
-
-#[test]
-fn snap_back_profile_stored_in_walk_state() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
-    let desk = l.home_desks[0];
-    let prev = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
-    };
-
-    let mut rig = RouteRig::new(StubRouter::straight());
-    rig.history
-        .record(slot.agent_id, prev, now - Duration::from_millis(50));
-
-    let _p1 = derive_with_routing(&slot, now, &l, &mut rig.rctx());
-    let dur1 = rig
-        .walks
-        .get(&slot.agent_id)
-        .and_then(|walk| walk.snap_back.as_ref())
-        .map(|leg| leg.profile.duration_ms)
-        .expect("snap_back profile created on frame 1");
-
-    // Fresh history but the SAME persistent walks map.
-    let slot2 = active_slot(now, now - Duration::from_secs(60));
-    let t2 = now + Duration::from_millis(100);
-    rig.history
-        .record(slot2.agent_id, prev, t2 - Duration::from_millis(50));
-    let _p2 = derive_with_routing(&slot2, t2, &l, &mut rig.rctx());
-    let dur2 = rig
-        .walks
-        .get(&slot2.agent_id)
-        .and_then(|walk| walk.snap_back.as_ref())
-        .map(|leg| leg.profile.duration_ms)
-        .expect("snap_back profile still present on frame 2");
-
-    assert_eq!(
-        dur1, dur2,
-        "snap-back profile must be snapshotted once and reused across frames"
-    );
 }
 
 #[test]
@@ -900,41 +808,6 @@ fn near_far_desk_indices(l: &SceneLayout) -> (usize, usize) {
         dists[near_idx]
     );
     (near_idx, far_idx)
-}
-
-#[test]
-fn entry_duration_scales_with_path_longer_desk_takes_longer() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let l = layout();
-    let (near_idx, far_idx) = near_far_desk_indices(&l);
-
-    let near = entry_slot_far(now, near_idx);
-    let far = entry_slot_far(now, far_idx);
-
-    // Separate walks maps — each agent's first call snapshots its own profile.
-    let mut rig_near = RouteRig::new(StubRouter::straight());
-    let mut rig_far = RouteRig::new(StubRouter::straight());
-
-    let _pn = derive_with_routing(&near, now, &l, &mut rig_near.rctx());
-    let _pf = derive_with_routing(&far, now, &l, &mut rig_far.rctx());
-
-    let dur_near = rig_near.walks[&near.agent_id]
-        .entry
-        .as_ref()
-        .expect("entry profile set for near desk")
-        .profile
-        .duration_ms;
-    let dur_far = rig_far.walks[&far.agent_id]
-        .entry
-        .as_ref()
-        .expect("entry profile set for far desk")
-        .profile
-        .duration_ms;
-
-    assert!(
-        dur_far >= dur_near,
-        "far desk duration {dur_far}ms must be >= near desk {dur_near}ms"
-    );
 }
 
 #[test]

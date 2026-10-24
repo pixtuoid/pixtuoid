@@ -1,8 +1,6 @@
 //! The model names no rasterizer: outside `pixel_painter/`, `cutaway/` and the
-//! frame entry, no source file paths into either, but for the edges
-//! [`KNOWN_EDGES`] lists.
+//! frame entry, no source file paths into either.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use syn::visit::Visit;
@@ -12,11 +10,6 @@ const RASTERIZERS: [&str; 2] = ["pixel_painter", "cutaway"];
 /// The frame entry, `look::render`: it steps the model and runs a rasterizer
 /// on the result, so it names both by design.
 const ENTRY: &str = "look";
-
-/// Each model file or directory still naming a rasterizer, how many paths do,
-/// and the PR that removes the edge. A fix deletes its entry; a new edge under a
-/// listed path changes its count.
-const KNOWN_EDGES: &[(&str, usize, &str)] = &[];
 
 fn is_rasterizer(ident: &syn::Ident) -> bool {
     RASTERIZERS.iter().any(|r| ident == r)
@@ -71,8 +64,8 @@ impl<'ast> Visit<'ast> for RasterizerPaths {
         syn::visit::visit_path(self, path);
     }
 
-    /// One edge per item a `use` imports from under a rasterizer, so an item
-    /// added to an existing group moves the count.
+    /// One entry per item a `use` imports from under a rasterizer, so the
+    /// failure names each.
     fn visit_use_tree(&mut self, tree: &'ast syn::UseTree) {
         fn leaves(tree: &syn::UseTree, rooted: bool, out: &mut Vec<String>) {
             match tree {
@@ -120,7 +113,7 @@ fn the_model_names_no_rasterizer() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     rust_files(&src, &mut files);
-    let (mut met, mut stray) = (BTreeMap::<&str, usize>::new(), Vec::new());
+    let mut stray = Vec::new();
     for file in files {
         let rel: Vec<String> = file
             .strip_prefix(&src)
@@ -141,18 +134,10 @@ fn the_model_names_no_rasterizer() {
         }
         let text = std::fs::read_to_string(&file).expect("source reads");
         for path in RasterizerPaths::of(&text) {
-            match KNOWN_EDGES.iter().find(|(at, ..)| rel.starts_with(at)) {
-                Some((at, ..)) => *met.entry(*at).or_default() += 1,
-                None => stray.push(format!("{rel}: {path}")),
-            }
+            stray.push(format!("{rel}: {path}"));
         }
     }
     assert_eq!(stray, Vec::<String>::new(), "the model names a rasterizer");
-    let listed: BTreeMap<&str, usize> = KNOWN_EDGES.iter().map(|&(at, n, _)| (at, n)).collect();
-    assert_eq!(
-        met, listed,
-        "a listed edge's path count moved: a fix lowers it (to 0: delete the entry), a new edge needs its own review"
-    );
 }
 
 #[test]
@@ -182,7 +167,7 @@ fn a_rasterizer_path_is_named_but_its_word_is_not() {
     assert_eq!(
         RasterizerPaths::of("use crate::pixel_painter::{a, b as c, d::*};").len(),
         3,
-        "each item a rasterizer group imports is its own edge"
+        "each item a rasterizer group imports is its own entry"
     );
 }
 
