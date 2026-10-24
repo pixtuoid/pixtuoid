@@ -3,24 +3,24 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8991870377713718749
+    agent_id: 15257610664975780667
     source: copilot
-    session_id: e3c8634f-45e7-48fd-8608-46f8e0deeeb0
+    session_id: 687d6221-da78-417d-999f-92d2eff6af14
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ActivityStart:
-    agent_id: 8991870377713718749
-    tool_use_id: call_I3ji-gIxKvFoq-vK
+    agent_id: 15257610664975780667
+    tool_use_id: call_jCpIMDIgFUwR1WIw
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ActivityEnd:
-    agent_id: 8991870377713718749
-    tool_use_id: call_I3ji-gIxKvFoq-vK
+    agent_id: 15257610664975780667
+    tool_use_id: call_jCpIMDIgFUwR1WIw
 - ModelInfo:
-    agent_id: 8991870377713718749
+    agent_id: 15257610664975780667
     model: gpt-4.1
     effort: ~
 - SessionEnd:
-    agent_id: 8991870377713718749
+    agent_id: 15257610664975780667
     as_child: false

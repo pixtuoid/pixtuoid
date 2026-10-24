@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.98.",
-  "captured": "2026-10-20",
+  "version": "GitHub Copilot CLI 1.0.103.",
+  "captured": "2026-10-24",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",

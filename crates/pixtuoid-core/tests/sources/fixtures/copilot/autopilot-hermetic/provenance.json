@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.98.",
-  "captured": "2026-10-20",
+  "version": "GitHub Copilot CLI 1.0.103.",
+  "captured": "2026-10-24",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 59
+    "blanked": 60
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/copilot/autopilot.json",
@@ -17,6 +17,7 @@
         "assistant.message",
         "assistant.turn_end",
         "assistant.turn_start",
+        "instruction.update",
         "session.mode_changed",
         "session.mode_notice_delivered",
         "session.usage_record",
