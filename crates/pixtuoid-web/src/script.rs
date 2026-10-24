@@ -509,15 +509,10 @@ mod tests {
             pixtuoid_scene::token_meter::token_tier(cc3) >= 2,
             "cc must have grown to T2 by loop 3, got {cc3}"
         );
-    }
-
-    #[test]
-    fn looping_stays_stable_across_wraps() {
-        let scene = run_script_through_reducer(3);
         assert!(
-            (9..=11).contains(&scene.agents.len()),
+            (9..=11).contains(&scene3.agents.len()),
             "cast must stay bounded across loops, got {}",
-            scene.agents.len()
+            scene3.agents.len()
         );
     }
 

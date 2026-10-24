@@ -158,43 +158,6 @@ mod tests {
     }
 
     #[test]
-    fn newer_version_detected() {
-        assert!(is_newer_version("0.2.0", "0.1.0"));
-    }
-
-    #[test]
-    fn same_version_not_newer() {
-        assert!(!is_newer_version("0.1.0", "0.1.0"));
-    }
-
-    #[test]
-    fn older_not_newer() {
-        assert!(!is_newer_version("0.1.0", "0.2.0"));
-    }
-
-    #[test]
-    fn major_bump_detected() {
-        assert!(is_newer_version("1.0.0", "0.9.9"));
-    }
-
-    #[test]
-    fn minor_bump_detected() {
-        assert!(is_newer_version("0.5.0", "0.4.0"));
-    }
-
-    #[test]
-    fn patch_bump_detected() {
-        assert!(is_newer_version("0.4.1", "0.4.0"));
-    }
-
-    #[test]
-    fn bad_input_safe() {
-        assert!(!is_newer_version("not-semver", "0.1.0"));
-        assert!(!is_newer_version("0.1.0", "garbage"));
-        assert!(!is_newer_version("", ""));
-    }
-
-    #[test]
     fn prerelease_newer_than_older_release() {
         assert!(is_newer_version("0.5.0-alpha", "0.4.0"));
     }

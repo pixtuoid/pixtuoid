@@ -40,9 +40,9 @@ generated — eslint/prettier-ignored, never hand-edit them.
 At runtime `src/conforms.ts` checks every CLI row against the same committed
 schemas and fails closed on drift (`npm test`), so a stale schema there breaks
 the extension, not only the types.
-(The `source_status_json_shape` / `outcome_row_json_shape` byte tests pin the
-exact wire JSON; `OutcomeRow`'s doc comment in `crates/pixtuoid/src/sources.rs`
-owns its shape and the published-wire rule.)
+(`outcome_row_json_shape` pins `OutcomeRow`'s exact wire JSON, the
+`sources --json` golden and schema test `SourceStatus`'s; `OutcomeRow`'s doc
+comment in `crates/pixtuoid/src/sources.rs` owns the published-wire rule.)
 
 **A republish may still be owed.** The split (`e21ec7f0`, 2026-07-02) landed
 AFTER the local `ray publish` marker `__raycast_latest_publish_ext/pixtuoid__`

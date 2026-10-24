@@ -37,12 +37,3 @@ fn golden_populated_vs_empty_differ() {
     let h_pop = render_hash(&fixture_scene(n), n, &theme::NORMAL, FloorMeta::ground());
     assert_ne!(h_empty, h_pop, "populated and empty scenes look identical");
 }
-
-#[test]
-fn golden_cyberpunk_vs_normal_differ() {
-    let n = now();
-    let scene = fixture_scene(n);
-    let h_normal = render_hash(&scene, n, &theme::NORMAL, FloorMeta::ground());
-    let h_cyber = render_hash(&scene, n, &theme::CYBERPUNK, FloorMeta::ground());
-    assert_ne!(h_normal, h_cyber, "the theme never reached the pixels");
-}

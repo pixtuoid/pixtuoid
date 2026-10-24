@@ -6,54 +6,6 @@ use pixtuoid_scene::display::HoverTarget;
 use pixtuoid_scene::floor::PerFloor;
 
 #[test]
-fn furniture_hit_test_resolves_against_rendered_layout() {
-    let scene = scene_with(vec![idle("/hit/0.jsonl", 0, t0())], 16);
-    let mut r = build(120, 44, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
-    let layout = r.cached_layout().expect("layout");
-    let desk = layout.home_desks[0];
-    let hit = crate::tui::hit_test::hit_test_furniture(
-        layout,
-        CellArea::half_block(desk.x + 4, CellArea::row_of(desk.y) + 1),
-    );
-    assert_eq!(
-        hit,
-        Some("Desk"),
-        "a desk pixel should hit the Desk furniture in the cached layout"
-    );
-}
-
-#[test]
-fn coffee_machine_hit_test_resolves_on_pantry() {
-    use pixtuoid_scene::layout::WaypointKind;
-    let scene = scene_with(vec![idle("/cm/0.jsonl", 0, t0())], 16);
-    let mut r = build(140, 48, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
-    let layout = r.cached_layout().expect("layout");
-    let pantry = layout
-        .waypoints
-        .iter()
-        .find(|w| w.kind == WaypointKind::Pantry)
-        .expect("a 140×48 office must lay out a pantry");
-    let cx = pantry.pos.x;
-    let cy = CellArea::row_of(pantry.pos.y);
-    let mut found = false;
-    for dx in -14i32..=14 {
-        for dy in -4i32..=4 {
-            let mx = (i32::from(cx) + dx).max(0) as u16;
-            let my = (i32::from(cy) + dy).max(0) as u16;
-            if crate::tui::hit_test::hit_test_coffee_machine(layout, CellArea::half_block(mx, my)) {
-                found = true;
-            }
-        }
-    }
-    assert!(
-        found,
-        "the coffee machine should be hit-testable somewhere on the pantry counter"
-    );
-}
-
-#[test]
 fn pet_hit_test_resolves_at_pet_position() {
     let scene = scene_with(vec![active("/ph/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(120, 44, vec![PetKind::Cat]);

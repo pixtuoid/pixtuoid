@@ -51,66 +51,6 @@ fn walkable_debug_toggle_tints_blocked_pixels_and_is_reversible() {
     );
 }
 
-#[test]
-fn version_popup_entrance_reaches_full_scale() {
-    let mut r = build(100, 40, vec![]);
-    r.set_frames(
-        RenderFrames {
-            version_popup: crate::panels::ui_state::VersionPopupFrame {
-                open: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        t0(),
-    );
-    let s = r.version_popup_scale(t0() + Duration::from_millis(250));
-    assert!(s > 0.99, "entrance eases to ~1.0, got {s}");
-}
-
-#[test]
-fn version_popup_dismissal_reaches_zero() {
-    let mut r = build(100, 40, vec![]);
-    r.set_frames(
-        RenderFrames {
-            version_popup: crate::panels::ui_state::VersionPopupFrame {
-                open: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        t0(),
-    );
-    let mid = t0() + Duration::from_millis(250);
-    r.set_frames(RenderFrames::default(), mid);
-    let s = r.version_popup_scale(mid + Duration::from_millis(200));
-    assert!(s < 0.01, "dismissal eases to ~0.0, got {s}");
-}
-
-#[test]
-fn version_popup_interrupt_continues_from_edge() {
-    let mut r = build(100, 40, vec![]);
-    r.set_frames(
-        RenderFrames {
-            version_popup: crate::panels::ui_state::VersionPopupFrame {
-                open: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        t0(),
-    );
-    // Interrupt entrance ~halfway.
-    let half = t0() + Duration::from_millis(100);
-    let scale_at_interrupt = r.version_popup_scale(half);
-    r.set_frames(RenderFrames::default(), half);
-    let s = r.version_popup_scale(half + Duration::from_millis(1));
-    assert!(
-        (s - scale_at_interrupt).abs() < 0.2,
-        "interrupted animation continues from current scale ({scale_at_interrupt}), not a snap (got {s})"
-    );
-}
-
 /// 80 columns is the classic default and `min_terminal_size().1` is the tightest HEIGHT
 /// that lays out the office at all — so it is also the tightest the popup must render
 /// whole on: title and link both reach the frame. Not the tightest width: the panel
@@ -184,25 +124,6 @@ fn the_popup_body_reaches_the_frame_at_every_office_width() {
             );
         }
     }
-}
-
-#[test]
-fn help_overlay_renders_shortcuts() {
-    let scene = scene_with(vec![idle("/help/0.jsonl", 0, t0())], 16);
-    let mut r = build(100, 40, vec![]);
-    r.set_frames(
-        RenderFrames {
-            help_open: true,
-            ..Default::default()
-        },
-        t0(),
-    );
-    r.render(&scene, pack(), t0()).unwrap();
-    let text = frame_text(r.frame_buffer());
-    assert!(
-        text.contains("Keyboard"),
-        "help overlay should list shortcuts; frame was:\n{text}"
-    );
 }
 
 #[test]

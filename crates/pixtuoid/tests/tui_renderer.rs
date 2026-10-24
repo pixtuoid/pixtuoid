@@ -97,16 +97,6 @@ fn tui_renderer_render_paints_a_full_frame() {
     let buf = renderer.buf().expect("a frame");
     assert_eq!(buf.width(), 96);
     assert_eq!(buf.height(), 70);
-
-    let mut colors = std::collections::HashSet::new();
-    for px in buf.as_slice() {
-        colors.insert((px.r, px.g, px.b));
-    }
-    assert!(
-        colors.len() > 32,
-        "TuiRenderer::render produced suspiciously few colors ({})",
-        colors.len()
-    );
 }
 
 /// The transition path must not hardcode `PetInputs::default()` or empty

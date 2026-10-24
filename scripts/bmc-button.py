@@ -19,11 +19,10 @@ import json
 import pathlib
 import re
 import sys
-import traceback
 from typing import NamedTuple
 from urllib import request
 
-from readme_pixels import GLYPH_H, PACK_DIR, THEMES, Pack, _run, animation, compact, load_pack, mask_path, parse_sprite, sprite_size, text_path, text_width
+from readme_pixels import GLYPH_H, PACK_DIR, THEMES, Pack, _run, animation, check, compact, load_pack, mask_path, parse_sprite, run_selftest, sprite_size, text_path, text_width
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 README_PATH = REPO / "README.md"
@@ -150,14 +149,6 @@ def fetch_creator(slug: str) -> object:
         return json.load(resp)
 
 
-FAILS: list[str] = []
-
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        FAILS.append(msg)
-
-
 def _raises(fn, *args) -> bool:
     try:
         fn(*args)
@@ -248,16 +239,7 @@ def test_write_buttons_emits_both_themes() -> None:
 
 
 def selftest() -> int:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            try:
-                fn()
-            except Exception:  # noqa: BLE001 — a crashing test is a failing test
-                FAILS.append(f"{name} crashed:\n{traceback.format_exc()}")
-    for f in FAILS:
-        print(f"FAIL: {f}", file=sys.stderr)
-    print(f"bmc-button selftest: {'FAIL' if FAILS else 'ok'}")
-    return 1 if FAILS else 0
+    return run_selftest("bmc-button", globals())
 
 
 def main(argv: list[str]) -> int:

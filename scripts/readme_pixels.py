@@ -2,7 +2,7 @@
 
 Shared by `star-history.py` (the star chart), `bmc-button.py` (the Buy Me a
 Coffee button), `gen-banner.py` (the README banner) and `gen-pix-icons.py` (the
-README's pix icons); their selftests exercise it.
+README's pix icons); their selftests exercise it, and `run_selftest` runs the first three's.
 """
 
 from __future__ import annotations
@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import sys
 import tomllib
+import traceback
 from typing import NamedTuple
 
 PACK_DIR = pathlib.Path(__file__).resolve().parent.parent / "crates" / "pixtuoid-scene" / "sprites" / "default"
@@ -140,6 +142,28 @@ def compact(n: int) -> str:
 
 def _run(x: int, y: int, w: int, h: int) -> str:
     return f"M{x} {y}h{w}v{h}h-{w}z"
+
+
+FAILS: list[str] = []
+
+
+def check(cond: bool, msg: str) -> None:
+    if not cond:
+        FAILS.append(msg)
+
+
+def run_selftest(label: str, namespace: dict[str, object]) -> int:
+    """Run every `test_*` callable of `namespace` (a script's `globals()`); a crashing test is a failing test."""
+    for name, fn in sorted(namespace.items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+            except Exception:
+                FAILS.append(f"{name} crashed:\n{traceback.format_exc()}")
+    for f in FAILS:
+        print(f"FAIL: {f}", file=sys.stderr)
+    print(f"{label} selftest: {'FAIL' if FAILS else 'ok'}")
+    return 1 if FAILS else 0
 
 
 def text_width(s: str, px: int) -> int:

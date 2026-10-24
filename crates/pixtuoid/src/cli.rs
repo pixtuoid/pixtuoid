@@ -414,23 +414,6 @@ mod tests {
     }
 
     #[test]
-    fn floating_subcommand_rejects_empty_socket() {
-        assert!(Cli::try_parse_from(["pixtuoid", "floating", "--socket", "  "]).is_err());
-    }
-
-    #[test]
-    fn sources_list_parses_with_json() {
-        let cli = Cli::try_parse_from(["pixtuoid", "sources", "--json"]).unwrap();
-        assert!(matches!(
-            cli.cmd,
-            Some(Cmd::Sources {
-                action: None,
-                json: true
-            })
-        ));
-    }
-
-    #[test]
     fn sources_set_parses_its_ids() {
         let cli = Cli::try_parse_from(["pixtuoid", "sources", "set", "codex", "cursor"]).unwrap();
         match cli.cmd {
@@ -481,18 +464,6 @@ mod tests {
         assert!(matches!(dry.cmd, Some(Cmd::Setup { yes: false })));
         let apply = Cli::try_parse_from(["pixtuoid", "setup", "--yes"]).unwrap();
         assert!(matches!(apply.cmd, Some(Cmd::Setup { yes: true })));
-    }
-
-    #[test]
-    fn completions_takes_a_shell_value() {
-        let c = Cli::try_parse_from(["pixtuoid", "completions", "zsh"]).unwrap();
-        assert!(matches!(
-            c.cmd,
-            Some(Cmd::Completions {
-                shell: clap_complete::Shell::Zsh
-            })
-        ));
-        assert!(Cli::try_parse_from(["pixtuoid", "completions", "nonsense"]).is_err());
     }
 
     #[test]

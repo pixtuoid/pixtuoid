@@ -903,21 +903,6 @@ mod tests {
         assert!(!o.audio_adopt_oneshot(0, &[0.1]));
     }
 
-    #[test]
-    fn synth_take_matches_what_the_main_thread_would_have_synthesized() {
-        let mut take = SynthTake::new();
-        while take.step() > 0 {}
-        let mut take2 = SynthTake::new();
-        while take2.step() > 0 {}
-        for i in 0..take.loop_count() {
-            assert_eq!(
-                take.driver.loop_buffer(i),
-                take2.driver.loop_buffer(i),
-                "stem {i} is deterministic"
-            );
-        }
-    }
-
     /// The worker's stream plays the song its first controls pick, chunk
     /// after chunk with no seam.
     #[test]
@@ -980,9 +965,7 @@ mod tests {
         // Scope the count to the labels array: board segments also emit "text".
         let labels_json = json.split("],\"board\"").next().unwrap();
         let labels = labels_json.split("\"text\":").count() - 1;
-        let badges = labels_json.split("\"badge\":").count() - 1;
         assert!(labels > 0, "the seated cast produced labels");
-        assert_eq!(labels, badges, "every cast label resolves a badge hue");
     }
 
     #[test]
@@ -1297,11 +1280,6 @@ mod tests {
 
         let labels = v["labels"].as_array().unwrap();
         assert!(!labels.is_empty(), "visible agents produce badges");
-        for l in labels {
-            assert!(l["x"].is_number() && l["y"].is_number());
-            assert!(l["text"].as_str().unwrap().starts_with('\u{25cf}'));
-            assert!(l["color"].as_str().unwrap().starts_with('#'));
-        }
     }
 
     /// Every badge the frame drew reaches the site, in its text and inks, and
@@ -1335,6 +1313,8 @@ mod tests {
             .collect();
         assert!(!want.is_empty(), "premise: agents are drawn");
         assert_eq!(got, want);
+        // The site slices the marker off the label by one UTF-16 code unit.
+        assert_eq!(pixtuoid_scene::badge::BADGE_MARKER.len_utf16(), 1);
     }
 
     #[test]

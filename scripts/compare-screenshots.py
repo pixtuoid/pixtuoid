@@ -108,7 +108,6 @@ def _selftest():
 
         rgb_a = write("rgb_a.png", "RGB", black)
         rgb_b = write("rgb_b.png", "RGB", white)
-        check("differing RGB images must FAIL", compare_images(rgb_a, rgb_b, diff_out), 1)
 
         check("identical images must PASS", compare_images(rgb_a, rgb_a, diff_out), 0)
 

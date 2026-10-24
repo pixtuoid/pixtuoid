@@ -2,11 +2,6 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn stdin_cap_plus_headroom_equals_the_pipe_quota() {
-    assert_eq!(STDIN_CAP + STAMP_HEADROOM, 1 << 20);
-}
-
-#[test]
 fn stamp_headroom_covers_worst_case_stamps() {
     let mut p = json!({});
     let map = p.as_object_mut().unwrap();
@@ -71,14 +66,6 @@ fn stamps_cli_source_under_private_key_and_leaves_public_source_untouched() {
 }
 
 #[test]
-fn no_source_env_omits_private_key_so_decoder_defaults_to_claude() {
-    let mut p = json!({ "hook_event_name": "Stop" });
-    let map = p.as_object_mut().unwrap();
-    enrich_payload(map, None, None, 1, || None);
-    assert!(map.get("_pixtuoid_source").is_none());
-}
-
-#[test]
 fn empty_source_env_is_ignored() {
     // Seeded with an inbound key: the empty-source path must strip it too,
     // not merely decline to insert.
@@ -125,36 +112,20 @@ fn argv(parts: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn source_from_argv_reads_space_form() {
+fn source_from_argv_reads_both_forms_and_rejects_empty() {
     assert_eq!(
         source_from_argv(&argv(&["pixtuoid-hook", "--source", "codex"])),
         Some("codex".into())
     );
-}
-
-#[test]
-fn source_from_argv_reads_equals_form() {
     assert_eq!(
         source_from_argv(&argv(&["pixtuoid-hook", "--source=codex"])),
         Some("codex".into())
     );
-}
-
-#[test]
-fn source_from_argv_absent_is_none() {
     assert_eq!(source_from_argv(&argv(&["pixtuoid-hook"])), None);
-}
-
-#[test]
-fn source_from_argv_missing_value_is_none() {
     assert_eq!(
         source_from_argv(&argv(&["pixtuoid-hook", "--source"])),
         None
     );
-}
-
-#[test]
-fn source_from_argv_empty_value_is_none() {
     assert_eq!(
         source_from_argv(&argv(&["pixtuoid-hook", "--source", ""])),
         None

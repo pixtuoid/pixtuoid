@@ -302,18 +302,6 @@ mod tests {
         assert_eq!(first_cli_ancestor(300, rows), Some(200));
     }
 
-    /// The `cmd.exe /C` form — the trap this module exists for.
-    #[test]
-    fn the_transient_cmd_parent_is_skipped_for_the_cli_above_it() {
-        let rows = table(&[
-            (300, 250, "pixtuoid-hook.exe"),
-            (250, 200, "cmd.exe"),
-            (200, 100, "codex.exe"),
-            (100, 50, "WindowsTerminal.exe"),
-        ]);
-        assert_eq!(first_cli_ancestor(300, rows), Some(200));
-    }
-
     /// #896: the wrapper Cursor `eval`s the hook inside cannot exec us.
     #[test]
     fn the_transient_unix_wrapper_shell_is_skipped_for_the_cli_above_it() {

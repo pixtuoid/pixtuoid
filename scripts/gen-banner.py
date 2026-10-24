@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import pathlib
 import sys
-import traceback
 
-from readme_pixels import BASELINE, THEMES, Frame, Pack, _run, animation, sprite_path, sprite_size, text_path, text_width
+from readme_pixels import BASELINE, THEMES, Frame, Pack, _run, animation, check, run_selftest, sprite_path, sprite_size, text_path, text_width
 
 ART_PATH = pathlib.Path(__file__).resolve().parent.parent / "crates" / "pixtuoid-scene" / "src" / "character" / "banner.golden"
 WORD, WORD_PX = "pixtuoid", 6
@@ -130,14 +129,6 @@ def stale(out_dir: pathlib.Path) -> list[str]:
     return [f"banner-{t}.svg" for t in THEMES if not (out_dir / f"banner-{t}.svg").is_file() or (out_dir / f"banner-{t}.svg").read_text(encoding="utf-8") != render_svg(t)]
 
 
-FAILS: list[str] = []
-
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        FAILS.append(msg)
-
-
 def test_read_art_keeps_each_animation_s_frames_in_order() -> None:
     art = read_art("@palette a=#010203 b=#040506\n@frame cat 750\n. a\n@frame guy 600\nb b\n@frame cat 750\na .\n")
     check(art.palette == {"a": "#010203", "b": "#040506"}, f"palette: {art.palette}")
@@ -204,16 +195,7 @@ def test_render_paints_inside_the_canvas() -> None:
 
 
 def selftest() -> int:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            try:
-                fn()
-            except Exception:  # noqa: BLE001 — a crashing test is a failing test
-                FAILS.append(f"{name} crashed:\n{traceback.format_exc()}")
-    for f in FAILS:
-        print(f"FAIL: {f}", file=sys.stderr)
-    print(f"gen-banner selftest: {'FAIL' if FAILS else 'ok'}")
-    return 1 if FAILS else 0
+    return run_selftest("gen-banner", globals())
 
 
 def main(argv: list[str]) -> int:

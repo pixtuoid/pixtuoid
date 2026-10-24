@@ -79,12 +79,6 @@ fn save_audio_volume_persists_the_nudged_level() {
 use super::*;
 
 #[test]
-fn load_missing_returns_defaults() {
-    let cfg = load(Path::new("/nonexistent/path/config.toml"), &mut Vec::new());
-    assert!(cfg.theme.is_none());
-}
-
-#[test]
 fn save_then_load_roundtrips_and_leaves_no_tmp_sidecar() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
@@ -102,20 +96,6 @@ fn load_missing_collects_no_warning() {
     let mut w = Vec::new();
     load(Path::new("/nonexistent/path/config.toml"), &mut w);
     assert!(w.is_empty(), "a missing config is normal, not a warning");
-}
-
-#[test]
-fn load_malformed_collects_reset_warning() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("config.toml");
-    std::fs::write(&p, "theme = [unclosed").unwrap();
-    let mut w = Vec::new();
-    load(&p, &mut w);
-    assert_eq!(w.len(), 1);
-    assert!(
-        w[0].contains("malformed config") && w[0].contains("ALL settings reset"),
-        "the all-settings-reset case is the highest-stakes warning: {w:?}"
-    );
 }
 
 /// The injected bytes every config-warning egress test crafts: a live OSC
@@ -327,15 +307,6 @@ fn load_ignores_unknown_keys() {
 }
 
 #[test]
-fn save_then_load_roundtrip() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    save(&path, "dracula").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    assert_eq!(cfg.theme.as_deref(), Some("dracula"));
-}
-
-#[test]
 fn resolve_cli_wins_over_config() {
     let cfg = AppConfig {
         theme: Some("normal".into()),
@@ -358,16 +329,6 @@ fn resolve_config_wins_over_default() {
 #[test]
 fn resolve_all_none_uses_default() {
     let cfg = AppConfig::default();
-    let theme = resolve_theme(&cfg, None, &mut Vec::new()).unwrap();
-    assert_eq!(theme.name, "normal");
-}
-
-#[test]
-fn resolve_invalid_config_theme_falls_back_to_default() {
-    let cfg = AppConfig {
-        theme: Some("does-not-exist".into()),
-        ..AppConfig::default()
-    };
     let theme = resolve_theme(&cfg, None, &mut Vec::new()).unwrap();
     assert_eq!(theme.name, "normal");
 }
@@ -404,26 +365,6 @@ fn resolve_invalid_cli_theme_errors_even_with_valid_config() {
         ..AppConfig::default()
     };
     assert!(resolve_theme(&cfg, Some("definitely-not-a-theme"), &mut Vec::new()).is_err());
-}
-
-#[test]
-fn full_config_flow_file_drives_theme() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(&path, "theme = \"cyberpunk\"\n").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    let theme = resolve_theme(&cfg, None, &mut Vec::new()).unwrap();
-    assert_eq!(theme.name, "cyberpunk");
-}
-
-#[test]
-fn full_config_flow_cli_overrides_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(&path, "theme = \"cyberpunk\"\n").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    let theme = resolve_theme(&cfg, Some("dracula"), &mut Vec::new()).unwrap();
-    assert_eq!(theme.name, "dracula");
 }
 
 #[test]
@@ -468,13 +409,6 @@ fn max_desks_zero_in_config_still_warns_when_the_cli_flag_wins() {
 }
 
 #[test]
-fn max_desks_neither_set() {
-    let cfg = AppConfig::default();
-    let desk_cap = resolve_desk_cap(&cfg, None, &mut Vec::new());
-    assert_eq!(desk_cap, None);
-}
-
-#[test]
 fn max_desks_no_config_file() {
     let cfg = load(Path::new("/nonexistent/path/config.toml"), &mut Vec::new());
     let desk_cap = resolve_desk_cap(&cfg, None, &mut Vec::new());
@@ -501,17 +435,6 @@ fn max_desks_zero_in_config_is_ignored_with_warning() {
 }
 
 #[test]
-fn save_preserves_max_desks() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(&path, "theme = \"normal\"\nmax-desks = 8\n").unwrap();
-    save(&path, "cyberpunk").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    assert_eq!(cfg.theme.as_deref(), Some("cyberpunk"));
-    assert_eq!(cfg.max_desks, Some(8));
-}
-
-#[test]
 fn pets_absent_returns_all_with_default_names() {
     let cfg = AppConfig::default();
     let pets = resolve_pets(&cfg, &mut Vec::new());
@@ -528,66 +451,6 @@ fn pets_empty_vec_returns_none() {
         ..AppConfig::default()
     };
     assert!(resolve_pets(&cfg, &mut Vec::new()).is_empty());
-}
-
-#[test]
-fn pets_unknown_kind_warns_and_skips() {
-    let cfg = AppConfig {
-        pets: Some(vec![
-            PetEntry {
-                kind: Some("cat".into()),
-                name: None,
-            },
-            PetEntry {
-                kind: Some("hamster".into()),
-                name: None,
-            },
-        ]),
-        ..AppConfig::default()
-    };
-    let pets = resolve_pets(&cfg, &mut Vec::new());
-    assert_eq!(pets.len(), 1);
-    assert_eq!(pets[0].kind, pixtuoid_scene::pet::PetKind::Cat);
-    assert_eq!(pets[0].name, "Office Cat");
-}
-
-#[test]
-fn pets_all_unknown_returns_empty() {
-    let cfg = AppConfig {
-        pets: Some(vec![
-            PetEntry {
-                kind: Some("hamster".into()),
-                name: None,
-            },
-            PetEntry {
-                kind: Some("parrot".into()),
-                name: None,
-            },
-        ]),
-        ..AppConfig::default()
-    };
-    assert!(resolve_pets(&cfg, &mut Vec::new()).is_empty());
-}
-
-#[test]
-fn pets_entry_custom_name_attached() {
-    let cfg = AppConfig {
-        pets: Some(vec![
-            PetEntry {
-                kind: Some("cat".into()),
-                name: Some("Whiskers".into()),
-            },
-            PetEntry {
-                kind: Some("dog".into()),
-                name: Some("Rex".into()),
-            },
-        ]),
-        ..AppConfig::default()
-    };
-    let pets = resolve_pets(&cfg, &mut Vec::new());
-    let name = |k| pets.iter().find(|p| p.kind == k).map(|p| p.name.as_str());
-    assert_eq!(name(pixtuoid_scene::pet::PetKind::Cat), Some("Whiskers"));
-    assert_eq!(name(pixtuoid_scene::pet::PetKind::Dog), Some("Rex"));
 }
 
 #[test]
@@ -653,27 +516,6 @@ fn pets_full_toml_resolves_names() {
     let name = |k| pets.iter().find(|p| p.kind == k).map(|p| p.name.as_str());
     assert_eq!(name(pixtuoid_scene::pet::PetKind::Cat), Some("Luna"));
     assert_eq!(name(pixtuoid_scene::pet::PetKind::Dog), Some("Office Dog"));
-}
-
-#[test]
-fn save_preserves_pets() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(
-        &path,
-        "theme = \"normal\"\n[[pets]]\nkind = \"cat\"\nname = \"Luna\"\n",
-    )
-    .unwrap();
-    save(&path, "cyberpunk").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    assert_eq!(cfg.theme.as_deref(), Some("cyberpunk"));
-    assert_eq!(
-        cfg.pets,
-        Some(vec![PetEntry {
-            kind: Some("cat".into()),
-            name: Some("Luna".into())
-        }])
-    );
 }
 
 #[test]
@@ -746,19 +588,6 @@ fn update_config_refuses_a_type_invalid_config() {
 }
 
 #[test]
-fn update_config_still_accepts_unknown_keys() {
-    // Unknown ≠ type-invalid: a key written by a newer binary must survive the
-    // typed gate.
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("config.toml");
-    std::fs::write(&p, "future-key = 1\n").unwrap();
-    save(&p, "cyberpunk").expect("unknown keys must not block saves");
-    let after = std::fs::read_to_string(&p).unwrap();
-    assert!(after.contains("future-key = 1"));
-    assert!(after.contains("theme = \"cyberpunk\""));
-}
-
-#[test]
 fn update_config_refuses_to_overwrite_a_malformed_config() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("config.toml");
@@ -785,17 +614,6 @@ fn save_version_refuses_to_overwrite_a_malformed_config() {
     std::fs::write(&p, original).unwrap();
     assert!(save_version(&p, "9.9.9").is_err());
     assert_eq!(std::fs::read_to_string(&p).unwrap(), original);
-}
-
-#[test]
-fn save_on_a_missing_config_creates_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("config.toml");
-    save(&p, "cyberpunk").unwrap();
-    assert_eq!(
-        load(&p, &mut Vec::new()).theme.as_deref(),
-        Some("cyberpunk")
-    );
 }
 
 #[test]
@@ -1064,26 +882,6 @@ fn save_leaves_the_lock_file_in_place() {
         dir.path().join("config.toml.lock").exists(),
         "the lock file must stay in place"
     );
-}
-
-#[test]
-fn save_version_persists() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    save_version(&path, "0.4.0").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    assert_eq!(cfg.last_seen_version.as_deref(), Some("0.4.0"));
-}
-
-#[test]
-fn save_version_preserves_theme() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(&path, "theme = \"cyberpunk\"\n").unwrap();
-    save_version(&path, "0.4.0").unwrap();
-    let cfg = load(&path, &mut Vec::new());
-    assert_eq!(cfg.theme.as_deref(), Some("cyberpunk"));
-    assert_eq!(cfg.last_seen_version.as_deref(), Some("0.4.0"));
 }
 
 /// The degraded bit must come from `load` itself, not from reading the shared

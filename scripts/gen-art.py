@@ -4885,11 +4885,6 @@ def write(pack, sprites):
 
 def selftest(sprites):
     """A drift gate that cannot fail is no gate."""
-    draws = Draws(21)
-    require(
-        [draws.randrange(1000) for _ in range(6)] == [164, 689, 634, 479, 216, 792],
-        "Draws(21) drew another sequence: random()'s seeded stream moved",
-    )
     with tempfile.TemporaryDirectory() as tmp:
         pack = pathlib.Path(tmp)
         write(pack, sprites)

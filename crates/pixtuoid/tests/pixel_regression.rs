@@ -40,21 +40,6 @@ fn weather_cycle_affects_render() {
 }
 
 #[test]
-fn theme_affects_render() {
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
-    let scene = fixture_scene(now);
-    let floor = FloorMeta::ground();
-
-    let hash_normal = render_hash(&scene, now, &theme::NORMAL, floor);
-    let hash_cyberpunk = render_hash(&scene, now, &theme::CYBERPUNK, floor);
-
-    assert_ne!(
-        hash_normal, hash_cyberpunk,
-        "NORMAL and CYBERPUNK themes produced identical pixels"
-    );
-}
-
-#[test]
 fn all_themes_render_distinctly() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
     let scene = fixture_scene(now);
