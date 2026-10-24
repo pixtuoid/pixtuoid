@@ -230,8 +230,8 @@ mod tests {
         }
     }
 
-    /// The negative control for the row above: the CC name kimi never sends must
-    /// NOT be read for this source, or the row would be decorative.
+    /// The negative control for kimi's `ToolIdKey::ToolCall` registry row: the CC
+    /// name kimi never sends must NOT be read, or the row would be decorative.
     #[test]
     fn the_cc_spelling_is_not_read_for_kimi() {
         let evs = crate::source::decoder::decode_hook_payload(json!({

@@ -272,7 +272,7 @@ step 10 by the theme guards; steps 1–3 and step 11's `#[test]` are on you.
    can't disagree.
 2. **Write the source module** — `crates/pixtuoid-core/src/source/<name>.rs`:
    `SOURCE_NAME`, a `LineDecoder` fn (one JSONL line → `Vec<AgentEvent>`), a label
-   deriver, unit tests for mappings no recorded fixture reaches. Format lives HERE.
+   deriver, unit tests for mappings no fixture reaches. Format knowledge lives HERE.
 3. **Implement the `Source` trait** (an async `run(self, tx)` watching +
    decoding until the session universe ends). **Hook-only CLI?** Skip the
    decoder, trait, and step 7: `transcript: None` in the registry row, format

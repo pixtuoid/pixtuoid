@@ -870,7 +870,7 @@ fn stale_sweep_already_cascaded_child_is_skipped_in_pass_two() {
         Transport::Hook,
     );
 
-    // No heartbeat for either — unlike the cascade tests above, that puts BOTH
+    // No heartbeat for either — unlike stale_sweep_cascades_to_grandchildren, that puts BOTH
     // in the pass-1 `stale` vec, so one of them must hit the write-once skip.
     let now = t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(1);
     r.tick(&mut scene, now);

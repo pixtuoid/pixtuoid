@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn user_home_opt_is_the_shared_precedence_without_a_host_fallback() {
+    fn user_home_opt_has_no_host_fallback() {
         assert_eq!(resolve_user_home_opt(true, None, None), None);
         assert_eq!(resolve_user_home_opt(false, None, None), None);
     }
