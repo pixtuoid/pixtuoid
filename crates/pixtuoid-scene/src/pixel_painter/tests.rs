@@ -2396,7 +2396,7 @@ fn pet_hearts_skip_dead_and_faded_hearts() {
 fn the_notice_board_paints_in_a_large_room() {
     let theme = crate::theme::theme_by_name("normal").expect("theme");
     let bg = Rgb { r: 9, g: 9, b: 9 };
-    // A generous room, well above every guard threshold.
+    // Large enough to clear the board's size guard.
     let big = crate::layout::Bounds {
         x: 4,
         y: 4,
@@ -4725,6 +4725,29 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
         break;
     }
     assert!(checked, "no meeting-chair sitter appeared in 1000s of sim");
+}
+
+#[test]
+fn render_top_left_matches_the_pre_lift_kind_partition() {
+    use crate::layout::{Facing, Point, WaypointKind};
+    let stand = Point { x: 80, y: 60 };
+    let w = CHARACTER_SPRITE_W;
+    for &kind in WaypointKind::ALL {
+        // Independent oracle: the exact pre-lift partition, keyed on kind alone.
+        let expected = match kind {
+            WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair => {
+                back_couch_top_left(stand, w)
+            }
+            _ => waypoint_top_left(stand, w),
+        };
+        for facing in [Facing::North, Facing::South, Facing::East, Facing::West] {
+            assert_eq!(
+                Seat::at_waypoint(kind, stand, facing).render_top_left(w),
+                expected,
+                "{kind:?}/{facing:?}: render top-left drifted from the pre-lift partition"
+            );
+        }
+    }
 }
 
 #[test]
