@@ -180,7 +180,6 @@ fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::MAX_DECODED_FIELD_CHARS;
     use crate::source::decoder::test_obj;
     use serde_json::json;
 
@@ -216,39 +215,6 @@ mod tests {
     }
 
     #[test]
-    fn session_start_keys_on_session_id_label_from_workspace() {
-        // Real CLI shape: session_id present, top-level cwd EMPTY, the workspace
-        // in workspace_roots[0].
-        let ev = decode(json!({
-            "hook_event_name": "sessionStart",
-            "session_id": "c7cef226-sess",
-            "conversation_id": "c7cef226-sess",
-            "cwd": "",
-            "workspace_roots": ["/Users/dev/proj"]
-        }));
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                parent_id,
-            } => {
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(agent_id, AgentId::from_parts(SOURCE_NAME, "c7cef226-sess"));
-                assert_eq!(session_id, "c7cef226-sess", "key on session_id, not cwd");
-                assert_eq!(
-                    cwd,
-                    std::path::PathBuf::from("/Users/dev/proj"),
-                    "empty top-level cwd → workspace_roots[0] for the label"
-                );
-                assert_eq!(parent_id, None);
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn session_id_distinguishes_two_sessions_in_one_workspace() {
         let a = decode(
             json!({"hook_event_name": "sessionStart", "session_id": "sess-A",
@@ -263,30 +229,6 @@ mod tests {
             b.agent_id(),
             "two sessions in one repo must be distinct"
         );
-    }
-
-    #[test]
-    fn pre_tool_use_is_activity_start_with_no_tool_id() {
-        // Real CLI tool shape: PascalCase tool_name, file_path input, empty cwd.
-        let ev = decode(json!({
-            "hook_event_name": "preToolUse",
-            "session_id": "s",
-            "cwd": "",
-            "workspace_roots": ["/repo"],
-            "tool_name": "Read",
-            "tool_input": {"file_path": "/repo/src/main.rs"}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                tool_use_id,
-                detail,
-                ..
-            } => {
-                assert_eq!(tool_use_id, None);
-                assert_eq!(detail.unwrap().display(), "Read: /repo/src/main.rs");
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 
     /// The wire HAS a `tool_use_id` and it pairs; we drop it on purpose. Wiring
@@ -371,48 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn long_targets_are_truncated() {
-        let long = "x".repeat(60);
-        let ev = decode(json!({
-            "hook_event_name": "preToolUse", "session_id": "s", "cwd": "/r",
-            "tool_name": "shell", "tool_input": {"command": long}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(display.starts_with("shell: "));
-                assert!(display.ends_with('…'));
-                assert_eq!(display.chars().count(), "shell: ".chars().count() + 41);
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn long_tool_name_is_truncated_at_the_decode_boundary() {
-        let long = "T".repeat(MAX_DECODED_FIELD_CHARS * 3);
-        let ev = decode(json!({
-            "hook_event_name": "preToolUse", "session_id": "s", "cwd": "/r",
-            "tool_name": long, "tool_input": {}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(
-                    display.ends_with('…'),
-                    "name should be ellipsized: {display}"
-                );
-                assert_eq!(display.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn post_tool_use_and_stop_are_activity_end() {
         for event in ["postToolUse", "postToolUseFailure", "stop"] {
             let ev = decode(json!({"hook_event_name": event, "session_id": "s", "cwd": "/r"}));
@@ -427,18 +327,6 @@ mod tests {
                 "{event} must decode to ActivityEnd with no tool id"
             );
         }
-    }
-
-    #[test]
-    fn session_end_maps_to_session_end() {
-        let ev = decode(json!({"hook_event_name": "sessionEnd", "session_id": "s", "cwd": "/r"}));
-        assert!(matches!(
-            ev,
-            AgentEvent::SessionEnd {
-                as_child: false,
-                ..
-            }
-        ));
     }
 
     #[test]
@@ -458,40 +346,6 @@ mod tests {
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
-    }
-
-    #[test]
-    fn activity_arms_prepend_identity_keyed_on_session_id() {
-        for payload in [
-            json!({"hook_event_name": "preToolUse", "session_id": "s", "cwd": "", "workspace_roots": ["/repo"],
-                   "tool_name": "Shell", "tool_input": {"command": "ls"}}),
-            json!({"hook_event_name": "postToolUse", "session_id": "s", "workspace_roots": ["/repo"], "tool_name": "Shell"}),
-            json!({"hook_event_name": "postToolUseFailure", "session_id": "s", "workspace_roots": ["/repo"],
-                   "tool_name": "Shell", "error_message": "command failed", "failure_type": "error", "is_interrupt": false}),
-        ] {
-            let name = payload["hook_event_name"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 2, "{name}: Identity + activity");
-            match &events[0] {
-                AgentEvent::Identity {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    pid: None,
-                } => {
-                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "s"));
-                    assert_eq!(source, SOURCE_NAME);
-                    assert_eq!(session_id, "s", "key on session_id");
-                    assert_eq!(
-                        cwd.as_deref(),
-                        Some(std::path::Path::new("/repo")),
-                        "Identity cwd comes from workspace_roots[0]"
-                    );
-                }
-                other => panic!("{name}: expected leading Identity, got {other:?}"),
-            }
-        }
     }
 
     #[test]

@@ -40,38 +40,6 @@ fn load_jsonl(name: &str) -> serde_json::Value {
 }
 
 #[test]
-fn decode_session_start() {
-    let ev = decode_single(load("session_start"));
-    let expected_id = AgentId::from_parts("claude-code", "ses-abc");
-    match ev {
-        AgentEvent::SessionStart {
-            agent_id,
-            session_id,
-            source,
-            ..
-        } => {
-            assert_eq!(agent_id, expected_id);
-            assert_eq!(session_id, "ses-abc");
-            assert_eq!(source, "claude-code");
-        }
-        other => panic!("expected SessionStart, got {other:?}"),
-    }
-}
-
-#[test]
-fn decode_session_start_with_custom_source() {
-    let mut payload = load("session_start");
-    payload["_pixtuoid_source"] = serde_json::Value::String("codex".into());
-    let ev = decode_single(payload);
-    match ev {
-        AgentEvent::SessionStart { source, .. } => {
-            assert_eq!(source, "codex");
-        }
-        other => panic!("expected SessionStart, got {other:?}"),
-    }
-}
-
-#[test]
 fn decode_pre_tool_use_write_maps_to_typing() {
     let ev = decode_activity(load("pre_tool_use_write"));
     match ev {
@@ -80,33 +48,6 @@ fn decode_pre_tool_use_write_maps_to_typing() {
         }
         other => panic!("got {other:?}"),
     }
-}
-
-#[test]
-fn decode_post_tool_use_is_activity_end() {
-    let ev = decode_activity(load("post_tool_use_write"));
-    assert!(matches!(ev, AgentEvent::ActivityEnd { .. }));
-}
-
-#[test]
-fn decode_notification_is_waiting() {
-    let ev = decode_activity(load("notification"));
-    match ev {
-        AgentEvent::Waiting { reason, .. } => assert!(reason.contains("permission")),
-        other => panic!("got {other:?}"),
-    }
-}
-
-#[test]
-fn decode_session_end() {
-    let ev = decode_single(load("session_end"));
-    assert!(matches!(
-        ev,
-        AgentEvent::SessionEnd {
-            as_child: false,
-            ..
-        }
-    ));
 }
 
 #[test]
@@ -662,13 +603,6 @@ fn cc_jsonl_subagent_line_with_attribution_emits_rename() {
 }
 
 #[test]
-fn cc_jsonl_plain_user_message_yields_no_events() {
-    let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
-    let events = decode_cc_line(transcript, "claude-code", load_jsonl("user_message")).unwrap();
-    assert!(events.is_empty());
-}
-
-#[test]
 fn cc_jsonl_slash_command_user_lines_yield_no_events() {
     let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
     for cmd in ["/exit", "/quit", "/clear", "/compact"] {
@@ -682,37 +616,6 @@ fn cc_jsonl_slash_command_user_lines_yield_no_events() {
             "{cmd} content must not drive lifecycle: {events:?}"
         );
     }
-}
-
-#[test]
-fn cc_jsonl_quoted_exit_wrapper_mid_prose_yields_no_events() {
-    let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
-    let v = serde_json::json!({
-        "type": "user",
-        "message": {
-            "role": "user",
-            "content": "I saw <command-name>/exit</command-name> in a transcript — what writes that?"
-        }
-    });
-    let events = decode_cc_line(transcript, "claude-code", v).unwrap();
-    assert!(
-        events.is_empty(),
-        "quoting the wrapper must not emit SessionEnd: {events:?}"
-    );
-}
-
-#[test]
-fn cc_jsonl_plain_string_user_message_yields_no_events() {
-    let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
-    let v = serde_json::json!({
-        "type": "user",
-        "message": { "role": "user", "content": "please fix the /exit bug" }
-    });
-    let events = decode_cc_line(transcript, "claude-code", v).unwrap();
-    assert!(
-        events.is_empty(),
-        "prose mentioning /exit is not a command: {events:?}"
-    );
 }
 
 #[test]

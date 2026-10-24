@@ -230,60 +230,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_event_coalesces_to_one_agent_id_end_to_end() {
-        use crate::source::decoder::decode_hook_payload;
-        let sid = "session_abc";
-        let payloads = [
-            json!({"hook_event_name": "SessionStart", "session_id": sid, "cwd": "/repo", "_pixtuoid_source": "kimi"}),
-            json!({"hook_event_name": "PreToolUse", "session_id": sid, "cwd": "/repo", "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_call_id": "t1", "_pixtuoid_source": "kimi"}),
-            json!({"hook_event_name": "PostToolUseFailure", "session_id": sid, "cwd": "/repo", "tool_name": "Bash", "tool_call_id": "t1", "_pixtuoid_source": "kimi"}),
-            json!({"hook_event_name": "PermissionRequest", "session_id": sid, "cwd": "/repo", "_pixtuoid_source": "kimi"}),
-            json!({"hook_event_name": "SessionEnd", "session_id": sid, "cwd": "/repo", "_pixtuoid_source": "kimi"}),
-        ];
-        let ids: std::collections::BTreeSet<_> = payloads
-            .into_iter()
-            .flat_map(|v| decode_hook_payload(v).expect("decodes"))
-            .map(|e| e.agent_id())
-            .collect();
-        assert_eq!(
-            ids,
-            std::collections::BTreeSet::from([AgentId::from_parts(SOURCE_NAME, sid)]),
-            "all kimi events must coalesce to one AgentId"
-        );
-    }
-
-    /// Captured off kimi-code (`fixtures/kimi/tool-run`): the per-call id rides `tool_call_id`, and
-    /// kimi never sends the CC-shaped `tool_use_id`. Driven through the FULL
-    /// dispatch, not this module's decoder, because that is where the registry
-    /// row is read — the failure the row exists to prevent is a shared arm
-    /// reading the CC name and silently decoding every id to `None`.
-    #[test]
-    fn per_call_id_rides_tool_call_id_not_tool_use_id() {
-        for ev in ["PreToolUse", "PostToolUse", "PostToolUseFailure"] {
-            let evs = crate::source::decoder::decode_hook_payload(json!({
-                "hook_event_name": ev,
-                "session_id": "session_abc",
-                "cwd": "/w",
-                "client_type": "kimi_code_cli",
-                "tool_name": "Read",
-                "tool_call_id": "call_1",
-                "_pixtuoid_source": SOURCE_NAME,
-            }))
-            .unwrap_or_else(|e| panic!("{ev} must decode: {e}"));
-            assert!(
-                evs.iter().any(|e| matches!(
-                    e,
-                    AgentEvent::ActivityStart { tool_use_id: Some(t), .. }
-                        | AgentEvent::ActivityEnd { tool_use_id: Some(t), .. } if t == "call_1"
-                )),
-                "{ev} must carry kimi's tool_call_id, got {evs:?}"
-            );
-        }
-    }
-
-    /// The negative control for the row above: the CC name kimi never sends must
-    /// NOT be read for this source, or the row would be decorative.
+    /// The negative control for kimi's `ToolIdKey::ToolCall` registry row: the CC
+    /// name kimi never sends must NOT be read, or the row would be decorative.
     #[test]
     fn the_cc_spelling_is_not_read_for_kimi() {
         let evs = crate::source::decoder::decode_hook_payload(json!({

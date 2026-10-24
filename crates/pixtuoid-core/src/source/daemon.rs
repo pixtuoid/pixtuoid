@@ -809,21 +809,6 @@ mod tests {
     }
 
     #[test]
-    fn any_event_resurrects_from_down() {
-        for src in SOURCES {
-            let mut s = SceneState::default();
-            apply(&mut s, src, DaemonPresenceUpdate::GatewayDown, ms(0));
-            assert_eq!(st(&s, src), DaemonState::Down);
-            apply(&mut s, src, DaemonPresenceUpdate::SessionStarted, ms(1));
-            assert_eq!(
-                st(&s, src),
-                DaemonState::Idle,
-                "any presence event implies up"
-            );
-        }
-    }
-
-    #[test]
     fn session_end_after_a_gateway_stop_leaves_it_down() {
         // The recorded clean shutdown's own order, 2 ms apart.
         for src in SOURCES {

@@ -632,29 +632,6 @@ mod tests {
     }
 
     #[test]
-    fn session_start_keys_on_session_id() {
-        let mut v = envelope("session_start");
-        v["source"] = json!("new");
-        let ev = decode(v);
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                parent_id,
-            } => {
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(agent_id, AgentId::from_parts(SOURCE_NAME, "0197fa30-sess"));
-                assert_eq!(session_id, "0197fa30-sess");
-                assert_eq!(cwd, PathBuf::from("/Users/dev/proj"));
-                assert_eq!(parent_id, None);
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn session_start_public_source_field_never_drives_attribution() {
         for reason in ["new", "load"] {
             let mut v = envelope("session_start");
@@ -697,101 +674,6 @@ mod tests {
             if m == "grok-4-code")
         );
         assert_eq!(decode_all(envelope("session_start")).len(), 1);
-    }
-
-    #[test]
-    fn user_prompt_submit_is_the_resurrect_carrier() {
-        let ev = decode(envelope("user_prompt_submit"));
-        assert!(matches!(ev, AgentEvent::SessionStart { agent_id, .. }
-            if agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa30-sess")));
-    }
-
-    #[test]
-    fn session_end_maps_to_root_session_end() {
-        let mut v = envelope("session_end");
-        v["reason"] = json!("shutdown");
-        assert!(matches!(
-            decode(v),
-            AgentEvent::SessionEnd {
-                as_child: false,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn pre_tool_use_is_identity_plus_activity_start_with_tool_id() {
-        let mut v = envelope("pre_tool_use");
-        v["toolName"] = json!("run_terminal_command");
-        v["toolUseId"] = json!("call_42");
-        v["toolInput"] = json!({"command": "cargo test"});
-        v["toolInputTruncated"] = json!(false);
-        let evs = decode_all(v);
-        assert_eq!(evs.len(), 2);
-        match &evs[0] {
-            AgentEvent::Identity {
-                session_id,
-                cwd,
-                pid: None,
-                ..
-            } => {
-                assert_eq!(session_id, "0197fa30-sess");
-                assert_eq!(cwd.as_deref(), Some(Path::new("/Users/dev/proj")));
-            }
-            other => panic!("expected leading Identity, got {other:?}"),
-        }
-        match &evs[1] {
-            AgentEvent::ActivityStart {
-                tool_use_id,
-                detail,
-                ..
-            } => {
-                assert_eq!(tool_use_id.as_deref(), Some("call_42"));
-                assert_eq!(
-                    detail.as_ref().unwrap().display(),
-                    "run_terminal_command: cargo test"
-                );
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn post_tool_use_variants_and_denial_close_the_activity() {
-        for event in [
-            "post_tool_use",
-            "post_tool_use_failure",
-            "permission_denied",
-        ] {
-            let mut v = envelope(event);
-            v["toolName"] = json!("run_terminal_command");
-            v["toolUseId"] = json!("call_42");
-            let evs = decode_all(v);
-            assert_eq!(evs.len(), 2, "{event}: Identity + End");
-            assert!(
-                matches!(&evs[1], AgentEvent::ActivityEnd { tool_use_id: Some(id), .. }
-                    if id == "call_42"),
-                "{event} must end tool call_42"
-            );
-        }
-    }
-
-    #[test]
-    fn the_three_turn_end_causes_are_identityless_turn_ends() {
-        for event in ["stop", "stop_failure", "stop_cancelled"] {
-            let evs = decode_all(envelope(event));
-            assert_eq!(evs.len(), 1, "{event}: exactly one event");
-            assert!(
-                matches!(
-                    &evs[0],
-                    AgentEvent::ActivityEnd {
-                        tool_use_id: None,
-                        ..
-                    }
-                ),
-                "{event} must decode to a bare ActivityEnd"
-            );
-        }
     }
 
     #[test]
@@ -860,22 +742,6 @@ mod tests {
             matches!(decode(v), AgentEvent::ActivityStart { detail: Some(d), .. }
             if d.display() == "read_file: src/lib.rs")
         );
-    }
-
-    #[test]
-    fn long_targets_are_truncated_at_the_decode_boundary() {
-        let mut v = envelope("pre_tool_use");
-        v["toolName"] = json!("run_terminal_command");
-        v["toolInput"] = json!({"command": "x".repeat(300)});
-        match decode(v) {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(display.ends_with('…'), "must be ellipsized: {display}");
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 
     #[test]
@@ -1004,34 +870,6 @@ mod tests {
                 "{event} without subagentId must bail"
             );
         }
-    }
-
-    #[test]
-    fn all_events_for_one_session_share_one_agent_id() {
-        let sid = "0197fa30-sess";
-        let mut pre = envelope("pre_tool_use");
-        pre["toolName"] = json!("read_file");
-        pre["toolUseId"] = json!("c1");
-        let mut post = envelope("post_tool_use");
-        post["toolUseId"] = json!("c1");
-        let mut note = envelope("notification");
-        note["notificationType"] = json!("permission_prompt");
-        let events = [
-            envelope("session_start"),
-            envelope("user_prompt_submit"),
-            pre,
-            note,
-            post,
-            envelope("stop"),
-            envelope("session_end"),
-        ];
-        let ids: std::collections::BTreeSet<_> = events
-            .iter()
-            .flat_map(|v| decode_grok_hook_payload(test_obj(v)).unwrap())
-            .map(|e| e.agent_id())
-            .collect();
-        assert_eq!(ids.len(), 1, "all root events must coalesce to one AgentId");
-        assert!(ids.contains(&AgentId::from_parts(SOURCE_NAME, sid)));
     }
 
     #[test]

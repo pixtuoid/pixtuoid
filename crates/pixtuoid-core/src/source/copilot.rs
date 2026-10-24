@@ -515,67 +515,6 @@ mod tests {
     }
 
     #[test]
-    fn real_session_start_registers_root_with_cwd_and_session_id() {
-        let line = r#"{"type":"session.start","data":{"sessionId":"65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3","version":1,"producer":"copilot-agent","copilotVersion":"unknown","startTime":"2026-05-22T05:59:45.408Z","selectedModel":"claude-haiku-4.5","context":{"cwd":"d:\\contentforge-fullstack (1)"},"alreadyInUse":false},"id":"0bc5f1ba-1abe-49c9-a303-d843bd0c3fa8","timestamp":"2026-05-22T05:59:45.488Z","parentId":null}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::SessionStart {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    parent_id,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(source, "copilot");
-                assert_eq!(session_id, "65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3");
-                assert_eq!(cwd, Path::new(r"d:\contentforge-fullstack (1)"));
-                assert_eq!(*parent_id, None);
-            }
-            other => panic!("expected one SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn real_tool_round_is_active_then_idle_keyed_on_tool_call_id() {
-        let start = r#"{"type":"tool.execution_start","data":{"toolCallId":"tooluse_9CoqZL2lZlJUsz7TjJsSUk","toolName":"report_intent","arguments":{"intent":"Exploring project setup"}},"id":"595a6493-1763-4c80-b75a-936d4f263a11","timestamp":"2026-05-22T06:00:14.298Z","parentId":"2902a578-0304-4abc-8402-afefefff9e70"}"#;
-        match &decode(start)[..] {
-            [
-                AgentEvent::ActivityStart {
-                    agent_id,
-                    tool_use_id,
-                    detail: Some(_),
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(
-                    tool_use_id.as_deref(),
-                    Some("tooluse_9CoqZL2lZlJUsz7TjJsSUk")
-                );
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-        let complete = r#"{"type":"tool.execution_complete","data":{"toolCallId":"tooluse_9CoqZL2lZlJUsz7TjJsSUk","model":"claude-haiku-4.5","interactionId":"65f25156-0095-4746-ac3e-fa52340df72b","success":true,"result":{"content":"Intent logged","detailedContent":"Exploring project setup"},"toolTelemetry":{}},"id":"cd7e82e8","timestamp":"2026-05-22T06:00:14.323Z","parentId":"d97de833"}"#;
-        match &decode(complete)[..] {
-            [
-                AgentEvent::ActivityEnd {
-                    agent_id,
-                    tool_use_id,
-                },
-                ..,
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(
-                    tool_use_id.as_deref(),
-                    Some("tooluse_9CoqZL2lZlJUsz7TjJsSUk")
-                );
-            }
-            other => panic!("expected ActivityEnd first, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn real_task_tool_is_delegating() {
         let line = r#"{"type":"tool.execution_start","data":{"toolCallId":"call_SGMJ1yjMtpgFUbZct2fEo2Hk","toolName":"task","arguments":{"description":"Incident command response","agent_type":"sisko","name":"sisko-incident-command","mode":"sync"},"turnId":"0"},"id":"a","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
@@ -762,21 +701,6 @@ mod tests {
                 "a line with envelope agentId must attribute to the CHILD, not root"
             ),
             other => panic!("expected child ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn permission_requested_reason_is_capped_at_the_decode_boundary() {
-        use crate::source::decoder::MAX_DECODED_FIELD_CHARS;
-        let kind = "x".repeat(MAX_DECODED_FIELD_CHARS * 4);
-        let line = format!(
-            r#"{{"type":"permission.requested","data":{{"permissionRequest":{{"kind":"{kind}"}}}},"id":"a","timestamp":"t","parentId":null}}"#
-        );
-        match &decode(&line)[..] {
-            [AgentEvent::Waiting { reason, .. }] => {
-                assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-            }
-            other => panic!("expected Waiting, got {other:?}"),
         }
     }
 

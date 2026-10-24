@@ -1,7 +1,0 @@
-{
-  "hook_event_name": "Notification",
-  "session_id": "ses-abc",
-  "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
-  "cwd": "/repo",
-  "message": "Claude needs your permission to use Bash"
-}

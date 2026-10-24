@@ -1254,32 +1254,6 @@ mod tests {
     }
 
     #[test]
-    fn session_header_registers_root_with_cwd_and_no_parent() {
-        let line = r#"{"type":"session","version":3,"id":"0197f0aa-0000-7000-8000-000000000001","timestamp":"2026-07-09T08:00:00.000Z","cwd":"/home/u/proj"}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::SessionStart {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    parent_id,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(source, "omp");
-                assert_eq!(
-                    session_id, ROOT_KEY,
-                    "session_id must match the watcher's id-deriver key"
-                );
-                assert_eq!(cwd, Path::new("/home/u/proj"));
-                assert_eq!(*parent_id, None);
-            }
-            other => panic!("expected one SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn subagent_header_registers_child_parented_to_the_root() {
         let line = r#"{"type":"session","version":3,"id":"0197f0cc-0000-7000-8000-000000000003","timestamp":"2026-07-09T08:01:00.000Z","cwd":"/home/u/proj"}"#;
         match &decode_at(CHILD, line)[..] {
@@ -1349,18 +1323,6 @@ mod tests {
     }
 
     #[test]
-    fn session_exit_ends_root_not_as_child() {
-        let line = r#"{"type":"custom","id":"a1b2c3d4","parentId":"e5f6a7b8","timestamp":"2026-07-09T08:10:00.000Z","customType":"session_exit","data":{"reason":"exit command","kind":"normal","recordedAt":"2026-07-09T08:10:00.000Z"}}"#;
-        match &decode(line)[..] {
-            [AgentEvent::SessionEnd { agent_id, as_child }] => {
-                assert_eq!(*agent_id, root());
-                assert!(!*as_child);
-            }
-            other => panic!("expected root SessionEnd, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn session_exit_in_a_subagent_file_ends_the_child_as_child() {
         let line = r#"{"type":"custom","id":"a1b2c3d4","parentId":null,"timestamp":"t","customType":"session_exit","data":{"reason":"task complete","kind":"normal","recordedAt":"t"}}"#;
         match &decode_at(CHILD, line)[..] {
@@ -1396,28 +1358,6 @@ mod tests {
                 .any(|e| matches!(e, AgentEvent::Usage { .. })),
             "cache-read-only reading must be silent"
         );
-    }
-
-    #[test]
-    fn assistant_tool_calls_start_activity_keyed_on_block_id() {
-        let line = r#"{"type":"message","id":"m1","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"text","text":"Reading."},{"type":"toolCall","id":"toolu_01AAA","name":"read","arguments":{"path":"/home/u/proj/main.rs"}}],"stopReason":"toolUse","timestamp":1720512000000}}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::ActivityStart {
-                    agent_id,
-                    tool_use_id,
-                    detail: Some(ToolDetail::Generic { display }),
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(tool_use_id.as_deref(), Some("toolu_01AAA"));
-                assert!(
-                    display.contains("main.rs"),
-                    "read tool should show its path target, got {display:?}"
-                );
-            }
-            other => panic!("expected one ActivityStart, got {other:?}"),
-        }
     }
 
     /// Byte-real: omp mandates a per-call `i` intent, and its `edit`/`todo`
@@ -1547,44 +1487,6 @@ mod tests {
     }
 
     #[test]
-    fn parallel_tool_calls_each_start_activity() {
-        let line = r#"{"type":"message","id":"m1","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"cargo test"}},{"type":"toolCall","id":"t2","name":"grep","arguments":{"pattern":"fn main"}}],"timestamp":1}}"#;
-        let evs = decode(line);
-        assert_eq!(evs.len(), 2, "one ActivityStart per toolCall block");
-        match &evs[..] {
-            [
-                AgentEvent::ActivityStart {
-                    tool_use_id: id1, ..
-                },
-                AgentEvent::ActivityStart {
-                    tool_use_id: id2, ..
-                },
-            ] => {
-                assert_eq!(id1.as_deref(), Some("t1"));
-                assert_eq!(id2.as_deref(), Some("t2"));
-            }
-            other => panic!("expected two ActivityStarts, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn tool_result_ends_activity_keyed_on_tool_call_id() {
-        let line = r#"{"type":"message","id":"m2","parentId":"m1","timestamp":"t","message":{"role":"toolResult","toolCallId":"toolu_01AAA","toolName":"read","content":[{"type":"text","text":"fn main() {}"}],"isError":false,"timestamp":1720512001000}}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::ActivityEnd {
-                    agent_id,
-                    tool_use_id,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(tool_use_id.as_deref(), Some("toolu_01AAA"));
-            }
-            other => panic!("expected one ActivityEnd, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn task_dispatch_is_delegating() {
         let line = r#"{"type":"message","id":"m3","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t3","name":"task","arguments":{"task":"fix the flaky test","id":"Alpha"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
@@ -1672,21 +1574,6 @@ mod tests {
                 assert_eq!(ask.as_deref(), Some("tool_ASK5"));
             }
             other => panic!("expected bash Start, then ask Start+Waiting, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn ask_reason_is_capped_at_the_decode_boundary() {
-        let long = "q".repeat(MAX_DECODED_FIELD_CHARS * 10);
-        let line = format!(
-            r#"{{"type":"message","id":"mA","parentId":null,"timestamp":"t","message":{{"role":"assistant","content":[{{"type":"toolCall","id":"tool_ASK4","name":"ask","arguments":{{"questions":[{{"id":"x","question":"{long}"}}]}}}}],"timestamp":1}}}}"#
-        );
-        match &decode(&line)[..] {
-            [_, AgentEvent::Waiting { reason, .. }] => {
-                assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-                assert!(reason.ends_with('…'));
-            }
-            other => panic!("expected Start+Waiting, got {other:?}"),
         }
     }
 

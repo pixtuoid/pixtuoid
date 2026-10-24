@@ -1,7 +1,0 @@
-{
-  "hook_event_name": "SessionEnd",
-  "session_id": "ses-abc",
-  "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
-  "cwd": "/repo",
-  "reason": "exit"
-}

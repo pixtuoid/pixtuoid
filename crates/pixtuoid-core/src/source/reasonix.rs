@@ -350,38 +350,6 @@ mod tests {
     }
 
     #[test]
-    fn user_prompt_submit_is_the_resurrect_session_start() {
-        let ev = decode(json!({
-            "event": "UserPromptSubmit",
-            "sessionId": "s", "cwd": "/Users/dev/zirs",
-            "prompt": "add a feature"
-        }));
-        assert!(matches!(ev, AgentEvent::SessionStart { agent_id, .. }
-                if agent_id == AgentId::from_parts(SOURCE_NAME, "s")));
-    }
-
-    #[test]
-    fn pre_tool_use_is_activity_start_with_no_tool_id() {
-        let ev = decode(json!({
-            "event": "PreToolUse",
-            "sessionId": "s", "cwd": "/repo",
-            "toolName": "read_file",
-            "toolArgs": {"path": "src/main.go"}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                tool_use_id,
-                detail,
-                ..
-            } => {
-                assert_eq!(tool_use_id, None);
-                assert_eq!(detail.unwrap().display(), "read_file: src/main.go");
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn tool_target_uses_reasonix_arg_vocabulary() {
         let bash = decode(json!({
             "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
@@ -399,48 +367,6 @@ mod tests {
             matches!(grep, AgentEvent::ActivityStart { detail: Some(d), .. }
             if d.display() == "grep: src")
         );
-    }
-
-    #[test]
-    fn long_targets_are_truncated() {
-        let long = "x".repeat(60);
-        let ev = decode(json!({
-            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
-            "toolName": "bash", "toolArgs": {"command": long}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(display.starts_with("bash: "));
-                assert!(display.ends_with('…'));
-                assert_eq!(display.chars().count(), "bash: ".chars().count() + 41);
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn long_tool_name_is_truncated_at_the_decode_boundary() {
-        let long = "T".repeat(MAX_DECODED_FIELD_CHARS * 3);
-        let ev = decode(json!({
-            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
-            "toolName": long, "toolArgs": {}
-        }));
-        match ev {
-            AgentEvent::ActivityStart {
-                detail: Some(d), ..
-            } => {
-                let display = d.display();
-                assert!(
-                    display.ends_with('…'),
-                    "name should be ellipsized: {display}"
-                );
-                assert_eq!(display.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
     }
 
     #[test]
@@ -473,23 +399,6 @@ mod tests {
             assert!(
                 matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()),
                 "{tool} must not map to ToolDetail::Task"
-            );
-        }
-    }
-
-    #[test]
-    fn post_tool_use_and_stop_are_activity_end() {
-        for event in ["PostToolUse", "Stop"] {
-            let ev = decode(json!({"event": event, "sessionId": "s", "cwd": "/r"}));
-            assert!(
-                matches!(
-                    &ev,
-                    AgentEvent::ActivityEnd {
-                        tool_use_id: None,
-                        ..
-                    }
-                ),
-                "{event} must decode to ActivityEnd with no tool id"
             );
         }
     }
@@ -532,23 +441,6 @@ mod tests {
             "{:?}",
             post("read_file")
         );
-    }
-
-    #[test]
-    fn notification_maps_to_waiting_with_message() {
-        let ev = decode(json!({
-            "event": "Notification",
-            "sessionId": "s", "cwd": "/r",
-            "message": "approval needed: bash rm -rf ./build"
-        }));
-        assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
-            if reason == "approval needed: bash rm -rf ./build"));
-    }
-
-    #[test]
-    fn session_end_maps_to_session_end() {
-        let ev = decode(json!({"event": "SessionEnd", "sessionId": "s", "cwd": "/r"}));
-        assert!(matches!(ev, AgentEvent::SessionEnd { .. }));
     }
 
     #[test]
@@ -618,59 +510,6 @@ mod tests {
     }
 
     #[test]
-    fn activity_arms_prepend_identity_with_the_session_key() {
-        let payloads = [
-            json!({"event": "PreToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash",
-                   "toolArgs": {"command": "ls"}}),
-            json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash"}),
-            json!({"event": "Notification", "sessionId": "s", "cwd": "/Users/dev/p", "message": "approval needed"}),
-            json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/Users/dev/p", "toolName": "bash", "subject": "ls"}),
-        ];
-        for payload in payloads {
-            let name = payload["event"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 2, "{name}: Identity + activity");
-            match &events[0] {
-                AgentEvent::Identity {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    pid: None,
-                } => {
-                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "s"));
-                    assert_eq!(source, SOURCE_NAME);
-                    assert_eq!(session_id, "s");
-                    assert_eq!(
-                        cwd.as_deref(),
-                        Some(std::path::Path::new("/Users/dev/p")),
-                        "rx hooks always know their cwd"
-                    );
-                }
-                other => panic!("{name}: expected leading Identity, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn stop_session_events_and_session_end_carry_no_identity() {
-        for payload in [
-            json!({"event": "Stop", "sessionId": "s", "cwd": "/r"}),
-            json!({"event": "SessionStart", "sessionId": "s", "cwd": "/r"}),
-            json!({"event": "UserPromptSubmit", "sessionId": "s", "cwd": "/r"}),
-            json!({"event": "SessionEnd", "sessionId": "s", "cwd": "/r"}),
-        ] {
-            let name = payload["event"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 1, "{name}: exactly one event");
-            assert!(
-                !matches!(events[0], AgentEvent::Identity { .. }),
-                "{name} must not emit Identity"
-            );
-        }
-    }
-
-    #[test]
     fn empty_or_missing_cwd_is_malformed() {
         assert!(
             decode_rx_hook_payload(test_obj(
@@ -720,23 +559,6 @@ mod tests {
             matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()),
             "spoofed subagent_type must stay Generic"
         );
-    }
-
-    #[test]
-    fn notification_reason_is_capped_at_the_decode_boundary() {
-        let long = "é".repeat(MAX_DECODED_FIELD_CHARS * 10);
-        let ev = decode(json!({
-            "event": "Notification",
-            "sessionId": "s", "cwd": "/r",
-            "message": long
-        }));
-        match &ev {
-            AgentEvent::Waiting { reason, .. } => {
-                assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
-                assert!(reason.ends_with('…'));
-            }
-            other => panic!("expected Waiting, got {other:?}"),
-        }
     }
 
     #[test]

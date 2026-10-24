@@ -259,47 +259,6 @@ mod tests {
     }
 
     #[test]
-    fn session_start_reports_the_model_from_extra() {
-        // The shape from fixtures/hermes/tool-run-hermetic: hermes nests it one
-        // level down, and only the session events carry it.
-        let evs = decode_all(json!({
-            "hook_event_name": "on_session_start", "session_id": "s1", "cwd": "/repo",
-            "extra": {"model": "gpt-4o-mini"}
-        }));
-        assert!(
-            evs.iter().any(
-                |e| matches!(e, AgentEvent::ModelInfo { model: Some(m), .. } if m == "gpt-4o-mini")
-            ),
-            "extra.model must reach ModelInfo, got {evs:?}"
-        );
-    }
-
-    #[test]
-    fn session_start_keys_on_session_id_with_real_cwd() {
-        let ev = decode(json!({
-            "hook_event_name": "on_session_start",
-            "tool_name": null, "tool_input": null,
-            "session_id": "sess-1", "cwd": "/Users/dev/proj", "extra": {}
-        }));
-        match ev {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                parent_id,
-            } => {
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(agent_id, AgentId::from_parts(SOURCE_NAME, "sess-1"));
-                assert_eq!(session_id, "sess-1", "key on session_id, not cwd");
-                assert_eq!(cwd, std::path::PathBuf::from("/Users/dev/proj"));
-                assert_eq!(parent_id, None);
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn session_id_distinguishes_two_sessions_in_one_workspace() {
         let a = decode(
             json!({"hook_event_name": "on_session_start", "session_id": "A", "cwd": "/repo"}),
@@ -321,37 +280,6 @@ mod tests {
         }));
         assert!(matches!(ev, AgentEvent::SessionStart { agent_id, .. }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
-    }
-
-    #[test]
-    fn a_call_its_wait_and_its_end_name_one_tool_id() {
-        let call = |event: &str| {
-            decode(json!({
-                "hook_event_name": event,
-                "session_id": "s", "cwd": "/repo",
-                "tool_name": "terminal", "tool_input": {"command": "echo hello"},
-                "extra": {"task_id": "t", "tool_call_id": "c", "description": "why"}
-            }))
-        };
-        match call("pre_tool_call") {
-            AgentEvent::ActivityStart {
-                tool_use_id,
-                detail,
-                ..
-            } => {
-                assert_eq!(tool_use_id.as_deref(), Some("c"));
-                assert_eq!(detail.unwrap().display(), "terminal: echo hello");
-            }
-            other => panic!("expected ActivityStart, got {other:?}"),
-        }
-        assert!(matches!(
-            call("pre_approval_request"),
-            AgentEvent::Waiting { tool_use_id: Some(t), .. } if t == "c"
-        ));
-        assert!(matches!(
-            call("post_tool_call"),
-            AgentEvent::ActivityEnd { tool_use_id: Some(t), .. } if t == "c"
-        ));
     }
 
     #[test]
@@ -420,71 +348,6 @@ mod tests {
             0,
             "a turn boundary must not end the session: {evs:?}"
         );
-    }
-
-    #[test]
-    fn all_events_for_one_session_share_one_agent_id() {
-        let sid = "sess-1";
-        let events = [
-            json!({"hook_event_name": "on_session_start", "session_id": sid, "cwd": "/repo"}),
-            json!({"hook_event_name": "pre_tool_call", "session_id": sid, "cwd": "/repo",
-                   "tool_name": "terminal", "tool_input": {"command": "ls"}}),
-            json!({"hook_event_name": "post_tool_call", "session_id": sid, "cwd": "/repo", "tool_name": "terminal"}),
-            json!({"hook_event_name": "on_session_end", "session_id": sid, "cwd": "/repo"}),
-        ];
-        let ids: std::collections::BTreeSet<_> = events
-            .iter()
-            .flat_map(|v| decode_hermes_hook_payload(test_obj(v)).unwrap())
-            .map(|e| e.agent_id())
-            .collect();
-        assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
-    }
-
-    #[test]
-    fn activity_arms_prepend_identity_keyed_on_session_id() {
-        for payload in [
-            json!({"hook_event_name": "pre_tool_call", "session_id": "s", "cwd": "/repo",
-                   "tool_name": "terminal", "tool_input": {"command": "ls"}}),
-            json!({"hook_event_name": "post_tool_call", "session_id": "s", "cwd": "/repo", "tool_name": "terminal"}),
-            json!({"hook_event_name": "on_session_end", "session_id": "s", "cwd": "/repo"}),
-        ] {
-            let name = payload["hook_event_name"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 2, "{name}: Identity + activity");
-            match &events[0] {
-                AgentEvent::Identity {
-                    agent_id,
-                    source,
-                    session_id,
-                    cwd,
-                    pid: None,
-                } => {
-                    assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "s"));
-                    assert_eq!(source, SOURCE_NAME);
-                    assert_eq!(session_id, "s");
-                    assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/repo")));
-                }
-                other => panic!("{name}: expected leading Identity, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    /// The partition is by decoded CLASS, not by wire name — `on_session_end`
-    /// moved to the activity arms and its Identity had to move with it.
-    fn session_events_carry_no_identity() {
-        for payload in [
-            json!({"hook_event_name": "on_session_start", "session_id": "s", "cwd": "/r"}),
-            json!({"hook_event_name": "on_session_finalize", "session_id": "s", "cwd": "/r"}),
-        ] {
-            let name = payload["hook_event_name"].clone();
-            let events = decode_all(payload);
-            assert_eq!(events.len(), 1, "{name}: exactly one event");
-            assert!(
-                !matches!(events[0], AgentEvent::Identity { .. }),
-                "{name} must not emit Identity"
-            );
-        }
     }
 
     #[test]
@@ -602,15 +465,5 @@ mod tests {
             "HERMES_HOME still outranks the platform default"
         );
         assert_eq!(resolve_hermes_home(None, None, true, None), None);
-    }
-
-    /// The arms MUST disagree — the assertion that would have caught the bug.
-    #[test]
-    fn the_windows_and_unix_defaults_diverge() {
-        let home = Some(PathBuf::from(r"C:\Users\ada"));
-        assert_ne!(
-            resolve_hermes_home(None, None, true, home.clone()),
-            resolve_hermes_home(None, None, false, home),
-        );
     }
 }

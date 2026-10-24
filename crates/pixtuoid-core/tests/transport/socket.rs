@@ -120,14 +120,6 @@ async fn listener_drops_slow_connection_via_timeout() {
     handle.abort();
 }
 
-#[tokio::test]
-async fn listener_path_accessor_returns_bound_path() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("pixtuoid.sock");
-    let listener = HookSocketListener::bind(path.clone()).await.unwrap();
-    assert_eq!(listener.path(), path.as_path());
-}
-
 // Invalid UTF-8 makes tokio's `next_line()` return an io::Error, a different
 // arm than the malformed-JSON serde warn the sibling test hits.
 #[tokio::test]

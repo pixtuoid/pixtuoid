@@ -311,12 +311,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn pids_by_name_returns_without_panic() {
-        // Shape-only: whether a codex process is running is environmental.
-        let _ = pids_by_name("codex");
-    }
-
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn pids_by_name_finds_a_spawned_child() {

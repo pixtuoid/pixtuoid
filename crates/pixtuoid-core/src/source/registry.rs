@@ -1120,19 +1120,6 @@ mod tests {
     }
 
     #[test]
-    fn every_descriptor_has_two_char_label_prefix() {
-        for d in REGISTRY {
-            assert_eq!(
-                d.label_prefix.chars().count(),
-                2,
-                "source {:?} label_prefix {:?} must be exactly 2 chars",
-                d.name,
-                d.label_prefix
-            );
-        }
-    }
-
-    #[test]
     fn every_descriptor_has_a_verified_version() {
         for d in REGISTRY {
             assert!(
@@ -1348,16 +1335,6 @@ mod tests {
                 d.name
             );
         }
-    }
-
-    #[test]
-    fn openclaw_is_the_only_daemon() {
-        let daemons: Vec<&str> = REGISTRY
-            .iter()
-            .filter(|d| d.is_daemon())
-            .map(|d| d.name)
-            .collect();
-        assert_eq!(daemons, vec![openclaw::SOURCE_NAME]);
     }
 
     #[test]

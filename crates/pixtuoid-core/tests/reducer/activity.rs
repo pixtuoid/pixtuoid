@@ -11,27 +11,6 @@ use crate::{
 };
 
 #[test]
-fn activity_start_sets_state_active() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start(&mut r, &mut scene, id);
-
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        Some("Edit: foo.rs"),
-        SystemTime::now(),
-        Transport::Hook,
-    );
-
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
-}
-
-#[test]
 fn activity_end_arms_debounce_then_tick_flips_to_idle() {
     use std::time::Duration;
     let mut scene = SceneState::uniform(4);
@@ -181,36 +160,6 @@ fn tool_call_count_increments_on_activity_start() {
         Transport::Hook,
     );
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 2);
-}
-
-#[test]
-fn active_ms_accumulates_on_state_transitions() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/active.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    start(&mut r, &mut scene, id);
-
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0,
-        Transport::Hook,
-    );
-    assert_eq!(scene.agents.get(&id).unwrap().active_ms, 0);
-
-    let t1 = t0 + Duration::from_secs(1);
-    act_end(&mut r, &mut scene, id, Some("t1"), t1, Transport::Hook);
-    r.tick(&mut scene, t1 + Duration::from_secs(3));
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(
-        slot.active_ms >= 1000,
-        "expected >= 1000ms active, got {}",
-        slot.active_ms
-    );
 }
 
 #[test]

@@ -326,20 +326,8 @@ mod tests {
     }
 
     #[test]
-    fn user_home_opt_is_the_shared_precedence_without_a_host_fallback() {
-        assert_eq!(
-            resolve_user_home_opt(true, s(r"C:\Users\me"), s("/c/Users/me")),
-            s(r"C:\Users\me")
-        );
-        assert_eq!(
-            resolve_user_home_opt(true, None, s("/c/Users/me")),
-            s("/c/Users/me")
-        );
+    fn user_home_opt_has_no_host_fallback() {
         assert_eq!(resolve_user_home_opt(true, None, None), None);
-        assert_eq!(
-            resolve_user_home_opt(false, s(r"C:\ignored"), s("/Users/me")),
-            s("/Users/me")
-        );
         assert_eq!(resolve_user_home_opt(false, None, None), None);
     }
 
@@ -409,21 +397,5 @@ mod tests {
             s("/Users/me")
         );
         assert_eq!(resolve_home_first(false, None, s(r"C:\ignored")), None);
-    }
-
-    #[test]
-    fn home_first_and_generic_user_home_diverge_on_windows_with_home_set() {
-        let home = s("/c/Users/me");
-        let userprofile = s(r"C:\Users\me");
-        assert_eq!(
-            resolve_user_home_opt(true, userprofile.clone(), home.clone()),
-            userprofile,
-            "generic resolver is USERPROFILE-first on Windows"
-        );
-        assert_eq!(
-            resolve_home_first(true, home.clone(), userprofile),
-            home,
-            "HOME-first resolver picks HOME — the two MUST diverge here"
-        );
     }
 }

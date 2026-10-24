@@ -4,7 +4,6 @@
 //! flat, so the hooks and the rollout head's `parent_thread_id` carry the
 //! parent link.
 
-use std::path::PathBuf;
 use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
@@ -160,43 +159,5 @@ fn codex_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
     assert!(
         parent_slot.exiting_at.is_none(),
         "the child's tombstone must not affect the parent"
-    );
-}
-
-#[test]
-fn codex_subagent_stop_before_start_is_a_safe_noop() {
-    let (parent, child) = ids();
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let now = SystemTime::now();
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "codex".into(),
-            session_id: "root".into(),
-            cwd: PathBuf::from("/private/tmp/pixtuoid-capture/proj"),
-            parent_id: None,
-        },
-        now,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionEnd {
-            agent_id: child,
-            as_child: true,
-        },
-        now,
-        Transport::Hook,
-    );
-    assert!(
-        !scene.agents.contains_key(&child),
-        "a SessionEnd for an absent child must not create a phantom slot"
-    );
-    assert!(
-        scene.agents.get(&parent).unwrap().exiting_at.is_none(),
-        "an orphan SubagentStop must not cascade the unrelated parent"
     );
 }

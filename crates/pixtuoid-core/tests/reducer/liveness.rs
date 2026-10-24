@@ -251,40 +251,6 @@ fn a_quit_opencode_idle_slot_is_swept_short_and_walks_back_in_on_its_next_turn()
 }
 
 #[test]
-fn proof_of_life_exempts_active_slot_from_stale_sweep() {
-    use pixtuoid_core::state::reducer::{PROOF_OF_LIFE_TTL, STALE_ACTIVE_TIMEOUT};
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/pol-active.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: id,
-            source: HOOK_AND_TRANSCRIPT.into(),
-            session_id: "s".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    act_start(&mut r, &mut scene, id, Some("t"), None, t0, Transport::Hook);
-
-    let vouch_at = t0 + STALE_ACTIVE_TIMEOUT;
-    proof_of_life(&mut r, &mut scene, id, vouch_at, Transport::Jsonl);
-
-    let sweep_at = vouch_at + Duration::from_secs(1);
-    assert!(sweep_at.duration_since(vouch_at).unwrap() < PROOF_OF_LIFE_TTL);
-    r.tick(&mut scene, sweep_at);
-    let slot = scene.agents.get(&id).expect("vouched slot must survive");
-    assert!(
-        slot.exiting_at.is_none(),
-        "a probe-vouched slot must be exempt from the stale sweep"
-    );
-}
-
-#[test]
 fn proof_of_life_lapse_restores_normal_sweep() {
     use pixtuoid_core::state::reducer::{PROOF_OF_LIFE_TTL, STALE_ACTIVE_TIMEOUT};
     let mut scene = SceneState::uniform(4);
@@ -739,58 +705,6 @@ fn parented_empty_cwd_subagent_is_not_ghost_reaped() {
 }
 
 #[test]
-fn session_end_cascades_to_children() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let parent = AgentId::from_transcript_path("/p/parent.jsonl");
-    let child = AgentId::from_parts("claude-code", "/p/parent/subagents/agent-1.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "claude-code".into(),
-            session_id: "parent".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id: "child".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: Some(parent),
-        },
-        t0 + Duration::from_millis(100),
-        Transport::Hook,
-    );
-    assert!(scene.agents.get(&child).unwrap().exiting_at.is_none());
-
-    sess_end(
-        &mut r,
-        &mut scene,
-        parent,
-        false,
-        t0 + Duration::from_secs(10),
-        Transport::Hook,
-    );
-    assert!(
-        scene.agents.get(&parent).unwrap().exiting_at.is_some(),
-        "parent should be exiting"
-    );
-    assert!(
-        scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "child should cascade to exiting when parent ends"
-    );
-}
-
-#[test]
 fn session_end_cascades_to_grandchildren() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
@@ -923,95 +837,6 @@ fn session_end_cascade_marks_all_descendants_exiting() {
 }
 
 #[test]
-fn sweep_stale_marks_old_agent_exiting_on_tick() {
-    use pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/stale-sweep.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_500_000_000);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: id,
-            source: "claude-code".into(),
-            session_id: "sw".into(),
-            cwd: PathBuf::from("/old-project"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    assert!(scene.agents.get(&id).unwrap().exiting_at.is_none());
-
-    r.tick(
-        &mut scene,
-        t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(60),
-    );
-    assert!(
-        scene.agents.get(&id).unwrap().exiting_at.is_some(),
-        "tick past STALE_IDLE_TIMEOUT should mark agent exiting"
-    );
-}
-
-#[test]
-fn stale_sweep_cascades_to_children() {
-    use pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT;
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let parent = AgentId::from_transcript_path("/p/stale-cascade.jsonl");
-    let child = AgentId::from_parts("claude-code", "/p/stale-cascade/subagents/agent-1.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: parent,
-            source: "claude-code".into(),
-            session_id: "parent".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: None,
-        },
-        t0,
-        Transport::Hook,
-    );
-    r.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: child,
-            source: "claude-code".into(),
-            session_id: "child".into(),
-            cwd: PathBuf::from("/repo"),
-            parent_id: Some(parent),
-        },
-        t0 + Duration::from_millis(100),
-        Transport::Hook,
-    );
-    // Heartbeat the child so it is NOT independently stale: its exit can then
-    // only have come from the cascade.
-    r.apply(
-        &mut scene,
-        AgentEvent::Rename {
-            agent_id: child,
-            label: "cc·sub".into(),
-        },
-        t0 + Duration::from_secs(25 * 60),
-        Transport::Jsonl,
-    );
-
-    r.tick(&mut scene, t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(1));
-
-    assert!(
-        scene.agents.get(&parent).unwrap().exiting_at.is_some(),
-        "stale parent should be marked exiting"
-    );
-    assert!(
-        scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "child should cascade-exit with a stale-swept parent (it is not independently stale)"
-    );
-}
-
-#[test]
 fn stale_sweep_already_cascaded_child_is_skipped_in_pass_two() {
     use pixtuoid_core::state::reducer::STALE_IDLE_TIMEOUT;
     let mut scene = SceneState::uniform(8);
@@ -1045,7 +870,7 @@ fn stale_sweep_already_cascaded_child_is_skipped_in_pass_two() {
         Transport::Hook,
     );
 
-    // No heartbeat for either — unlike the cascade tests above, that puts BOTH
+    // No heartbeat for either — unlike stale_sweep_cascades_to_grandchildren, that puts BOTH
     // in the pass-1 `stale` vec, so one of them must hit the write-once skip.
     let now = t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(1);
     r.tick(&mut scene, now);

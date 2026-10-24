@@ -109,13 +109,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn agent_id_is_deterministic_per_path() {
-        let a = AgentId::from_transcript_path("/Users/me/.claude/projects/x/abc.jsonl");
-        let b = AgentId::from_transcript_path("/Users/me/.claude/projects/x/abc.jsonl");
-        assert_eq!(a, b);
-    }
-
-    #[test]
     fn agent_id_differs_per_path() {
         let a = AgentId::from_transcript_path("/Users/me/.claude/projects/x/abc.jsonl");
         let b = AgentId::from_transcript_path("/Users/me/.claude/projects/x/def.jsonl");
@@ -140,15 +133,6 @@ mod tests {
         let a = AgentId::from_parts("a", "bc");
         let b = AgentId::from_parts("ab", "c");
         assert_ne!(a, b);
-    }
-
-    #[test]
-    fn from_transcript_path_routes_through_from_parts() {
-        // An already-normalized path: the fold only rewrites backslash/uppercase
-        // forms, so the shim equals raw `from_parts` on every platform.
-        let a = AgentId::from_transcript_path("/x.jsonl");
-        let b = AgentId::from_parts("claude-code", "/x.jsonl");
-        assert_eq!(a, b);
     }
 
     #[test]

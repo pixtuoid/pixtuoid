@@ -1,7 +1,0 @@
-{
-  "type": "user",
-  "uuid": "u-1",
-  "sessionId": "ses-abc",
-  "cwd": "/repo",
-  "message": { "role": "user", "content": "hi" }
-}

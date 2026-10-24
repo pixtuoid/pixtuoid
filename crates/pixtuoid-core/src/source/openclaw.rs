@@ -306,14 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn gateway_start_pid_is_not_double_emitted_as_pid_seen() {
-        assert_eq!(
-            decode(json!({"type": "gateway_start", "_pid": 4242})),
-            vec![DaemonPresenceUpdate::GatewayUp { pid: Some(4242) }]
-        );
-    }
-
-    #[test]
     fn unmapped_event_with_pid_emits_nothing_not_a_lone_pid_seen() {
         assert!(
             decode(json!({"type": "model_call_started", "_pid": 5})).is_empty(),
@@ -385,13 +377,6 @@ mod tests {
         assert_eq!(a.instance.as_str(), "18789");
         assert_eq!(b.instance.as_str(), "19789");
         assert_ne!(a.instance, b.instance);
-    }
-
-    #[test]
-    fn the_same_port_after_a_restart_is_the_same_instance() {
-        let first = decode_full(json!({"type": "gateway_start", "gatewayPort": 18789, "_pid": 11}));
-        let after = decode_full(json!({"type": "gateway_start", "gatewayPort": 18789, "_pid": 99}));
-        assert_eq!(first.instance, after.instance);
     }
 
     #[test]

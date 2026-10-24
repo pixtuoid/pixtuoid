@@ -1,9 +1,0 @@
-{
-  "hook_event_name": "PostToolUse",
-  "session_id": "ses-abc",
-  "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
-  "cwd": "/repo",
-  "tool_name": "Write",
-  "tool_input": { "file_path": "src/foo.rs", "content": "fn main(){}" },
-  "tool_response": { "success": true }
-}
