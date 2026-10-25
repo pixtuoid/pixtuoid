@@ -11,7 +11,7 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::state::AgentSlot;
 use pixtuoid_core::walkable::{OccupancyOverlay, WalkableMask};
 
-use crate::layout::{Point, SceneLayout, WaypointKind};
+use crate::layout::{HomeDesk, Point, SceneLayout, WaypointKind};
 use crate::pathfind::Router;
 use crate::pose::{
     SpotClaims, WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms,
@@ -270,7 +270,7 @@ pub(crate) fn advance_wander(
     slot: &AgentSlot,
     now: SystemTime,
     layout: &SceneLayout,
-    desk: Point,
+    desk: HomeDesk,
     router: &mut dyn Router,
     overlay: &OccupancyOverlay,
     walks: &mut HashMap<AgentId, WalkState>,
@@ -467,7 +467,7 @@ fn pick_wander_dest(
     id: AgentId,
     cycle_n: u64,
     layout: &SceneLayout,
-    origin: Point,
+    origin: HomeDesk,
     claimed: &SpotClaims,
 ) -> WanderTarget {
     crate::pose::resolve_wander_target(id, cycle_n, layout, origin, claimed)
@@ -572,7 +572,7 @@ fn snapshot_back_profile(
     slot: &AgentSlot,
     walk: &WalkState,
     layout: &SceneLayout,
-    desk: Point,
+    desk: HomeDesk,
     router: &mut dyn Router,
     overlay: &OccupancyOverlay,
 ) -> WalkProfile {

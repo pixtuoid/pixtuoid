@@ -104,7 +104,7 @@ pub struct CharacterPlacement {
     /// The home desk this placement is SEATED AT, in logical units — `None` for
     /// anyone not sitting at one (walking, at a waypoint, standing). Carried
     /// because `top_left` is already PROJECTED and cannot yield it back.
-    pub(crate) seat_desk: Option<Point>,
+    pub(crate) seat_desk: Option<crate::layout::HomeDesk>,
     /// Whether this figure sits on furniture — a desk's chair, a couch, a sofa
     /// or a meeting chair — which grounds it in place of a shadow.
     pub(crate) seated: bool,
@@ -347,7 +347,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
             // Reserve the cell the agent actually stands on, NOT the
             // blocked furniture center — else another agent's A* routes
             // straight through the stander.
-            let stand = layout.stand_point(w.kind, w.pos, origin, w.facing);
+            let stand = layout.stand_point(w.kind, w.pos, origin.at, w.facing);
             stores.overlay.add(
                 stand.x.saturating_sub(CHARACTER_SPRITE_W / 2),
                 stand.y.saturating_sub(WALKING_Y_OFF / 2),
@@ -777,8 +777,11 @@ fn desk_props(
     timing: Timing,
 ) -> Vec<DeskProps> {
     let Timing { now, beat } = timing;
-    (0..layout.home_desks.len())
-        .map(|i| {
+    layout
+        .home_desks
+        .iter()
+        .enumerate()
+        .map(|(i, desk)| {
             let occupant = desk_occupant(agents, FloorLocalDeskIndex(i));
             let fetched_at = occupant.and_then(|a| coffee.get(&a.agent_id));
             let cup = fetched_at.map(|t| {
@@ -791,16 +794,8 @@ fn desk_props(
                 cup,
                 token_tier: occupant.map_or(0, |a| crate::token_meter::token_tier(a.tokens_used)),
                 sheet_fall: occupant.and_then(|a| crate::token_meter::sheet_fall_dist(a, now)),
-                effects: cup_effects(
-                    desk_cup_at(
-                        pack,
-                        layout.home_desks[i],
-                        layout.desk_facing(FloorLocalDeskIndex(i)),
-                    ),
-                    cup,
-                    beat,
-                ),
-                scanline: scanline_col(layout.home_desks[i].x, beat),
+                effects: cup_effects(desk_cup_at(pack, desk.at, desk.facing), cup, beat),
+                scanline: scanline_col(desk.at.x, beat),
             }
         })
         .collect()
@@ -902,8 +897,7 @@ pub(crate) fn resolve_characters(
         };
         let is_waiting = matches!(agent.state, ActivityState::Waiting { .. });
         let seated = |base: Piece, glow: CharacterGlow, sleep_seed: Option<u64>| {
-            let facing = layout.desk_facing(agent.desk_index.single_floor_local());
-            let seat = Seat::at_desk(desk, facing);
+            let seat = Seat::at_desk(desk.at, desk.facing);
             let top_left = seat.render_top_left(CHARACTER_SPRITE_W);
             let (anim_name, flip_x) = seat.sprite_for(base);
             let placement = CharacterPlacement {
@@ -960,7 +954,7 @@ pub(crate) fn resolve_characters(
                     let rank = *wp_rank.entry(wp).or_insert(0);
                     wp_rank.insert(wp, rank + 1);
                     let dx = waypoint_rank_offset_x(kind, rank);
-                    let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk, wp_obj.facing);
+                    let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk.at, wp_obj.facing);
                     let seat = Seat::at_waypoint(kind, stand, wp_obj.facing);
                     let upright_top_left = seat.render_top_left(CHARACTER_SPRITE_W);
                     let (anim_name, flip_x) = seat.sprite_for(SEATED);
@@ -1103,7 +1097,7 @@ pub(crate) fn resolve_characters(
         // head, the badge clears.
         let ceiling = p
             .seat_desk
-            .map(|d| desk_art_top(pack, d.y, desk_art(pack, layout.desk_facing_at(d)).height()));
+            .map(|d| desk_art_top(pack, d.at.y, desk_art(pack, d.facing).height()));
         p.label_anchor = badge_anchor(fitted, size, ceiling);
         // Breath after the fit, so it never moves the badge.
         let agent = &agents[p.agent_idx];

@@ -266,6 +266,16 @@ impl Lounge {
     }
 }
 
+/// An agent's home desk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HomeDesk {
+    /// Its art's top-left.
+    pub at: Point,
+    /// Which way its occupant faces — the ONE authority painters and the
+    /// approach/walk geometry share, so a seat is never drawn off its routed side.
+    pub facing: Facing,
+}
+
 /// The computed office geometry for one floor — quadrant bounds, per-agent
 /// desks, waypoints, decor, walls, and the walkability mask. Built once per
 /// `(buf_w, buf_h, max_desks)`.
@@ -281,11 +291,9 @@ pub struct SceneLayout {
     /// the appliance-placement region (vending/printer). Keep it distinct from
     /// `corridor`: same y/height, different x-extent.
     pub cubicle_aisle: Bounds,
-    /// Per-agent home-desk anchor positions, indexed floor-locally (read via
+    /// Per-agent home desks, indexed floor-locally (read via
     /// [`Self::home_desk`]).
-    pub home_desks: Vec<Point>,
-    /// Facing per home desk, parallel to [`Self::home_desks`].
-    pub(crate) desk_facings: Vec<Facing>,
+    pub home_desks: Vec<HomeDesk>,
     /// Named stops (lounge seats, appliances, meeting slots) agents walk to.
     pub waypoints: Vec<Waypoint>,
     /// Placed potted plants.
@@ -501,10 +509,10 @@ impl SceneLayout {
         self.walkable.is_walkable(x, y)
     }
 
-    /// Typed accessor for a floor's home-desk anchor. `home_desks` is a
+    /// Typed accessor for a floor's home desk. `home_desks` is a
     /// FLOOR-LOCAL vector — index it through a `FloorLocalDeskIndex`, never
     /// with an `AgentSlot.desk_index` directly.
-    pub fn home_desk(&self, i: FloorLocalDeskIndex) -> Option<Point> {
+    pub fn home_desk(&self, i: FloorLocalDeskIndex) -> Option<HomeDesk> {
         self.home_desks.get(i.0).copied()
     }
 
@@ -555,20 +563,6 @@ impl SceneLayout {
             };
             covers && inside(f.visual)
         })
-    }
-
-    /// Which way the desk AT `pos` seats its occupant (an O(desks) scan).
-    pub(crate) fn desk_facing_at(&self, pos: Point) -> Facing {
-        self.home_desks
-            .iter()
-            .position(|&d| d == pos)
-            .map_or(Facing::South, |i| self.desk_facing(FloorLocalDeskIndex(i)))
-    }
-
-    /// Which way desk `i`'s occupant faces — the ONE authority painters and the
-    /// approach/walk geometry share, so a seat is never drawn off its routed side.
-    pub fn desk_facing(&self, i: FloorLocalDeskIndex) -> Facing {
-        self.desk_facings[i.0]
     }
 
     /// The visible top window-wall band height in px: [`wall_band_h`] of this

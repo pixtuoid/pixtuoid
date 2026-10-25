@@ -189,7 +189,7 @@ fn island_bartenders_approach_from_behind_never_through_the_front() {
                 continue;
             };
             exercised = true;
-            let origin = l.home_desks.first().copied().expect("desks");
+            let origin = l.home_desks.first().expect("desks").at;
             for wp in l
                 .waypoints
                 .iter()
@@ -363,12 +363,12 @@ fn desk_is_walk_behind_the_monitor() {
     let vis = crate::layout::desk_furniture_def().visual;
     let foot_h = crate::layout::DESK_FOOT_H;
     for &d in &l.home_desks {
-        let cx = d.x + vis.w / 2;
+        let cx = d.at.x + vis.w / 2;
         assert!(
-            l.walkable.is_walkable(cx, d.y),
+            l.walkable.is_walkable(cx, d.at.y),
             "desk {d:?}: north row (monitor overhang) must be walkable (walk-behind)"
         );
-        let south = d.y + vis.h.saturating_sub(1);
+        let south = d.at.y + vis.h.saturating_sub(1);
         assert!(
             !l.walkable.is_walkable(cx, south.saturating_sub(foot_h / 2)),
             "desk {d:?}: front-contact ground must be blocked"
@@ -389,13 +389,13 @@ fn partial_bottom_row_caps_mid_fill_when_agents_run_out() {
             cap,
             "{w}x{h}: expected total desk capacity {cap}"
         );
-        let max_y = full.home_desks.iter().map(|d| d.y).max().unwrap();
+        let max_y = full.home_desks.iter().map(|d| d.at.y).max().unwrap();
         let band_at = |n: usize| {
             SceneLayout::compute_with_seed(w, h, Some(n), 0)
                 .expect("fits")
                 .home_desks
                 .iter()
-                .filter(|d| d.y == max_y)
+                .filter(|d| d.at.y == max_y)
                 .count()
         };
         for n in 1..=cap {
@@ -540,17 +540,17 @@ fn narrow_width_desks_stay_inside_the_band_with_anchors_on_buffer() {
             let band_right = l.cubicle_band.x + l.cubicle_band.width;
             for d in &l.home_desks {
                 assert!(
-                    d.x >= l.cubicle_band.x,
+                    d.at.x >= l.cubicle_band.x,
                     "{w}x70 seed {seed}: desk x={} west of band x={}",
-                    d.x,
+                    d.at.x,
                     l.cubicle_band.x
                 );
                 assert!(
-                    d.x + DESK_W <= band_right,
+                    d.at.x + DESK_W <= band_right,
                     "{w}x70 seed {seed}: desk x={} overflows the band's right edge {band_right}",
-                    d.x
+                    d.at.x
                 );
-                let a = desk_walk_anchor_facing(*d, crate::layout::Facing::South);
+                let a = desk_walk_anchor_facing(d.at, crate::layout::Facing::South);
                 assert!(
                     a.x < l.buf_w && a.y < l.buf_h,
                     "{w}x70 seed {seed}: desk_walk_anchor_facing {a:?} is off-buffer ({}x{})",
@@ -614,12 +614,11 @@ fn every_home_desk_has_a_reachable_approach_on_its_own_far_side() {
         // Without this the loop is vacuous: chair, probe and assertion agree under
         // any single facing, so an all-`South` layout would pass it untouched.
         assert!(
-            l.desk_facings.contains(&Facing::North),
+            l.home_desks.iter().any(|d| d.facing == Facing::North),
             "{w}x{h}: no desk faces north — the pod back row never turned around, \
              so nothing below probes the gap-side approach"
         );
-        for (i, &desk) in l.home_desks.iter().enumerate() {
-            let facing = l.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i));
+        for &crate::layout::HomeDesk { at: desk, facing } in &l.home_desks {
             let chair = desk_walk_anchor_facing(desk, facing);
             const PROBE_DIST: u16 = 40;
             let origin = match facing {
@@ -1001,7 +1000,7 @@ fn pod_grid_fills_every_desk_row_that_fits() {
             if l.home_desks.is_empty() {
                 continue;
             }
-            let lowest = l.home_desks.iter().map(|d| d.y).max().unwrap();
+            let lowest = l.home_desks.iter().map(|d| d.at.y).max().unwrap();
             let next_row_y = lowest + DESK_H + INTER_POD_AISLE_Y;
             let desk_y_max = (l.cubicle_band.y + l.cubicle_band.height)
                 .saturating_sub(super::decor::DESK_GROUND_H);
@@ -1025,7 +1024,7 @@ fn desk_columns_stay_on_one_lattice_and_never_shift_with_width() {
             continue;
         };
         let origin = l.cubicle_band.x + INTER_POD_AISLE_X / 2;
-        let offs: BTreeSet<u16> = l.home_desks.iter().map(|d| d.x - origin).collect();
+        let offs: BTreeSet<u16> = l.home_desks.iter().map(|d| d.at.x - origin).collect();
         for &off in &offs {
             let in_pod = off % stride_x;
             assert!(
@@ -1052,9 +1051,9 @@ fn desk_rows_stay_on_one_lattice() {
             let Some(first) = l.home_desks.first() else {
                 continue;
             };
-            let origin_y = first.y;
+            let origin_y = first.at.y;
             for d in &l.home_desks {
-                let off = d.y - origin_y;
+                let off = d.at.y - origin_y;
                 let in_pod = off % stride_y;
                 assert!(
                     in_pod == 0 || in_pod == DESK_H + INTRA_POD_GAP_Y,

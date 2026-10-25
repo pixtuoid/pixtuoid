@@ -33,7 +33,7 @@ pub use pure::{
 // visibility.
 pub(crate) use pure::{SpotClaims, resolve_wander_target, typing_frame, walk_frame};
 
-use crate::layout::{Point, SceneLayout, desk_walk_anchor_facing};
+use crate::layout::{HomeDesk, Point, SceneLayout, desk_walk_anchor_facing};
 use crate::pathfind::Router;
 
 /// The per-frame routing engine state threaded through pose derivation,
@@ -144,12 +144,12 @@ const EXIT_BUDGET_MARGIN_MS: u64 = 300;
 /// anchored top-left, so a corner scan is lopsided and can't clear the body to
 /// the EAST — the east side would read as walled-off. `None` only in a
 /// degenerate layout where every allowed side is walled off.
-pub(crate) fn desk_approach_cell(desk: Point, layout: &SceneLayout) -> Option<Point> {
+pub(crate) fn desk_approach_cell(desk: HomeDesk, layout: &SceneLayout) -> Option<Point> {
     use crate::layout::{Furniture, desk_walk_anchor_facing};
     // The desk's OWN facing, not a constant: `ApproachSides` is canonical (facing-South) and
     // rotated by it, so a back-turned desk is approached from its south front, not walled off there.
-    let facing = layout.desk_facing_at(desk);
-    let chair = desk_walk_anchor_facing(desk, facing);
+    let HomeDesk { at, facing } = desk;
+    let chair = desk_walk_anchor_facing(at, facing);
     let cell = layout.approach_point(Furniture::Desk, chair, chair, facing);
     // `approach_point` returns the scanned pos (== chair) as its "no approach"
     // sentinel when no allowed+reachable side exists.
@@ -165,8 +165,8 @@ pub(crate) fn desk_approach_cell(desk: Point, layout: &SceneLayout) -> Option<Po
 /// A\*, plus `Some(chair)` to prepend/append via [`Settle`] (the short glide
 /// on/off the seat the router never plans), or `None` in the degenerate boxed-in
 /// layout where the leg reverts to the direct chair target.
-pub(crate) fn desk_leg_endpoint(desk: Point, layout: &SceneLayout) -> (Point, Option<Point>) {
-    let chair = crate::layout::desk_walk_anchor_facing(desk, layout.desk_facing_at(desk));
+pub(crate) fn desk_leg_endpoint(desk: HomeDesk, layout: &SceneLayout) -> (Point, Option<Point>) {
+    let chair = crate::layout::desk_walk_anchor_facing(desk.at, desk.facing);
     match desk_approach_cell(desk, layout) {
         Some(approach) => (approach, Some(chair)),
         None => (chair, None),
@@ -249,7 +249,7 @@ pub(crate) fn derive_with_routing(
         if walk.exit.is_none() {
             // From wherever the agent actually is — otherwise one mid-coffee-run at
             // session end teleports to the desk before walking to the door.
-            let desk_anchor = desk_walk_anchor_facing(desk, layout.desk_facing_at(desk));
+            let desk_anchor = desk_walk_anchor_facing(desk.at, desk.facing);
             let from = match walk.lifted.take() {
                 Some(Lifted::Held(at) | Lifted::Dropped(at)) => {
                     landing(at, desk_leg_endpoint(desk, layout).0, layout)
@@ -302,13 +302,12 @@ pub(crate) fn derive_with_routing(
 
         // Must reproduce the snapshotted profile's endpoints, or the leg's
         // duration no longer matches the distance it renders.
-        let (from, exit_settle) =
-            if stored_from == desk_walk_anchor_facing(desk, layout.desk_facing_at(desk)) {
-                let (approach, chair) = desk_leg_endpoint(desk, layout);
-                (approach, chair.map_or(Settle::None, Settle::Start))
-            } else {
-                (stored_from, Settle::None)
-            };
+        let (from, exit_settle) = if stored_from == desk_walk_anchor_facing(desk.at, desk.facing) {
+            let (approach, chair) = desk_leg_endpoint(desk, layout);
+            (approach, chair.map_or(Settle::None, Settle::Start))
+        } else {
+            (stored_from, Settle::None)
+        };
 
         return Some(route_walking_pose(
             slot,
@@ -512,7 +511,7 @@ pub(crate) fn derive_with_routing(
             {
                 // To the CHAIR, not the desk origin: the chair is offset, so a
                 // desk-origin gate re-fires forever once the agent settles on it.
-                let chair = desk_walk_anchor_facing(desk, layout.desk_facing_at(desk));
+                let chair = desk_walk_anchor_facing(desk.at, desk.facing);
                 let dist = (i32::from(prev.x) - i32::from(chair.x)).abs()
                     + (i32::from(prev.y) - i32::from(chair.y)).abs();
                 if dist >= SNAP_BACK_MIN_DIST {
@@ -590,7 +589,7 @@ fn lifted_pose(
     slot: &AgentSlot,
     now: SystemTime,
     layout: &SceneLayout,
-    desk: Point,
+    desk: HomeDesk,
     rctx: &mut RouteCtx<'_>,
 ) -> Option<Pose> {
     let (home, chair_settle) = desk_leg_endpoint(desk, layout);

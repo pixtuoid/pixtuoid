@@ -22,7 +22,7 @@ real-world headings. Pin this and stop re-deriving it:
 - East = +x (right), West = −x (left).
 
 A piece's approach set is canonical (facing-South) then rotated by live
-`Facing` — `layout.desk_facing(i)` is the authority; never assume the
+`Facing` — a `HomeDesk`'s `facing` is the authority; never assume the
 canonical set is the live one. (The compass stays screen-space even where
 real-world geography disagrees — flipping it would invert the z-sort/"south
 row" vocabulary across the crate for zero behavior change.)

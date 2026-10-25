@@ -44,11 +44,11 @@ fn click_hit_test_follows_a_walking_sprite() {
     let scene = scene_with(vec![s.clone()], 16);
     let mut r = build(192, 80, vec![]);
     r.render(&scene, t0()).unwrap();
-    let layout = r.cached_layout().expect("layout");
+    let desk = r.cached_layout().expect("layout").home_desks[0];
     let seat = pixtuoid_scene::sim::seated_top_left(
-        layout.home_desks[0],
+        desk.at,
         pixtuoid_scene::layout::CHARACTER_SPRITE_W,
-        layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(0)),
+        desk.facing,
     );
     let (dx, dy) = (
         seat.x + pixtuoid_scene::layout::CHARACTER_SPRITE_W / 2,
@@ -138,9 +138,9 @@ fn a_breathing_sitter_is_hit_at_its_drawn_cells_not_its_seat_top_left() {
     r.render(&scene, t0()).unwrap();
     let layout = r.cached_layout().expect("layout").clone();
     let seat = pixtuoid_scene::sim::seated_top_left(
-        layout.home_desks[0],
+        layout.home_desks[0].at,
         pixtuoid_scene::layout::CHARACTER_SPRITE_W,
-        layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(0)),
+        layout.home_desks[0].facing,
     );
     let (now, drawn) = BREATH_PROBES_MS
         .into_iter()

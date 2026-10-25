@@ -356,7 +356,7 @@ fn exit_override_walks_desk_to_door_within_window() {
             let to = segment.to();
             assert_eq!(
                 from,
-                desk_walk_anchor_facing(desk, l.desk_facing_at(desk)),
+                desk_walk_anchor_facing(desk.at, desk.facing),
                 "exit walk starts at desk anchor"
             );
             assert_eq!(to, l.door_threshold, "exit walk targets the door threshold");
@@ -653,7 +653,7 @@ fn walk_out_intact_when_gate_releases_during_the_seated_phase() {
     let l = layout();
     let id = agent_matching(|id| takes_trip(id, 0) && seated_dwell_ms(id) > RELEASE_MS + 1_000);
     let s = thinking_slot(id);
-    let desk = l.home_desks[0];
+    let desk = l.home_desks[0].at;
 
     let mid_walk_out = seated_dwell_ms(id) + WANDER_WALK_EST_MS / 2;
     let now = s.state_started_at + Duration::from_millis(mid_walk_out);
@@ -674,7 +674,7 @@ fn cycle_after_a_suppressed_release_walks_out_from_its_beginning() {
         takes_trip(id, 0) && takes_trip(id, 1) && seated_dwell_ms(id) + 500 < RELEASE_MS
     });
     let s = thinking_slot(id);
-    let desk = l.home_desks[0];
+    let desk = l.home_desks[0].at;
 
     let cycle = est_wander_cycle_ms(id);
     let mid_walk_out = cycle + seated_dwell_ms(id) + WANDER_WALK_EST_MS / 2;
@@ -746,7 +746,7 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
             pick_aimless_dest(&l, seed, desk),
             // The desk's OWN facing, not South: the fallback is whatever anchor
             // production would use, and desk 0 is not guaranteed viewer-facing.
-            crate::layout::desk_walk_anchor_facing(desk, l.desk_facing_at(desk)),
+            crate::layout::desk_walk_anchor_facing(desk.at, desk.facing),
             "seed {seed}: fully blocked corridor must fall back to the desk anchor"
         );
     }

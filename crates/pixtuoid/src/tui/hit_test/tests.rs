@@ -46,16 +46,16 @@ fn furniture_hit_test_returns_none_for_empty_space() {
 fn furniture_hit_test_finds_desk() {
     let layout = SceneLayout::compute(160, 200, Some(4)).expect("layout");
     let desk = layout.home_desks.first().expect("desk");
-    let cell_y = CellArea::row_of(desk.y + 2);
+    let cell_y = CellArea::row_of(desk.at.y + 2);
     assert_eq!(
-        hit_test_furniture(&layout, CellArea::half_block(desk.x + 2, cell_y)),
+        hit_test_furniture(&layout, CellArea::half_block(desk.at.x + 2, cell_y)),
         Some("Desk")
     );
     let vis_w = pixtuoid_scene::layout::furniture_def(pixtuoid_scene::layout::Furniture::Desk)
         .visual
         .w;
     assert_eq!(
-        hit_test_furniture(&layout, CellArea::half_block(desk.x + vis_w - 1, cell_y)),
+        hit_test_furniture(&layout, CellArea::half_block(desk.at.x + vis_w - 1, cell_y)),
         Some("Desk"),
         "the desk's east overhang column must hover it"
     );

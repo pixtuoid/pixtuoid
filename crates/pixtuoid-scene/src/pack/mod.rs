@@ -604,7 +604,7 @@ mod tests {
     /// such desk the layout places leaves it the room, so none loses its tower.
     #[test]
     fn every_back_turned_desk_has_room_for_its_teeter() {
-        use crate::layout::{Facing, SceneLayout};
+        use crate::layout::{Facing, HomeDesk, SceneLayout};
         let pack = test_office();
         let tower = densest_frame(&pack, Piece::TokenTower, 0, RenderScale::ONE)
             .frame
@@ -615,8 +615,8 @@ mod tests {
                 let Some(layout) = SceneLayout::compute_with_seed(w, h, None, seed) else {
                     continue;
                 };
-                for &desk in &layout.home_desks {
-                    if layout.desk_facing_at(desk) != Facing::North {
+                for &HomeDesk { at: desk, facing } in &layout.home_desks {
+                    if facing != Facing::North {
                         continue;
                     }
                     desks += 1;

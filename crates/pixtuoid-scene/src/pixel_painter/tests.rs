@@ -9,7 +9,7 @@ use crate::cutaway::wall::paint_wall;
 use crate::display::pen::test_density;
 use crate::floor::{FloorInputs, PetInputs};
 use crate::layout::CHARACTER_SPRITE_W;
-use crate::layout::{Point, Size, sort_row_at};
+use crate::layout::{HomeDesk, Point, Size, sort_row_at};
 use crate::pack::desk_art_top;
 use crate::physics::LegProgress;
 use crate::pose;
@@ -919,8 +919,10 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
     use std::time::Duration;
     const DENSITY: u16 = 2;
     let (mut scene, layout, id, now0, bundled) = sim_rig();
-    let north = (0..layout.home_desks.len())
-        .find(|&i| layout.desk_facing(FloorLocalDeskIndex(i)) == Facing::North)
+    let north = layout
+        .home_desks
+        .iter()
+        .position(|d| d.facing == Facing::North)
         .expect("the office has a back-turned desk");
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
     slot.desk_index = GlobalDeskIndex(north);
@@ -1423,9 +1425,9 @@ fn settle_seat_recognizes_the_home_desk() {
     use crate::layout::{Furniture, desk_walk_anchor_facing};
     let l = SceneLayout::compute(192, 158, Some(TEST_DEFAULT_DESKS)).expect("fits");
     let desk = *l.home_desks.first().expect("at least one home desk");
-    let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     // Pinning `Front` unconditionally would assert the pre-facing world.
-    let want = Seat::at_desk(desk, l.desk_facing_at(desk));
+    let want = Seat::at_desk(desk.at, desk.facing);
     assert_eq!(
         settle_seat(chair, &l),
         Some(want),
@@ -1439,14 +1441,14 @@ fn settle_seat_recognizes_the_home_desk() {
     // `seated_foot_cell` is facing-BLIND — it takes a kind and a position, so its
     // desk arm can only answer for the viewer-facing seat.
     assert_eq!(
-        crate::layout::seated_foot_cell(Furniture::Desk, desk),
+        crate::layout::seated_foot_cell(Furniture::Desk, desk.at),
         Some(crate::layout::desk_walk_anchor_facing(
-            desk,
+            desk.at,
             crate::layout::Facing::South
         ))
     );
     assert_eq!(
-        settle_seat(desk, &l),
+        settle_seat(desk.at, &l),
         None,
         "the desk corner is not the chair"
     );
@@ -1904,7 +1906,8 @@ fn a_seat_ties_its_sitter_and_hides_them_only_from_behind() {
         for f in &fixtures {
             if let FixtureKind::DeskChair(i) = f.kind {
                 chairs += 1;
-                let row = Seat::at_desk(layout.home_desks[i.0], layout.desk_facing(i)).sort_row();
+                let desk = layout.home_desks[i.0];
+                let row = Seat::at_desk(desk.at, desk.facing).sort_row();
                 assert_eq!(
                     f.depth,
                     Depth::Sorted {
@@ -2819,7 +2822,7 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
     for (i, props) in fresh.iter().enumerate() {
         assert_eq!(
             props.scanline,
-            crate::sim::scanline_col(layout.home_desks[i].x, Motion::Full.beat(now0)),
+            crate::sim::scanline_col(layout.home_desks[i].at.x, Motion::Full.beat(now0)),
             "desk {i}'s scanline is its own column's"
         );
         if i != desk {
@@ -3202,9 +3205,7 @@ fn a_waiting_agent_stays_seated_and_gets_its_bubble_whichever_way_the_desk_faces
     let (mut scene, layout, id, now0, pack) = sim_rig();
     let coffee = HashMap::new();
     let mut seen = std::collections::BTreeSet::new();
-    for (i, &desk) in layout.home_desks.iter().enumerate() {
-        let _ = desk;
-        let facing = layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i));
+    for (i, &HomeDesk { facing, .. }) in layout.home_desks.iter().enumerate() {
         let slot = scene.agents.get_mut(&id).expect("the rig's agent");
         slot.desk_index = GlobalDeskIndex(i);
         slot.state = ActivityState::Waiting {
@@ -4697,7 +4698,7 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
             w.pos,
             layout.pantry_counter_size(),
             &layout.walkable,
-            desk,
+            desk.at,
             w.facing,
             &layout.reachable,
         );
@@ -5110,7 +5111,6 @@ fn badged(drawn: &Drawn) -> Vec<(Badged, crate::layout::Bounds)> {
 fn assert_badges_top_their_frames(
     frame: &SimFrame,
     drawn: &[(Badged, crate::layout::Bounds)],
-    layout: &SceneLayout,
     pack: &OfficeArt,
 ) {
     // A breath lifts the drawn top by one pixel, never the badge.
@@ -5129,13 +5129,9 @@ fn assert_badges_top_their_frames(
             .iter()
             .find(|c| frame.agents[c.agent_idx].agent_id == f.agent_id)
             .expect("every drawn sprite has a placement");
-        let desk_top = c.seat_desk.map(|d| {
-            desk_art_top(
-                pack,
-                d.y,
-                crate::pack::desk_art(pack, layout.desk_facing_at(d)).height(),
-            )
-        });
+        let desk_top = c
+            .seat_desk
+            .map(|d| desk_art_top(pack, d.at.y, crate::pack::desk_art(pack, d.facing).height()));
         match desk_top {
             Some(row) => assert!(
                 at.y <= row && (at.y == row || at.y >= body.y),
@@ -5174,7 +5170,7 @@ fn every_seated_badge_tops_its_frame_and_clears_a_raised_monitor() {
         scene.agents.len(),
         "premise: everyone is drawn"
     );
-    assert_badges_top_their_frames(&frame, &drawn, &layout, &pack);
+    assert_badges_top_their_frames(&frame, &drawn, &pack);
     assert!(
         drawn.iter().any(|(f, body)| f.label_anchor.y < body.y),
         "premise: some back-turned sitter's monitor rises over their head"
@@ -5224,8 +5220,10 @@ fn a_typist_keys_on_the_art_its_seat_resolves_to() {
         "[animations.typing_back]\nframes   = [\"typing_back_0.sprite\", \"typing_back_1.sprite\"]\nframe_ms = 250",
     ))
     .expect("the test pack parses");
-    let back = (0..layout.home_desks.len())
-        .find(|&i| layout.desk_facing(FloorLocalDeskIndex(i)) == Facing::North)
+    let back = layout
+        .home_desks
+        .iter()
+        .position(|d| d.facing == Facing::North)
         .expect("a back-turned desk");
     scene.agents.get_mut(&id).expect("the agent").desk_index = GlobalDeskIndex(back);
     let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
@@ -5350,7 +5348,7 @@ fn co_located_visitors_badges_step_aside_with_their_sprites() {
     );
     let drawn = badged(&paint_drawn(&owned, &scene, &layout, &pack, now, &frame));
     assert_eq!(drawn.len(), 3, "premise: all three are drawn");
-    assert_badges_top_their_frames(&frame, &drawn, &layout, &pack);
+    assert_badges_top_their_frames(&frame, &drawn, &pack);
     let xs: std::collections::BTreeSet<_> = drawn.iter().map(|(f, _)| f.label_anchor.x).collect();
     assert_eq!(xs.len(), 3, "the badges stacked: {drawn:?}");
 }
@@ -5402,7 +5400,7 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
                 continue;
             }
             let drawn = badged(&paint_drawn(&owned, &scene, &layout, &pack, now, &frame));
-            assert_badges_top_their_frames(&frame, &drawn, &layout, &pack);
+            assert_badges_top_their_frames(&frame, &drawn, &pack);
             at_the_rim += drawn
                 .iter()
                 .filter(|(_, body)| body.x + body.width == layout.buf_w)
@@ -5462,12 +5460,8 @@ fn every_north_facing_desk_enqueues_a_chair_and_no_south_one_does() {
         let want: std::collections::BTreeSet<(u16, u16)> = layout
             .home_desks
             .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(*i))
-                    == crate::layout::Facing::North
-            })
-            .map(|(_, &d)| {
+            .filter(|d| d.facing == crate::layout::Facing::North)
+            .map(|&HomeDesk { at: d, .. }| {
                 (
                     crate::sim::anchors::seated_top_left(d, chair_w, crate::layout::Facing::North)
                         .x,

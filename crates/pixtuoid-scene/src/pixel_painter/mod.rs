@@ -467,7 +467,7 @@ fn queue_fixtures<'a>(
     for f in layout.fixtures() {
         let kind = match f.kind {
             FixtureKind::Desk(i) => {
-                let facing = layout.desk_facing(i);
+                let facing = layout.home_desks[i.0].facing;
                 DrawableKind::DeskCubicle {
                     desk: f.top_left(),
                     facing,

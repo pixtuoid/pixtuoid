@@ -80,8 +80,8 @@ fn walk_leg_freezes_path_against_midleg_reroute() {
     let door = l.door_threshold;
     let desk = l.home_desks[0];
     let desk_target = Point {
-        x: desk.x + 6,
-        y: desk.y + 4,
+        x: desk.at.x + 6,
+        y: desk.at.y + 4,
     };
     let mid_a = Point {
         x: door.x,
@@ -164,12 +164,12 @@ fn seated_waypoint_snap_back_starts_from_the_seat_not_the_approach_cell() {
     let desk = l.home_desks[0];
     // Distinct seat vs approach cells, both far from the desk chair (snap arms).
     let seat = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let approach = Point {
-        x: desk.x + 56,
-        y: desk.y + 30,
+        x: desk.at.x + 56,
+        y: desk.at.y + 30,
     };
     let mut rig = RouteRig::new(StubRouter::straight());
 
@@ -220,8 +220,8 @@ fn snap_back_origin_is_frozen_across_frames() {
     // 8-frame window; a snap near SNAP_BACK_MIN_DIST could delay the first
     // drift past the window and false-pass on broken code.
     let prev0 = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let mut rig = RouteRig::new(StubRouter::straight());
     rig.history
@@ -252,12 +252,12 @@ fn snap_back_cornered_leg_freezes_path_no_reroute() {
     let l = layout();
     let desk = l.home_desks[0];
     let snap_target = Point {
-        x: desk.x + 6,
-        y: desk.y + 4,
+        x: desk.at.x + 6,
+        y: desk.at.y + 4,
     };
     let prev0 = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let corner_a = Point {
         x: prev0.x,
@@ -329,8 +329,8 @@ fn snap_back_derive_is_idempotent_within_a_frame() {
     // Far enough from the CHAIR to arm (≥ SNAP_BACK_MIN_DIST); the chair-distance
     // gate then stops it re-arming once the walk reaches the chair, so it settles.
     let prev0 = Point {
-        x: desk.x + 16,
-        y: desk.y + 12,
+        x: desk.at.x + 16,
+        y: desk.at.y + 12,
     };
     let mut rig = RouteRig::new(StubRouter::straight());
     rig.history
@@ -408,8 +408,8 @@ fn snap_back_long_distance_renders_past_window_by_physics() {
     let desk = l.home_desks[0];
     // Far prev → SnapBack physics duration well over the `SNAP_BACK_MS` arm window.
     let prev = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let mut rig = RouteRig::new(StubRouter::straight());
     rig.history
@@ -450,7 +450,7 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
         .find(|&i| desk_approach_cell(l.home_desks[i], &l).is_some())
         .expect("a desk with a valid approach cell");
     let desk = l.home_desks[desk_index];
-    let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let mut slot = active_slot(now, now - Duration::from_secs(60));
@@ -497,7 +497,7 @@ fn snap_back_skipped_when_prev_within_min_distance() {
     let desk = l.home_desks[0];
     // 3 px from the SEAT, not from the desk origin — the threshold is measured
     // against where the agent sits, and the seat carries a per-desk nudge.
-    let seat = crate::layout::desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let seat = crate::layout::desk_walk_anchor_facing(desk.at, desk.facing);
     let close = Point {
         x: seat.x,
         y: seat.y.saturating_sub(3),
@@ -522,8 +522,8 @@ fn snap_back_skipped_past_its_window() {
     );
     let desk = l.home_desks[0];
     let prev = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let mut rig = RouteRig::new(StubRouter::straight());
     rig.history
@@ -556,10 +556,10 @@ fn multi_segment_path_maps_progress_to_segment_via_octile_distance() {
     let door = l.door_threshold;
     let desk = l.home_desks[0];
     let mid = Point {
-        x: u16::midpoint(door.x, desk.x),
-        y: u16::midpoint(door.y, desk.y),
+        x: u16::midpoint(door.x, desk.at.x),
+        y: u16::midpoint(door.y, desk.at.y),
     };
-    let mut rig = RouteRig::new(StubRouter::corners(vec![door, mid, desk]));
+    let mut rig = RouteRig::new(StubRouter::corners(vec![door, mid, desk.at]));
     let p = derive_with_routing(&slot, now, &l, &mut rig.rctx());
     match p {
         Some(Pose::Walking { segment, .. }) => {
@@ -642,8 +642,8 @@ fn snap_back_progress_is_physics_eased_not_linear() {
     let desk = l.home_desks[0];
     // Far from the CHAIR (≥ SNAP_BACK_MIN_DIST) so the snap-back arms.
     let prev = Point {
-        x: desk.x + 20,
-        y: desk.y + 18,
+        x: desk.at.x + 20,
+        y: desk.at.y + 18,
     };
 
     let mut rig = RouteRig::new(StubRouter::straight());
@@ -707,8 +707,8 @@ fn snap_back_rearms_on_new_state_transition() {
     let t0 = now;
     let slot0 = active_slot(t0, now - Duration::from_secs(60));
     let prev0 = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     rig.history
         .record(slot0.agent_id, prev0, t0 - Duration::from_millis(50));
@@ -727,8 +727,8 @@ fn snap_back_rearms_on_new_state_transition() {
     let slot1 = active_slot(t1_state, now - Duration::from_secs(60));
     let now1 = t1_state;
     let prev1 = Point {
-        x: desk.x + 40,
-        y: desk.y + 25,
+        x: desk.at.x + 40,
+        y: desk.at.y + 25,
     };
     rig.history
         .record(slot1.agent_id, prev1, now1 - Duration::from_millis(50));
@@ -779,8 +779,8 @@ fn near_far_desk_indices(l: &SceneLayout) -> (usize, usize) {
         .iter()
         .map(|d| {
             let target = Point {
-                x: d.x + 6,
-                y: d.y + 4,
+                x: d.at.x + 6,
+                y: d.at.y + 4,
             };
             octile_distance(door, target)
         })
@@ -913,8 +913,8 @@ fn exit_far_completes_before_grace_window_no_vanish() {
     let door = l.door_threshold;
     let desk = l.home_desks[0];
     let from = Point {
-        x: desk.x + 6,
-        y: desk.y + 4,
+        x: desk.at.x + 6,
+        y: desk.at.y + 4,
     };
     // A long synthetic route, so the physics exit duration exceeds the exit
     // budget and the compression path is the one under test.
@@ -1068,8 +1068,8 @@ fn desk_approach_cell_is_never_inside_the_blocked_desk() {
     );
     let mut any_some = false;
     let mut facings: Vec<Facing> = Vec::new();
-    for &desk in &l.home_desks {
-        let facing = l.desk_facing_at(desk);
+    for &home in &l.home_desks {
+        let crate::layout::HomeDesk { at: desk, facing } = home;
         if !facings.contains(&facing) {
             facings.push(facing);
         }
@@ -1089,7 +1089,7 @@ fn desk_approach_cell_is_never_inside_the_blocked_desk() {
         );
         // None = degenerate layout (every allowed side walled off); the entry then
         // falls back to the direct chair target. Acceptable, so not asserted.
-        if let Some(cell) = desk_approach_cell(desk, &l) {
+        if let Some(cell) = desk_approach_cell(home, &l) {
             any_some = true;
             assert!(
                 l.is_walkable(cell.x, cell.y),
@@ -1121,7 +1121,7 @@ fn desk_entry_routes_around_the_desk_then_settles_onto_the_chair() {
         .find(|&i| desk_approach_cell(l.home_desks[i], &l).is_some())
         .expect("a desk with a valid approach cell");
     let desk = l.home_desks[desk_index];
-    let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let slot = entry_slot_far(now, desk_index);
@@ -1163,7 +1163,7 @@ fn wander_legs_approach_the_desk_via_an_allowed_side_not_through_the_front() {
         .find(|&i| desk_approach_cell(l.home_desks[i], &l).is_some())
         .expect("a desk with a valid approach cell");
     let desk = l.home_desks[desk_index];
-    let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let trip_id = (0u64..3000)
@@ -1250,7 +1250,7 @@ fn exit_from_desk_rises_off_the_chair_via_the_approach_cell() {
         .find(|&i| desk_approach_cell(l.home_desks[i], &l).is_some())
         .expect("a desk with a valid approach cell");
     let desk = l.home_desks[desk_index];
-    let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+    let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
     let mut slot = exiting_slot(now, now - Duration::from_secs(300));
@@ -1972,8 +1972,8 @@ fn frozen_leg_anchor_continuous_across_router_shape_change() {
     let door = l.door_threshold;
     let desk = l.home_desks[0];
     let desk_t = Point {
-        x: desk.x + 6,
-        y: desk.y + 4,
+        x: desk.at.x + 6,
+        y: desk.at.y + 4,
     };
     // Shape A is a long DOWN-then-across detour so the walk lasts many frames;
     // shape B is short and very differently routed. Both share the endpoints.
@@ -2157,8 +2157,8 @@ fn snap_back_profile_length_measures_the_routed_polyline() {
     let desk = l.home_desks[0];
     let (snap_target, chair_settle) = crate::pose::desk_leg_endpoint(desk, &l);
     let prev = Point {
-        x: desk.x + 50,
-        y: desk.y + 30,
+        x: desk.at.x + 50,
+        y: desk.at.y + 30,
     };
     let corner = Point {
         x: prev.x,

@@ -157,12 +157,8 @@ fn a_back_turned_sitter_carries_their_own_chair() {
     let north: Vec<crate::layout::Point> = layout
         .home_desks
         .iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(*i))
-                == crate::layout::Facing::North
-        })
-        .map(|(_, d)| *d)
+        .filter(|d| d.facing == crate::layout::Facing::North)
+        .map(|d| d.at)
         .collect();
     assert!(!north.is_empty(), "the office has back-turned desks");
 
@@ -310,8 +306,10 @@ pub(crate) fn sit_down_as(
     let meta = FloorMeta::ground();
     let layout = SceneLayout::compute_with_seed(LOGICAL.0, LOGICAL.1, None, meta.floor_seed)
         .expect("lays out");
-    let home = (0..layout.home_desks.len())
-        .find(|&i| layout.desk_facing(FloorLocalDeskIndex(i)) == facing)
+    let home = layout
+        .home_desks
+        .iter()
+        .position(|d| d.facing == facing)
         .expect("the office has a desk facing that way");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let mut scene = pixtuoid_core::SceneState::uniform(16);
@@ -363,7 +361,7 @@ pub(crate) fn sit_down_as(
         }
         frames.push(frame);
         if seated_at.is_some_and(|at| frames.len() > at + seated_ticks) {
-            let desk = layout.home_desks[home];
+            let desk = layout.home_desks[home].at;
             return (layout, pack, frames, desk);
         }
     }
@@ -492,7 +490,7 @@ fn a_sitters_depth_holds_through_their_breath() {
     for frame in frames.iter().filter(|f| {
         f.characters
             .first()
-            .is_some_and(|c| c.seat_desk == Some(desk))
+            .is_some_and(|c| c.seat_desk.is_some_and(|d| d.at == desk))
     }) {
         let mut order = Vec::new();
         push_characters(

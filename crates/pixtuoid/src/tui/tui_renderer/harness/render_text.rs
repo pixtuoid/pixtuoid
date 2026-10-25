@@ -105,7 +105,7 @@ fn tool_glow_tint_differs_by_tool() {
         );
         let mut r = build(120, 44, vec![]);
         r.render(&scene, t0()).unwrap();
-        let desk = r.cached_layout().expect("layout").home_desks[0];
+        let desk = r.cached_layout().expect("layout").home_desks[0].at;
         (r.buf().expect("a frame").clone(), desk)
     };
     let (edit, desk) = render_tool("Edit src/main.rs");

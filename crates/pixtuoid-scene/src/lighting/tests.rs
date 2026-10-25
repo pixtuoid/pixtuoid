@@ -187,7 +187,7 @@ fn a_spills_bounds_hold_every_row_whichever_way_it_leans() {
 fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     let layout =
         SceneLayout::compute(192, 80, Some(crate::layout::TEST_DEFAULT_DESKS)).expect("fits");
-    let facing = |i: usize| layout.desk_facing(FloorLocalDeskIndex(i));
+    let facing = |i: usize| layout.home_desks[i].facing;
     let north: Vec<usize> = (0..layout.home_desks.len())
         .filter(|&i| facing(i) == Facing::North)
         .collect();
@@ -247,7 +247,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
         )],
         "only the seated, mid-call agent at a screen facing us"
     );
-    let desk = layout.home_desks[lit];
+    let desk = layout.home_desks[lit].at;
     assert_eq!(
         lights.monitor_halos[0].light,
         Light::Patch {

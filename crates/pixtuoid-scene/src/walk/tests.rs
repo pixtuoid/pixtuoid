@@ -806,7 +806,7 @@ fn wander_dest_for_pantry_is_the_home_desk_stand_point() {
             ..
         }
     ));
-    let desk = l.home_desks[0];
+    let desk = l.home_desks[0].at;
     let expected = crate::layout::approach_point(
         WaypointKind::Pantry.furniture(),
         l.waypoints[pantry_idx].pos,

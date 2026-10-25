@@ -341,7 +341,7 @@ fn furniture_tooltip_on_hover_over_empty_desk() {
         return;
     }
     let d1 = layout.home_desks[1];
-    r.set_mouse_pos(Some((d1.x + 4, d1.y / 2 + 1)));
+    r.set_mouse_pos(Some((d1.at.x + 4, d1.at.y / 2 + 1)));
     r.render(&scene, t0()).unwrap();
     assert!(
         frame_text(r.frame_buffer()).contains("Desk"),

@@ -347,10 +347,8 @@ fn lights(
         .home_desks
         .iter()
         .zip(&lights.desks)
-        .enumerate()
-        .map(|(i, (&at, d))| {
-            let facing = layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i));
-            d.relit_at(bulb_at(at, Desk::facing(facing), pack, scale))
+        .map(|(desk, d)| {
+            d.relit_at(bulb_at(desk.at, Desk::facing(desk.facing), pack, scale))
                 .lamp
         })
         .collect();
@@ -666,10 +664,10 @@ fn push_fixture(
         ),
         K::DeskChair(i) => {
             let desk = layout.home_desks[i.0];
-            if carried.contains(&desk) {
+            if carried.contains(&desk.at) {
                 return;
             }
-            if let Some((span, at)) = chair_span(pack, layout.desk_facing(i), desk) {
+            if let Some((span, at)) = chair_span(pack, desk.facing, desk.at) {
                 order.push((span.with_depth(depth), PieceKind::Chair { at }));
             }
         }
@@ -946,8 +944,7 @@ fn push_desk(
         theme,
         scale,
     } = office;
-    let d = layout.home_desks[i.0];
-    let facing = layout.desk_facing(i);
+    let crate::layout::HomeDesk { at: d, facing } = layout.home_desks[i.0];
     let desk = Desk::facing(facing);
     let props = frame.desk(i);
     let screen = Screen::of(
@@ -1124,7 +1121,7 @@ fn push_characters(
     (order, badges): (&mut Vec<(Span, PieceKind)>, &mut Vec<crate::display::Badge>),
 ) -> Vec<crate::layout::Point> {
     let Office {
-        layout,
+        layout: _,
         pack,
         theme,
         scale,
@@ -1141,13 +1138,12 @@ fn push_characters(
             crate::pack::densest_frame(pack, pose.anim_name, pose.frame_idx, RenderScale::ONE)
                 .logical;
         let key = crate::character::character_key(pose, agent, pack, scale, now);
-        let seat = c.seat_desk.map(|d| (d, layout.desk_facing_at(d)));
-        let chair = seat.and_then(|(d, facing)| chair_span(pack, facing, d));
-        if let (Some((d, _)), Some(_)) = (seat, chair) {
-            carried.push(d);
+        let seat = c.seat_desk;
+        let chair = seat.and_then(|d| chair_span(pack, d.facing, d.at));
+        if let (Some(d), Some(_)) = (seat, chair) {
+            carried.push(d.at);
         }
-        let badge_ceiling =
-            seat.map(|(d, facing)| desk_span(pack, Desk::facing(facing), d, scale).y0);
+        let badge_ceiling = seat.map(|d| desk_span(pack, Desk::facing(d.facing), d.at, scale).y0);
         let at = cutaway_top_left(c);
         let shadow = !c.seated;
         // The drawn box reaches up over the hair its style dresses it in.

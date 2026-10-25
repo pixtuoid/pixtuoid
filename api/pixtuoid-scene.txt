@@ -530,6 +530,27 @@ impl core::marker::Unpin for pixtuoid_scene::layout::FurnitureDef
 impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::FurnitureDef
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::FurnitureDef
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::FurnitureDef
+pub struct pixtuoid_scene::layout::HomeDesk
+pub pixtuoid_scene::layout::HomeDesk::at: pixtuoid_scene::layout::Point
+pub pixtuoid_scene::layout::HomeDesk::facing: pixtuoid_scene::layout::Facing
+impl core::clone::Clone for pixtuoid_scene::layout::HomeDesk
+pub fn pixtuoid_scene::layout::HomeDesk::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::layout::HomeDesk
+impl core::cmp::PartialEq for pixtuoid_scene::layout::HomeDesk
+pub fn pixtuoid_scene::layout::HomeDesk::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::layout::HomeDesk
+pub fn pixtuoid_scene::layout::HomeDesk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_scene::layout::HomeDesk
+pub fn pixtuoid_scene::layout::HomeDesk::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for pixtuoid_scene::layout::HomeDesk
+impl core::marker::StructuralPartialEq for pixtuoid_scene::layout::HomeDesk
+impl core::marker::Freeze for pixtuoid_scene::layout::HomeDesk
+impl core::marker::Send for pixtuoid_scene::layout::HomeDesk
+impl core::marker::Sync for pixtuoid_scene::layout::HomeDesk
+impl core::marker::Unpin for pixtuoid_scene::layout::HomeDesk
+impl core::marker::UnsafeUnpin for pixtuoid_scene::layout::HomeDesk
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::layout::HomeDesk
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::layout::HomeDesk
 pub struct pixtuoid_scene::layout::Lounge
 pub pixtuoid_scene::layout::Lounge::couch_center: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::Lounge::fish_tank: core::option::Option<pixtuoid_scene::layout::Point>
@@ -678,7 +699,7 @@ pub pixtuoid_scene::layout::SceneLayout::cubicle_aisle: pixtuoid_scene::layout::
 pub pixtuoid_scene::layout::SceneLayout::cubicle_band: pixtuoid_scene::layout::Bounds
 pub pixtuoid_scene::layout::SceneLayout::door: pixtuoid_scene::layout::Point
 pub pixtuoid_scene::layout::SceneLayout::door_threshold: pixtuoid_scene::layout::Point
-pub pixtuoid_scene::layout::SceneLayout::home_desks: alloc::vec::Vec<pixtuoid_scene::layout::Point>
+pub pixtuoid_scene::layout::SceneLayout::home_desks: alloc::vec::Vec<pixtuoid_scene::layout::HomeDesk>
 pub pixtuoid_scene::layout::SceneLayout::lounge: core::option::Option<pixtuoid_scene::layout::Lounge>
 pub pixtuoid_scene::layout::SceneLayout::meeting_rooms: alloc::vec::Vec<pixtuoid_scene::layout::MeetingRoom>
 pub pixtuoid_scene::layout::SceneLayout::pantry: core::option::Option<pixtuoid_scene::layout::PantryRoom>
@@ -695,8 +716,7 @@ pub fn pixtuoid_scene::layout::SceneLayout::fixture_at(&self, pixtuoid_scene::la
 impl pixtuoid_scene::layout::SceneLayout
 pub fn pixtuoid_scene::layout::SceneLayout::compute(u16, u16, core::option::Option<usize>) -> core::option::Option<Self>
 pub fn pixtuoid_scene::layout::SceneLayout::compute_with_seed(u16, u16, core::option::Option<usize>, u64) -> core::option::Option<Self>
-pub fn pixtuoid_scene::layout::SceneLayout::desk_facing(&self, pixtuoid_core::state::FloorLocalDeskIndex) -> pixtuoid_scene::layout::Facing
-pub fn pixtuoid_scene::layout::SceneLayout::home_desk(&self, pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<pixtuoid_scene::layout::Point>
+pub fn pixtuoid_scene::layout::SceneLayout::home_desk(&self, pixtuoid_core::state::FloorLocalDeskIndex) -> core::option::Option<pixtuoid_scene::layout::HomeDesk>
 pub fn pixtuoid_scene::layout::SceneLayout::is_walkable(&self, u16, u16) -> bool
 pub fn pixtuoid_scene::layout::SceneLayout::meeting_room_bounds(&self, usize) -> core::option::Option<pixtuoid_scene::layout::Bounds>
 impl core::clone::Clone for pixtuoid_scene::layout::SceneLayout

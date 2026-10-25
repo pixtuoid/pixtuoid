@@ -727,12 +727,11 @@ pub(crate) fn assert_variant_desk_foot(
     let buf_w = usize::from(scale.to_buffer(layout.buf_w));
     let face = desk_front_h();
     // Each desk's columns and the first row below its art, in logical units.
-    let feet: Vec<(u16, u16, u16)> = (0..layout.home_desks.len())
-        .map(|i| {
-            let d = layout.home_desks[i];
-            let art =
-                Desk::facing(layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i)))
-                    .piece();
+    let feet: Vec<(u16, u16, u16)> = layout
+        .home_desks
+        .iter()
+        .map(|&crate::layout::HomeDesk { at: d, facing }| {
+            let art = Desk::facing(facing).piece();
             let (w, h) = art_size(base_pack, art);
             (
                 d.x,
@@ -5397,11 +5396,8 @@ mod tests {
             let bulbs: Vec<(f32, f32)> = layout
                 .home_desks
                 .iter()
-                .enumerate()
-                .filter_map(|(i, &at)| {
-                    let which = Desk::facing(
-                        layout.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i)),
-                    );
+                .filter_map(|&crate::layout::HomeDesk { at, facing }| {
+                    let which = Desk::facing(facing);
                     let span = desk_span(&pack, which, at, scale);
                     let desk = crate::pack::densest_frame(&pack, which.piece(), 0, scale);
                     let cells = drawn_in(&desk, &[crate::pack::DESK_BULB_KEY]);

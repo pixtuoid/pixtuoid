@@ -10,7 +10,7 @@ use pixtuoid_core::{AgentSlot, ToolKind};
 
 use crate::atmosphere::SkyTones;
 use crate::floor::NeonLevels;
-use crate::layout::{Facing, Point, SceneLayout};
+use crate::layout::{Facing, HomeDesk, Point, SceneLayout};
 
 /// The floor lamp's level at full dark, before the room's own level.
 const FLOOR_LAMP_GAIN: f32 = 0.55;
@@ -338,10 +338,8 @@ impl Lights {
             desks: layout
                 .home_desks
                 .iter()
-                .enumerate()
-                .map(|(i, &desk)| {
-                    let facing = layout.desk_facing(FloorLocalDeskIndex(i));
-                    desk_lights(desk, facing, inputs.bulbs.at(facing), darkness, indoor)
+                .map(|&HomeDesk { at, facing }| {
+                    desk_lights(at, facing, inputs.bulbs.at(facing), darkness, indoor)
                 })
                 .collect(),
             monitor_halos: monitor_halos(layout, inputs),
@@ -488,13 +486,13 @@ fn monitor_halos(layout: &SceneLayout, inputs: &LightInputs<'_>) -> Vec<Emitter>
             let local = agent.desk_index.single_floor_local();
             let seated = inputs.seated.get(&local).copied().unwrap_or(false);
             let desk = layout.home_desk(local)?;
-            let tool = lit_screen(agent, layout.desk_facing(local), seated)?;
+            let tool = lit_screen(agent, desk.facing, seated)?;
             Some(Emitter {
                 kind: EmitterKind::MonitorHalo(tool),
                 light: Light::Patch {
                     centre: Point {
-                        x: desk.x + MONITOR_HALO_DX,
-                        y: desk.y.saturating_sub(1),
+                        x: desk.at.x + MONITOR_HALO_DX,
+                        y: desk.at.y.saturating_sub(1),
                     },
                 },
                 strength: MONITOR_HALO_INTENSITY,

@@ -683,16 +683,16 @@ pub(crate) fn anim_scene(
     // Which home desk to stage. `--anim-facing` picks one seated that way, so
     // the back-turned pose is reachable at all; desk 0 is always viewer-facing.
     let desk_idx = if target == "desk" {
-        let pick = (0..l.home_desks.len()).find(|&i| {
-            want_facing
-                .is_none_or(|f| l.desk_facing(pixtuoid_core::state::FloorLocalDeskIndex(i)) == f)
-        });
+        let pick = l
+            .home_desks
+            .iter()
+            .position(|d| want_facing.is_none_or(|f| d.facing == f));
         match pick {
             Some(i) => {
                 let d = l.home_desks[i];
                 eprintln!(
                     "ANIM target=desk buf_pos≈({}, {}) [home desk {i}]",
-                    d.x, d.y
+                    d.at.x, d.at.y
                 );
                 i
             }

@@ -174,7 +174,7 @@ fn pieces(l: &SceneLayout) -> Vec<Piece> {
             FixtureKind::Desk(i) => out.push(Piece::table(
                 format!("desk[{}]", i.0),
                 Pivot::TopLeft,
-                l.home_desks[i.0],
+                l.home_desks[i.0].at,
                 Furniture::Desk,
                 Container::Band,
                 None,
@@ -863,7 +863,7 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
                 wp.facing,
                 l.pantry_counter_size(),
                 &l.walkable,
-                desk,
+                desk.at,
                 &l.reachable,
             );
             // A `wp.pos` sentinel is the documented "no valid approach"
@@ -872,7 +872,7 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
                 continue;
             }
             legs.push(WanderLeg {
-                desk,
+                desk: desk.at,
                 kind: wp.kind,
                 origin,
                 approach: a,
@@ -928,12 +928,11 @@ fn assert_back_turned_desks_face_a_partner(w: u16, h: u16, seed: u64, l: &SceneL
     let south: std::collections::HashSet<Point> = l
         .home_desks
         .iter()
-        .zip(&l.desk_facings)
-        .filter(|&(_, &f)| f == Facing::South)
-        .map(|(&d, _)| d)
+        .filter(|d| d.facing == Facing::South)
+        .map(|d| d.at)
         .collect();
-    for (&d, &f) in l.home_desks.iter().zip(&l.desk_facings) {
-        if f != Facing::North {
+    for &HomeDesk { at: d, facing } in &l.home_desks {
+        if facing != Facing::North {
             continue;
         }
         let partner = Point {
@@ -1057,7 +1056,7 @@ fn narrow_band_connectivity_boundary_scan() {
 /// Each pod's vertical extent from the desks ALONE, so the guards below test the
 /// layout's output rather than the placement helper's own idea of where the pods are.
 fn pod_y_extents(l: &SceneLayout) -> Vec<(u16, u16)> {
-    let mut ys: Vec<u16> = l.home_desks.iter().map(|d| d.y).collect();
+    let mut ys: Vec<u16> = l.home_desks.iter().map(|d| d.at.y).collect();
     ys.sort_unstable();
     ys.dedup();
     let mut pods = Vec::new();
@@ -1108,7 +1107,7 @@ fn free_standing_furniture_never_stands_inside_a_pod() {
 /// `the_width_floor_stands_no_whiteboard`.
 fn assert_the_whiteboard_lands_when_an_aisle_exists(w: u16, h: u16, seed: u64, l: &SceneLayout) {
     let has_side_rooms = !l.meeting_rooms.is_empty() || l.pantry.is_some();
-    let mut desk_columns: Vec<u16> = l.home_desks.iter().map(|d| d.x).collect();
+    let mut desk_columns: Vec<u16> = l.home_desks.iter().map(|d| d.at.x).collect();
     desk_columns.sort_unstable();
     desk_columns.dedup();
     let lone_pod_column = desk_columns.len() <= usize::from(POD_SIDE);

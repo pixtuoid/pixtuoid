@@ -8,7 +8,6 @@ use super::*;
 use pixtuoid_core::sprite::format::Piece;
 
 use crate::sim::anchors::{back_couch_top_left, waypoint_top_left};
-use pixtuoid_core::state::FloorLocalDeskIndex;
 
 /// The still back view — also the fallback for a pose that has none of its own,
 /// so a back-turned sitter keeps their back to the camera whenever the pack has
@@ -260,8 +259,8 @@ pub(crate) fn settle_seat(cell: Point, layout: &SceneLayout) -> Option<Seat> {
                 .then(|| Seat::at_waypoint(w.kind, w.pos, w.facing))
         })
         .or_else(|| {
-            layout.home_desks.iter().enumerate().find_map(|(i, &desk)| {
-                let seat = Seat::at_desk(desk, layout.desk_facing(FloorLocalDeskIndex(i)));
+            layout.home_desks.iter().find_map(|desk| {
+                let seat = Seat::at_desk(desk.at, desk.facing);
                 (seat.pos == cell).then_some(seat)
             })
         })

@@ -151,14 +151,12 @@ pub(crate) fn character_top_left(
     let pose = pose::derive_with_routing(agent, now, layout, rctx)?;
     let w = CHARACTER_SPRITE_W;
     let top_left = match pose {
-        Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping => seated_top_left(
-            desk,
-            w,
-            layout.desk_facing(agent.desk_index.single_floor_local()),
-        ),
+        Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping => {
+            seated_top_left(desk.at, w, desk.facing)
+        }
         Pose::AtWaypoint { wp, kind } => {
             let wp_obj = layout.waypoints.get(wp)?;
-            let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk, wp_obj.facing);
+            let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk.at, wp_obj.facing);
             // Via [`Seat::render_top_left`], the sprite blit's authority.
             Seat::at_waypoint(kind, stand, wp_obj.facing).render_top_left(w)
         }

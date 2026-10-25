@@ -164,9 +164,9 @@ pub(crate) fn compute_crop_rect(
                     anyhow::anyhow!("agent {agent_label:?} is neither placed nor at a home desk")
                 })?;
                 pixtuoid_scene::sim::seated_top_left(
-                    desk,
+                    desk.at,
                     pixtuoid_scene::layout::CHARACTER_SPRITE_W,
-                    layout.desk_facing(idx),
+                    desk.facing,
                 )
             }
         }
@@ -180,7 +180,7 @@ pub(crate) fn compute_crop_rect(
         )
         .ok_or_else(|| anyhow::anyhow!("scene too small to compute a layout"))?;
         let found = match furniture_str.to_lowercase().as_str() {
-            "desk" => layout.home_desks.first().copied(),
+            "desk" => layout.home_desks.first().map(|d| d.at),
             name => {
                 let kind = crate::scenes::waypoint_target(name).ok_or_else(|| {
                     anyhow::anyhow!(

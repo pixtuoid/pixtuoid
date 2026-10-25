@@ -584,7 +584,10 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
         .first()
         .copied()
         .ok_or_else(|| anyhow!("layout has no home desks"))?;
-    let desk_px = (u32::from(desk.x) * CELL_W, (u32::from(desk.y) / 2) * CELL_H);
+    let desk_px = (
+        u32::from(desk.at.x) * CELL_W,
+        (u32::from(desk.at.y) / 2) * CELL_H,
+    );
 
     let backend = TestBackend::new(job.cols, job.rows);
     let mut term = Terminal::new(backend)?;

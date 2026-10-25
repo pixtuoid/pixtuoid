@@ -15,7 +15,6 @@ use crate::layout::{
     Furniture, Point, SceneLayout, Size, WaypointKind, desk_walk_anchor_facing, furniture_def,
 };
 use crate::walk::WalkState;
-use pixtuoid_core::state::FloorLocalDeskIndex;
 
 const BLOCKED: Rgb = Rgb {
     r: 220,
@@ -132,9 +131,8 @@ fn paint_approach(buf: &mut RgbBuffer, layout: &SceneLayout) {
     // desk's top-left corner, or the east side never shows — the corner scan
     // can't clear the desk body.
     let desk_def = furniture_def(Furniture::Desk);
-    for (i, desk) in layout.home_desks.iter().enumerate() {
-        let facing = layout.desk_facing(FloorLocalDeskIndex(i));
-        let chair = desk_walk_anchor_facing(*desk, facing);
+    for &crate::layout::HomeDesk { at, facing } in &layout.home_desks {
+        let chair = desk_walk_anchor_facing(at, facing);
         // SEAT last: the 3x3 blobs overlap when the approach cell lands a pixel off the chair.
         for (dx, dy) in DIRS {
             // The desk's OWN facing, as production reads it — a fixed South here
@@ -239,7 +237,7 @@ mod tests {
         use crate::layout::{Facing, Furniture};
         let l = SceneLayout::compute_with_seed(200, 130, Some(8), 0).unwrap();
         let desk = *l.home_desks.first().expect("a home desk");
-        let chair = desk_walk_anchor_facing(desk, l.desk_facing_at(desk));
+        let chair = desk_walk_anchor_facing(desk.at, desk.facing);
         let mut buf = RgbBuffer::filled(l.buf_w, l.buf_h, Rgb { r: 0, g: 0, b: 0 });
         paint_approach(&mut buf, &l);
 

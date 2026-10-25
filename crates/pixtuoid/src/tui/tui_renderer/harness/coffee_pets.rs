@@ -141,8 +141,8 @@ fn injected_coffee_changes_desk_render() {
     let d = region_diff(
         &baseline,
         r.buf().expect("a frame"),
-        desk.x.saturating_sub(2),
-        desk.y.saturating_sub(6),
+        desk.at.x.saturating_sub(2),
+        desk.at.y.saturating_sub(6),
         18,
         14,
     );
@@ -382,7 +382,7 @@ fn agent_tooltip_flips_up_near_bottom_edge() {
         .home_desks
         .iter()
         .enumerate()
-        .max_by_key(|(_, d)| d.y)
+        .max_by_key(|(_, d)| d.at.y)
         .map(|(i, _)| i)
         .expect("a home desk");
     let scene = scene_with(

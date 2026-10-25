@@ -3,20 +3,32 @@ source: crates/pixtuoid/tests/layout_golden.rs
 expression: l.home_desks
 ---
 [
-    Point {
-        x: 37,
-        y: 30,
+    HomeDesk {
+        at: Point {
+            x: 37,
+            y: 30,
+        },
+        facing: South,
     },
-    Point {
-        x: 59,
-        y: 30,
+    HomeDesk {
+        at: Point {
+            x: 59,
+            y: 30,
+        },
+        facing: South,
     },
-    Point {
-        x: 37,
-        y: 42,
+    HomeDesk {
+        at: Point {
+            x: 37,
+            y: 42,
+        },
+        facing: North,
     },
-    Point {
-        x: 59,
-        y: 42,
+    HomeDesk {
+        at: Point {
+            x: 59,
+            y: 42,
+        },
+        facing: North,
     },
 ]

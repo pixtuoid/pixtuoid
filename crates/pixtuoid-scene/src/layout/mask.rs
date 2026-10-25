@@ -3,8 +3,9 @@
 
 use super::decor::{FurnitureDef, GroundAlign};
 use super::{
-    Furniture, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem, Point, Size,
-    WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left, furniture_def,
+    Furniture, HomeDesk, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem,
+    Point, Size, WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left,
+    furniture_def,
 };
 use pixtuoid_core::walkable::WalkableMask;
 
@@ -79,7 +80,7 @@ pub(super) struct MaskObstacles<'a> {
     pub(super) buf_w: u16,
     pub(super) buf_h: u16,
     pub(super) top_margin: u16,
-    pub(super) home_desks: &'a [Point],
+    pub(super) home_desks: &'a [HomeDesk],
     pub(super) meeting_rooms: &'a [MeetingRoom],
     pub(super) kitchen_island: Option<Point>,
     pub(super) waypoints: &'a [Waypoint],
@@ -182,7 +183,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
         // the monitor overhangs NORTH and a walker behind it is occluded by the desk's
         // own y-sorted sprite. Stamped TOP-LEFT — the desk pos IS its NW corner.
         let desk_def = super::decor::desk_furniture_def();
-        stamp_ground(&mut mask, &desk_def, Pivot::TopLeft, *desk);
+        stamp_ground(&mut mask, &desk_def, Pivot::TopLeft, desk.at);
     }
 
     for trio in meeting_rooms.iter().filter_map(|r| r.trio.as_ref()) {

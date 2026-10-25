@@ -1,5 +1,5 @@
 # 8x10 seated character seen from BEHIND — the desk pose for a back-turned seat
-# (`layout.desk_facings`), and the fallback for every seated pose whose own back
+# (`HomeDesk::facing`), and the fallback for every seated pose whose own back
 # view the pack does not ship.
 #
 # The HEAD keeps the front view's six rows. That proportion is not a bug to fix:

@@ -39,8 +39,8 @@ pub(crate) fn naps_here(layout: &SceneLayout, agents: &[AgentSlot], at: Point) -
         .filter(|a| matches!(a.state, ActivityState::Idle) && a.exiting_at.is_none())
         .filter_map(|a| layout.home_desk(a.desk_index.single_floor_local()))
         .any(|d| {
-            (i32::from(at.x) - i32::from(d.x)).abs() <= NAP_NEAR_DESK_PX
-                && (i32::from(at.y) - i32::from(d.y)).abs() <= NAP_NEAR_DESK_PX
+            (i32::from(at.x) - i32::from(d.at.x)).abs() <= NAP_NEAR_DESK_PX
+                && (i32::from(at.y) - i32::from(d.at.y)).abs() <= NAP_NEAR_DESK_PX
         })
 }
 
