@@ -95,7 +95,7 @@ examples).
   markers and liveness signals only.
 - **Upgrade path** — state a released version wrote survives; a fresh-install
   assumption that wipes an upgrader's config is blocking (#457).
-- **Env** — a set-but-empty var reads as unset (`platform::path_env`).
+- **Env** — a set-but-empty var reads as unset (`platform::path_env`/`text_env`).
 - **Char-safe truncation** — user-visible text cuts on char/grapheme
   boundaries, never bytes.
 - **Terminal egress** strips Cc controls and Cf bidi overrides (Trojan Source).

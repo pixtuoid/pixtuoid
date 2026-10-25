@@ -5,7 +5,7 @@
 //! both ways are [`super::wire`]'s, and only [`probe`] touches the terminal.
 
 use super::wire::{self, Answer, Passthrough, Question, Reader};
-use super::{CellSize, Detected, ImageProtocol, Probe, TermEnv, env_set, env_text};
+use super::{CellSize, Detected, ImageProtocol, Probe, TermEnv, env_set};
 
 /// The capability query's kitty image: kitty's own example's id (kitty's
 /// graphics protocol, "Querying support and available transmission mediums").
@@ -136,7 +136,7 @@ impl EnvHints {
     fn read() -> Self {
         Self {
             env: TermEnv::read(),
-            lc_terminal: env_text("LC_TERMINAL"),
+            lc_terminal: pixtuoid_core::platform::text_env("LC_TERMINAL"),
             wezterm: env_set("WEZTERM_EXECUTABLE"),
             konsole: env_set("KONSOLE_VERSION"),
             iterm_session: env_set("ITERM_SESSION_ID"),

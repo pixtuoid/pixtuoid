@@ -37,9 +37,13 @@ pub fn path_env_trimmed(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// A TEXT-valued env var (a location is [`path_env`]; `env::var` is banned by `clippy.toml`).
+/// A TEXT-valued env var, `None` when unset, blank or not UTF-8 (a location is
+/// [`path_env`]; `env::var` is banned by `clippy.toml`).
 pub fn text_env(name: &str) -> Option<String> {
-    std::env::var_os(name)?.into_string().ok()
+    std::env::var_os(name)
+        .filter(|v| !is_blank(v))?
+        .into_string()
+        .ok()
 }
 /// Whitespace test that never rejects a non-UTF-8 value: the lossy form is used
 /// ONLY for the emptiness question, never as the value, and its replacement
@@ -258,6 +262,23 @@ mod tests {
             assert_eq!(text_env(K), None, "text_env keeps env::var's semantics");
             assert_eq!(path_env(K), Some(PathBuf::from(&bad)));
             assert_eq!(path_env_trimmed(K), Some(PathBuf::from(&bad)));
+        });
+    }
+
+    #[test]
+    fn text_env_reads_a_blank_as_unset() {
+        const K: &str = "PIXTUOID_TEXT_ENV_TEST";
+        for blank in ["", "   ", "\t \n"] {
+            temp_env::with_var(K, Some(blank), || {
+                assert_eq!(text_env(K), None, "{blank:?} counts as unset");
+            });
+        }
+        temp_env::with_var(K, Some(" x "), || {
+            assert_eq!(
+                text_env(K).as_deref(),
+                Some(" x "),
+                "a value is not trimmed"
+            );
         });
     }
 

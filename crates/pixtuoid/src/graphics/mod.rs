@@ -367,11 +367,6 @@ pub(crate) enum Chosen {
     Name,
 }
 
-/// A text variable: `None` when unset, blank or not UTF-8.
-fn env_text(name: &str) -> Option<String> {
-    pixtuoid_core::platform::text_env(name).filter(|v| !v.trim().is_empty())
-}
-
 /// A marker variable, presence only, by [`path_env`](pixtuoid_core::platform::path_env)'s rule.
 fn env_set(name: &str) -> bool {
     pixtuoid_core::platform::path_env(name).is_some()
@@ -402,8 +397,8 @@ struct TermEnv {
 impl TermEnv {
     fn read() -> Self {
         Self {
-            term: env_text("TERM"),
-            term_program: env_text("TERM_PROGRAM"),
+            term: pixtuoid_core::platform::text_env("TERM"),
+            term_program: pixtuoid_core::platform::text_env("TERM_PROGRAM"),
             tmux_client: env_set("TMUX"),
             // ssh(1) ENVIRONMENT: what a session's sshd sets, SSH_TTY only with a tty.
             ssh: env_set("SSH_CONNECTION") || env_set("SSH_TTY"),
