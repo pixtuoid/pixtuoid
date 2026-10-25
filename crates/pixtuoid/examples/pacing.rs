@@ -208,6 +208,11 @@ fn office(start: SystemTime) -> SceneState {
     scene
 }
 
+/// A text variable: `None` when unset, blank or not UTF-8.
+fn env_text(name: &str) -> Option<String> {
+    pixtuoid_core::platform::text_env(name).filter(|v| !v.trim().is_empty())
+}
+
 /// The scenario's start for `motion`: a strike lands [`STRIKE_AT`] in.
 fn start_for(motion: Motion) -> Result<SystemTime> {
     let base = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
@@ -538,11 +543,11 @@ fn hitch(path: &Path) -> Result<()> {
         "the owner's terminal no longer gives the owner's office exactly: its runs stop being comparable"
     );
     let tick = Duration::from_secs(1) / PAINT_FPS;
-    let real_secs = pixtuoid_core::platform::text_env("HITCH_REAL_SECS")
-        .map(|s| s.parse())
+    let real_secs = env_text("HITCH_REAL_SECS")
+        .map(|s| s.parse().with_context(|| format!("HITCH_REAL_SECS={s:?}")))
         .transpose()?
         .unwrap_or(600);
-    let only = pixtuoid_core::platform::text_env("HITCH_ONLY");
+    let only = env_text("HITCH_ONLY");
     let noon = pixtuoid_scene::localclock::at_hour(12);
     let dusk = pixtuoid_scene::localclock::at_hour_min(19, 55);
     let sweeps = [
@@ -729,7 +734,7 @@ fn hitch(path: &Path) -> Result<()> {
         pixtuoid::dev::warm(&mut r, &scene, &pack, start);
         let mut totals = Vec::new();
         let mut n = 0u64;
-        let pace = if pixtuoid_core::platform::text_env("HITCH_HOT").is_some() {
+        let pace = if env_text("HITCH_HOT").is_some() {
             Pace::Hot
         } else {
             Pace::Paced

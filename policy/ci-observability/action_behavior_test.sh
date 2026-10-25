@@ -122,6 +122,7 @@ assert_wait() {
 }
 assert_wait pass "a ci-gate that passes after running" \
     "$no_runs"$'\n'"$(check_page github-actions in_progress "")"$'\n'"$(check_page github-actions completed success)"
+assert_wait fail "an API failure" error
 assert_wait fail "a failed ci-gate" "$(check_page github-actions completed failure)"
 assert_wait fail "a cancelled ci-gate" "$(check_page github-actions completed cancelled)"
 assert_wait fail "a skipped ci-gate" "$(check_page github-actions completed skipped)"

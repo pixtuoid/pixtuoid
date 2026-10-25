@@ -572,8 +572,7 @@ corpus-all:
     rc=0
     n=0
     uncovered=()
-    while IFS=$'\t' read -r id kind; do
-        [ "$kind" = transcript ] || continue
+    while read -r id; do
         n=$((n + 1))
         echo "── $id"
         "$cc" "$id"
@@ -586,10 +585,9 @@ corpus-all:
         *) rc=1 ;;
         esac
     done <<<"$roster"
-    # A roster that yields zero transcript rows — a column insertion, a rename of
-    # the `transcript` literal — reproduces the silent-empty census the roster
+    # A roster that yields zero ids reproduces the silent-empty census the roster
     # read above guards against.
-    [ "$n" -gt 0 ] || { echo "roster parsed 0 transcript rows — column layout changed?" >&2; exit 2; }
+    [ "$n" -gt 0 ] || { echo "roster listed no transcript sources" >&2; exit 2; }
     if [ ${#uncovered[@]} -gt 0 ]; then
         echo "NOT COVERED (no local corpus): ${uncovered[*]}"
     fi

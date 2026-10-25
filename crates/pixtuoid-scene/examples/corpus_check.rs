@@ -11,8 +11,8 @@
 //! transcripts register, how many render, and the provenance spread.
 //!
 //! Usage: `corpus_check <source> [root] [--json]`, plus `--roster` — the
-//! id/kind rows `just corpus-all` reads instead of keeping a second copy of the
-//! roster.
+//! transcript-bearing ids `just corpus-all` reads instead of keeping a second
+//! copy of the roster.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -147,19 +147,11 @@ fn newest_activity(source: &str, body: &[u8]) -> Option<u64> {
     }
 }
 
-/// The `--roster` rows, `id \t kind`, which `just corpus-all` reads by column:
-/// `the_roster_rows_are_id_tab_kind` is the pin AGENTS.md's magic-number
-/// rule asks for at that cross-language boundary.
-fn roster() -> Vec<String> {
+/// The `--roster` rows, one transcript-bearing source id each, which
+/// `just corpus-all` reads.
+fn roster() -> Vec<&'static str> {
     registry::registered_source_names()
-        .map(|name| {
-            let kind = if Drive::transcript(name, "/probe.jsonl").is_some() {
-                "transcript"
-            } else {
-                "hook"
-            };
-            format!("{name}\t{kind}")
-        })
+        .filter(|name| Drive::transcript(name, "/probe.jsonl").is_some())
         .collect()
 }
 
@@ -303,16 +295,5 @@ fn main() {
     // there (the contract is log-and-continue).
     if totals.decode_errors > 0 || !totals.panics.is_empty() {
         std::process::exit(1);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    /// `just corpus-all` indexes the columns positionally, and the `\t` is in
-    /// `roster`'s own format literal.
-    fn the_roster_rows_are_id_tab_kind() {
-        assert!(roster().iter().any(|r| r == "claude-code\ttranscript"));
     }
 }

@@ -217,8 +217,8 @@ def main():
         wanted = ("classic", "1") if args.scale == "classic" else (args.protocol, args.scale)
         if (w0.get("look"), w0.get("scale")) != wanted:
             sys.exit(f"pace-check: ran {w0.get('look')} x{w0.get('scale')}, not {wanted[0]} x{wanted[1]}: {log}")
-    # The verdict reads these; a binary that logs none, or whose loop gives
-    # no frame its due, must not PASS.
+    # scheduled, hitch_ms and span_ms are indexed, not .get: a binary that logs
+    # none raises instead of passing, and one that schedules no frame must not PASS.
     if not sum(int(w["scheduled"]) for w in windows):
         sys.exit(f"pace-check: no frame was shown on a schedule: {log}")
     over = sum(int(w.get("over", 0)) for w in windows)
