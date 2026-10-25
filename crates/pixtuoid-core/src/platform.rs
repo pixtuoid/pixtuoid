@@ -5,7 +5,7 @@
 //! join onto — so `USERPROFILE` must win on Windows, or the watcher watches a
 //! path no session ever writes to. On Unix, `HOME` stays authoritative.
 //!
-//! Every env filter here is TRIM-based — empty or whitespace-only counts as
+//! Every path env filter here is TRIM-based — empty or whitespace-only counts as
 //! unset, so `XDG_CONFIG_HOME="   "` can't be unset for the app config but set
 //! for the CLI config-dir resolution.
 
@@ -37,11 +37,12 @@ pub fn path_env_trimmed(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// A TEXT-valued env var, `None` when unset, blank or not UTF-8 (a location is
+/// A TEXT-valued env var, `None` when unset, EMPTY or not UTF-8 — never trimmed,
+/// as `NO_COLOR`'s "present and not an empty string" needs (a location is
 /// [`path_env`]; `env::var` is banned by `clippy.toml`).
 pub fn text_env(name: &str) -> Option<String> {
     std::env::var_os(name)
-        .filter(|v| !is_blank(v))?
+        .filter(|v| !v.is_empty())?
         .into_string()
         .ok()
 }
@@ -266,20 +267,14 @@ mod tests {
     }
 
     #[test]
-    fn text_env_reads_a_blank_as_unset() {
+    fn text_env_reads_an_empty_value_as_unset_and_never_trims() {
         const K: &str = "PIXTUOID_TEXT_ENV_TEST";
-        for blank in ["", "   ", "\t \n"] {
-            temp_env::with_var(K, Some(blank), || {
-                assert_eq!(text_env(K), None, "{blank:?} counts as unset");
+        temp_env::with_var(K, Some(""), || assert_eq!(text_env(K), None));
+        for kept in [" ", " x "] {
+            temp_env::with_var(K, Some(kept), || {
+                assert_eq!(text_env(K).as_deref(), Some(kept));
             });
         }
-        temp_env::with_var(K, Some(" x "), || {
-            assert_eq!(
-                text_env(K).as_deref(),
-                Some(" x "),
-                "a value is not trimmed"
-            );
-        });
     }
 
     #[test]
