@@ -645,16 +645,12 @@ pub(super) fn compute_with_seed(
             walkable = build_mask(&plants, &wall_decor);
             reach = connected(&walkable);
         }
-        debug_assert!(
-            reach.is_some(),
-            "#566 connectivity guard: a pocket (or a coarse-unroutable home desk) survived \
-             dropping every scatter plant AND every floor-standing wall decor — a new NON-decor \
-             seal cause needs its own fix"
-        );
     }
-
-    // ReachSet's seed snap pulls a blocked seed into the adjacent component.
-    let reachable = reach.unwrap_or_else(|| ReachSet::from_mask(&walkable, conn_seed));
+    let reachable = reach.expect(
+        "#566 connectivity guard: a pocket (or a coarse-unroutable home desk) survived \
+         dropping every scatter plant AND every floor-standing wall decor — a new NON-decor \
+         seal cause needs its own fix",
+    );
 
     // A narrow band can wall off a back-turned desk's SOUTH front — demote, don't drop.
     let home_desks: Vec<HomeDesk> = home_desks

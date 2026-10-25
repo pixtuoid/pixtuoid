@@ -284,12 +284,7 @@ pub(crate) fn advance_wander(
     // A fresh WalkState's epoch `phase_started_at` is below any real
     // `state_started_at`; we also re-seed when the slot (re-)entered Idle after a
     // different state.
-    let is_fresh = walk
-        .wander
-        .phase_started_at
-        .checked_add(Duration::from_millis(1))
-        .map(|t| t <= slot.state_started_at)
-        .unwrap_or(true);
+    let is_fresh = walk.wander.phase_started_at + Duration::from_millis(1) <= slot.state_started_at;
 
     // Stale resume: advanced before, but more than a full wander cycle ago — its
     // floor was off-screen (only the current floor renders) or `now` was frozen
@@ -335,11 +330,7 @@ pub(crate) fn advance_wander(
             if may_transition && elapsed_phase >= seated_dur {
                 if !takes_trip(id, walk.wander.cycle_n) || layout.waypoints.is_empty() {
                     walk.wander.cycle_n += 1;
-                    walk.wander.phase_started_at = walk
-                        .wander
-                        .phase_started_at
-                        .checked_add(Duration::from_millis(seated_dur))
-                        .unwrap_or(now);
+                    walk.wander.phase_started_at += Duration::from_millis(seated_dur);
                 } else {
                     // The origin must match pose::pure::idle_pose's `desk` so the
                     // stateless/stateful destinations stay in lockstep.
@@ -361,11 +352,7 @@ pub(crate) fn advance_wander(
                             intent: WalkIntent::WanderOut,
                         },
                     ));
-                    walk.wander.phase_started_at = walk
-                        .wander
-                        .phase_started_at
-                        .checked_add(Duration::from_millis(seated_dur))
-                        .unwrap_or(now);
+                    walk.wander.phase_started_at += Duration::from_millis(seated_dur);
                 }
             }
             (walk.wander.phase, LegProgress::ZERO)
@@ -379,7 +366,7 @@ pub(crate) fn advance_wander(
                     // by the time the dwell ends.
                     let back = snapshot_back_profile(slot, walk, layout, desk, router, overlay);
                     walk.wander.phase = WanderPhase::AtWaypoint(back);
-                    advance_phase_clock(walk, walk_total, now);
+                    advance_phase_clock(walk, walk_total);
                     (WanderPhase::AtWaypoint(back), LegProgress::ZERO)
                 }
             }
@@ -388,11 +375,7 @@ pub(crate) fn advance_wander(
         WanderPhase::AtWaypoint(back) => {
             if may_transition && elapsed_phase >= dwell_dur {
                 walk.wander.phase = WanderPhase::WalkingBack(back);
-                walk.wander.phase_started_at = walk
-                    .wander
-                    .phase_started_at
-                    .checked_add(Duration::from_millis(dwell_dur))
-                    .unwrap_or(now);
+                walk.wander.phase_started_at += Duration::from_millis(dwell_dur);
             }
             (walk.wander.phase, LegProgress::ZERO)
         }
@@ -406,7 +389,7 @@ pub(crate) fn advance_wander(
                     walk.wander.cycle_n += 1;
                     walk.wander.target.kind = WanderKind::Aimless;
                     walk.wander.phase = WanderPhase::Seated;
-                    advance_phase_clock(walk, walk_total, now);
+                    advance_phase_clock(walk, walk_total);
                     (WanderPhase::Seated, LegProgress::ZERO)
                 }
             }
@@ -451,12 +434,8 @@ fn poll_walk_leg(profile: &WalkProfile, elapsed_phase: u64, may_transition: bool
 
 /// Advance the phase clock from its CURRENT anchor — not from `now` — so the
 /// next phase starts exactly when this one's wall-time budget elapsed.
-fn advance_phase_clock(walk: &mut WalkState, walk_total: u64, now: SystemTime) {
-    walk.wander.phase_started_at = walk
-        .wander
-        .phase_started_at
-        .checked_add(Duration::from_millis(walk_total))
-        .unwrap_or(now);
+fn advance_phase_clock(walk: &mut WalkState, walk_total: u64) {
+    walk.wander.phase_started_at += Duration::from_millis(walk_total);
 }
 
 /// Delegates to the ONE stateless resolver `crate::pose::resolve_wander_target`,

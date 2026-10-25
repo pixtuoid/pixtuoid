@@ -29,7 +29,6 @@ const SWEEP_SIZES: &[(u16, u16)] = &[
     (super::compute::MIN_LAYOUT_W + 1, 120),
     (super::compute::MIN_LAYOUT_W + 3, 70),
     (super::compute::MIN_LAYOUT_W + 4, 160),
-    // The only size here reaching the #566 guard: one layout whose decor it degraded.
     (59, 148),
     (64, 130),
     (96, 60),
@@ -1026,7 +1025,7 @@ fn short_band_connectivity_boundary_scan() {
 /// Step-1 width sweep across the degradation band, running BOTH connectivity
 /// predicates at that resolution — the discrete `SWEEP_SIZES` grid can't cover
 /// every width, and a sealed pocket at a width it skips ships silently. Heights
-/// span the tall floors where the aisle-seal manifests; only 148 reaches the #566 guard.
+/// span the tall floors where the aisle-seal manifests.
 #[test]
 fn narrow_band_connectivity_boundary_scan() {
     for w in NARROW_BAND {

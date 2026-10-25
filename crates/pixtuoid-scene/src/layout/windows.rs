@@ -129,7 +129,7 @@ pub(crate) fn window_posts(buf_w: u16) -> impl Iterator<Item = Range<u16>> {
 /// The elevator door's left column on a wall `buf_w` wide: centred in the
 /// door's slot, which stands even where no window run fits west of it.
 pub(crate) fn door_x(buf_w: u16) -> u16 {
-    door_slot_x(buf_w).unwrap_or(0) + DOOR_INSET
+    door_slot_x(buf_w).expect("every wall that lays out holds the door's slot") + DOOR_INSET
 }
 
 /// The wall band's trim row, where the band meets the floor.

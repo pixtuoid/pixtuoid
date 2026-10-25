@@ -173,7 +173,7 @@ impl FloorNav {
     /// resize) must not silently revert a navigation.
     pub(crate) fn cancel(&mut self, n_floors: usize) {
         if let Some(tr) = self.transition.take() {
-            self.current = tr.to_floor.min(n_floors.max(1) - 1);
+            self.current = tr.to_floor.min(n_floors - 1);
         }
     }
 
@@ -187,7 +187,7 @@ impl FloorNav {
             self.current = tr.to_floor;
         }
         if self.current >= n_floors {
-            self.current = n_floors.saturating_sub(1);
+            self.current = n_floors - 1;
         }
     }
 }
