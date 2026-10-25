@@ -39,8 +39,8 @@ trap 'rm -rf "$root"' EXIT
 # `cargo fmt`; drop it from this list the moment it fans out to anything else.
 hooks_exempt_from_scrub="pre-commit"
 
-# The PATH for the cases that need neither just nor mise, whatever the
-# machine keeps in its system dirs: only what the hooks and stubs run.
+# A PATH with no real just or mise, whatever the machine keeps in its
+# system dirs: only what the hooks and stubs run.
 sysbin="$root/sysbin"
 mkdir -p "$sysbin"
 for b in bash git dirname; do ln -s "$(command -v "$b")" "$sysbin/$b"; done

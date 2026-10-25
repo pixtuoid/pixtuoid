@@ -687,7 +687,11 @@ fn hitch(path: &Path) -> Result<()> {
                 .all(|part| term.name.contains(part) || run.name.contains(part))
         })
     });
-    anyhow::ensure!(!plan.is_empty(), "HITCH_ONLY={only:?} selects no run");
+    anyhow::ensure!(
+        !plan.is_empty(),
+        "HITCH_ONLY={:?} selects no run",
+        only.as_deref().unwrap_or_default()
+    );
     for (term, run) in plan {
         let pets = vec![Pet::defaulted(PetKind::Cat), Pet::defaulted(PetKind::Dog)];
         let (mut r, wire) = renderer(

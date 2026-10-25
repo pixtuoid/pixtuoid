@@ -569,11 +569,10 @@ corpus-all:
     # is unobservable, so a roster that dies would feed an empty loop and the
     # census would report "everything clean" having censused nothing.
     roster="$("$cc" --roster)" || { echo "corpus_check --roster failed" >&2; exit 2; }
+    [ -n "$roster" ] || { echo "roster listed no transcript sources" >&2; exit 2; }
     rc=0
-    n=0
     uncovered=()
     while read -r id; do
-        n=$((n + 1))
         echo "── $id"
         "$cc" "$id"
         # 3 is "no corpus on this host" — never ran that CLI here. It is NOT a
@@ -585,9 +584,6 @@ corpus-all:
         *) rc=1 ;;
         esac
     done <<<"$roster"
-    # A roster that yields zero ids reproduces the silent-empty census the roster
-    # read above guards against.
-    [ "$n" -gt 0 ] || { echo "roster listed no transcript sources" >&2; exit 2; }
     if [ ${#uncovered[@]} -gt 0 ]; then
         echo "NOT COVERED (no local corpus): ${uncovered[*]}"
     fi

@@ -110,5 +110,8 @@ fn shim_and_daemon_resolve_identical_pipe_names_in_all_branches() {
         let (shim, daemon) = temp_env::with_var_unset("USERNAME", both);
         assert_eq!(shim, daemon, "USERNAME-absent fallback branch diverged");
         assert_eq!(shim, PathBuf::from(r"\\.\pipe\pixtuoid-default"));
+        let (shim, daemon) = temp_env::with_var("USERNAME", Some(""), both);
+        assert_eq!(shim, daemon, "empty USERNAME branch diverged");
+        assert_eq!(shim, PathBuf::from(r"\\.\pipe\pixtuoid-default"));
     });
 }

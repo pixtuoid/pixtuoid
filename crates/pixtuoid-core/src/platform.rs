@@ -260,7 +260,7 @@ mod tests {
             #[expect(clippy::disallowed_methods, reason = "self-test of clippy.toml's ban")]
             let dropped = std::env::var(K).is_err();
             assert!(dropped, "precondition: env::var is what DROPS this value");
-            assert_eq!(text_env(K), None, "text_env keeps env::var's semantics");
+            assert_eq!(text_env(K), None, "text_env drops it, as env::var does");
             assert_eq!(path_env(K), Some(PathBuf::from(&bad)));
             assert_eq!(path_env_trimmed(K), Some(PathBuf::from(&bad)));
         });

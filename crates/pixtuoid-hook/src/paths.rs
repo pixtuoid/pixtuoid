@@ -59,6 +59,7 @@ pub(crate) fn default_socket_path() -> PathBuf {
 #[cfg(windows)]
 pub(crate) fn default_windows_pipe_name() -> String {
     let user = std::env::var_os("USERNAME")
+        .filter(|u| !u.is_empty())
         .and_then(|u| u.into_string().ok())
         .unwrap_or_else(|| "default".into())
         .replace('\\', "-");
