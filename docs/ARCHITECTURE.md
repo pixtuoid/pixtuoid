@@ -57,7 +57,7 @@ flowchart TB
 
   subgraph core["pixtuoid-core (headless)"]
     L["HookRouter<br/>(shared socket: Unix / named pipe)"]
-    D["decode_hook_payload"]
+    D["decode_hook_object"]
     J["JsonlWatcher · walk_jsonl"]
     R["Reducer::apply<br/>(Transport-tagged)"]
     AP["apply_presence<br/>(AgentId-free · bypasses Reducer)"]

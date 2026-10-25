@@ -59,6 +59,13 @@ async fn attach_matrix_registers_exactly_the_live_set() {
             break;
         }
     }
+    // The seed pass may still queue c's (or a repeat) start behind the break.
+    while let Ok(Some((_, ev))) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
+    {
+        if let AgentEvent::SessionStart { agent_id, .. } = ev {
+            *starts.entry(agent_id).or_default() += 1;
+        }
+    }
 
     let expected: std::collections::HashMap<AgentId, usize> =
         [(id_a, 1), (id_b, 1)].into_iter().collect();
@@ -209,6 +216,10 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
         {
             break;
         }
+    }
+    // The same pass may still queue a repeat dispatch behind the break.
+    while let Ok(Some(pair)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
+        events.push(pair);
     }
 
     assert!(

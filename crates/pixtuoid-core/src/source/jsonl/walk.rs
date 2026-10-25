@@ -218,8 +218,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         return;
     }
     // Reset-to-0 is the LIVE-session resync. Exit-path drains must NOT take it —
-    // they pre-park at the new EOF, or the un-claim behind the drain turns this
-    // into a ghost replay (`park_if_truncated_below_cursor`).
+    // they pre-park at the new EOF (`park_if_truncated_below_cursor`).
     let cursor_now = if cursor_now > file_len {
         warn!(
             path = ?path,
@@ -430,10 +429,11 @@ fn tail_shows_activity(
 
 /// Pre-drain guard for the exit-path drains: a transcript truncated/recreated
 /// BELOW its cursor at the moment a drain runs would hit `walk_jsonl`'s
-/// truncation arm — cursor reset to 0 and the whole file replayed as a
-/// first-sight — and re-register the just-ended
-/// session as a ghost. Park the cursor at the new EOF instead; only genuinely
-/// NEW bytes (len > cursor) re-register. The reset-to-0 replay stays the right
+/// truncation arm, which re-reads it from 0 inside the drain — re-sending the
+/// rewrite's stale events around the end — and stops at its last whole line,
+/// leaving an unterminated tail for the walk after the un-claim to judge as
+/// new: a ghost revival. Park the cursor at the new EOF instead; only genuinely
+/// NEW bytes (len > cursor) re-register. The reset-to-0 re-read stays the right
 /// call on the NORMAL walk path, where a live session's truncate-rewrite
 /// resyncs from the top.
 pub(super) async fn park_if_truncated_below_cursor(path: &Path, ctx: &WatchCtx<'_>) {

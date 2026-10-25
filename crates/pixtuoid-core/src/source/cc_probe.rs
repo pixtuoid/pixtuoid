@@ -59,7 +59,7 @@ pub fn live_cc_session_ids(sessions_dir: &Path) -> Option<ProbeSnapshot> {
                 RegistryParse::Entry(reg) => reg,
                 RegistryParse::Skip => continue,
                 RegistryParse::ShapeDrift(key) => {
-                    // Warn ONCE per process run, never per 250ms scan pass:
+                    // Warn ONCE per process run, never per scan pass:
                     // the registry is the one undocumented upstream surface
                     // with no fetchable text to drift-diff (#247), so a silent
                     // key rename would degrade the probe to mtime-only gating
