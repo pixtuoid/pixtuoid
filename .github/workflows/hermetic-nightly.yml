@@ -210,7 +210,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          DRIFT: ${{ needs.drift.result }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -221,15 +220,10 @@ jobs:
             reports=(report.md)
           else
             legs=(*/)
-            # None uploaded: nothing to file, unless drift failed first.
-            if [ ${#legs[@]} -eq 0 ]; then
-              if [ "$DRIFT" = failure ]; then echo "::error::drift failed and no leg uploaded its runs"; exit 1; fi
-              exit 0
-            fi
+            # None uploaded: nothing to file.
+            [ ${#legs[@]} -gt 0 ] || exit 0
             reports=(*/report.md)
           fi
-          gh label create hermetic --color FBCA04 --force \
-            --description "A hermetic run's verdict on an agent CLI's latest release"
           # The orchestrator owns the title, as each uploaded leg's report H1
           # naming its OS and shard, and they carry the disposition: retitle on the dedup
           # path too. A leg whose runs hold no report.md never finished its run

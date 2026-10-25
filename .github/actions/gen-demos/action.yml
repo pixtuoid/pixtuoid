@@ -18,7 +18,7 @@ runs:
     - if: steps.cache.outputs.cache-hit != 'true'
       uses: ./.github/actions/apt-install
       with:
-        packages: ffmpeg gifsicle
+        packages: ffmpeg
         recommends: 'false'
     - name: Render the demos
       if: steps.cache.outputs.cache-hit != 'true'

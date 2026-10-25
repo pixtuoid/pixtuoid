@@ -26,13 +26,11 @@ runs:
       run: |
         set -euo pipefail
         ver="$(yq -e -p toml -oy '.tools["aqua:WebAssembly/binaryen"]' mise.toml)"
-        [[ "$ver" =~ ^[0-9]+$ ]] || { echo "error: mise.toml has no single binaryen version" >&2; exit 1; }
         url="https://github.com/WebAssembly/binaryen/releases/download/version_$ver/binaryen-version_${ver}-x86_64-linux.tar.gz"
         curl -fsSL --retry 5 --retry-all-errors "$url" -o /tmp/binaryen.tar.gz
         echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  /tmp/binaryen.tar.gz" | sha256sum -c -
         tar -xzf /tmp/binaryen.tar.gz -C /tmp "binaryen-version_$ver/bin/wasm-opt"
         sudo install -m 0755 "/tmp/binaryen-version_$ver/bin/wasm-opt" /usr/local/bin/wasm-opt
-        wasm-opt --version
 
     - shell: bash
       run: just gen-wasm

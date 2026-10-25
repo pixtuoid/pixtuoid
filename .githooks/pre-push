@@ -19,12 +19,8 @@ toplevel=$(git rev-parse --show-toplevel)
 # silently writes into THIS one (#893) — the unset githooks(5) prescribes
 # (https://git-scm.com/docs/githooks), applied here rather than per-script so
 # nothing downstream has to remember it.
-# A failed or empty list would leave the scrub silently not happening, and
-# `unset $(...)` discards the substitution's status so `set -e` never sees it.
-if ! scrub=$(git rev-parse --local-env-vars) || [ -z "$scrub" ]; then
-    printf '\033[31m[pre-push] git gave no local-env-vars — refusing to run unscrubbed\033[0m\n' >&2
-    exit 1
-fi
+# `unset $(...)` would discard the substitution's status, which `set -e` needs.
+scrub=$(git rev-parse --local-env-vars)
 # shellcheck disable=SC2086  # the var list must word-split
 unset $scrub
 

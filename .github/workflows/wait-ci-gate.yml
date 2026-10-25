@@ -29,12 +29,9 @@ jobs:
           while :; do
             # Actions' run alone, as branch protection requires: another app
             # can post a check by the same name.
-            if ! verdict="$(gh api "repos/$REPOSITORY/commits/$SHA/check-runs?check_name=$CHECK_NAME&filter=latest" \
+            verdict="$(gh api "repos/$REPOSITORY/commits/$SHA/check-runs?check_name=$CHECK_NAME&filter=latest" \
               --jq '[.check_runs[] | select(.app.slug == "github-actions")] | max_by(.started_at)
-                | if . == null then "absent" elif .status != "completed" then "pending" else .conclusion end')"; then
-              echo "::warning::could not read $CHECK_NAME at ${SHA::7}; retrying"
-              verdict=pending
-            fi
+                | if . == null then "absent" elif .status != "completed" then "pending" else .conclusion end')"
             case "$verdict" in
             success)
               echo "$CHECK_NAME passed at ${SHA::7}"

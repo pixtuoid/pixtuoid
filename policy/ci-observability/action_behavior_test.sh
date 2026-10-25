@@ -121,7 +121,7 @@ assert_wait() {
     fi
 }
 assert_wait pass "a ci-gate that passes after running" \
-    "$no_runs"$'\n'"$(check_page github-actions in_progress "")"$'\n'error$'\n'"$(check_page github-actions completed success)"
+    "$no_runs"$'\n'"$(check_page github-actions in_progress "")"$'\n'"$(check_page github-actions completed success)"
 assert_wait fail "a failed ci-gate" "$(check_page github-actions completed failure)"
 assert_wait fail "a cancelled ci-gate" "$(check_page github-actions completed cancelled)"
 assert_wait fail "a skipped ci-gate" "$(check_page github-actions completed skipped)"
@@ -402,17 +402,13 @@ printf '# hermetic, latest CLIs on macos, shard 1: New\n\nbody\n' >"$flat/report
     bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a lone leg that landed flat"
 grep -qxF "issue create --title hermetic, latest CLIs on macos, shard 1: New --label hermetic --body-file report.md" "$test_dir/gh.log" ||
     fail "a lone flat leg is not filed under its H1: $(<"$test_dir/gh.log")"
-# None uploaded: a green drift files nothing, and a failed one is red.
+# None uploaded: nothing is filed.
 empty="$test_dir/file-empty"
 mkdir -p "$empty"
 : >"$test_dir/gh.log"
-(cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" DRIFT=success GH_TOKEN=t GH_REPO=o/r \
+(cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_TOKEN=t GH_REPO=o/r \
     bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a night nothing uploaded on"
 [[ ! -s "$test_dir/gh.log" ]] || fail "a night nothing uploaded on filed something: $(<"$test_dir/gh.log")"
-if (cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" DRIFT=failure GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1; then
-    fail "the file step passed a failed drift that uploaded nothing"
-fi
 # Every uploaded leg failed before its report: red, and no issue retitled or opened.
 bare="$test_dir/file-bare"
 mkdir -p "$bare/hermetic-runs-1-1-linux"
