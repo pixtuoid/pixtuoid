@@ -219,7 +219,7 @@ impl Tiles {
     /// other tile last sent with another carve than its own now: text that
     /// left a cell leaves it to the image again.
     pub(crate) fn carved(&self, changed: &[Changed], carves: &[Carve]) -> Vec<Changed> {
-        let carve = |index: u32| carves.get(index as usize).copied().unwrap_or(0);
+        let carve = |index: u32| carves[index as usize];
         let recarved = self.sent.iter().zip(0u32..).filter_map(|(sent, index)| {
             let sent = (*sent)?;
             let moved = sent.carve != carve(index);
@@ -342,9 +342,9 @@ impl Tiles {
             index % across * u32::from(self.shape.cols),
             index / across * u32::from(self.shape.rows),
         );
-        // The image is at most `u16::MAX` px a side (`cutaway_fit`), so its
-        // cells are too.
-        let cells = |n: u32| u16::try_from(n).unwrap_or(u16::MAX);
+        let cells = |n: u32| {
+            u16::try_from(n).expect("the image is at most u16::MAX px a side (cutaway_fit)")
+        };
         Tile {
             index,
             col: cells(col),

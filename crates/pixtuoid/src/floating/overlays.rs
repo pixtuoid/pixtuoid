@@ -48,16 +48,15 @@ pub(crate) fn panels_grid(
 /// A window `window` physical px big, in screen cells of `cell`: the
 /// surface the panels are laid out on.
 pub(crate) fn panel_cells((w, h): (u32, u32), cell: CellPx) -> (u16, u16) {
-    let fits = |px: u32, size: u16| u16::try_from(px / u32::from(size.max(1))).unwrap_or(u16::MAX);
+    let fits = |px: u32, size: u16| u16::try_from(px / u32::from(size)).unwrap_or(u16::MAX);
     (fits(w, cell.w), fits(h, cell.h))
 }
 
 /// The screen cell of `cell` under window point `(x, y)`: the panels paint
 /// from the window's top-left ([`paint_panels`]).
 pub(crate) fn cell_at((x, y): (f64, f64), cell: CellPx) -> (u16, u16) {
-    let at = |p: f64, size: u16| {
-        u16::try_from(p.max(0.0) as u32 / u32::from(size.max(1))).unwrap_or(u16::MAX)
-    };
+    let at =
+        |p: f64, size: u16| u16::try_from(p.max(0.0) as u32 / u32::from(size)).unwrap_or(u16::MAX);
     (at(x, cell.w), at(y, cell.h))
 }
 
@@ -100,8 +99,7 @@ impl PlacedTip {
         (w, h): (u32, u32),
     ) -> Self {
         let card = tip.card(theme);
-        let cells =
-            |px: u32, size: u16| u16::try_from(px / u32::from(size.max(1))).unwrap_or(u16::MAX);
+        let cells = |px: u32, size: u16| u16::try_from(px / u32::from(size)).unwrap_or(u16::MAX);
         let area = CellRect {
             x: 0,
             y: 0,
@@ -245,7 +243,7 @@ pub(crate) fn paint_panels(
 /// between the footer's margins: its column budget.
 pub fn footer_budget(win_w: usize, cell: CellPx) -> u16 {
     let room = win_w.saturating_sub(2 * usize::from(FOOTER_MARGIN_PX));
-    u16::try_from(room / usize::from(cell.w.max(1))).unwrap_or(u16::MAX)
+    u16::try_from(room / usize::from(cell.w)).unwrap_or(u16::MAX)
 }
 
 /// The footer's band: a `window`'s full width at its foot, `at`'s

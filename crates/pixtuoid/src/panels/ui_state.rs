@@ -493,15 +493,13 @@ impl UiState {
         // after actions, NOT per frame, because it does FS reads. Only the LIVE
         // facet + socket line recompute here.
         let connection_frame = if self.connection.open {
-            let live = connection::live_view(now, &self.connection.rows, scene, health);
             // NOT "(listening)": a second pixtuoid instance loses the hook plane
             // to the lock-holding owner, so THIS process may own no socket at
             // all. Don't assert what we haven't checked.
             let socket_line = format!("socket  {}", self.socket_path.display());
             ConnectionFrame {
                 open: true,
-                rows: self.connection.rows.clone(),
-                live,
+                rows: connection::live_view(now, &self.connection.rows, scene, health),
                 selected: self.connection.selected,
                 confirm: self.connection.confirm,
                 result: self.connection.last_result.clone(),
@@ -674,7 +672,15 @@ mod tests {
         ui.close_dashboard();
         assert!(!ui.modal().dashboard_open);
 
-        ui.open_connection(Vec::new());
+        ui.open_connection(vec![ConnectionRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex",
+            state: connection::ConnState::Connected,
+            config_path: None,
+            target: None,
+            health: None,
+        }]);
         assert!(ui.modal().connection_open);
         assert!(!ui.modal().connection_confirm);
         ui.connection.confirm = Some(0);

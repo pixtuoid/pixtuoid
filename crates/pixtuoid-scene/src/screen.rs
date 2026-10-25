@@ -121,11 +121,6 @@ impl<S: Copy + PartialEq> FlashHold<S> {
         }
     }
 
-    /// The staged write never reached the screen: it shows nothing.
-    pub(crate) fn lost(&mut self) {
-        self.staged = None;
-    }
-
     /// A write showing `phases` finished reaching a screen shaped `shape` just
     /// now.
     fn shown(&mut self, phases: Flashes, shape: S) {
@@ -156,8 +151,8 @@ impl Admit {
 
 /// A painter's screen of shape `S`: the hold its writes go through, and what
 /// the picture on it answers a pointer with, through the painter's geometry
-/// `G` (its cells, its window pixels). A held or lost write leaves the screen
-/// showing the last, and a pointer hitting it.
+/// `G` (its cells, its window pixels). A held write leaves the screen showing
+/// the last, and a pointer hitting it.
 #[derive(Debug)]
 pub struct Screen<S, G> {
     hold: FlashHold<S>,
@@ -234,12 +229,6 @@ impl<S: Copy + PartialEq, G> Screen<S, G> {
         if let Some(staged) = self.staged.take() {
             self.shown = Some(staged);
         }
-    }
-
-    /// The staged write never reached the screen: it still shows the last.
-    pub fn lost(&mut self) {
-        self.hold.lost();
-        self.staged = None;
     }
 
     /// A write showing no office to a screen shaped `shape` is under way:
@@ -343,17 +332,13 @@ mod tests {
         assert!(!hold.holds(two, SHAPE), "a clock run backward");
     }
 
-    /// A staged write counts from when it lands, and a lost one never counts.
+    /// A staged write counts from when it lands.
     #[test]
-    fn a_write_counts_from_when_it_lands_and_a_lost_one_never() {
+    fn a_write_counts_from_when_it_lands() {
         let [one, two] = two_pictures();
         let screen = ManualClock::default();
         let mut hold = FlashHold::on(screen.clock());
         screen.at(at(0));
-        hold.stage(one, SHAPE);
-        hold.lost();
-        hold.landed();
-        assert!(hold.changes(one), "a lost write shows nothing");
         hold.stage(one, SHAPE);
         screen.at(at(50));
         hold.landed();
@@ -444,8 +429,8 @@ mod tests {
         Some(Arc::clone(screen.shown()?.hits()?.layout()))
     }
 
-    /// A pointer hits the picture on screen: not one held back, nor one whose
-    /// write was lost, nor one still under way.
+    /// A pointer hits the picture on screen: not one held back, nor one still
+    /// under way.
     #[test]
     fn a_pointer_hits_the_picture_on_screen() {
         let [one, two] = two_pictures();
@@ -473,9 +458,6 @@ mod tests {
         assert!(is(&first, &screen), "a held picture never shows");
         let same = screen.admit(&floor_picture(&pixels, &second_hits, one), SHAPE, (), None);
         assert_eq!(same, Admit::Same);
-        screen.lost();
-        screen.landed();
-        assert!(is(&first, &screen), "a lost write shows nothing new");
     }
 
     /// A slide on screen hits nothing, and a blank screen shows nothing.

@@ -153,7 +153,6 @@ impl std::fmt::Debug for FrameOut {
         f.debug_struct("FrameOut")
             .field("holding", &held.holding)
             .field("sync", &held.sync)
-            .field("torn", &held.torn)
             .finish_non_exhaustive()
     }
 }
@@ -165,9 +164,6 @@ struct Held {
     holding: bool,
     /// Wrap each frame in `CSI ? 2026 h` / `l`.
     sync: bool,
-    /// The last present failed, perhaps mid-escape or inside its update: the
-    /// next opens with ST, and ends that update.
-    torn: bool,
 }
 
 /// Begin and end synchronized update
@@ -183,7 +179,6 @@ impl FrameOut {
             frame: Vec::new(),
             holding: false,
             sync,
-            torn: false,
         })))
     }
 
@@ -203,12 +198,6 @@ impl FrameOut {
         let mut held = self.held();
         held.holding = true;
         held.frame.clear();
-        if held.torn {
-            held.frame.extend_from_slice(crate::graphics::ST);
-            if held.sync {
-                held.frame.extend_from_slice(END_SYNC);
-            }
-        }
         if held.sync {
             held.frame.extend_from_slice(BEGIN_SYNC);
         }
@@ -223,7 +212,7 @@ impl FrameOut {
     ///
     /// # Errors
     ///
-    /// If the write or the flush fails; the next frame then opens with ST.
+    /// If the write or the flush fails.
     pub(crate) fn present(&self) -> std::io::Result<()> {
         let mut held = self.held();
         held.holding = false;
@@ -232,7 +221,6 @@ impl FrameOut {
         }
         let Held { out, frame, .. } = &mut *held;
         let wrote = out.write_all(frame).and_then(|()| out.flush());
-        held.torn = wrote.is_err();
         held.frame.clear();
         wrote
     }
@@ -753,27 +741,6 @@ mod frame_out_tests {
                 2,
                 "outside a frame: straight through"
             );
-        }
-    }
-
-    /// A frame the terminal refused leaves the next one opening with ST, so
-    /// an escape it cut short ends before the next frame's bytes, and with
-    /// the end of the update it may have left open.
-    #[test]
-    fn a_refused_frame_opens_the_next_with_st() {
-        for sync in [false, true] {
-            let tty = Tty::default();
-            let mut out = FrameOut::new(tty.clone(), sync);
-            tty.seen().full = true;
-            assert!(frame(&mut out, &[b"\x1b_Ga=T"]).is_err());
-            tty.seen().full = false;
-            frame(&mut out, &[b"next"]).expect("presented");
-            let opening: &[&[u8]] = if sync {
-                &[crate::graphics::ST, END_SYNC, BEGIN_SYNC, b"next", END_SYNC]
-            } else {
-                &[crate::graphics::ST, b"next"]
-            };
-            assert_eq!(tty.seen().writes, vec![opening.concat()], "sync {sync}");
         }
     }
 }

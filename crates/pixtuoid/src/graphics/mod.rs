@@ -48,7 +48,7 @@ pub(crate) struct TileShape {
 }
 
 /// How long each wait of the capability probe may take: the query start to
-/// finish, and, inside tmux, the `allow-passthrough` read before it.
+/// finish.
 ///
 /// The query ends with a device-status request ([`wire::ask`]), so a terminal
 /// that answers ends the wait the moment its reply is complete; the budget is

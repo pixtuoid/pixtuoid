@@ -310,7 +310,7 @@ impl Painter {
             let texture = self.textures[layer.id.index()]
                 .as_ref()
                 .expect("upload ensures a layer's texture before drawing it");
-            let s = f32::from(layer.scale.max(1));
+            let s = f32::from(layer.scale);
             let (x, y) = (layer.origin.0 as f32, layer.origin.1 as f32);
             let (w, h) = (layer.extent.0 as f32, layer.extent.1 as f32);
             let (x0, x1) = (x / sw * 2.0 - 1.0, (x + w) / sw * 2.0 - 1.0);

@@ -158,36 +158,6 @@ pub fn fatal_error_text(e: &anyhow::Error) -> String {
     format!("Error: {}", strip_lines(&format!("{e:?}"), "\n"))
 }
 
-/// Run `cmd` and collect its output, or kill and reap it at `timeout`:
-/// [`Command::output`](std::process::Command::output) has no timeout. `None`
-/// on a spawn or wait error too.
-///
-/// The caller pipes the streams it reads (a spawned child inherits by default)
-/// and expects little output: nothing drains the pipes until the child exits,
-/// so a child that fills one blocks and runs into the timeout.
-pub(crate) fn output_within(
-    cmd: &mut std::process::Command,
-    timeout: std::time::Duration,
-) -> Option<std::process::Output> {
-    use std::time::{Duration, Instant};
-    const POLL_INTERVAL: Duration = Duration::from_millis(20);
-    let mut child = cmd.spawn().ok()?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            Ok(None) => std::thread::sleep(POLL_INTERVAL),
-            Err(_) => return None,
-        }
-    }
-    child.wait_with_output().ok()
-}
-
 /// The one URL launcher both painters call: `open::that` blocks on Linux until the
 /// browser exits (`xdg-open`), freezing frames, input and the quit arm on the event
 /// loop. A failed launch only logs: the click does nothing on screen.
@@ -649,47 +619,5 @@ mod tests {
                  display_safe disagree — the two Cf/Cc tables have drifted apart",
             );
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_child_that_outlives_its_timeout_is_killed_and_reaped() {
-        use std::process::{Command, Stdio};
-        use std::time::{Duration, Instant};
-        let dir = tempfile::TempDir::new().expect("tempdir");
-        let pid_file = dir.path().join("pid");
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg("echo $$ > \"$0\"; exec sleep 30")
-            .arg(&pid_file)
-            .stdout(Stdio::piped());
-        let started = Instant::now();
-        assert!(output_within(&mut cmd, Duration::from_millis(200)).is_none());
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "{:?}",
-            started.elapsed()
-        );
-        let pid: libc::pid_t = std::fs::read_to_string(&pid_file)
-            .expect("the child wrote its pid")
-            .trim()
-            .parse()
-            .expect("a pid");
-        // ESRCH only once the child is reaped: a zombie still answers kill 0.
-        // SAFETY: signal 0 sends nothing; it only checks the pid exists.
-        let alive = unsafe { libc::kill(pid, 0) } == 0;
-        assert!(!alive, "the child {pid} was left running or unreaped");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_child_that_exits_in_time_yields_its_output_and_status() {
-        use std::process::{Command, Stdio};
-        use std::time::Duration;
-        let mut cmd = Command::new("sh");
-        cmd.args(["-c", "echo hi; exit 3"]).stdout(Stdio::piped());
-        let out = output_within(&mut cmd, Duration::from_secs(5)).expect("exits in time");
-        assert_eq!(out.stdout, b"hi\n");
-        assert_eq!(out.status.code(), Some(3));
     }
 }

@@ -385,11 +385,6 @@ impl TileCutaway {
         }
     }
 
-    /// The frame never reached the terminal: nothing it wrote is shown.
-    pub(crate) fn lost(&mut self) {
-        self.landing = None;
-    }
-
     /// What encodes this frame's tiles, apart from the sink no thread shares.
     fn encoder(&self) -> Encoder<'_> {
         Encoder {

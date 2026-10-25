@@ -686,20 +686,6 @@ fn a_modal_over_the_image_shows_its_text() {
 }
 
 #[test]
-fn a_failed_write_re_sends_next_frame() {
-    let (mut r, wire) = kitty(120, 40);
-    let scene = office();
-    wire.fail.store(true, Ordering::Relaxed);
-    r.render(&scene, pack(), t0())
-        .expect("a lost transmit is no render error");
-    wire.fail.store(false, Ordering::Relaxed);
-    r.render(&scene, pack(), t0()).expect("render");
-    let sent = wire.take();
-    assert!(sent.starts_with("\x1b\\"), "an ST first ends a torn escape");
-    assert!(sent.contains(TRANSMIT));
-}
-
-#[test]
 fn a_redraw_re_sends_every_tile() {
     let (mut r, wire) = kitty(120, 40);
     let scene = office();
@@ -958,40 +944,6 @@ fn a_resized_terminal_is_never_held() {
         screen.at(held);
         r.render(&scene, pack(), held).expect("render");
         assert!(wire.take().contains(TRANSMIT), "sliding {sliding}: sent");
-    }
-}
-
-/// A write that failed never showed its phase, so a held frame after it
-/// stamps nothing: the phase before it keeps its floor. The failed write
-/// went out unheld to a resized terminal; the one resized back holds.
-#[test]
-fn a_held_frame_after_a_failed_write_stamps_nothing() {
-    use crate::test_flash::{held_frames, storm_strike};
-    let strike = storm_strike();
-    let [_, late, held, _] = held_frames(&strike);
-    let ms = Duration::from_millis(1);
-    let (cols, rows) = crate::tui::renderer::min_terminal_size();
-    let (mut r, wire, screen) = on_screen(cols, rows, ImageProtocol::Kitty);
-    r.set_weather(strike.weather);
-    r.set_motion(pixtuoid_scene::anim::Motion::Full);
-    let scene = office();
-    screen.at(late);
-    r.render(&scene, pack(), late).expect("render");
-    let resize = |r: &mut TuiRenderer<Window>, cols, rows| {
-        r.terminal.backend_mut().inner.resize(cols, rows);
-    };
-    resize(&mut r, cols + 8, rows + 4);
-    wire.fail.store(true, Ordering::Relaxed);
-    screen.at(held);
-    r.render(&scene, pack(), held)
-        .expect("a lost transmit is no render error");
-    wire.fail.store(false, Ordering::Relaxed);
-    resize(&mut r, cols, rows);
-    for at in [held + ms, held + 2 * ms] {
-        wire.take();
-        screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
-        assert!(!wire.take().contains(TRANSMIT), "held at {at:?}");
     }
 }
 

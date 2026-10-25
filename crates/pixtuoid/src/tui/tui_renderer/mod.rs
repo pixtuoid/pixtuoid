@@ -47,11 +47,6 @@ pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     /// What holds each frame's output and presents it whole; `None` writes
     /// straight to the backend.
     frame_out: Option<crate::tui::FrameOut>,
-    /// A frame was dropped unwritten, though ratatui's diff counts its cells
-    /// as shown: the next repaints everything.
-    redraw_owed: bool,
-    /// The terminal refused the last frame: a run of refusals warns once.
-    refusing: bool,
     /// Every floor, the office-wide state they share (a cup of coffee
     /// survives a floor switch), which floor shows and the slide to another,
     /// and the floor a pointer grips: the floating window's own.
@@ -200,8 +195,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             pack,
             jank: crate::jank::Jank::new(),
             frame_out: None,
-            redraw_owed: false,
-            refusing: false,
             last_extent: None,
             mouse_pos: None,
             pointer: pixtuoid_scene::interact::Pointer::default(),
@@ -723,19 +716,13 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// # Errors
     ///
     /// If querying the terminal size, drawing the frame to the backend, or
-    /// writing the held frame fails; a full terminal (`WouldBlock`) drops the
-    /// frame instead.
+    /// writing the held frame fails.
     pub fn render(&mut self, scene: &SceneState, pack: &OfficeArt, now: SystemTime) -> Result<()> {
         let begun = std::time::Instant::now();
         if let Some(out) = &self.frame_out {
             out.begin();
         }
-        let redrawn = if std::mem::take(&mut self.redraw_owed) {
-            self.redraw()
-        } else {
-            Ok(())
-        };
-        let drawn = redrawn.and_then(|()| self.draw_frame(scene, pack, now));
+        let drawn = self.draw_frame(scene, pack, now);
         self.follow_resize();
         // Presented even when the draw failed, so nothing stays held.
         let presenting = std::time::Instant::now();
@@ -744,32 +731,11 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             .as_ref()
             .map_or(Ok(()), crate::tui::FrameOut::present);
         let present = presenting.elapsed();
+        presented?;
         if let Some(cutaway) = &mut self.cutaway {
-            if presented.is_ok() {
-                cutaway.landed();
-            } else {
-                cutaway.lost();
-            }
+            cutaway.landed();
         }
-        if presented.is_ok() {
-            self.screen.landed();
-        } else {
-            self.screen.lost();
-        }
-        let refused = std::mem::replace(&mut self.refusing, presented.is_err());
-        if let Err(e) = presented {
-            // A full terminal: the frame is dropped, and the next repaints
-            // every cell and every tile.
-            if e.kind() != std::io::ErrorKind::WouldBlock {
-                return Err(e.into());
-            }
-            if refused {
-                tracing::debug!(error = %e, "frame write failed");
-            } else {
-                tracing::warn!(error = %e, "frame write failed");
-            }
-            self.redraw_owed = true;
-        }
+        self.screen.landed();
         let note = drawn?;
         let send = self
             .cutaway

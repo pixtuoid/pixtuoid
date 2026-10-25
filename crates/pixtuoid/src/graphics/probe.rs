@@ -317,19 +317,13 @@ fn reads_shared_memory() -> bool {
 }
 
 /// Our pane's `allow-passthrough`, inherited value included (tmux(1)
-/// `show-options -A`); `None` when tmux cannot say within
-/// [`GRAPHICS_PROBE_TIMEOUT`](super::GRAPHICS_PROBE_TIMEOUT). Asked only where
+/// `show-options -A`); `None` when tmux cannot say. Asked only where
 /// [`EnvHints::our_tmux_pane`] holds.
 fn tmux_passthrough() -> Option<bool> {
-    use std::process::{Command, Stdio};
-    let out = crate::output_within(
-        Command::new("tmux")
-            .args(["show-options", "-Apv", "allow-passthrough"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null()),
-        super::GRAPHICS_PROBE_TIMEOUT,
-    )?;
+    let out = std::process::Command::new("tmux")
+        .args(["show-options", "-Apv", "allow-passthrough"])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }

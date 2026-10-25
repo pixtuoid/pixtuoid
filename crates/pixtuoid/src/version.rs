@@ -27,15 +27,13 @@ pub(crate) struct Versions {
 /// UNPARSEABLE recorded version — overwrite to recover, else a corrupted or
 /// hand-edited value silently disables the popup forever.
 pub(crate) fn boot_decision(current_ver: &str, last_seen: Option<&str>) -> BootDecision {
-    let current = Version::parse(current_ver).ok();
+    let current = Version::parse(current_ver).expect("CARGO_PKG_VERSION is SemVer");
     let previous = last_seen.and_then(|v| Version::parse(v).ok());
-    let should_show_popup = matches!((&current, &previous), (Some(c), Some(p)) if c > p);
+    let should_show_popup = previous.as_ref().is_some_and(|p| current > *p);
     BootDecision {
         should_show_popup,
         should_persist: should_show_popup || previous.is_none(),
-        versions: previous
-            .zip(current)
-            .map(|(previous, current)| Versions { previous, current }),
+        versions: previous.map(|previous| Versions { previous, current }),
     }
 }
 

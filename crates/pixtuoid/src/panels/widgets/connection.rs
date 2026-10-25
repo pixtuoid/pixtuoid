@@ -41,7 +41,6 @@ pub(crate) fn paint_connection_panel(
     let &ConnectionFrame {
         open: _,
         ref rows,
-        ref live,
         selected,
         confirm,
         ref result,
@@ -65,18 +64,15 @@ pub(crate) fn paint_connection_panel(
     let list: Vec<Line<'static>> = rows
         .iter()
         .enumerate()
-        .map(|(i, row)| {
-            let li = live.get(i).cloned().unwrap_or_default();
-            connection_line(row, &li, selected == i, now, theme)
-        })
+        .map(|(i, (row, live))| connection_line(row, live, selected == i, now, theme))
         .collect();
 
     let detail = if let Some(ci) = confirm {
-        let name = rows.get(ci).map_or("", |r| r.display_name);
+        let name = rows.get(ci).map_or("", |(r, _)| r.display_name);
         format!("\u{26a0} disconnect {name}? (y/n)")
     } else if let Some(res) = result {
         res.clone()
-    } else if let Some(row) = rows.get(selected) {
+    } else if let Some((row, _)) = rows.get(selected) {
         if let Some(h) = &row.health {
             h.clone()
         } else {

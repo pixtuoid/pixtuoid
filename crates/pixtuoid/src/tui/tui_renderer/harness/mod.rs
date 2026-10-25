@@ -247,21 +247,16 @@ impl Latency {
     }
 }
 
-/// The terminal's side of a [`FrameOut`](crate::tui::FrameOut); set `fail` to
-/// make it refuse writes as a full terminal does (`WouldBlock`), or `slow` to
+/// The terminal's side of a [`FrameOut`](crate::tui::FrameOut); set `slow` to
 /// make a flush land late.
 #[derive(Clone, Default)]
 pub(super) struct Wire {
     pub(super) bytes: Arc<std::sync::Mutex<Vec<u8>>>,
-    pub(super) fail: Arc<std::sync::atomic::AtomicBool>,
     pub(super) slow: Arc<std::sync::Mutex<Option<Latency>>>,
 }
 
 impl std::io::Write for Wire {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.fail.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(std::io::ErrorKind::WouldBlock.into());
-        }
         self.bytes.lock().expect("lock").extend_from_slice(buf);
         Ok(buf.len())
     }
@@ -292,7 +287,7 @@ pub(super) fn half_blocks_on_screen(
         pack_arc(),
     );
     let wire = Wire::default();
-    // Synchronized, so every frame writes, and a refusing wire refuses it.
+    // Synchronized, so every frame writes.
     r.present_through(crate::tui::FrameOut::new(wire.clone(), true));
     r.screen = pixtuoid_scene::screen::Screen::on(screen.clock());
     (r, screen, wire)

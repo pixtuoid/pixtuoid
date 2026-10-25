@@ -63,9 +63,6 @@ struct Carried {
     write_ns: AtomicU64,
     #[cfg(test)]
     writes: AtomicU64,
-    /// Refuse the next write, as a full terminal does.
-    #[cfg(test)]
-    refuse: std::sync::atomic::AtomicBool,
 }
 
 /// A writer that discards what it is given, counting its bytes and timing each
@@ -89,12 +86,6 @@ impl Wire {
         )
     }
 
-    /// Refuse the next write with `WouldBlock`.
-    #[cfg(test)]
-    fn refuse_next(&self) {
-        self.0.refuse.store(true, Ordering::Relaxed);
-    }
-
     fn timed<T>(&self, f: impl FnOnce() -> T) -> T {
         let start = Instant::now();
         let out = f();
@@ -106,10 +97,6 @@ impl Wire {
 
 impl Write for Wire {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        #[cfg(test)]
-        if self.0.refuse.swap(false, Ordering::Relaxed) {
-            return Err(std::io::ErrorKind::WouldBlock.into());
-        }
         self.timed(|| {
             #[cfg(test)]
             self.0.writes.fetch_add(1, Ordering::Relaxed);
@@ -294,75 +281,6 @@ mod tests {
         let (bytes, _) = wire.take();
         assert!(bytes > 100_000, "a whole frame of tiles: {bytes}");
         assert_eq!(wire.take_writes(), 1);
-    }
-
-    /// A frame the terminal refused is dropped, though ratatui counts its
-    /// cells as shown: the next repaints every cell and every tile, at least
-    /// the first frame's bytes.
-    #[test]
-    fn a_frame_after_a_refused_one_is_whole() {
-        let pack =
-            std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("the pack"));
-        let (mut r, wire) = super::renderer(
-            Protocol::Kitty,
-            120,
-            40,
-            (8, 16),
-            vec![],
-            std::sync::Arc::clone(&pack),
-        )
-        .expect("a cutaway");
-        let scene = pixtuoid_core::SceneState::uniform(8);
-        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        wire.take();
-        r.render(&scene, &pack, now).expect("render");
-        let (first, _) = wire.take();
-        r.render(&scene, &pack, now).expect("render");
-        let (steady, _) = wire.take();
-        assert!(steady < first / 10, "nothing moved: {steady} of {first}");
-        wire.refuse_next();
-        r.render(&scene, &pack, now)
-            .expect("a full terminal is no error");
-        r.render(&scene, &pack, now).expect("render");
-        let (after, _) = wire.take();
-        assert!(
-            after >= first,
-            "{after} after a refused frame, {first} first"
-        );
-    }
-
-    /// A terminal that stays full warns once, not a line a frame.
-    #[test]
-    fn a_run_of_refused_frames_warns_once() {
-        let pack =
-            std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("the pack"));
-        let (mut r, wire) = super::renderer(
-            Protocol::Kitty,
-            120,
-            40,
-            (8, 16),
-            vec![],
-            std::sync::Arc::clone(&pack),
-        )
-        .expect("a cutaway");
-        let scene = pixtuoid_core::SceneState::uniform(8);
-        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let logged = crate::test_capture::capture(|| {
-            for _ in 0..3 {
-                wire.refuse_next();
-                r.render(&scene, &pack, now)
-                    .expect("a full terminal is no error");
-            }
-            r.render(&scene, &pack, now).expect("render");
-            wire.refuse_next();
-            r.render(&scene, &pack, now)
-                .expect("a full terminal is no error");
-        });
-        let warns = logged
-            .lines()
-            .filter(|l| l.contains("frame write failed") && l.contains(" WARN "))
-            .count();
-        assert_eq!(warns, 2, "one per run of refusals: {logged}");
     }
 
     /// The bench measures every protocol the cutaway speaks: a new

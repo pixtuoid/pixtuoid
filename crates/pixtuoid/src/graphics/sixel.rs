@@ -67,7 +67,7 @@ pub(crate) fn transmit(image: &TileImage, origin: Position) -> Vec<u8> {
         out.push(';');
         push_number(&mut out, usize::from(*b));
     }
-    let rows: Vec<&[usize]> = indices.chunks(width.max(1)).collect();
+    let rows: Vec<&[usize]> = indices.chunks(width).collect();
     // One pass a band sets every colour's sixels, as libsixel's encoder does
     // (`src/tosixel.c`, `sixel_encode_body`): testing each colour against
     // every pixel of the band costs as many passes as it has colours.
@@ -97,7 +97,7 @@ pub(crate) fn transmit(image: &TileImage, origin: Position) -> Vec<u8> {
                 sixels[m * width + x] |= 1 << y;
             }
         }
-        for (m, (&colour, line)) in colours.iter().zip(sixels.chunks(width.max(1))).enumerate() {
+        for (m, (&colour, line)) in colours.iter().zip(sixels.chunks(width)).enumerate() {
             slot[colour] = None;
             if m > 0 {
                 out.push('$');
@@ -358,7 +358,7 @@ mod tests {
         for (i, [r, g, b]) in palette.iter().enumerate() {
             let _ = write!(out, "#{i};2;{r};{g};{b}");
         }
-        let rows: Vec<&[usize]> = indices.chunks(width.max(1)).collect();
+        let rows: Vec<&[usize]> = indices.chunks(width).collect();
         for (n, band) in rows.chunks(BAND).enumerate() {
             if n > 0 {
                 out.push('-');

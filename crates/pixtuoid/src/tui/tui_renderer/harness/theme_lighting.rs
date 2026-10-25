@@ -212,41 +212,6 @@ fn a_slow_flushs_phase_holds_the_floor_from_when_it_lands() {
     assert_ne!(*r.frame_buffer(), before, "shown once it has");
 }
 
-/// A frame the terminal refuses (a full one's `WouldBlock`) never showed, so
-/// its phase holds the floor from the first frame of it that lands.
-#[test]
-fn a_refused_frames_phase_holds_the_floor_from_the_frame_that_lands() {
-    use crate::test_flash::storm_strike;
-    use std::sync::atomic::Ordering;
-    let floor = Duration::from_millis(pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS);
-    let strike = storm_strike();
-    let [first, second] = [strike.changes[0], strike.changes[1]];
-    let lands = second - floor * 3 / 4;
-    assert!(
-        lands > first,
-        "a frame of the phase lands after the refused one"
-    );
-    let (cols, rows) = crate::tui::renderer::min_terminal_size();
-    let (mut r, screen, wire) = half_blocks_on_screen(cols, rows);
-    r.set_weather(strike.weather);
-    r.set_motion(pixtuoid_scene::anim::Motion::Full);
-    let scene = scene_with(vec![idle("/s/0.jsonl", 0, t0())], 16);
-    let render = |r: &mut TuiRenderer<TestBackend>, at| {
-        screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
-    };
-    render(&mut r, first - 2 * floor);
-    wire.fail.store(true, Ordering::Relaxed);
-    render(&mut r, first);
-    wire.fail.store(false, Ordering::Relaxed);
-    render(&mut r, lands);
-    let landed = r.frame_buffer().clone();
-    render(&mut r, second);
-    assert_eq!(*r.frame_buffer(), landed, "held from the frame that landed");
-    render(&mut r, lands + floor);
-    assert_ne!(*r.frame_buffer(), landed, "shown once it has");
-}
-
 /// A slide cancelled before the next frame (a resize lands it) still reports
 /// what its last frame flashes, which its pixels still show: a starved tube's
 /// catch on the floor it leaves.
