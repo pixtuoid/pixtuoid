@@ -636,7 +636,7 @@ mod frame_out_tests {
     use super::{BEGIN_SYNC, END_SYNC, FrameOut};
     use std::io::Write;
 
-    /// A terminal that records each write it gets, and fails while `full`;
+    /// A terminal that records each write it gets, and fails once `gone`;
     /// clones share it.
     #[derive(Clone, Default)]
     struct Tty(std::sync::Arc<std::sync::Mutex<Seen>>);
@@ -646,7 +646,7 @@ mod frame_out_tests {
         writes: Vec<Vec<u8>>,
         /// Every write call, the failed ones too.
         attempts: usize,
-        full: bool,
+        gone: bool,
     }
 
     impl Tty {
@@ -659,8 +659,8 @@ mod frame_out_tests {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             let mut seen = self.seen();
             seen.attempts += 1;
-            if seen.full {
-                return Err(std::io::ErrorKind::WouldBlock.into());
+            if seen.gone {
+                return Err(std::io::ErrorKind::BrokenPipe.into());
             }
             seen.writes.push(buf.to_vec());
             Ok(buf.len())
@@ -690,7 +690,7 @@ mod frame_out_tests {
         )
         .expect("a fixed viewport needs no size query");
         term.hide_cursor().expect("hidden");
-        tty.seen().full = true;
+        tty.seen().gone = true;
 
         assert!(super::teardown_terminal(&mut term, Some(&out)).is_err());
         let attempts = tty.seen().attempts;
@@ -1248,7 +1248,7 @@ mod apply_key_action_tests {
     #[test]
     fn v_reopens_the_popup_with_the_notices_still_due() {
         let mut h = Harness::new();
-        h.ui = super::ui_state::UiState::upgraded_from("0.19.0", "0.20.0");
+        h.ui = super::ui_state::UiState::upgraded_from("0.19.0", &semver::Version::new(0, 20, 0));
         h.connected = crate::runtime::ConnectedSources::new(HashSet::from(["codex".to_string()]));
         h.installed = || vec!["codex", "reasonix"];
         assert!(!h.apply(KeyAction::OpenVersionPopup));

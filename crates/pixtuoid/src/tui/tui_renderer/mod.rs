@@ -732,9 +732,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             .map_or(Ok(()), crate::tui::FrameOut::present);
         let present = presenting.elapsed();
         presented?;
-        if let Some(cutaway) = &mut self.cutaway {
-            cutaway.landed();
-        }
         self.screen.landed();
         let note = drawn?;
         let send = self
@@ -918,7 +915,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let tooltip = mouse.and_then(|(mx, my, hit)| {
             pixtuoid_scene::tooltip::for_hit(hit, &world).map(|tip| (mx, my, tip))
         });
-        cutaway.before_flush(now);
+        cutaway.before_flush(now)?;
         let mut carves = Vec::new();
         self.terminal.draw(|f| {
             let full = f.area();
@@ -939,7 +936,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             paint_overlays(f, &overlays, now, full, theme);
             carves = cutaway.carve(f.buffer_mut(), scene_area);
         })?;
-        cutaway.after_flush(&carves, now);
+        cutaway.after_flush(&carves, now)?;
         self.chrome.popup.last_scale = popup_scale;
         Ok(drawn)
     }

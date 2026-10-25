@@ -508,3 +508,20 @@ fn a_scheduled_frame_shown_late_hitches() {
     assert!(late.contains("scheduled=1 "), "{late}");
     assert!(!late.contains("hitch_ms=0.0 "), "{late}");
 }
+
+/// A frame the terminal fails to take is the render's error, which ends the
+/// run, never a stale screen shown as drawn.
+#[test]
+fn a_failed_present_ends_the_render() {
+    let (cols, rows) = crate::tui::renderer::min_terminal_size();
+    let (mut r, _, wire) = half_blocks_on_screen(cols, rows);
+    let scene = scene_with(vec![idle("/sm/0.jsonl", 0, t0())], 16);
+    wire.fail.store(true, std::sync::atomic::Ordering::Relaxed);
+    let e = r
+        .render(&scene, pack(), t0())
+        .expect_err("the present failed");
+    assert_eq!(
+        e.downcast_ref::<std::io::Error>().map(std::io::Error::kind),
+        Some(std::io::ErrorKind::BrokenPipe)
+    );
+}
