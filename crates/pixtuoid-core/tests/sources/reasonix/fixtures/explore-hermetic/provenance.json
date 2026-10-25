@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "reasonix",
-  "version": "reasonix v2.50.0",
-  "captured": "2026-10-24",
+  "version": "reasonix v2.51.0",
+  "captured": "2026-10-25",
   "command": "just hermetic --record reasonix",
   "deidentified": {
     "method": "decoder-allowlist",
