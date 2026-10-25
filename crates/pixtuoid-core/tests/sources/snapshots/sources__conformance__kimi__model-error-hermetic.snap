@@ -3,15 +3,15 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 11158960856140424243
+    agent_id: 5160345468971280892
     source: kimi
-    session_id: session_b7d2b4c6-a0c4-4e1c-99f6-0d77a3631f6a
+    session_id: session_bec745f3-9f68-4686-8b9b-06e29863bcb4
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 11158960856140424243
+    agent_id: 5160345468971280892
     model: __kimi_env_model__
     effort: ~
 - ActivityEnd:
-    agent_id: 11158960856140424243
+    agent_id: 5160345468971280892
     tool_use_id: ~
