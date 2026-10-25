@@ -10,9 +10,6 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # Its own PR, so a red bump elsewhere in rust-deps never holds a lofi patch.
-      lofi:
-        patterns: ["pixtuoid-lofi"]
       rust-deps:
         patterns: ["*"]
     open-pull-requests-limit: 5
@@ -54,20 +51,8 @@ updates:
       - dependency-name: "winit"
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
-      # A lofi minor (0.y) is a breaking change
-      # (https://github.com/pixtuoid/lofi/blob/main/AGENTS.md#workflow),
-      # so it needs pixtuoid code or the owner's LISTEN and a person bumps it.
-      # Patches flow: lofi makes a changed dsp output a minor, so a patch is a
-      # lock-only bump.
-      - dependency-name: "pixtuoid-lofi"
-        update-types:
-          ["version-update:semver-minor", "version-update:semver-major"]
     cooldown:
       default-days: 7
-      # Our own crate: a lofi patch is reviewed in its repo before release
-      # (https://github.com/pixtuoid/lofi/blob/main/AGENTS.md#workflow), so the
-      # cooldown's quarantine buys nothing.
-      exclude: ["pixtuoid-lofi"]
 
   # rust-toolchain.toml's exact pin, so CodSpeed's base and head build on one
   # rustc and each release lands as its own PR; hawk and api-surface keep their
@@ -76,6 +61,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: github-actions
     # `directory: /` searches ONLY `.github/workflows` plus a root `action.yml`,
