@@ -3759,7 +3759,6 @@ mod tests {
             .step(
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
-                    pack: &pack,
                     now: std::time::SystemTime::UNIX_EPOCH,
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
@@ -3987,7 +3986,6 @@ mod tests {
             .step(
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
-                    pack: &pack,
                     now: std::time::SystemTime::UNIX_EPOCH,
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
@@ -4104,7 +4102,6 @@ mod tests {
             .step(
                 crate::floor::FloorInputs {
                     scene: &pixtuoid_core::SceneState::uniform(16),
-                    pack: &pack,
                     now: std::time::SystemTime::UNIX_EPOCH,
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),
@@ -4448,7 +4445,6 @@ mod tests {
                 .step(
                     crate::floor::FloorInputs {
                         scene: &pixtuoid_core::SceneState::uniform(16),
-                        pack: &pack,
                         now: std::time::SystemTime::UNIX_EPOCH,
                         floor: FloorMeta::ground(),
                         pets: crate::floor::PetInputs::default(),

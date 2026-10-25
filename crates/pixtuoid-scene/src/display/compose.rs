@@ -1215,9 +1215,8 @@ fn riders(
     inks: crate::effects::look::Inks,
 ) -> Vec<crate::display::effects::Riding> {
     let d = key.frame.density.get();
-    let Some(pen) = Pen::new(scale, key.frame.density) else {
-        return Vec::new();
-    };
+    let pen =
+        Pen::new(scale, key.frame.density).expect("`densest` picks a density dividing `scale`");
     // A dressed frame's head is its mark's column on its crest; the base
     // art's, the classic's crown point: its frame's top, centred.
     let head = match key.dress.as_ref() {

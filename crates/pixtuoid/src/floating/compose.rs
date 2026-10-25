@@ -728,7 +728,7 @@ mod tests {
             let mut renderer =
                 super::super::offscreen::OfficeRenderer::new(std::sync::Arc::clone(&pack));
             let office = renderer
-                .render(at, super::super::fixtures::frame(&scene, &pack, theme, now))
+                .render(at, super::super::fixtures::frame(&scene, theme, now))
                 .expect("a frame")
                 .clone();
             let cell = pixtuoid_scene::cutaway::Face::chrome(at);

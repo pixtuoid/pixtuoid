@@ -165,7 +165,6 @@ fn floor_frames<'a>(
             RenderInputs {
                 world: FloorInputs {
                     scene,
-                    pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -285,7 +284,6 @@ fn render_cutaway_frame(c: &mut Criterion) {
                     .step(
                         pixtuoid_scene::floor::FloorInputs {
                             scene: &scene,
-                            pack: &pack,
                             now,
                             floor: meta,
                             pets: pixtuoid_scene::floor::PetInputs::default(),

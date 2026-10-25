@@ -254,13 +254,8 @@ pub fn cutaway_office(
 }
 
 /// Warm `r`'s caches on `scene` at `now`, as the TUI does at boot.
-pub fn warm(
-    r: &mut TuiRenderer<PacedBackend>,
-    scene: &SceneState,
-    pack: &OfficeArt,
-    now: std::time::SystemTime,
-) {
-    r.warm(scene, pack, now);
+pub fn warm(r: &mut TuiRenderer<PacedBackend>, scene: &SceneState, now: std::time::SystemTime) {
+    r.warm(scene, now);
 }
 
 /// Paint and send `r`'s next frame whole.
@@ -278,19 +273,12 @@ mod tests {
     fn a_rendered_frame_is_one_write() {
         let pack =
             std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("the pack"));
-        let (mut r, wire) = super::renderer(
-            Protocol::Kitty,
-            120,
-            40,
-            (8, 16),
-            vec![],
-            std::sync::Arc::clone(&pack),
-        )
-        .expect("a cutaway");
+        let (mut r, wire) =
+            super::renderer(Protocol::Kitty, 120, 40, (8, 16), vec![], pack).expect("a cutaway");
         let scene = pixtuoid_core::SceneState::uniform(8);
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         wire.take_writes();
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("render");
         let (bytes, _) = wire.take();
         assert!(bytes > 100_000, "a whole frame of tiles: {bytes}");
         assert_eq!(wire.take_writes(), 1);
@@ -303,27 +291,19 @@ mod tests {
     fn a_frame_after_a_refused_one_is_whole() {
         let pack =
             std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("the pack"));
-        let (mut r, wire) = super::renderer(
-            Protocol::Kitty,
-            120,
-            40,
-            (8, 16),
-            vec![],
-            std::sync::Arc::clone(&pack),
-        )
-        .expect("a cutaway");
+        let (mut r, wire) =
+            super::renderer(Protocol::Kitty, 120, 40, (8, 16), vec![], pack).expect("a cutaway");
         let scene = pixtuoid_core::SceneState::uniform(8);
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         wire.take();
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("render");
         let (first, _) = wire.take();
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("render");
         let (steady, _) = wire.take();
         assert!(steady < first / 10, "nothing moved: {steady} of {first}");
         wire.refuse_next();
-        r.render(&scene, &pack, now)
-            .expect("a full terminal is no error");
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("a full terminal is no error");
+        r.render(&scene, now).expect("render");
         let (after, _) = wire.take();
         assert!(
             after >= first,
@@ -336,27 +316,18 @@ mod tests {
     fn a_run_of_refused_frames_warns_once() {
         let pack =
             std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("the pack"));
-        let (mut r, wire) = super::renderer(
-            Protocol::Kitty,
-            120,
-            40,
-            (8, 16),
-            vec![],
-            std::sync::Arc::clone(&pack),
-        )
-        .expect("a cutaway");
+        let (mut r, wire) =
+            super::renderer(Protocol::Kitty, 120, 40, (8, 16), vec![], pack).expect("a cutaway");
         let scene = pixtuoid_core::SceneState::uniform(8);
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let logged = crate::test_capture::capture(|| {
             for _ in 0..3 {
                 wire.refuse_next();
-                r.render(&scene, &pack, now)
-                    .expect("a full terminal is no error");
+                r.render(&scene, now).expect("a full terminal is no error");
             }
-            r.render(&scene, &pack, now).expect("render");
+            r.render(&scene, now).expect("render");
             wire.refuse_next();
-            r.render(&scene, &pack, now)
-                .expect("a full terminal is no error");
+            r.render(&scene, now).expect("a full terminal is no error");
         });
         let warns = logged
             .lines()

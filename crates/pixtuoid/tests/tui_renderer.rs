@@ -88,9 +88,8 @@ fn tui_renderer_render_paints_a_full_frame() {
             .collect(),
         pack(),
     );
-    let pack = pack();
 
-    renderer.render(&scene, &pack, now).expect("render");
+    renderer.render(&scene, now).expect("render");
 
     // The 96×(36-1) scene area (one row reserved for the footer), doubled vertically
     // via half-block ⇒ 96 × 70.
@@ -136,10 +135,9 @@ fn tui_renderer_transition_paints_pets_and_coffee() {
             .collect(),
         pack(),
     );
-    let pack = pack();
 
     // Initial render so the renderer grows its per-floor state to nf=2.
-    renderer.render(&scene, &pack, now).expect("initial render");
+    renderer.render(&scene, now).expect("initial render");
 
     renderer.set_active_pet(Some(pixtuoid::dev::PetState {
         petted_at: now,
@@ -154,9 +152,7 @@ fn tui_renderer_transition_paints_pets_and_coffee() {
     );
 
     let mid = now + Duration::from_millis(100);
-    renderer
-        .render(&scene, &pack, mid)
-        .expect("transition render");
+    renderer.render(&scene, mid).expect("transition render");
 
     assert!(
         renderer.transition().is_some(),
@@ -389,9 +385,8 @@ fn cancel_transition_lands_on_destination_floor() {
             .collect(),
         pack(),
     );
-    let pack = pack();
 
-    renderer.render(&scene, &pack, now).expect("initial render");
+    renderer.render(&scene, now).expect("initial render");
     assert_eq!(renderer.current_floor(), 0);
 
     renderer.navigate_floor(1, now);
@@ -429,7 +424,6 @@ fn make_renderer() -> TuiRenderer<TestBackend> {
 fn the_help_paints_only_while_open() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
     let scene = SceneState::uniform(8);
-    let pack = pack();
     let mut r = make_renderer();
     let help_painted = |r: &TuiRenderer<TestBackend>| {
         let text: String = r
@@ -447,12 +441,12 @@ fn the_help_paints_only_while_open() {
         ..Default::default()
     };
 
-    r.render(&scene, &pack, now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(!help_painted(&r));
     r.set_frames(help(true), now);
-    r.render(&scene, &pack, now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(help_painted(&r));
     r.set_frames(help(false), now);
-    r.render(&scene, &pack, now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(!help_painted(&r));
 }

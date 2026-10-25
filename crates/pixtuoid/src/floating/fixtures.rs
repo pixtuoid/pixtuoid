@@ -77,14 +77,12 @@ pub(super) fn scene_with(agents: Vec<pixtuoid_core::state::AgentSlot>, cap: usiz
 /// floor with no pet.
 pub(super) fn frame<'a>(
     scene: &'a SceneState,
-    pack: &'a pixtuoid_scene::pack::OfficeArt,
     theme: &'static pixtuoid_scene::theme::Theme,
     now: std::time::SystemTime,
 ) -> super::offscreen::WindowFrame<'a> {
     super::offscreen::WindowFrame {
         world: pixtuoid_scene::floor::FloorInputs {
             scene,
-            pack,
             now,
             floor: pixtuoid_scene::floor::FloorMeta::ground(),
             pets: pixtuoid_scene::floor::PetInputs::default(),

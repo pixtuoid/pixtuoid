@@ -5,7 +5,7 @@ use pixtuoid_scene::layout::{Point, WallSegment};
 fn footer_shows_floor_indicator_on_multi_floor() {
     let scene = two_floor_scene();
     let mut r = build(120, 40, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("1/2") || text.contains("F1"),
@@ -19,7 +19,7 @@ fn agent_label_painted_above_character() {
     s.label = "ZQXLBL".into();
     let scene = scene_with(vec![s], 16);
     let mut r = build(120, 44, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("ZQXLBL"),
@@ -32,11 +32,11 @@ fn hovered_agent_renders_stats_tooltip() {
     let a = AgentId::from_transcript_path("/pintip/0.jsonl");
     let scene = scene_with(vec![slot(a, 0, 0, t0() - Duration::from_secs(600))], 16);
     let mut r = build(120, 44, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let before = frame_text(r.frame_buffer());
     assert!(!before.contains("calls"));
     super::hover_agent(&mut r, a);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let after = frame_text(r.frame_buffer());
     assert!(
         after.contains("calls"),
@@ -50,9 +50,9 @@ fn hovered_dossier_shows_token_usage_only_when_nonzero() {
     let mut s = slot(a, 0, 0, t0() - Duration::from_secs(600));
     let scene = scene_with(vec![s.clone()], 16);
     let mut r = build(120, 44, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     super::hover_agent(&mut r, a);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let without = frame_text(r.frame_buffer());
     assert!(
         !without.contains("tok"),
@@ -61,7 +61,7 @@ fn hovered_dossier_shows_token_usage_only_when_nonzero() {
     s.tokens_used = 2_400_000;
     let scene = scene_with(vec![s], 16);
     super::hover_agent(&mut r, a);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let with = frame_text(r.frame_buffer());
     assert!(
         with.contains("Σ 2.4M tok"),
@@ -80,7 +80,7 @@ fn footer_shows_agent_count() {
         16,
     );
     let mut r = build(140, 44, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains(" 3 \u{b7} \u{25cf}1 A") && text.contains("\u{25cb}2 I"),
@@ -104,7 +104,7 @@ fn tool_glow_tint_differs_by_tool() {
             16,
         );
         let mut r = build(120, 44, vec![]);
-        r.render(&scene, pack(), t0()).unwrap();
+        r.render(&scene, t0()).unwrap();
         let desk = r.cached_layout().expect("layout").home_desks[0];
         (r.buf().expect("a frame").clone(), desk)
     };
@@ -135,7 +135,7 @@ fn weather_variants_render_without_panic_and_vary() {
     let mut sigs = std::collections::HashSet::new();
     for step in 0..120u64 {
         let now = t0() + Duration::from_secs(step * 600 + 12 * 3600);
-        r.render(&scene, pack(), now).unwrap();
+        r.render(&scene, now).unwrap();
         // Signature the top window strip (where weather effects paint).
         let buf = r.buf().expect("a frame");
         let mut s: u64 = 0;
@@ -171,7 +171,6 @@ fn region_text(buf: &ratatui::buffer::Buffer, cx: u16, cy: u16, cw: u16, ch: u16
 
 #[test]
 fn meeting_room_fills_and_hosts_group_chitchat() {
-    let pack = pack();
     let mut now = t0();
 
     let cap = 64;
@@ -186,7 +185,7 @@ fn meeting_room_fills_and_hosts_group_chitchat() {
     }
 
     let mut r = build(160, 56, vec![]);
-    r.render(&scene, pack, now).expect("render");
+    r.render(&scene, now).expect("render");
     let layout = r.cached_layout().expect("layout").clone();
     let mr = layout
         .meeting_room_bounds(0)
@@ -195,8 +194,7 @@ fn meeting_room_fills_and_hosts_group_chitchat() {
     // Empty-room pixel baseline (same furniture, no agents) so the region diff
     // isolates the characters.
     let mut r0 = build(160, 56, vec![]);
-    r0.render(&SceneState::uniform(cap), pack, now)
-        .expect("render");
+    r0.render(&SceneState::uniform(cap), now).expect("render");
     let baseline = r0.buf().expect("a frame").clone();
 
     // The layout must actually carry meeting slots (otherwise the test is
@@ -226,7 +224,7 @@ fn meeting_room_fills_and_hosts_group_chitchat() {
     let mut chat_iter: Option<usize> = None;
     for iter in 1..=BUDGET {
         now += Duration::from_millis(250);
-        r.render(&scene, pack, now).expect("render");
+        r.render(&scene, now).expect("render");
 
         if !saw_characters {
             let d = region_diff(
@@ -275,7 +273,7 @@ fn meeting_glass_partition_connects_at_window_and_corner() {
     // time-of-day dim / weather tint applied globally.
     let mut r = build(192, 80, vec![]);
     let scene = scene_with(vec![idle("/h/glass.jsonl", 0, t0())], 16);
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
 
     let layout = r.cached_layout().expect("layout").clone();
     let v_x = layout

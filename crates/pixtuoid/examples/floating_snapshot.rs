@@ -239,7 +239,6 @@ fn main() -> Result<()> {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -293,7 +292,6 @@ fn main() -> Result<()> {
     let cell = Face::chrome(at);
     let world = FloorInputs {
         scene: &scene,
-        pack: &pack,
         now,
         floor: FloorMeta::ground(),
         pets: PetInputs::default(),

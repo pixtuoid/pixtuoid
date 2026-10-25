@@ -29,7 +29,7 @@ pub struct OfficeRenderer {
 }
 
 impl OfficeRenderer {
-    /// A renderer drawing with `pack`, which every frame's `world.pack` must be.
+    /// A renderer drawing with `pack`.
     pub fn new(pack: std::sync::Arc<pixtuoid_scene::pack::OfficeArt>) -> Self {
         Self {
             session: OfficeSession::new(pack),
@@ -459,14 +459,13 @@ mod tests {
         );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
+        let mut renderer = OfficeRenderer::new(pack);
         let buf = renderer
             .render(
                 cutaway(Size { w: 160, h: 96 }),
                 WindowFrame {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -504,7 +503,7 @@ mod tests {
         let mut lit = |dim| -> u64 {
             let at = WindowFrame {
                 dim,
-                ..frame(&scene, crate::test_flash::pack(), theme, now)
+                ..frame(&scene, theme, now)
             };
             renderer
                 .render(cutaway(Size { w: 160, h: 96 }), at)
@@ -571,7 +570,6 @@ mod tests {
                 WindowFrame {
                     world: FloorInputs {
                         scene: &self.scene,
-                        pack: crate::test_flash::pack(),
                         now,
                         floor: self.floor,
                         pets: PetInputs::default(),
@@ -1105,13 +1103,12 @@ mod tests {
         );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
+        let mut renderer = OfficeRenderer::new(pack);
         renderer.render(
             cutaway(Size { w: 160, h: 96 }),
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -1147,7 +1144,7 @@ mod tests {
         );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
+        let mut renderer = OfficeRenderer::new(pack);
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
         renderer.render(
@@ -1155,7 +1152,6 @@ mod tests {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -1215,7 +1211,7 @@ mod tests {
         let mut idle = active_on("/w/wanderer.jsonl", 0, 0);
         idle.state = pixtuoid_core::state::ActivityState::Idle;
         let scene = scene_with(vec![idle], 16);
-        let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
+        let mut renderer = OfficeRenderer::new(pack);
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
         let mut heard = Vec::new();
@@ -1229,7 +1225,6 @@ mod tests {
                 WindowFrame {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -1267,7 +1262,7 @@ mod tests {
         );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let mut now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
+        let mut renderer = OfficeRenderer::new(pack);
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
 
@@ -1278,7 +1273,6 @@ mod tests {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -1298,7 +1292,6 @@ mod tests {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -1325,7 +1318,6 @@ mod tests {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -1431,11 +1423,7 @@ mod tests {
         let mut unpresented = OfficeRenderer::new(crate::test_flash::pack_arc());
         let scene = scene_with(vec![active_on("/p/a.jsonl", 0, 0)], 16);
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme");
-        assert!(unpresented.render_live(
-            at,
-            frame(&scene, crate::test_flash::pack(), theme, now),
-            size
-        ));
+        assert!(unpresented.render_live(at, frame(&scene, theme, now), size));
         let on_agent = agent_point(&rendered, at, now);
         let corner = (f64::from(size.0) - 1.0, f64::from(size.1) - 1.0);
         for mut renderer in [fresh, unpresented] {
@@ -1513,7 +1501,6 @@ mod tests {
             WindowFrame {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),

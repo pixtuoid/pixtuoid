@@ -574,11 +574,11 @@ fn a_person_from_a_faithful_variant_renders_as_their_upscaled_base() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &bundled,
                 now: now0 + std::time::Duration::from_millis(250),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &bundled,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -815,11 +815,11 @@ fn a_desk_variant_lands_where_the_base_does_and_draws_its_own_front() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &bundled,
                 now: now0 + std::time::Duration::from_secs(40),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &bundled,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -939,11 +939,11 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &bundled,
                         now: now0 + Duration::from_millis(100 * n),
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
                     },
+                    pack: &bundled,
                     layout: &layout,
                     coffee: &coffee,
                     door_anim_max_ms: 0,
@@ -962,11 +962,11 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
         SimInputs {
             world: FloorInputs {
                 scene: &SceneState::uniform(16),
-                pack: &bundled,
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &bundled,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -2680,11 +2680,11 @@ fn sim_step_keeps_the_sign_lit_through_a_gap_in_a_room_that_once_dimmed() {
                     SimInputs {
                         world: FloorInputs {
                             scene,
-                            pack: &pack,
                             now,
                             floor: crate::floor::FloorMeta::ground(),
                             pets: PetInputs::default(),
                         },
+                        pack: &pack,
                         layout: &layout,
                         coffee: &coffee,
                         door_anim_max_ms: 0,
@@ -2731,11 +2731,11 @@ fn seat_desk_is_set_exactly_when_the_sim_seats_someone_at_a_desk() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: now0 + Duration::from_millis(ms),
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -2795,11 +2795,11 @@ fn sim_step_decides_each_desks_props_from_its_occupant() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -2855,11 +2855,11 @@ fn sim_step_roams_the_pet_and_holds_a_petted_one_where_it_stands() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: now0,
                     floor,
                     pets,
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -3002,11 +3002,11 @@ fn sim_step_walks_a_mascot_in_for_each_gateway_present() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0 + Duration::from_secs(6),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -3044,11 +3044,11 @@ fn a_mascot_hovers_sized_by_its_frame() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,
@@ -3099,11 +3099,11 @@ fn sim_step_fits_every_mascot_frame_on_the_canvas() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: now0 + Duration::from_secs(s),
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -3146,11 +3146,11 @@ fn sim_step_advances_walks_without_painting() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0 + Duration::from_millis(50),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -3161,11 +3161,11 @@ fn sim_step_advances_walks_without_painting() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0 + Duration::from_millis(250),
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -3220,11 +3220,11 @@ fn a_waiting_agent_stays_seated_and_gets_its_bubble_whichever_way_the_desk_faces
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -3287,11 +3287,11 @@ fn the_hover_list_omits_the_undrawn_and_follows_sort_drawables() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,
@@ -3680,11 +3680,11 @@ fn each_mascot_hovers_as_its_own_instance() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,
@@ -3724,11 +3724,11 @@ fn paint_frame_is_pure_and_byte_identical() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -4257,11 +4257,11 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -4354,11 +4354,11 @@ fn no_two_agents_ever_occupy_the_same_exclusive_waypoint() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -4418,11 +4418,11 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -4485,11 +4485,11 @@ fn an_active_agent_releases_the_seat_it_snapped_back_from() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -4524,11 +4524,11 @@ fn an_active_agent_releases_the_seat_it_snapped_back_from() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &coffee,
             door_anim_max_ms: 0,
@@ -4608,11 +4608,11 @@ fn one_meeting_sofa_still_seats_three_agents_at_once() {
             SimInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: PetInputs::default(),
                 },
+                pack: &pack,
                 layout: &layout,
                 coffee: &coffee,
                 door_anim_max_ms: 0,
@@ -4668,11 +4668,11 @@ fn a_meeting_chair_sitter_is_drawn_on_the_seat_not_5px_high() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
                     },
+                    pack: &pack,
                     layout: &layout,
                     coffee: &coffee,
                     door_anim_max_ms: 0,
@@ -4817,7 +4817,6 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor,
                         pets: PetInputs {
@@ -4825,6 +4824,7 @@ fn a_roaming_creature_is_never_sliced_by_the_canvas_edge() {
                             petting: None,
                         },
                     },
+                    pack: &pack,
                     layout: &layout,
                     coffee: &HashMap::new(),
                     door_anim_max_ms: 0,
@@ -4979,11 +4979,11 @@ fn a_wandering_character_is_never_sliced_by_the_canvas_edge() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
                     },
+                    pack: &pack,
                     layout: &layout,
                     coffee: &coffee,
                     door_anim_max_ms: 0,
@@ -5026,11 +5026,11 @@ fn sim_and_paint(
         SimInputs {
             world: FloorInputs {
                 scene,
-                pack,
                 now,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack,
             layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,
@@ -5385,11 +5385,11 @@ fn a_badge_follows_its_sprite_fitted_to_the_canvas_rim() {
                 SimInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: crate::floor::FloorMeta::ground(),
                         pets: PetInputs::default(),
                     },
+                    pack: &pack,
                     layout: &layout,
                     coffee: &coffee,
                     door_anim_max_ms: 0,
@@ -5812,11 +5812,11 @@ fn the_outside_reaches_only_the_glass() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,
@@ -5953,11 +5953,11 @@ fn the_neon_halo_lifts_the_window_glass_it_falls_on() {
         SimInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0,
                 floor: crate::floor::FloorMeta::ground(),
                 pets: PetInputs::default(),
             },
+            pack: &pack,
             layout: &layout,
             coffee: &HashMap::new(),
             door_anim_max_ms: 0,

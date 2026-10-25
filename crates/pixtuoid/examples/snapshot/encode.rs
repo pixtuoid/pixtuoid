@@ -444,7 +444,7 @@ pub(crate) fn save_renderer_animation(
             for floor in due_navigations(navigations, &mut fired, elapsed_ms) {
                 r.navigate_floor(floor, now);
             }
-            r.render(job.scene, job.pack, now)
+            r.render(job.scene, now)
         },
         |r| r.terminal.backend().buffer(),
     )
@@ -468,15 +468,7 @@ pub(crate) fn save_animation(
         |term, now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
-                ..DrawCtx::offscreen(
-                    floor,
-                    office.stores(),
-                    job.theme,
-                    scene,
-                    job.pack,
-                    now,
-                    floor_meta,
-                )
+                ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
             };
             draw_scene(term, &mut draw_ctx).map(drop)
         },

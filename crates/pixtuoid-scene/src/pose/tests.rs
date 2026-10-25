@@ -1523,7 +1523,6 @@ fn exit_while_wandering_does_not_teleport_to_desk() {
 /// it through the floor's grip: the largest per-axis jump of its sprite
 /// between two painted frames, from its first.
 struct Hand {
-    pack: Arc<crate::pack::OfficeArt>,
     scene: pixtuoid_core::SceneState,
     id: AgentId,
     session: crate::floor::FloorSession,
@@ -1538,13 +1537,11 @@ struct Hand {
 
 impl Hand {
     fn new(slot: AgentSlot, now: SystemTime) -> Self {
-        let pack = Arc::new(crate::pack::test_office());
         let mut scene = pixtuoid_core::SceneState::uniform(4);
         let id = slot.agent_id;
         scene.agents.insert(id, slot);
         let mut hand = Self {
-            session: crate::floor::FloorSession::new(Arc::clone(&pack)),
-            pack,
+            session: crate::floor::FloorSession::new(Arc::new(crate::pack::test_office())),
             scene,
             id,
             now,
@@ -1579,7 +1576,6 @@ impl Hand {
             .step(
                 crate::floor::FloorInputs {
                     scene: &self.scene,
-                    pack: &self.pack,
                     now: self.now,
                     floor: crate::floor::FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default(),

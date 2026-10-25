@@ -26,7 +26,7 @@ fn dashboard_popup_renders_labels_states_and_live_tool() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("Agents ("), "header missing:\n{text}");
@@ -93,7 +93,7 @@ fn connection_panel_renders_both_facets_borderless() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("Sources"), "title missing:\n{text}");
@@ -145,7 +145,7 @@ fn connection_panel_health_flag_and_detail_preempt_the_install_path() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains('\u{26a0}'),
@@ -188,7 +188,7 @@ fn connection_panel_armed_shows_confirm_prompt() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("(y/n)"),
@@ -224,7 +224,7 @@ fn connection_panel_disconnected_selected_shows_connect_hint() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("press t to connect"),
@@ -263,7 +263,7 @@ fn connection_panel_no_cli_selected_shows_not_detected_hint() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("not detected on this machine"),
@@ -302,7 +302,7 @@ fn connection_panel_connected_without_config_path_shows_connected() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("connected"),
@@ -342,7 +342,7 @@ fn connection_panel_last_result_overrides_per_state_detail() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("X-RESULT-SENTINEL"),
@@ -369,7 +369,7 @@ fn connection_panel_empty_rows_renders_panel_with_blank_detail() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("Sources"), "title missing:\n{text}");
     assert!(text.contains("j/k move"), "footer missing:\n{text}");
@@ -418,7 +418,7 @@ fn dashboard_collapsed_big_tree_shows_badge_and_hides_children() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let text = frame_text(r.frame_buffer());
     assert!(text.contains("cc\u{b7}root"), "root row missing:\n{text}");
@@ -452,7 +452,7 @@ fn dashboard_closed_paints_no_popup() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let text = frame_text(r.frame_buffer());
     assert!(
@@ -573,7 +573,7 @@ fn dashboard_renders_waiting_reason_and_active_without_detail() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let popup = dash_popup(r.frame_buffer());
     assert!(
@@ -613,7 +613,7 @@ fn dashboard_scrolls_to_keep_a_deep_selection_visible() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let buf = r.frame_buffer();
     let text = frame_text(buf);
@@ -643,7 +643,7 @@ fn dashboard_empty_scene_shows_placeholder() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     assert!(
         frame_text(r.frame_buffer()).contains("No active agents"),
         "empty dashboard must show the placeholder"
@@ -682,7 +682,7 @@ fn a_short_terminal_windows_the_dashboard_below_its_row_cap() {
             },
             t0(),
         );
-        r.render(&scene, pack(), t0()).unwrap();
+        r.render(&scene, t0()).unwrap();
         // `dash_popup`, NOT `frame_text`: at a roomy height the OFFICE also renders
         // and paints agent name badges, which a whole-frame scan counts as rows.
         let text = dash_popup(r.frame_buffer());
@@ -735,7 +735,7 @@ fn dashboard_badge_text_present_for_cc_and_cx() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let popup = dash_popup(r.frame_buffer());
     assert!(popup.contains("[cc]"), "cc badge missing:\n{popup}");
@@ -766,7 +766,7 @@ fn dashboard_overflow_cue_appears_below_when_more_than_viewport() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let popup = dash_popup(r.frame_buffer());
     assert!(
@@ -798,7 +798,7 @@ fn dashboard_overflow_cue_absent_when_all_visible() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
 
     let popup = dash_popup(r.frame_buffer());
     assert!(
@@ -833,7 +833,7 @@ fn dashboard_overflow_cue_keeps_a_bottom_navigated_selection_visible() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let popup = dash_popup(r.frame_buffer());
     assert!(
         popup.contains("row20"),
@@ -872,7 +872,7 @@ fn dashboard_overflow_no_blank_line_when_selection_is_last_row() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let popup = dash_popup(r.frame_buffer());
     assert!(
         popup.contains("row16"),

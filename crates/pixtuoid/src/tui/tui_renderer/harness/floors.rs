@@ -2,7 +2,6 @@ use super::*;
 
 #[test]
 fn offscreen_floor_freezes_and_resyncs_on_return() {
-    let pack = pack_arc();
     let theme = pixtuoid_scene::theme::ALL_THEMES[0];
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
 
@@ -17,12 +16,12 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
     scene.agents.insert(b, slot(b, 1, cap, t0));
 
     let term = Terminal::new(TestBackend::new(100, 40)).expect("test backend");
-    let mut r = TuiRenderer::new(term, theme, vec![], Arc::clone(&pack));
+    let mut r = TuiRenderer::new(term, theme, vec![], pack_arc());
 
     // Warm up floor 0 so agent A's WalkState initialises and wanders.
     let mut now = t0;
     for _ in 0..10 {
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("render");
         now += Duration::from_millis(PAINT_FRAME_MS);
     }
     assert_eq!(r.current_floor(), 0);
@@ -32,7 +31,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
     );
 
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &scene, &pack, &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
 
     let frozen_at = r
         .floor_walks(0)
@@ -43,7 +42,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
     // ~30 s on floor 1.
     for _ in 0..900 {
         now += Duration::from_millis(PAINT_FRAME_MS);
-        r.render(&scene, &pack, now).expect("render");
+        r.render(&scene, now).expect("render");
     }
     let still_frozen = r
         .floor_walks(0)
@@ -57,7 +56,7 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
 
     let back_at = now;
     r.navigate_floor(0, now);
-    render_until_settled(&mut r, &scene, &pack, &mut now, 0);
+    render_until_settled(&mut r, &scene, &mut now, 0);
 
     let walk = r
         .floor_walks(0)
@@ -71,11 +70,10 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
 
 #[test]
 fn floor_transition_completes_and_lands() {
-    let p = pack();
     let scene = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
-    r.render(&scene, p, now).unwrap();
+    r.render(&scene, now).unwrap();
     assert_eq!(r.current_floor(), 0);
 
     r.navigate_floor(1, now);
@@ -85,7 +83,7 @@ fn floor_transition_completes_and_lands() {
     );
 
     now += Duration::from_millis(450);
-    r.render(&scene, p, now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_some(), "still transitioning mid-slide");
     assert!(
         r.cached_layout().is_none(),
@@ -93,7 +91,7 @@ fn floor_transition_completes_and_lands() {
     );
 
     now += Duration::from_millis(600); // past `FloorTransition::duration_ms`
-    r.render(&scene, p, now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_none(), "transition complete");
     assert_eq!(r.current_floor(), 1, "landed on the target floor");
     assert!(
@@ -120,7 +118,7 @@ fn navigation_blocked_during_active_transition() {
     );
     let mut r = build(100, 40, vec![]);
     let now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.navigate_floor(1, now);
     r.navigate_floor(2, now); // must be ignored — a transition is in flight
     assert_eq!(
@@ -137,13 +135,13 @@ fn transition_cancelled_when_target_floor_disappears() {
     let mut scene = scene_with(vec![idle("/c/0.jsonl", 0, t0()), f1.clone()], cap);
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.navigate_floor(1, now);
     assert!(r.transition().is_some());
 
     scene.agents.remove(&f1.agent_id);
     now += Duration::from_millis(100);
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(
         r.transition().is_none(),
         "transition to a vanished floor must cancel (no infinite slide)"
@@ -157,7 +155,7 @@ fn floor_buffers_grow_on_overflow() {
     let mut r = build(100, 40, vec![]);
     let now = t0();
     let one = scene_with(vec![idle("/g/0.jsonl", 0, t0())], cap);
-    r.render(&one, pack(), now).unwrap();
+    r.render(&one, now).unwrap();
     assert!(r.session.floor(1).is_none(), "only one floor allocated");
 
     let two = scene_with(
@@ -167,7 +165,7 @@ fn floor_buffers_grow_on_overflow() {
         ],
         cap,
     );
-    r.render(&two, pack(), now).unwrap();
+    r.render(&two, now).unwrap();
     assert!(
         r.session.floor(1).is_some(),
         "floor-1 state allocated after overflow"
@@ -179,10 +177,10 @@ fn per_floor_layout_seeds_differ() {
     let scene = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     let seed0 = r.current_floor_seed();
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &scene, pack(), &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
     assert_ne!(
         seed0,
         r.current_floor_seed(),
@@ -215,11 +213,11 @@ fn transition_at_narrow_terminal_paints_no_agents_no_panic() {
         pack_arc(),
     );
     let mut now = t0();
-    r.render(&scene, pack(), now).expect("render at 30 cols");
+    r.render(&scene, now).expect("render at 30 cols");
     r.navigate_floor(1, now);
     assert!(r.transition().is_some(), "navigation begins a transition");
     now += Duration::from_millis(PAINT_FRAME_MS);
-    r.render(&scene, pack(), now)
+    r.render(&scene, now)
         .expect("transition render at a narrow terminal must not panic");
     assert!(
         r.transition().is_some(),
@@ -253,7 +251,7 @@ fn footer_shows_source_death_warning() {
         ..Default::default()
     };
     r.set_frames(frames, t0());
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("source died") && text.contains("restart pixtuoid"),
@@ -261,7 +259,7 @@ fn footer_shows_source_death_warning() {
         text.lines().last().unwrap_or("")
     );
     r.set_frames(RenderFrames::default(), t0());
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         !text.contains("source died"),
@@ -274,7 +272,7 @@ fn source_death_warning_survives_floor_transition() {
     let scene = two_floor_scene();
     let mut r = build(120, 44, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
             source_warning: Some(
@@ -287,7 +285,7 @@ fn source_death_warning_survives_floor_transition() {
     );
     r.navigate_floor(1, now);
     now += Duration::from_millis(200); // mid-transition
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_some(), "still mid-transition");
     let text = frame_text(r.frame_buffer());
     assert!(
@@ -301,7 +299,7 @@ fn version_popup_active_during_floor_transition() {
     let scene = two_floor_scene();
     let mut r = build(120, 44, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
             version_popup: crate::panels::ui_state::VersionPopupFrame {
@@ -314,7 +312,7 @@ fn version_popup_active_during_floor_transition() {
     );
     r.navigate_floor(1, now);
     now += Duration::from_millis(200); // mid-transition
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_some(), "still mid-transition");
     assert!(
         r.last_popup_scale() > 0.0,
@@ -327,7 +325,7 @@ fn help_overlay_renders_during_floor_transition() {
     let scene = two_floor_scene();
     let mut r = build(120, 44, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
             help_open: true,
@@ -337,7 +335,7 @@ fn help_overlay_renders_during_floor_transition() {
     );
     r.navigate_floor(1, now);
     now += Duration::from_millis(200);
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_some());
     let text = frame_text(r.frame_buffer());
     assert!(
@@ -357,10 +355,9 @@ fn a_too_small_slide_footers_the_destination_floor() {
         cap,
     );
     let mut r = build(120, crate::tui::renderer::MIN_SCENE_HEIGHT, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     r.navigate_floor(1, t0());
-    r.render(&scene, pack(), t0() + Duration::from_millis(100))
-        .unwrap();
+    r.render(&scene, t0() + Duration::from_millis(100)).unwrap();
     let text = frame_text(r.frame_buffer());
     let footer = text.lines().last().expect("a footer row");
     assert!(
@@ -379,9 +376,9 @@ fn transition_on_too_small_terminal_clears_state_and_lands() {
     let scene = two_floor_scene();
     let mut r = build(18, 10, vec![PetKind::Cat]);
     let now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.navigate_floor(1, now);
-    r.render(&scene, pack(), now + Duration::from_millis(100))
+    r.render(&scene, now + Duration::from_millis(100))
         .expect("transition render on a tiny terminal must not panic");
     assert!(r.cached_layout().is_none());
     assert!(r.drawn_pet().is_none());
@@ -412,7 +409,7 @@ fn already_expired_active_pet_clears_on_render() {
         kind: PetKind::Cat,
         floor_idx: 0,
     }));
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     assert!(
         r.active_pet_ref().is_none(),
         "an already-expired pet state must be cleared on render"
@@ -425,12 +422,12 @@ fn current_floor_clamps_when_floor_count_drops() {
     let two = two_floor_scene();
     let mut r = build(100, 40, vec![]);
     let mut now = t0();
-    r.render(&two, pack(), now).unwrap();
+    r.render(&two, now).unwrap();
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &two, pack(), &mut now, 1);
+    render_until_settled(&mut r, &two, &mut now, 1);
     assert_eq!(r.current_floor(), 1);
     let one = scene_with(vec![idle("/clamp/0.jsonl", 0, t0())], cap);
-    r.render(&one, pack(), now).unwrap();
+    r.render(&one, now).unwrap();
     assert_eq!(
         r.current_floor(),
         0,
@@ -443,7 +440,7 @@ fn theme_picker_renders_during_floor_transition() {
     let scene = two_floor_scene();
     let mut r = build(140, 48, vec![]);
     let mut now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     r.set_frames(
         RenderFrames {
             theme_picker: Some(0),
@@ -453,7 +450,7 @@ fn theme_picker_renders_during_floor_transition() {
     );
     r.navigate_floor(1, now);
     now += Duration::from_millis(200);
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     assert!(r.transition().is_some(), "still mid-transition");
     let text = frame_text(r.frame_buffer());
     assert!(
@@ -467,7 +464,6 @@ fn theme_picker_renders_during_floor_transition() {
 /// on floor 0, so a board built from it would drop the `⬢gw` chip upstairs.
 #[test]
 fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
-    let pack = pack_arc();
     let theme = pixtuoid_scene::theme::ALL_THEMES[0];
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let cap = 16;
@@ -490,11 +486,11 @@ fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
     );
 
     let term = Terminal::new(TestBackend::new(120, 44)).expect("test backend");
-    let mut r = TuiRenderer::new(term, theme, vec![], Arc::clone(&pack));
+    let mut r = TuiRenderer::new(term, theme, vec![], pack_arc());
     let mut now = t0;
-    r.render(&scene, &pack, now).expect("render");
+    r.render(&scene, now).expect("render");
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &scene, &pack, &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
 
     // Above the footer row, which carries its own floor indicator.
     let text = frame_text(r.frame_buffer());

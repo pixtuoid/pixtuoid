@@ -259,7 +259,7 @@ fn run(
         wire.take();
         clock.take();
         let begun = Instant::now();
-        r.render(&scene, pack, now)?;
+        r.render(&scene, now)?;
         let total = begun.elapsed();
         let (bytes, write_ns) = wire.take();
         let spans = clock.take();
@@ -312,7 +312,7 @@ fn real_clock(
         if let Some(prev) = last.replace(begun) {
             intervals.push(begun - prev);
         }
-        r.render(&scene, pack, start + clock.elapsed())?;
+        r.render(&scene, start + clock.elapsed())?;
         renders.push(begun.elapsed());
         // The loop's own wait is crossterm's input poll; a CI runner has no
         // terminal to poll, so it sleeps.
@@ -724,7 +724,7 @@ fn hitch(path: &Path) -> Result<()> {
         let wall = Instant::now();
         let start = run.start.unwrap_or_else(SystemTime::now);
         let scene = office(start);
-        pixtuoid::dev::warm(&mut r, &scene, &pack, start);
+        pixtuoid::dev::warm(&mut r, &scene, start);
         let mut totals = Vec::new();
         let mut n = 0u64;
         let pace = if pixtuoid_core::platform::text_env("HITCH_HOT").is_some() {
@@ -749,7 +749,7 @@ fn hitch(path: &Path) -> Result<()> {
             wire.take();
             probe.take();
             let begun = Instant::now();
-            r.render(&scene, &pack, now)?;
+            r.render(&scene, now)?;
             let total = begun.elapsed();
             let (bytes, write_ns) = wire.take();
             let seen = probe.take();

@@ -516,7 +516,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     let term = setup_terminal(out.clone(), &arms)?;
     let quit = arms.signalled();
     tokio::pin!(quit);
-    let mut renderer = TuiRenderer::new(term, theme, pets, Arc::clone(&pack));
+    let mut renderer = TuiRenderer::new(term, theme, pets, pack);
     renderer.set_motion(motion);
     paint_plan(&mut renderer, plan, &out);
     renderer.present_through(out);
@@ -534,7 +534,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         connected: &connected.snapshot(),
         terminal_cutaway: matches!(plan, crate::graphics::Plan::Cutaway { .. }),
     });
-    renderer.warm(&scene_rx.borrow().clone(), &pack, ui.now());
+    renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
 
     let tick = frame_tick();
@@ -556,7 +556,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     let audio_now = std::time::Instant::now();
                     audio_ctl.tick(audio_now);
                     renderer.set_volume_flash(audio_ctl.volume_flash(audio_now));
-                    renderer.render(&snapshot, &pack, now)?;
+                    renderer.render(&snapshot, now)?;
 
                     if let Some(layout) = renderer.cached_layout() {
                         cap_sweep.publish(layout.buf_w, layout.buf_h, desk_cap, &floor_caps);
@@ -1050,11 +1050,10 @@ mod route_tests {
             Terminal::new(TestBackend::new(120, 60)).expect("test backend"),
             &theme::NORMAL,
             Vec::new(),
-            std::sync::Arc::clone(&pack),
+            pack,
         );
         r.render(
             &pixtuoid_core::state::SceneState::uniform(16),
-            &pack,
             SystemTime::UNIX_EPOCH,
         )
         .expect("a half-block frame");
@@ -1092,11 +1091,10 @@ mod route_tests {
             Terminal::new(TestBackend::new(120, 60)).expect("test backend"),
             &theme::NORMAL,
             Vec::new(),
-            std::sync::Arc::clone(&pack),
+            pack,
         );
         r.render(
             &pixtuoid_core::state::SceneState::uniform(16),
-            &pack,
             SystemTime::UNIX_EPOCH,
         )
         .expect("a half-block frame");

@@ -341,7 +341,6 @@ pub(crate) fn sit_down_as(
             .step(
                 crate::floor::FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: now0 + Duration::from_millis(100 * n),
                     floor: meta,
                     pets: crate::floor::PetInputs::default(),

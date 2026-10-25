@@ -39,7 +39,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::floor::FloorCtx
 pub struct pixtuoid_scene::floor::FloorInputs<'a>
 pub pixtuoid_scene::floor::FloorInputs::floor: pixtuoid_scene::floor::FloorMeta
 pub pixtuoid_scene::floor::FloorInputs::now: std::time::SystemTime
-pub pixtuoid_scene::floor::FloorInputs::pack: &'a pixtuoid_scene::pack::OfficeArt
 pub pixtuoid_scene::floor::FloorInputs::pets: pixtuoid_scene::floor::PetInputs<'a>
 pub pixtuoid_scene::floor::FloorInputs::scene: &'a pixtuoid_core::state::SceneState
 impl<'a> core::clone::Clone for pixtuoid_scene::floor::FloorInputs<'a>

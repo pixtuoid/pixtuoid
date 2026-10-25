@@ -71,11 +71,10 @@ fn settled_pixels(scene: &SceneState, cols: u16, rows: u16, now: SystemTime) -> 
     // would no longer be purely the agent's paint. Don't raise past ~150 frames.
     const SETTLE_FRAMES: usize = 30;
     const FRAME_STEP: Duration = Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
-    let pack = pack();
     let mut r = new_renderer(cols, rows);
     let mut t = now;
     for _ in 0..SETTLE_FRAMES {
-        r.render(scene, &pack, t).expect("render office");
+        r.render(scene, t).expect("render office");
         t += FRAME_STEP;
     }
     r.buf()
@@ -369,16 +368,11 @@ fn every_agent_source_renders_a_painted_sprite_from_real_wire() {
 /// drawable, so matching the authored carapace RGB would have to predict the
 /// wash — coupling a presence assertion to the lighting model and expecting a
 /// value the code under test computed.
-fn lobster_px(
-    r: &mut TuiRenderer<TestBackend>,
-    scene: &SceneState,
-    pack: &pixtuoid_scene::pack::OfficeArt,
-    times: &[SystemTime],
-) -> usize {
+fn lobster_px(r: &mut TuiRenderer<TestBackend>, scene: &SceneState, times: &[SystemTime]) -> usize {
     let baseline = SceneState::uniform(16);
     let settle = |r: &mut TuiRenderer<TestBackend>, s: &SceneState| {
         for &t in times {
-            r.render(s, pack, t).expect("render office");
+            r.render(s, t).expect("render office");
         }
     };
     settle(r, &baseline);
@@ -501,13 +495,12 @@ fn openclaw_presence_envelope_renders_a_lobster() {
 
     // `entered_at` == `now` means the lobster is mid walk-in; settle at a LATER
     // wall-clock so it's scuttling the floor, well past the elevator.
-    let pack = pack();
     let mut r = new_renderer(160, 80);
     let times: Vec<_> = (0..10)
         .map(|k| now + Duration::from_secs(20) + Duration::from_millis(k * 130))
         .collect();
     assert!(
-        lobster_px(&mut r, &scene, &pack, &times) > 10,
+        lobster_px(&mut r, &scene, &times) > 10,
         "a live OpenClaw gateway (from real presence wire bytes) must paint the lobster mascot"
     );
 }

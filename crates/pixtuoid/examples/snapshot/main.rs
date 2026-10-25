@@ -730,15 +730,7 @@ fn main() -> Result<()> {
         debug_walkable: args.debug_walkable,
         footer: pixtuoid::dev::footer_context(&scene, None, false, None, warning_text.as_deref()),
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
-        ..DrawCtx::offscreen(
-            &mut floor,
-            office.stores(),
-            theme,
-            &scene,
-            &pack,
-            now,
-            floor_meta,
-        )
+        ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
     };
     let drawn = draw_scene(&mut term, &mut draw_ctx)?;
 

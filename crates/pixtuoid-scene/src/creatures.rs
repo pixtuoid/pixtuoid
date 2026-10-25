@@ -974,17 +974,14 @@ mod tests {
     /// a time.
     struct Office {
         session: FloorSession,
-        pack: OfficeArt,
         size: Size,
         floor: FloorMeta,
     }
 
     impl Office {
         fn new(w: u16, h: u16) -> Self {
-            let pack = test_pack();
             Self {
-                session: FloorSession::new(std::sync::Arc::new(pack.clone())),
-                pack,
+                session: FloorSession::new(std::sync::Arc::new(test_pack())),
                 size: Size { w, h },
                 floor: FloorMeta::ground(),
             }
@@ -1001,7 +998,6 @@ mod tests {
                 .step(
                     FloorInputs {
                         scene,
-                        pack: &self.pack,
                         now: at(ms),
                         floor: self.floor,
                         pets: PetInputs { pet, petting },

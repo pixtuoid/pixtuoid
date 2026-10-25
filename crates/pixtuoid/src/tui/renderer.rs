@@ -53,14 +53,12 @@ impl<'a> DrawCtx<'a> {
         office: OfficeStores<'a>,
         theme: &'static pixtuoid_scene::theme::Theme,
         scene: &'a SceneState,
-        pack: &'a pixtuoid_scene::pack::OfficeArt,
         now: SystemTime,
         meta: pixtuoid_scene::floor::FloorMeta,
     ) -> Self {
         Self {
             world: FloorInputs {
                 scene,
-                pack,
                 now,
                 floor: meta,
                 pets: Default::default(),
@@ -428,15 +426,15 @@ mod tests {
                 current_pid: Some(1),
             },
         );
-        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("pack"));
-        let mut floor = pixtuoid_scene::floor::PerFloor::new(Arc::clone(&pack));
+        let mut floor = pixtuoid_scene::floor::PerFloor::new(Arc::new(
+            pixtuoid_scene::pack::load_bundled_pack().expect("pack"),
+        ));
         let mut office = pixtuoid_scene::floor::PerOffice::new();
         let ctx = DrawCtx::offscreen(
             &mut floor,
             office.stores(),
             &pixtuoid_scene::theme::NORMAL,
             &scene,
-            &pack,
             t0,
             pixtuoid_scene::floor::FloorMeta::ground(),
         );

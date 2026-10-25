@@ -42,11 +42,10 @@ fn office(t0: SystemTime) -> SceneState {
     scene
 }
 
-fn inputs<'a>(scene: &'a SceneState, pack: &'a OfficeArt, now: SystemTime) -> RenderInputs<'a> {
+fn inputs(scene: &SceneState, now: SystemTime) -> RenderInputs<'_> {
     RenderInputs {
         world: FloorInputs {
             scene,
-            pack,
             now,
             floor: FloorMeta::ground(),
             pets: PetInputs::default(),
@@ -63,10 +62,12 @@ fn inputs<'a>(scene: &'a SceneState, pack: &'a OfficeArt, now: SystemTime) -> Re
 /// stamped with the frame that saw it, and the door's clamp is the frame's own.
 #[test]
 fn the_entry_runs_the_epilogue_every_frame() {
-    let pack = Arc::new(crate::pack::test_office());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let (mut floor, mut office) = (
+        PerFloor::new(Arc::new(crate::pack::test_office())),
+        PerOffice::new(),
+    );
     let mut coffee_seen = false;
     let mut door_seen = false;
     for step in 0..1_200u64 {
@@ -76,7 +77,7 @@ fn the_entry_runs_the_epilogue_every_frame() {
             &mut floor,
             office.stores(),
             Look::Classic,
-            inputs(&scene, &pack, now),
+            inputs(&scene, now),
         )
         .expect("lays out");
         for (id, at) in office.coffee.map() {
@@ -110,10 +111,12 @@ fn the_entry_runs_the_epilogue_every_frame() {
 /// each look's raster, so switching back rebuilds nothing.
 #[test]
 fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
-    let pack = Arc::new(crate::pack::test_office());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let (mut floor, mut office) = (
+        PerFloor::new(Arc::new(crate::pack::test_office())),
+        PerOffice::new(),
+    );
     let scale = RenderScale::new(2).expect("nonzero");
     let cutaway = Look::Cutaway {
         scale,
@@ -124,7 +127,7 @@ fn a_floor_switching_looks_repaints_whole_and_keeps_each_raster() {
             floor,
             office.stores(),
             look,
-            inputs(&scene, &pack, t0 + Duration::from_millis(ms)),
+            inputs(&scene, t0 + Duration::from_millis(ms)),
         )
         .expect("lays out");
         let px = floor.raster.pixels().expect("drawn");
@@ -171,7 +174,7 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
             scale: RenderScale::new(4).expect("nonzero"),
             text,
         };
-        render(&mut floor, office.stores(), look, inputs(&scene, &pack, t0)).expect("lays out");
+        render(&mut floor, office.stores(), look, inputs(&scene, t0)).expect("lays out");
         let pixels = floor.raster.pixels().expect("drawn").clone();
         (floor, pixels)
     };
@@ -190,7 +193,7 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
         &mut classic,
         office.stores(),
         Look::Classic,
-        inputs(&scene, &pack, t0),
+        inputs(&scene, t0),
     )
     .expect("lays out");
     let classic = classic.raster.host_text().expect("shown");
@@ -207,21 +210,17 @@ fn a_cutaway_leaving_its_text_to_the_host_hands_over_the_classics() {
 /// sees sessions come and go holds none of the gone ones' art.
 #[test]
 fn the_cutaways_figures_leave_with_their_agents() {
-    let pack = Arc::new(crate::pack::test_office());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let (mut floor, mut office) = (
+        PerFloor::new(Arc::new(crate::pack::test_office())),
+        PerOffice::new(),
+    );
     let cutaway = Look::Cutaway {
         scale: RenderScale::new(4).expect("nonzero"),
         text: WorldText::Baked,
     };
-    render(
-        &mut floor,
-        office.stores(),
-        cutaway,
-        inputs(&scene, &pack, t0),
-    )
-    .expect("lays out");
+    render(&mut floor, office.stores(), cutaway, inputs(&scene, t0)).expect("lays out");
     assert!(
         office.raster.cutaway.figures_len() > 0,
         "premise: the frame drew its agents"
@@ -235,15 +234,17 @@ fn the_cutaways_figures_leave_with_their_agents() {
 #[test]
 fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
     use crate::display::TextRole;
-    let pack = Arc::new(crate::pack::test_office());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
+    let (mut floor, mut office) = (
+        PerFloor::new(Arc::new(crate::pack::test_office())),
+        PerOffice::new(),
+    );
     render(
         &mut floor,
         office.stores(),
         Look::Classic,
-        inputs(&scene, &pack, t0),
+        inputs(&scene, t0),
     )
     .expect("lays out");
     let text = floor.raster.host_text().expect("shown");
@@ -259,25 +260,11 @@ fn a_classic_frame_hands_over_its_badges_and_signs_apart() {
     );
     let refused = RenderInputs {
         size: Size { w: 1, h: 1 },
-        ..inputs(&scene, &pack, t0)
+        ..inputs(&scene, t0)
     };
     assert!(render(&mut floor, office.stores(), Look::Classic, refused).is_none());
     let text = floor.raster.host_text().expect("shown");
     assert!(text.badges.is_empty() && text.bubbles.is_empty() && text.signs.is_empty());
-}
-
-/// The sim and the raster draw one pack: a frame stepped with another is
-/// refused rather than drawn with art the sim never placed.
-#[test]
-fn a_frame_stepped_with_another_pack_is_refused() {
-    let pack = Arc::new(crate::pack::test_office());
-    let other = crate::pack::test_office();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    let scene = office(t0);
-    let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-    let stepped = |pack| inputs(&scene, pack, t0);
-    assert!(render(&mut floor, office.stores(), Look::Classic, stepped(&other)).is_none());
-    assert!(render(&mut floor, office.stores(), Look::Classic, stepped(&pack)).is_some());
 }
 
 /// A frame of another pack or theme empties the office's caches first, and

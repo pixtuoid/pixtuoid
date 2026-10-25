@@ -324,7 +324,7 @@ pub(crate) mod test_flash {
         pack_static()
     }
 
-    /// [`pack`], shared: a floor's raster draws the pack its frames step.
+    /// [`pack`], shared.
     pub(crate) fn pack_arc() -> Arc<OfficeArt> {
         Arc::clone(pack_static())
     }
@@ -345,7 +345,6 @@ pub(crate) mod test_flash {
             RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: pack(),
                     now: at,
                     floor,
                     pets: PetInputs::default(),

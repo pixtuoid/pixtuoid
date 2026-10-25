@@ -487,8 +487,8 @@ fn monitor_halos(layout: &SceneLayout, inputs: &LightInputs<'_>) -> Vec<Emitter>
         .filter_map(|agent| {
             let local = agent.desk_index.single_floor_local();
             let seated = inputs.seated.get(&local).copied().unwrap_or(false);
-            let tool = lit_screen(agent, layout.desk_facing(local), seated)?;
             let desk = layout.home_desk(local)?;
+            let tool = lit_screen(agent, layout.desk_facing(local), seated)?;
             Some(Emitter {
                 kind: EmitterKind::MonitorHalo(tool),
                 light: Light::Patch {

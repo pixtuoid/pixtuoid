@@ -280,6 +280,7 @@ impl SimFrame {
 /// What one `sim_step` reads, besides the stores it advances.
 pub(crate) struct SimInputs<'a> {
     pub(crate) world: FloorInputs<'a>,
+    pub(crate) pack: &'a OfficeArt,
     pub(crate) layout: &'a SceneLayout,
     /// Carrier → fetch time of each desk cup.
     pub(crate) coffee: &'a HashMap<AgentId, SystemTime>,
@@ -294,11 +295,11 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
         world:
             FloorInputs {
                 scene,
-                pack,
                 now,
                 floor,
                 pets,
             },
+        pack,
         layout,
         coffee,
         door_anim_max_ms,

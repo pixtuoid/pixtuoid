@@ -48,13 +48,12 @@ pub(super) fn slot(
 pub(super) fn render_until_settled<B: Backend<Error: Send + Sync + 'static>>(
     r: &mut TuiRenderer<B>,
     scene: &SceneState,
-    pack: &OfficeArt,
     now: &mut SystemTime,
     target_floor: usize,
 ) {
     for _ in 0..60 {
         *now += Duration::from_millis(PAINT_FRAME_MS);
-        r.render(scene, pack, *now).expect("render");
+        r.render(scene, *now).expect("render");
         if r.current_floor() == target_floor && r.transition().is_none() {
             return;
         }

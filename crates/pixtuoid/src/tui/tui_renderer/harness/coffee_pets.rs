@@ -7,11 +7,11 @@ fn coffee_state_evicted_when_agent_leaves_scene() {
     let mut r = build(100, 40, vec![]);
     r.inject_coffee(id, t0());
     r.evict_missing(&scene);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     assert!(r.coffee_contains(id));
     let empty = SceneState::uniform(16);
     r.evict_missing(&empty);
-    r.render(&empty, pack(), t0() + Duration::from_millis(PAINT_FRAME_MS))
+    r.render(&empty, t0() + Duration::from_millis(PAINT_FRAME_MS))
         .unwrap();
     assert!(
         !r.coffee_contains(id),
@@ -29,7 +29,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
     r.inject_coffee(a, t0());
     let mut now = t0();
     r.evict_missing(&scene);
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(r.coffee_contains(a), "cup staged");
 
     now += Duration::from_millis(PAINT_FRAME_MS);
@@ -37,7 +37,7 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
     let gone = scene_with(vec![slot(b, 1, cap, t0())], cap);
     now += Duration::from_millis(PAINT_FRAME_MS);
     r.evict_missing(&gone);
-    r.render(&gone, pack(), now).expect("render");
+    r.render(&gone, now).expect("render");
     assert!(r.transition().is_some(), "still mid-slide");
     assert!(
         !r.coffee_contains(a),
@@ -47,7 +47,6 @@ fn coffee_state_is_evicted_during_a_floor_transition() {
 
 #[test]
 fn coffee_persists_through_floor_transition() {
-    let p = pack();
     let step = Duration::from_millis(500);
     let cap = 16;
     // The pantry is 1 of ~10 wander waypoints, so many floor-0 agents reach it far
@@ -78,11 +77,11 @@ fn coffee_persists_through_floor_transition() {
     // floor-0 wanderer walking back from the pantry.
     let mut scratch = build(100, 40, vec![]);
     let mut now = t0();
-    scratch.render(&scene, p, now).unwrap();
+    scratch.render(&scene, now).unwrap();
     let mut hit = None;
     'outer: for _ in 0..400 {
         now += step;
-        scratch.render(&scene, p, now).unwrap();
+        scratch.render(&scene, now).unwrap();
         for &id in &f0_ids {
             if scratch.coffee_contains(id) {
                 hit = Some((id, now));
@@ -98,10 +97,10 @@ fn coffee_persists_through_floor_transition() {
     // else this timeline diverges from the scratch pass.
     let mut r = build(100, 40, vec![]);
     let mut t = t0();
-    r.render(&scene, p, t).unwrap();
+    r.render(&scene, t).unwrap();
     while t + step < detect_at {
         t += step;
-        r.render(&scene, p, t).unwrap();
+        r.render(&scene, t).unwrap();
     }
     assert!(
         !r.coffee_contains(agent),
@@ -109,7 +108,7 @@ fn coffee_persists_through_floor_transition() {
     );
     r.navigate_floor(1, t);
     assert!(r.transition().is_some(), "navigation begins a transition");
-    r.render(&scene, p, detect_at).unwrap();
+    r.render(&scene, detect_at).unwrap();
     assert!(
         r.coffee_contains(agent),
         "a coffee run completing mid-transition must persist (regression: \
@@ -129,15 +128,15 @@ fn injected_coffee_changes_desk_render() {
     let t1 = t0() + Duration::from_millis(PAINT_FRAME_MS);
 
     let mut base = build(100, 40, vec![]);
-    base.render(&scene, pack(), t0()).unwrap();
-    base.render(&scene, pack(), t1).unwrap();
+    base.render(&scene, t0()).unwrap();
+    base.render(&scene, t1).unwrap();
     let baseline = base.buf().expect("a frame").clone();
     let desk = base.cached_layout().expect("layout").home_desks[0];
 
     let mut r = build(100, 40, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     r.inject_coffee(id, t0()); // fresh fetch ⇒ within steam window
-    r.render(&scene, pack(), t1).unwrap();
+    r.render(&scene, t1).unwrap();
 
     let d = region_diff(
         &baseline,
@@ -157,7 +156,7 @@ fn injected_coffee_changes_desk_render() {
 fn no_pet_when_pets_disabled() {
     let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     assert!(r.drawn_pet().is_none(), "no pet when none enabled");
 }
 
@@ -165,7 +164,7 @@ fn no_pet_when_pets_disabled() {
 fn pet_present_when_enabled() {
     let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     assert!(r.drawn_pet().is_some(), "a cat should be placed");
 }
 
@@ -175,7 +174,7 @@ fn pet_position_varies_over_its_roam() {
     let mut r = build(100, 40, vec![PetKind::Cat]);
     let mut seen = std::collections::HashSet::new();
     for step in 0..(pixtuoid_scene::PET_LONGEST_REST_MS + 10_000) / 500 {
-        r.render(&scene, pack(), t0() + Duration::from_millis(step * 500))
+        r.render(&scene, t0() + Duration::from_millis(step * 500))
             .unwrap();
         if let Some(PetHover {
             centre: pos, anim, ..
@@ -195,7 +194,7 @@ fn pet_position_varies_over_its_roam() {
 fn petting_freezes_pet_position() {
     let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let PetHover {
         centre: pos, kind, ..
     } = r.drawn_pet().expect("pet placed");
@@ -204,8 +203,7 @@ fn petting_freezes_pet_position() {
         kind,
         floor_idx: 0,
     }));
-    r.render(&scene, pack(), t0() + Duration::from_millis(500))
-        .unwrap();
+    r.render(&scene, t0() + Duration::from_millis(500)).unwrap();
     let PetHover { centre: pos2, .. } = r.drawn_pet().expect("pet still placed");
     assert_eq!(pos, pos2, "a petted pet holds its position");
 }
@@ -217,8 +215,8 @@ fn pet_walk_is_frame_stable() {
     let mut r2 = build(160, 80, vec![PetKind::Cat]);
     for step in 0..(pixtuoid_scene::PET_LONGEST_REST_MS + 10_000) / 500 {
         let now = t0() + Duration::from_millis(step * 500);
-        r1.render(&scene, pack(), now).unwrap();
-        r2.render(&scene, pack(), now).unwrap();
+        r1.render(&scene, now).unwrap();
+        r2.render(&scene, now).unwrap();
         assert_eq!(
             r1.drawn_pet().map(|f| (f.centre.x, f.centre.y, f.anim)),
             r2.drawn_pet().map(|f| (f.centre.x, f.centre.y, f.anim)),
@@ -231,11 +229,11 @@ fn pet_walk_is_frame_stable() {
 fn pet_walks_routed_ground_and_rests_on_walkable_floor() {
     let scene = scene_with(vec![active("/pwalk/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(160, 80, vec![PetKind::Cat]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let layout = r.cached_layout().expect("layout after prime").clone();
     let (mut walking, mut resting) = (0, 0);
     for step in 0..3 * pixtuoid_scene::PET_LONGEST_REST_MS / 400 {
-        r.render(&scene, pack(), t0() + Duration::from_millis(step * 400))
+        r.render(&scene, t0() + Duration::from_millis(step * 400))
             .unwrap();
         let Some(PetHover {
             centre: pos, anim, ..
@@ -277,10 +275,10 @@ fn pet_leg_boundary_no_pop() {
     // is also the next leg's snapped walk-start anchor.
     let scene = scene_with(vec![active("/pbnd/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(160, 80, vec![PetKind::Cat]);
-    r.render(&scene, pack(), t0() + Duration::from_millis(39_600))
+    r.render(&scene, t0() + Duration::from_millis(39_600))
         .unwrap();
     let before = r.drawn_pet().map(|f| (f.centre.x, f.centre.y));
-    r.render(&scene, pack(), t0() + Duration::from_millis(40_040))
+    r.render(&scene, t0() + Duration::from_millis(40_040))
         .unwrap();
     let after = r.drawn_pet().map(|f| (f.centre.x, f.centre.y));
     if let (Some((x0, y0)), Some((x1, y1))) = (before, after) {
@@ -298,7 +296,7 @@ fn pet_tooltip_shows_cooldown_reaction_for_cat_and_dog() {
     for (kind, word) in [(PetKind::Cat, "purr"), (PetKind::Dog, "woof")] {
         let scene = scene_with(vec![active("/ck/0.jsonl", 0, "Edit", t0())], 16);
         let mut r = build(140, 48, vec![kind]);
-        r.render(&scene, pack(), t0()).unwrap();
+        r.render(&scene, t0()).unwrap();
         let PetHover { centre: pos, .. } = r.drawn_pet().expect("pet placed");
         r.set_active_pet(Some(PetState {
             petted_at: t0(),
@@ -306,8 +304,7 @@ fn pet_tooltip_shows_cooldown_reaction_for_cat_and_dog() {
             floor_idx: 0,
         }));
         r.set_mouse_pos(Some((pos.x, pos.y / 2)));
-        r.render(&scene, pack(), t0() + Duration::from_millis(200))
-            .unwrap();
+        r.render(&scene, t0() + Duration::from_millis(200)).unwrap();
         let text = frame_text(r.frame_buffer());
         assert!(
             text.contains(word),
@@ -327,7 +324,7 @@ fn pet_tooltip_shows_sleeping_when_all_idle() {
     let mut hit = None;
     for i in 0..40u64 {
         let now = t0() + Duration::from_secs(i);
-        r.render(&scene, pack(), now).unwrap();
+        r.render(&scene, now).unwrap();
         if let Some(PetHover {
             centre: pos, anim, ..
         }) = r.drawn_pet()
@@ -339,7 +336,7 @@ fn pet_tooltip_shows_sleeping_when_all_idle() {
     }
     let (pos, now) = hit.expect("a long-idle cat must enter its sleep anim within the window");
     r.set_mouse_pos(Some((pos.x, pos.y / 2)));
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("sleeping"),
@@ -351,7 +348,7 @@ fn pet_tooltip_shows_sleeping_when_all_idle() {
 fn furniture_tooltip_flips_below_near_top_edge() {
     let scene = scene_with(vec![idle("/flip/0.jsonl", 0, t0())], 16);
     let mut r = build(140, 48, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let layout = r.cached_layout().expect("layout");
     let mut top_hit = None;
     'scan: for my in 0..6u16 {
@@ -369,7 +366,7 @@ fn furniture_tooltip_flips_below_near_top_edge() {
     }
     let (mx, my) = top_hit.expect("some furniture must hover-test near the top edge");
     r.set_mouse_pos(Some((mx, my)));
-    r.render(&scene, pack(), t0())
+    r.render(&scene, t0())
         .expect("top-edge furniture hover must flip the tooltip below without panic");
 }
 
@@ -379,7 +376,7 @@ fn agent_tooltip_flips_up_near_bottom_edge() {
     // cursor and never takes the flip-up branch.
     let probe = SceneState::uniform(16);
     let mut r = build(120, 44, vec![]);
-    r.render(&probe, pack(), t0()).unwrap();
+    r.render(&probe, t0()).unwrap();
     let layout = r.cached_layout().expect("layout").clone();
     let bottom_idx = layout
         .home_desks
@@ -396,9 +393,9 @@ fn agent_tooltip_flips_up_near_bottom_edge() {
         )],
         16,
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let id = AgentId::from_transcript_path("/flup/0.jsonl");
     super::hover_agent(&mut r, id);
-    r.render(&scene, pack(), t0())
+    r.render(&scene, t0())
         .expect("bottom-edge hover must not panic");
 }

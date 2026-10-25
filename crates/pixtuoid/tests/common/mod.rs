@@ -15,7 +15,6 @@ macro_rules! make_draw_ctx {
             _office.stores(),
             &pixtuoid_scene::theme::NORMAL,
             $scene,
-            $pack,
             $now,
             pixtuoid_scene::floor::FloorMeta::ground(),
         );

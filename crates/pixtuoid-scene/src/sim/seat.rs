@@ -52,15 +52,10 @@ enum SeatKind {
 /// needs — sprite, flip, render top-left, sort row, sit-down glide — derives from
 /// these three, so a couch, a meeting chair and a home desk are one thing.
 ///
-/// Extend [`view`](Self::view) and [`sprite_for`](Self::sprite_for) to add a
-/// seatable furniture — both list their kinds EXPLICITLY, so a new
-/// `WaypointKind` is a compile error there. The GEOMETRY pair reads
-/// [`seated_furniture`](Self::seated_furniture) instead, which defaults a
-/// newcomer to the upright top-left and the feet's sort row without complaint. The net
-/// for THAT is `sit_arc_sort_row_is_stable_and_on_the_right_side_of_its_furniture`,
-/// a per-kind sort row oracle that stops on a kind it does not name — and it sees
-/// a newcomer only if the furniture is `occupies_pos` and the ONE layout it
-/// renders places it, not the whole sweep.
+/// Extend [`view`](Self::view), [`sprite_for`](Self::sprite_for) and
+/// [`seated_furniture`](Self::seated_furniture) to add a seatable furniture —
+/// each lists its kinds EXPLICITLY, so a new `WaypointKind` is a compile error
+/// there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Seat {
     kind: SeatKind,
@@ -115,12 +110,21 @@ impl Seat {
     /// sprite's bottom-row geometry.
     pub(crate) fn seated_furniture(self) -> bool {
         use crate::layout::WaypointKind;
-        matches!(
-            self.kind,
+        match self.kind {
             SeatKind::Waypoint(
-                WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair
-            )
-        )
+                WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair,
+            ) => true,
+            SeatKind::HomeDesk
+            | SeatKind::Waypoint(
+                WaypointKind::Pantry
+                | WaypointKind::PhoneBooth
+                | WaypointKind::StandingDesk
+                | WaypointKind::VendingMachine
+                | WaypointKind::Printer
+                | WaypointKind::Island
+                | WaypointKind::SnackShelf,
+            ) => false,
+        }
     }
 
     fn view(self) -> SeatView {

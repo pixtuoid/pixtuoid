@@ -555,7 +555,6 @@ fn transition_escapes_a_backward_clock_step() {
 /// One classic frame of `scene` at `now` through `session`'s entry.
 fn classic_frame(
     session: &mut FloorSession,
-    pack: &Arc<crate::pack::OfficeArt>,
     scene: &SceneState,
     now: SystemTime,
     floor: FloorMeta,
@@ -566,7 +565,6 @@ fn classic_frame(
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene,
-                pack,
                 now,
                 floor,
                 pets: PetInputs::default(),
@@ -597,7 +595,6 @@ fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
     let mut session = FloorSession::new(Arc::clone(&pack));
     classic_frame(
         &mut session,
-        &pack,
         &scene,
         now,
         FloorMeta::ground(),
@@ -615,7 +612,6 @@ fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
     let mut session2 = FloorSession::new(Arc::clone(&pack));
     classic_frame(
         &mut session2,
-        &pack,
         &plain,
         now,
         FloorMeta::ground(),
@@ -643,14 +639,12 @@ fn the_classic_paints_the_flame_crown_for_a_top_tier_agent() {
 
 #[test]
 fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
-    let pack = Arc::new(crate::pack::test_office());
     let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     let scene = SceneState::new([8; MAX_FLOORS]);
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
 
     let none = classic_frame(
         &mut session,
-        &pack,
         &scene,
         now,
         FloorMeta::ground(),
@@ -666,7 +660,6 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
 
     let layout = classic_frame(
         &mut session,
-        &pack,
         &scene,
         now,
         FloorMeta::ground(),
@@ -686,11 +679,10 @@ fn the_classic_paints_records_coffee_state_and_survives_a_tiny_buffer() {
 
 #[test]
 fn floor_session_render_owns_the_dual_eviction() {
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let gone = AgentId::from_parts("claude-code", "session-evict");
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     session
         .floor_mut()
         .ctx
@@ -704,7 +696,6 @@ fn floor_session_render_owns_the_dual_eviction() {
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -731,7 +722,6 @@ fn floor_session_render_owns_the_dual_eviction() {
 fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
     // `last_occupied` is the set the shared `AudioObserver` reads, so recording it
     // here is what lets a windowed painter avoid re-running the sim.
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let mut scene = make_scene(1, 8);
@@ -740,7 +730,7 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
         slot.state_started_at = now0;
         slot.last_event_at = now0;
     }
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     assert!(
         session.view.last_occupied.is_empty(),
         "empty before any render"
@@ -756,7 +746,6 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -797,7 +786,6 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
         crate::look::RenderInputs {
             world: FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: now0,
                 floor: FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -818,17 +806,15 @@ fn floor_session_render_surfaces_the_sims_occupied_waypoints() {
 
 #[test]
 fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(1, 8);
     let id = AgentId::from_transcript_path("/p/0.jsonl");
     let t = t0() + Duration::from_millis(100); // 100ms in: entry walk in flight
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
 
     let frame = session
         .step(
             crate::floor::FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: t,
                 floor: FloorMeta::ground(),
                 pets: crate::floor::PetInputs::default(),
@@ -859,7 +845,6 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
             .step(
                 crate::floor::FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: t,
                     floor: FloorMeta::ground(),
                     pets: crate::floor::PetInputs::default()
@@ -874,16 +859,14 @@ fn floor_session_step_advances_the_world_without_a_pixel_buffer() {
 /// `step` hands back the memoized layout itself, not an equal copy.
 #[test]
 fn step_hands_back_the_layout_the_sim_stepped_on() {
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(1, 8);
     let size = Size { w: 160, h: 96 };
     let meta = FloorMeta::ground();
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let stepped = session
         .step(
             crate::floor::FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: t0(),
                 floor: meta,
                 pets: crate::floor::PetInputs::default(),
@@ -915,9 +898,9 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
         &mut upstairs.ctx,
         &mut office.coffee,
         &mut office.chitchat,
+        &pack,
         crate::floor::FloorInputs {
             scene: &projected,
-            pack: &pack,
             now: t0(),
             floor: FloorMeta::for_floor(1, num_floors(&scene)),
             pets: crate::floor::PetInputs::default(),
@@ -1045,12 +1028,10 @@ fn the_foreground_layer_is_lit_by_the_clock() {
     // clock alone.
     let clear = crate::sky::WeatherPolicy::Forced(crate::sky::Weather::Clear);
     let render = |now: SystemTime| {
-        let pack = Arc::new(crate::pack::test_office());
         let scene = make_scene(6, 8);
-        let mut session = FloorSession::new(Arc::clone(&pack));
+        let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
         classic_frame(
             &mut session,
-            &pack,
             &scene,
             now,
             FloorMeta::ground().with_weather(clear),
@@ -1486,7 +1467,6 @@ fn the_classic_sees_the_skyline_from_its_floors_altitude() {
         let mut session = FloorSession::new(Arc::clone(&pack));
         classic_frame(
             &mut session,
-            &pack,
             &scene,
             now,
             floor_meta,
@@ -1571,7 +1551,7 @@ fn looks() -> [crate::look::Look; 2] {
 
 /// `session`'s pixels for `scene` on `floor` at `now`, in `look`.
 fn paint(
-    (session, pack): (&mut FloorSession, &Arc<OfficeArt>),
+    session: &mut FloorSession,
     look: crate::look::Look,
     scene: &SceneState,
     floor: FloorMeta,
@@ -1582,7 +1562,6 @@ fn paint(
     let inputs = crate::look::RenderInputs {
         world: FloorInputs {
             scene,
-            pack,
             now,
             floor,
             pets: PetInputs { pet, petting: None },
@@ -1616,7 +1595,7 @@ fn both_painters(
     let pack = Arc::new(crate::pack::test_office());
     let [classic, cutaway_px] = looks().map(|look| {
         let mut session = FloorSession::new(Arc::clone(&pack));
-        paint((&mut session, &pack), look, scene, floor, pet, now)
+        paint(&mut session, look, scene, floor, pet, now)
     });
     (classic, cutaway_px)
 }
@@ -1765,7 +1744,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
                 } else {
                     after
                 };
-                let px = paint((&mut session, &pack), look, scene, floor, pet, now);
+                let px = paint(&mut session, look, scene, floor, pet, now);
                 let beat = motion.timing(now).beat.ms();
                 if let Some((held_beat, held_px)) = &held
                     && *held_beat == beat
@@ -1875,10 +1854,9 @@ fn a_slides_footer_speaks_for_its_destination() {
 /// its own floor alone, and only while it lasts.
 #[test]
 fn a_petting_plays_only_on_its_own_floor() {
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(3, 2);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut office = OfficeSession::new(Arc::clone(&pack));
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     office.prepare(&scene, t0);
     let petting = crate::pet::PetState {
         petted_at: t0,
@@ -1888,7 +1866,6 @@ fn a_petting_plays_only_on_its_own_floor() {
     let pets = [crate::pet::Pet::defaulted(crate::pet::PetKind::Cat)];
     let world = |now| FloorInputs {
         scene: &scene,
-        pack: &pack,
         now,
         floor: FloorMeta::ground(),
         pets: PetInputs {
@@ -1947,18 +1924,16 @@ fn a_grip_stays_on_the_floor_it_lifted_on() {
 /// nothing, and lands on its destination.
 #[test]
 fn an_office_session_shows_each_floor_and_slides_between_them() {
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let scene = make_scene(3, 2);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut office = OfficeSession::new(Arc::clone(&pack));
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, now| {
         office.render(
             crate::look::Look::Classic,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2033,7 +2008,6 @@ fn a_cutaway_slide_bakes_its_floors_text() {
                 crate::look::RenderInputs {
                     world: FloorInputs {
                         scene: &scene,
-                        pack: &pack,
                         now,
                         floor: FloorMeta::ground(),
                         pets: PetInputs::default(),
@@ -2083,7 +2057,6 @@ fn a_cutaway_slide_bakes_its_floors_text() {
 #[test]
 fn a_slides_gap_dims_with_its_floors() {
     use crate::look::{Dim, Look};
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let scene = make_scene(3, 2);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -2093,14 +2066,13 @@ fn a_slides_gap_dims_with_its_floors() {
         b: u8::MAX,
     };
     let dim = Dim::from_brightness(0.4);
-    let mut office = OfficeSession::new(Arc::clone(&pack));
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, now| {
         office.render(
             Look::Classic,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2132,7 +2104,6 @@ fn a_slides_gap_dims_with_its_floors() {
 /// nothing and the audio hears no one at the floor's waypoints.
 #[test]
 fn a_frame_without_the_office_forgets_the_last() {
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let mut scene = make_scene(1, 8);
@@ -2141,7 +2112,7 @@ fn a_frame_without_the_office_forgets_the_last() {
         slot.state_started_at = now0;
         slot.last_event_at = now0;
     }
-    let mut office = OfficeSession::new(Arc::clone(&pack));
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     // A BUDGET for the wander to bring someone to a waypoint, not part of
     // the assertion.
     let occupied = (0..600u64).any(|step| {
@@ -2150,7 +2121,6 @@ fn a_frame_without_the_office_forgets_the_last() {
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: now0 + Duration::from_secs(3 * step),
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2189,17 +2159,15 @@ fn a_frame_without_the_office_forgets_the_last() {
 /// breadcrumb follow the live scene, not the views kept.
 #[test]
 fn an_office_session_follows_its_floors_down() {
-    let pack = Arc::new(crate::pack::test_office());
     let theme = crate::theme::theme_by_name("normal").expect("normal theme exists");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut office = OfficeSession::new(Arc::clone(&pack));
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
     let render = |office: &mut OfficeSession, scene: &SceneState| {
         office.render(
             crate::look::Look::Classic,
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene,
-                    pack: &pack,
                     now: t0,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2233,18 +2201,16 @@ fn a_lifted_agent_hangs_from_the_pointer_and_walks_home_when_set_down() {
     use crate::interact::{Figure, Gesture};
     use crate::layout::Point;
     use crate::pose::Pose;
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(1, 4);
     let id = *scene.agents.keys().next().expect("one agent");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let size = Size { w: 160, h: 96 };
     let step = |session: &mut FloorSession, now| {
         session
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2333,7 +2299,6 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: t0 + Duration::from_millis(ms),
                     floor: FloorMeta::ground(),
                     pets: PetInputs {
@@ -2392,7 +2357,6 @@ fn a_lifted_agent_reserves_no_cell() {
     use crate::interact::{Figure, Gesture};
     use crate::layout::Point;
     use crate::pose::Pose;
-    let pack = Arc::new(crate::pack::test_office());
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let size = Size { w: 160, h: 96 };
     let layout = crate::layout::SceneLayout::compute_with_seed(
@@ -2422,13 +2386,12 @@ fn a_lifted_agent_reserves_no_cell() {
         })
         .expect("a timeline stands someone at a waypoint");
     scene.agents.retain(|&a, _| a == id);
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let step = |session: &mut FloorSession, now| {
         session
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs::default(),
@@ -2502,7 +2465,6 @@ fn a_lifted_creature_is_in_front_of_the_room() {
             crate::look::RenderInputs {
                 world: FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs {
@@ -2605,7 +2567,6 @@ fn a_creature_not_in_hand_sorts_on_its_frames_south_row() {
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now: t0 + FRAME * paint,
                     floor: FloorMeta::ground(),
                     pets: PetInputs {
@@ -2642,7 +2603,6 @@ fn a_creature_not_in_hand_sorts_on_its_frames_south_row() {
 /// or walking out.
 #[test]
 fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
-    let pack = Arc::new(crate::pack::test_office());
     let mut scene = make_scene(3, 4);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut slots = scene.agents.values_mut();
@@ -2650,12 +2610,11 @@ fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
     seated.created_at = t0 - Duration::from_secs(120);
     let leaving = slots.next().expect("three agents");
     leaving.exiting_at = Some(t0);
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let stepped = session
         .step(
             FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now: t0 + FRAME,
                 floor: FloorMeta::ground(),
                 pets: PetInputs::default(),
@@ -2679,20 +2638,18 @@ fn every_drawn_agent_has_a_walk_a_lift_lands_on() {
 fn a_pet_flicked_within_one_paint_lands_at_the_drop() {
     use crate::interact::{Figure, Gesture};
     use crate::layout::Point;
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(1, 4);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let cat = crate::pet::Pet {
         kind: crate::pet::PetKind::Cat,
         name: "Mochi".into(),
     };
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let pet_at = |session: &mut FloorSession, now| {
         session
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs {
@@ -2727,21 +2684,19 @@ fn a_pet_flicked_within_one_paint_lands_at_the_drop() {
 fn a_lifted_pet_rests_where_it_is_set_down() {
     use crate::interact::{Figure, Gesture};
     use crate::layout::Point;
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(1, 4);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let cat = crate::pet::Pet {
         kind: crate::pet::PetKind::Cat,
         name: "Mochi".into(),
     };
-    let mut session = FloorSession::new(Arc::clone(&pack));
+    let mut session = FloorSession::new(Arc::new(crate::pack::test_office()));
     let size = Size { w: 160, h: 96 };
     let pet_at = |session: &mut FloorSession, now| {
         let stepped = session
             .step(
                 FloorInputs {
                     scene: &scene,
-                    pack: &pack,
                     now,
                     floor: FloorMeta::ground(),
                     pets: PetInputs {

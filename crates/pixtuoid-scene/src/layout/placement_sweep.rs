@@ -883,19 +883,6 @@ fn wander_legs(l: &SceneLayout) -> Vec<WanderLeg> {
     legs
 }
 
-/// Nothing in the type system pins `desk_facings` parallel to `home_desks`; a short one
-/// makes the tail desks silently fall back to `South`, passing every geometry invariant.
-fn assert_every_desk_has_a_facing(w: u16, h: u16, seed: u64, l: &SceneLayout) {
-    assert_eq!(
-        l.desk_facings.len(),
-        l.home_desks.len(),
-        "{w}x{h} seed {seed}: {} desks but {} facings — the tail would silently \
-         fall back to South",
-        l.home_desks.len(),
-        l.desk_facings.len()
-    );
-}
-
 /// The COARSE twin of [`assert_walkable_connected`]: that one is a 4-connected
 /// PIXEL flood, but the router runs on the 4×4 grid, so a ≤3px channel is
 /// pixel-connected and coarse-IMPASSABLE — `desk_approach_cell` then returns its
@@ -933,12 +920,6 @@ fn assert_home_desk_approaches_are_routable(w: u16, h: u16, seed: u64, l: &Scene
 fn every_home_desk_approach_is_routable_from_the_door() {
     sweep(assert_home_desk_approaches_are_routable);
     sweep_production_floors(assert_home_desk_approaches_are_routable);
-}
-
-#[test]
-fn every_desk_has_a_facing() {
-    sweep(assert_every_desk_has_a_facing);
-    sweep_production_floors(assert_every_desk_has_a_facing);
 }
 
 /// A back-turned desk exists only to face a viewer-facing one across the pod's inner

@@ -40,8 +40,6 @@ struct PopupState {
 #[derive(Debug)]
 pub struct TuiRenderer<B: Backend<Error: Send + Sync + 'static>> {
     pub terminal: Terminal<B>,
-    /// The pack every floor's raster draws with, which each frame's must be.
-    pack: Arc<OfficeArt>,
     /// The frames' times and janks.
     jank: crate::jank::Jank,
     /// What holds each frame's output and presents it whole; `None` writes
@@ -135,12 +133,11 @@ impl Chrome {
         &'a self,
         session: &OfficeSession,
         floor_scene: &'a SceneState,
-        pack: &'a OfficeArt,
         now: SystemTime,
         floor: usize,
     ) -> FloorInputs<'a> {
         session.floor_world(
-            self.office_world(floor_scene, pack, now),
+            self.office_world(floor_scene, now),
             floor_scene,
             floor,
             &self.pets,
@@ -150,15 +147,9 @@ impl Chrome {
     /// The office's inputs over `scene`, as [`OfficeSession::render`] takes
     /// them: its weather and motion, and the petting the session keeps to
     /// its own floor.
-    fn office_world<'a>(
-        &'a self,
-        scene: &'a SceneState,
-        pack: &'a OfficeArt,
-        now: SystemTime,
-    ) -> FloorInputs<'a> {
+    fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
         FloorInputs {
             scene,
-            pack,
             now,
             floor: FloorMeta::ground()
                 .with_weather(self.weather)
@@ -196,8 +187,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     ) -> Self {
         Self {
             terminal,
-            session: OfficeSession::new(Arc::clone(&pack)),
-            pack,
+            session: OfficeSession::new(pack),
             jank: crate::jank::Jank::new(),
             frame_out: None,
             redraw_owed: false,
@@ -243,7 +233,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// Draw the first frame of `scene` unseen, in the look the first frame
     /// shown will take, so the caches it fills (the cloud rasters above all)
     /// are warm when it is shown; what it shows is unchanged.
-    pub(crate) fn warm(&mut self, scene: &SceneState, pack: &OfficeArt, now: SystemTime) {
+    pub(crate) fn warm(&mut self, scene: &SceneState, now: SystemTime) {
         let Ok(size) = self.terminal.size() else {
             return;
         };
@@ -256,7 +246,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let classic = (Look::Classic, Size { w: buf_w, h: buf_h });
         let look = self.cutaway_look(scene_area).unwrap_or(classic);
         self.session.office_mut().raster.warm();
-        let _ = self.render_office(scene, pack, now, look.0, look.1, false);
+        let _ = self.render_office(scene, now, look.0, look.1, false);
     }
 
     /// One frame of `scene` drawn through the session in `look` at `size`:
@@ -265,7 +255,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     fn render_office(
         &mut self,
         scene: &SceneState,
-        pack: &OfficeArt,
         now: SystemTime,
         look: Look,
         size: Size,
@@ -274,7 +263,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let frame = self.session.render(
             look,
             RenderInputs {
-                world: self.chrome.office_world(scene, pack, now),
+                world: self.chrome.office_world(scene, now),
                 theme: self.chrome.theme,
                 size,
                 place: Place {
@@ -698,7 +687,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             now,
         );
         if !stepped {
-            let office_floor = self.chrome.office_world(scene, &self.pack, now).floor;
+            let office_floor = self.chrome.office_world(scene, now).floor;
             let audio = self.session.drew_no_office(scene, office_floor, now);
             self.chrome.audio.frame(audio);
         }
@@ -725,7 +714,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     /// If querying the terminal size, drawing the frame to the backend, or
     /// writing the held frame fails; a full terminal (`WouldBlock`) drops the
     /// frame instead.
-    pub fn render(&mut self, scene: &SceneState, pack: &OfficeArt, now: SystemTime) -> Result<()> {
+    pub fn render(&mut self, scene: &SceneState, now: SystemTime) -> Result<()> {
         let begun = std::time::Instant::now();
         if let Some(out) = &self.frame_out {
             out.begin();
@@ -735,7 +724,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         } else {
             Ok(())
         };
-        let drawn = redrawn.and_then(|()| self.draw_frame(scene, pack, now));
+        let drawn = redrawn.and_then(|()| self.draw_frame(scene, now));
         self.follow_resize();
         // Presented even when the draw failed, so nothing stays held.
         let presenting = std::time::Instant::now();
@@ -786,12 +775,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
     }
 
     /// One frame of `scene`, whichever path draws it: what it was drawn under.
-    fn draw_frame(
-        &mut self,
-        scene: &SceneState,
-        pack: &OfficeArt,
-        now: SystemTime,
-    ) -> Result<Option<FrameNote>> {
+    fn draw_frame(&mut self, scene: &SceneState, now: SystemTime) -> Result<Option<FrameNote>> {
         if self
             .chrome
             .active_pet
@@ -814,7 +798,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
                 .and_then(crate::graphics::CellSize::of_window);
             let drawn = cutaway
                 .fit_to(scene_area, window)
-                .map(|fitted| self.render_cutaway(&mut cutaway, fitted, scene, pack, now));
+                .map(|fitted| self.render_cutaway(&mut cutaway, fitted, scene, now));
             self.cutaway = Some(cutaway);
             if let Some(drawn) = drawn {
                 return drawn;
@@ -830,7 +814,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
             crate::tui::renderer::scene_buf_size(full_rect.width, full_rect.height);
         let drawn = self.render_office(
             scene,
-            pack,
             now,
             Look::Classic,
             Size { w: buf_w, h: buf_h },
@@ -854,9 +837,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         );
         let popup_scale = self.version_popup_scale(now);
         let mouse_pos = self.tooltip_pos();
-        let world = self
-            .chrome
-            .world(&self.session, &floor_scene, pack, now, current);
+        let world = self.chrome.world(&self.session, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());
@@ -896,7 +877,6 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         cutaway: &mut crate::tui::cutaway::TileCutaway,
         fitted: crate::tui::cutaway::Fitted,
         scene: &SceneState,
-        pack: &OfficeArt,
         now: SystemTime,
     ) -> Result<Option<FrameNote>> {
         use crate::panels::paint_overlays;
@@ -907,8 +887,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         if crate::tui::renderer::scene_too_small(fitted.scene) {
             return self.draw_too_small(scene, now, false);
         }
-        let drawn =
-            self.render_office(scene, pack, now, fitted.look(), fitted.fit.logical(), false);
+        let drawn = self.render_office(scene, now, fitted.look(), fitted.fit.logical(), false);
         let Some(picture) = self.session.picture() else {
             return self.draw_too_small(scene, now, true);
         };
@@ -923,9 +902,7 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         let popup_scale = self.version_popup_scale(now);
         let theme = self.chrome.theme;
         let mouse_pos = self.tooltip_pos();
-        let world = self
-            .chrome
-            .world(&self.session, &floor_scene, pack, now, current);
+        let world = self.chrome.world(&self.session, &floor_scene, now, current);
         let overlays = self
             .chrome
             .overlays(popup_scale, self.offers_walkable_debug());

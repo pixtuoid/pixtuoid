@@ -121,7 +121,6 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
         .step(
             pixtuoid_scene::floor::FloorInputs {
                 scene: &driven.scene,
-                pack,
                 now: now(),
                 floor: FloorMeta::ground(),
                 pets: pixtuoid_scene::floor::PetInputs::default(),

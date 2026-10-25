@@ -187,7 +187,6 @@ fn main() -> Result<()> {
         RenderInputs {
             world: pixtuoid_scene::floor::FloorInputs {
                 scene: &scene,
-                pack: &pack,
                 now,
                 floor: meta,
                 pets: pixtuoid_scene::floor::PetInputs::default(),

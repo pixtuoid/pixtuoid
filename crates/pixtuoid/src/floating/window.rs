@@ -433,7 +433,6 @@ impl FloatingApp {
         let now = self.ui.now();
         let world = FloorInputs {
             scene: &scene,
-            pack: &self.pack,
             now,
             floor: floor_meta,
             pets: PetInputs {

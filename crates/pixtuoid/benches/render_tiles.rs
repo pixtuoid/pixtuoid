@@ -35,14 +35,14 @@ fn whole_frame(c: &mut Criterion) {
             Arc::clone(&pack),
         )
         .expect("a 16x cutaway");
-        warm(&mut r, &scene, &pack, now);
+        warm(&mut r, &scene, now);
         let mut later = false;
         group.bench_function(format!("{}_whole_frame_16x", protocol.name()), |b| {
             b.iter(|| {
                 forget_frame(&mut r);
                 later = !later;
                 let at = if later { now + APART } else { now };
-                r.render(&scene, &pack, at).expect("render");
+                r.render(&scene, at).expect("render");
             });
         });
     }

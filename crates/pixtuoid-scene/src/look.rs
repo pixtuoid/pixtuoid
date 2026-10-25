@@ -224,7 +224,7 @@ impl OfficeRaster {
 /// forth never rebuilds it.
 #[derive(Debug)]
 pub struct Raster {
-    // The pack the cutaway draws; the sim's (`FloorInputs::pack`) must be it.
+    /// The pack this floor is stepped and drawn with.
     pack: Arc<OfficeArt>,
     classic: Option<Classic>,
     cutaway: Option<CutawayCanvas>,
@@ -483,6 +483,10 @@ impl Raster {
         self.note
     }
 
+    pub(crate) fn pack(&self) -> &OfficeArt {
+        &self.pack
+    }
+
     /// The pixels of the last frame drawn, `None` before the first.
     pub fn pixels(&self) -> Option<&RgbBuffer> {
         match self.shown? {
@@ -493,8 +497,7 @@ impl Raster {
 }
 
 /// Step `floor` one frame and draw it in `look` on its raster: the one frame
-/// entry every painter calls. `None` when `inputs.size` can't lay out, or when
-/// `world.pack` is not the one `floor` was made with.
+/// entry every painter calls. `None` when `inputs.size` can't lay out.
 pub fn render(
     floor: &mut PerFloor,
     office: OfficeStores<'_>,
@@ -502,6 +505,7 @@ pub fn render(
     inputs: RenderInputs<'_>,
 ) -> Option<Rendered> {
     let PerFloor { ctx, raster } = floor;
+    let pack = Arc::clone(&raster.pack);
     let RenderInputs {
         world,
         theme,
@@ -510,13 +514,9 @@ pub fn render(
         debug_walkable,
         dim,
     } = inputs;
-    if !std::ptr::eq(world.pack, &*raster.pack) {
-        tracing::error!("frame refused: the sim steps one pack and the raster draws another");
-        return None;
-    }
-    office.raster.serve(&raster.pack, theme);
+    office.raster.serve(&pack, theme);
     let stepped = tracing::trace_span!(spans::COMPOSE)
-        .in_scope(|| step_floor(ctx, office.coffee, office.chitchat, world, size));
+        .in_scope(|| step_floor(ctx, office.coffee, office.chitchat, &pack, world, size));
     let Some(stepped) = stepped else {
         if look == Look::Classic {
             let classic = raster.classic();
@@ -558,7 +558,7 @@ pub fn render(
                 .buf
                 .resize_fill(size.w, size.h, theme.surface.bg_fallback);
             let mut paint = PaintCtx::classic(
-                world,
+                (world, &pack),
                 &stepped.layout,
                 theme,
                 (&mut classic.caches, &mut office.raster.outside),
@@ -578,7 +578,7 @@ pub fn render(
         Look::Cutaway { scale, text } => {
             let canvas = raster
                 .cutaway
-                .get_or_insert_with(|| CutawayCanvas::new(Arc::clone(&raster.pack)));
+                .get_or_insert_with(|| CutawayCanvas::new(Arc::clone(&pack)));
             let CanvasFrame {
                 dirty,
                 flash,

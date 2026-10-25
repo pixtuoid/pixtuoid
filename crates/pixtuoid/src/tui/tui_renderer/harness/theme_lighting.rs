@@ -5,10 +5,10 @@ fn theme_switch_recolors_floor() {
     let scene = scene_with(vec![idle("/t/0.jsonl", 0, t0())], 16);
     let mut r = build(100, 40, vec![]);
     let now = t0();
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     let before = r.buf().expect("a frame").clone();
     r.set_theme(dark_theme());
-    r.render(&scene, pack(), now).unwrap();
+    r.render(&scene, now).unwrap();
     let d = region_diff(
         &before,
         r.buf().expect("a frame"),
@@ -33,12 +33,12 @@ fn theme_switch_paints_as_a_fresh_renderer_would() {
     let scene = scene_with(vec![active("/t/fresh.jsonl", 0, "Edit x", started)], 16);
     let now = t0();
     let mut switched = build(100, 40, vec![]);
-    switched.render(&scene, pack(), now).unwrap();
+    switched.render(&scene, now).unwrap();
     switched.set_theme(dark_theme());
-    switched.render(&scene, pack(), now).unwrap();
+    switched.render(&scene, now).unwrap();
     let mut fresh = build(100, 40, vec![]);
     fresh.set_theme(dark_theme());
-    fresh.render(&scene, pack(), now).unwrap();
+    fresh.render(&scene, now).unwrap();
     assert_eq!(
         switched.buf().expect("a frame").as_slice(),
         fresh.buf().expect("a frame").as_slice(),
@@ -57,7 +57,7 @@ fn occupied_floor_stays_lit() {
         t0(),
         t0() + Duration::from_millis(VacancyDim::EMPTY_DEBOUNCE_MS),
     ] {
-        r.render(&scene, pack(), now).unwrap();
+        r.render(&scene, now).unwrap();
     }
     assert_eq!(
         r.session.floor(0).expect("a floor").ctx.vacancy_dim.level(),
@@ -82,13 +82,13 @@ fn each_strike_phase_holds_the_floor_on_screen_in_half_blocks() {
         let scene = scene_with(vec![idle("/s/0.jsonl", 0, t0())], 16);
         let now = strike.start - lead(frame) + offset;
         screen.at(now);
-        r.render(&scene, pack(), now).expect("render");
+        r.render(&scene, now).expect("render");
         let cells = crate::tui::renderer::scene_rect(r.frame_buffer().area);
         let mut shown = r.frame_buffer().clone();
         let mut changed = Vec::new();
         for now in crate::test_flash::frames_after(now, frame, strike.end + lead(frame)) {
             screen.at(now);
-            r.render(&scene, pack(), now).expect("render");
+            r.render(&scene, now).expect("render");
             let differ = cells
                 .positions()
                 .filter(|&p| r.frame_buffer()[p] != shown[p])
@@ -122,16 +122,16 @@ fn a_held_frame_leaves_the_terminal_and_its_hit_targets_alone() {
         }
         for at in [dark, late] {
             screen.at(at);
-            r.render(&scene, pack(), at).expect("render");
+            r.render(&scene, at).expect("render");
         }
         let before = r.frame_buffer().clone();
         let layout = r.cached_layout().map(|l| l as *const SceneLayout);
         screen.at(held);
-        r.render(&scene, pack(), held).expect("render");
+        r.render(&scene, held).expect("render");
         assert_eq!(*r.frame_buffer(), before, "sliding {sliding}: held");
         assert_eq!(r.cached_layout().map(|l| l as *const SceneLayout), layout);
         screen.at(shown);
-        r.render(&scene, pack(), shown).expect("render");
+        r.render(&scene, shown).expect("render");
         assert_ne!(*r.frame_buffer(), before, "sliding {sliding}: shown");
         assert_eq!(r.transition().is_some(), sliding);
     }
@@ -155,7 +155,7 @@ fn a_resized_terminal_is_never_held_in_half_blocks() {
         }
         for at in [dark, late] {
             screen.at(at);
-            r.render(&scene, pack(), at).expect("render");
+            r.render(&scene, at).expect("render");
         }
         let resized = ratatui::layout::Rect::new(0, 0, cols + 8, rows + 4);
         r.terminal
@@ -164,7 +164,7 @@ fn a_resized_terminal_is_never_held_in_half_blocks() {
         let mut stale = r.frame_buffer().clone();
         stale.resize(resized);
         screen.at(held);
-        r.render(&scene, pack(), held).expect("render");
+        r.render(&scene, held).expect("render");
         assert_eq!(r.frame_buffer().area, resized);
         assert_ne!(*r.frame_buffer(), stale, "sliding {sliding}: drawn");
     }
@@ -185,13 +185,13 @@ fn a_slow_flushs_phase_holds_the_floor_from_when_it_lands() {
     r.set_motion(pixtuoid_scene::anim::Motion::Full);
     let scene = scene_with(vec![idle("/s/0.jsonl", 0, t0())], 16);
     screen.at(first - 2 * floor);
-    r.render(&scene, pack(), first - 2 * floor).expect("render");
+    r.render(&scene, first - 2 * floor).expect("render");
     *wire.slow.lock().expect("lock") = Some(Latency {
         screen: screen.clone(),
         by: SLOW,
     });
     screen.at(first);
-    r.render(&scene, pack(), first).expect("render");
+    r.render(&scene, first).expect("render");
     let landed = screen.now();
     *wire.slow.lock().expect("lock") = None;
     let before = r.frame_buffer().clone();
@@ -200,7 +200,7 @@ fn a_slow_flushs_phase_holds_the_floor_from_when_it_lands() {
         "the frame clock says the floor has passed"
     );
     screen.at(second);
-    r.render(&scene, pack(), second).expect("render");
+    r.render(&scene, second).expect("render");
     assert_eq!(
         *r.frame_buffer(),
         before,
@@ -208,7 +208,7 @@ fn a_slow_flushs_phase_holds_the_floor_from_when_it_lands() {
     );
     let shown = std::time::UNIX_EPOCH + landed + floor;
     screen.at(shown);
-    r.render(&scene, pack(), shown).expect("render");
+    r.render(&scene, shown).expect("render");
     assert_ne!(*r.frame_buffer(), before, "shown once it has");
 }
 
@@ -233,7 +233,7 @@ fn a_refused_frames_phase_holds_the_floor_from_the_frame_that_lands() {
     let scene = scene_with(vec![idle("/s/0.jsonl", 0, t0())], 16);
     let render = |r: &mut TuiRenderer<TestBackend>, at| {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     };
     render(&mut r, first - 2 * floor);
     wire.fail.store(true, Ordering::Relaxed);
@@ -267,11 +267,11 @@ fn a_cancelled_slide_reports_what_its_last_frame_flashes() {
     let before = catch - Duration::from_millis(pixtuoid_scene::anim::FULL_TICK_MS);
     for at in stutter.setup.into_iter().chain([before]) {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     r.navigate_floor(1, before);
     screen.at(catch);
-    r.render(&scene, pack(), catch).expect("render");
+    r.render(&scene, catch).expect("render");
     let flashes = |r: &TuiRenderer<_>| r.session.picture().map(|p| p.flashes()).unwrap_or_default();
     let caught = flashes(&r);
     assert_ne!(
@@ -298,16 +298,16 @@ fn a_pause_inside_a_hold_never_wedges_the_half_blocks() {
     let scene = scene_with(vec![idle("/s/0.jsonl", 0, t0())], 16);
     for at in [dark, late] {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     let before = r.frame_buffer().clone();
     screen.at(paused);
-    r.render(&scene, pack(), paused).expect("render");
+    r.render(&scene, paused).expect("render");
     assert_eq!(*r.frame_buffer(), before, "held");
     r.set_theme(dark_theme());
     screen.at(late);
     screen.advance(floor);
-    r.render(&scene, pack(), paused).expect("render");
+    r.render(&scene, paused).expect("render");
     assert_ne!(
         *r.frame_buffer(),
         before,
@@ -333,7 +333,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_in_half_blocks() {
         r.set_motion(pixtuoid_scene::anim::Motion::Full);
         for at in stutter.setup {
             screen.at(at);
-            r.render(&scene, pack(), at).expect("render");
+            r.render(&scene, at).expect("render");
         }
         let cells = crate::tui::renderer::scene_rect(r.frame_buffer().area);
         let tube: Vec<ratatui::layout::Position> = cells
@@ -345,12 +345,12 @@ fn each_stutter_phase_holds_the_floor_on_screen_in_half_blocks() {
         };
         let now = stutter.start - lead(frame) + offset;
         screen.at(now);
-        r.render(&scene, pack(), now).expect("render");
+        r.render(&scene, now).expect("render");
         let mut shown = snapshot(&r);
         let mut changed = Vec::new();
         for now in crate::test_flash::frames_after(now, frame, stutter.end + lead(frame)) {
             screen.at(now);
-            r.render(&scene, pack(), now).expect("render");
+            r.render(&scene, now).expect("render");
             let shot = snapshot(&r);
             if shot != shown {
                 changed.push(now);
@@ -373,7 +373,7 @@ fn theme_picker_renders_theme_names() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
         text.contains("cyberpunk") || text.contains("normal"),
@@ -385,7 +385,7 @@ fn theme_picker_renders_theme_names() {
 fn version_popup_paints_when_open() {
     let scene = scene_with(vec![idle("/vp/0.jsonl", 0, t0())], 16);
     let mut r = build(140, 48, vec![]);
-    r.render(&scene, pack(), t0()).unwrap();
+    r.render(&scene, t0()).unwrap();
     let baseline = r.buf().expect("a frame").clone();
     // Render past the 200ms entrance animation so the popup is at full scale.
     r.set_frames(
@@ -399,7 +399,7 @@ fn version_popup_paints_when_open() {
         t0(),
     );
     let t1 = t0() + Duration::from_millis(250);
-    r.render(&scene, pack(), t1).unwrap();
+    r.render(&scene, t1).unwrap();
     assert!(
         r.last_popup_scale() > 0.9,
         "popup should be near full scale"

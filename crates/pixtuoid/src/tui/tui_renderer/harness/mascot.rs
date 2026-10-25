@@ -95,8 +95,8 @@ impl Probe {
         baseline: &SceneState,
         now: SystemTime,
     ) -> std::collections::BTreeSet<(u16, u16)> {
-        self.base.render(baseline, pack(), now).unwrap();
-        self.r.render(scene, pack(), now).unwrap();
+        self.base.render(baseline, now).unwrap();
+        self.r.render(scene, now).unwrap();
         let (base, buf) = (
             self.base.buf().expect("a frame"),
             self.r.buf().expect("a frame"),
@@ -197,7 +197,7 @@ fn the_port_suffix_names_a_gateway_only_when_it_has_a_sibling() {
         // pixel.
         for &(x, y) in cells.iter().step_by(5) {
             p.r.set_mouse_pos(Some((x, CellArea::row_of(y))));
-            p.r.render(&scene, pack(), t0()).unwrap();
+            p.r.render(&scene, t0()).unwrap();
             let text = frame_text(p.r.frame_buffer());
             if text.contains("gateway") {
                 out.push(text);
@@ -245,7 +245,7 @@ fn the_port_suffix_names_a_gateway_only_when_it_has_a_sibling() {
     assert!(!cells.is_empty(), "openclaw still paints its lobster");
     for &(x, y) in cells.iter().step_by(5) {
         p.r.set_mouse_pos(Some((x, CellArea::row_of(y))));
-        p.r.render(&mixed, pack(), t0()).unwrap();
+        p.r.render(&mixed, t0()).unwrap();
         let text = frame_text(p.r.frame_buffer());
         if text.contains("gateway") {
             assert!(
@@ -448,7 +448,7 @@ fn gateway_mascot_tooltip_on_hover() {
     );
     // vec![] = no pet, so the pet hover arm is skipped and the mascot arm runs.
     let mut p = Probe::new();
-    p.r.render(&scene, pack(), t0()).unwrap();
+    p.r.render(&scene, t0()).unwrap();
 
     assert!(
         !frame_text(p.r.frame_buffer()).contains("gateway"),
@@ -461,7 +461,7 @@ fn gateway_mascot_tooltip_on_hover() {
     // The hover is the painted frame, which tolerates the approximate
     // center.
     p.r.set_mouse_pos(Some((cx, CellArea::row_of(cy_px))));
-    p.r.render(&scene, pack(), t0()).unwrap();
+    p.r.render(&scene, t0()).unwrap();
 
     // The literal "gateway" is exclusive to the mascot arm — pet/coffee/furniture
     // tooltips never say it — so it distinguishes the branch from the fallthroughs.

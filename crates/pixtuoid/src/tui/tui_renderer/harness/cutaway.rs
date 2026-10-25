@@ -204,9 +204,9 @@ fn sixel_cells(wire: &str) -> std::collections::BTreeSet<(u16, u16)> {
 fn the_first_frame_transmits_and_an_identical_one_sends_nothing() {
     let (mut r, wire) = kitty(120, 40);
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(wire.take().contains(TRANSMIT));
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert_eq!(wire.take(), "");
 }
 
@@ -223,7 +223,7 @@ fn the_onboarding_dims_the_cutaway_and_sends_its_tiles() {
         let frame = picture.pixels();
         avg_lum(frame, 0, 0, frame.width(), frame.height())
     };
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     let bright = lum(&r);
     let bright_cells = r.frame_buffer().clone();
     wire.take();
@@ -238,7 +238,7 @@ fn the_onboarding_dims_the_cutaway_and_sends_its_tiles() {
         },
         t0(),
     );
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     let dim = lum(&r);
     assert!(dim < bright * 0.6, "dim={dim} vs bright={bright}");
     assert!(wire.take().contains(TRANSMIT), "the dimmed tiles are sent");
@@ -255,7 +255,7 @@ fn the_onboarding_dims_the_cutaway_and_sends_its_tiles() {
 fn a_whole_frame_transmits_every_tile_once_in_order() {
     let (mut r, wire) = kitty(120, 40);
     r.cutaway.as_mut().expect("a cutaway").split_across(4);
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     let ids: Vec<u32> = wire
         .take()
         .split(TRANSMIT)
@@ -283,10 +283,10 @@ fn a_warmed_first_frame_draws_no_cloud() {
     ));
     let scene = office();
     assert!(
-        cloud_draws(|| r.warm(&scene, pack(), t0())) > 0,
+        cloud_draws(|| r.warm(&scene, t0())) > 0,
         "warming an overcast sky draws its masses"
     );
-    let first = cloud_draws(|| r.render(&scene, pack(), t0()).expect("render"));
+    let first = cloud_draws(|| r.render(&scene, t0()).expect("render"));
     assert_eq!(first, 0, "the first frame drew a cloud");
 }
 
@@ -317,12 +317,12 @@ fn cloud_draws(f: impl FnOnce()) -> usize {
 #[test]
 fn a_frame_without_room_reports_no_transmits() {
     let (mut r, _wire) = kitty(120, 40);
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     let cutaway = |r: &TuiRenderer<Window>| r.cutaway.as_ref().expect("a cutaway").last_send();
     assert_ne!(cutaway(&r).sent, 0, "the first frame sent its tiles");
     let (cols, rows) = too_small_terminal();
     r.terminal.backend_mut().resize(cols, rows);
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     assert_ne!(cutaway(&r).dirty, crate::jank::Painted::All);
     assert_eq!(cutaway(&r).sent, 0);
 }
@@ -336,12 +336,12 @@ fn a_new_view_is_reported_fresh() {
     let fresh = |r: &TuiRenderer<Window>| r.cutaway.as_ref().expect("a cutaway").last_send().fresh;
     let scene = two_floor_scene();
     let now = t0();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(fresh(&r), "the first frame");
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert!(!fresh(&r), "the same floor again");
     r.navigate_floor(1, now);
-    r.render(&scene, pack(), now + Duration::from_millis(1))
+    r.render(&scene, now + Duration::from_millis(1))
         .expect("render");
     assert!(r.transition().is_some() && fresh(&r), "a slide frame");
 }
@@ -365,11 +365,11 @@ fn a_held_frame_reports_no_transmits() {
         }
         for at in [dark, late] {
             screen.at(at);
-            r.render(&scene, pack(), at).expect("render");
+            r.render(&scene, at).expect("render");
         }
         assert_ne!(cutaway(&r).sent, 0, "the late phase sent, slide {slide}");
         screen.at(held);
-        r.render(&scene, pack(), held).expect("render");
+        r.render(&scene, held).expect("render");
         assert_eq!(
             cutaway(&r),
             crate::jank::FrameSend::default(),
@@ -385,7 +385,7 @@ fn a_held_frame_reports_no_transmits() {
 fn placeholders_fill_the_scene_and_never_the_footer() {
     let (cols, rows) = (120, 40);
     let (mut r, _wire) = kitty(cols, rows);
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     let text = text_cells(&world_text(&r));
     assert!(
         !text.is_empty(),
@@ -405,9 +405,9 @@ fn placeholders_fill_the_scene_and_never_the_footer() {
 fn the_star_is_clickable_in_both_looks() {
     use crate::tui::hit_test::SceneHit;
     let (mut cutaway, _wire) = kitty(120, 40);
-    cutaway.render(&office(), pack(), t0()).expect("render");
+    cutaway.render(&office(), t0()).expect("render");
     let mut classic = build(120, 40, vec![]);
-    classic.render(&office(), pack(), t0()).expect("render");
+    classic.render(&office(), t0()).expect("render");
     let star_cells = |r: &dyn Fn(u16, u16) -> bool| {
         (0..40u16)
             .flat_map(|row| (0..120u16).map(move |col| (col, row)))
@@ -444,12 +444,12 @@ fn shrinking_under_the_minimum_refuses_the_cutaway_frame() {
     let (cols, rows) = (120, 40);
     let (mut r, wire) = kitty(cols, rows);
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(r.scene_area_at(cols / 2, rows / 2).is_some());
     wire.take();
     let (small_cols, small_rows) = too_small_terminal();
     r.terminal.backend_mut().resize(small_cols, small_rows);
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(!wire.take().contains(TRANSMIT));
     assert_eq!(r.scene_area_at(cols / 2, rows / 2), None);
     assert!(r.drawn_pet().is_none());
@@ -475,21 +475,19 @@ fn a_terminal_restored_from_too_small_gets_every_tile_again() {
         // The images the last of three frames sends.
         let sent = |between: (u16, u16)| {
             let (mut r, wire) = painter(cols, rows, protocol);
-            r.render(&scene, pack(), t0()).expect("render");
+            r.render(&scene, t0()).expect("render");
             wire.take();
             r.terminal.backend_mut().resize(between.0, between.1);
-            r.render(&scene, pack(), t0() + cadence).expect("render");
+            r.render(&scene, t0() + cadence).expect("render");
             r.terminal.backend_mut().resize(cols, rows);
-            r.render(&scene, pack(), t0() + cadence * 2)
-                .expect("render");
+            r.render(&scene, t0() + cadence * 2).expect("render");
             wire.take().matches(intro).count()
         };
         // Every tile, as a fresh terminal gets that last frame: the text it
         // carves moves with the board's flap.
         let all = {
             let (mut r, wire) = painter(cols, rows, protocol);
-            r.render(&scene, pack(), t0() + cadence * 2)
-                .expect("render");
+            r.render(&scene, t0() + cadence * 2).expect("render");
             wire.take().matches(intro).count()
         };
         let steady = sent((cols, rows));
@@ -531,7 +529,7 @@ fn the_plans_cell_holds_until_the_windows_moves() {
     r.terminal.backend_mut().zoom(padded);
     let scene = office();
     let cadence = ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)), "the plan's cell");
     let plan = crate::graphics::Plan::Cutaway {
         fit: fit(cols, rows),
@@ -551,11 +549,10 @@ fn the_plans_cell_holds_until_the_windows_moves() {
         h: CELL.h * 2,
     };
     r.terminal.backend_mut().zoom(zoomed);
-    r.render(&scene, pack(), t0() + cadence).expect("render");
+    r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(&whole_tile(zoomed)), "zoomed in");
     r.terminal.backend_mut().zoom(padded);
-    r.render(&scene, pack(), t0() + cadence * 2)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 2).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)), "zoomed back");
 }
 
@@ -571,10 +568,10 @@ fn a_first_frame_with_no_pixels_does_not_pose_as_the_windows_baseline() {
     let (mut r, wire) = painter(cols, rows, ImageProtocol::Sixel);
     r.terminal.backend_mut().zoom(CellSize { w: 0, h: 0 });
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)), "the plan's cell");
     r.terminal.backend_mut().zoom(padded);
-    r.render(&scene, pack(), t0() + ImageProtocol::Sixel.cadence())
+    r.render(&scene, t0() + ImageProtocol::Sixel.cadence())
         .expect("render");
     assert_eq!(wire.take(), "", "the plan's cell holds, nothing re-cut");
     let plan = crate::graphics::Plan::Cutaway {
@@ -600,7 +597,7 @@ fn a_font_zoom_refits_the_cutaway_to_the_windows_cell() {
     let (mut r, wire) = painter(cols, rows, ImageProtocol::Sixel);
     let scene = office();
     let cadence = ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(wire.take().contains(&whole_tile(CELL)));
 
     let zoomed = CellSize {
@@ -608,7 +605,7 @@ fn a_font_zoom_refits_the_cutaway_to_the_windows_cell() {
         h: CELL.h * 2,
     };
     r.terminal.backend_mut().zoom(zoomed);
-    r.render(&scene, pack(), t0() + cadence).expect("render");
+    r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(&whole_tile(zoomed)), "zoomed in");
 
     let tiny = CellSize {
@@ -618,8 +615,7 @@ fn a_font_zoom_refits_the_cutaway_to_the_windows_cell() {
     let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows)).as_size();
     assert!(cutaway_fit(tiny, area, pack_arc().max_density_variant()).is_none());
     r.terminal.backend_mut().zoom(tiny);
-    r.render(&scene, pack(), t0() + cadence * 2)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 2).expect("render");
     assert!(!wire.take().contains(SIXEL), "too small for the art");
     assert!(
         frame_text(r.frame_buffer()).contains('\u{2580}'),
@@ -627,8 +623,7 @@ fn a_font_zoom_refits_the_cutaway_to_the_windows_cell() {
     );
 
     r.terminal.backend_mut().zoom(zoomed);
-    r.render(&scene, pack(), t0() + cadence * 3)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 3).expect("render");
     assert!(wire.take().contains(&whole_tile(zoomed)), "zoomed back in");
 }
 
@@ -639,7 +634,7 @@ fn a_cell_too_small_hit_tests_the_classic_frame() {
     let (cols, rows) = crate::tui::renderer::min_terminal_size();
     let (mut r, _wire) = kitty(cols, rows);
     let id = AgentId::from_transcript_path("/k/0.jsonl");
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     hover_agent(&mut r, id);
     let (col, row) = r.mouse_pos.expect("hovered");
     r.set_mouse_pos(None);
@@ -647,8 +642,7 @@ fn a_cell_too_small_hit_tests_the_classic_frame() {
         w: CELL.w / 2,
         h: CELL.h / 2,
     });
-    r.render(&scene_with(vec![], 16), pack(), t0())
-        .expect("render");
+    r.render(&scene_with(vec![], 16), t0()).expect("render");
     assert_eq!(r.hit_test_agent_at(col, row), None);
 }
 
@@ -659,11 +653,11 @@ fn shrinking_mid_slide_lands_on_the_destination() {
     let (cols, rows) = (120, 40);
     let (mut r, _wire) = kitty(cols, rows);
     let scene = two_floor_scene();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     r.navigate_floor(1, t0());
     let (small_cols, small_rows) = too_small_terminal();
     r.terminal.backend_mut().resize(small_cols, small_rows);
-    r.render(&scene, pack(), t0() + Duration::from_millis(100))
+    r.render(&scene, t0() + Duration::from_millis(100))
         .expect("render");
     assert!(r.transition().is_none());
     assert_eq!(r.current_floor(), 1);
@@ -681,7 +675,7 @@ fn a_modal_over_the_image_shows_its_text() {
         },
         t0(),
     );
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     assert!(frame_text(r.frame_buffer()).contains("? Keyboard"));
 }
 
@@ -690,10 +684,10 @@ fn a_failed_write_re_sends_next_frame() {
     let (mut r, wire) = kitty(120, 40);
     let scene = office();
     wire.fail.store(true, Ordering::Relaxed);
-    r.render(&scene, pack(), t0())
+    r.render(&scene, t0())
         .expect("a lost transmit is no render error");
     wire.fail.store(false, Ordering::Relaxed);
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     let sent = wire.take();
     assert!(sent.starts_with("\x1b\\"), "an ST first ends a torn escape");
     assert!(sent.contains(TRANSMIT));
@@ -703,10 +697,10 @@ fn a_failed_write_re_sends_next_frame() {
 fn a_redraw_re_sends_every_tile() {
     let (mut r, wire) = kitty(120, 40);
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     let tiles = wire.take().matches(TRANSMIT).count();
     r.redraw().expect("redraw");
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert_eq!(wire.take().matches(TRANSMIT).count(), tiles);
 }
 
@@ -714,10 +708,10 @@ fn a_redraw_re_sends_every_tile() {
 fn an_agent_under_the_cutaway_is_hit_tested_on_the_canvas() {
     let (mut r, _wire) = kitty(120, 40);
     let scene = scene_with(vec![active("/k/0.jsonl", 0, "Bash", t0())], 16);
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(!frame_text(r.frame_buffer()).contains("Active"));
     hover_agent(&mut r, AgentId::from_transcript_path("/k/0.jsonl"));
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(
         frame_text(r.frame_buffer()).contains("Active"),
         "the hovered agent's tooltip"
@@ -749,9 +743,9 @@ fn sixel_and_iterm2_draw_changed_tiles_and_nothing_on_an_identical_frame() {
     ] {
         let (mut r, wire) = painter(120, 40, protocol);
         let scene = office();
-        r.render(&scene, pack(), t0()).expect("render");
+        r.render(&scene, t0()).expect("render");
         assert!(wire.take().contains(intro), "{protocol:?}");
-        r.render(&scene, pack(), t0()).expect("render");
+        r.render(&scene, t0()).expect("render");
         assert_eq!(wire.take(), "", "{protocol:?}");
     }
 }
@@ -761,7 +755,7 @@ fn sixel_and_iterm2_draw_changed_tiles_and_nothing_on_an_identical_frame() {
 fn the_image_cells_are_never_written_by_ratatui() {
     let (cols, rows) = (120, 40);
     let (mut r, _wire) = painter(cols, rows, ImageProtocol::Sixel);
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     let world = world_text(&r);
     assert!(!text_cells(&world).is_empty(), "premise: there is text");
     assert_eq!(text_cells(r.frame_buffer()), text_cells(&world));
@@ -778,14 +772,13 @@ fn the_image_cells_are_never_written_by_ratatui() {
 fn the_protocols_cadence_gates_its_transmits() {
     let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     wire.take();
     r.redraw().expect("redraw");
     let cadence = ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), t0() + cadence / 2)
-        .expect("render");
+    r.render(&scene, t0() + cadence / 2).expect("render");
     assert_eq!(wire.take(), "", "inside the cadence, the tiles stay owed");
-    r.render(&scene, pack(), t0() + cadence).expect("render");
+    r.render(&scene, t0() + cadence).expect("render");
     assert!(wire.take().contains(SIXEL));
 }
 
@@ -820,12 +813,12 @@ fn each_strike_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
             let scene = office();
             let now = strike.start - lead(frame) + offset;
             screen.at(now);
-            r.render(&scene, pack(), now).expect("render");
+            r.render(&scene, now).expect("render");
             let tiles = wire.take().matches(intro(protocol)).count();
             let mut changed = Vec::new();
             for now in crate::test_flash::frames_after(now, frame, strike.end + lead(frame)) {
                 screen.at(now);
-                r.render(&scene, pack(), now).expect("render");
+                r.render(&scene, now).expect("render");
                 if 2 * wire.take().matches(intro(protocol)).count() > tiles {
                     changed.push(now);
                 }
@@ -851,14 +844,14 @@ fn a_held_slide_frame_sends_nothing() {
     r.navigate_floor(1, dark);
     for at in [dark, late] {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     wire.take();
     screen.at(held);
-    r.render(&scene, pack(), held).expect("render");
+    r.render(&scene, held).expect("render");
     assert_eq!(wire.take(), "", "held");
     screen.at(shown);
-    r.render(&scene, pack(), shown).expect("render");
+    r.render(&scene, shown).expect("render");
     assert!(wire.take().contains(TRANSMIT), "shown");
     assert!(r.transition().is_some(), "still sliding");
 }
@@ -878,7 +871,7 @@ fn a_held_cutaway_frame_leaves_the_pointer_hitting_the_one_on_screen() {
     let scene = office();
     for at in [dark, late] {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     let (col, row, id) = (0..rows)
         .flat_map(|row| (0..cols).map(move |col| (col, row)))
@@ -887,8 +880,7 @@ fn a_held_cutaway_frame_leaves_the_pointer_hitting_the_one_on_screen() {
     wire.take();
     let before = r.frame_buffer().clone();
     screen.at(held);
-    r.render(&scene_with(vec![], 16), pack(), held)
-        .expect("render");
+    r.render(&scene_with(vec![], 16), held).expect("render");
     assert!(!wire.take().contains(TRANSMIT), "premise: held");
     assert_eq!(
         *r.frame_buffer(),
@@ -913,7 +905,7 @@ fn a_phase_holds_the_floor_across_a_fall_back_to_the_half_blocks() {
     let scene = office();
     for at in [dark, late] {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     assert!(!r.offers_walkable_debug(), "premise: the cutaway shows");
     let before = r.frame_buffer().clone();
@@ -922,14 +914,14 @@ fn a_phase_holds_the_floor_across_a_fall_back_to_the_half_blocks() {
         h: CELL.h / 2,
     });
     screen.at(held);
-    r.render(&scene, pack(), held).expect("render");
+    r.render(&scene, held).expect("render");
     assert!(
         r.offers_walkable_debug(),
         "premise: the half-blocks drew it"
     );
     assert_eq!(*r.frame_buffer(), before, "held");
     screen.at(shown);
-    r.render(&scene, pack(), shown).expect("render");
+    r.render(&scene, shown).expect("render");
     assert_ne!(*r.frame_buffer(), before, "shown");
 }
 
@@ -951,12 +943,12 @@ fn a_resized_terminal_is_never_held() {
         }
         for at in [dark, late] {
             screen.at(at);
-            r.render(&scene, pack(), at).expect("render");
+            r.render(&scene, at).expect("render");
         }
         wire.take();
         r.terminal.backend_mut().inner.resize(cols + 8, rows + 4);
         screen.at(held);
-        r.render(&scene, pack(), held).expect("render");
+        r.render(&scene, held).expect("render");
         assert!(wire.take().contains(TRANSMIT), "sliding {sliding}: sent");
     }
 }
@@ -976,21 +968,21 @@ fn a_held_frame_after_a_failed_write_stamps_nothing() {
     r.set_motion(pixtuoid_scene::anim::Motion::Full);
     let scene = office();
     screen.at(late);
-    r.render(&scene, pack(), late).expect("render");
+    r.render(&scene, late).expect("render");
     let resize = |r: &mut TuiRenderer<Window>, cols, rows| {
         r.terminal.backend_mut().inner.resize(cols, rows);
     };
     resize(&mut r, cols + 8, rows + 4);
     wire.fail.store(true, Ordering::Relaxed);
     screen.at(held);
-    r.render(&scene, pack(), held)
+    r.render(&scene, held)
         .expect("a lost transmit is no render error");
     wire.fail.store(false, Ordering::Relaxed);
     resize(&mut r, cols, rows);
     for at in [held + ms, held + 2 * ms] {
         wire.take();
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
         assert!(!wire.take().contains(TRANSMIT), "held at {at:?}");
     }
 }
@@ -1010,13 +1002,13 @@ fn a_slow_writes_phase_holds_the_floor_from_when_it_lands() {
     r.set_motion(pixtuoid_scene::anim::Motion::Full);
     let scene = office();
     screen.at(first - 2 * floor);
-    r.render(&scene, pack(), first - 2 * floor).expect("render");
+    r.render(&scene, first - 2 * floor).expect("render");
     *wire.slow.lock().expect("lock") = Some(Latency {
         screen: screen.clone(),
         by: SLOW,
     });
     screen.at(first);
-    r.render(&scene, pack(), first).expect("render");
+    r.render(&scene, first).expect("render");
     let landed = screen.now();
     *wire.slow.lock().expect("lock") = None;
     wire.take();
@@ -1025,7 +1017,7 @@ fn a_slow_writes_phase_holds_the_floor_from_when_it_lands() {
         "the frame clock says the floor has passed"
     );
     screen.at(second);
-    r.render(&scene, pack(), second).expect("render");
+    r.render(&scene, second).expect("render");
     assert_eq!(
         wire.take(),
         "",
@@ -1033,7 +1025,7 @@ fn a_slow_writes_phase_holds_the_floor_from_when_it_lands() {
     );
     let shown = std::time::UNIX_EPOCH + landed + floor;
     screen.at(shown);
-    r.render(&scene, pack(), shown).expect("render");
+    r.render(&scene, shown).expect("render");
     assert!(wire.take().contains(TRANSMIT), "shown once it has");
 }
 
@@ -1052,16 +1044,16 @@ fn a_pause_inside_a_hold_never_wedges_the_repaint() {
     let scene = office();
     for at in [dark, late] {
         screen.at(at);
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
     }
     wire.take();
     screen.at(paused);
-    r.render(&scene, pack(), paused).expect("render");
+    r.render(&scene, paused).expect("render");
     assert_eq!(wire.take(), "", "held");
     r.set_theme(dark_theme());
     screen.at(late);
     screen.advance(floor);
-    r.render(&scene, pack(), paused).expect("render");
+    r.render(&scene, paused).expect("render");
     assert!(
         wire.take().contains(TRANSMIT),
         "the paused frame went out once the hold ran out"
@@ -1090,13 +1082,13 @@ fn each_strike_phase_holds_the_floor_in_the_cells_a_full_modal_leaves() {
         let scene = office();
         let now = strike.start - lead(frame) + offset;
         screen.at(now);
-        r.render(&scene, pack(), now).expect("render");
+        r.render(&scene, now).expect("render");
         let free = sixel_cells(&wire.take());
         assert!(!free.is_empty(), "the modal leaves cells free");
         let mut changed = Vec::new();
         for now in crate::test_flash::frames_after(now, frame, strike.end + lead(frame)) {
             screen.at(now);
-            r.render(&scene, pack(), now).expect("render");
+            r.render(&scene, now).expect("render");
             if 2 * sixel_cells(&wire.take()).len() > free.len() {
                 changed.push(now);
             }
@@ -1131,7 +1123,7 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
             r.set_motion(pixtuoid_scene::anim::Motion::Full);
             for at in stutter.setup {
                 screen.at(at);
-                r.render(&scene, pack(), at).expect("render");
+                r.render(&scene, at).expect("render");
             }
             let shape = r.cutaway.as_ref().expect("a cutaway").tile_shape();
             let across = u32::from(area.width.div_ceil(shape.cols));
@@ -1155,12 +1147,12 @@ fn each_stutter_phase_holds_the_floor_on_screen_at_every_protocols_cadence() {
             };
             let now = stutter.start - lead(frame) + offset;
             screen.at(now);
-            r.render(&scene, pack(), now).expect("render");
+            r.render(&scene, now).expect("render");
             wire.take();
             let mut changed = Vec::new();
             for now in crate::test_flash::frames_after(now, frame, stutter.end + lead(frame)) {
                 screen.at(now);
-                r.render(&scene, pack(), now).expect("render");
+                r.render(&scene, now).expect("render");
                 if tube_sent(&wire.take()) {
                     changed.push(now);
                 }
@@ -1235,7 +1227,7 @@ fn shared_memory_carries_the_tiles_the_escapes_would() {
             crate::graphics::Route::of(ImageProtocol::Kitty, false, shm),
             Box::new(out),
         ));
-        r.render(&office(), pack(), t0()).expect("render");
+        r.render(&office(), t0()).expect("render");
         kitty_images(&wire.take())
     };
     let direct = run(false);
@@ -1251,7 +1243,7 @@ fn a_floor_switch_slides_the_cutaway_then_settles() {
     let (mut r, wire) = kitty(120, 40);
     let scene = two_floor_scene();
     let mut now = t0();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     let shape = r.cutaway.as_ref().expect("a cutaway").tile_shape();
     let across = 120u32.div_ceil(u32::from(shape.cols));
     let down = 40u32.div_ceil(u32::from(shape.rows));
@@ -1267,7 +1259,7 @@ fn a_floor_switch_slides_the_cutaway_then_settles() {
 
     r.navigate_floor(1, now);
     let half = Duration::from_millis(r.transition().expect("sliding").duration_ms / 2);
-    r.render(&scene, pack(), now + half).expect("render");
+    r.render(&scene, now + half).expect("render");
     // What the terminal shows for the tile: its last transmit, or the one
     // before when none came.
     let mid = tile(&wire.take()).unwrap_or_else(|| before.clone());
@@ -1280,7 +1272,7 @@ fn a_floor_switch_slides_the_cutaway_then_settles() {
     );
 
     now += half;
-    render_until_settled(&mut r, &scene, pack(), &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
     let after = tile(&wire.take()).unwrap_or_else(|| mid.clone());
     assert!(mid != before && mid != after);
     assert_eq!(r.current_floor(), 1);
@@ -1296,19 +1288,19 @@ fn a_cutaway_slide_runs_until_a_resize_lands_it() {
     let (mut r, _wire) = kitty(cols, rows);
     let scene = two_floor_scene();
     let start = t0();
-    r.render(&scene, pack(), start).expect("render");
+    r.render(&scene, start).expect("render");
     let extent = r.office_extent();
     r.navigate_floor(1, start);
     let slide = Duration::from_millis(r.transition().expect("sliding").duration_ms);
     let frames = 4;
     let at = |frame| start + slide * frame / frames;
     for frame in 1..frames - 1 {
-        r.render(&scene, pack(), at(frame)).expect("render");
+        r.render(&scene, at(frame)).expect("render");
         assert_eq!(r.office_extent(), extent, "frame {frame}");
         assert!(r.transition().is_some(), "landed at frame {frame}");
     }
     r.terminal.backend_mut().resize(cols - 1, rows);
-    r.render(&scene, pack(), at(frames - 1)).expect("render");
+    r.render(&scene, at(frames - 1)).expect("render");
     assert!(r.transition().is_none());
     assert_eq!(r.current_floor(), 1);
 }
@@ -1321,22 +1313,21 @@ fn the_cells_a_modal_held_go_back_to_the_image_when_it_closes() {
     let (mut r, wire) = painter(cols, rows, ImageProtocol::Sixel);
     let scene = office();
     let cadence = ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     wire.take();
     let frames = RenderFrames {
         help_open: true,
         ..Default::default()
     };
     r.set_frames(frames, t0());
-    r.render(&scene, pack(), t0() + cadence).expect("render");
+    r.render(&scene, t0() + cadence).expect("render");
     let held = text_cells(r.frame_buffer());
     let open = sixel_cells(&wire.take());
     assert!(!open.is_empty(), "the modal's tiles are sent");
     assert!(open.is_disjoint(&held), "never over its text");
 
     r.set_frames(RenderFrames::default(), t0());
-    r.render(&scene, pack(), t0() + cadence * 2)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 2).expect("render");
     let sent = sixel_cells(&wire.take());
     let text = text_cells(&world_text(&r));
     let lost: Vec<_> = held
@@ -1355,7 +1346,7 @@ fn a_grid_image_arms_the_unwinds_erase() {
     };
     let (mut r, _wire, in_grid) = armed(120, 40, ImageProtocol::Sixel, vec![]);
     assert!(!erases(in_grid), "nothing drawn yet");
-    r.render(&office(), pack(), t0()).expect("render");
+    r.render(&office(), t0()).expect("render");
     assert!(erases(in_grid));
 }
 
@@ -1366,7 +1357,7 @@ fn no_image_is_drawn_over_text() {
     let (mut r, wire) = painter(120, 40, ImageProtocol::Sixel);
     let scene = office();
     let cadence = ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     wire.take();
     r.set_frames(
         RenderFrames {
@@ -1381,8 +1372,7 @@ fn no_image_is_drawn_over_text() {
     // the world's of that frame.
     let mut modal = None;
     for tick in 1..4 {
-        r.render(&scene, pack(), t0() + cadence * tick)
-            .expect("render");
+        r.render(&scene, t0() + cadence * tick).expect("render");
         let sent = sixel_cells(&wire.take());
         let world = text_cells(&world_text(&r));
         let modal = modal.get_or_insert_with(|| {
@@ -1442,7 +1432,7 @@ fn kitty_transmits_before_the_flush_and_sixel_after() {
             )
             .arming(Box::leak(Box::new(AtomicBool::new(false)))),
         );
-        r.render(&office(), pack(), t0()).expect("render");
+        r.render(&office(), t0()).expect("render");
         let sent = wire.take();
         let (image, flush) = (
             sent.find(intro).expect("an image"),
@@ -1458,14 +1448,14 @@ fn kitty_transmits_before_the_flush_and_sixel_after() {
 fn a_refused_cutaway_frame_keeps_the_doors_clamp_on_time() {
     let (mut r, _wire) = kitty(120, 40);
     let scene = office();
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(
         r.session.floor(0).expect("a floor").ctx.door_anim_max_ms > 0,
         "the entry walk holds the door"
     );
     let (small_cols, small_rows) = too_small_terminal();
     r.terminal.backend_mut().resize(small_cols, small_rows);
-    r.render(&scene, pack(), t0() + Duration::from_secs(600))
+    r.render(&scene, t0() + Duration::from_secs(600))
         .expect("render");
     assert_eq!(
         r.session.floor(0).expect("a floor").ctx.door_anim_max_ms,
@@ -1483,22 +1473,22 @@ fn a_slide_cancelled_on_its_first_frame_repaints_the_destination_whole() {
     let (mut r, wire) = painter(cols, rows, ImageProtocol::Sixel);
     let scene = two_floor_scene();
     let mut now = t0();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     let every = wire.take().matches(SIXEL).count();
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &scene, pack(), &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
     r.navigate_floor(0, now);
-    render_until_settled(&mut r, &scene, pack(), &mut now, 0);
+    render_until_settled(&mut r, &scene, &mut now, 0);
     r.navigate_floor(1, now);
     let (small_cols, small_rows) = too_small_terminal();
     r.terminal.backend_mut().resize(small_cols, small_rows);
     now += ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert_eq!(r.current_floor(), 1);
     r.terminal.backend_mut().resize(cols, rows);
     wire.take();
     now += ImageProtocol::Sixel.cadence();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert_eq!(wire.take().matches(SIXEL).count(), every);
 }
 
@@ -1517,19 +1507,19 @@ fn a_floor_clamped_into_view_repaints_whole() {
     let mut scene = two_floor_scene();
     let mut now = t0();
     let mut terminal = std::collections::BTreeMap::new();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     r.navigate_floor(1, now);
-    render_until_settled(&mut r, &scene, pack(), &mut now, 1);
+    render_until_settled(&mut r, &scene, &mut now, 1);
     scene
         .agents
         .remove(&AgentId::from_transcript_path("/n/1.jsonl"));
     now += ImageProtocol::Kitty.cadence();
-    r.render(&scene, pack(), now).expect("render");
+    r.render(&scene, now).expect("render");
     assert_eq!(r.current_floor(), 0, "the view clamped");
     held(&wire.take(), &mut terminal);
 
     let (mut fresh, fresh_wire) = kitty(cols, rows);
-    fresh.render(&scene, pack(), now).expect("render");
+    fresh.render(&scene, now).expect("render");
     let mut want = std::collections::BTreeMap::new();
     held(&fresh_wire.take(), &mut want);
     assert!(
@@ -1564,12 +1554,12 @@ fn w_follows_the_look_the_frame_drew() {
             },
             t0(),
         );
-        r.render(&scene, pack(), at).expect("render");
+        r.render(&scene, at).expect("render");
         let text = frame_text(r.frame_buffer());
         r.set_frames(RenderFrames::default(), t0());
         text
     };
-    r.render(&scene, pack(), t0()).expect("render");
+    r.render(&scene, t0()).expect("render");
     assert!(!r.offers_walkable_debug(), "the cutaway");
     let text = help(&mut r, t0() + cadence);
     assert!(text.contains("Keyboard"), "premise: the help is drawn");
@@ -1580,17 +1570,14 @@ fn w_follows_the_look_the_frame_drew() {
         w: CELL.w / 2,
         h: CELL.h / 2,
     });
-    r.render(&scene, pack(), t0() + cadence * 2)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 2).expect("render");
     assert!(r.offers_walkable_debug(), "the fallback");
     let text = help(&mut r, t0() + cadence * 3);
     assert!(text.contains("walkable"), "the fallback's help: {text}");
-    r.render(&scene, pack(), t0() + cadence * 4)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 4).expect("render");
     let before = r.buf().expect("a frame").clone();
     assert!(w(&mut r));
-    r.render(&scene, pack(), t0() + cadence * 5)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 5).expect("render");
     let after = r.buf().expect("a frame");
     assert!(
         region_diff(&before, after, 0, 0, before.width(), before.height()) > 1_000,
@@ -1598,7 +1585,6 @@ fn w_follows_the_look_the_frame_drew() {
     );
 
     r.terminal.backend_mut().zoom(CELL);
-    r.render(&scene, pack(), t0() + cadence * 6)
-        .expect("render");
+    r.render(&scene, t0() + cadence * 6).expect("render");
     assert!(!r.offers_walkable_debug(), "the cutaway is back");
 }
