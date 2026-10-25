@@ -164,7 +164,8 @@ impl UiState {
             boot,
             WelcomeUi::from_detected(&detected),
             crate::sources::detect,
-            env!("CARGO_PKG_VERSION"),
+            &semver::Version::parse(env!("CARGO_PKG_VERSION"))
+                .expect("CARGO_PKG_VERSION is SemVer"),
         )
     }
 
@@ -174,7 +175,7 @@ impl UiState {
         boot: Boot<'_>,
         onboarding_ui: WelcomeUi,
         installed: impl FnOnce() -> Vec<&'static str>,
-        current: &str,
+        current: &semver::Version,
     ) -> Self {
         let decision = resolve_version_popup(boot.config_path, current);
         // Yields to the onboarding but still STAMPS `last_seen_version`: gated on
@@ -493,15 +494,13 @@ impl UiState {
         // after actions, NOT per frame, because it does FS reads. Only the LIVE
         // facet + socket line recompute here.
         let connection_frame = if self.connection.open {
-            let live = connection::live_view(now, &self.connection.rows, scene, health);
             // NOT "(listening)": a second pixtuoid instance loses the hook plane
             // to the lock-holding owner, so THIS process may own no socket at
             // all. Don't assert what we haven't checked.
             let socket_line = format!("socket  {}", self.socket_path.display());
             ConnectionFrame {
                 open: true,
-                rows: self.connection.rows.clone(),
-                live,
+                rows: connection::live_view(now, &self.connection.rows, scene, health),
                 selected: self.connection.selected,
                 confirm: self.connection.confirm,
                 result: self.connection.last_result.clone(),
@@ -561,7 +560,7 @@ impl UiState {
 impl UiState {
     /// A run an upgrade from `previous` to `current` booted, with its popup
     /// closed.
-    pub(crate) fn upgraded_from(previous: &str, current: &str) -> Self {
+    pub(crate) fn upgraded_from(previous: &str, current: &semver::Version) -> Self {
         let mut ui = Self::new(
             &theme::NORMAL,
             WelcomeUi::from_detected(&[]),
@@ -577,17 +576,17 @@ impl UiState {
 }
 
 /// Whether this version's popup shows, and the version before it, stamping
-/// `current_ver` as `last_seen_version` in the config at `config_path` at boot, so the popup
+/// `current` as `last_seen_version` in the config at `config_path` at boot, so the popup
 /// shows at most once per upgrade however the run exits. The config's warnings
 /// are dropped: `main`'s pre-altscreen pass already surfaced them.
 fn resolve_version_popup(
     config_path: &std::path::Path,
-    current_ver: &str,
+    current: &semver::Version,
 ) -> crate::version::BootDecision {
     let cfg = crate::config::load(config_path, &mut Vec::new());
-    let decision = crate::version::boot_decision(current_ver, cfg.last_seen_version.as_deref());
+    let decision = crate::version::boot_decision(current, cfg.last_seen_version.as_deref());
     if decision.should_persist
-        && let Err(e) = crate::config::save_version(config_path, current_ver)
+        && let Err(e) = crate::config::save_version(config_path, &current.to_string())
     {
         tracing::warn!(error = ?e, "failed to persist version");
     }
@@ -674,7 +673,15 @@ mod tests {
         ui.close_dashboard();
         assert!(!ui.modal().dashboard_open);
 
-        ui.open_connection(Vec::new());
+        ui.open_connection(vec![ConnectionRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex",
+            state: connection::ConnState::Connected,
+            config_path: None,
+            target: None,
+            health: None,
+        }]);
         assert!(ui.modal().connection_open);
         assert!(!ui.modal().connection_confirm);
         ui.connection.confirm = Some(0);
@@ -752,7 +759,7 @@ mod tests {
 
     /// A run of `current` booted over the config at `path`, with `welcome`'s
     /// onboarding and nothing connected.
-    fn boot_at(path: &std::path::Path, welcome: WelcomeUi, current: &str) -> UiState {
+    fn boot_at(path: &std::path::Path, welcome: WelcomeUi, current: &semver::Version) -> UiState {
         boot_into(path, welcome, current, &HashSet::new(), false)
     }
 
@@ -761,7 +768,7 @@ mod tests {
     fn boot_into(
         path: &std::path::Path,
         welcome: WelcomeUi,
-        current: &str,
+        current: &semver::Version,
         connected: &HashSet<String>,
         terminal_cutaway: bool,
     ) -> UiState {
@@ -787,10 +794,9 @@ mod tests {
     #[test]
     fn a_new_version_pops_up_once_and_yields_to_the_onboarding() {
         let tmp = tempfile::tempdir().expect("tempdir");
+        let this = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("SemVer");
         let boot = |path: &std::path::Path, welcome: WelcomeUi| {
-            boot_at(path, welcome, env!("CARGO_PKG_VERSION"))
-                .modal()
-                .version_popup_open
+            boot_at(path, welcome, &this).modal().version_popup_open
         };
         let stamped =
             |path: &std::path::Path| crate::config::load(path, &mut Vec::new()).last_seen_version;
@@ -822,7 +828,7 @@ mod tests {
         let ui = boot_into(
             &path,
             WelcomeUi::from_detected(&[]),
-            &across.current.to_string(),
+            &across.current,
             &HashSet::from(["codex".to_string()]),
             true,
         );
@@ -903,7 +909,7 @@ mod tests {
             if let Some(seed) = seed {
                 crate::config::save_version(&path, seed).expect("seed a version");
             }
-            let mut ui = boot_at(&path, welcome, "0.20.0");
+            let mut ui = boot_at(&path, welcome, &semver::Version::new(0, 20, 0));
             ui.open_version_popup(&HashSet::new(), &[]);
             let frames = ui.build_frames(SystemTime::now(), &SceneState::new([0; 10]), &[]);
             frames.version_popup.upgraded

@@ -233,12 +233,10 @@ fn move_selection_clamps_at_both_ends() {
     assert_eq!(move_selection(&rows, 0, -1), 0);
     assert_eq!(move_selection(&rows, 0, 1), 1);
     assert_eq!(move_selection(&rows, 1, 1), 1);
-    assert_eq!(move_selection(&[], 0, 1), 0);
 }
 
 #[test]
-fn build_rows_covers_every_registry_source_with_aligned_live_view() {
-    // The painter relies on `live_view` being index-aligned with `rows`.
+fn build_rows_covers_every_registry_source() {
     let rows = build_rows(&HashSet::new(), "");
     assert!(rows.len() >= 5, "expected the 5 install targets + sources");
     assert!(
@@ -246,9 +244,6 @@ fn build_rows_covers_every_registry_source_with_aligned_live_view() {
             .any(|r| r.source_id == "copilot" && r.target.is_none()),
         "copilot must appear as a no-target (JSONL) row"
     );
-    let scene = SceneState::uniform(8);
-    let live = live_view(SystemTime::UNIX_EPOCH, &rows, &scene, &[]);
-    assert_eq!(live.len(), rows.len());
 }
 
 /// A disconnected row carries no health line, even with drift its connected

@@ -573,7 +573,7 @@ fn main() -> Result<()> {
 
     // Deterministic — no FS probes — so the demo image is reproducible across
     // machines.
-    let (connection_rows, connection_live, connection_socket_line) = if args.connection {
+    let (connection_rows, connection_socket_line) = if args.connection {
         use pixtuoid::dev::{ConnState, ConnectionRow, DaemonRollup, LiveFacet, LiveInfo};
         use std::path::PathBuf;
         use std::time::Duration;
@@ -586,59 +586,6 @@ fn main() -> Result<()> {
             target: None,
             health: None,
         };
-        let rows = vec![
-            mk(
-                "claude-code",
-                "cc",
-                "Claude Code",
-                ConnState::Connected,
-                Some("~/.claude/settings.json"),
-            ),
-            mk(
-                "codex",
-                "cx",
-                "Codex",
-                ConnState::Disconnected,
-                Some("~/.codex/config.toml"),
-            ),
-            mk(
-                "reasonix",
-                "rx",
-                "Reasonix",
-                ConnState::NoCli { connected: false },
-                None,
-            ),
-            mk(
-                "codewhale",
-                "cw",
-                "CodeWhale",
-                ConnState::Connected,
-                Some("~/.codewhale/config.toml"),
-            ),
-            mk(
-                "opencode",
-                "oc",
-                "opencode",
-                ConnState::Disconnected,
-                Some("~/.config/opencode/plugins/pixtuoid.ts"),
-            ),
-            mk(
-                "antigravity",
-                "ag",
-                "Antigravity",
-                ConnState::Connected,
-                None,
-            ),
-            // A DAEMON row, so the captured panel shows the daemon LIVE cell next
-            // to the agent rows' N-agents form.
-            mk(
-                "openclaw",
-                "ok",
-                "OpenClaw",
-                ConnState::Connected,
-                Some("~/.openclaw/openclaw.json"),
-            ),
-        ];
         let agents = |n: usize, age_s: u64| LiveInfo {
             facet: LiveFacet::Agents {
                 agents: n,
@@ -646,31 +593,92 @@ fn main() -> Result<()> {
             },
             dead: false,
         };
-        let live = vec![
-            agents(2, 3),
-            LiveInfo::default(),
-            LiveInfo::default(),
-            LiveInfo {
-                facet: LiveFacet::default(),
-                dead: true,
-            },
-            LiveInfo::default(),
-            agents(1, 12),
-            LiveInfo {
-                facet: LiveFacet::Daemon(Some(DaemonRollup {
-                    instances: std::num::NonZeroUsize::new(2).expect("two gateways"),
-                    state: pixtuoid_core::state::DaemonState::Busy,
-                })),
-                dead: false,
-            },
+        let rows = vec![
+            (
+                mk(
+                    "claude-code",
+                    "cc",
+                    "Claude Code",
+                    ConnState::Connected,
+                    Some("~/.claude/settings.json"),
+                ),
+                agents(2, 3),
+            ),
+            (
+                mk(
+                    "codex",
+                    "cx",
+                    "Codex",
+                    ConnState::Disconnected,
+                    Some("~/.codex/config.toml"),
+                ),
+                LiveInfo::default(),
+            ),
+            (
+                mk(
+                    "reasonix",
+                    "rx",
+                    "Reasonix",
+                    ConnState::NoCli { connected: false },
+                    None,
+                ),
+                LiveInfo::default(),
+            ),
+            (
+                mk(
+                    "codewhale",
+                    "cw",
+                    "CodeWhale",
+                    ConnState::Connected,
+                    Some("~/.codewhale/config.toml"),
+                ),
+                LiveInfo {
+                    facet: LiveFacet::default(),
+                    dead: true,
+                },
+            ),
+            (
+                mk(
+                    "opencode",
+                    "oc",
+                    "opencode",
+                    ConnState::Disconnected,
+                    Some("~/.config/opencode/plugins/pixtuoid.ts"),
+                ),
+                LiveInfo::default(),
+            ),
+            (
+                mk(
+                    "antigravity",
+                    "ag",
+                    "Antigravity",
+                    ConnState::Connected,
+                    None,
+                ),
+                agents(1, 12),
+            ),
+            // A DAEMON row, so the captured panel shows the daemon LIVE cell next
+            // to the agent rows' N-agents form.
+            (
+                mk(
+                    "openclaw",
+                    "ok",
+                    "OpenClaw",
+                    ConnState::Connected,
+                    Some("~/.openclaw/openclaw.json"),
+                ),
+                LiveInfo {
+                    facet: LiveFacet::Daemon(Some(DaemonRollup {
+                        instances: std::num::NonZeroUsize::new(2).expect("two gateways"),
+                        state: pixtuoid_core::state::DaemonState::Busy,
+                    })),
+                    dead: false,
+                },
+            ),
         ];
-        (
-            rows,
-            live,
-            "socket  /run/user/501/pixtuoid.sock".to_string(),
-        )
+        (rows, "socket  /run/user/501/pixtuoid.sock".to_string())
     } else {
-        (Vec::new(), Vec::new(), String::new())
+        (Vec::new(), String::new())
     };
     let onboarding_frame = if args.onboarding {
         use pixtuoid::dev::WelcomeRow;
@@ -703,7 +711,6 @@ fn main() -> Result<()> {
     let connection_frame = pixtuoid::dev::ConnectionFrame {
         open: args.connection,
         rows: connection_rows,
-        live: connection_live,
         selected: 0,
         confirm: None,
         result: None,

@@ -4,7 +4,6 @@
 use std::fmt::Write as _;
 use std::io::Write;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 
 use crate::doctor::DriftSeen;
 use crate::run_log::LogLocation;
@@ -50,12 +49,11 @@ pub(crate) fn init(tui_active: bool, log_level: &'static str) -> DriftSeen {
         };
         match log_at.open_sink(SystemTime::now()) {
             Ok(f) => {
-                let writer = Arc::new(Mutex::new(f));
                 registry
                     .with(
                         fmt_layer()
                             .with_ansi(false)
-                            .with_writer(move || MutexFileWriter(writer.clone()))
+                            .with_writer(f)
                             .with_filter(filter),
                     )
                     .init();
@@ -204,23 +202,6 @@ fn filter_directives<'a>(rust_log: Option<&'a str>, log_level: &'a str) -> &'a s
     match rust_log {
         Some(v) if !v.is_empty() => v,
         _ => log_level,
-    }
-}
-
-struct MutexFileWriter(Arc<Mutex<std::fs::File>>);
-
-impl std::io::Write for MutexFileWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|_| std::io::Error::other("poisoned"))?
-            .write(buf)
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0
-            .lock()
-            .map_err(|_| std::io::Error::other("poisoned"))?
-            .flush()
     }
 }
 

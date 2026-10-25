@@ -211,9 +211,9 @@ fn format_source_death(d: &SourceDeath) -> String {
 /// count — logging the whole borrow on every change would re-warn all prior deaths,
 /// reading as repeated crashes in forensics.
 pub(crate) fn unseen_deaths<'a>(deaths: &'a [SourceDeath], seen: &mut usize) -> &'a [SourceDeath] {
-    let start = (*seen).min(deaths.len());
+    let unseen = &deaths[*seen..];
     *seen = deaths.len();
-    &deaths[start..]
+    unseen
 }
 
 /// A boxed quit arm.

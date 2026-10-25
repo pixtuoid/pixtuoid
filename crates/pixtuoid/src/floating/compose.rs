@@ -305,7 +305,7 @@ impl XrgbSurface<'_> {
         let Some((rows, cols)) = self.clip(layer.rect()).filter(|_| bw > 0 && bh > 0) else {
             return;
         };
-        let s = usize::from(layer.scale.max(1));
+        let s = usize::from(layer.scale);
         let (ox, oy) = (layer.origin.0 as isize, layer.origin.1 as isize);
         let src = buf.as_slice();
         for wy in rows {

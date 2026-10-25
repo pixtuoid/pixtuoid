@@ -59,8 +59,7 @@ impl Default for LiveFacet {
     }
 }
 
-/// Live-connection facet, derived per frame from the scene snapshot. Aligned by
-/// index to `ConnectionUi.rows`.
+/// Live-connection facet, derived per frame from the scene snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LiveInfo {
     pub facet: LiveFacet,
@@ -76,8 +75,7 @@ pub struct LiveInfo {
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionFrame {
     pub open: bool,
-    pub rows: Vec<ConnectionRow>,
-    pub live: Vec<LiveInfo>,
+    pub rows: Vec<(ConnectionRow, LiveInfo)>,
     pub selected: usize,
     pub confirm: Option<usize>,
     pub result: Option<String>,
@@ -153,16 +151,13 @@ pub(crate) fn live_view(
     rows: &[ConnectionRow],
     scene: &SceneState,
     health: &[SourceDeath],
-) -> Vec<LiveInfo> {
+) -> Vec<(ConnectionRow, LiveInfo)> {
     rows.iter()
-        .map(|r| live_for(now, r.source_id, scene, health))
+        .map(|r| (r.clone(), live_for(now, r.source_id, scene, health)))
         .collect()
 }
 
 pub(crate) fn move_selection(rows: &[ConnectionRow], sel: usize, delta: i32) -> usize {
-    if rows.is_empty() {
-        return 0;
-    }
     (sel as i32 + delta).clamp(0, rows.len() as i32 - 1) as usize
 }
 

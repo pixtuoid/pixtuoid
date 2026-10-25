@@ -118,7 +118,7 @@ fn build_issue_url(
     );
 
     format!(
-        "{}/issues/new?labels=crash-report&title={}&body={}",
+        "{}/issues/new?title={}&body={}",
         pixtuoid_scene::hit::REPO_URL,
         percent_encode(&title),
         percent_encode(&body),
@@ -329,7 +329,6 @@ mod tests {
             Path::new("/tmp/x"),
         );
         assert!(url.starts_with(&format!("{}/issues/new?", pixtuoid_scene::hit::REPO_URL)));
-        assert!(url.contains("labels=crash-report"));
         assert!(url.contains("title="));
         assert!(url.contains("body="));
     }

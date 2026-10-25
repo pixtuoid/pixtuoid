@@ -153,7 +153,6 @@ impl std::fmt::Debug for FrameOut {
         f.debug_struct("FrameOut")
             .field("holding", &held.holding)
             .field("sync", &held.sync)
-            .field("torn", &held.torn)
             .finish_non_exhaustive()
     }
 }
@@ -165,9 +164,6 @@ struct Held {
     holding: bool,
     /// Wrap each frame in `CSI ? 2026 h` / `l`.
     sync: bool,
-    /// The last present failed, perhaps mid-escape or inside its update: the
-    /// next opens with ST, and ends that update.
-    torn: bool,
 }
 
 /// Begin and end synchronized update
@@ -183,7 +179,6 @@ impl FrameOut {
             frame: Vec::new(),
             holding: false,
             sync,
-            torn: false,
         })))
     }
 
@@ -203,12 +198,6 @@ impl FrameOut {
         let mut held = self.held();
         held.holding = true;
         held.frame.clear();
-        if held.torn {
-            held.frame.extend_from_slice(crate::graphics::ST);
-            if held.sync {
-                held.frame.extend_from_slice(END_SYNC);
-            }
-        }
         if held.sync {
             held.frame.extend_from_slice(BEGIN_SYNC);
         }
@@ -223,7 +212,7 @@ impl FrameOut {
     ///
     /// # Errors
     ///
-    /// If the write or the flush fails; the next frame then opens with ST.
+    /// If the write or the flush fails.
     pub(crate) fn present(&self) -> std::io::Result<()> {
         let mut held = self.held();
         held.holding = false;
@@ -232,7 +221,6 @@ impl FrameOut {
         }
         let Held { out, frame, .. } = &mut *held;
         let wrote = out.write_all(frame).and_then(|()| out.flush());
-        held.torn = wrote.is_err();
         held.frame.clear();
         wrote
     }
@@ -648,7 +636,7 @@ mod frame_out_tests {
     use super::{BEGIN_SYNC, END_SYNC, FrameOut};
     use std::io::Write;
 
-    /// A terminal that records each write it gets, and fails while `full`;
+    /// A terminal that records each write it gets, and fails once `gone`;
     /// clones share it.
     #[derive(Clone, Default)]
     struct Tty(std::sync::Arc<std::sync::Mutex<Seen>>);
@@ -658,7 +646,7 @@ mod frame_out_tests {
         writes: Vec<Vec<u8>>,
         /// Every write call, the failed ones too.
         attempts: usize,
-        full: bool,
+        gone: bool,
     }
 
     impl Tty {
@@ -671,8 +659,8 @@ mod frame_out_tests {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             let mut seen = self.seen();
             seen.attempts += 1;
-            if seen.full {
-                return Err(std::io::ErrorKind::WouldBlock.into());
+            if seen.gone {
+                return Err(std::io::ErrorKind::BrokenPipe.into());
             }
             seen.writes.push(buf.to_vec());
             Ok(buf.len())
@@ -702,7 +690,7 @@ mod frame_out_tests {
         )
         .expect("a fixed viewport needs no size query");
         term.hide_cursor().expect("hidden");
-        tty.seen().full = true;
+        tty.seen().gone = true;
 
         assert!(super::teardown_terminal(&mut term, Some(&out)).is_err());
         let attempts = tty.seen().attempts;
@@ -753,27 +741,6 @@ mod frame_out_tests {
                 2,
                 "outside a frame: straight through"
             );
-        }
-    }
-
-    /// A frame the terminal refused leaves the next one opening with ST, so
-    /// an escape it cut short ends before the next frame's bytes, and with
-    /// the end of the update it may have left open.
-    #[test]
-    fn a_refused_frame_opens_the_next_with_st() {
-        for sync in [false, true] {
-            let tty = Tty::default();
-            let mut out = FrameOut::new(tty.clone(), sync);
-            tty.seen().full = true;
-            assert!(frame(&mut out, &[b"\x1b_Ga=T"]).is_err());
-            tty.seen().full = false;
-            frame(&mut out, &[b"next"]).expect("presented");
-            let opening: &[&[u8]] = if sync {
-                &[crate::graphics::ST, END_SYNC, BEGIN_SYNC, b"next", END_SYNC]
-            } else {
-                &[crate::graphics::ST, b"next"]
-            };
-            assert_eq!(tty.seen().writes, vec![opening.concat()], "sync {sync}");
         }
     }
 }
@@ -1279,7 +1246,7 @@ mod apply_key_action_tests {
     #[test]
     fn v_reopens_the_popup_with_the_notices_still_due() {
         let mut h = Harness::new();
-        h.ui = super::ui_state::UiState::upgraded_from("0.19.0", "0.20.0");
+        h.ui = super::ui_state::UiState::upgraded_from("0.19.0", &semver::Version::new(0, 20, 0));
         h.connected = crate::runtime::ConnectedSources::new(HashSet::from(["codex".to_string()]));
         h.installed = || vec!["codex", "reasonix"];
         assert!(!h.apply(KeyAction::OpenVersionPopup));

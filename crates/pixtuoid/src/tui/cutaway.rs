@@ -1,6 +1,6 @@
 //! The cutaway as terminal images: a frame's changed tiles are encoded in the
-//! plan's protocol and written after ratatui's flush, once the frame's text
-//! cells are known.
+//! plan's protocol, kitty's written before ratatui's flush and SIXEL's and
+//! iTerm2's after it, once the frame's text cells are known.
 //!
 //! - kitty shows every tile through Unicode placeholders, which are ordinary
 //!   text, so a modal or tooltip drawn after them takes their cells as any
@@ -96,9 +96,6 @@ pub(crate) struct TileCutaway {
     in_grid: &'static AtomicBool,
     /// When the last transmits were written, for the protocol's cadence.
     sent_at: Option<SystemTime>,
-    /// This frame's written transmits, counted as shown once the frame
-    /// lands ([`Self::landed`]).
-    landing: Option<Landing>,
     /// What the last frame's transmits did, for its jank report.
     last: FrameSend,
     /// The cores a frame's encode splits across: the platform's, or a test's
@@ -113,13 +110,6 @@ struct Pending {
     due: bool,
 }
 
-/// Transmits written into the frame; the cadence restarts from `at` when
-/// there were any.
-struct Landing {
-    sent: Vec<Changed>,
-    at: Option<SystemTime>,
-}
-
 impl std::fmt::Debug for TileCutaway {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TileCutaway")
@@ -128,7 +118,6 @@ impl std::fmt::Debug for TileCutaway {
             .field("route", &self.route)
             .field("origin", &self.origin)
             .field("pending", &self.pending.as_ref().map(|p| p.tiles.len()))
-            .field("landing", &self.landing.as_ref().map(|l| l.sent.len()))
             .finish_non_exhaustive()
     }
 }
@@ -164,7 +153,6 @@ impl TileCutaway {
             pending: None,
             in_grid: &crate::graphics::IN_GRID,
             sent_at: None,
-            landing: None,
             last: FrameSend::default(),
             cores: pixtuoid_scene::par::cores(),
         }
@@ -301,35 +289,35 @@ impl TileCutaway {
 
     /// Send kitty's tiles before ratatui's flush, so the placeholders it
     /// writes find their images there.
-    pub(crate) fn before_flush(&mut self, now: SystemTime) {
+    pub(crate) fn before_flush(&mut self, now: SystemTime) -> std::io::Result<()> {
         if self.route.protocol() == ImageProtocol::Kitty {
-            self.send(now);
+            self.send(now)?;
         }
+        Ok(())
     }
 
     /// Send SIXEL's or iTerm2's tiles after ratatui's flush, each carved
     /// around the text cells `carves` marks: only then are they known. A tile
     /// whose text moved is sent again, to give the cells text left back to
     /// the image.
-    pub(crate) fn after_flush(&mut self, carves: &[Carve], now: SystemTime) {
+    pub(crate) fn after_flush(&mut self, carves: &[Carve], now: SystemTime) -> std::io::Result<()> {
         if self.route.protocol() == ImageProtocol::Kitty {
-            return;
+            return Ok(());
         }
         if let Some(pending) = self.pending.as_mut().filter(|p| p.due) {
             pending.tiles = self.tiles.carved(&pending.tiles, carves);
         }
-        self.send(now);
+        self.send(now)
     }
 
-    /// Encode and write the queued tiles, to land with the frame. A write
-    /// the sink refuses is logged and leaves its tiles owed.
-    fn send(&mut self, now: SystemTime) {
+    /// Encode and write the queued tiles, to land with the frame, counting them
+    /// as shown: a frame that fails to land ends the run.
+    fn send(&mut self, now: SystemTime) -> std::io::Result<()> {
         let Some(Pending { tiles: send, .. }) = self.pending.take() else {
-            return;
+            return Ok(());
         };
         if send.is_empty() {
-            self.wrote(send, None);
-            return;
+            return Ok(());
         }
         match self.route.protocol() {
             ImageProtocol::Kitty => {
@@ -345,49 +333,23 @@ impl TileCutaway {
                 self.in_grid.store(true, Ordering::Relaxed)
             }
         }
-        let mut wrote = Ok(());
         let begun = Instant::now();
         let encoded =
             tracing::trace_span!("tiles.encode").in_scope(|| self.encoder().encode_all(&send));
         self.last.encode = begun.elapsed();
         let mut sent = Vec::with_capacity(send.len());
         for (c, bytes) in send.into_iter().zip(encoded) {
-            if wrote.is_err() {
-                break;
-            }
             if let Some(bytes) = bytes {
-                wrote = tracing::trace_span!("tile.write").in_scope(|| self.out.write_all(&bytes));
+                tracing::trace_span!("tile.write").in_scope(|| self.out.write_all(&bytes))?;
                 self.last.bytes += bytes.len() as u64;
                 sent.push(c);
             }
         }
-        let flushed = wrote.and_then(|()| self.out.flush());
+        self.out.flush()?;
         self.last.sent = sent.len();
-        match flushed {
-            Ok(()) => self.wrote(sent, Some(now)),
-            Err(e) => tracing::warn!(error = %e, "image transmit failed"),
-        }
-    }
-
-    /// A write went out with the frame: its transmits show once the frame
-    /// lands ([`Self::landed`]).
-    fn wrote(&mut self, sent: Vec<Changed>, at: Option<SystemTime>) {
-        self.landing = Some(Landing { sent, at });
-    }
-
-    /// The frame reached the terminal: its transmits are shown.
-    pub(crate) fn landed(&mut self) {
-        if let Some(Landing { sent, at }) = self.landing.take() {
-            if at.is_some() {
-                self.sent_at = at;
-            }
-            self.tiles.sent(&sent);
-        }
-    }
-
-    /// The frame never reached the terminal: nothing it wrote is shown.
-    pub(crate) fn lost(&mut self) {
-        self.landing = None;
+        self.sent_at = Some(now);
+        self.tiles.sent(&sent);
+        Ok(())
     }
 
     /// What encodes this frame's tiles, apart from the sink no thread shares.

@@ -43,7 +43,7 @@ exclude_re = [
     'omp\.rs.*replace \|\| with && in parse_omp_env_line',
     # Untestable glue inside otherwise-mutated files: ZERO test call sites, so
     # nothing exists that could kill them. Delete a name the moment a test reaches it.
-    'tui/mod\.rs.*(run_tui|setup_terminal|teardown_terminal)',
+    'tui/mod\.rs.*(run_tui|setup_terminal)',
     'runtime/driver\.rs.*replace (run|run_async|headless_loop) ->',
     'runtime/driver\.rs.*replace reducer_task with',
     # Reached under test, but only on a branch where the mutation is unobservable.

@@ -26,16 +26,16 @@ pub(crate) struct Versions {
 /// `last_seen_version`. Persist also happens on a first-time install and on an
 /// UNPARSEABLE recorded version — overwrite to recover, else a corrupted or
 /// hand-edited value silently disables the popup forever.
-pub(crate) fn boot_decision(current_ver: &str, last_seen: Option<&str>) -> BootDecision {
-    let current = Version::parse(current_ver).ok();
+pub(crate) fn boot_decision(current: &Version, last_seen: Option<&str>) -> BootDecision {
     let previous = last_seen.and_then(|v| Version::parse(v).ok());
-    let should_show_popup = matches!((&current, &previous), (Some(c), Some(p)) if c > p);
+    let should_show_popup = previous.as_ref().is_some_and(|p| current > p);
     BootDecision {
         should_show_popup,
         should_persist: should_show_popup || previous.is_none(),
-        versions: previous
-            .zip(current)
-            .map(|(previous, current)| Versions { previous, current }),
+        versions: previous.map(|previous| Versions {
+            previous,
+            current: current.clone(),
+        }),
     }
 }
 
@@ -154,7 +154,7 @@ mod tests {
     use super::*;
 
     fn is_newer_version(current: &str, last_seen: &str) -> bool {
-        boot_decision(current, Some(last_seen)).should_show_popup
+        boot_decision(&v(current), Some(last_seen)).should_show_popup
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn boot_decision_overwrites_corrupted_last_seen() {
         for corrupted in ["v0.4.0", "0.5", "garbage", ""] {
-            let d = boot_decision("0.4.1", Some(corrupted));
+            let d = boot_decision(&v("0.4.1"), Some(corrupted));
             assert!(
                 !d.should_show_popup,
                 "can't show popup when comparison fails: {corrupted:?}"
@@ -231,28 +231,28 @@ mod tests {
 
     #[test]
     fn boot_decision_first_run_persists_silently() {
-        let d = boot_decision("0.4.1", None);
+        let d = boot_decision(&v("0.4.1"), None);
         assert!(!d.should_show_popup);
         assert!(d.should_persist);
     }
 
     #[test]
     fn boot_decision_upgrade_shows_popup_and_persists() {
-        let d = boot_decision("0.4.0", Some("0.3.0"));
+        let d = boot_decision(&v("0.4.0"), Some("0.3.0"));
         assert!(d.should_show_popup);
         assert!(d.should_persist);
     }
 
     #[test]
     fn boot_decision_same_version_no_action() {
-        let d = boot_decision("0.4.0", Some("0.4.0"));
+        let d = boot_decision(&v("0.4.0"), Some("0.4.0"));
         assert!(!d.should_show_popup);
         assert!(!d.should_persist);
     }
 
     #[test]
     fn boot_decision_downgrade_no_action() {
-        let d = boot_decision("0.3.0", Some("0.4.0"));
+        let d = boot_decision(&v("0.3.0"), Some("0.4.0"));
         assert!(!d.should_show_popup);
         assert!(!d.should_persist);
     }
@@ -290,12 +290,12 @@ mod tests {
     #[test]
     fn nothing_is_due_without_a_previous_version() {
         for last_seen in [None, Some("v0.4.0")] {
-            let versions = boot_decision("0.20.0", last_seen).versions;
+            let versions = boot_decision(&v("0.20.0"), last_seen).versions;
             assert_eq!(versions, None, "{last_seen:?}");
             assert!(due(versions.as_ref(), &all_hold()).is_empty());
         }
         assert_eq!(
-            boot_decision("0.20.0", Some("0.19.0")).versions,
+            boot_decision(&v("0.20.0"), Some("0.19.0")).versions,
             Some(versions("0.19.0", "0.20.0"))
         );
     }

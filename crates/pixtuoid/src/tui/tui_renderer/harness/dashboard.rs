@@ -45,47 +45,48 @@ fn connection_panel_renders_both_facets_borderless() {
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
     let rows = vec![
-        ConnectionRow {
-            source_id: "claude",
-            label_prefix: "cc",
-            display_name: "Claude Code",
-            state: ConnState::Connected,
-            config_path: Some(std::path::PathBuf::from("~/.claude/settings.json")),
-            target: None,
-            health: None,
-        },
-        ConnectionRow {
-            source_id: "antigravity",
-            label_prefix: "ag",
-            display_name: "Antigravity",
-            state: ConnState::Disconnected,
-            config_path: None,
-            target: None,
-            health: None,
-        },
-    ];
-    let live = vec![
-        LiveInfo {
-            facet: LiveFacet::Agents {
-                agents: 2,
-                last_event_age: Some(std::time::Duration::from_secs(3)),
+        (
+            ConnectionRow {
+                source_id: "claude",
+                label_prefix: "cc",
+                display_name: "Claude Code",
+                state: ConnState::Connected,
+                config_path: Some(std::path::PathBuf::from("~/.claude/settings.json")),
+                target: None,
+                health: None,
             },
-            dead: false,
-        },
-        LiveInfo {
-            facet: LiveFacet::Agents {
-                agents: 1,
-                last_event_age: Some(std::time::Duration::from_secs(12)),
+            LiveInfo {
+                facet: LiveFacet::Agents {
+                    agents: 2,
+                    last_event_age: Some(std::time::Duration::from_secs(3)),
+                },
+                dead: false,
             },
-            dead: false,
-        },
+        ),
+        (
+            ConnectionRow {
+                source_id: "antigravity",
+                label_prefix: "ag",
+                display_name: "Antigravity",
+                state: ConnState::Disconnected,
+                config_path: None,
+                target: None,
+                health: None,
+            },
+            LiveInfo {
+                facet: LiveFacet::Agents {
+                    agents: 1,
+                    last_event_age: Some(std::time::Duration::from_secs(12)),
+                },
+                dead: false,
+            },
+        ),
     ];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live,
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()
             },
@@ -123,21 +124,23 @@ fn connection_panel_health_flag_and_detail_preempt_the_install_path() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "reasonix",
-        label_prefix: "rx",
-        display_name: "Reasonix",
-        state: ConnState::Connected,
-        config_path: Some(std::path::PathBuf::from("~/.reasonix/settings.json")),
-        target: None,
-        health: Some("install broken: shim binary missing".into()), // NO ⚠ prefix
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "reasonix",
+            label_prefix: "rx",
+            display_name: "Reasonix",
+            state: ConnState::Connected,
+            config_path: Some(std::path::PathBuf::from("~/.reasonix/settings.json")),
+            target: None,
+            health: Some("install broken: shim binary missing".into()), // NO ⚠ prefix
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()
             },
@@ -166,21 +169,23 @@ fn connection_panel_armed_shows_confirm_prompt() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "codex",
-        label_prefix: "cx",
-        display_name: "Codex",
-        state: ConnState::Connected,
-        config_path: Some(std::path::PathBuf::from("~/.codex/config.toml")),
-        target: None,
-        health: None,
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex",
+            state: ConnState::Connected,
+            config_path: Some(std::path::PathBuf::from("~/.codex/config.toml")),
+            target: None,
+            health: None,
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 confirm: Some(0),
                 ..Default::default()
             },
@@ -202,21 +207,23 @@ fn connection_panel_disconnected_selected_shows_connect_hint() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "antigravity",
-        label_prefix: "ag",
-        display_name: "Antigravity",
-        state: ConnState::Disconnected,
-        config_path: None,
-        target: None,
-        health: None,
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "antigravity",
+            label_prefix: "ag",
+            display_name: "Antigravity",
+            state: ConnState::Disconnected,
+            config_path: None,
+            target: None,
+            health: None,
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()
             },
@@ -241,21 +248,23 @@ fn connection_panel_no_cli_selected_shows_not_detected_hint() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "codex",
-        label_prefix: "cx",
-        display_name: "Codex",
-        state: ConnState::NoCli { connected: false },
-        config_path: None,
-        target: None,
-        health: None,
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "codex",
+            label_prefix: "cx",
+            display_name: "Codex",
+            state: ConnState::NoCli { connected: false },
+            config_path: None,
+            target: None,
+            health: None,
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()
             },
@@ -280,21 +289,23 @@ fn connection_panel_connected_without_config_path_shows_connected() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "claude",
-        label_prefix: "cc",
-        display_name: "Claude Code",
-        state: ConnState::Connected,
-        config_path: None,
-        target: None,
-        health: None,
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "claude",
+            label_prefix: "cc",
+            display_name: "Claude Code",
+            state: ConnState::Connected,
+            config_path: None,
+            target: None,
+            health: None,
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()
             },
@@ -319,21 +330,23 @@ fn connection_panel_last_result_overrides_per_state_detail() {
     use crate::panels::connection::{ConnState, ConnectionRow, LiveInfo};
     let mut r = build(120, 44, vec![]);
     let scene = scene_with(vec![], 16);
-    let rows = vec![ConnectionRow {
-        source_id: "claude",
-        label_prefix: "cc",
-        display_name: "Claude Code",
-        state: ConnState::Connected,
-        config_path: Some(std::path::PathBuf::from("~/.claude/settings.json")),
-        target: None,
-        health: None,
-    }];
+    let rows = vec![(
+        ConnectionRow {
+            source_id: "claude",
+            label_prefix: "cc",
+            display_name: "Claude Code",
+            state: ConnState::Connected,
+            config_path: Some(std::path::PathBuf::from("~/.claude/settings.json")),
+            target: None,
+            health: None,
+        },
+        LiveInfo::default(),
+    )];
     r.set_frames(
         RenderFrames {
             connection: ConnectionFrame {
                 open: true,
                 rows,
-                live: vec![LiveInfo::default()],
                 result: Some("X-RESULT-SENTINEL".to_string()),
                 socket_line: "socket  /tmp/p.sock".into(),
                 ..Default::default()

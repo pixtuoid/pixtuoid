@@ -480,22 +480,12 @@ fn first_sanitized_line(bytes: &[u8]) -> Option<String> {
 }
 
 /// Probe a source's `<cli> --version` (argv from the static registry — never user input)
-/// → the first non-empty output line, sanitized. Best-effort: a spawn error, a NONZERO
-/// exit (whose error text must never show as a version), or a hang all yield None. stdin
-/// is nulled so the child can't block on the inherited TTY.
+/// → the first non-empty output line, sanitized. Best-effort: a spawn error or a NONZERO
+/// exit (whose error text must never show as a version) yields None. `output()` closes
+/// the child's stdin, so it can't block on the inherited TTY.
 fn probe_version(argv: &'static [&'static str]) -> Option<String> {
-    use std::process::{Command, Stdio};
-    const PROBE_VERSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
     let (cmd, args) = argv.split_first()?;
-    let output = crate::output_within(
-        Command::new(cmd)
-            .args(args)
-            .stdin(Stdio::null())
-            // `--version` output is tiny, which `output_within` requires.
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped()),
-        PROBE_VERSION_TIMEOUT,
-    )?;
+    let output = std::process::Command::new(cmd).args(args).output().ok()?;
     if !output.status.success() {
         return None;
     }
