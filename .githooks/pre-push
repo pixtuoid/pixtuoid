@@ -26,6 +26,6 @@ unset $scrub
 
 cd "$toplevel"
 
-resolve_just pre-push
+resolve_just
 
 exec "${just[@]}" preflight

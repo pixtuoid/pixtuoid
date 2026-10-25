@@ -4927,8 +4927,6 @@ def main():
     args = parser.parse_args()
     if not args.selftest and args.pack is None:
         parser.error("a pack directory is required")
-    if args.pack is not None and not args.pack.is_dir():
-        parser.error(f"not a directory: {args.pack}")
     pieces = {
         "plant": (plant_bush.__doc__, [plant_bush()]),
         "plant_tall": (plant_tall.__doc__, [plant_tall()]),

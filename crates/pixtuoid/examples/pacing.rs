@@ -539,7 +539,8 @@ fn hitch(path: &Path) -> Result<()> {
     );
     let tick = Duration::from_secs(1) / PAINT_FPS;
     let real_secs = pixtuoid_core::platform::text_env("HITCH_REAL_SECS")
-        .and_then(|s| s.parse().ok())
+        .map(|s| s.parse())
+        .transpose()?
         .unwrap_or(600);
     let only = pixtuoid_core::platform::text_env("HITCH_ONLY");
     let noon = pixtuoid_scene::localclock::at_hour(12);
@@ -680,13 +681,14 @@ fn hitch(path: &Path) -> Result<()> {
         .flat_map(|t| sweeps.iter().map(move |r| (t, r)))
         .collect();
     plan.insert(0, (&terms[0], &real));
-    for (term, run) in plan {
-        if only.as_deref().is_some_and(|o| {
-            !o.split('|')
+    plan.retain(|(term, run)| {
+        only.as_deref().is_none_or(|o| {
+            o.split('|')
                 .all(|part| term.name.contains(part) || run.name.contains(part))
-        }) {
-            continue;
-        }
+        })
+    });
+    anyhow::ensure!(!plan.is_empty(), "HITCH_ONLY={only:?} selects no run");
+    for (term, run) in plan {
         let pets = vec![Pet::defaulted(PetKind::Cat), Pet::defaulted(PetKind::Dog)];
         let (mut r, wire) = renderer(
             term.protocol,

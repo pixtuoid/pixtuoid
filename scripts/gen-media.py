@@ -122,12 +122,7 @@ def crop_box(img, spec, job_id):
 
 
 def run_crop(job, out_dirs, work, intermediates):
-    src = intermediates.get(job["from"])
-    if src is None:
-        sys.exit(
-            f"gen-media: crop job '{job['id']}' needs its source render '{job['from']}' "
-            f"— include it, e.g. --jobs {job['from']},{job['id']}"
-        )
+    src = intermediates[job["from"]]
     with Image.open(src) as im:
         img = im.convert("RGB")
     if "quadrants" in job:
@@ -180,8 +175,6 @@ def run_composite(job, out_dirs, work, intermediates):
 
 
 def run_gif(job, out_dirs, work, intermediates):
-    if not shutil.which("gifsicle"):
-        sys.exit("gifsicle not found — brew install gifsicle")
     for d in out_dirs:
         dst = d / f"{job['id']}.gif"
         snap(dst, cols=job["cols"], rows=job["rows"], hour=job["hour"], day=job.get("day"),
@@ -420,12 +413,6 @@ def main():
     args = ap.parse_args()
     global CHECK_MODE
     CHECK_MODE = args.check
-
-    # run_check walks the FULL committed tree, so every still owned by a
-    # filtered-out job would report "NOT REGENERATED" — spurious failures.
-    if args.check and args.jobs:
-        ap.error("--check renders everything and walks the full committed tree; "
-                 "--jobs cannot be combined with it (run --check without --jobs)")
 
     # Pin TZ=UTC for EVERY render (inherited by every subprocess) so the office's
     # epoch-derived weather slot + lighting phase — snapshot reads --now-hour as a

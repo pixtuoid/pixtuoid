@@ -256,7 +256,7 @@ before re-litigating.
 
 ## Adding a new agent CLI
 
-The registration steps (4–7, 9) and step 11's roster literals are test-forced —
+The registration steps (4–7, 9) and step 11's roster literal are test-forced —
 skipping one fails `just test`. Step 8 is forced only for hook-only sources;
 step 10 by the theme guards; steps 1–3 are on you.
 
@@ -302,9 +302,8 @@ step 10 by the theme guards; steps 1–3 are on you.
 10. **Add the per-source badge hue** — a `SourceColors` field + value in EVERY
     theme file + `badge_color` in the manifest row; the coverage, legibility
     and site-bridge tests fail until it exists.
-11. **Two roster literals in two test binaries** (a scoped run misses them):
-    the row-by-row byte pin in `corpus_check.rs`; a case row in
-    `crates/pixtuoid/tests/wire_to_pixels.rs`'s `agent_cases()`.
+11. **A roster literal in a second test binary** (a scoped run misses it): a
+    case row in `crates/pixtuoid/tests/wire_to_pixels.rs`'s `agent_cases()`.
 
 ## License
 

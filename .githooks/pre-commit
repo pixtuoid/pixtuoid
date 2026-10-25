@@ -11,7 +11,7 @@ cd "$(git rev-parse --show-toplevel)"
 # shellcheck source=SCRIPTDIR/../scripts/lib/hook-just.sh
 source "$here/../scripts/lib/hook-just.sh"
 
-resolve_just pre-commit
+resolve_just
 
 printf '\033[36m[pre-commit] just fmt-check\033[0m\n' >&2
 "${just[@]}" fmt-check || {

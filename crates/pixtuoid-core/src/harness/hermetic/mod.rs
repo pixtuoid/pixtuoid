@@ -225,8 +225,7 @@ impl Turn {
 /// A daemon's own live tier, driven against this build.
 #[derive(Debug)]
 pub struct Live {
-    /// The tier, from the repository root. It takes its ports as arguments,
-    /// and exits [`LIVE_PREREQUISITE`] when something it needs is missing.
+    /// The tier, from the repository root. It takes its ports as arguments.
     pub script: &'static str,
     /// How many free ports the orchestrator passes it.
     pub ports: usize,
@@ -252,10 +251,6 @@ pub struct Daemon {
     /// Environment it alone gets, beside the profile's.
     pub env: &'static [(&'static str, &'static str)],
 }
-
-/// A live tier's exit when a prerequisite is missing, which no run of the build
-/// under test caused.
-pub const LIVE_PREREQUISITE: i32 = 2;
 
 /// What a live tier reads as the build under test.
 pub const LIVE_PIXTUOID_ENV: &str = "PIXTUOID_BIN";
@@ -630,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_tier_takes_the_ports_the_build_and_the_exit_it_is_given() {
+    fn a_live_tier_takes_the_ports_and_the_build_it_is_given() {
         for p in PROFILES {
             let Some(live) = &p.live else {
                 continue;
@@ -640,11 +635,6 @@ mod tests {
             assert!(
                 script.contains(&format!("${{{LIVE_PIXTUOID_ENV}:-")),
                 "{}: the script ignores the build under test",
-                p.source
-            );
-            assert!(
-                script.contains(&format!("exit {LIVE_PREREQUISITE}")),
-                "{}: no prerequisite exit",
                 p.source
             );
             let default = script

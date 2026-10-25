@@ -129,18 +129,6 @@ check "pre-push falls back to mise exec -- just preflight with a scrubbed env" \
 check "pre-commit falls back to mise exec -- just fmt-check" \
     hook_falls_back_to_mise "$repo/.githooks/pre-commit" "exec -- just fmt-check" no
 
-hook_fails_with_hint_without_just_or_mise() {
-    local hook="$1" s out
-    s=$(mktemp -d "$root/hookXXXX")
-    git init -q "$s"
-    ! out=$(cd "$s" && PATH="$sysbin" bash "$hook" origin y </dev/null 2>&1) &&
-        grep -qF 'brew install mise' <<<"$out"
-}
-for name in pre-commit pre-push; do
-    check "$name exits 1 with the install hint when neither just nor mise exists" \
-        hook_fails_with_hint_without_just_or_mise "$repo/.githooks/$name"
-done
-
 if [ "$fails" -eq 0 ]; then
     echo "hook-scrub-selftest: OK"
 else

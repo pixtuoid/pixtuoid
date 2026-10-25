@@ -179,9 +179,7 @@ def text_path(s: str, x: int, y: int, px: int) -> str:
     """Path data lighting `s` top-left at (x, y), `px` real pixels per glyph pixel."""
     runs = []
     for i, ch in enumerate(s):
-        rows = GLYPHS.get(ch)
-        if rows is None:
-            raise ValueError(f"no glyph for {ch!r} in {s!r}")
+        rows = GLYPHS[ch]
         runs.append(mask_path(rows, x + i * GLYPH_ADVANCE * px, y, px))
     return "".join(runs)
 

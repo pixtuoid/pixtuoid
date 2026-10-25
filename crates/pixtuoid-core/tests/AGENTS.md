@@ -78,7 +78,7 @@ under `sources/fixtures/` would be mis-scanned.
    source name (`claude-code`, not `claude`); transcript-bearing fixtures are
    driven WITH the first-sight seed, so a wrong `id_from_path` fails here
    instead of shipping two sprites for one session.
-2. **Always:** the two roster literals in
+2. **Always:** the roster literal in
    [CONTRIBUTING's add-a-CLI checklist](../../../docs/CONTRIBUTING.md#adding-a-new-agent-cli)
    (its last step).
 3. **Only for unique behavior** (subagent hooks, custom lifecycle): a

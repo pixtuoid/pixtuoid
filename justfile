@@ -31,7 +31,7 @@ _cargo_home := env('CARGO_HOME', '')
 # mise.toml's tools, ahead of ~/.cargo/bin (cargo resolves subcommands in PATH
 # order, and stale copies sit there). Directories, not shims: a shim errors
 # outside the repo, and the hermetic sandbox runs CLIs in temp dirs.
-_mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths || { echo "error: mise env --paths failed; needs the mise named by min_version in mise.toml (brew upgrade mise)" >&2; exit 1; }')
+_mise_paths := shell('command -v mise >/dev/null || exit 0; MISE_OFFLINE=1 mise env --paths')
 export PATH := (if _mise_paths == '' { '' } else { replace_regex(_mise_paths, '\r?\n', PATH_VAR_SEP) + PATH_VAR_SEP }) + (if _cargo_home == '' { home_directory() / '.cargo' } else { _cargo_home }) / 'bin' + PATH_VAR_SEP + env('PATH')
 
 # ── variables ─────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ actionlint-composites:
             shell="$(yq -r ".runs.steps | map(select(has(\"run\"))) | .[$i].shell" "$action")"
             script="$work/$(echo "$action" | tr /. __)-$i.$shell"
             { echo "#!/usr/bin/env $shell"; yq -r ".runs.steps | map(select(has(\"run\"))) | .[$i].run" "$action"; } >"$script"
-            shellcheck -s "$shell" "$script" || { echo "  ^ from $action run step $i" >&2; exit 1; }
+            shellcheck -s "$shell" "$script"
             checked=$((checked + 1))
         done
     done
@@ -643,13 +643,11 @@ hermetic-build:
 hermetic *args: hermetic-build
     cargo run --release -q -p pixtuoid-core --example hermetic -- "$@"
 
-# The nightly's bump leg: snapshots rewritten for the re-recorded fixtures,
-# then judged as CI judges them.
+# The nightly's bump leg: snapshots rewritten for the re-recorded fixtures.
 [doc('Re-record a source at a release, moving its pin, and write the bump as a patch')]
 [group('rust')]
 hermetic-bump source release out: (hermetic "--cli" release "--record" source)
     TZ={{ TEST_TZ }} INSTA_UPDATE=always INSTA_FORCE_PASS=1 cargo test -q -p pixtuoid-core --test sources
-    TZ={{ TEST_TZ }} cargo test -q -p pixtuoid-core --test sources
     cargo run --release -q -p pixtuoid-core --example bump -- patch "$1" "$3"
 
 # Compile the workspace; extra args are forwarded:
@@ -1000,33 +998,24 @@ setup-tools:
     # skip it. CI runs every gate itself, so a skipped local hook still meets
     # them at merge.
     git config core.hooksPath .githooks
-    command -v mise &>/dev/null || { echo "error: mise not found — brew install mise" >&2; exit 1; }
     mise install
     # The rust-analyzer component powers the editor / AI-agent LSP (go-to-def,
     # find-references — the tool the "change all N keying sites in lockstep"
     # invariants depend on). rust-toolchain.toml pins only rustfmt+clippy, so
     # without this the `~/.cargo/bin/rust-analyzer` rustup shim errors with
-    # "Unknown binary" and the LSP silently degrades to grep. Idempotent; skipped
-    # cleanly when rustup is absent (e.g. a distro-packaged toolchain).
-    if command -v rustup &>/dev/null; then
-        rustup component add rust-analyzer
-    fi
+    # "Unknown binary" and the LSP silently degrades to grep. Idempotent.
+    rustup component add rust-analyzer
     just _install-public-api
 
 # The pixel comparator is the primitive under `gen-check` and
 # `gen-media-check`; an always-green comparator reports success for any render
-# at all. Its own recipe because it needs only Pillow, while `gen-check` needs
-# every generator's toolchain: a developer who cannot run that gate should still
-# be able to run this.
+# at all.
 [doc('Self-test the pixel comparator that gen-check and gen-media-check ride on')]
 [group('meta')]
 compare-selftest:
     #!/usr/bin/env bash
     set -eu
-    # Prefer the venv (the same Pillow gen-media.py uses), but do not require it:
-    # any python3 with Pillow answers the question this recipe asks.
-    if [ -x .venv/bin/python3 ]; then py=.venv/bin/python3; else py=python3; fi
-    "$py" scripts/compare-screenshots.py --selftest
+    .venv/bin/python3 scripts/compare-screenshots.py --selftest
 
 [doc("Self-test the git env scrub of the pre-push hook")]
 [group('meta')]

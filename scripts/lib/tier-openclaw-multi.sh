@@ -22,21 +22,6 @@ PIX="${PIXTUOID_BIN:-$REPO/target/release/pixtuoid}"
 PORTS=("$@")
 [ "${#PORTS[@]}" -gt 0 ] || PORTS=(18901 18902 18903 18904)
 
-[ -x "$PIX" ] || {
-    echo "missing $PIX — run: just build --release" >&2
-    exit 2
-}
-command -v openclaw >/dev/null 2>&1 || {
-    echo "missing 'openclaw' on PATH — this live test drives the REAL gateway" >&2
-    exit 2
-}
-for port in "${PORTS[@]}"; do
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-        echo "port $port is already in use — pass free ports, or stop that listener" >&2
-        exit 2
-    fi
-done
-
 # 0700 by construction, with the SOCKET inside it: a fixed or `mktemp -u`
 # socket name in shared temp lets concurrent runs clobber each other and is
 # pre-plantable by another user, which nothing downstream polices —
@@ -50,14 +35,6 @@ PIXPID=""
 cleanup() {
     for p in "${GW_PIDS[@]:-}"; do
         [ -n "$p" ] && kill "$p" 2>/dev/null
-    done
-    sleep 1
-    # Belt-and-braces port reap: `$!` normally holds the port, so this only catches a
-    # version that daemonises, or a gateway that outlived a failed kill.
-    for port in "${PORTS[@]}"; do
-        left="$(lsof -ti tcp:"$port" -sTCP:LISTEN 2>/dev/null)"
-        # shellcheck disable=SC2086  # word-split intended — one kill per listener pid
-        [ -n "$left" ] && kill -9 $left 2>/dev/null
     done
     [ -n "$PIXPID" ] && kill "$PIXPID" 2>/dev/null
     rm -rf "$MG"
@@ -85,7 +62,7 @@ for port in "${PORTS[@]}"; do
     }
     # THE install cross-check: a config merge that writes keys upstream does not read
     # passes every unit test and still renders no lobster.
-    OPENCLAW_HOME="$home" openclaw plugins list 2>/dev/null | grep -q 'pixtuoid.*enabled' || {
+    OPENCLAW_HOME="$home" openclaw plugins list | grep -q 'pixtuoid.*enabled' || {
         echo "FAIL: openclaw does not report the pixtuoid plugin enabled (port $port)" >&2
         exit 1
     }

@@ -80,17 +80,18 @@ fn tui_of(source: &str, scenario: &str) -> std::io::Result<(&'static Tui, Answer
 /// portable-pty's own base environment merges the Windows registry's over it
 /// (`src/cmdbuilder.rs:74-190` at 0.9.0), which would let a key set with
 /// `setx` past the tier's sandbox.
-fn command(argv: &[OsString], env: impl Iterator<Item = (OsString, OsString)>) -> CommandBuilder {
+fn command(
+    argv: &[OsString],
+    env: impl Iterator<Item = (OsString, OsString)>,
+) -> std::io::Result<CommandBuilder> {
     let mut cmd = CommandBuilder::from_argv(argv.to_vec());
     cmd.env_clear();
     for (k, v) in env {
         cmd.env(k, v);
     }
     cmd.env("TERM", TERM);
-    if let Ok(cwd) = std::env::current_dir() {
-        cmd.cwd(cwd);
-    }
-    cmd
+    cmd.cwd(std::env::current_dir()?);
+    Ok(cmd)
 }
 
 fn drive(line: CommandLine) -> std::io::Result<i32> {
@@ -101,7 +102,7 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
         .map_err(std::io::Error::other)?;
     let mut child = pair
         .slave
-        .spawn_command(command(&line.program, std::env::vars_os()))
+        .spawn_command(command(&line.program, std::env::vars_os())?)
         .map_err(std::io::Error::other)?;
     drop(pair.slave);
     let mut reader = pair
@@ -249,7 +250,8 @@ mod tests {
         let cmd = command(
             &["cli".into()],
             given.iter().map(|(k, v)| ((*k).into(), (*v).into())),
-        );
+        )
+        .expect("cwd");
         let got: std::collections::BTreeMap<&str, &str> = cmd.iter_full_env_as_str().collect();
         assert_eq!(
             got,

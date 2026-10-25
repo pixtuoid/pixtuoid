@@ -320,8 +320,6 @@ def sprite_rows(name, frame=0):
             continue
         if in_frame:
             rows.append(line.split())
-    if not rows:
-        sys.exit(f"gen-pix-icons: no @frame {frame} rows in {name}")
     return rows
 
 
@@ -334,8 +332,6 @@ def render(icon_name, rows, pal):
         if len(row) != w:
             sys.exit(f"gen-pix-icons: {icon_name} row {y} is ragged ({len(row)} != {w})")
         for x, key in enumerate(row):
-            if key not in pal:
-                sys.exit(f"gen-pix-icons: {icon_name} uses unknown palette key {key!r}")
             rgb = pal[key]
             if rgb is not None:
                 px[x, y] = (*rgb, 255)

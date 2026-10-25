@@ -471,7 +471,7 @@ def test_text_path_paints_every_glyph_pixel_and_nothing_else() -> None:
 def test_text_path_rejects_a_character_without_a_glyph() -> None:
     try:
         text_path("é", 0, 0, 1)
-    except ValueError as e:
+    except KeyError as e:
         check("é" in str(e), f"the offending character must be named: {e}")
     else:
         FAILS.append("text_path must refuse a character it cannot draw")
@@ -684,9 +684,6 @@ def main(argv: list[str]) -> int:
         return 2
     repo, out_dir = argv
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("error: GH_TOKEN (or GITHUB_TOKEN) is unset", file=sys.stderr)
-        return 2
     dates = fetch_star_dates(repo, token)
     series = cumulative_by_day(dates)
     today = dt.datetime.now(dt.timezone.utc).date()

@@ -16,14 +16,9 @@ Setup (once):
 """
 
 import argparse
-import sys
 from pathlib import Path
 
-try:
-    from PIL import Image
-except ImportError:
-    print("Pillow not installed. Run: pip3 install -r requirements-dev.txt", file=sys.stderr)
-    sys.exit(1)
+from PIL import Image
 
 
 QUADRANTS = {

@@ -40,9 +40,9 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV,
-        LIVE_PREREQUISITE, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
-        Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
+        self, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV, Live,
+        MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, SHARDS,
+        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::plan::{
@@ -520,15 +520,10 @@ mod run {
         Ok(vec![Entry::new(key, banner, verdict)])
     }
 
-    /// What `live`'s exit `code` says: [`LIVE_PREREQUISITE`] is a missing
-    /// prerequisite, which no run of the build caused.
+    /// What `live`'s exit `code` says.
     fn live_verdict(live: &Live, code: Option<i32>) -> Verdict {
         match code {
             Some(0) => Verdict::new(vec![]),
-            Some(LIVE_PREREQUISITE) => Verdict::new(vec![(
-                Label::Blocked,
-                format!("{} found a prerequisite missing ({LIVE_LOG})", live.script),
-            )]),
             _ => Verdict::new(vec![(
                 Label::Fail,
                 format!("{} exited {code:?} ({LIVE_LOG})", live.script),
@@ -2320,13 +2315,12 @@ mod run {
         }
 
         #[test]
-        fn a_live_tier_s_exit_reads_pass_blocked_or_fail() {
+        fn a_live_tier_s_exit_reads_pass_or_fail() {
             let Some(live) = &hermetic::profile("openclaw").expect("openclaw").live else {
                 panic!("openclaw runs live");
             };
             let label = |code| live_verdict(live, code).label();
             assert_eq!(label(Some(0)), Label::Pass);
-            assert_eq!(label(Some(LIVE_PREREQUISITE)), Label::Blocked);
             assert_eq!(label(Some(1)), Label::Fail);
             assert_eq!(label(None), Label::Fail, "a signal");
         }
