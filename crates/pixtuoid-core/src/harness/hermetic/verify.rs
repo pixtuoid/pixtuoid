@@ -678,7 +678,7 @@ fn judge(
     let mut events: Vec<AgentEvent> = Vec::new();
     let mut reaches: Vec<(AgentId, Reach)> = Vec::new();
     let mut absorb = |what: &str, d: Driven, findings: &mut Vec<(Label, String)>| {
-        for f in d.decode_errors.iter().chain(&d.panics) {
+        for f in &d.decode_errors {
             findings.push((Label::Fail, format!("{what}: {f}")));
         }
         if d.unparseable > 0 {

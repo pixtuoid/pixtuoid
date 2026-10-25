@@ -42,38 +42,6 @@ fn is_rollout_filename(path: &Path) -> bool {
             .is_some_and(|s| s.starts_with("rollout-"))
 }
 
-/// Attach the probe ONLY for codex's first-party layout: the standard
-/// `~/.codex/sessions` shape, or the resolved `codex_home()/sessions` for THIS
-/// environment (a `CODEX_HOME` user's real rollout root — rejecting it would
-/// silently drop the whole liveness ladder for a supported config). A root
-/// pointed elsewhere (a test's temp dir) must keep the pure-mtime first-sight
-/// gate, or a rollout there vouched for by a coincidentally-running codex would
-/// resurrect as live.
-fn codex_probe_root(sessions_root: &Path) -> Option<PathBuf> {
-    codex_probe_root_resolved(sessions_root, &codex_home())
-}
-
-/// The injectable core of [`codex_probe_root`]; `home` is the resolved codex
-/// home for this environment.
-fn codex_probe_root_resolved(sessions_root: &Path, home: &Path) -> Option<PathBuf> {
-    if sessions_root.file_name().and_then(|n| n.to_str()) != Some("sessions") {
-        return None;
-    }
-    let parent = sessions_root.parent();
-    let parent_is_codex =
-        parent.and_then(|p| p.file_name()).and_then(|n| n.to_str()) == Some(".codex");
-    // A parent that IS the resolved codex home is first-party even when not
-    // named `.codex` — the CODEX_HOME case.
-    let parent_is_resolved_home = parent.is_some_and(|p| p == home);
-    if !parent_is_codex && !parent_is_resolved_home {
-        return None;
-    }
-    // Not canonicalized here: the dir may not exist yet at wiring time.
-    // `live_codex_rollout_ids` canonicalizes per probe call, which also picks up
-    // a root created after startup.
-    Some(sessions_root.to_path_buf())
-}
-
 /// Source that watches the Codex session transcript directory.
 #[derive(Debug)]
 pub struct CodexSource {
@@ -101,16 +69,14 @@ impl Source for CodexSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
+        let root = self.sessions_root.clone();
         let mut watcher = JsonlWatcher::new(
             self.sessions_root.clone(),
             SOURCE_NAME.to_string(),
             decode_codex_line,
             codex_session_ended,
-        );
-        if let Some(root) = codex_probe_root(&self.sessions_root) {
-            watcher = watcher
-                .with_liveness_probe(std::sync::Arc::new(move || live_codex_rollout_ids(&root)));
-        }
+        )
+        .with_liveness_probe(std::sync::Arc::new(move || live_codex_rollout_ids(&root)));
         if let Some(unclaims) = &self.child_end_unclaims {
             watcher = watcher.with_child_end_unclaims(unclaims.clone());
         }
@@ -197,36 +163,6 @@ mod tests {
         let wrong_ext = root.join(format!("2026/06/10/rollout-1-{UUID}.log"));
         let no_ext = root.join("2026/06/10/rollout-noext");
         assert!(snap_of(root, vec![wrong_stem, wrong_ext, no_ext]).is_empty());
-    }
-
-    #[test]
-    fn probe_root_requires_dot_codex_sessions_layout() {
-        assert_eq!(
-            codex_probe_root(Path::new("/home/u/.codex/sessions")),
-            Some(PathBuf::from("/home/u/.codex/sessions"))
-        );
-        assert_eq!(codex_probe_root(Path::new("/tmp/fixture")), None);
-        assert_eq!(codex_probe_root(Path::new("sessions")), None);
-    }
-
-    #[test]
-    fn probe_root_accepts_resolved_codex_home_sessions_layout() {
-        // A CODEX_HOME-shaped layout: the resolved home is NOT named `.codex`.
-        let home = tempfile::tempdir().unwrap();
-        let sessions = home.path().join("sessions");
-        std::fs::create_dir_all(&sessions).unwrap();
-        assert_eq!(
-            codex_probe_root_resolved(&sessions, home.path()),
-            Some(sessions.clone())
-        );
-        assert_eq!(
-            codex_probe_root_resolved(Path::new("/tmp/fixture"), home.path()),
-            None
-        );
-        assert_eq!(
-            codex_probe_root_resolved(Path::new("/srv/other/sessions"), home.path()),
-            None
-        );
     }
 
     #[test]

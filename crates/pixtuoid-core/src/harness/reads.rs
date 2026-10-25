@@ -191,7 +191,6 @@ type Decoded = (
     Vec<String>,
     Vec<String>,
     Vec<String>,
-    Vec<String>,
     Vec<Option<DecodedPresence>>,
     Vec<String>,
 );
@@ -228,7 +227,6 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
     (
         d.events.iter().map(|e| format!("{e:?}")).collect(),
         failures(&d.decode_errors),
-        failures(&d.panics),
         d.breadcrumbs,
         presence,
         first_sight,

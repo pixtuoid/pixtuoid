@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use pixtuoid_core::harness::{Drive, LineFailure};
+use pixtuoid_core::harness::Drive;
 use pixtuoid_core::source::decoder::TailActivity;
 use pixtuoid_core::source::registry;
 use pixtuoid_scene::floor::{FloorMeta, FloorSession};
@@ -40,8 +40,6 @@ struct Verdict {
     /// The decoder returned Err. ALWAYS a defect: the contract is
     /// log-and-continue, never a hard error on a line the source wrote.
     decode_errors: usize,
-    /// The decoder PANICKED — the never-panic contract violated.
-    panics: Vec<LineFailure>,
     /// Events the WIRE produced — the first-sight seed is NOT counted.
     events: usize,
     /// Slots on the floor, reported only when the wire produced events — the
@@ -104,12 +102,10 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
     v.decode_errors = driven.decode_errors.len();
     v.events = driven.wire_events();
     if v.events == 0 {
-        v.panics = driven.panics;
         return v;
     }
     v.registered = driven.registered();
     v.drove = !driven.reaches.is_empty();
-    v.panics = driven.panics.clone();
     if v.registered == 0 {
         return v;
     }
@@ -217,7 +213,6 @@ fn main() {
     let mut drawn_files = 0usize;
     let mut gap_buckets: BTreeMap<&str, usize> = BTreeMap::new();
     let mut error_files: Vec<(PathBuf, usize)> = Vec::new();
-    let mut panic_files: Vec<(PathBuf, LineFailure)> = Vec::new();
 
     for f in &files {
         let v = check_file(source, f, &pack);
@@ -237,10 +232,6 @@ fn main() {
         if v.decode_errors > 0 {
             error_files.push((f.clone(), v.decode_errors));
         }
-        if let Some(p) = v.panics.first() {
-            panic_files.push((f.clone(), p.clone()));
-        }
-        totals.panics.extend(v.panics.iter().cloned());
         let bucket = match v.provenance_gap_secs() {
             None => "no-stamp",
             Some(s) if s < 3600 => "<1h",
@@ -253,12 +244,11 @@ fn main() {
 
     if json {
         println!(
-            r#"{{"source":"{source}","files":{},"lines":{},"unparseable":{},"decode_errors":{},"panics":{},"events":{},"registered_files":{registered_files},"drove_files":{drove_files},"drawn_files":{drawn_files}}}"#,
+            r#"{{"source":"{source}","files":{},"lines":{},"unparseable":{},"decode_errors":{},"events":{},"registered_files":{registered_files},"drove_files":{drove_files},"drawn_files":{drawn_files}}}"#,
             files.len(),
             totals.lines,
             totals.unparseable,
             totals.decode_errors,
-            totals.panics.len(),
             totals.events
         );
     } else {
@@ -270,7 +260,6 @@ fn main() {
             totals.unparseable
         );
         println!("  DECODE ERRORS     {}  <- must be 0", totals.decode_errors);
-        println!("  PANICS            {}  <- must be 0", totals.panics.len());
         println!(
             "  events decoded    {} (the wire's own; first-sight seeds excluded)",
             totals.events
@@ -293,15 +282,12 @@ fn main() {
         for (p, n) in error_files.iter().take(10) {
             println!("  decode error x{n}: {}", p.display());
         }
-        for (p, f) in panic_files.iter().take(10) {
-            println!("  PANIC {}: {f}", p.display());
-        }
     }
 
-    // The ONLY hard failures: a decoder that PANICS on bytes its own source
-    // wrote (it would take the whole watcher down), or one that returns Err
-    // there (the contract is log-and-continue).
-    if totals.decode_errors > 0 || !totals.panics.is_empty() {
+    // A decoder that PANICS on bytes its own source wrote aborts the census;
+    // the only other hard failure is one that returns Err there (the contract
+    // is log-and-continue).
+    if totals.decode_errors > 0 {
         std::process::exit(1);
     }
 }

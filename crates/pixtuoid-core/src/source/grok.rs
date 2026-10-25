@@ -350,12 +350,10 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
     };
     let str_field = |key: &str| update.get(key).and_then(|s| s.as_str());
 
-    let decoded: Result<Vec<AgentEvent>> = match method {
-        crate::source::acp::SESSION_UPDATE_METHOD => Ok(crate::source::acp::decode_session_update(
-            agent_id,
-            update,
-            grok_transcript_tool_detail,
-        )),
+    let mut evs = match method {
+        crate::source::acp::SESSION_UPDATE_METHOD => {
+            crate::source::acp::decode_session_update(agent_id, update, grok_transcript_tool_detail)
+        }
         // xAI private extension namespace — ACP reserves the `_` prefix for
         // implementation-specific methods, so none of this is ACP vocabulary.
         XAI_SESSION_UPDATE_METHOD => match tag {
@@ -384,41 +382,40 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
                         label: ellipsize(label, MAX_DECODED_FIELD_CHARS),
                     });
                 }
-                Ok(evs)
+                evs
             }
             XAI_SUBAGENT_FINISHED => {
                 let Some(child_key) = transcript_child_key(update) else {
                     crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
                     return Ok(vec![]);
                 };
-                Ok(vec![AgentEvent::SessionEnd {
+                vec![AgentEvent::SessionEnd {
                     agent_id: AgentId::from_parts(SOURCE_NAME, child_key),
                     as_child: true,
-                }])
+                }]
             }
             // The transcript twin of the `stop` hook: a tool-less turn's only
             // end signal for transcript-only setups.
-            XAI_TURN_COMPLETED => Ok(vec![AgentEvent::ActivityEnd {
+            XAI_TURN_COMPLETED => vec![AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: None,
-            }]),
+            }],
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some("session_end") {
-                    Ok(vec![AgentEvent::SessionEnd {
+                    vec![AgentEvent::SessionEnd {
                         agent_id,
                         as_child: false,
-                    }])
+                    }]
                 } else {
-                    Ok(vec![])
+                    vec![]
                 }
             }
             // grok emits many cosmetic xAI updates (diff_review, compaction,
             // rewind_marker, …), so an unhandled extension tag is a silent skip.
-            _ => Ok(vec![]),
+            _ => vec![],
         },
-        _ => Ok(vec![]),
+        _ => vec![],
     };
-    let mut evs = decoded?;
     // The model rides `_meta` on an ORDINARY update; keying on the
     // `model_changed` tag a real session never sends left the flame dark.
     if let Some(model) = update

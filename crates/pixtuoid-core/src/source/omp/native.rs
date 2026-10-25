@@ -48,10 +48,6 @@ pub struct OmpSource {
     /// authority, tests shrink it.
     #[doc(hidden)]
     pub rescan_interval: Duration,
-    /// Roots here came from the resolver (never user-supplied), so every
-    /// watcher gets the fd probe without the replay-excluding layout gate.
-    /// Only [`Self::default_paths`] sets it.
-    first_party_roots: bool,
 }
 
 impl std::fmt::Debug for OmpSource {
@@ -60,7 +56,6 @@ impl std::fmt::Debug for OmpSource {
             .field("sessions_root", &self.sessions_root)
             .field("profile_sessions_roots", &self.profile_sessions_roots)
             .field("rescan_interval", &self.rescan_interval)
-            .field("first_party_roots", &self.first_party_roots)
             .finish_non_exhaustive()
     }
 }
@@ -74,7 +69,6 @@ impl OmpSource {
             rescan: Arc::new(omp_profile_sessions_dirs),
             rescan_interval: DEFAULT_POLL_INTERVAL,
             sessions_root: omp_sessions_dir(),
-            first_party_roots: true,
         }
     }
 
@@ -86,38 +80,28 @@ impl OmpSource {
             profile_sessions_roots: Vec::new(),
             rescan: Arc::new(Vec::new),
             rescan_interval: DEFAULT_POLL_INTERVAL,
-            first_party_roots: false,
         }
     }
 }
 
-/// One watcher over `root`. A first-party root (resolver-enumerated, never
-/// user-supplied) gets the fd probe unconditionally; anything else goes
-/// through [`omp_probe_root`]'s replay-excluding gate. `started` keeps every
+/// One watcher over `root`. `started` keeps every
 /// root ever spawned, so a failed one is not respawn-thrashed by the rescan.
 fn spawn_watcher(
     set: &mut tokio::task::JoinSet<Result<()>>,
     started: &mut HashSet<PathBuf>,
     root: PathBuf,
-    first_party: bool,
     tx: TaggedSender,
 ) {
-    let mut watcher = JsonlWatcher::new(
+    let probe_root = root.clone();
+    let watcher = JsonlWatcher::new(
         root.clone(),
         SOURCE_NAME.to_string(),
         decode_omp_line,
         omp_session_ended,
     )
     .with_label_deriver(omp_derive_label)
-    .with_head_label(omp_head_title);
-    let probe_root = if first_party {
-        Some(root.clone())
-    } else {
-        omp_probe_root(&root)
-    };
-    if let Some(probe_root) = probe_root {
-        watcher = watcher.with_liveness_probe(Arc::new(move || live_omp_session_ids(&probe_root)));
-    }
+    .with_head_label(omp_head_title)
+    .with_liveness_probe(Arc::new(move || live_omp_session_ids(&probe_root)));
     started.insert(root);
     set.spawn(watcher.run(tx));
 }
@@ -133,21 +117,14 @@ impl Source for OmpSource {
             profile_sessions_roots,
             rescan,
             rescan_interval,
-            first_party_roots,
         } = *self;
         let mut set = tokio::task::JoinSet::new();
         let mut started = HashSet::new();
         let mut last_error = None;
-        spawn_watcher(
-            &mut set,
-            &mut started,
-            sessions_root,
-            first_party_roots,
-            tx.clone(),
-        );
+        spawn_watcher(&mut set, &mut started, sessions_root, tx.clone());
         for root in profile_sessions_roots {
             if !started.contains(&root) {
-                spawn_watcher(&mut set, &mut started, root, first_party_roots, tx.clone());
+                spawn_watcher(&mut set, &mut started, root, tx.clone());
             }
         }
         loop {
@@ -162,7 +139,7 @@ impl Source for OmpSource {
                     .await;
                     for root in listed.unwrap_or_default() {
                         if !started.contains(&root) {
-                            spawn_watcher(&mut set, &mut started, root, first_party_roots, tx.clone());
+                            spawn_watcher(&mut set, &mut started, root, tx.clone());
                         }
                     }
                 }
@@ -205,7 +182,7 @@ impl Source for OmpSource {
 /// `bun`. The fd MODE is not checked, so a long-lived bun tool reading an OLD
 /// transcript vouches for it: an accepted intermittent resurrection, reaped
 /// again once the fd closes.
-fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot> {
+pub(crate) fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot> {
     ProbeSnapshot::from_open_fds(
         sessions_root,
         &["bun", "omp"],
@@ -214,123 +191,15 @@ fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot> {
     )
 }
 
-/// The FOCUS-jump entry point: the same snapshot the liveness probe takes,
-/// behind the same first-party-layout gate, so a root pointed elsewhere can
-/// never resolve a pid for a transcript merely replayed there. Re-probed at CLICK
-/// time rather than cached, which is what makes the pid recycle-safe: a dead
-/// omp holds no fd, so its id simply drops out of the snapshot.
-pub(crate) fn live_omp_session_ids_for_focus(sessions_root: &Path) -> Option<ProbeSnapshot> {
-    live_omp_session_ids(&omp_probe_root(sessions_root)?)
-}
-
 /// The per-source RECOGNIZER: a held-open `.jsonl` under the root vouches. The
 /// id-space fold is applied by `from_open_fds`, not here.
 fn omp_recognize(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
 
-/// Attach the probe ONLY for omp's first-party layout — the standard
-/// `~/.omp/agent/sessions` shape, or whatever `omp_sessions_dir()` resolves for
-/// THIS environment. A test/replay root pointed at an arbitrary dir must keep
-/// the pure-mtime first-sight gate, or a replayed transcript vouched for by a
-/// coincidentally running bun process resurrects as live.
-fn omp_probe_root(sessions_root: &Path) -> Option<PathBuf> {
-    omp_probe_root_resolved(sessions_root, &omp_sessions_dir())
-}
-
-/// The injectable core of [`omp_probe_root`]. `resolved_sessions` is the
-/// SESSIONS root, not the agent dir: XDG flattens `agent/` away, so an XDG root
-/// has no agent-dir parent and would silently lose the probe.
-fn omp_probe_root_resolved(sessions_root: &Path, resolved_sessions: &Path) -> Option<PathBuf> {
-    if sessions_root.file_name().and_then(|n| n.to_str()) != Some("sessions") {
-        return None;
-    }
-    let parent = sessions_root.parent();
-    let parent_is_dot_omp_agent = parent.is_some_and(|p| {
-        p.file_name().and_then(|n| n.to_str()) == Some(super::AGENT_SUBDIR)
-            && p.parent()
-                .and_then(|g| g.file_name())
-                .and_then(|n| n.to_str())
-                == Some(".omp")
-    });
-    // Covers every relocating axis at once: this gate and `default_paths` call
-    // the SAME `omp_sessions_dir()`, so they cannot disagree.
-    let is_resolved_root = sessions_root == resolved_sessions;
-    if !parent_is_dot_omp_agent && !is_resolved_root {
-        return None;
-    }
-    // Not canonicalized here: the dir may not exist yet at wiring time (omp
-    // never run). `live_omp_session_ids` canonicalizes per probe call, which
-    // also picks up a root created after startup.
-    Some(sessions_root.to_path_buf())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn probe_root_accepts_the_dot_omp_agent_layout_and_nothing_that_merely_resembles_it() {
-        let home = tempfile::tempdir().unwrap();
-        // A resolved agent dir that is NOT the standard layout, so each case
-        // below is decided by the `.omp/agent` check alone.
-        let elsewhere = home.path().join("pi-coding-agent");
-
-        let standard = home.path().join(".omp").join("agent").join("sessions");
-        std::fs::create_dir_all(&standard).unwrap();
-        assert_eq!(
-            omp_probe_root_resolved(&standard, &elsewhere.join("sessions")),
-            Some(standard.clone()),
-            "the first-party `.omp/agent/sessions` layout attaches the probe"
-        );
-
-        // Parent named `agent` but the GRANDPARENT is not `.omp` — the halves
-        // of the layout check must both hold, or a `~/work/agent/sessions`
-        // replay would be vouched for by any running bun process.
-        let impostor = home.path().join("work").join("agent").join("sessions");
-        std::fs::create_dir_all(&impostor).unwrap();
-        assert_eq!(
-            omp_probe_root_resolved(&impostor, &elsewhere.join("sessions")),
-            None
-        );
-
-        let wrong_parent = home.path().join(".omp").join("other").join("sessions");
-        std::fs::create_dir_all(&wrong_parent).unwrap();
-        assert_eq!(
-            omp_probe_root_resolved(&wrong_parent, &elsewhere.join("sessions")),
-            None
-        );
-
-        // The PI_CODING_AGENT_DIR case still attaches on the resolved dir.
-        let resolved = elsewhere.join("sessions");
-        std::fs::create_dir_all(&resolved).unwrap();
-        assert_eq!(
-            omp_probe_root_resolved(&resolved, &elsewhere.join("sessions")),
-            Some(resolved)
-        );
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("/tmp/fixture"), &elsewhere.join("sessions")),
-            None
-        );
-    }
-
-    /// The XDG shape has no `agent/` parent to recognise, so it used to lose the
-    /// probe and fall back to pure mtime.
-    #[test]
-    fn probe_root_attaches_for_the_xdg_flattened_layout() {
-        let xdg = Path::new("/xdg/omp/sessions");
-        assert_eq!(
-            omp_probe_root_resolved(xdg, xdg),
-            Some(xdg.to_path_buf()),
-            "the flattened `$XDG_DATA_HOME/omp/sessions` root is first-party too"
-        );
-        // Still not a blanket accept: an arbitrary `.../sessions` that is NOT
-        // what this environment resolves stays on the mtime gate.
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("/srv/x/sessions"), xdg),
-            None
-        );
-    }
 
     #[test]
     fn session_ended_marker_is_anchored_on_the_structural_fields() {
@@ -405,38 +274,6 @@ mod tests {
         let got = snap_of(root, vec![outside, wrong_ext, no_ext]);
         assert!(got.is_empty());
         assert!(got.pid_of.is_empty());
-    }
-
-    #[test]
-    fn probe_root_requires_first_party_layout() {
-        let resolved = Path::new("/home/u/.omp/agent/sessions");
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("/home/u/.omp/agent/sessions"), resolved),
-            Some(PathBuf::from("/home/u/.omp/agent/sessions"))
-        );
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("/tmp/fixture"), resolved),
-            None
-        );
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("/srv/other/sessions"), resolved),
-            None
-        );
-        assert_eq!(
-            omp_probe_root_resolved(Path::new("sessions"), resolved),
-            None
-        );
-    }
-
-    #[test]
-    fn probe_root_accepts_resolved_agent_dir_sessions_layout() {
-        let agent_dir = tempfile::tempdir().unwrap();
-        let sessions = agent_dir.path().join("sessions");
-        std::fs::create_dir_all(&sessions).unwrap();
-        assert_eq!(
-            omp_probe_root_resolved(&sessions, &sessions),
-            Some(sessions.clone())
-        );
     }
 
     #[test]

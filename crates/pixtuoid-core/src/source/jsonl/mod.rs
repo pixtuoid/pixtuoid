@@ -204,8 +204,6 @@ const DEFAULT_INITIAL_WINDOW: Duration = Duration::from_secs(3600);
 /// The watcher's poll backstop — also the cadence profile rescans ride, so
 /// "how often we look at the filesystem" has one authority.
 pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
-/// How long after the initial seed the watcher rescans.
-pub(super) const RESCAN_DELAY: Duration = Duration::from_millis(250);
 
 /// Test-only seam: forces every `JsonlWatcher` in this process onto a polling
 /// backend (`notify::PollWatcher`) at `interval`, instead of the native
@@ -336,7 +334,7 @@ impl JsonlWatcher {
         self
     }
 
-    /// The initial seed, the `RESCAN_DELAY` rescan and the `DEFAULT_POLL_INTERVAL` poll all run this SAME
+    /// The initial seed and the `DEFAULT_POLL_INTERVAL` poll both run this SAME
     /// sequence; only the seed skips the un-claim drain (`drain = false` —
     /// nothing has been pushed at startup).
     async fn run_scan_pass(
@@ -365,8 +363,8 @@ impl JsonlWatcher {
         }
     }
 
-    /// Consume the watcher and drive the watch loop — initial seed, a `RESCAN_DELAY`
-    /// rescan, the `DEFAULT_POLL_INTERVAL` poll backstop, and notify events — feeding each decoded
+    /// Consume the watcher and drive the watch loop — initial seed, the
+    /// `DEFAULT_POLL_INTERVAL` poll backstop, and notify events — feeding each decoded
     /// event to `tx`.
     ///
     /// # Errors
@@ -495,13 +493,6 @@ impl JsonlWatcher {
             .await;
         }
 
-        // Re-scan shortly after startup to catch files APFS read_dir missed during
-        // the initial seed walk (metadata propagation race). walk_jsonl is
-        // idempotent (cursor == file_len → no-op).
-        let mut rescan_done = false;
-        let rescan_delay = tokio::time::sleep(RESCAN_DELAY);
-        tokio::pin!(rescan_delay);
-
         // An INTERVAL hoisted outside the loop, not a per-iteration sleep: a sleep
         // re-created per iteration resets its deadline on every notify event, so
         // sustained notify traffic starves scan_root indefinitely. Delay (not the
@@ -529,13 +520,6 @@ impl JsonlWatcher {
                     // as unknown-id no-ops.
                     drain_child_end_unclaims(unclaims.as_ref(), decoders, &ctx).await;
                     walk_jsonl(&path, decoders, &ctx).await;
-                }
-                _ = &mut rescan_delay, if !rescan_done => {
-                    rescan_done = true;
-                    self.run_scan_pass(
-                        &ctx, &mut scan_state,
-                        exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
-                    ).await;
                 }
                 _ = poll.tick() => {
                     if !watching && tokio::fs::try_exists(&self.root).await.unwrap_or(false) {

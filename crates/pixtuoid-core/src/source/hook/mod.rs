@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{checked_pid, decode_hook_payload, hook_source};
+use crate::source::decoder::{DecodeError, checked_pid, decode_hook_object, hook_source};
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -267,11 +267,15 @@ pub(crate) async fn handle_conn(
                         continue;
                     }
                 };
+                let Some(obj) = v.as_object() else {
+                    warn!(error = %DecodeError::not_an_object("hook"), "hook decode error");
+                    continue;
+                };
                 // DAEMON demux, registry-DRIVEN so a 2nd daemon needs NO edit
                 // here: `presence_decoder_for` returns `None` for every agent
                 // source, and a daemon's payloads decode to presence deltas on
                 // the sibling channel instead of `AgentEvent`s.
-                if let (Some(ptx), Some(obj)) = (presence_tx.as_ref(), v.as_object())
+                if let Some(ptx) = presence_tx.as_ref()
                     && let Some(src) = obj
                         .get("_pixtuoid_source")
                         .and_then(serde_json::Value::as_str)
@@ -295,25 +299,21 @@ pub(crate) async fn handle_conn(
                     // A daemon produces no AgentEvents — never the agent arms.
                     continue;
                 }
-                // Peek the shim-supplied CLI pid BEFORE `v` is consumed by
-                // decode. Deliberately NOT gated on `pid_watch`: a platform with
-                // no exit-watch backend, or one that failed to init, must not
-                // take the focus-jump pid cache down with it — only the BIND
-                // below needs the watch.
-                let pid = v
+                // The shim-supplied CLI pid, deliberately NOT gated on `pid_watch`:
+                // a platform with no exit-watch backend, or one that failed to
+                // init, must not take the focus-jump pid cache down with it —
+                // only the BIND below needs the watch.
+                let pid = obj
                     .get("_pid")
                     .and_then(serde_json::Value::as_i64)
                     .and_then(checked_pid);
-                let source = v.as_object().map(|o| hook_source(o).to_owned());
-                match decode_hook_payload(v) {
+                match decode_hook_object(obj) {
                     // One payload can decode to multiple events (#221) — sent in
                     // order on the same channel, so the reducer registers with
                     // real identity before the activity event applies.
                     Ok(evs) => {
-                        if let (Some(pid), Some(source), Some(watch)) =
-                            (pid, source.as_deref(), pid_watch.as_ref())
-                        {
-                            for (agent_id, corroborate) in bind_targets(source, &evs) {
+                        if let (Some(pid), Some(watch)) = (pid, pid_watch.as_ref()) {
+                            for (agent_id, corroborate) in bind_targets(hook_source(obj), &evs) {
                                 watch.note(pid, agent_id, corroborate);
                             }
                         }

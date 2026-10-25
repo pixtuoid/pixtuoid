@@ -61,7 +61,7 @@ async fn watcher_emits_proof_of_life_for_probe_live_ids() {
     handle.abort();
 }
 
-/// The probe starts EMPTY so the initial seed + 250ms rescan gate the stale
+/// The probe starts EMPTY so the initial seed gates the stale
 /// file; the id becomes probe-live only afterwards, so the SessionStart can
 /// ONLY come from a poll-arm snapshot refresh and the ProofOfLife only from
 /// the poll-arm emission. `with_poll_interval` is the test seam — the

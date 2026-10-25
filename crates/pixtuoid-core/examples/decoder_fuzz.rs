@@ -3,7 +3,7 @@
 //! The source is an ARGUMENT, never sniffed from line shape: inferring it
 //! silently MISROUTED sources whose shape didn't match a hard-coded predicate
 //! (grok's `method` envelope, omp's bare `type`) to `decode_cc_line`, reporting
-//! a false-green "0 panics" having exercised the WRONG decoder.
+//! a false-green exit 0 having exercised the WRONG decoder.
 //!
 //! A TOOL, not a committed corpus — point it at any JSONL tree, e.g.
 //! `just fuzz claude-code ~/.claude/projects`. `Driven` retains every decoded
@@ -16,8 +16,6 @@ use std::io::BufRead;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::source::registry;
-
-const MAX_REPORTED_PANICS: usize = 10;
 
 fn main() {
     let source = std::env::args().nth(1).unwrap_or_default();
@@ -43,7 +41,7 @@ fn main() {
 
     // Split by error KIND: a non-UTF-8 line is SKIPPED (`read_line` already
     // consumed it; stopping would fuzz only the corpus PREFIX while still
-    // reporting "0 PANIC"), but any other read error repeats without consuming,
+    // exiting 0), but any other read error repeats without consuming,
     // so skipping it would spin forever.
     let lines = std::io::stdin().lock().lines().map_while(|r| match r {
         Ok(line) => Some(Some(line)),
@@ -53,20 +51,12 @@ fn main() {
     let driven = drive.lines(lines.flatten());
 
     eprintln!(
-        "decoder_fuzz[{source}]: {} lines, {} parsed, {} events, {} decode-err, {} PANIC",
+        "decoder_fuzz[{source}]: {} lines, {} parsed, {} events, {} decode-err",
         driven.lines,
         driven.lines - driven.unparseable,
         driven.events.len(),
-        driven.decode_errors.len(),
-        driven.panics.len()
+        driven.decode_errors.len()
     );
-    // STRUCTURE only, never content — a transcript line carries real prose/code.
-    for f in driven.panics.iter().take(MAX_REPORTED_PANICS) {
-        eprintln!("  PANIC on: {f}");
-    }
-    if !driven.panics.is_empty() {
-        std::process::exit(1);
-    }
     // An empty corpus tested nothing, yet would exit 0 as "never-panic verified".
     if driven.lines == 0 {
         eprintln!("decoder_fuzz: no lines on stdin — nothing was fuzzed");

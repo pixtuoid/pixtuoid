@@ -59,7 +59,7 @@ async fn attach_matrix_registers_exactly_the_live_set() {
             break;
         }
     }
-    // Settle past the 250ms post-startup rescan and several poll cycles, then
+    // Settle past several poll cycles, then
     // drain: re-scans of the SAME root must not re-emit SessionStart.
     tokio::time::sleep(Duration::from_millis(700)).await;
     while let Ok(Some((_, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await {
@@ -218,7 +218,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
             break;
         }
     }
-    // Settle past the 250ms rescan and several poll cycles, then drain: the
+    // Settle past several poll cycles, then drain: the
     // tail scan runs only on the oversized-skip pass, so re-scans (cursor
     // parked at EOF) must not re-emit the dispatch.
     tokio::time::sleep(Duration::from_millis(700)).await;

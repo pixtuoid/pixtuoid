@@ -3283,15 +3283,11 @@ async fn walk_jsonl_resets_cursor_to_zero_when_known_file_truncated_below_cursor
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
     let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Claimed)])));
 
-    let events = walk_once(&path, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
-    assert!(
-        events.is_empty(),
-        "the truncation resync emits nothing this pass, got {events:?}"
-    );
+    walk_once(&path, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
-        Some(0),
-        "the normal-walk truncation arm must RESET the cursor to 0 (not park at EOF)"
+        Some(file_len),
+        "the normal-walk truncation arm must re-read from 0 this pass (not park at EOF)"
     );
 }
 

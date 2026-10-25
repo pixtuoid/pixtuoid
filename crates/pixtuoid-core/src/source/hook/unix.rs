@@ -155,13 +155,6 @@ fn socket_sibling(path: &Path, suffix: &str) -> std::path::PathBuf {
     ))
 }
 
-/// `sockaddr_un`'s `sun_path` capacity, NUL included — [unix(7)] fixes the
-/// field per platform, so it is read off the struct, never restated.
-///
-/// [unix(7)]: https://man7.org/linux/man-pages/man7/unix.7.html
-const SUN_PATH_CAP: usize =
-    std::mem::size_of::<libc::sockaddr_un>() - std::mem::offset_of!(libc::sockaddr_un, sun_path);
-
 /// Arbitrate the bind on `<path>.lock`: harden the owned fallback dir, then take
 /// the exclusive lock, or [`super::SocketBusy`]. Synchronous file IO, so
 /// [`Listener::bind`] runs it on tokio's blocking pool.
@@ -200,11 +193,6 @@ fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
             Err(e).with_context(|| format!("locking hook socket at {}", lock_path.display()))
         }
     }
-}
-
-/// Whether `tmp` fits `sun_path` with its NUL, so the bind can go through it.
-fn binds_via_temp(tmp: &Path) -> bool {
-    tmp.as_os_str().len() < SUN_PATH_CAP
 }
 
 /// One accepted hook connection.
@@ -246,20 +234,6 @@ impl Listener {
         // looser than 0600 — and without a process-global umask, which would race
         // every other tokio worker's file creation.
         let tmp = socket_sibling(path, &format!("{}.tmp", std::process::id()));
-        // A PIXTUOID_SOCKET whose FINAL path fits `sun_path` but whose
-        // `.<pid>.tmp` twin does not falls back to a direct bind + chmod,
-        // re-accepting the pre-chmod micro-TOCTOU.
-        if !binds_via_temp(&tmp) {
-            let listener = UnixListener::bind(path)
-                .with_context(|| format!("binding hook socket at {}", path.display()))?;
-            tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .await
-                .with_context(|| format!("restricting hook socket mode at {}", path.display()))?;
-            return Ok(Self {
-                listener,
-                _lock: lock,
-            });
-        }
         // A leftover temp can only be ours-by-name from a crashed prior run
         // that had this very pid — never a live socket.
         let _ = tokio::fs::remove_file(&tmp).await;
@@ -333,19 +307,6 @@ impl Listener {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sun_path_cap_is_the_platform_s_field() {
-        let want = if cfg!(target_os = "linux") { 108 } else { 104 };
-        assert_eq!(SUN_PATH_CAP, want);
-    }
-
-    #[test]
-    fn a_temp_path_binds_only_with_room_for_its_nul() {
-        let of = |len: usize| std::path::PathBuf::from("/".repeat(len));
-        assert!(binds_via_temp(&of(SUN_PATH_CAP - 1)));
-        assert!(!binds_via_temp(&of(SUN_PATH_CAP)));
-    }
 
     #[test]
     fn accept_backoff_doubles_to_the_cap_and_resets_on_success() {
