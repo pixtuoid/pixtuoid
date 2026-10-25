@@ -1,6 +1,6 @@
 //! The cutaway as terminal images: a frame's changed tiles are encoded in the
-//! plan's protocol and written after ratatui's flush, once the frame's text
-//! cells are known.
+//! plan's protocol, kitty's written before ratatui's flush and SIXEL's and
+//! iTerm2's after it, once the frame's text cells are known.
 //!
 //! - kitty shows every tile through Unicode placeholders, which are ordinary
 //!   text, so a modal or tooltip drawn after them takes their cells as any
