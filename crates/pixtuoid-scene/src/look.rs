@@ -504,8 +504,6 @@ pub fn render(
     look: Look,
     inputs: RenderInputs<'_>,
 ) -> Option<Rendered> {
-    let PerFloor { ctx, raster } = floor;
-    let pack = Arc::clone(&raster.pack);
     let RenderInputs {
         world,
         theme,
@@ -514,9 +512,11 @@ pub fn render(
         debug_walkable,
         dim,
     } = inputs;
-    office.raster.serve(&pack, theme);
+    office.raster.serve(&floor.raster.pack, theme);
     let stepped = tracing::trace_span!(spans::COMPOSE)
-        .in_scope(|| step_floor(ctx, office.coffee, office.chitchat, &pack, world, size));
+        .in_scope(|| step_floor(floor, office.coffee, office.chitchat, world, size));
+    let PerFloor { ctx, raster } = floor;
+    let pack = Arc::clone(&raster.pack);
     let Some(stepped) = stepped else {
         if look == Look::Classic {
             let classic = raster.classic();

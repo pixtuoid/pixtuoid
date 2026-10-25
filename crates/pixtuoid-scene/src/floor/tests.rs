@@ -886,19 +886,17 @@ fn step_hands_back_the_layout_the_sim_stepped_on() {
 /// other floor's agents: their coffee must outlive it.
 #[test]
 fn stepping_a_projected_floor_keeps_other_floors_coffee() {
-    let pack = Arc::new(crate::pack::test_office());
     let scene = make_scene(17, 16);
     let downstairs = AgentId::from_transcript_path("/p/0.jsonl");
     assert_eq!(scene.agents[&downstairs].floor_idx, 0);
     let mut office = PerOffice::new();
     office.coffee.insert(downstairs, t0());
-    let mut upstairs = PerFloor::new(Arc::clone(&pack));
+    let mut upstairs = PerFloor::new(Arc::new(crate::pack::test_office()));
     let projected = project_floor_scene(&scene, 1);
     let stepped = step_floor(
-        &mut upstairs.ctx,
+        &mut upstairs,
         &mut office.coffee,
         &mut office.chitchat,
-        &pack,
         crate::floor::FloorInputs {
             scene: &projected,
             now: t0(),

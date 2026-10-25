@@ -374,10 +374,11 @@ pub(super) fn compute_with_seed(
 
     let plan = FloorPlan::new(buf_w, buf_h, floor_seed);
 
-    let home_desks = compute_pod_desks(max_desks, plan.pod_grid);
+    let pod_desks = compute_pod_desks(max_desks, plan.pod_grid);
+    let desk_points: Vec<Point> = pod_desks.iter().map(|d| d.at).collect();
 
-    let desk_art: Vec<(Point, Size)> = desk_fixtures(&home_desks, plan.buf_h)
-        .chain(desk_chair_fixtures(&home_desks))
+    let desk_art: Vec<(Point, Size)> = desk_fixtures(desk_points.iter().copied(), plan.buf_h)
+        .chain(desk_chair_fixtures(&pod_desks))
         .map(|f| art_rect(f.visual))
         .collect();
     let pod_decor = compute_pod_decor(plan.pod_grid, floor_seed, &desk_art);
@@ -428,7 +429,7 @@ pub(super) fn compute_with_seed(
         &plan,
         &pod_decor,
         lounge.map(|l| l.couch_center),
-        &home_desks,
+        &desk_points,
     );
 
     const BAND_INSET: u16 = 4;
@@ -581,7 +582,7 @@ pub(super) fn compute_with_seed(
             buf_w,
             buf_h,
             top_margin: plan.top_margin,
-            home_desks: &home_desks,
+            home_desks: &desk_points,
             meeting_rooms: &plan.meeting_rooms,
             kitchen_island,
             waypoints: &waypoints,
@@ -608,8 +609,8 @@ pub(super) fn compute_with_seed(
         let reach = ReachSet::from_mask(mask, conn_seed);
         // South is where the demotion pass below retreats, so a reachable south seat
         // proves no decor arrangement strands a desk.
-        let stranded = home_desks.iter().any(|d| {
-            let chair = desk_walk_anchor_facing(d.at, crate::layout::Facing::South);
+        let stranded = desk_points.iter().any(|&d| {
+            let chair = desk_walk_anchor_facing(d, crate::layout::Facing::South);
             approach_point(
                 Furniture::Desk,
                 chair,
@@ -653,7 +654,7 @@ pub(super) fn compute_with_seed(
     );
 
     // A narrow band can wall off a back-turned desk's SOUTH front — demote, don't drop.
-    let home_desks: Vec<HomeDesk> = home_desks
+    let home_desks: Vec<HomeDesk> = pod_desks
         .iter()
         .map(|&HomeDesk { at, facing }| {
             let facing = if facing == Facing::North && {
@@ -1609,15 +1610,10 @@ pub(super) fn compute_pod_decor(
 /// desk's workstation — the desk and its filing cabinet, and its sitter, since
 /// a south-row sitter hangs into the aisle, over the art's top. Both facings,
 /// since a narrow band demotes a back-turned desk after this runs.
-fn clears_the_workstations(
-    kind: Furniture,
-    pos: Point,
-    home_desks: &[HomeDesk],
-    buf_h: u16,
-) -> bool {
+fn clears_the_workstations(kind: Furniture, pos: Point, home_desks: &[Point], buf_h: u16) -> bool {
     let art = corridor_art(kind, pos);
-    super::roster::desk_fixtures(home_desks, buf_h).all(|f| !f.visual.overlaps(art))
-        && home_desks.iter().all(|&HomeDesk { at: desk, .. }| {
+    super::roster::desk_fixtures(home_desks.iter().copied(), buf_h).all(|f| !f.visual.overlaps(art))
+        && home_desks.iter().all(|&desk| {
             [Facing::North, Facing::South].into_iter().all(|facing| {
                 let foot = desk_walk_anchor_facing(desk, facing);
                 let sitter = Bounds {
@@ -1651,7 +1647,7 @@ fn vending_spot(
     aisle: &Bounds,
     west: u16,
     stride: u16,
-    home_desks: &[HomeDesk],
+    home_desks: &[Point],
     buf_h: u16,
 ) -> Option<Point> {
     let fits = aisle.height >= VENDING_MIN_AISLE_H && aisle.width > VENDING_MIN_AISLE_W;
@@ -1685,7 +1681,7 @@ fn compute_waypoints(
     plan: &FloorPlan,
     pod_decor: &[PodDecorItem],
     couch: Option<Point>,
-    home_desks: &[HomeDesk],
+    home_desks: &[Point],
 ) -> Vec<Waypoint> {
     let FloorPlan {
         buf_h,

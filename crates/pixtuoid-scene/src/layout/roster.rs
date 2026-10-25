@@ -372,31 +372,28 @@ fn top_left(b: Bounds) -> Point {
 /// Each home desk's filing cabinet, then the desk: the fixture authority the
 /// floor whiteboard also clears, before the layout that rosters them exists.
 pub(crate) fn desk_fixtures(
-    home_desks: &[HomeDesk],
+    home_desks: impl IntoIterator<Item = Point>,
     buf_h: u16,
-) -> impl Iterator<Item = Fixture> + '_ {
+) -> impl Iterator<Item = Fixture> {
     let desk = furniture_def(Furniture::Desk).visual;
-    home_desks
-        .iter()
-        .enumerate()
-        .flat_map(move |(i, &HomeDesk { at, .. })| {
-            let local = FloorLocalDeskIndex(i);
-            let depth = Depth::sorted(at.y + desk.h);
-            filing_cabinet_top_left(at, local, buf_h)
-                .map(|tl| Fixture {
-                    kind: FixtureKind::FilingCabinet(local),
-                    at: tl,
-                    visual: boxed(tl, furniture_def(Furniture::FilingCabinet).visual),
-                    depth,
-                })
-                .into_iter()
-                .chain(std::iter::once(Fixture {
-                    kind: FixtureKind::Desk(local),
-                    at,
-                    visual: boxed(at, desk),
-                    depth,
-                }))
-        })
+    home_desks.into_iter().enumerate().flat_map(move |(i, at)| {
+        let local = FloorLocalDeskIndex(i);
+        let depth = Depth::sorted(at.y + desk.h);
+        filing_cabinet_top_left(at, local, buf_h)
+            .map(|tl| Fixture {
+                kind: FixtureKind::FilingCabinet(local),
+                at: tl,
+                visual: boxed(tl, furniture_def(Furniture::FilingCabinet).visual),
+                depth,
+            })
+            .into_iter()
+            .chain(std::iter::once(Fixture {
+                kind: FixtureKind::Desk(local),
+                at,
+                visual: boxed(at, desk),
+                depth,
+            }))
+    })
 }
 
 /// Each home desk's task chair, where its facing turns it north.
@@ -544,7 +541,7 @@ impl SceneLayout {
                 self.island_bar_mat()
                     .map(|b| backdrop(FixtureKind::IslandMat, b)),
             )
-            .chain(desk_fixtures(home_desks, *buf_h))
+            .chain(desk_fixtures(home_desks.iter().map(|d| d.at), *buf_h))
             .chain(rooms.clone().filter_map(move |(room, _, trio)| {
                 // Off the corridor runner a south room's floor runs into.
                 let rug = trio?.0.rug(corridor.y);

@@ -269,7 +269,7 @@ impl Lounge {
 /// An agent's home desk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HomeDesk {
-    /// Its art's top-left.
+    /// Its top-left, where the pod grid places it.
     pub at: Point,
     /// Which way its occupant faces — the ONE authority painters and the
     /// approach/walk geometry share, so a seat is never drawn off its routed side.
@@ -487,6 +487,7 @@ pub(crate) const INTER_POD_AISLE_Y: u16 = 18;
 impl SceneLayout {
     /// Returns `None` if the buffer is too small for even one cubicle plus the
     /// fixed lounge area — the caller paints a "terminal too small" message.
+    /// Panics where [`Self::compute_with_seed`] does.
     pub fn compute(buf_w: u16, buf_h: u16, max_desks: Option<usize>) -> Option<Self> {
         Self::compute_with_seed(buf_w, buf_h, max_desks, 0)
     }
@@ -495,6 +496,11 @@ impl SceneLayout {
     /// physical capacity, `Some(n)` caps at `n` for deterministic
     /// tests/snapshots. The pod grid geometry is always the room's true
     /// capacity regardless of the cap.
+    ///
+    /// # Panics
+    ///
+    /// If the office is still sealed once the #566 guard has dropped every
+    /// decor that can seal it: a layout bug no production floor seed is known to reach.
     pub fn compute_with_seed(
         buf_w: u16,
         buf_h: u16,
