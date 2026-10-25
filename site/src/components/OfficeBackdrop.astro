@@ -319,15 +319,11 @@ const officeDriverUrl = asset('office-driver.js');
 >
   (function () {
     const script = document.currentScript;
-    if (!(script instanceof HTMLScriptElement)) return;
     const { wasmJsUrl, audioWorkerUrl, musicWorkerUrl, musicWorkletUrl, officeDriverUrl } =
       script.dataset;
-    if (!wasmJsUrl || !audioWorkerUrl || !musicWorkerUrl || !musicWorkletUrl || !officeDriverUrl)
-      return;
 
     const wrap = document.querySelector('.backdrop');
     const canvas = document.getElementById('office-live');
-    if (!wrap || !canvas) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const hasWasm = typeof WebAssembly !== 'undefined';
 
@@ -451,12 +447,7 @@ const officeDriverUrl = asset('office-driver.js');
 
     function updateOverlay() {
       if (!overlayEl || bufW < 1) return;
-      let data;
-      try {
-        data = JSON.parse(office.overlay_json());
-      } catch (e) {
-        return; // a malformed frame degrades to no overlay, never a throw
-      }
+      const data = JSON.parse(office.overlay_json());
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
       // reflow every frame.
@@ -465,7 +456,7 @@ const officeDriverUrl = asset('office-driver.js');
         lastLabelPx = labelPx;
         overlayEl.style.setProperty('--ov-label-px', labelPx + 'px');
       }
-      const labels = data.labels || [];
+      const labels = data.labels;
       const lift = Math.max(2, map.s); // ~1 buffer px above the head-top
       let i = 0;
       for (; i < labels.length; i++) {
@@ -480,7 +471,7 @@ const officeDriverUrl = asset('office-driver.js');
           labelPool[i] = el;
         }
         const L = labels[i];
-        const key = L.text + '\u0000' + L.color + '\u0000' + (L.badge || '');
+        const key = L.text + '\u0000' + L.color + '\u0000' + L.badge;
         if (el._k !== key) {
           el._k = key;
           const parts = el.children;
@@ -488,7 +479,7 @@ const officeDriverUrl = asset('office-driver.js');
           parts[1].textContent = L.text.slice(1);
           parts[0].className = 'ov-strip';
           parts[0].style.backgroundColor = L.color;
-          parts[1].style.color = L.badge || L.color;
+          parts[1].style.color = L.badge;
         }
         const x = map.ox + L.x * map.s;
         const y = map.oy + L.y * map.s - lift;
@@ -523,8 +514,8 @@ const officeDriverUrl = asset('office-driver.js');
       boardBrand.style.color = b.brand.color;
       boardStar.textContent = b.star.text;
       boardStar.style.color = b.star.color;
-      setSegments(boardMood, b.mood || []);
-      setSegments(boardCtx, b.context || []);
+      setSegments(boardMood, b.mood);
+      setSegments(boardCtx, b.context);
     }
 
     function paint(nowMs) {
@@ -532,7 +523,6 @@ const officeDriverUrl = asset('office-driver.js');
       office.step(nowMs, bufW, BUF_H);
       // Re-read ptr/len every frame — resize and memory.grow move the frame view.
       const view = officeDriver.officeFrameView(office, wasm);
-      if (view.length !== img.data.length) return;
       markEngineResolved();
       // Hold on the bg-tone cover until the boot splash lifts: the roll is never played hidden behind the overlay.
       if (!splashCleared) return;
@@ -693,9 +683,7 @@ const officeDriverUrl = asset('office-driver.js');
       for (const wire of ONESHOT_WIRES) {
         oneShotBufs[wire] = [];
         // Grow until the engine reports an empty slot, so the Rust-side pool size is never duplicated across the wire.
-        // POOL_MAX is belt-and-braces: a regression returning non-empty unboundedly must never hang the main thread.
-        const POOL_MAX = 1024;
-        for (let j = 0; j < POOL_MAX && office.audio_oneshot_len(wire, j) > 0; j++) {
+        for (let j = 0; office.audio_oneshot_len(wire, j) > 0; j++) {
           oneShotBufs[wire].push(
             audioMakeBuffer(office.audio_oneshot_ptr(wire, j), office.audio_oneshot_len(wire, j))
           );
@@ -750,12 +738,7 @@ const officeDriverUrl = asset('office-driver.js');
     function audioTick(nowMs) {
       if (!audioReady || !audioCtx) return;
       // ALWAYS advance the engine even while MUTED: skipping the tick freezes the cue tracker, which then replays a stacked one-shot volley on unmute.
-      let cmd;
-      try {
-        cmd = JSON.parse(office.audio_tick(nowMs));
-      } catch (e) {
-        return; // a bad frame degrades to holding the last gains, never a throw
-      }
+      const cmd = JSON.parse(office.audio_tick(nowMs));
       if (cmd.music) musicTick(cmd.music.controls);
       // Muted = a suspended AudioContext: nodes queued against one all fire at once on resume, so schedule nothing.
       if (!audioPlaying) return;
@@ -1082,11 +1065,7 @@ const officeDriverUrl = asset('office-driver.js');
               setTimeout(prewarmSpawn, PREWARM_IDLE_FALLBACK_MS);
             }
             window.__pixHire = function () {
-              try {
-                return office.hire();
-              } catch (e) {
-                return false; // never let a background flourish break the click
-              }
+              return office.hire();
             };
           });
         })
@@ -1188,7 +1167,6 @@ const officeDriverUrl = asset('office-driver.js');
   // center and releases it in the gaps. One style.opacity write per changed frame keeps it compositor-only.
   (function () {
     const dimmer = document.getElementById('dimmer');
-    if (!dimmer) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const DIM_MAX = 0.86;
 

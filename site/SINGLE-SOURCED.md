@@ -78,8 +78,7 @@ Notes no gate carries:
   `navigator.audioSession.type = 'playback'` before the context, else the Ring/Silent switch mutes a deliberate ♩ tap.
 - **The VIBING channel is a SECOND live `Office` (#468)**: each office keeps
   its own weather, and both consumers MUST share ONE `init()` via
-  `public/office-driver.js` (`sharedWasm` / `officeFrameView`, pinned by
-  `config/wasm-init-consts.test.mjs`) — independent `mod.default()` calls
+  `public/office-driver.js` (`sharedWasm` / `officeFrameView`) — independent `mod.default()` calls
   racing instantiate two wasm instances that stomp the module-global. The
   bounded init retry lives INSIDE that one promise; it nulls only a SETTLED
   rejection (#671). Its rAF loop runs only active + in-view + not paused +

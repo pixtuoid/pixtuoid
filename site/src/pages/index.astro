@@ -12,13 +12,13 @@ import Install from '../components/Install.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import ElevatorShaft from '../components/ElevatorShaft.astro';
-import { asset, REPO, CRATES, floorById, floorName, SITE_ORIGIN } from '../consts';
+import { asset, REPO, CRATES, floorById, floorName } from '../consts';
 
 const amenities = floorById('amenities');
 
 // Homepage structured data for the search-engine rich result. The version is
 // the latest release TAG, with Cargo.toml as the tag-less fallback.
-const SITE = Astro.site ?? new URL(SITE_ORIGIN);
+const SITE = Astro.site;
 const softwareJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',

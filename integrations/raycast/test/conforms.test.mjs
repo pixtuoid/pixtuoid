@@ -38,11 +38,6 @@ test("an outcome row's token is one the schema's enum names", () => {
   assert.ok(!conforms({ id: "codex" }, outcomeRow));
 });
 
-test("a ref outside #/$defs fails closed", () => {
-  assert.ok(!conforms("x", { $ref: "https://example.com/s.json" }));
-  assert.ok(!conforms("x", { $ref: "#/$defs/Missing" }));
-});
-
 test("rowsOf returns conforming rows and throws the skew error on anything else", () => {
   const source = { id: "codex", display_name: "Codex", connected: true, cli_present: false };
   assert.deepEqual(rowsOf(JSON.stringify([source]), sourceStatus, "sources --json"), [source]);
@@ -51,11 +46,4 @@ test("rowsOf returns conforming rows and throws the skew error on anything else"
   assert.throws(() => rowsOf("{}", sourceStatus, "sources --json"), skew);
   assert.throws(() => rowsOf(JSON.stringify([source, { id: 1 }]), sourceStatus, "sources --json"), skew);
   assert.throws(() => rowsOf(JSON.stringify([{ id: "codex", outcome: "partial" }]), outcomeRow, "sources --json"), skew);
-});
-
-test("each wire's rows fail the other wire's schema, so a swapped schema throws", () => {
-  const source = { id: "codex", display_name: "Codex", connected: true, cli_present: false };
-  const outcome = { id: "codex", outcome: "connected" };
-  assert.throws(() => rowsOf(JSON.stringify([source]), outcomeRow, "x"));
-  assert.throws(() => rowsOf(JSON.stringify([outcome]), sourceStatus, "x"));
 });

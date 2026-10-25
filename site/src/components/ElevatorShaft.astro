@@ -30,7 +30,6 @@ import { FLOORS, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../const
 >
   (function () {
     const shaft = document.querySelector('[data-shaft]');
-    if (!shaft) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const car = shaft.querySelector('[data-shaft-car]');
     const stops = Array.prototype.slice.call(shaft.querySelectorAll('[data-shaft-stop]'));

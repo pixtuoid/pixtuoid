@@ -33,7 +33,7 @@ const channels = SHOWCASE.map((c, i) => ({
   featureDesc: featureForChannel(c.id).desc,
 }));
 const live = channels.filter((c) => c.status === 'live');
-const def = channels.find((c) => c.default) ?? live[0];
+const def = channels.find((c) => c.default)!;
 // The headline count is derived from the dial itself — a hardcoded "Eight" desyncs
 // the moment a demo is added or dropped.
 const COUNT_WORDS = [
@@ -130,7 +130,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
 >
   (function () {
     const studio = document.getElementById('studio');
-    if (!studio) return;
     const stages = studio.querySelectorAll('[data-stage]');
     const monitors = studio.querySelectorAll('button.mon[data-ch]');
     const dialDesc = studio.querySelector('.dial__desc');
@@ -273,7 +272,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       const now = vBase + (Date.now() - vStart);
       vOffice.step(now, vibingCanvas.width, vibingCanvas.height);
       const view = vDriver.officeFrameView(vOffice, vWasm);
-      if (view.length !== vImg.data.length) return;
       vImg.data.set(view);
       vCtx.putImageData(vImg, 0, 0);
     }

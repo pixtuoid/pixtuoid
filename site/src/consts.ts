@@ -9,9 +9,6 @@ import { REPO_SLUG } from '../config/gh-stars.mjs';
 export const REPO = `https://github.com/${REPO_SLUG}`;
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
-// The build authority is `site` in astro.config.mjs; this is only the shared
-// type-narrowing fallback for the `Astro.site` undefined arm.
-export const SITE_ORIGIN = 'https://pixtuoid.dev';
 
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => `${BASE.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;

@@ -46,7 +46,6 @@ import { asset } from '../consts';
   // >5s of auto-motion in aggregate, so the bubbles JOIN the pix:paused set.
   (function () {
     const scene = document.querySelector('.pantry__scene');
-    if (!scene) return;
     // Toggle a class, NOT inline animationPlayState: freezing the pop at t=0 paints
     // its backwards-fill from-keyframe (opacity:0), so pausing before the pantry
     // reveals would blank the whole FAQ.

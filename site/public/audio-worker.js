@@ -5,9 +5,6 @@
 // closes so its wasm memory is reclaimed.
 'use strict';
 
-// Belt-and-braces vs a non-terminating one-shot pool (mirrors POOL_MAX in
-// OfficeBackdrop's discovery loop).
-const POOL_MAX = 1024;
 // = pool_from_wire's 0-4 domain (audio.rs) — mirrors OfficeBackdrop's list.
 const ONESHOT_WIRES = [0, 1, 2, 3, 4];
 
@@ -37,7 +34,7 @@ self.onmessage = async function (e) {
     const oneshots = {};
     for (const wire of ONESHOT_WIRES) {
       oneshots[wire] = [];
-      for (let j = 0; j < POOL_MAX && take.oneshot_len(wire, j) > 0; j++) {
+      for (let j = 0; take.oneshot_len(wire, j) > 0; j++) {
         const t = copy(take.oneshot_ptr(wire, j), take.oneshot_len(wire, j));
         oneshots[wire].push(t);
         transfers.push(t.buffer);

@@ -41,6 +41,6 @@
         ]
       }
     },
-    "upload": { "target": "filesystem", "outputDir": "./.lighthouseci" }
+    "upload": { "outputDir": "./.lighthouseci" }
   }
 }

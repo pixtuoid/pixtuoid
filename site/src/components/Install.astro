@@ -65,7 +65,6 @@ import tabs from '../install.json';
 <script is:inline>
   (function () {
     const box = document.querySelector('.install__box');
-    if (!box) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     // WAI-ARIA APG tabs: one tab stop, arrows (and Home/End) move and select.
     const tabs = Array.from(box.querySelectorAll('.install__tab'));
@@ -121,7 +120,7 @@ import tabs from '../install.json';
         // no / blocked Clipboard API (insecure context, old browser): select
         // the command so the user can copy it — don't fail silently.
         const code = btn.parentElement && btn.parentElement.querySelector('code');
-        const sel = window.getSelection && window.getSelection();
+        const sel = window.getSelection();
         if (code && sel) {
           const range = document.createRange();
           range.selectNodeContents(code);

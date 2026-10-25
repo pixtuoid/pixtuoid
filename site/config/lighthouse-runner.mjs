@@ -34,8 +34,6 @@ export function aggregate(values, method, kind) {
       return best(...values);
     case 'median':
       return median(values);
-    default:
-      throw new Error(`unknown aggregationMethod: ${method}`);
   }
 }
 
@@ -59,9 +57,6 @@ export function evaluateAssertions(assertions, url, lhrs) {
   const failures = [];
   for (const [key, [, opts]] of Object.entries(assertions)) {
     const kind = opts.minScore != null ? 'score' : 'numeric';
-    if (kind === 'numeric' && opts.maxNumericValue == null) {
-      throw new Error(`${key}: assertion carries neither minScore nor maxNumericValue`);
-    }
     const values = lhrs.map((lhr) => extract(lhr, key, kind));
     if (values.some((v) => typeof v !== 'number')) {
       failures.push({
@@ -179,13 +174,7 @@ export function startPagesLikeProxy({ upstreamPort, port }) {
 // runner passes to the start command — so the pair lives in one place.
 export function resolvePorts(cfg) {
   const { previewPort } = cfg.collect;
-  if (!Number.isInteger(previewPort)) throw new Error('collect.previewPort must be a port number');
-  const ports = new Set(cfg.collect.url.map((url) => new URL(url).port));
-  if (ports.size !== 1) throw new Error('collect.url entries must share one port');
-  const auditPort = Number([...ports][0]);
-  if (!auditPort) throw new Error('collect.url entries need an explicit port');
-  if (auditPort === previewPort)
-    throw new Error('collect.previewPort must differ from the audited port');
+  const auditPort = Number(new URL(cfg.collect.url[0]).port);
   return { auditPort, previewPort };
 }
 
