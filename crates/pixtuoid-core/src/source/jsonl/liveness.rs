@@ -348,7 +348,7 @@ pub(super) async fn emit_session_exit(id: &str, decoders: SourceDecoders, ctx: &
     };
     for path in &claimed {
         // A truncated-below-cursor file must be parked at its new EOF, not
-        // handed to the walk's truncation arm (cursor→0, no drain).
+        // handed to the walk's truncation arm (cursor→0, whole-file replay).
         park_if_truncated_below_cursor(path, ctx).await;
         walk_jsonl(path, decoders, ctx).await;
     }

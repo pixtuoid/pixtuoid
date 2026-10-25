@@ -142,9 +142,9 @@ fn ensure_private_dir(dir: &Path, uid: u32) -> Result<()> {
 }
 
 /// A sibling of the FINAL socket path, named `<sock>.<suffix>`. Both siblings
-/// `bind` derives — the arbitration lock and the pre-rename temp endpoint — MUST
-/// be built from the same base, because both bind branches have to arbitrate on
-/// one lock file.
+/// `bind` derives — the arbitration lock and the pre-rename temp endpoint — are
+/// built from the same base: the lock must be one file for every instance
+/// whatever its pid, and the temp must share the dir so the rename is atomic.
 #[cfg(unix)]
 fn socket_sibling(path: &Path, suffix: &str) -> std::path::PathBuf {
     path.with_file_name(format!(
@@ -165,8 +165,8 @@ fn acquire_bind_lock(path: &Path) -> Result<std::fs::File> {
     // EAGAIN on Linux, so an errno-guessing probe unlinks a live socket and
     // leaves it accepting on an anonymous inode forever. Never unlinked —
     // unlock-then-unlink lets a waiter on the old inode and a newcomer on a
-    // fresh one both "hold" it — and derived from the FINAL path so both bind
-    // branches arbitrate on the same file.
+    // fresh one both "hold" it — and derived from the FINAL path so every
+    // instance contends on one file.
     let lock_path = socket_sibling(path, "lock");
     let lock = std::fs::OpenOptions::new()
         .create(true)

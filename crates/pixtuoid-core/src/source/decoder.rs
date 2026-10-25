@@ -412,10 +412,13 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 ///
 /// If the payload is not an object, a source-owned decoder rejects it, `hook_event_name` or `session_id` is missing or empty, or the event is unsupported.
 pub fn decode_hook_payload(v: Value) -> DecodeResult<Vec<AgentEvent>> {
-    decode_hook_object(
-        v.as_object()
-            .ok_or_else(|| DecodeError::not_an_object("hook"))?,
-    )
+    decode_hook_object(hook_object(&v)?)
+}
+
+/// The one object gate for a hook payload, shared by the listener and [`decode_hook_payload`].
+pub(crate) fn hook_object(v: &Value) -> DecodeResult<&crate::source::registry::HookObject> {
+    v.as_object()
+        .ok_or_else(|| DecodeError::not_an_object("hook"))
 }
 
 /// [`decode_hook_payload`] past its object gate.

@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{DecodeError, checked_pid, decode_hook_object, hook_source};
+use crate::source::decoder::{checked_pid, decode_hook_object, hook_object, hook_source};
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -267,9 +267,12 @@ pub(crate) async fn handle_conn(
                         continue;
                     }
                 };
-                let Some(obj) = v.as_object() else {
-                    warn!(error = %DecodeError::not_an_object("hook"), "hook decode error");
-                    continue;
+                let obj = match hook_object(&v) {
+                    Ok(obj) => obj,
+                    Err(e) => {
+                        warn!(error = %e, "hook decode error");
+                        continue;
+                    }
                 };
                 // DAEMON demux, registry-DRIVEN so a 2nd daemon needs NO edit
                 // here: `presence_decoder_for` returns `None` for every agent

@@ -7,7 +7,7 @@
 //!
 //! It REPORTS rather than asserts. Corpus content is unbounded and partly
 //! historical, so a failing file is not automatically a bug — the value is the
-//! census: decode errors and panics (which ARE bugs, always), how many
+//! census: decode errors (which ARE bugs, always; a panic aborts the run), how many
 //! transcripts register, how many render, and the provenance spread.
 //!
 //! Usage: `corpus_check <source> [root] [--json]`, plus `--roster` — the

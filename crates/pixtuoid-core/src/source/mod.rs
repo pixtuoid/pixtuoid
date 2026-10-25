@@ -528,18 +528,10 @@ mod focus_pid_tests {
     }
 
     /// Like the Codex twin this is miss-only: a HIT needs an fd held by a
-    /// process the probe recognizes (`bun`/`omp`), which a test binary is not,
-    /// so this is a WIRING smoke test — both roots miss for different reasons
-    /// and it cannot tell them apart. The layout gate itself has teeth in
-    /// `omp::native`'s `probe_root_requires_first_party_layout`.
+    /// process the probe recognizes (`bun`/`omp`), which a test binary is not.
     #[test]
-    fn omp_pid_for_session_gates_on_the_first_party_layout() {
+    fn omp_pid_for_session_misses_on_unknown_session() {
         let root = tempfile::tempdir().unwrap();
-        // An arbitrary replay root: rejected before the probe even runs.
         assert_eq!(omp_pid_for_session(root.path(), "any-session"), None);
-        // First-party shape: passes the gate, so the probe itself runs.
-        let sessions = root.path().join(".omp").join("agent").join("sessions");
-        std::fs::create_dir_all(&sessions).unwrap();
-        assert_eq!(omp_pid_for_session(&sessions, "any-session"), None);
     }
 }

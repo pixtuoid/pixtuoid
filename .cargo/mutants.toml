@@ -53,7 +53,6 @@ exclude_re = [
     # `_resolved` core one line down. Keep them substitutions — logic added here
     # is unmeasurable, exactly as `ensure_owned_socket_dir` above.
     'hermes\.rs.*replace hermes_home ->',
-    'omp/native\.rs.*replace omp_probe_root ->',
     'grok/native\.rs.*replace grok_probe_root ->',
     # #828: the `from_open_fds` family — under test the proc walk finds nothing,
     # so `Some(empty)` is indistinguishable from the real answer. Pinned to the

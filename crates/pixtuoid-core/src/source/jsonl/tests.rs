@@ -3266,10 +3266,10 @@ async fn walk_jsonl_on_a_missing_path_is_a_silent_no_op() {
 }
 
 #[tokio::test]
-async fn walk_jsonl_resets_cursor_to_zero_when_known_file_truncated_below_cursor() {
+async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("resync.jsonl");
-    tokio::fs::write(&path, "{\"type\":\"assistant\"}\n")
+    tokio::fs::write(&path, "{\"type\":\"tool_use\"}\n")
         .await
         .unwrap();
     let file_len = tokio::fs::metadata(&path).await.unwrap().len();
@@ -3283,7 +3283,21 @@ async fn walk_jsonl_resets_cursor_to_zero_when_known_file_truncated_below_cursor
     let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 999u64)])));
     let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Claimed)])));
 
-    walk_once(&path, Duration::from_secs(3600), t_ended, &cursors, &seen).await;
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        t_decode_lifecycle,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    assert!(
+        events
+            .iter()
+            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+        "the rewritten line must be decoded this pass, got {events:?}"
+    );
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
         Some(file_len),

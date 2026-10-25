@@ -8,7 +8,7 @@
 //! Whether the resulting scene would PAINT is the render layer's question,
 //! asked one crate up; this half stops at the state the painter reads.
 //!
-//! Three things here are load-bearing rather than incidental:
+//! Two things here are load-bearing rather than incidental:
 //!
 //! 1. **Registration comes from the WATCHER, not the decoder.** A JSONL event
 //!    for an unknown id is a documented no-op, so a transcript driven with no
@@ -17,9 +17,6 @@
 //!    reads, so the seed can't drift from production.
 //! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
 //!    so it is not a free parameter.
-//! 3. **A decoder panic is a contract violation, everywhere.** The watcher and
-//!    hook listener log-and-continue on malformed input; a panic takes the
-//!    whole watcher down, and the registry's never-panic proptests pin it.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -141,7 +138,7 @@ impl Driven {
     }
 
     /// Assert bytes WE control drove cleanly. Not for unbounded bytes (the
-    /// corpus shell reports the same three counts instead).
+    /// corpus shell reports the same counts instead).
     ///
     /// # Panics
     ///
@@ -582,8 +579,8 @@ mod tests {
         assert!(Drive::transcript("not-a-source", "/x.jsonl").is_none());
     }
 
-    /// A `Drive` over a STAND-IN decoder: no real decoder rejects or panics on
-    /// any corpus bytes, so neither failure lane below has a real fixture.
+    /// A `Drive` over a STAND-IN decoder: no real decoder rejects any corpus
+    /// bytes, so the error lane below has no real fixture.
     fn drive_with(decode: LineDecoder) -> Drive {
         Drive {
             transport: Transport::Jsonl,
