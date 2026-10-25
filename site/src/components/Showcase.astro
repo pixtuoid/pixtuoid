@@ -398,13 +398,11 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           const on = m.dataset.ch === id;
           m.setAttribute('aria-selected', on ? 'true' : 'false');
           m.tabIndex = on ? 0 : -1;
-          if (on && dialDesc) dialDesc.textContent = m.dataset.desc || '';
+          if (on) dialDesc.textContent = m.dataset.desc || '';
         });
-        if (dialDesc) {
-          dialDesc.classList.remove('dial__desc--pulse');
-          void dialDesc.offsetWidth;
-          dialDesc.classList.add('dial__desc--pulse');
-        }
+        dialDesc.classList.remove('dial__desc--pulse');
+        void dialDesc.offsetWidth;
+        dialDesc.classList.add('dial__desc--pulse');
         syncVideos();
         syncCanvas();
       }

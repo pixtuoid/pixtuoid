@@ -99,6 +99,15 @@ test('a missing audit, category, or timing FAILS — never a vacuous pass', () =
   }
 });
 
+test('a mistyped aggregationMethod or a bound-less assertion FAILS, never passes', () => {
+  const typo = {
+    'categories:performance': ['error', { minScore: 0.5, aggregationMethod: 'typo' }],
+  };
+  assert.equal(evaluateAssertions(typo, 'u', [lhr()]).length, 1);
+  const unbounded = { 'largest-contentful-paint': ['error', { aggregationMethod: 'median' }] };
+  assert.equal(evaluateAssertions(unbounded, 'u', [lhr()]).length, 1);
+});
+
 const WASM = Buffer.alloc(64 * 1024, 'pixtuoid');
 const PNG = Buffer.from('not really a png, but never compressible by contract');
 const JS_GZ = gzipSync(Buffer.from('export const already = "gzipped by the preview server";'));
@@ -262,7 +271,7 @@ test('a client that aborts before upstream answers does not crash the runner', a
   }
 });
 
-test('the audited port and the preview port come from the config, and must differ', () => {
+test('the audited port and the preview port come from the config', () => {
   const collect = (url, previewPort) => ({ collect: { url, previewPort } });
   assert.deepEqual(
     resolvePorts(collect(['http://localhost:4321/', 'http://localhost:4321/x/'], 4320)),

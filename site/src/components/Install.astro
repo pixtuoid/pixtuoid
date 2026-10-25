@@ -106,22 +106,22 @@ import tabs from '../install.json';
       // capture the resting label ONCE — not after a click, or a rapid second
       // click would capture 'Copied ✓' and the button would stick on it
       const LABEL = (btn.textContent || 'Copy').trim();
-      const status = btn.parentElement && btn.parentElement.querySelector('[data-copy-status]');
+      const status = btn.parentElement.querySelector('[data-copy-status]');
       function flash(label, announce) {
         btn.textContent = label;
-        if (status) status.textContent = announce;
+        status.textContent = announce;
         clearTimeout(restore);
         restore = setTimeout(function () {
           btn.textContent = LABEL;
-          if (status) status.textContent = '';
+          status.textContent = '';
         }, 1600);
       }
       function manual() {
         // no / blocked Clipboard API (insecure context, old browser): select
         // the command so the user can copy it — don't fail silently.
-        const code = btn.parentElement && btn.parentElement.querySelector('code');
+        const code = btn.parentElement.querySelector('code');
         const sel = window.getSelection();
-        if (code && sel) {
+        if (sel) {
           const range = document.createRange();
           range.selectNodeContents(code);
           sel.removeAllRanges();

@@ -403,7 +403,7 @@ const officeDriverUrl = asset('office-driver.js');
     let lastLabelPx = -1;
 
     function ensureBoard() {
-      if (boardWrap || !overlayEl) return;
+      if (boardWrap) return;
       boardWrap = document.createElement('div');
       boardWrap.className = 'ov-board';
       const top = document.createElement('div');
@@ -446,7 +446,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
 
     function updateOverlay() {
-      if (!overlayEl || bufW < 1) return;
+      if (bufW < 1) return;
       const data = JSON.parse(office.overlay_json());
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
@@ -551,7 +551,7 @@ const officeDriverUrl = asset('office-driver.js');
         ctx2d.putImageData(img, 0, 0);
         // Caption the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
         updateOverlay();
-        if (overlayEl) overlayEl.classList.add('is-on');
+        overlayEl.classList.add('is-on');
       }
     }
     // putImageData writes the sub-1 alpha straight to the canvas, so the
@@ -607,7 +607,7 @@ const officeDriverUrl = asset('office-driver.js');
     // pauseOffset resumes from the frozen moment; tab-hidden stops take NO offset on purpose — the office keeps living while you're away.
     function setPaused(p) {
       paused = p;
-      if (pauseBtn) pauseBtn.setAttribute('aria-pressed', String(p));
+      pauseBtn.setAttribute('aria-pressed', String(p));
       // WCAG 2.2.2 covers the page, not just this canvas — ONE control fans out to every other auto-motion surface.
       document.dispatchEvent(new CustomEvent('pix:paused', { detail: { paused: p } }));
       if (audioCtx && audioPlaying) {
@@ -622,14 +622,12 @@ const officeDriverUrl = asset('office-driver.js');
         start();
       }
     }
-    if (pauseBtn) {
-      pauseBtn.addEventListener('click', function () {
-        setPaused(!paused);
-      });
-    }
+    pauseBtn.addEventListener('click', function () {
+      setPaused(!paused);
+    });
     // The pause control governs the page's wasm-independent ambient motion via pix:paused, so it stays reachable on a no-wasm engine or a failed fetch (#456).
     function syncPauseBtn() {
-      if (pauseBtn) pauseBtn.hidden = mq.matches;
+      pauseBtn.hidden = mq.matches;
     }
     syncPauseBtn();
 
@@ -798,10 +796,8 @@ const officeDriverUrl = asset('office-driver.js');
         audioBus = null;
         musicGain = null;
       }
-      if (audioBtn) {
-        audioBtn.setAttribute('aria-pressed', 'false');
-        audioBtn.hidden = true;
-      }
+      audioBtn.setAttribute('aria-pressed', 'false');
+      audioBtn.hidden = true;
     }
     let prewarm = 'idle';
     let prewarmWorker = null;
@@ -956,7 +952,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     function setAudioPlaying(on) {
       audioPlaying = on;
-      if (audioBtn) audioBtn.setAttribute('aria-pressed', String(on));
+      audioBtn.setAttribute('aria-pressed', String(on));
       try {
         window.localStorage.setItem(AUDIO_PREF, on ? '1' : '0');
       } catch (e) {
@@ -966,18 +962,16 @@ const officeDriverUrl = asset('office-driver.js');
       if (on && !paused) audioCtx.resume();
       else audioCtx.suspend();
     }
-    if (audioBtn) {
-      audioBtn.addEventListener('click', function () {
-        if (audioUnavailable) return;
-        if (!audioReady && !audioBooting) audioStart();
-        if (audioUnavailable) return; // audioStart just failed (ctor threw) → don't flip to a silent "playing"
-        setAudioPlaying(!audioPlaying);
-      });
-    }
+    audioBtn.addEventListener('click', function () {
+      if (audioUnavailable) return;
+      if (!audioReady && !audioBooting) audioStart();
+      if (audioUnavailable) return; // audioStart just failed (ctor threw) → don't flip to a silent "playing"
+      setAudioPlaying(!audioPlaying);
+    });
     let audioBtnShown = false;
     // AUDIO_PREF is a remembered CHOICE restored on the visitor's FIRST gesture: autoplay policy forbids resuming without one, so this can never become an on-load restore.
     function showAudioBtn() {
-      if (!audioBtn || mq.matches || audioBtnShown) return;
+      if (mq.matches || audioBtnShown) return;
       audioBtn.hidden = false;
       audioBtnShown = true;
       let remembered = false;
@@ -1137,10 +1131,10 @@ const officeDriverUrl = asset('office-driver.js');
           stopBgTicks(); // hidden-tab playback must not re-animate a poster-still office
           // Reduced motion IS the poster-still design: reset the pause flag, or the statusline feed / hero dust stay stuck paused after a later un-reduce.
           paused = false;
-          if (pauseBtn) pauseBtn.setAttribute('aria-pressed', 'false');
+          pauseBtn.setAttribute('aria-pressed', 'false');
           document.dispatchEvent(new CustomEvent('pix:paused', { detail: { paused: false } }));
           wrap.classList.remove('is-live');
-          if (overlayEl) overlayEl.classList.remove('is-on');
+          overlayEl.classList.remove('is-on');
           live = false;
           // …and rewind the reveal with it, or the surviving progress leaves rt >= 1 and the office SNAPS back in on un-reduce.
           reveal = freshReveal();
@@ -1148,7 +1142,7 @@ const officeDriverUrl = asset('office-driver.js');
           // Reduced motion stops the rAF loop, so the sound loops would drone unfed behind the poster — suspend, keeping the
           // flag on so an un-reduce resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
           if (audioCtx && audioPlaying) audioCtx.suspend();
-          if (audioBtn) audioBtn.hidden = true;
+          audioBtn.hidden = true;
           audioBtnShown = false;
         } else if (hasWasm) {
           cover();

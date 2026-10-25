@@ -4,9 +4,9 @@
 // docs/variability.md, reading the SAME lighthouserc.json the retired
 // @lhci/cli wrapper did — LHCI's last publish (2025-06) pinned lighthouse 12,
 // which dragged the @puppeteer/browsers and chrome-launcher overrides.
-// One deliberate divergence from LHCI: an assertion without an explicit
-// aggregationMethod aggregates by MEDIAN (LHCI defaulted to optimistic;
-// median is stricter-or-equal, and the affected category scores are stable).
+// Divergences from LHCI: every assertion fails CI whatever its level, and one
+// without an explicit aggregationMethod aggregates by MEDIAN (LHCI defaulted
+// to optimistic; median is stricter-or-equal).
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -193,7 +193,7 @@ async function main() {
   const { default: lighthouse } = await import('lighthouse');
   const chromeLauncher = await import('chrome-launcher');
   const cfg = JSON.parse(readFileSync(new URL('../lighthouserc.json', import.meta.url), 'utf8')).ci;
-  const outDir = new URL(`../${cfg.upload?.outputDir ?? './.lighthouseci'}/`, import.meta.url);
+  const outDir = new URL(`../${cfg.upload.outputDir}/`, import.meta.url);
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
 
