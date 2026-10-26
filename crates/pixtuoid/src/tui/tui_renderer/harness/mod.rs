@@ -165,8 +165,6 @@ pub(super) fn region_diff(a: &RgbBuffer, b: &RgbBuffer, x0: u16, y0: u16, w: u16
     d
 }
 
-/// A backend whose calls reach `inner` through its [`Tap`].
-/// `append_lines` is forwarded too: ratatui defaults it to a no-op.
 pub(super) struct Tapped<B, T> {
     pub(super) inner: B,
     pub(super) tap: T,
@@ -195,6 +193,7 @@ impl<B: Backend, T: Tap<B>> Backend for Tapped<B, T> {
         self.tap.on_draw(&cells);
         self.inner.draw(cells.into_iter())
     }
+    // Forwarded explicitly: ratatui defaults it to a no-op.
     fn append_lines(&mut self, n: u16) -> Result<(), Self::Error> {
         self.inner.append_lines(n)
     }
