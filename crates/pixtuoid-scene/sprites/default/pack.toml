@@ -681,8 +681,8 @@ frame_ms = 600
 frames   = ["holding_coffee@4x.sprite"]
 frame_ms = 600
 
-# The symbols text shows as art, by the name `display::Icon::art` gives: a
-# glyph wide per cell its terminal glyph takes, a line tall.
+# The symbols text shows as art, by the name `display::Icon::art` gives: as
+# many cells wide as its terminal glyph takes less the last gap, a line tall.
 [icons]
 alert       = "icon_floor_up.sprite"   # floor_up's: both write ▲ (the icon tests)
 active      = "icon_active.sprite"

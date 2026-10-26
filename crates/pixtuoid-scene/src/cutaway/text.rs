@@ -21,7 +21,7 @@ pub(crate) const LEFTMOST_PIXEL: u8 = 1 << (u8::BITS - 1);
 /// Fusion Pixel 8px, written by `scripts/gen-fonts.py` (its format);
 /// license and sources in `fonts/`.
 #[cfg(feature = "cutaway-assets")]
-static FUSION: &[u8] = include_bytes!("../../fonts/world.bin");
+static FUSION: &[u8] = include_bytes!("../../fonts/fusion-pixel-8px.bin");
 #[cfg(not(feature = "cutaway-assets"))]
 static FUSION: &[u8] = &[];
 
@@ -53,20 +53,28 @@ pub(crate) fn glyph(c: char) -> Option<Rows> {
     ruled(c).or_else(|| fusion(c)).or_else(|| by_hand(c))
 }
 
-/// `c`'s capitals, for what the office writes that Fusion Pixel 8px draws
-/// only full-width or not at all.
+/// `c`'s glyph where Fusion Pixel 8px draws it only full-width or not at
+/// all: a glyph it reads as where three pixels draw no other, else drawn here.
 fn by_hand(c: char) -> Option<Rows> {
-    let capitals: [u8; CAP_H as usize] = match c {
+    match c {
+        '\u{201c}' | '\u{201d}' | '\u{2033}' => return fusion('"'),
+        '\u{2010}' | '\u{2011}' | '\u{2014}' | '\u{2015}' => return fusion('-'),
+        '\u{2022}' => return fusion('\u{b7}'),
+        _ => {}
+    }
+    // A glyph's columns, leftmost the high bit, from the line's top row.
+    let art: [u8; LINE_H as usize] = match c {
+        // The font's `’` turned over.
+        '\u{2018}' => [0, 0b010, 0b100, 0b110, 0, 0, 0, 0],
         // Three dots take five columns: two keep the glyph's gap.
-        '\u{2026}' => [0, 0, 0, 0, 0b101],
-        '\u{3a3}' => [0b111, 0b100, 0b010, 0b100, 0b111],
+        '\u{2026}' => [0, 0, 0, 0, 0, 0, 0b101, 0],
+        '\u{3a3}' => [0, 0b111, 0b100, 0b010, 0b010, 0b100, 0b111, 0],
+        '\u{d8}' => [0, 0b011, 0b101, 0b101, 0b101, 0b101, 0b110, 0],
+        '\u{e6}' => [0, 0, 0, 0b011, 0b111, 0b110, 0b011, 0],
+        '\u{f8}' => [0, 0, 0, 0b011, 0b101, 0b101, 0b110, 0],
         _ => return None,
     };
-    let mut rows = Rows::default();
-    for (row, ink) in rows.iter_mut().skip(usize::from(ACCENT_ROWS)).zip(capitals) {
-        *row = ink << (u8::BITS - u32::from(GLYPH_W));
-    }
-    Some(rows)
+    Some(art.map(|ink| ink << (u8::BITS - u32::from(GLYPH_W))))
 }
 
 /// What `cluster`'s `n` cells show, each glyph with the cells it takes. When
@@ -166,9 +174,6 @@ pub(crate) fn ruled(c: char) -> Option<Rows> {
                 ink(col, RULE_ROW..LINE_H, solid);
             }
         }
-        // An em dash, which Fusion Pixel draws only full-width, as a rule
-        // that keeps its cell's gap: it ends a run as often as it joins one.
-        '\u{2014}' => ink(0..GLYPH_W, RULE_ROW..RULE_ROW + 1, solid),
         '\u{2580}' => ink(FULL, 0..half_h, solid),
         // Lower one to eight eighths.
         '\u{2581}'..='\u{2588}' => {
@@ -391,7 +396,8 @@ mod tests {
             );
         }
         let ruled_chars = ('\u{2500}'..='\u{259f}').filter(|&c| ruled(c).is_some());
-        for c in ruled_chars.chain(['I', '\u{25cf}', '\u{2026}', '\u{3a3}']) {
+        let by_hand = "\u{2018}\u{201c}\u{2014}\u{2022}\u{2026}\u{3a3}\u{d8}\u{e6}\u{f8}".chars();
+        for c in ruled_chars.chain(['I', '\u{25cf}']).chain(by_hand) {
             let text = c.to_string();
             let reach = ink(&text).iter().map(|&(x, _)| x + 1).max().unwrap_or(0);
             assert!(reach <= width(&text).0, "{c:?} inks to {reach}");

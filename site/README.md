@@ -42,8 +42,8 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
 ## Design
 
 - **Layout/type** — "Cozy Terminal": Jersey 10 (pixel display) · Monaspace
-  Neon (UI/code) · Lora (body); ASCII dividers, blinking cursor, CRT
-  scanlines.
+  Neon (UI/code) · Lora (body) · Fusion Pixel 8px (the office's captions);
+  ASCII dividers, blinking cursor, CRT scanlines.
 - **Palette** — warm "Coworking" (cream + Claude coral). Day = cream, night =
   after-hours; until the visitor picks, the site follows their wall clock
   (19:00–07:00 → night; `prefers-color-scheme` keeps night at noon for

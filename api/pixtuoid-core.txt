@@ -1341,21 +1341,6 @@ impl core::marker::Unpin for pixtuoid_core::sprite::format::Hairstyle
 impl core::marker::UnsafeUnpin for pixtuoid_core::sprite::format::Hairstyle
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::sprite::format::Hairstyle
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::format::Hairstyle
-pub struct pixtuoid_core::sprite::format::IconArt
-impl pixtuoid_core::sprite::format::IconArt
-pub fn pixtuoid_core::sprite::format::IconArt::screen(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
-pub fn pixtuoid_core::sprite::format::IconArt::world(&self) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
-impl core::clone::Clone for pixtuoid_core::sprite::format::IconArt
-pub fn pixtuoid_core::sprite::format::IconArt::clone(&self) -> Self
-impl core::fmt::Debug for pixtuoid_core::sprite::format::IconArt
-pub fn pixtuoid_core::sprite::format::IconArt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_core::sprite::format::IconArt
-impl core::marker::Send for pixtuoid_core::sprite::format::IconArt
-impl core::marker::Sync for pixtuoid_core::sprite::format::IconArt
-impl core::marker::Unpin for pixtuoid_core::sprite::format::IconArt
-impl core::marker::UnsafeUnpin for pixtuoid_core::sprite::format::IconArt
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::sprite::format::IconArt
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::format::IconArt
 pub struct pixtuoid_core::sprite::format::Pack
 impl pixtuoid_core::sprite::format::Pack
 pub fn pixtuoid_core::sprite::format::Pack::buildings(&self) -> impl core::iter::traits::iterator::Iterator<Item = &pixtuoid_core::sprite::format::Building>
@@ -1364,7 +1349,7 @@ pub fn pixtuoid_core::sprite::format::Pack::city_materials(&self) -> &pixtuoid_c
 pub fn pixtuoid_core::sprite::format::Pack::density_variants(&self) -> &[pixtuoid_core::sprite::format::Density]
 pub fn pixtuoid_core::sprite::format::Pack::hairstyle(&self, &str, pixtuoid_core::sprite::format::Density) -> core::option::Option<&pixtuoid_core::sprite::format::Hairstyle>
 pub fn pixtuoid_core::sprite::format::Pack::hairstyles(&self) -> impl core::iter::traits::iterator::Iterator<Item = &pixtuoid_core::sprite::format::Hairstyle>
-pub fn pixtuoid_core::sprite::format::Pack::icon(&self, &str) -> core::option::Option<&pixtuoid_core::sprite::format::IconArt>
+pub fn pixtuoid_core::sprite::format::Pack::icon(&self, &str) -> core::option::Option<&pixtuoid_core::sprite::Sprite>
 pub fn pixtuoid_core::sprite::format::Pack::max_density_variant(&self) -> pixtuoid_core::sprite::format::Density
 pub fn pixtuoid_core::sprite::format::Pack::palette(&self) -> &pixtuoid_core::sprite::Palette
 pub fn pixtuoid_core::sprite::format::Pack::piece(&self, pixtuoid_core::sprite::format::Piece) -> &pixtuoid_core::sprite::Sprite

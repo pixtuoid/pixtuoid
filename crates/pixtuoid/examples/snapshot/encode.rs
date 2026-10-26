@@ -269,8 +269,16 @@ const TERMINAL_FG: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb {
     b: 220,
 };
 
+/// One terminal cell of the frames, [`CELL_W`]×[`CELL_H`].
+pub(crate) fn terminal_cell() -> CellPx {
+    CellPx {
+        w: u16::try_from(CELL_W).expect("a cell is small"),
+        h: u16::try_from(CELL_H).expect("a cell is small"),
+    }
+}
+
 /// Paint `area`'s cells of `term_buf` onto `img` from its origin, one
-/// [`CELL_W`]×[`CELL_H`] cell each, in the window's face: the ONE
+/// [`terminal_cell`] each, in the window's face: the ONE
 /// rasterizer behind the PNG and RGBA outputs. A cell with no colour of its
 /// own leaves `img`'s ground and takes [`TERMINAL_FG`].
 fn rasterize_cells<I: image::GenericImage>(
@@ -280,14 +288,10 @@ fn rasterize_cells<I: image::GenericImage>(
 ) where
     I::Pixel: image::Pixel<Subpixel = u8>,
 {
-    let cell = CellPx {
-        w: u16::try_from(CELL_W).expect("a cell is small"),
-        h: u16::try_from(CELL_H).expect("a cell is small"),
-    };
     paint_grid(
         &mut ImageCanvas(img),
         &pixtuoid::dev::grid_of(term_buf, area),
-        ((0, 0), cell),
+        ((0, 0), terminal_cell()),
         crate::icons(),
         GridInk {
             text: TERMINAL_FG,

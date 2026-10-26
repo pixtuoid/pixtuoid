@@ -1,6 +1,7 @@
-//! Every character the office can write is one the window draws. Read from
-//! the literals of everything that renders text, parsed so a comment, a doc,
-//! a pattern, a test or the dev-only `harness` never counts.
+//! Every character the office can write is one the window draws, and what
+//! its own signs and names write is a glyph. Read from the literals of
+//! everything that renders text, parsed so a comment, a doc, a pattern, a
+//! test or the dev-only `harness` never counts.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,13 +17,19 @@ const RENDERERS: [&str; 4] = [
     "src/floating",
 ];
 
-/// What no text writes: the icons' terminal glyphs, which a pixel painter
-/// draws as their art and nothing writes as text the gate could check, and
-/// the pack's palette keys.
-const NOT_TEXT: [&str; 2] = [
-    "../pixtuoid-scene/src/display/icon.rs",
-    "../pixtuoid-scene/src/pack/lookup.rs",
+/// What world text (the badges, the board, the bubbles, the floor sign) is
+/// written by: core's labels and the scene's signs.
+const WORLD_WRITERS: [&str; 6] = [
+    "../pixtuoid-core/src",
+    "../pixtuoid-scene/src/neon_sign.rs",
+    "../pixtuoid-scene/src/chitchat.rs",
+    "../pixtuoid-scene/src/badge.rs",
+    "../pixtuoid-scene/src/display/text.rs",
+    "../pixtuoid-scene/src/layout",
 ];
+
+/// The pack's palette keys, which name art colours and never show.
+const PALETTE_KEYS: &str = "../pixtuoid-scene/src/pack/lookup.rs";
 
 /// The characters of a file's string and char literals outside tests, the
 /// `harness`, attributes and patterns, and the off-screen modules it declares
@@ -173,7 +180,7 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
     for tree in RENDERERS {
         rust_files(&root.join(tree), &mut files);
     }
-    files.retain(|file| !NOT_TEXT.iter().any(|t| *file == root.join(t)));
+    files.retain(|file| *file != root.join(PALETTE_KEYS));
     let parsed: Vec<(PathBuf, Written)> = files
         .into_iter()
         .map(|file| {
@@ -200,17 +207,18 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
         .collect()
 }
 
-/// The characters of `files` the window draws as tofu, with where each is
+/// The characters of `files` that `draws` refuses, with where each is
 /// written.
 fn tofu<'a>(
     files: impl IntoIterator<Item = &'a (PathBuf, Vec<char>)>,
+    draws: impl Fn(char, &pixtuoid_scene::pack::OfficeArt) -> bool,
 ) -> BTreeMap<String, Vec<String>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pack = pixtuoid_scene::pack::load_bundled_pack().expect("the bundled pack loads");
     let mut tofu = BTreeMap::<String, Vec<String>>::new();
     for (file, chars) in files {
         for &c in chars {
-            if drawn(c) && !pixtuoid_scene::cutaway::draws(c, &pack) {
+            if drawn(c) && !draws(c, &pack) {
                 let at = file
                     .strip_prefix(root)
                     .unwrap_or(file)
@@ -230,9 +238,24 @@ fn tofu<'a>(
 
 #[test]
 fn the_window_draws_every_character_the_office_writes() {
-    let missing = tofu(&written());
+    let missing = tofu(&written(), pixtuoid_scene::cutaway::draws);
     assert!(
         missing.is_empty(),
         "the window draws these as tofu: {missing:#?}"
+    );
+}
+
+#[test]
+fn the_office_draws_every_character_its_signs_and_names_write() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let writers: Vec<PathBuf> = WORLD_WRITERS.iter().map(|w| root.join(w)).collect();
+    let world: Vec<(PathBuf, Vec<char>)> = written()
+        .into_iter()
+        .filter(|(file, _)| writers.iter().any(|w| file.starts_with(w)))
+        .collect();
+    let missing = tofu(&world, |c, _| pixtuoid_scene::cutaway::office_text_draws(c));
+    assert!(
+        missing.is_empty(),
+        "the office's text draws these as tofu: {missing:#?}"
     );
 }

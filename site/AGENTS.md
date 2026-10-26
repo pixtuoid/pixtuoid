@@ -102,9 +102,9 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
   `mobileSlow4G` throughput, `interactive`/LCP are BYTE budgets. They and
   `speed-index` were sized once (#1124): wasm padded to `just
   gen-wasm-check`'s cap, plus run spread.
-- **Fonts**: Fontsource WOFF2 with `font-display: optional` + preloads — do
-  not switch to the default `swap` (Ubuntu cold visits reflow past the CLS
-  budget; `font-layout.spec.ts` reproduces it deliberately).
+- **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
+  the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
+  visits reflow past the CLS budget; `font-layout.spec.ts` reproduces it).
 - **npm**: `audit` runs LAST in `verify` (a live advisory would short-circuit
   the checks below it — #847/#849); CI runs it when a PR changes
   `package.json` or `package-lock.json`, and daily in `audit.yml`.

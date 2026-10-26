@@ -768,11 +768,11 @@ gen-banner-check:
     python3 scripts/gen-banner.py --selftest
     python3 scripts/gen-banner.py --check docs/images/banner
 
-# Not in `gen`: it downloads its pinned fonts.
+# Not in `gen`: it downloads its pinned fonts. Requires the .venv (fontTools).
 [doc("Regenerate Fusion Pixel 8px + its licenses for the scene (crates/pixtuoid-scene/fonts/) and the site (site/src/assets/fonts/) from scripts/gen-fonts.py")]
 [group('gen')]
 gen-fonts:
-    python3 scripts/gen-fonts.py
+    .venv/bin/python3 scripts/gen-fonts.py
 
 [doc('Sync README install/features/tools sections from site/src/*.json')]
 [group('gen')]

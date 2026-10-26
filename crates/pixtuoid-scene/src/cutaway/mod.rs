@@ -20,5 +20,5 @@ pub(crate) mod shade;
 pub(crate) mod text;
 #[doc(hidden)]
 pub use crate::display::cells::CellPx;
-pub use grid::{Canvas, GridInk, chrome_cell, draws, glyph_cell, paint_grid};
+pub use grid::{Canvas, GridInk, chrome_cell, draws, glyph_cell, office_text_draws, paint_grid};
 pub(crate) mod wall;

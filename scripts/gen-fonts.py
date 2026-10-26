@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the one pixel face from a pinned open bitmap font, and write its
-licenses beside it: crates/pixtuoid-scene/fonts/world.bin, every text the
+licenses beside it: crates/pixtuoid-scene/fonts/fusion-pixel-8px.bin, every text the
 cutaway and the floating window draw, from Fusion Pixel 8px; and the site's
-copy of it, site/src/assets/fonts/, which the live office's captions draw in.
+copy of its Latin, site/src/assets/fonts/, the live office's captions' face.
 
 Usage: python3 scripts/gen-fonts.py   (just gen-fonts)
 
@@ -26,9 +26,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from fontTools import subset
+from fontTools.ttLib import TTFont
+
 ROOT = Path(__file__).resolve().parent.parent
 FONTS = ROOT / "crates/pixtuoid-scene/fonts"
-OUT = FONTS / "world.bin"
+OUT = FONTS / "fusion-pixel-8px.bin"
 SITE_FONTS = ROOT / "site/src/assets/fonts"
 
 FETCH_TIMEOUT_S = 30
@@ -47,11 +50,14 @@ FUSION_MEMBERS = (
 )
 # The font's license and its sources' licenses, as its release ships them.
 FUSION_LICENSES = {"OFL.txt": "OFL-Fusion-Pixel.txt", "LICENSES/": "LICENSES-Fusion-Pixel/"}
-WEB_URL = FUSION_URL.replace("bdf", "otf.woff2")
-WEB_SHA256 = "5a2e0c345d83124a962772ecc7f04748bea14978f02ac1474d5fd38a00f3de56"
+SITE_URL = FUSION_URL.replace("bdf", "otf.woff2")
+SITE_SHA256 = "5a2e0c345d83124a962772ecc7f04748bea14978f02ac1474d5fd38a00f3de56"
 # Latin, for the half-width `·` a badge's `cc·<id4>` writes.
-WEB_MEMBER = "fusion-pixel-8px-monospaced-latin.otf.woff2"
-WEB_OUT = SITE_FONTS / "fusion-pixel-8px.woff2"
+SITE_MEMBER = "fusion-pixel-8px-monospaced-latin.otf.woff2"
+SITE_OUT = SITE_FONTS / "fusion-pixel-8px.woff2"
+# What the captions write: Latin, as the site's other faces load, and the
+# board's symbols; the whole face is past the site's Lighthouse budgets.
+SITE_RANGES = [(0x0020, 0x007E), (0x00A0, 0x017F), (0x2000, 0x206F), (0x2190, 0x26FF)]
 # `text.rs`'s LINE_H and the art pixels a cell is wide (its ADVANCE).
 LINE_H = 8
 CELL_W = 4
@@ -81,10 +87,10 @@ def fetch(url, sha256):
 
 
 def parse_bdf(text):
-    """{code point: (advance, ink as (row, col)s, row 0 the first under the baseline)}"""
+    """{code point: ink as (row, col)s, row 0 the first under the baseline}"""
     glyphs = {}
     ascent = None
-    cp = advance = bbx = bitmap = None
+    cp = bbx = bitmap = None
     for line in text.splitlines():
         p = line.split()
         if not p:
@@ -93,8 +99,6 @@ def parse_bdf(text):
             ascent = int(p[1])
         elif p[0] == "ENCODING":
             cp = int(p[1])
-        elif p[0] == "DWIDTH":
-            advance = int(p[1])
         elif p[0] == "BBX":
             bbx = [int(v) for v in p[1:5]]
         elif p[0] == "BITMAP":
@@ -108,7 +112,7 @@ def parse_bdf(text):
                 for c in range(w):
                     if bits >> (nbits - 1 - c) & 1:
                         ink.add((top + r - ascent, xoff + c))
-            glyphs[cp] = (advance, ink)
+            glyphs[cp] = ink
             bitmap = None
         elif bitmap is not None:
             bitmap.append(p[0])
@@ -131,17 +135,16 @@ def wanted(cp):
     return True
 
 
-def rows_of(advance, ink, n_cells, cell_w=CELL_W, line_h=LINE_H, ascent=ASCENT, bits=8):
-    """The glyph as `line_h` rows of `bits`-bit ink, the high bit leftmost,
-    or None when it leaves its box."""
-    if advance != n_cells * cell_w:
-        return None
-    rows = [0] * line_h
+def rows_of(ink, n_cells):
+    """The glyph as LINE_H rows of 8-bit ink, the high bit leftmost, or None
+    when it leaves its box. Its advance is not read: the font sets a quote or
+    a `«` wider than its ink, which still fits the cell."""
+    rows = [0] * LINE_H
     for dy, x in ink:
-        y = dy + ascent
-        if not (0 <= y < line_h and 0 <= x < n_cells * cell_w):
+        y = dy + ASCENT
+        if not (0 <= y < LINE_H and 0 <= x < n_cells * CELL_W):
             return None
-        rows[y] |= (1 << (bits - 1)) >> x
+        rows[y] |= 0x80 >> x
     return rows
 
 
@@ -182,15 +185,20 @@ def main():
                 continue
             for source in fusion:
                 if cp in source:
-                    rows = rows_of(*source[cp], cells(cp))
+                    rows = rows_of(source[cp], cells(cp))
                     if rows is not None:
                         picked[cp] = rows
                         break
 
     write(OUT, LINE_H, picked, 1)
 
-    WEB_OUT.write_bytes(unzip(WEB_URL, WEB_SHA256, SITE_FONTS).read(WEB_MEMBER))
-    print(f"{WEB_OUT.relative_to(ROOT)}: {WEB_OUT.stat().st_size} bytes")
+    face = TTFont(io.BytesIO(unzip(SITE_URL, SITE_SHA256, SITE_FONTS).read(SITE_MEMBER)))
+    # Every name kept: the copyright and license notice the OFL requires.
+    latin = subset.Subsetter(subset.Options(flavor="woff2", name_IDs=["*"], name_languages=["*"]))
+    latin.populate(unicodes=[cp for lo, hi in SITE_RANGES for cp in range(lo, hi + 1)])
+    latin.subset(face)
+    face.save(SITE_OUT)
+    print(f"{SITE_OUT.relative_to(ROOT)}: {SITE_OUT.stat().st_size} bytes")
 
 
 if __name__ == "__main__":

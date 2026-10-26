@@ -18,9 +18,9 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 
-use crate::encode::{FrameSink, ImageCanvas, Timeline, cells_to_rgba, fill_rect};
+use crate::encode::{FrameSink, ImageCanvas, Timeline, cells_to_rgba, fill_rect, terminal_cell};
 use crate::{CELL_H, CELL_W};
-use pixtuoid_scene::cutaway::{CellPx, GridInk, glyph_cell, paint_grid};
+use pixtuoid_scene::cutaway::{GridInk, paint_grid};
 use pixtuoid_scene::display::cells::CellGrid;
 use pixtuoid_scene::display::text::cells;
 
@@ -111,15 +111,9 @@ fn wrap_text(text: &str, max_width: i32, width_fn: impl Fn(&str) -> i32) -> Vec<
     lines
 }
 
-/// The cell the frames' text draws in: a glyph pixel two pixels square, as
-/// the office's terminal cells draw theirs.
-fn text_cell() -> CellPx {
-    glyph_cell(2)
-}
-
-/// `s`'s width in pixels in [`text_cell`]s.
+/// `s`'s width in pixels in [`terminal_cell`]s.
 fn text_width(s: &str) -> i32 {
-    i32::from(cells(s)) * i32::from(text_cell().w)
+    i32::from(cells(s)) * i32::from(terminal_cell().w)
 }
 
 /// Draw `s` in the window's face, top-left at `(x, top_y)`, over what is
@@ -142,7 +136,7 @@ fn draw_text(
     paint_grid(
         &mut ImageCanvas(img),
         &grid,
-        ((x, top_y), text_cell()),
+        ((x, top_y), terminal_cell()),
         crate::icons(),
         GridInk {
             text: rgb(color),
@@ -369,7 +363,7 @@ fn dot(img: &mut RgbaImage, (cx, cy): (i32, i32), r: i32, c: Rgba<u8>) {
 
 /// The top of a [`text_cell`] centred in a band `h` tall from `y`.
 fn centred_in(y: u32, h: u32) -> i32 {
-    (y + (h - u32::from(text_cell().h)) / 2) as i32
+    (y + (h - u32::from(terminal_cell().h)) / 2) as i32
 }
 
 fn dashed_h(img: &mut RgbaImage, x0: i32, x1: i32, y: i32, c: Rgba<u8>) {
@@ -451,7 +445,7 @@ fn panel_body(
             let advance = draw_text(img, &visible, ((origin.0 + PAD) as i32, top), color, None);
             if take < sub_len {
                 let cx = origin.0 as i32 + PAD as i32 + advance;
-                let cell = text_cell();
+                let cell = terminal_cell();
                 fill_rect(
                     img,
                     cx.max(0) as u32,

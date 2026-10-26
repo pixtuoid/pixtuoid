@@ -24,7 +24,7 @@ pub(crate) const ACCENT_ROWS: u16 = 2;
 /// Fusion Pixel 8px's capital height in art pixels.
 pub(crate) const CAP_H: u16 = 5;
 /// A line's height in art pixels: the accent rows, the capitals, and a row for
-/// descenders, Fusion Pixel 8px's own box. Pinned to `world.bin`'s header.
+/// descenders, Fusion Pixel 8px's own box. Pinned to `fusion-pixel-8px.bin`'s header.
 pub(crate) const LINE_H: u16 = ACCENT_ROWS + CAP_H + 1;
 
 /// `text`'s width in art pixels, from its first ink column to its last: its

@@ -385,6 +385,7 @@ const officeDriverUrl = asset('office-driver.js');
     let raf = 0;
     let last = 0;
     let live = false;
+    let captionFace = false;
     const pauseBtn = document.getElementById('office-pause');
     let paused = false;
     let pauseOffset = 0;
@@ -454,10 +455,11 @@ const officeDriverUrl = asset('office-driver.js');
     }
 
     // Fusion Pixel 8px's em: its glyph pixels land on whole CSS pixels only at
-    // a multiple, so a size snaps to one (`round` it, or `floor` to fit a box).
+    // a multiple, so a size snaps to one; a box under one em keeps its own.
     const PIXEL_EM = 8;
     function pixelEm(px, snap) {
-      return PIXEL_EM * Math.max(1, snap(px / PIXEL_EM));
+      const ems = snap(px / PIXEL_EM);
+      return ems < 1 ? px : PIXEL_EM * ems;
     }
 
     function updateOverlay() {
@@ -471,7 +473,8 @@ const officeDriverUrl = asset('office-driver.js');
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
       // reflow every frame.
-      const labelPx = pixelEm(Math.max(9, Math.min(20, map.s * 2.2)), Math.round);
+      // The 9-20 px band, snapped to 8 or 16.
+      const labelPx = Math.min(2 * PIXEL_EM, pixelEm(Math.max(9, map.s * 2.2), Math.round));
       if (labelPx !== lastLabelPx) {
         lastLabelPx = labelPx;
         overlayEl.style.setProperty('--ov-label-px', labelPx + 'px');
@@ -571,8 +574,10 @@ const officeDriverUrl = asset('office-driver.js');
         img.data.set(view);
         ctx2d.putImageData(img, 0, 0);
         // Caption the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
-        updateOverlay();
-        if (overlayEl) overlayEl.classList.add('is-on');
+        if (captionFace) {
+          updateOverlay();
+          if (overlayEl) overlayEl.classList.add('is-on');
+        }
       }
     }
     // putImageData writes the sub-1 alpha straight to the canvas, so the
@@ -1072,6 +1077,12 @@ const officeDriverUrl = asset('office-driver.js');
     function boot() {
       if (booted) return;
       booted = true;
+      // The captions' face, fetched beside the wasm: `optional` keeps a face
+      // that is late at its first use out for the whole visit.
+      const faceIn = function () {
+        captionFace = true;
+      };
+      document.fonts.load('8px "Fusion Pixel 8px"').then(faceIn, faceIn);
       // Showcase.astro's VIBING channel boots a SECOND Office off the SAME wasm module, and __wbg_init memoizes only the RESOLVED
       // instance — two racing `mod.default()` calls each instantiate and stomp the one module-global `wasm`, so drv.sharedWasm memoizes ONE init promise.
       import(officeDriverUrl)

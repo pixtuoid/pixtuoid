@@ -1,4 +1,4 @@
-# Dev-only Python deps for visual verification tooling.
+# Dev-only Python deps for visual verification tooling and gen-fonts.
 #
 # Setup (once per clone):
 #   python3 -m venv .venv
@@ -7,3 +7,5 @@
 # Run scripts via the venv:
 #   .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png
 Pillow==13.0.0
+brotli==1.2.1
+fonttools==4.67.0

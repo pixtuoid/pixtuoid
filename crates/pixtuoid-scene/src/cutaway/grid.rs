@@ -41,6 +41,12 @@ pub fn draws(c: char, pack: &OfficeArt) -> bool {
     text::glyph(c).is_some() || icon(c.encode_utf8(&mut [0; 4]), pack).is_some()
 }
 
+/// Whether the office's own text (badges, bubbles, signs) draws `c`: it
+/// names its icons, so only a glyph counts.
+pub fn office_text_draws(c: char) -> bool {
+    text::glyph(c).is_some()
+}
+
 /// The art of the icon whose terminal glyph `symbol` is.
 fn icon<'p>(symbol: &str, pack: &'p OfficeArt) -> Option<&'p Sprite> {
     <Icon as strum::VariantArray>::VARIANTS
@@ -390,12 +396,14 @@ mod tests {
         assert!(ink.iter().all(|&(x, _)| x < cell.w), "{ink:?}");
     }
 
-    /// Screen text draws ASCII and CJK, each as wide as its cells.
+    /// Screen text draws ASCII, the quotes and letters a session's title or
+    /// cwd writes, and CJK, each as wide as its cells.
     #[cfg(feature = "cutaway-assets")]
     #[test]
     fn screen_text_draws_latin_and_cjk_in_their_cells() {
         let pack = crate::pack::test_office();
-        for c in ['M', 'g', '\u{5c0f}', '\u{660e}', '\u{d55c}'] {
+        let latin = "Mg\u{2018}\u{2019}\u{201c}\u{201d}\u{ab}\u{bb}\u{e6}\u{f8}".chars();
+        for c in latin.chain(['\u{5c0f}', '\u{660e}', '\u{d55c}']) {
             assert!(draws(c, &pack), "{c:?}");
         }
         let cell = glyph_cell(1);

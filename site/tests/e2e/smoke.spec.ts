@@ -776,7 +776,10 @@ test('crisp AA captions overlay the live office (name badges + neon board)', asy
   await expect(brand).toHaveText(/\S/, { timeout: 10_000 });
   const brandFont = await brand.evaluate((el) => getComputedStyle(el).fontFamily);
   expect(brandFont).toContain('Fusion Pixel 8px');
-  expect(await page.evaluate(() => document.fonts.check('8px "Fusion Pixel 8px"'))).toBe(true);
+  const faces = await page.evaluate(
+    async () => (await document.fonts.load('8px "Fusion Pixel 8px"', 'a')).length
+  );
+  expect(faces).toBeGreaterThan(0);
   expect(errors()).toEqual([]);
 });
 
@@ -830,6 +833,19 @@ test('the neon board keeps one monospace column per char, through a flap roll', 
   expect(Math.abs(ctx.width - ctx.text.length * samples[0].ch), `"${ctx.text}"`).toBeLessThan(
     samples[0].ch / 2
   );
+  expect(errors()).toEqual([]);
+});
+
+// The board's box is six office pixels tall: under one em a row keeps its own
+// size, or the third row falls out of the box.
+test('the neon board keeps its rows inside its box on a landscape phone', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await gotoLive(page);
+  await expect(page.locator('#office-overlay.is-on')).toBeAttached({ timeout: 10_000 });
+  const board = page.locator('#office-overlay .ov-board');
+  await expect(board.locator('span').first()).toHaveText(/\S/, { timeout: 10_000 });
+  expect(await board.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
   expect(errors()).toEqual([]);
 });
 

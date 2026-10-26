@@ -150,8 +150,8 @@ mod tests {
     use crate::display::text::{LINE_H, cells, columns};
     use strum::VariantArray;
 
-    /// Each icon's art is one cell wide less the gap per cell its terminal
-    /// glyph takes, a line tall, and the pack draws no icon nothing names.
+    /// Each icon's art is a line tall and as wide as its glyph's cells less
+    /// the last gap, and the pack draws no icon nothing names.
     #[test]
     fn every_icon_has_its_art_and_every_art_an_icon() {
         let pack = crate::pack::test_office();

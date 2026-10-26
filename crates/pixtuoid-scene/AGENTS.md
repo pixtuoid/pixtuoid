@@ -69,8 +69,8 @@ canvas: whatever of the desk stands between the viewer and its sitter's props,
 its monitor.
 
 A symbol in text is an icon, `[icons] <name> = "<file>"` under the name
-`display::Icon::art` gives it: one frame a line tall and a glyph wide per cell
-its terminal glyph takes. Its pixels in key `ι` (`pack::ICON_INK_KEY`), and
+`display::Icon::art` gives it: one frame a line tall, as many cells wide as its
+terminal glyph takes less the last cell's gap. Its pixels in key `ι` (`pack::ICON_INK_KEY`), and
 that key's ramps, take the text's ink; every other key keeps the pack's
 colour. Screen text finds an icon by its glyph, so icons that write one glyph
 draw one art. The icon tests pin the size, the ink and the shared art.
