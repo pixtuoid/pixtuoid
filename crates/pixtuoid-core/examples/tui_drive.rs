@@ -61,7 +61,7 @@ fn main() {
         eprintln!("{USAGE}");
         std::process::exit(USAGE_ERROR);
     };
-    let code = drive(line).unwrap_or_else(|e| {
+    let code = drive(line, BUDGET).unwrap_or_else(|e| {
         let why = format!("tui_drive: {e}");
         eprintln!("{why}");
         say_why(&why);
@@ -99,7 +99,7 @@ fn command(
     Ok(cmd)
 }
 
-fn drive(line: CommandLine) -> std::io::Result<i32> {
+fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
     let (tui, answer) = tui_of(&line.source, &line.scenario)?;
     let mut log = std::fs::File::create(&line.log)?;
     let pair = NativePtySystem::default()
@@ -143,8 +143,8 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
             return Ok(i32::try_from(status.exit_code()).unwrap_or(GAVE_UP));
         }
         let now = Instant::now();
-        if now.duration_since(started) >= BUDGET {
-            let why = format!("the {BUDGET:?} budget ran out");
+        if now.duration_since(started) >= budget {
+            let why = format!("the {budget:?} budget ran out");
             return give_up(&mut log, &mut child, &why, &screen, OUT_OF_TIME);
         }
         if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
@@ -301,6 +301,27 @@ mod tests {
         std::thread::sleep(Duration::from_secs(1));
         assert_eq!(beaten(), before, "the CLI's child outlived its give-up");
         drop(pair.master);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_past_its_budget_exits_out_of_time_and_tells_the_recorder_why() {
+        let dir = tempfile::tempdir().expect("dir");
+        let line = CommandLine {
+            source: "claude-code".into(),
+            scenario: "permission".into(),
+            log: dir.path().join("tui.log"),
+            prompt: "hi".into(),
+            program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
+        };
+        let budget = Duration::from_millis(500);
+        let code = temp_env::with_var(DRIVER_DIR_ENV, Some(dir.path()), || drive(line, budget))
+            .expect("it drove");
+        assert_eq!(code, OUT_OF_TIME);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(GAVE_UP_NOTE)).expect("its note"),
+            format!("the {budget:?} budget ran out")
+        );
     }
 
     #[test]

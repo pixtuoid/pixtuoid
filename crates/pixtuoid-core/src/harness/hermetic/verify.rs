@@ -75,7 +75,7 @@ impl Verdict {
     /// This verdict, of a run a budget killed: whatever it found, nothing of
     /// pixtuoid's was judged.
     #[must_use]
-    pub fn outran(self) -> Self {
+    pub(crate) fn outran(self) -> Self {
         Self {
             outran: true,
             ..self

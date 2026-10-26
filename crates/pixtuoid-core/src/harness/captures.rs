@@ -229,7 +229,7 @@ impl TurnEnd {
     }
 
     /// Whether the recorder's budget killed it.
-    pub fn hung(self) -> bool {
+    pub(crate) fn hung(self) -> bool {
         self == Self::OutOfTime(Budget::Recorder)
     }
 }
