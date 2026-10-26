@@ -522,3 +522,48 @@ fn a_failed_present_ends_the_render() {
         Some(std::io::ErrorKind::BrokenPipe)
     );
 }
+
+/// A terminal that never answers where its cursor is: `TestBackend`'s error is
+/// `Infallible`, so a panic is the only way to model the stall.
+struct Mute;
+
+impl Tap<TestBackend> for Mute {
+    fn cursor_position(
+        &mut self,
+        _: &mut TestBackend,
+    ) -> Result<ratatui::layout::Position, <TestBackend as ratatui::backend::Backend>::Error> {
+        panic!("asked a terminal that never answers where its cursor is")
+    }
+}
+
+#[test]
+fn a_redraw_repaints_a_garbled_screen_without_asking_the_terminal() {
+    use ratatui::backend::Backend;
+    let mut r = TuiRenderer::new(
+        Terminal::new(Tapped {
+            inner: TestBackend::new(120, 40),
+            tap: Mute,
+        })
+        .expect("test backend"),
+        normal_theme(),
+        vec![],
+        pack_arc(),
+    );
+    let scene = scene_with(vec![idle("/sm/0.jsonl", 0, t0())], 16);
+    r.render(&scene, t0()).expect("render");
+    r.terminal.backend_mut().inner.resize(118, 39);
+    r.render(&scene, t0()).expect("render after a resize");
+    let shown = r.frame_buffer().clone();
+
+    let garbage = ratatui::buffer::Cell::new("#");
+    r.terminal
+        .backend_mut()
+        .inner
+        .draw([(0, 0, &garbage), (59, 19, &garbage)].into_iter())
+        .expect("garble");
+    assert_ne!(r.frame_buffer(), &shown, "the screen must start garbled");
+
+    r.redraw().expect("redraw");
+    r.render(&scene, t0()).expect("render");
+    assert_eq!(r.frame_buffer(), &shown);
+}
