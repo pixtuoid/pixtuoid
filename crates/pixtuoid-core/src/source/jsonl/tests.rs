@@ -3335,6 +3335,45 @@ async fn an_unterminated_last_record_is_held_back_by_the_watcher_and_the_census_
     assert_eq!(census_tuids, task_start_tuids(&watched));
 }
 
+#[tokio::test]
+async fn a_line_the_walker_skips_costs_only_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("skipped.jsonl");
+    let body = b"not json\n\xff\xfe\n{\"type\":\"tool_use\",\"cwd\":\"/r\"}\n";
+    tokio::fs::write(&path, body).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        t_decode_lifecycle,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let expected = AgentId::from_parts("test", &default_id_from_path(&path));
+    assert!(
+        events.iter().any(|(_, e)| matches!(
+            e,
+            AgentEvent::SessionStart { agent_id, .. } if *agent_id == expected
+        )),
+        "first sight still registers, got {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+        "the line after the skipped ones still decodes, got {events:?}"
+    );
+    assert_eq!(
+        cursors.lock().await.get(&path).copied(),
+        Some(body.len() as u64),
+        "the cursor advances to EOF past the skipped lines"
+    );
+}
+
 fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
     let mut full = Vec::from(HEAD_LINE_BYTES);
     while full.len() <= (1usize << 20) + 4096 {

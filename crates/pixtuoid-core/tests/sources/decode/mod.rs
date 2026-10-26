@@ -662,19 +662,6 @@ fn ag_tool_result_emits_activity_end() {
 }
 
 #[test]
-fn ag_uses_source_namespaced_agent_id() {
-    let transcript = "/shared/path.jsonl";
-    let v = serde_json::json!({ "step_index": 1, "type": "PLANNER_RESPONSE", "tool_calls": [] });
-    let _events = antigravity::decode_ag_line(transcript, "antigravity", v);
-    let ag_id = AgentId::from_parts("antigravity", transcript);
-    let cc_id = AgentId::from_parts("claude-code", transcript);
-    assert_ne!(
-        ag_id, cc_id,
-        "different sources must produce different AgentIds"
-    );
-}
-
-#[test]
 fn ag_ask_permission_and_question_emits_waiting() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
 

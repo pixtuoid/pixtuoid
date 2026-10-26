@@ -100,8 +100,8 @@ pub struct Driven {
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
-    /// Lines that were not valid JSON — a torn write, outside the decoder
-    /// contract (the watcher skips them too).
+    /// Lines the watcher skips too, outside the decoder contract: not UTF-8, or
+    /// not JSON.
     pub unparseable: usize,
     /// Hook lines the dispatcher refused. A refusal of bytes the source itself
     /// wrote is drift in our decoder.

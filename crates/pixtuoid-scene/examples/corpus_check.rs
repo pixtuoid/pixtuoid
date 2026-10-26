@@ -35,7 +35,7 @@ fn now() -> SystemTime {
 #[derive(Default)]
 struct Verdict {
     lines: usize,
-    /// Lines that were not valid JSON at all — a torn write, not our problem.
+    /// Lines the watcher skips: not UTF-8, or not JSON.
     unparseable: usize,
     /// Events the WIRE produced — the first-sight seed is NOT counted.
     events: usize,
@@ -228,7 +228,7 @@ fn main() {
     println!("  files             {}", files.len());
     println!("  lines             {}", totals.lines);
     println!(
-        "  unparseable       {} (torn writes; not ours)",
+        "  unparseable       {} (not UTF-8 or not JSON; the watcher skips them)",
         totals.unparseable
     );
     println!(
