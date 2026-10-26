@@ -165,8 +165,8 @@ portable-pty       = "0.9"
 vt100              = "0.18"
 # Dev-only: `crates/pixtuoid-core/examples/support/bounded.rs`.
 process-wrap       = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
-# The newest major, not crossterm's 0.3: reusing that copy would freeze this
-# dev-only crate behind crossterm, a cost larger than its second compile.
+# Not crossterm's copy: holding to it would freeze this dev-only crate behind
+# crossterm, a cost larger than its second compile.
 signal-hook        = "0.4"
 # regex is already built through criterion; sha2 checks the hermetic tier's
 # release downloads, where a platform hasher would need a seam of its own to
