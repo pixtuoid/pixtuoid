@@ -181,8 +181,8 @@ fn is_managed_entry(entry: &toml::Value) -> bool {
 fn managed_entry(event: &str, env_mode: bool, base_cmd: &str) -> toml::Value {
     let mut entry = Table::new();
     entry.insert("event".into(), toml::Value::String(event.into()));
-    // env-mode events bake `--event <name>` (the shim reads DEEPSEEK_* env); the
-    // subagent observer events forward the raw stdin JSON, so no `--event`.
+    // env-mode events bake `--event <name>` (the shim reads CodeWhale's hook env);
+    // the subagent observer events forward the raw stdin JSON, so no `--event`.
     let command = if env_mode {
         format!("{base_cmd}{}{event}", crate::install::hook_cmd::EVENT_FLAG)
     } else {

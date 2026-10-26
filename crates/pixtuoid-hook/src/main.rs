@@ -111,7 +111,7 @@ fn cap_env_field(mut val: String) -> String {
     val
 }
 
-/// CodeWhale env-mode: synthesize the hook envelope from the `DEEPSEEK_*` env
+/// CodeWhale env-mode: synthesize the hook envelope from CodeWhale's hook env
 /// vars `get` reads, so a test need not mutate process-global env.
 fn env_payload_from(
     event: &str,
