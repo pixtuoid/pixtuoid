@@ -14,8 +14,9 @@ use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::jsonl::{JsonlWatcher, ProbeSnapshot, force_polling_backend_for_tests};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
 
-/// Run every watcher test on a fast `PollWatcher` backend instead of the native
-/// FSEvents/inotify watcher, whose stream setup/teardown dominated test time.
+/// Run every watcher test's root watch on a fast `PollWatcher` backend instead
+/// of the native FSEvents/inotify watcher, whose stream setup/teardown
+/// dominated test time.
 /// Idempotent / set-once. Call at the top of any test that drives a real
 /// `JsonlWatcher`/`Source::run`.
 fn fast_watch() {

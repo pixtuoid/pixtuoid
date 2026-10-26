@@ -408,43 +408,49 @@ async fn omp_source_rescan_hot_plugs_a_profile_created_mid_run() {
     let dir = TempDir::new().unwrap();
     let primary = dir.path().join("agent").join("sessions");
     tokio::fs::create_dir_all(&primary).await.unwrap();
-    let late_profile = dir
-        .path()
-        .join("profiles")
-        .join("late")
-        .join("agent")
-        .join("sessions");
+    let profiles = dir.path().join("profiles");
+    let sessions_of = |name: &str| profiles.join(name).join("agent").join("sessions");
 
-    // The rescan seam reports nothing until the test "creates" the profile.
-    let announced = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let feed = announced.clone();
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
     let mut src = OmpSource::single_root(primary);
-    src.rescan = std::sync::Arc::new(move || feed.lock().unwrap().clone());
-    src.rescan_interval = Duration::from_millis(50);
+    src.profiles_dir = Some(profiles.clone());
+    src.rescan = std::sync::Arc::new({
+        let profiles = profiles.clone();
+        move || {
+            let Ok(entries) = std::fs::read_dir(&profiles) else {
+                return Vec::new();
+            };
+            let mut roots: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path().join("agent").join("sessions"))
+                .collect();
+            roots.sort();
+            roots
+        }
+    });
+    // Past the test's deadline: only the profiles-dir watch can bind the root.
+    src.rescan_interval = Duration::from_secs(3600);
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     const STEM: &str = "2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000022";
-    let cwd_dir = late_profile.join("-dev-proj");
+    let cwd_dir = sessions_of("late").join("-dev-proj");
     tokio::fs::create_dir_all(&cwd_dir).await.unwrap();
-    announced.lock().unwrap().push(late_profile.clone());
-    // Give the rescan a tick to bind the new root BEFORE the transcript lands,
-    // so registration cannot ride the initial scan of an already-known root.
-    tokio::time::sleep(Duration::from_millis(150)).await;
     let transcript = cwd_dir.join(format!("{STEM}.jsonl"));
     write_omp_header(&transcript, "0197f0aa-0000-7000-8000-000000000022").await;
 
     let want = AgentId::from_parts("omp", &omp_watcher_key(&transcript));
     assert!(
         wait_for_session_start(&mut rx, want).await,
-        "a profile announced after startup must gain a watcher without a restart"
+        "a profile created after startup must gain a watcher without a restart"
     );
 
-    // Re-announcing the SAME root must not disturb it: a later transcript
-    // still registers. (Watcher-count dedup itself is not observable here —
-    // one watcher already emits SessionStart twice, seed + decoded header.)
-    announced.lock().unwrap().push(late_profile.clone());
+    // A second profile re-lists the first: the already-bound root must not be
+    // disturbed. (Watcher-count dedup itself is not observable here — one
+    // watcher already emits SessionStart twice, seed + decoded header.)
+    tokio::fs::create_dir_all(sessions_of("later"))
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(150)).await;
     const STEM2: &str = "2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000023";
     let second = cwd_dir.join(format!("{STEM2}.jsonl"));
@@ -452,7 +458,7 @@ async fn omp_source_rescan_hot_plugs_a_profile_created_mid_run() {
     let want2 = AgentId::from_parts("omp", &omp_watcher_key(&second));
     assert!(
         wait_for_session_start(&mut rx, want2).await,
-        "a re-announced root must keep registering new transcripts"
+        "a re-listed root must keep registering new transcripts"
     );
     handle.abort();
 }

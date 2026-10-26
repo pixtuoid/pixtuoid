@@ -3696,3 +3696,345 @@ fn folded_deriver_folds_separators_and_case_on_windows() {
         "the Windows fold must normalize separators AND case, got {id:?}"
     );
 }
+
+#[derive(Debug, Clone, PartialEq)]
+enum WatchCall {
+    Watch(PathBuf, RecursiveMode),
+    /// The watcher dropped, which ends its watch.
+    Unwatch(PathBuf),
+}
+
+/// A recording [`notify::Watcher`] factory: its `failures` first watches
+/// fail, each removing the watched dir before it does when `remove_on_fail`.
+#[derive(Clone, Default)]
+struct FakeWatcher {
+    calls: Arc<std::sync::Mutex<Vec<WatchCall>>>,
+    failures: Arc<std::sync::Mutex<usize>>,
+    remove_on_fail: bool,
+}
+
+impl FakeWatcher {
+    fn calls(&self) -> Vec<WatchCall> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn watches(&self) -> usize {
+        self.calls()
+            .iter()
+            .filter(|c| matches!(c, WatchCall::Watch(..)))
+            .count()
+    }
+
+    fn builder(&self) -> root_watch::BuildWatcher {
+        let fake = self.clone();
+        Box::new(move || {
+            Ok(Box::new(FakeInstance {
+                fake: fake.clone(),
+                watched: None,
+            }))
+        })
+    }
+}
+
+struct FakeInstance {
+    fake: FakeWatcher,
+    watched: Option<PathBuf>,
+}
+
+impl Drop for FakeInstance {
+    fn drop(&mut self) {
+        if let Some(path) = self.watched.take() {
+            self.fake
+                .calls
+                .lock()
+                .unwrap()
+                .push(WatchCall::Unwatch(path));
+        }
+    }
+}
+
+impl notify::Watcher for FakeInstance {
+    fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
+        Ok(Self {
+            fake: FakeWatcher::default(),
+            watched: None,
+        })
+    }
+
+    fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+        self.fake
+            .calls
+            .lock()
+            .unwrap()
+            .push(WatchCall::Watch(path.to_path_buf(), mode));
+        let mut failures = self.fake.failures.lock().unwrap();
+        let Some(left) = failures.checked_sub(1) else {
+            self.watched = Some(path.to_path_buf());
+            return Ok(());
+        };
+        *failures = left;
+        if self.fake.remove_on_fail {
+            std::fs::remove_dir(path).unwrap();
+        }
+        Err(notify::Error::generic("fake watch failure"))
+    }
+
+    fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
+        unreachable!("a RootWatch drops a watcher rather than unwatching")
+    }
+
+    fn kind() -> notify::WatcherKind {
+        notify::WatcherKind::NullWatcher
+    }
+}
+
+fn fake_root_watch(
+    root: &Path,
+    root_watcher: &FakeWatcher,
+) -> (RootWatch, FakeWatcher, tokio::sync::mpsc::Receiver<()>) {
+    let anchor = FakeWatcher::default();
+    let (nudge, nudges) = Nudge::channel();
+    let watch = RootWatch::with_builders(
+        root.to_path_buf(),
+        RecursiveMode::Recursive,
+        root_watcher.builder(),
+        anchor.builder(),
+        nudge,
+    );
+    (watch, anchor, nudges)
+}
+
+#[tokio::test]
+async fn root_watch_follows_the_root_through_appearance_and_removal() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a");
+    let b = a.join("b");
+    let root = b.join("root");
+    std::fs::create_dir(&a).unwrap();
+    let root_fake = FakeWatcher::default();
+    let (mut watch, anchor, _nudges) = fake_root_watch(&root, &root_fake);
+
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Unchanged
+    );
+    assert_eq!(
+        anchor.calls(),
+        vec![WatchCall::Watch(a.clone(), RecursiveMode::NonRecursive)],
+        "an absent chain anchors at its deepest existing ancestor"
+    );
+    assert!(root_fake.calls().is_empty());
+
+    std::fs::create_dir_all(&root).unwrap();
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Attached
+    );
+    assert_eq!(
+        anchor.calls()[1..],
+        [
+            WatchCall::Unwatch(a.clone()),
+            WatchCall::Watch(b.clone(), RecursiveMode::NonRecursive)
+        ],
+        "the chain appearing moves the anchor onto the root's parent"
+    );
+    assert_eq!(
+        root_fake.calls(),
+        vec![WatchCall::Watch(root.clone(), RecursiveMode::Recursive)]
+    );
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Unchanged
+    );
+    assert_eq!(root_fake.calls().len() + anchor.calls().len(), 4);
+
+    std::fs::remove_dir(&root).unwrap();
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Unchanged
+    );
+    assert_eq!(
+        root_fake.calls()[1..],
+        [WatchCall::Unwatch(root.clone())],
+        "a removed root is detached"
+    );
+    assert_eq!(anchor.calls().len(), 3, "its parent stays the anchor");
+
+    std::fs::remove_dir(&b).unwrap();
+    watch.reconcile(Wake::Nudge).await.unwrap();
+    assert_eq!(
+        anchor.calls()[3..],
+        [
+            WatchCall::Unwatch(b.clone()),
+            WatchCall::Watch(a.clone(), RecursiveMode::NonRecursive)
+        ],
+        "a removed anchor re-anchors one level up"
+    );
+}
+
+/// inotify and Windows drop the watch of a deleted directory, so one deleted
+/// and recreated between two reconciles must be watched afresh.
+#[tokio::test]
+async fn root_watch_reattaches_a_replaced_root_and_anchor() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("parent");
+    let root = parent.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let root_fake = FakeWatcher::default();
+    let (mut watch, anchor, _nudges) = fake_root_watch(&root, &root_fake);
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Attached
+    );
+
+    std::fs::remove_dir(&root).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Attached
+    );
+    assert_eq!(
+        root_fake.calls()[1..],
+        [
+            WatchCall::Unwatch(root.clone()),
+            WatchCall::Watch(root.clone(), RecursiveMode::Recursive)
+        ]
+    );
+
+    std::fs::remove_dir_all(&parent).unwrap();
+    std::fs::create_dir_all(&root).unwrap();
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Attached
+    );
+    assert_eq!(
+        anchor.calls()[1..],
+        [
+            WatchCall::Unwatch(parent.clone()),
+            WatchCall::Watch(parent.clone(), RecursiveMode::NonRecursive)
+        ],
+        "a recreated anchor is watched afresh"
+    );
+}
+
+#[tokio::test]
+async fn root_watch_warns_a_failed_attach_once_and_retries_it_on_the_poll() {
+    let (logs, _guard) = crate::test_capture::capture_warns();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let root_fake = FakeWatcher::default();
+    *root_fake.failures.lock().unwrap() = 3;
+    let (mut watch, _anchor, _nudges) = fake_root_watch(&root, &root_fake);
+
+    assert!(
+        watch.reconcile(Wake::Poll).await.is_err(),
+        "a boot attach failure is the caller's"
+    );
+    for wake in [Wake::Poll, Wake::Nudge, Wake::Poll] {
+        assert_eq!(watch.reconcile_logged(wake).await, Reconciled::Unchanged);
+    }
+    assert_eq!(
+        root_fake.watches(),
+        3,
+        "a nudge leaves the failed directory to the poll"
+    );
+    assert_eq!(
+        watch.reconcile_logged(Wake::Poll).await,
+        Reconciled::Attached
+    );
+    assert_eq!(
+        logs.contents()
+            .matches("watch root could not be attached")
+            .count(),
+        1,
+        "a persistent failure warns once: {}",
+        logs.contents()
+    );
+}
+
+#[tokio::test]
+async fn root_watch_treats_a_root_removed_mid_attach_as_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let root_fake = FakeWatcher {
+        remove_on_fail: true,
+        ..FakeWatcher::default()
+    };
+    *root_fake.failures.lock().unwrap() = 1;
+    let (mut watch, _anchor, _nudges) = fake_root_watch(&root, &root_fake);
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Unchanged
+    );
+    std::fs::create_dir(&root).unwrap();
+    assert_eq!(
+        watch.reconcile(Wake::Nudge).await.unwrap(),
+        Reconciled::Attached,
+        "the race left nothing to wait out"
+    );
+}
+
+#[tokio::test]
+async fn root_watch_never_anchors_a_filesystem_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = dir.path().ancestors().last().unwrap();
+    let root = top.join("pixtuoid-no-such-dir-7f3a").join("root");
+    let root_fake = FakeWatcher::default();
+    let (mut watch, anchor, _nudges) = fake_root_watch(&root, &root_fake);
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Unchanged
+    );
+    assert!(anchor.calls().is_empty(), "anchored at {top:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn root_watch_fails_on_a_root_it_cannot_stat() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let sealed = dir.path().join("sealed");
+    std::fs::create_dir(&sealed).unwrap();
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let root_fake = FakeWatcher::default();
+    let (mut watch, _anchor, _nudges) = fake_root_watch(&sealed.join("root"), &root_fake);
+    let result = watch.reconcile(Wake::Poll).await;
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "an EACCES stat is a watch failure (#157)");
+}
+
+#[test]
+fn nudge_wakes_only_on_a_change_to_which_directories_exist() {
+    use notify::event::{
+        AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
+    };
+    let (nudge, mut nudges) = Nudge::channel();
+    let woke = |kind: notify::EventKind, nudges: &mut tokio::sync::mpsc::Receiver<()>| {
+        nudge.on_event(&Ok(notify::Event::new(kind)));
+        nudges.try_recv().is_ok()
+    };
+    for quiet in [
+        notify::EventKind::Access(AccessKind::Any),
+        notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+        notify::EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)),
+        notify::EventKind::Modify(ModifyKind::Any),
+    ] {
+        assert!(!woke(quiet, &mut nudges), "{quiet:?} nudged");
+    }
+    for structural in [
+        notify::EventKind::Create(CreateKind::Any),
+        notify::EventKind::Remove(RemoveKind::Any),
+        notify::EventKind::Modify(ModifyKind::Name(RenameMode::Any)),
+        notify::EventKind::Any,
+        notify::EventKind::Other,
+    ] {
+        assert!(
+            woke(structural, &mut nudges),
+            "{structural:?} did not nudge"
+        );
+    }
+    nudge.on_event(&Err(notify::Error::generic("lost events")));
+    assert!(nudges.try_recv().is_ok(), "an error may hide a lost event");
+}

@@ -4,7 +4,7 @@
 /// spams the warn-floor log every interval, while total silence leaves the
 /// watcher permanently blind — after a successful bind there is no SourceDeath
 /// path left to report through.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct FailureLatch {
     failing: bool,
 }

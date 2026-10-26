@@ -16,6 +16,10 @@ use crate::{
     spawn_copilot, vouch_snapshot, write_lines,
 };
 
+/// An attach rides filesystem events, so it lands well inside this; a test
+/// that sets the poll far past it proves the poll did not do the attaching.
+const ATTACH_BOUND: Duration = Duration::from_secs(5);
+
 #[tokio::test]
 async fn attach_matrix_registers_exactly_the_live_set() {
     let dir = TempDir::new().unwrap();
@@ -323,23 +327,21 @@ async fn cwd_split_attach_links_subagent_to_probe_live_stale_parent() {
 }
 
 /// A watcher creates no directory: its root is another CLI's, whose presence
-/// auto-detect keys on (`install::grok::detect_installed`). It attaches once the
-/// root appears.
+/// auto-detect keys on (`install::grok::detect_installed`). It attaches when the
+/// root appears, not at the next poll, however deep the absent chain.
 #[tokio::test]
 async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     let dir = TempDir::new().unwrap();
-    let root = dir.path().join("projects");
+    let root = dir.path().join(".codex").join("sessions");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    // The poll attaches the watch, so a write landing well inside one interval
-    // after that tick can only arrive through the watch.
-    let poll = Duration::from_secs(3);
     let watcher = codex_watcher(root.clone())
         .with_initial_window(Duration::from_secs(60))
-        .with_poll_interval(poll);
+        .with_poll_interval(Duration::from_secs(3600));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(!root.exists(), "the watcher created {root:?}");
+    let parent = root.parent().unwrap();
+    assert!(!parent.exists(), "the watcher created {parent:?}");
 
     let uuid = "ee000000-0000-7000-8000-00000000000e";
     let proj = root.join("-Users-me-late");
@@ -347,7 +349,7 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     let session = proj.join(format!("{uuid}.jsonl"));
     write_lines(&session, &[codex_meta_line(uuid, "/Users/me/late")]).await;
     let id = AgentId::from_parts("codex", uuid);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let deadline = tokio::time::Instant::now() + ATTACH_BOUND;
     let mut seen = false;
     while !seen && tokio::time::Instant::now() < deadline {
         if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
@@ -358,9 +360,17 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     }
     assert!(
         seen,
-        "a session under the root that appeared was never seen"
+        "a session under a root that appeared mid-run was not seen within {ATTACH_BOUND:?}"
     );
 
+    // The anchor now watches the root's parent, whose own files (CC's
+    // `history.jsonl` beside its projects root) are no transcripts.
+    let beside = "ff000000-0000-7000-8000-00000000000f";
+    write_lines(
+        &parent.join("history.jsonl"),
+        &[codex_meta_line(beside, "/Users/me/beside")],
+    )
+    .await;
     let mut file = tokio::fs::OpenOptions::new()
         .append(true)
         .open(&session)
@@ -370,16 +380,29 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     tokio::io::AsyncWriteExt::write_all(&mut file, format!("{line}\n").as_bytes())
         .await
         .unwrap();
-    let deadline = tokio::time::Instant::now() + poll / 2;
-    let mut active = false;
-    while !active && tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-        {
-            active = agent_id == id;
+    let is_active =
+        |e: &AgentEvent| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == id);
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + ATTACH_BOUND;
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
+            Ok(Some((_, ev))) => events.push(ev),
+            // Quiet once the append has landed: nothing else is coming.
+            _ if events.iter().any(is_active) => break,
+            _ => {}
         }
     }
-    assert!(active, "a write under the appeared root was not watched");
+    assert!(
+        events.iter().any(is_active),
+        "a write under the appeared root was not watched: {events:?}"
+    );
+    let beside_id = AgentId::from_parts("codex", beside);
+    assert!(
+        !events.iter().any(
+            |e| matches!(e, AgentEvent::SessionStart { agent_id, .. } if *agent_id == beside_id)
+        ),
+        "a file beside the root was decoded as a session"
+    );
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
     handle.abort();
 }
