@@ -49,9 +49,7 @@ pub struct RunVerdict {
 /// lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Issue {
-    /// Its number.
     pub(crate) number: u64,
-    /// Whether it is open.
     pub(crate) state: State,
     /// Its body, whose marker says which of the plan's it is.
     pub(crate) body: String,
@@ -196,7 +194,7 @@ impl Night<'_> {
 /// outputs, every verdicts file the legs uploaded and the run's URL. A leg
 /// whose verdicts are missing, or name a leg or a source the matrix gives it no
 /// part in, is lost: it files an issue of its own, and no source's issue closes
-/// that night. A source's closes only on a night no leg is lost and both legs
+/// that night. A source's closes only on a night no leg is lost and every leg
 /// running it reported its runs, each Pass; a leg's, once it reported again.
 pub fn plan(
     drift: &Map<String, Value>,
@@ -337,7 +335,7 @@ pub fn plan(
     Plan { actions, lost }
 }
 
-/// Whether both legs of the shard that runs `source` reported its runs.
+/// Whether every leg of [`OSES`] on the shard that runs `source` reported its runs.
 fn reported_on_every_leg(source: &str, nights: &BTreeMap<Leg, Night<'_>>) -> bool {
     let Some(shard) = shard_of(source) else {
         return false;

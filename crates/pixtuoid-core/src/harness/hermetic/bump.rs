@@ -222,7 +222,6 @@ mod tests {
     /// from the leg running each row's shard.
     fn drift(legs: &[(&str, &[(&str, &str)])]) -> Map<String, Value> {
         let mut out = Map::new();
-        out.insert("runs-stem".into(), Value::from("hermetic-runs-1-1-"));
         for (os, rows) in legs {
             for leg in super::legs().filter(|leg| leg.os == *os) {
                 let rows: Vec<Moved> = rows

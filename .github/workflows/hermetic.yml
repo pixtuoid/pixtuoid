@@ -15,9 +15,6 @@ on:
         type: string
         default: pinned
     outputs:
-      runs-stem:
-        description: 'The stem each leg uploads its runs under, as `<runs-stem><os>-<shard>`, when its run fails, times out or is cancelled, or passes with a New finding'
-        value: ${{ jobs.run.outputs.runs-stem }}
       verdicts-stem:
         description: 'The stem every leg uploads its verdicts under, as `<verdicts-stem><os>-<shard>`, empty when its run wrote none; a re-run leg replaces its own'
         value: ${{ jobs.run.outputs.verdicts-stem }}
@@ -80,7 +77,6 @@ jobs:
       RUNS_STEM: hermetic-runs-${{ github.run_id }}-${{ github.run_attempt }}-
       VERDICTS_STEM: hermetic-verdicts-${{ github.run_id }}-
     outputs:
-      runs-stem: ${{ env.RUNS_STEM }}
       verdicts-stem: ${{ env.VERDICTS_STEM }}
       # Each leg sets only its own, and a matrix combines its legs' outputs.
       moved_macos_1: ${{ steps.moved.outputs.moved_macos_1 }}
