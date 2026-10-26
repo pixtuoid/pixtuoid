@@ -10,6 +10,7 @@ disallowed-methods = [
     { path = "chrono::NaiveDateTime::and_local_timezone", reason = "it builds an instant in a `TimeZone`: on `Local` it reads `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails elsewhere; go through `pixtuoid_scene::localclock`, and build a fixed UTC instant with `NaiveDate::and_hms_opt(..).and_utc()`" },
     { path = "chrono::TimeZone::timestamp_nanos", reason = "it builds an instant in a `TimeZone`: on `Local` it reads `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails elsewhere; go through `pixtuoid_scene::localclock`, and build a fixed UTC instant with `NaiveDate::and_hms_opt(..).and_utc()`" },
     { path = "chrono::TimeZone::timestamp_micros", reason = "it builds an instant in a `TimeZone`: on `Local` it reads `$TZ`, so a test asserting on the hour passes in CI (UTC) and fails elsewhere; go through `pixtuoid_scene::localclock`, and build a fixed UTC instant with `NaiveDate::and_hms_opt(..).and_utc()`" },
+    { path = "ratatui::Terminal::clear", reason = "ratatui-core 0.1.2's `Terminal::clear` asks the terminal where its cursor is (`ESC[6n`, ratatui#2694) before clearing, and one that never answers stalls the event loop for crossterm's whole timeout, then fails; repaint with `Terminal::resize` to the full size" },
 ]
 disallowed-macros = [
     { path = "snapbox::file", reason = "it resolves against the outermost Cargo.toml, so in a nested worktree it reads and overwrites the main checkout's golden; use `snapbox::Data::read_from` on a `CARGO_MANIFEST_DIR` path" },

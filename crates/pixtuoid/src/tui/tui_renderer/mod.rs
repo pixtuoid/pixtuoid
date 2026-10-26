@@ -14,7 +14,7 @@ use pixtuoid_scene::pack::OfficeArt;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
 
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 
 use crate::tui::renderer::PetState;
 use pixtuoid_scene::floor::{
@@ -332,7 +332,8 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         if let Some(cutaway) = &mut self.cutaway {
             cutaway.forget();
         }
-        self.terminal.clear()?;
+        let size = self.terminal.size()?;
+        self.terminal.resize(Rect::from((Position::ORIGIN, size)))?;
         Ok(())
     }
 

@@ -165,9 +165,6 @@ pub(super) fn region_diff(a: &RgbBuffer, b: &RgbBuffer, x0: u16, y0: u16, w: u16
     d
 }
 
-/// A backend that forwards every call to `inner`, its [`Tap`] seeing each
-/// draw's cells, and answering the window's pixel size.
-/// `append_lines` is forwarded too: ratatui defaults it to a no-op.
 pub(super) struct Tapped<B, T> {
     pub(super) inner: B,
     pub(super) tap: T,
@@ -181,6 +178,9 @@ pub(super) trait Tap<B: Backend> {
     fn window_size(&mut self, inner: &mut B) -> Result<ratatui::backend::WindowSize, B::Error> {
         inner.window_size()
     }
+    fn cursor_position(&mut self, inner: &mut B) -> Result<ratatui::layout::Position, B::Error> {
+        inner.get_cursor_position()
+    }
 }
 
 impl<B: Backend, T: Tap<B>> Backend for Tapped<B, T> {
@@ -193,6 +193,7 @@ impl<B: Backend, T: Tap<B>> Backend for Tapped<B, T> {
         self.tap.on_draw(&cells);
         self.inner.draw(cells.into_iter())
     }
+    // Forwarded explicitly: ratatui defaults it to a no-op.
     fn append_lines(&mut self, n: u16) -> Result<(), Self::Error> {
         self.inner.append_lines(n)
     }
@@ -203,7 +204,7 @@ impl<B: Backend, T: Tap<B>> Backend for Tapped<B, T> {
         self.inner.show_cursor()
     }
     fn get_cursor_position(&mut self) -> Result<ratatui::layout::Position, Self::Error> {
-        self.inner.get_cursor_position()
+        self.tap.cursor_position(&mut self.inner)
     }
     fn set_cursor_position<P: Into<ratatui::layout::Position>>(
         &mut self,
