@@ -15,13 +15,13 @@ use crate::source::{AgentEvent, ToolDetail};
 /// events`. Defined HERE, NOT in the `native`-gated `jsonl` module, so the
 /// registry's `SourceDescriptor` can name it in a `--no-default-features` (wasm)
 /// build.
-pub type LineDecoder = fn(&str, &str, Value) -> DecodeResult<Vec<AgentEvent>>;
+pub type LineDecoder = fn(&str, &str, Value) -> Vec<AgentEvent>;
 
 /// A decoder's answer: its events, or why it refused the input.
 pub type DecodeResult<T> = std::result::Result<T, DecodeError>;
 
-/// Why a decoder refused a hook payload or a transcript line. The caller logs it
-/// and drops the input; every wire-borne string in it is `display_safe`d.
+/// Why a decoder refused a hook payload. The caller logs it and drops the input;
+/// every wire-borne string in it is `display_safe`d.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DecodeError {
@@ -208,10 +208,7 @@ pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a
 /// end-marker predicate, never a substring scan (user-controllable content — a
 /// tool result QUOTING the marker — must not drive lifecycle).
 pub(crate) fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
-    tail.split(|b| *b == b'\n').filter_map(|line| {
-        let s = std::str::from_utf8(line).ok()?;
-        serde_json::from_str::<Value>(s).ok()
-    })
+    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
 }
 
 /// What a transcript tail says about when its SESSION last wrote — the per-source
@@ -1365,7 +1362,6 @@ mod tests {
                         json!({"type":"assistant","message":{"content":[
                             {"type":"tool_use","id":"t1","name":name,"input":{"file_path":tgt}}]}}),
                     )
-                    .expect("cc decodes")
                 }),
             ),
             (
@@ -1376,7 +1372,6 @@ mod tests {
                         "codex",
                         json!({"type":"response_item","payload":{"type":"function_call","name":name}}),
                     )
-                    .expect("codex decodes")
                 }),
             ),
             (
@@ -1388,7 +1383,6 @@ mod tests {
                         json!({"type":"PLANNER_RESPONSE","step_index":0,"tool_calls":[
                             {"name":name,"args":{"CommandLine":tgt}}]}),
                     )
-                    .expect("antigravity decodes")
                 }),
             ),
             (
@@ -1400,7 +1394,6 @@ mod tests {
                         json!({"type":"tool.execution_start","data":{
                             "toolCallId":"tc1","toolName":name,"arguments":{"command":tgt}}}),
                     )
-                    .expect("copilot decodes")
                 }),
             ),
             (
@@ -1412,7 +1405,6 @@ mod tests {
                         json!({"type":"message","message":{"role":"assistant","content":[
                             {"type":"toolCall","id":"t1","name":name,"arguments":{"command":tgt}}]}}),
                     )
-                    .expect("omp decodes")
                 }),
             ),
             (
@@ -1588,7 +1580,6 @@ mod tests {
                         json!({"type":"PLANNER_RESPONSE","step_index":0,"tool_calls":[
                             {"name":"ask_permission","args":{"CommandLine":raw}}]}),
                     )
-                    .expect("antigravity decodes")
                 }),
             ),
             (
@@ -1601,7 +1592,6 @@ mod tests {
                         json!({"type":"permission.requested","data":{
                             "permissionRequest":{"kind":raw}}}),
                     )
-                    .expect("copilot decodes")
                 }),
             ),
             (
@@ -1614,7 +1604,6 @@ mod tests {
                         json!({"type":"message","message":{"role":"assistant","content":[
                             {"type":"toolCall","id":"t1","name":"ask","arguments":{"i":raw}}]}}),
                     )
-                    .expect("omp decodes")
                 }),
             ),
             (

@@ -1412,9 +1412,7 @@ mod tests {
     }
 
     proptest! {
-        // An `Err` is fine: the watcher logs-and-continues on a malformed line, so
-        // the property is only that it does not PANIC. Iterated from REGISTRY, so a
-        // new source is covered with no test edit.
+        // Iterated from REGISTRY, so a new source is covered with no test edit.
         #[test]
         fn every_line_decoder_never_panics_on_arbitrary_json(v in arb_json()) {
             for d in REGISTRY {

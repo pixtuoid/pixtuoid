@@ -36,7 +36,7 @@ workspace = true
 # builds against.
 #
 # `harness` (NON-default) adds the offline decode→reduce driver the
-# fixture/corpus/fuzz/render call sites ride. Dev scaffolding: keeping it out of
+# fixture/corpus/render call sites ride. Dev scaffolding: keeping it out of
 # a default build keeps it out of `cargo public-api` + `cargo semver-checks`, so
 # it never becomes a semver commitment.
 [features]

@@ -18,7 +18,6 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
@@ -113,18 +112,14 @@ const SESSION_SHUTDOWN: &str = "session.shutdown";
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
 /// ephemeral, or malformed shapes return `vec![]` and never panic — real files
 /// carry embedded-newline / U+2028 corruption (upstream copilot-cli #2649/#2012).
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
 pub(crate) fn decode_copilot_line(
     transcript_path: &str,
     source: &str,
     v: Value,
-) -> Result<Vec<AgentEvent>> {
+) -> Vec<AgentEvent> {
     let root = AgentId::from_parts(source, &copilot_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
+        return vec![];
     };
     let kind = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
     let data = obj.get("data");
@@ -134,7 +129,7 @@ pub(crate) fn decode_copilot_line(
         _ => root,
     };
 
-    let out = match kind {
+    match kind {
         SESSION_START => {
             let session_id = data
                 .and_then(|d| str_at(d, "sessionId"))
@@ -155,11 +150,11 @@ pub(crate) fn decode_copilot_line(
         TOOL_EXECUTION_START => {
             let Some(d) = data else {
                 crate::source::drift::missing_field(source, "tool.execution_start", "data");
-                return Ok(vec![]);
+                return vec![];
             };
             let Some(tool_call_id) = str_at(d, "toolCallId") else {
                 crate::source::drift::missing_field(source, "tool.execution_start", "toolCallId");
-                return Ok(vec![]);
+                return vec![];
             };
             let tool_name = str_at(d, "toolName").unwrap_or_else(|| {
                 crate::source::drift::missing_field(source, "tool.execution_start", "toolName");
@@ -175,7 +170,7 @@ pub(crate) fn decode_copilot_line(
         TOOL_EXECUTION_COMPLETE => {
             let Some(d) = data else {
                 crate::source::drift::missing_field(source, "tool.execution_complete", "data");
-                return Ok(vec![]);
+                return vec![];
             };
             let Some(tool_call_id) = str_at(d, "toolCallId") else {
                 crate::source::drift::missing_field(
@@ -183,7 +178,7 @@ pub(crate) fn decode_copilot_line(
                     "tool.execution_complete",
                     "toolCallId",
                 );
-                return Ok(vec![]);
+                return vec![];
             };
             let mut out = vec![AgentEvent::ActivityEnd {
                 agent_id: acting,
@@ -237,7 +232,7 @@ pub(crate) fn decode_copilot_line(
         }
         SUBAGENT_STARTED => {
             let Some(child_key) = copilot_child_key(&v, data) else {
-                return Ok(vec![]);
+                return vec![];
             };
             let child = AgentId::from_parts(source, child_key);
             let mut evs = vec![AgentEvent::SessionStart {
@@ -264,7 +259,7 @@ pub(crate) fn decode_copilot_line(
         }
         SUBAGENT_COMPLETED | SUBAGENT_FAILED => {
             let Some(child_key) = copilot_child_key(&v, data) else {
-                return Ok(vec![]);
+                return vec![];
             };
             vec![AgentEvent::SessionEnd {
                 agent_id: AgentId::from_parts(source, child_key),
@@ -313,8 +308,7 @@ pub(crate) fn decode_copilot_line(
             evs
         }
         _ => vec![],
-    };
-    Ok(out)
+    }
 }
 
 /// Copilot's tool-detail dispatch. The sub-agent dispatch is the `task` tool,
@@ -351,7 +345,7 @@ mod tests {
             });
             let mut evs = 0;
             let logs = crate::test_capture::capture_logs(|| {
-                evs = decode_copilot_line(path, "copilot", line).map_or(0, |e| e.len());
+                evs = decode_copilot_line(path, "copilot", line).len();
             });
             evs > 0 || logs.contains(crate::source::drift::TARGET)
         };
@@ -383,8 +377,7 @@ mod tests {
             "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
             "copilot",
             serde_json::from_str(line).unwrap(),
-        )
-        .unwrap();
+        );
         assert!(
             evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-haiku-4.5")),
             "per-tool model must surface, got {evs:?}"
@@ -394,8 +387,7 @@ mod tests {
             "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
             "copilot",
             serde_json::from_str(line).unwrap(),
-        )
-        .unwrap();
+        );
         assert!(
             !evs.iter()
                 .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
@@ -414,8 +406,7 @@ mod tests {
             "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
             "copilot",
             serde_json::from_str(line).unwrap(),
-        )
-        .unwrap();
+        );
         assert!(
             !evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })),
             "zero fresh tokens must not surface a Usage, got {evs:?}"
@@ -432,7 +423,7 @@ mod tests {
         AgentId::from_parts(SOURCE_NAME, "65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3")
     }
     fn decode(line: &str) -> Vec<AgentEvent> {
-        decode_copilot_line(PATH, SOURCE_NAME, serde_json::from_str(line).unwrap()).unwrap()
+        decode_copilot_line(PATH, SOURCE_NAME, serde_json::from_str(line).unwrap())
     }
 
     #[test]
@@ -826,16 +817,8 @@ mod tests {
             decode(r#"{"type":"tool.execution_start","id":"n","timestamp":"t","parentId":null}"#)
                 .is_empty()
         );
-        assert!(
-            decode_copilot_line(PATH, SOURCE_NAME, json!("not an object"))
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            decode_copilot_line(PATH, SOURCE_NAME, json!(["array"]))
-                .unwrap()
-                .is_empty()
-        );
+        assert!(decode_copilot_line(PATH, SOURCE_NAME, json!("not an object")).is_empty());
+        assert!(decode_copilot_line(PATH, SOURCE_NAME, json!(["array"])).is_empty());
     }
 
     #[test]

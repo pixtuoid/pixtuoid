@@ -700,10 +700,10 @@ fn judge(
         let Some(drive) = Drive::transcript_at(p.source, &t) else {
             continue;
         };
-        let text = std::fs::read_to_string(&t)?;
+        let bytes = std::fs::read(&t)?;
         absorb(
             &t.display().to_string(),
-            drive.seeded().lines(text.lines()),
+            drive.seeded().body(&bytes),
             findings,
         );
     }

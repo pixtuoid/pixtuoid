@@ -346,26 +346,18 @@ fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
     );
 }
 
-fn t_decode(
-    _t: &str,
-    _s: &str,
-    _v: serde_json::Value,
-) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-    Ok(vec![])
+fn t_decode(_t: &str, _s: &str, _v: serde_json::Value) -> Vec<AgentEvent> {
+    vec![]
 }
-fn t_decode_lifecycle(
-    t: &str,
-    s: &str,
-    v: serde_json::Value,
-) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
+fn t_decode_lifecycle(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     if v.get("subtype").and_then(|x| x.as_str()) == Some("session_end") {
-        return Ok(vec![AgentEvent::SessionEnd {
+        return vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(s, t),
             as_child: false,
-        }]);
+        }];
     }
     let agent_id = AgentId::from_parts(s, t);
-    Ok(match v.get("type").and_then(|x| x.as_str()) {
+    match v.get("type").and_then(|x| x.as_str()) {
         Some("tool_use") => vec![AgentEvent::ActivityStart {
             agent_id,
             tool_use_id: None,
@@ -376,7 +368,7 @@ fn t_decode_lifecycle(
             fresh_tokens: 1,
         }],
         _ => vec![],
-    })
+    }
 }
 fn t_label(_p: &Path, _s: &str, _c: &Path) -> String {
     "t".to_string()
@@ -3308,32 +3300,54 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
 }
 
 #[tokio::test]
-async fn walk_jsonl_skips_a_line_whose_decoder_errors_and_advances_cursor() {
-    fn err_decode(
-        _t: &str,
-        _s: &str,
-        v: serde_json::Value,
-    ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        if v.get("boom").is_some() {
-            return Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "boom",
-            ));
-        }
-        Ok(vec![])
-    }
-
+async fn an_unterminated_last_record_is_held_back_by_the_watcher_and_the_census_alike() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("badline.jsonl");
-    let body = "{\"boom\":1}\n{\"type\":\"assistant\",\"cwd\":\"/r\"}\n";
+    let path = dir.path().join("held-back.jsonl");
+    let body = task_dispatch_line("tu_done") + task_dispatch_line("tu_pending").trim_end();
+    tokio::fs::write(&path, &body).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+
+    let watched = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::omp::decode_omp_line,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let censused = crate::harness::Drive::transcript_at(crate::source::omp::SOURCE_NAME, &path)
+        .expect("omp is transcript-bearing")
+        .body(body.as_bytes());
+    let census_tuids: Vec<String> = censused
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ActivityStart {
+                tool_use_id: Some(t),
+                ..
+            } => Some(t.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(task_start_tuids(&watched), ["tu_done"]);
+    assert_eq!(census_tuids, task_start_tuids(&watched));
+}
+
+#[tokio::test]
+async fn a_line_the_walker_skips_costs_only_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("skipped.jsonl");
+    let body = b"not json\n\xff\xfe\n{\"type\":\"tool_use\",\"cwd\":\"/r\"}\n";
     tokio::fs::write(&path, body).await.unwrap();
-    let file_len = body.len() as u64;
     let cursors = Arc::new(Mutex::new(HashMap::new()));
     let seen = Arc::new(Mutex::new(HashMap::new()));
 
     let events = walk_once_with(
         &path,
         Duration::from_secs(3600),
-        err_decode,
+        t_decode_lifecycle,
         t_ended,
         &cursors,
         &seen,
@@ -3345,12 +3359,18 @@ async fn walk_jsonl_skips_a_line_whose_decoder_errors_and_advances_cursor() {
             e,
             AgentEvent::SessionStart { agent_id, .. } if *agent_id == expected
         )),
-        "the erroring line is non-fatal; first-sight registration must still run, got {events:?}"
+        "first sight still registers, got {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+        "the line after the skipped ones still decodes, got {events:?}"
     );
     assert_eq!(
         cursors.lock().await.get(&path).copied(),
-        Some(file_len),
-        "the cursor must advance to EOF despite the decode error"
+        Some(body.len() as u64),
+        "the cursor advances to EOF past the skipped lines"
     );
 }
 
@@ -3386,44 +3406,6 @@ async fn task_scan_skips_empty_and_non_utf8_lines_and_still_seeds_a_dispatch() {
         task_start_tuids(&events),
         vec!["tu_x".to_string()],
         "the garbage lines must be skipped and the valid dispatch still seed, got {events:?}"
-    );
-}
-
-#[tokio::test]
-async fn task_scan_skips_a_decoder_error_line_and_still_seeds_a_later_dispatch() {
-    fn deco(
-        t: &str,
-        s: &str,
-        v: serde_json::Value,
-    ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        if v.get("boom").is_some() {
-            return Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "x",
-            ));
-        }
-        crate::source::omp::decode_omp_line(t, s, v)
-    }
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("deleg-decode-err.jsonl");
-    let full = oversized_body(&["{\"boom\":1}\n".to_string(), task_dispatch_line("tu_y")]);
-    tokio::fs::write(&path, &full).await.unwrap();
-    let cursors = Arc::new(Mutex::new(HashMap::new()));
-    let seen = Arc::new(Mutex::new(HashMap::new()));
-
-    let events = walk_once_with(
-        &path,
-        Duration::from_secs(3600),
-        deco,
-        t_ended,
-        &cursors,
-        &seen,
-    )
-    .await;
-    assert_eq!(
-        task_start_tuids(&events),
-        vec!["tu_y".to_string()],
-        "the decoder-error line must be skipped and the valid dispatch still seed, got {events:?}"
     );
 }
 

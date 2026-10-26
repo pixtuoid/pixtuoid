@@ -215,7 +215,7 @@ fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             .into_iter()
             .flat_map(|line| {
                 let v: serde_json::Value = serde_json::from_str(&line).expect("fixture json");
-                decode_omp_line(&tpath, "omp", v).expect("decodes")
+                decode_omp_line(&tpath, "omp", v)
             })
             .collect();
         for ev in &jsonl {

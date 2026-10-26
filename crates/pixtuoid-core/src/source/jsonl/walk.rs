@@ -323,20 +323,16 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         return;
     }
 
-    let safe_end_relative = match new_chunk.iter().rposition(|&b| b == b'\n') {
-        Some(i) => i + 1,
-        None => 0,
-    };
-    if safe_end_relative == 0 {
+    let new_bytes = crate::source::admit::whole(&new_chunk);
+    if new_bytes.is_empty() {
         return;
     }
-    let new_cursor = cursor_now + safe_end_relative as u64;
+    let new_cursor = cursor_now + new_bytes.len() as u64;
     {
         let mut cursors_g = cursors.lock().await;
         cursors_g.insert(path.to_path_buf(), new_cursor);
     }
 
-    let new_bytes = &new_chunk[..safe_end_relative];
     // Normalized like `id_derive` above, or on Windows the hook key and the
     // per-line key disagree and every JSONL event lands on a phantom id.
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
@@ -360,16 +356,10 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         matches!(ev, AgentEvent::SessionEnd { .. }) && ev.agent_id() == path_agent_id
     };
     let mut decoded = Vec::new();
-    for line in new_bytes.split(|b| *b == b'\n') {
-        if line.is_empty() {
+    for line in crate::source::admit::lines(new_bytes) {
+        let Ok(s) = line else {
+            warn!(path = ?path, "non-utf8 line skipped");
             continue;
-        }
-        let s = match std::str::from_utf8(line) {
-            Ok(s) => s,
-            Err(_) => {
-                warn!(path = ?path, "non-utf8 line skipped");
-                continue;
-            }
         };
         let v: serde_json::Value = match serde_json::from_str(s) {
             Ok(v) => v,
@@ -378,10 +368,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
                 continue;
             }
         };
-        match decode_line(&transcript_path_str, source, v) {
-            Ok(events) => decoded.extend(events),
-            Err(e) => warn!(path = ?path, error = %e, "decode error"),
-        }
+        decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
     // A trailer flushed after the end line (grok's `hook_execution{stop}`)
@@ -417,13 +404,9 @@ fn tail_shows_activity(
     decode_line: LineDecoder,
 ) -> bool {
     let transcript = crate::id::normalize_path_key(&path.to_string_lossy());
-    // The window starts mid-file, so its first chunk is a partial line.
-    tail.split(|b| *b == b'\n')
-        .skip(1)
-        .filter_map(|line| std::str::from_utf8(line).ok())
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .filter_map(|v| decode_line(&transcript, source, v).ok())
-        .flatten()
+    crate::source::admit::window_lines(tail)
+        .filter_map(|line| serde_json::from_str(line.ok()?).ok())
+        .flat_map(|v| decode_line(&transcript, source, v))
         .any(|ev| ev.shows_activity())
 }
 
@@ -564,29 +547,11 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
         return;
     };
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
-    let mut lines = buf.split(|b| *b == b'\n');
-    // The window always starts mid-file, so its first chunk is a partial line —
-    // skip it rather than decode a fragment that may parse as JSON by accident.
-    let _ = lines.next();
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
-    for line in lines {
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(s) = std::str::from_utf8(line) else {
-            continue;
-        };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
-            continue;
-        };
-        let events = match (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
-            Ok(events) => events,
-            Err(e) => {
-                debug!(path = ?path, error = %e, "task-scan decode error");
-                continue;
-            }
-        };
-        for ev in events {
+    let parsed = crate::source::admit::window_lines(&buf)
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
+    for v in parsed {
+        for ev in (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
             match &ev {
                 AgentEvent::ActivityStart {
                     tool_use_id: Some(tuid),
@@ -636,19 +601,11 @@ pub(super) fn detect_parent_id(path: &Path, source: &str) -> Option<AgentId> {
 }
 
 /// Walk a byte span's JSONL lines, handing each parsed line to `visit` until it
-/// returns `true`. Malformed/non-UTF-8 lines are skipped — a transcript head can
-/// straddle a partial write.
+/// returns `true`. A line that does not parse is skipped.
 fn scan_jsonl(bytes: &[u8], mut visit: impl FnMut(&serde_json::Value) -> bool) {
-    for line in bytes.split(|b| *b == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(s) = std::str::from_utf8(line) else {
-            continue;
-        };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
-            continue;
-        };
+    let parsed = crate::source::admit::lines(bytes)
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
+    for v in parsed {
         if visit(&v) {
             return;
         }
