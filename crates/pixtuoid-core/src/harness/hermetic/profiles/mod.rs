@@ -7,6 +7,7 @@ use serde_json::Value;
 
 pub(super) mod antigravity;
 pub(super) mod claude_code;
+pub(super) mod codewhale;
 pub(super) mod codex;
 pub(super) mod copilot;
 pub(super) mod dsh;
@@ -27,4 +28,8 @@ fn hook_event_name(v: &Value) -> Option<Cow<'_, str>> {
 
 fn type_field(v: &Value) -> Option<Cow<'_, str>> {
     v.get("type")?.as_str().map(Cow::Borrowed)
+}
+
+fn event_field(v: &Value) -> Option<Cow<'_, str>> {
+    v.get("event")?.as_str().map(Cow::Borrowed)
 }

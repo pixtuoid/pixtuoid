@@ -60,13 +60,11 @@ fn main() {
         .collect();
 
     let mut payload: Value = match event_from_argv(&args) {
-        // CodeWhale env-mode: identity arrives as `DEEPSEEK_*` env vars with
-        // `--event <name>` baked into the registered command. Critically,
-        // CodeWhale does NOT pipe stdin for these events, so the hook child
-        // inherits the TUI's terminal stdin and a blind `read_to_string` would
-        // BLOCK (freezing the synchronous tool call until the hook timeout) —
-        // when `--event` is present we never touch stdin.
-        Some(event) => Value::Object(env_payload(&event)),
+        // CodeWhale env-mode: identity arrives as env vars with `--event <name>`
+        // baked into the registered command, so the envelope needs no stdin, and
+        // a read it doesn't need is a wait the watchdog (armed below) never
+        // bounds: invariant 5.
+        Some(event) => Value::Object(env_payload_from(&event, |k| std::env::var_os(k))),
         None => {
             let mut buf = String::new();
             if std::io::stdin()
@@ -107,18 +105,6 @@ fn main() {
     transport::send_line(&bound, &socket, &line);
 }
 
-/// CodeWhale env-mode: synthesize the hook envelope from `DEEPSEEK_*` env vars.
-/// The `std::env` reads live here so `env_payload_from` stays testable without
-/// mutating process-global env.
-fn env_payload(event: &str) -> serde_json::Map<String, Value> {
-    // CodeWhale runs the hook with current_dir = its working dir (= the
-    // workspace), so the shim's own cwd is the reliable fallback.
-    let cwd_fallback = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned());
-    env_payload_from(event, cwd_fallback, |k| std::env::var_os(k))
-}
-
 /// Per-field byte cap on env-mode values. The stdin arm enforces `STDIN_CAP`
 /// before parsing; the env arm has no such gate and `DEEPSEEK_TOOL_ARGS` can be
 /// large, so capping each folded field keeps the serialized line under the
@@ -130,28 +116,21 @@ fn cap_env_field(mut val: String) -> String {
     val
 }
 
+/// CodeWhale env-mode: synthesize the hook envelope from CodeWhale's hook env
+/// vars `get` reads, so a test need not mutate process-global env.
 fn env_payload_from(
     event: &str,
-    cwd_fallback: Option<String>,
     get: impl Fn(&str) -> Option<OsString>,
 ) -> serde_json::Map<String, Value> {
     let get = |k: &str| get(k).map(|v| v.to_string_lossy().into_owned());
     let mut map = serde_json::Map::new();
     map.insert("event".into(), Value::from(event));
-    // cwd is the AgentId KEY (the decoder drops a cwd-less event), and
-    // DEEPSEEK_WORKSPACE is UNSET for a fresh `codewhale` launched without `-C`
-    // until the workspace resolves — so `session_start` would otherwise never
-    // register a sprite. The fallback resolves to the same path the workspace
-    // eventually does, so a session's events coalesce on one AgentId.
-    if let Some(cwd) = get("DEEPSEEK_WORKSPACE")
-        .filter(|v| !v.is_empty())
-        .or_else(|| cwd_fallback.filter(|v| !v.is_empty()))
-    {
-        map.insert("cwd".into(), Value::from(cap_env_field(cwd)));
-    }
     for (env_key, field) in [
+        ("DEEPSEEK_WORKSPACE", "cwd"),
+        ("CODEWHALE_SESSION_ID", "session_id"),
         ("DEEPSEEK_TOOL_NAME", "tool"),
         ("DEEPSEEK_TOOL_ARGS", "tool_args"),
+        ("CODEWHALE_TOOL_CALL_ID", "tool_call_id"),
     ] {
         if let Some(val) = get(env_key).filter(|v| !v.is_empty()) {
             map.insert(field.into(), Value::from(cap_env_field(val)));

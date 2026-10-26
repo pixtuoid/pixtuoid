@@ -120,38 +120,18 @@ impl Drop for ExitWatch {
 mod imp {
     use std::collections::HashSet;
     use std::mem::MaybeUninit;
-    use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+    use std::os::fd::{AsFd, BorrowedFd};
     use std::ptr;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use rustix::event::kqueue::{
-        Event, EventFilter, EventFlags, ProcessEvents, UserDefinedFlags, UserFlags, kevent, kqueue,
-    };
+    use rustix::event::kqueue::{Event, EventFilter, EventFlags, ProcessEvents, kevent};
     use rustix::io::Errno;
     use rustix::process::Pid;
     use tokio::sync::mpsc::UnboundedSender;
 
     use super::{Shared, drain_pending};
-
-    /// Per-wait event budget. Overflow just takes another loop turn — kqueue
-    /// events are queued state, never lost.
-    const EVENT_BUF: usize = 16;
-
-    /// The `EVFILT_USER` wake slot ident — a pure key, carrying no fd/pid.
-    const WAKE_IDENT: isize = 0;
-
-    fn wake_filter(trigger: bool) -> EventFilter {
-        EventFilter::User {
-            ident: WAKE_IDENT,
-            flags: if trigger {
-                UserFlags::TRIGGER
-            } else {
-                UserFlags::empty()
-            },
-            user_flags: UserDefinedFlags::new(0),
-        }
-    }
+    use crate::source::kqueue::{EVENT_BUF, WakeableKqueue};
 
     #[cfg(test)]
     pub(super) const AVAILABLE: bool = true;
@@ -163,49 +143,22 @@ mod imp {
         /// the thread are gone — `wake()` can never hit a recycled fd (tokio's
         /// own selector is a kqueue; triggering a user event on a recycled fd
         /// would corrupt a foreign event loop).
-        kq: OwnedFd,
+        kq: WakeableKqueue,
     }
 
     impl Backend {
         pub(super) fn init() -> Option<Self> {
-            let kq = match kqueue() {
-                Ok(kq) => kq,
+            match WakeableKqueue::new() {
+                Ok(kq) => Some(Self { kq }),
                 Err(e) => {
-                    tracing::debug!(error = %e, "kqueue() failed; instant exit off (backstops cover)");
-                    return None;
+                    tracing::debug!(error = %e, "kqueue wake-slot setup failed; instant exit off (backstops cover)");
+                    None
                 }
-            };
-            // EV_CLEAR so each delivered NOTE_TRIGGER auto-resets the event.
-            let wake_slot = Event::new(
-                wake_filter(false),
-                EventFlags::ADD | EventFlags::CLEAR,
-                ptr::null_mut(),
-            );
-            // An empty eventlist ⇒ nevents 0: the kernel processes the change
-            // and writes nothing back.
-            let eventlist: &mut [Event] = &mut [];
-            // SAFETY: the EVFILT_USER change references no fd (ident 0 is a pure
-            // user-event key), so the kqueue-fd-validity contract is trivially
-            // met; the zero timeout means this can't block.
-            let registered = unsafe { kevent(&kq, &[wake_slot], eventlist, Some(Duration::ZERO)) };
-            if let Err(e) = registered {
-                tracing::debug!(error = %e, "EVFILT_USER wake-slot registration failed; instant exit off");
-                return None;
             }
-            Some(Self { kq })
         }
 
-        /// Trigger the EVFILT_USER ident-0 slot, waking a blocked `kevent`.
-        /// kevent(2) is thread-safe on one kq, so the registering side may call
-        /// this while the thread is blocked.
         pub(super) fn wake(&self) {
-            let trigger = Event::new(wake_filter(true), EventFlags::empty(), ptr::null_mut());
-            let eventlist: &mut [Event] = &mut [];
-            // SAFETY: the trigger references no fd; the empty eventlist + zero
-            // timeout write nothing and never block. Cannot ENOENT — the slot
-            // is registered at init and never deleted while the kq lives.
-            if let Err(e) = unsafe { kevent(&self.kq, &[trigger], eventlist, Some(Duration::ZERO)) }
-            {
+            if let Err(e) = self.kq.wake() {
                 tracing::debug!(error = %e, "exit-watch wake trigger failed");
             }
         }
@@ -335,7 +288,7 @@ mod imp {
                         return;
                     }
                 }
-                // EVFILT_USER ident 0 is the wake — the drain above handles it.
+                // EVFILT_USER is the `WAKE_IDENT` wake — the drain above handles it.
             }
         }
     }

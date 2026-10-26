@@ -1,0 +1,17 @@
+{
+  "origin": "recorded",
+  "cli": "codewhale",
+  "version": "codewhale 0.10.2 (ff466b2ed0bf)",
+  "captured": "2026-10-26",
+  "command": "just hermetic --record codewhale",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 2
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/codewhale/tool-run.json",
+  "dropped": {
+    "os": "macos",
+    "at": {}
+  }
+}

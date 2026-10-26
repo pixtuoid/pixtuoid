@@ -62,7 +62,7 @@
     "name": "CodeWhale",
     "url": "https://github.com/codewhale-hq/Codewhale",
     "status": "supported",
-    "transport": "hooks only (~/.codewhale/config.toml [hooks], cwd-keyed)",
+    "transport": "hooks only (~/.codewhale/config.toml [hooks])",
     "platforms": {
       "macos": "yes",
       "linux": "yes",

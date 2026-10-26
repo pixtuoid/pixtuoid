@@ -24,18 +24,19 @@ use crate::install::io;
 use crate::install::target::MergeOutcome;
 
 /// Events we register == events we decode (`source/codewhale.rs`). The `bool` is
-/// `env_mode`: `true` events carry identity via `DEEPSEEK_*` env vars, so their
+/// `env_mode`: `true` events carry identity via env vars, so their
 /// command bakes `--event <name>` and the shim builds the envelope from env;
 /// `false` events (the subagent observer hooks) are forwarded RAW on stdin.
 ///
-/// turn_end / mode_change / on_error / shell_env are deliberately absent
-/// (per-turn noise / no lifecycle meaning). CodeWhale has NO approval hook in the
-/// TUI path, so there is no Waiting event to register — no signal exists.
+/// `session_idle` ends a turn or a wait, so turn_end and session_busy are
+/// absent, as are mode_change / on_error / shell_env (no lifecycle meaning).
 pub(crate) const CODEWHALE_EVENTS: &[(&str, bool)] = &[
     ("session_start", true),
     ("message_submit", true),
     ("tool_call_before", true),
     ("tool_call_after", true),
+    ("waiting_for_user", true),
+    ("session_idle", true),
     ("session_end", true),
     ("subagent_spawn", false),
     ("subagent_complete", false),
@@ -180,8 +181,8 @@ fn is_managed_entry(entry: &toml::Value) -> bool {
 fn managed_entry(event: &str, env_mode: bool, base_cmd: &str) -> toml::Value {
     let mut entry = Table::new();
     entry.insert("event".into(), toml::Value::String(event.into()));
-    // env-mode events bake `--event <name>` (the shim reads DEEPSEEK_* env); the
-    // subagent observer events forward the raw stdin JSON, so no `--event`.
+    // env-mode events bake `--event <name>` (the shim reads CodeWhale's hook env);
+    // the subagent observer events forward the raw stdin JSON, so no `--event`.
     let command = if env_mode {
         format!("{base_cmd}{}{event}", crate::install::hook_cmd::EVENT_FLAG)
     } else {
@@ -777,10 +778,11 @@ command = "echo hi"
     fn every_registered_codewhale_event_decodes() {
         use pixtuoid_core::source::decoder::decode_hook_payload;
         for (ev, _env_mode) in CODEWHALE_EVENTS {
-            // Carry every identity field a decoder arm might need: `cwd` for the
+            // Every identity field a decoder arm reads: `session_id`/`cwd` for the
             // env-mode events, `agent_id`/`workspace` for the subagent events.
             let payload = serde_json::json!({
                 "event": ev,
+                "session_id": "sess_1",
                 "cwd": "/repo",
                 "agent_id": "agent-1",
                 "workspace": "/repo",
@@ -806,6 +808,8 @@ command = "echo hi"
                 ("message_submit", true),
                 ("tool_call_before", true),
                 ("tool_call_after", true),
+                ("waiting_for_user", true),
+                ("session_idle", true),
                 ("session_end", true),
                 ("subagent_spawn", false),
                 ("subagent_complete", false),

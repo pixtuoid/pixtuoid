@@ -148,6 +148,8 @@ semver             = "1"
 # 0.61 to match the major tokio already pulls (via mio) on Windows — a second
 # windows-sys major would double-compile the bindings.
 windows-sys        = "0.61"
+# Already in the tree through notify's walkdir: a Windows file id.
+winapi-util        = "0.1"
 criterion          = { package = "codspeed-criterion-compat", version = "6", default-features = false, features = ["cargo_bench_support"] }
 insta              = "1"
 schemars           = "1"
@@ -163,6 +165,11 @@ temp-env           = "0.3"
 # (ConPTY on Windows) and reads the screen it renders.
 portable-pty       = "0.9"
 vt100              = "0.18"
+# Dev-only: `crates/pixtuoid-core/examples/support/bounded.rs`.
+process-wrap       = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
+# Not crossterm's copy: holding to it would freeze this dev-only crate behind
+# crossterm, a cost larger than its second compile.
+signal-hook        = "0.4"
 # regex is already built through criterion; sha2 checks the hermetic tier's
 # release downloads, where a platform hasher would need a seam of its own to
 # keep the sums check testable.

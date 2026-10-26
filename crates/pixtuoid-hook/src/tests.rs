@@ -198,14 +198,18 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
         ("DEEPSEEK_WORKSPACE", "/repo"),
         ("DEEPSEEK_TOOL_NAME", "exec_shell"),
         ("DEEPSEEK_TOOL_ARGS", r#"{"command":"ls -la"}"#),
+        ("CODEWHALE_TOOL_CALL_ID", "call-1"),
+        ("CODEWHALE_SESSION_ID", "sess_1a2b3c4d"),
     ]
     .into_iter()
     .collect();
-    let map = env_payload_from("tool_call_before", None, |k| env.get(k).map(OsString::from));
+    let map = env_payload_from("tool_call_before", |k| env.get(k).map(OsString::from));
     assert_eq!(map["event"], json!("tool_call_before"));
     assert_eq!(map["cwd"], json!("/repo"));
+    assert_eq!(map["session_id"], json!("sess_1a2b3c4d"));
     assert_eq!(map["tool"], json!("exec_shell"));
     assert_eq!(map["tool_args"], json!(r#"{"command":"ls -la"}"#));
+    assert_eq!(map["tool_call_id"], json!("call-1"));
 }
 
 /// env-mode's envelope still carries `_pid` — via the ONE stamping site, which
@@ -214,7 +218,7 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
 /// pid is exactly the duplicate this pins against.
 #[test]
 fn env_mode_gets_its_pid_from_the_single_enrich_site() {
-    let mut map = env_payload_from("tool_call_before", None, |_| None);
+    let mut map = env_payload_from("tool_call_before", |_| None);
     assert!(!map.contains_key("_pid"), "not stamped at envelope build");
     enrich_payload(&mut map, None, None, 0, || Some(4321));
     assert_eq!(map["_pid"], json!(4321), "stamped once, by enrich_payload");
@@ -226,7 +230,7 @@ fn env_payload_omits_missing_and_empty_env() {
         [("DEEPSEEK_WORKSPACE", "/repo"), ("DEEPSEEK_TOOL_NAME", "")]
             .into_iter()
             .collect();
-    let map = env_payload_from("session_start", None, |k| env.get(k).map(OsString::from));
+    let map = env_payload_from("session_start", |k| env.get(k).map(OsString::from));
     assert_eq!(map["cwd"], json!("/repo"));
     assert!(
         !map.contains_key("tool"),
@@ -253,7 +257,7 @@ fn env_payload_caps_oversized_fields_at_a_char_boundary() {
     ]
     .into_iter()
     .collect();
-    let map = env_payload_from("tool_call_before", None, |k| env.get(k).map(OsString::from));
+    let map = env_payload_from("tool_call_before", |k| env.get(k).map(OsString::from));
     let args = map["tool_args"].as_str().unwrap();
     assert!(
         args.len() <= ENV_FIELD_CAP,
@@ -268,11 +272,7 @@ fn env_payload_caps_oversized_fields_at_a_char_boundary() {
         args.chars().all(|c| c == 'é'),
         "no mid-scalar split → still valid é runs"
     );
-    assert_eq!(
-        map["cwd"],
-        json!("/repo"),
-        "the AgentId key (a real path) is untouched"
-    );
+    assert_eq!(map["cwd"], json!("/repo"), "cwd (a real path) is untouched");
 }
 
 #[test]
@@ -294,42 +294,6 @@ fn cap_never_exceeds_the_bound_when_a_multibyte_scalar_straddles_it() {
         "floor to the last char boundary at or below the cap"
     );
     assert!(capped.chars().all(|c| c == 'a'), "the straddler is dropped");
-}
-
-#[test]
-fn env_payload_falls_back_to_cwd_when_workspace_unset() {
-    // A fresh `codewhale` without `-C` has no DEEPSEEK_WORKSPACE at
-    // session_start.
-    let no_ws: std::collections::HashMap<&str, String> =
-        [("DEEPSEEK_TOOL_NAME", "exec_shell".to_string())]
-            .into_iter()
-            .collect();
-    let map = env_payload_from("session_start", Some("/proj/here".to_string()), |k| {
-        no_ws.get(k).map(OsString::from)
-    });
-    assert_eq!(
-        map["cwd"],
-        json!("/proj/here"),
-        "cwd must fall back to the hook child's working dir when DEEPSEEK_WORKSPACE is unset"
-    );
-
-    let ws: std::collections::HashMap<&str, String> = [("DEEPSEEK_WORKSPACE", "/ws".to_string())]
-        .into_iter()
-        .collect();
-    let map = env_payload_from("session_start", Some("/proj/here".to_string()), |k| {
-        ws.get(k).map(OsString::from)
-    });
-    assert_eq!(
-        map["cwd"],
-        json!("/ws"),
-        "DEEPSEEK_WORKSPACE wins over the fallback"
-    );
-
-    let map = env_payload_from("session_start", None, |_| None);
-    assert!(
-        !map.contains_key("cwd"),
-        "no workspace and no cwd fallback → no cwd field"
-    );
 }
 
 #[cfg(unix)]

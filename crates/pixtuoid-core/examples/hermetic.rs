@@ -363,7 +363,7 @@ mod run {
         };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
-        let lifecycle = lifecycle_turn(args, p);
+        let lifecycle = lifecycle_turn(args, p, windows);
         if selected.is_empty() && lifecycle.is_none() {
             return Ok((entries, None));
         }
@@ -394,15 +394,16 @@ mod run {
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.fixture == s.fixture)) {
             scenarios.insert(0, s);
         }
+        let mut release = Release {
+            installed: &installed,
+            hung: None,
+        };
         for scenario in scenarios {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
             let key = format!("{}/{}", p.source, scenario.name);
             println!("== {key}");
-            let ran = match &installed {
-                Ok(v) => run_one(ctx, p, scenario, v, &dir),
-                Err(e) => Err(std::io::Error::other(e.clone())),
-            };
+            let ran = release.run(p, scenario.name, |v| run_one(ctx, p, scenario, v, &dir));
             let (banner, verdict, run) = match ran {
                 Ok((manifest, run)) => {
                     let verdict = verify::verify(&dir)?;
@@ -428,7 +429,9 @@ mod run {
             let key = format!("{}/{LIFECYCLE}", p.source);
             println!("== {key}");
             let verdict = match run {
-                Some(run) => match run_lifecycle(ctx, p, scenario, &run, &dir) {
+                Some(run) => match release.run(p, LIFECYCLE, |_| {
+                    run_lifecycle(ctx, p, scenario, &run, &dir).map(|m| (m, ()))
+                }) {
                     Ok(_) => verify::verify_lifecycle(&dir)?,
                     // The steps' record is judged though the turn after them failed.
                     Err(e) if dir.join(LIFECYCLE_RECORD).is_file() => {
@@ -438,10 +441,7 @@ mod run {
                     }
                     Err(e) => Verdict::new(vec![(Label::Blocked, e.to_string())]),
                 },
-                None => Verdict::new(vec![(
-                    Label::Blocked,
-                    format!("its {} run was not judged", scenario.name),
-                )]),
+                None => Verdict::new(vec![(Label::Blocked, release.not_run(p, scenario.name))]),
             };
             entries.push(Entry::new(p.source, key, None, verdict));
         }
@@ -570,11 +570,11 @@ mod run {
     /// The scenario `p`'s install lifecycle goes on from and turns under its
     /// last uninstall, when `args` selects the lifecycle. `--record` writes
     /// scenarios alone.
-    fn lifecycle_turn<'a>(args: &Args, p: &'a Profile) -> Option<&'a Scenario> {
+    fn lifecycle_turn(args: &Args, p: &Profile, windows: bool) -> Option<&'static Scenario> {
         if args.record || !args.selects(p.source, LIFECYCLE) {
             return None;
         }
-        headless_first(p.scenarios.iter())
+        p.lifecycle_turn(windows)
     }
 
     /// The sandbox a lifecycle goes on in, when its scenario's `verdict` was
@@ -582,12 +582,6 @@ mod run {
     /// uninstall.
     fn lifecycle_goes_on<T>(verdict: &Verdict, run: T) -> Option<T> {
         verdict.judged().then_some(run)
-    }
-
-    /// The first of `scenarios`, a headless one first, since a TUI's gate waits
-    /// on a hook.
-    fn headless_first<'a>(scenarios: impl Iterator<Item = &'a Scenario>) -> Option<&'a Scenario> {
-        scenarios.min_by_key(|s| !matches!(s.surface, Surface::Headless))
     }
 
     /// Every run of the sources `args` selects that a leg on `windows` never
@@ -676,6 +670,50 @@ mod run {
 
     /// The run's report, beside the runs, for whoever opens the upload.
     const REPORT: &str = "report.md";
+
+    /// The release a source's runs go on with, until a turn the recorder's
+    /// budget killed hangs it: the rest are skipped, so a hung release costs its
+    /// leg one budget.
+    struct Release<'a> {
+        installed: &'a Result<Version, String>,
+        /// The run whose turn hung it.
+        hung: Option<&'static str>,
+    }
+
+    impl<'a> Release<'a> {
+        /// The run `name` on the release, or why it never ran.
+        fn run<T>(
+            &mut self,
+            p: &Profile,
+            name: &'static str,
+            run: impl FnOnce(&'a Version) -> std::io::Result<(Manifest, T)>,
+        ) -> std::io::Result<(Manifest, T)> {
+            let ran = match (self.hung_in(p), self.installed) {
+                (Some(why), _) => Err(std::io::Error::other(why)),
+                (None, Ok(v)) => run(v),
+                (None, Err(e)) => Err(std::io::Error::other(e.clone())),
+            };
+            if ran
+                .as_ref()
+                .is_ok_and(|(m, _)| m.capture.killed_turn().is_some())
+            {
+                self.hung.get_or_insert(name);
+            }
+            ran
+        }
+
+        /// Why `p`'s runs are skipped, once a turn of one hung it.
+        fn hung_in(&self, p: &Profile) -> Option<String> {
+            self.hung
+                .map(|hung| format!("skipped: {} hung in {hung}", p.source))
+        }
+
+        /// Why a run that goes on from `before` never ran.
+        fn not_run(&self, p: &Profile, before: &str) -> String {
+            self.hung_in(p)
+                .unwrap_or_else(|| format!("its {before} run was not judged"))
+        }
+    }
 
     /// `entries` as [`issues::VERDICTS`] holds them, from the leg running
     /// [`SHARDS`]' `shard`th.
@@ -1817,8 +1855,8 @@ mod run {
         );
         wait_until("aimock", BOOT, || Ok(http_get(port, "/v1/models").is_ok()))?;
 
-        // A root absent at boot is watched only from the next poll, so a short
-        // run would reach pixtuoid by hook alone.
+        // A CLI that has run before has its root; create it so the sandbox
+        // matches.
         let mut prepare = sandbox.command(&built.recorder);
         prepare.args(Invocation::prepare_root_args(sandbox.dir.path(), p.source));
         succeed(prepare)?;
@@ -1875,20 +1913,18 @@ mod run {
         let results_seen = results_seen(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
-        // one means the CLI never did; it fails past one only on a capture it
-        // could not complete, which its log's last line names.
+        // one means the CLI never did.
         let capture: CaptureRecord = match std::fs::read_to_string(dir.join(CAPTURE_RECORD)) {
-            Ok(text) if recorder.success() => serde_json::from_str(&text)?,
-            read => {
+            Ok(text) => serde_json::from_str(&text)?,
+            Err(_) => {
                 let log = std::fs::read_to_string(dir.join(RECORDER_LOG)).unwrap_or_default();
                 let last = log
                     .lines()
                     .rev()
                     .find(|l| !l.trim().is_empty())
                     .unwrap_or_default();
-                let relation = if read.is_ok() { "after" } else { "with no" };
                 return Err(std::io::Error::other(format!(
-                    "the recorder exited {recorder} {relation} {CAPTURE_RECORD}: {last}"
+                    "the recorder exited {recorder} with no {CAPTURE_RECORD}: {last}"
                 )));
             }
         };
@@ -2451,6 +2487,78 @@ mod run {
                         findings: vec![(Label::Blocked, "npm view failed".into())],
                     }],
                 }
+            );
+        }
+
+        #[test]
+        fn a_turn_the_recorder_killed_skips_the_rest_of_its_source() {
+            use pixtuoid_core::harness::{SecondTurn, TurnEnd};
+            let p = hermetic::profile("dsh").expect("dsh's profile");
+            let ended = |end, second: Option<TurnEnd>| Manifest {
+                source: "dsh".into(),
+                scenario: "subagent".into(),
+                capture: CaptureRecord {
+                    workspace: PathBuf::from("/ws"),
+                    cli: "dsh".into(),
+                    version: "0.2.1".into(),
+                    end,
+                    give_up_reason: None,
+                    incomplete: None,
+                    second_turn: second.map(|end| SecondTurn { end }),
+                    note_survived: true,
+                },
+                aimock: "1.45.1".into(),
+                requests: 4210,
+                unmatched: 0,
+                results_seen: 0,
+            };
+            let ran = |m: Manifest| move |_: &Version| Ok((m, ()));
+            let never = |_: &Version| -> std::io::Result<(Manifest, ())> {
+                panic!("a hung release ran again")
+            };
+            let installed = Ok(Version::new(0, 2, 1));
+            let mut release = Release {
+                installed: &installed,
+                hung: None,
+            };
+            let ok = |r: std::io::Result<(Manifest, ())>| r.expect("it ran");
+            ok(release.run(p, "tool-run", ran(ended(TurnEnd::Exited(1), None))));
+            ok(release.run(p, "subagent", ran(ended(TurnEnd::OutOfTime, None))));
+            let skipped = "skipped: dsh hung in subagent";
+            let after = release.run(p, "permission", never).expect_err("skipped");
+            assert_eq!(after.to_string(), skipped);
+            let lifecycle = release.run(p, LIFECYCLE, never).expect_err("skipped");
+            assert_eq!(lifecycle.to_string(), skipped);
+            assert_eq!(release.not_run(p, "permission"), skipped);
+
+            let mut release = Release {
+                installed: &installed,
+                hung: None,
+            };
+            let second = ended(TurnEnd::Exited(0), Some(TurnEnd::OutOfTime));
+            ok(release.run(p, LIFECYCLE, ran(second)));
+            assert_eq!(
+                release
+                    .run(p, "subagent", never)
+                    .expect_err("skipped")
+                    .to_string(),
+                "skipped: dsh hung in lifecycle"
+            );
+            let unresolved = Err("npm view failed".to_owned());
+            let mut release = Release {
+                installed: &unresolved,
+                hung: None,
+            };
+            assert_eq!(
+                release
+                    .run(p, "tool-run", never)
+                    .expect_err("unresolved")
+                    .to_string(),
+                "npm view failed"
+            );
+            assert_eq!(
+                release.not_run(p, "tool-run"),
+                "its tool-run run was not judged"
             );
         }
 
@@ -3319,34 +3427,17 @@ mod run {
         }
 
         #[test]
-        fn the_lifecycle_turns_a_headless_scenario_and_never_records() {
-            let tui = PROFILES
-                .iter()
-                .flat_map(|p| p.scenarios)
-                .find(|s| matches!(s.surface, Surface::Tui { .. }))
-                .expect("a TUI scenario");
-            let scenario = |surface, fixture| Scenario {
-                name: tui.name,
-                shape: tui.shape,
-                surface,
-                expects: &[],
-                fixture,
-                turn: hermetic::Turn::PROFILE,
-            };
-            let tui_first = [
-                scenario(tui.surface, "tui"),
-                scenario(Surface::Headless, "headless"),
-            ];
-            let picked = |s: &[Scenario]| headless_first(s.iter()).map(|s| s.fixture);
-            assert_eq!(picked(&tui_first), Some("headless"));
-            assert_eq!(picked(&tui_first[..1]), Some("tui"));
+        fn the_lifecycle_runs_where_selected_and_never_records() {
             let codex = hermetic::profile("codex").expect("profiled");
             let record = parse(&args(&["--record", "codex"])).expect("parse");
-            assert!(lifecycle_turn(&record, codex).is_none());
+            assert!(lifecycle_turn(&record, codex, false).is_none());
             let all = parse(&args(&[])).expect("parse");
-            assert!(lifecycle_turn(&all, codex).is_some());
+            assert!(lifecycle_turn(&all, codex, false).is_some());
             let other = parse(&args(&["codex", "tool-run"])).expect("parse");
-            assert!(lifecycle_turn(&other, codex).is_none(), "not selected");
+            assert!(
+                lifecycle_turn(&other, codex, false).is_none(),
+                "not selected"
+            );
         }
 
         #[test]

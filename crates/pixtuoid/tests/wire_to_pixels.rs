@@ -254,7 +254,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "codewhale",
             source: "codewhale",
-            fixture: "fixtures/codewhale/tool-run/hook-payloads.jsonl",
+            fixture: "fixtures/codewhale/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Active],
         },

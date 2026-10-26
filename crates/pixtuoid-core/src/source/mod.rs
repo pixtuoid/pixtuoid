@@ -398,7 +398,6 @@ pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::R
     file.take(cap).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
-#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) mod admit;
 /// Claude Code transcript source: line/hook decoders + the `Source` adapter.
 pub mod claude_code;
@@ -426,6 +425,8 @@ pub mod hook;
 /// first-sight gate + liveness probe ladder.
 pub mod jsonl;
 pub mod kimi;
+#[cfg(all(target_os = "macos", feature = "native"))]
+pub(crate) mod kqueue;
 #[cfg(feature = "native")]
 /// `SourceManager` — spawns sources and surfaces a fatal source exit as `SourceDeath`.
 pub mod manager;

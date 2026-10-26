@@ -217,14 +217,10 @@ const RI_SEARCH: &[&str] = &["web_search_call", "tool_search_call", "tool_search
 
 /// Decode one transcript line. Only an output's End carries its call's id
 /// (`tool_use_id`), so only that End meets the hook-wins dedup (#150).
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Result<Vec<AgentEvent>> {
+pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &codex_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
+        return vec![];
     };
     let outer = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
     let payload = obj.get("payload").and_then(|p| p.as_object());
@@ -243,7 +239,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Resul
         tool_use_id: None,
     };
 
-    let out = match (outer, inner) {
+    match (outer, inner) {
         (EVENT_MSG, i) if EM_TURN_START.contains(&i) => vec![start()],
         // `custom_tool_call` is the SAME item under codex's custom-tool API and is
         // what a modern session serializes — `a_custom_tool_call_is_a_tool_call`.
@@ -336,8 +332,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Resul
             }
         }
         _ => vec![],
-    };
-    Ok(out)
+    }
 }
 
 /// A Codex `function_call` requesting escalated sandbox permissions
@@ -457,8 +452,7 @@ mod tests {
                             "model": "gpt-5.6-sol", "effort": "xhigh",
                             "info": {"last_token_usage": {"input_tokens": 1}}},
             });
-            decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v)
-                .is_ok_and(|e| !e.is_empty())
+            !decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v).is_empty()
         };
         for inner in [EM_TURN_START, EM_RESUME, EM_SEARCH, EM_TURN_END, EM_TOKENS].concat() {
             assert!(
@@ -492,7 +486,7 @@ mod tests {
             "type": "turn_context",
             "payload": {"turn_id": "t1", "cwd": "/r", "model": "gpt-5.6-sol", "effort": "xhigh"}
         });
-        let evs = decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v).unwrap();
+        let evs = decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v);
         assert!(
             evs.iter().any(
                 |e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: Some(f), .. }
@@ -504,17 +498,13 @@ mod tests {
             "type": "turn_context",
             "payload": {"turn_id": "t2", "cwd": "/r", "model": "gpt-5.5"}
         });
-        let evs = decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v).unwrap();
+        let evs = decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v);
         assert!(
             evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "gpt-5.5")),
             "got {evs:?}"
         );
         let v = serde_json::json!({"type": "turn_context", "payload": {"turn_id": "t3"}});
-        assert!(
-            decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v).is_empty());
     }
 
     #[test]
@@ -646,8 +636,7 @@ mod tests {
         let line = json!({"type": "response_item", "payload": {"type": "function_call",
             "name": DISPATCH_TOOL, "namespace": "multi_agent_v1",
             "arguments": "{\"message\":\"CHILD-TASK\"}", "call_id": "call_Fxnld0qmszdIwSfB"}});
-        let evs =
-            decode_codex_line("/p/rollout-2026-10-18T01-52-34-x.jsonl", "codex", line).unwrap();
+        let evs = decode_codex_line("/p/rollout-2026-10-18T01-52-34-x.jsonl", "codex", line);
         assert!(
             evs.iter().any(|e| matches!(e, AgentEvent::ActivityStart {
                 detail: Some(d), .. } if d.is_task())),
@@ -697,7 +686,6 @@ mod tests {
             SOURCE_NAME,
             line,
         )
-        .unwrap()
     }
 
     #[test]
@@ -950,8 +938,7 @@ mod tests {
             path,
             SOURCE_NAME,
             json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"t"}}),
-        )
-        .unwrap();
+        );
         let expected = AgentId::from_parts(SOURCE_NAME, &codex_id_from_path(Path::new(path)));
         assert_eq!(
             events[0].agent_id(),
@@ -1027,7 +1014,7 @@ mod tests {
             let line =
                 serde_json::json!({ "type": outer, "payload": { "type": "x", "message": "y" } });
             let quiet = crate::test_capture::capture_logs(|| {
-                decode_codex_line("/x/rollout.jsonl", SOURCE_NAME, line).unwrap();
+                decode_codex_line("/x/rollout.jsonl", SOURCE_NAME, line);
             });
             assert!(
                 !quiet.contains(crate::source::drift::TARGET),

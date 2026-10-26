@@ -1,0 +1,28 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "CHILD-TASK", "toolResultContains": "{note}"},
+      "response": {"error": {"message": "hermetic model error", "type": "invalid_request_error"}, "status": 400}
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "response": {"toolCalls": [{"name": "read", "arguments": {"path": "NOTE.txt"}}]},
+      "latency": 1500
+    },
+    {
+      "match": {"userMessage": "hermetic model error"},
+      "response": {"content": "the child failed"},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "status=running"},
+      "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "wait", "until": "all"}}]},
+      "latency": 1500
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "start", "type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
+      "latency": 300
+    }
+  ]
+}

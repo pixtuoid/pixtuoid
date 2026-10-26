@@ -36,7 +36,7 @@ workspace = true
 # builds against.
 #
 # `harness` (NON-default) adds the offline decode→reduce driver the
-# fixture/corpus/fuzz/render call sites ride. Dev scaffolding: keeping it out of
+# fixture/corpus/render call sites ride. Dev scaffolding: keeping it out of
 # a default build keeps it out of `cargo public-api` + `cargo semver-checks`, so
 # it never becomes a semver commitment.
 [features]
@@ -99,6 +99,8 @@ rustix = { workspace = true, features = ["event", "process", "pipe"] }
 # creation-FILETIME marker (the Windows half of the pid-recycle guard), and
 # `exit_watch`'s handle wait, whose cap is SystemServices' MAXIMUM_WAIT_OBJECTS.
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_SystemServices", "Win32_System_Threading"] }
+# The directory id a watch root is reconciled by.
+winapi-util = { workspace = true }
 
 [dev-dependencies]
 # Depending on ourselves BY PATH is how a crate turns its own non-default
@@ -115,12 +117,17 @@ temp-env = { workspace = true }
 schemars = { workspace = true }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
+process-wrap = { workspace = true }
 filetime = "0.2"
 insta = { workspace = true, features = ["yaml"] }
 tracing-subscriber = { workspace = true }
 # Wire→state benchmarks (`just bench`); same CodSpeed compat passthrough as
 # `pixtuoid-scene`'s.
 criterion = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+# `examples/support/bounded.rs`'s `kill_child_on_signal`.
+signal-hook = { workspace = true }
 
 [[bench]]
 name = "decode_reduce"

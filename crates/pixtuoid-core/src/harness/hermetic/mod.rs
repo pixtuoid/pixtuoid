@@ -6,13 +6,14 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::harness::CaptureRecord;
 use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
+use crate::harness::{CaptureRecord, TurnEnd};
 use crate::source::registry;
 
 pub mod bump;
@@ -50,6 +51,13 @@ impl<T> PerOs<T> {
         }
     }
 }
+
+/// How long a hermetic turn may run before the recorder kills it: well past
+/// the slowest turn a leg has run.
+pub const TURN_BUDGET: PerOs<Duration> = PerOs {
+    unix: Duration::from_secs(240),
+    windows: Duration::from_secs(480),
+};
 
 /// Where a CLI reads policy or config that no sandbox variable redirects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,12 +137,13 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
-    /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
-        match code {
-            Some(0) => true,
-            Some(_) => match self {
+    /// Whether a CLI whose turn ended as `end` ran this shape's turn as
+    /// scripted: one scripted to fail may exit non-zero, but neither a signal
+    /// nor the budget ends a turn.
+    pub(crate) const fn exits_as_scripted(self, end: TurnEnd) -> bool {
+        match end {
+            TurnEnd::Exited(0) => true,
+            TurnEnd::Exited(_) => match self {
                 Self::ModelError => true,
                 Self::ToolRun
                 | Self::Permission
@@ -142,7 +151,7 @@ impl Shape {
                 | Self::ChildError
                 | Self::Succession => false,
             },
-            None => false,
+            TurnEnd::Signalled | TurnEnd::OutOfTime => false,
         }
     }
 
@@ -216,7 +225,7 @@ pub enum Second {
 
 impl Turn {
     /// The profile's invocation as it stands.
-    pub const PROFILE: Self = Self {
+    pub(crate) const PROFILE: Self = Self {
         args: &[],
         prompt: None,
         second: None,
@@ -464,9 +473,6 @@ pub struct Manifest {
 pub enum Absence {
     /// Its model endpoint cannot be redirected, so no scripted turn can run.
     NoModelEndpoint,
-    /// Its headless run fires no session lifecycle, so no headless shape can
-    /// pass.
-    NoHeadlessLifecycle,
 }
 
 /// The profiled CLIs.
@@ -483,15 +489,13 @@ pub const PROFILES: &[Profile] = &[
     profiles::hermes::PROFILE,
     profiles::antigravity::PROFILE,
     profiles::openclaw::PROFILE,
+    profiles::codewhale::PROFILE,
 ];
 
 /// Every registered source without a profile, and why.
 pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     // Owner, 2026-10-13: no custom model endpoint, so no upstream detection.
     ("cursor", Absence::NoModelEndpoint),
-    // Owner, 2026-10-18: `exec --hooks` fires only `tool_call_before` and
-    // `shell_env` (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1).
-    ("codewhale", Absence::NoHeadlessLifecycle),
 ];
 
 /// The profile for `source`, if it has one.
@@ -505,7 +509,14 @@ pub(crate) const OSES: &[&str] = &["macos", "windows"];
 /// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
 /// selects the `n`th: whole sources, split for about equal run time.
 pub const SHARDS: &[&[&str]] = &[
-    &["openclaw", "codex", "omp", "dsh", "antigravity"],
+    &[
+        "openclaw",
+        "codex",
+        "omp",
+        "dsh",
+        "antigravity",
+        "codewhale",
+    ],
     &[
         "grok",
         "copilot",
@@ -558,6 +569,24 @@ impl Profile {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
+
+    /// The scenario its install lifecycle turns under its last uninstall on a
+    /// leg on `windows`.
+    pub fn lifecycle_turn(&self, windows: bool) -> Option<&'static Scenario> {
+        lifecycle_turn_of(self.scenarios, windows)
+    }
+}
+
+/// The first of `scenarios` a leg on `windows` runs and no dialog stops, since
+/// a TUI's gate waits on a hook.
+fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario> {
+    scenarios.iter().find(|s| {
+        s.not_run_on(windows).is_none()
+            && match s.surface {
+                Surface::Headless => true,
+                Surface::Tui { answer, .. } => answer == tui::Answer::Nothing,
+            }
+    })
 }
 
 impl Scenario {
@@ -733,23 +762,52 @@ mod tests {
     /// What the runner's source selection, the lifecycle's turn and the bump
     /// plan take for granted.
     #[test]
-    fn no_leg_skips_a_whole_source() {
+    fn no_leg_skips_a_whole_source_or_its_lifecycle() {
         for p in PROFILES {
-            assert!(
-                p.scenarios
-                    .iter()
-                    .any(|s| matches!(s.surface, Surface::Headless)),
-                "{}: no Headless scenario, which every leg runs and the lifecycle turns",
-                p.source
-            );
             for windows in [false, true] {
                 assert!(
-                    p.scenarios.iter().any(|s| s.not_run_on(windows).is_none()),
-                    "{}: a leg (windows: {windows}) runs none of its scenarios",
+                    p.lifecycle_turn(windows).is_some(),
+                    "{}: a leg (windows: {windows}) runs no scenario its lifecycle can turn",
                     p.source
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_lifecycle_turns_a_scenario_its_leg_runs_and_no_dialog_stops() {
+        let tui = |source: &str, name: &str, answer| match profile(source)
+            .and_then(|p| p.scenario(name))
+            .expect("profiled")
+            .surface
+        {
+            Surface::Tui { row, .. } => Surface::Tui { row, answer },
+            Surface::Headless => panic!("{source}/{name} drives no TUI"),
+        };
+        let scenario = |name, surface| Scenario {
+            name,
+            shape: Shape::ToolRun,
+            surface,
+            expects: &[],
+            fixture: name,
+            turn: Turn::PROFILE,
+        };
+        let scenarios = [
+            scenario("gated", tui("claude-code", "permission", tui::Answer::Deny)),
+            scenario("unpainted", tui("grok", "permission", tui::Answer::Nothing)),
+            scenario("ungated", tui("omp", "new-session", tui::Answer::Nothing)),
+            scenario("headless", Surface::Headless),
+        ];
+        let picked = |s: &[Scenario], windows| lifecycle_turn_of(s, windows).map(|s| s.name);
+        assert_eq!(picked(&scenarios[..1], false), None);
+        assert_eq!(picked(&scenarios[..2], false), Some("unpainted"));
+        assert_eq!(
+            picked(&scenarios[..2], true),
+            None,
+            "ConPTY paints it nothing"
+        );
+        assert_eq!(picked(&scenarios[..3], true), Some("ungated"));
+        assert_eq!(picked(&scenarios[3..], true), Some("headless"));
     }
 
     #[test]
@@ -1166,10 +1224,17 @@ mod tests {
                     "{}: the child's request never errs",
                     p.source
                 );
+                // codewhale hands its parent a child's failure in a user-role
+                // message (`crates/tui/src/runtime_handoff.rs:3-4`, `:556-567` at v0.10.2).
+                let waits = |f: &Value| {
+                    ["toolResultContains", "userMessage"].iter().any(|k| {
+                        f["match"][k]
+                            .as_str()
+                            .is_some_and(|t| errors.iter().any(|e| e.contains(t)))
+                    })
+                };
                 assert!(
-                    replies.iter().any(|f| f["match"]["toolResultContains"]
-                        .as_str()
-                        .is_some_and(|t| errors.iter().any(|e| e.contains(t)))),
+                    replies.iter().any(waits),
                     "{}: no reply waits for the child's error",
                     p.source
                 );

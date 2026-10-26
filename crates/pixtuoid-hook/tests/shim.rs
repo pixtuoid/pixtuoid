@@ -165,7 +165,7 @@ fn argv_source_flag_stamps_source_without_env() {
 }
 
 #[test]
-fn a_non_utf8_workspace_keys_the_session_not_the_fallback() {
+fn a_non_utf8_workspace_is_kept_lossily() {
     use std::os::unix::ffi::OsStrExt;
     let path = sock_path("cwlossy");
     let listener = UnixListener::bind(&path).expect("bind listener");
@@ -190,12 +190,9 @@ fn a_non_utf8_workspace_keys_the_session_not_the_fallback() {
 
 #[test]
 fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
-    // Env-mode MUST NOT read stdin: CodeWhale leaves the child's stdin = the
-    // TUI terminal, which NEVER reaches EOF, and `tool_call_before` runs
-    // SYNCHRONOUSLY — a blind read_to_string would freeze the user's tool call.
-    // So the fixture holds the child's stdin pipe OPEN (never write, never
-    // close) and bounds the wait: a re-added blocking read hangs and trips it,
-    // where an EOF-able pipe would pass.
+    // Env-mode never reads stdin (invariant 5): the fixture holds the child's
+    // stdin pipe OPEN (never write, never close) and bounds the wait, so a
+    // re-added blocking read hangs and trips it, where an EOF-able pipe would pass.
     let path = sock_path("cwevent");
     let listener = UnixListener::bind(&path).expect("bind listener");
     listener.set_nonblocking(true).unwrap();
@@ -221,9 +218,7 @@ fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!(
-                "env-mode shim did not exit within 2s — it must NOT read stdin (the inherited, never-EOF TUI terminal would block it; tool_call_before runs synchronously)"
-            );
+            panic!("env-mode shim did not exit within 2s — it must NOT read stdin (invariant 5)");
         }
         std::thread::sleep(Duration::from_millis(20));
     };
@@ -237,7 +232,7 @@ fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
     assert_eq!(v["event"], "tool_call_before");
     assert_eq!(
         v["cwd"], "/repo/myproj",
-        "AgentId key folded from DEEPSEEK_WORKSPACE, not stdin"
+        "cwd folded from DEEPSEEK_WORKSPACE, not stdin"
     );
     assert_eq!(v["tool"], "exec_shell");
     assert_eq!(v["tool_args"], r#"{"command":"ls -la"}"#);

@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::Result;
-use notify::{Config, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecursiveMode;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
@@ -13,6 +13,7 @@ use crate::source::exit_watch::ExitWatch;
 
 mod health;
 mod liveness;
+mod root_watch;
 #[cfg(test)]
 mod tests;
 mod unclaim;
@@ -29,6 +30,7 @@ use liveness::{
     NEGATIVE_VOUCH_MIN_SPAN, ProbeLadder, emit_proof_of_life, emit_session_exit,
     refresh_probe_snapshot,
 };
+pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
 use unclaim::drain_child_end_unclaims;
 use walk::{scan_root, walk_jsonl};
 
@@ -205,8 +207,8 @@ const DEFAULT_INITIAL_WINDOW: Duration = Duration::from_secs(3600);
 /// "how often we look at the filesystem" has one authority.
 pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Test-only seam: forces every `JsonlWatcher` in this process onto a polling
-/// backend (`notify::PollWatcher`) at `interval`, instead of the native
+/// Test-only seam: forces every recursive root watch in this process onto a
+/// polling backend (`notify::PollWatcher`) at `interval`, instead of the native
 /// FSEvents/inotify watcher. Set once — later calls are ignored. Integration
 /// tests use it because a real FSEvents stream costs tens of seconds of
 /// setup/teardown per `TempDir` on macOS.
@@ -233,7 +235,7 @@ impl JsonlWatcher {
         Self {
             id_derive: folded::FoldedDeriver::new(crate::source::registry::id_deriver_for(&source)),
             path_filter: crate::source::registry::path_filter_for(&source),
-            root,
+            root: absolute_root(root),
             initial_window: DEFAULT_INITIAL_WINDOW,
             source_name: source,
             decode_line,
@@ -325,6 +327,13 @@ impl JsonlWatcher {
         self
     }
 
+    /// Attach a liveness probe over the watch root itself (an open-fd scan),
+    /// handed the root as this watcher spells it.
+    pub(crate) fn with_root_probe(self, probe: fn(&Path) -> Option<ProbeSnapshot>) -> Self {
+        let root = self.root.clone();
+        self.with_liveness_probe(Arc::new(move || probe(&root)))
+    }
+
     /// Attach the child-end un-claim side-channel (see [`ChildEndUnclaims`]).
     /// The watcher becomes the CONSUMER: on each pass it drains the handle's
     /// ids that match its own claimed transcripts and ends those claims
@@ -334,9 +343,10 @@ impl JsonlWatcher {
         self
     }
 
-    /// The initial seed and the `DEFAULT_POLL_INTERVAL` poll both run this SAME
-    /// sequence; only the seed skips the un-claim drain (`drain = false` —
-    /// nothing has been pushed at startup).
+    /// The initial seed, the `DEFAULT_POLL_INTERVAL` poll and the pass after a
+    /// nudge re-attaches the watch root all run this SAME sequence; only the seed
+    /// skips the un-claim drain (`drain = false` — nothing has been pushed at
+    /// startup).
     async fn run_scan_pass(
         &self,
         ctx: &WatchCtx<'_>,
@@ -364,12 +374,12 @@ impl JsonlWatcher {
     }
 
     /// Consume the watcher and drive the watch loop — initial seed, the
-    /// `DEFAULT_POLL_INTERVAL` poll backstop, and notify events — feeding each decoded
-    /// event to `tx`.
+    /// `DEFAULT_POLL_INTERVAL` poll backstop, root-attach nudges, and notify
+    /// events — feeding each decoded event to `tx`.
     ///
     /// # Errors
     ///
-    /// If the file-watch backend cannot be created, or the watch root cannot be stat'ed or watched.
+    /// If the watch root cannot be read at boot, or exists but cannot be watched.
     pub async fn run(self, tx: TaggedSender) -> Result<()> {
         let cursors: Arc<Mutex<HashMap<PathBuf, u64>>> = Arc::new(Mutex::new(HashMap::new()));
         let seen_sessions: Arc<Mutex<HashMap<PathBuf, Sight>>> =
@@ -437,25 +447,17 @@ impl JsonlWatcher {
                 }
             }
         };
-        let mut watcher: Box<dyn Watcher + Send> = match TEST_POLL_OVERRIDE.get().copied() {
-            // `with_compare_contents` detects changes by hashing file contents, not
-            // just mtime/size, so truncate-rewrites are caught reliably.
-            Some(interval) => Box::new(PollWatcher::new(
-                event_handler,
-                Config::default()
-                    .with_poll_interval(interval)
-                    .with_compare_contents(true),
-            )?),
-            None => Box::new(RecommendedWatcher::new(event_handler, Config::default())?),
-        };
+        let (nudge, mut nudges) = Nudge::channel();
+        let mut root_watch = RootWatch::new(
+            self.root.clone(),
+            RecursiveMode::Recursive,
+            event_handler,
+            nudge,
+        );
         // The root is another CLI's, and auto-detect keys on its presence, so it
-        // is never created: until it appears, the poll's scan (an absent root is
-        // a healthy observation) stands in for the watch. One that can't even be
-        // stat'ed is a watch failure (#157).
-        let mut watching = tokio::fs::try_exists(&self.root).await?;
-        if watching {
-            watcher.watch(&self.root, RecursiveMode::Recursive)?;
-        }
+        // is never created: the anchor reports its appearance. One that can't
+        // be read, or exists and can't be watched, at boot is a watch failure (#157).
+        root_watch.reconcile(Wake::Poll).await?;
 
         let source_arc: Arc<str> = Arc::from(self.source_name.as_str());
         let unclaims = self.child_end_unclaims.clone();
@@ -513,6 +515,15 @@ impl JsonlWatcher {
                 live: &live,
             };
             tokio::select! {
+                Some(()) = nudges.recv() => {
+                    if root_watch.reconcile_logged(Wake::Nudge).await == Reconciled::Attached {
+                        // What was written before the watch existed.
+                        self.run_scan_pass(
+                            &ctx, &mut scan_state,
+                            exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
+                        ).await;
+                    }
+                }
                 Some(path) = notify_rx.recv() => {
                     // Drain BEFORE the walk (not only on scan passes), so the
                     // un-claim lands on the first notify after the hook Stop instead
@@ -522,10 +533,7 @@ impl JsonlWatcher {
                     walk_jsonl(&path, decoders, &ctx).await;
                 }
                 _ = poll.tick() => {
-                    if !watching && tokio::fs::try_exists(&self.root).await.unwrap_or(false) {
-                        watcher.watch(&self.root, RecursiveMode::Recursive)?;
-                        watching = true;
-                    }
+                    root_watch.reconcile_logged(Wake::Poll).await;
                     self.run_scan_pass(
                         &ctx, &mut scan_state,
                         exit_watch.as_ref(), unclaims.as_ref(), decoders, true,

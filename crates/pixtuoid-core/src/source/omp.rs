@@ -36,12 +36,8 @@ pub const SOURCE_NAME: &str = "omp";
 /// read through the `.env` overlay first (`with_omp_dotenv`): upstream applies
 /// those files and then REBUILDS this resolver, so a var set only in `~/.env`
 /// moves the sessions dir and process env alone would watch an empty directory.
-/// The read is deliberately UNBOUNDED, unlike `source/`'s per-refresh probe
-/// reads: a cap could truncate a key upstream's own `parseEnvFile` honors.
 pub fn omp_sessions_dir() -> PathBuf {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     resolve_omp_sessions_dir(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -57,9 +53,7 @@ pub fn omp_sessions_dir() -> PathBuf {
 /// migrated-XDG user's extensions still load from here. Exported for the
 /// install target — a second resolver copy is the #880 drift class.
 pub fn omp_agent_dir() -> PathBuf {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     resolve_omp_agent_dir(&env)
 }
 
@@ -72,6 +66,15 @@ pub(crate) const EXTENSIONS_SUBDIR: &str = "extensions";
 /// to non-public items).
 pub fn omp_extensions_dir() -> PathBuf {
     omp_agent_dir().join(EXTENSIONS_SUBDIR)
+}
+
+/// The process env under the `.env` overlay. The read is deliberately
+/// UNBOUNDED, unlike `source/`'s per-refresh probe reads: a cap could truncate
+/// a key upstream's own `parseEnvFile` honors.
+fn overlaid_env() -> OmpEnv {
+    with_omp_dotenv(&OmpEnv::from_process(), &|p| {
+        std::fs::read_to_string(p).ok()
+    })
 }
 
 /// The process environment omp's resolver reads, injected so every arm — the
@@ -243,9 +246,7 @@ fn resolve_omp_sessions_dir(
 /// env (upstream freezes the resolver per process the same way), so another
 /// profile's own `.env` relocations are unseen here.
 pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     omp_profile_sessions_dirs_resolved(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -263,20 +264,32 @@ pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
     )
 }
 
+/// The dir [`omp_profile_sessions_dirs`] enumerates, so each new entry in it
+/// is a new profile.
+#[cfg(feature = "native")]
+pub(crate) fn omp_profiles_dir() -> Option<PathBuf> {
+    let env = overlaid_env();
+    profiles_dir(&env)
+}
+
+fn profiles_dir(env: &OmpEnv) -> Option<PathBuf> {
+    Some(omp_config_root(env, None)?.join(PROFILES_SUBDIR))
+}
+
 fn omp_profile_sessions_dirs_resolved(
     env: &OmpEnv,
     xdg_platform: bool,
     exists: &dyn Fn(&Path) -> bool,
     list_profiles: &dyn Fn(&Path) -> Vec<String>,
 ) -> Vec<PathBuf> {
-    let Some(base) = omp_config_root(env, None) else {
+    let Some(profiles) = profiles_dir(env) else {
         return Vec::new();
     };
     let primary = resolve_omp_sessions_dir(env, xdg_platform, exists);
     // Through the same validator omp applies: a dir failing its name regex (or
     // a stray `default`) is one omp can never select, so watching it would
     // follow a root omp never writes.
-    let mut names: Vec<String> = list_profiles(&base.join(PROFILES_SUBDIR))
+    let mut names: Vec<String> = list_profiles(&profiles)
         .iter()
         .filter_map(|n| normalize_profile_name(Some(n)))
         .collect();
@@ -619,19 +632,15 @@ pub(crate) fn omp_head_title(v: &Value) -> Option<String> {
 /// Decode one omp session JSONL line into zero or more `AgentEvent`s.
 /// Unknown entry types / roles and malformed shapes return `vec![]` — the
 /// upstream loader is itself lenient (`parseJsonlLenient`).
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Result<Vec<AgentEvent>> {
+pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let path = Path::new(transcript_path);
     let acting = AgentId::from_parts(source, &omp_id_from_path(path));
     let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
+        return vec![];
     };
     let kind = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
-    let out = match kind {
+    match kind {
         SESSION => {
             let cwd = obj.get("cwd").and_then(|c| c.as_str()).unwrap_or_else(|| {
                 crate::source::drift::missing_field(source, "session", "cwd");
@@ -648,7 +657,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Result<
         }
         MESSAGE => {
             let Some(msg) = obj.get("message") else {
-                return Ok(vec![]);
+                return vec![];
             };
             match msg.get("role").and_then(|r| r.as_str()) {
                 Some(ROLE_ASSISTANT) => {
@@ -677,7 +686,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Result<
                         }
                     }
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
-                        return Ok(out);
+                        return out;
                     };
                     let mut asks = Vec::new();
                     for b in blocks
@@ -713,7 +722,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Result<
                 Some(ROLE_TOOL_RESULT) => {
                     let Some(tool_call_id) = msg.get("toolCallId").and_then(|i| i.as_str()) else {
                         crate::source::drift::missing_field(source, "toolResult", "toolCallId");
-                        return Ok(vec![]);
+                        return vec![];
                     };
                     vec![AgentEvent::ActivityEnd {
                         agent_id: acting,
@@ -750,8 +759,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Result<
         },
         // Not sprite-visible (`model_change` among them — see `ROLE_ASSISTANT`).
         _ => vec![],
-    };
-    Ok(out)
+    }
 }
 
 /// omp's tool-detail dispatch. The subagent dispatch is the `task` tool,
@@ -1005,7 +1013,7 @@ mod tests {
             };
             let mut evs = 0;
             let logs = crate::test_capture::capture_logs(|| {
-                evs = decode_omp_line(ROOT, SOURCE_NAME, line).map_or(0, |e| e.len());
+                evs = decode_omp_line(ROOT, SOURCE_NAME, line).len();
             });
             evs > 0 || logs.contains(crate::source::drift::TARGET)
         };
@@ -1038,7 +1046,7 @@ mod tests {
         AgentId::from_parts(SOURCE_NAME, ROOT_KEY)
     }
     fn decode_at(path: &str, line: &str) -> Vec<AgentEvent> {
-        decode_omp_line(path, SOURCE_NAME, serde_json::from_str(line).unwrap()).unwrap()
+        decode_omp_line(path, SOURCE_NAME, serde_json::from_str(line).unwrap())
     }
     fn decode(line: &str) -> Vec<AgentEvent> {
         decode_at(ROOT, line)
@@ -1239,18 +1247,13 @@ mod tests {
         );
         assert!(matches!(
             decode_omp_line(ROOT, SOURCE_NAME, title_entry(TITLE_CHANGE, field))
-                .expect("title entry decodes")
                 .as_slice(),
             [AgentEvent::Rename { label, .. }] if label == "om·Name this session"
         ));
 
         let renamed = "renamedTitle";
         assert!(omp_head_title(&title_entry(TITLE, renamed)).is_none());
-        assert!(
-            decode_omp_line(ROOT, SOURCE_NAME, title_entry(TITLE_CHANGE, renamed))
-                .expect("unknown title field is ignored")
-                .is_empty()
-        );
+        assert!(decode_omp_line(ROOT, SOURCE_NAME, title_entry(TITLE_CHANGE, renamed)).is_empty());
     }
 
     #[test]
@@ -1288,7 +1291,7 @@ mod tests {
                        "message": {"role": role, "timestamp": 1,
                                    "content": [{"type": block, "id": "t1", "name": tool}]}}),
             )
-            .map_or(0, |e| e.len())
+            .len()
         };
         let good = turn(ROLE_ASSISTANT, BLOCK_TOOL_CALL, TOOL_ASK);
         assert!(good > 0, "the message vocabulary decodes a turn");
@@ -1313,7 +1316,8 @@ mod tests {
                                    "content": [{"type": BLOCK_TOOL_CALL, "id": "t2",
                                                 "name": tool}]}}),
             )
-            .is_ok_and(|evs| evs.iter().any(|e| matches!(e, AgentEvent::Waiting { .. })))
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Waiting { .. }))
         };
         assert!(waits(TOOL_ASK), "an ask call must gate Waiting");
         assert!(
@@ -1432,15 +1436,6 @@ mod tests {
         }
         let empty = r#"{"type":"message","id":"m3","timestamp":"t","message":{"role":"assistant","model":"","content":[],"timestamp":3}}"#;
         assert!(decode(empty).is_empty());
-        // pi-ai `types.ts` requires `content`, so this shape cannot occur on real
-        // wire — it pins the let-else early return's `Ok(out)`, not `Ok(vec![])`.
-        let no_content = r#"{"type":"message","id":"m4","timestamp":"t","message":{"role":"assistant","model":"claude-fable-5","timestamp":4}}"#;
-        match &decode(no_content)[..] {
-            [AgentEvent::ModelInfo { model: Some(m), .. }] => {
-                assert_eq!(m.as_str(), "claude-fable-5");
-            }
-            other => panic!("expected one ModelInfo, got {other:?}"),
-        }
     }
 
     /// Byte-real shape, anchored by the recorded `omp/ask-recorded` fixture:
@@ -1648,16 +1643,8 @@ mod tests {
         ] {
             assert!(decode(line).is_empty(), "expected no events for {line}");
         }
-        assert!(
-            decode_omp_line(ROOT, SOURCE_NAME, json!("not an object"))
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            decode_omp_line(ROOT, SOURCE_NAME, json!(["array"]))
-                .unwrap()
-                .is_empty()
-        );
+        assert!(decode_omp_line(ROOT, SOURCE_NAME, json!("not an object")).is_empty());
+        assert!(decode_omp_line(ROOT, SOURCE_NAME, json!(["array"])).is_empty());
     }
 
     #[test]

@@ -286,15 +286,14 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
     );
 }
 
-/// A reasonix skill call (`explore`, `research`, …) is an id-less Task whose
-/// child fires no end of its own, so the call returning is the child's end;
-/// codewhale's `agent start` returns at dispatch, its child still running, and
-/// the parent's own tool ending is no delegation's.
+/// An id-less Task end walks a child out only under `AnyTaskEnd`: a reasonix
+/// skill call's child fires no end of its own, while codex's `spawn_agent`
+/// returns at launch and its child ends itself.
 #[test]
-fn an_untracked_task_end_walks_out_children_only_where_they_end_unannounced() {
+fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
     for (source, parent_tool, walks_out) in [
         ("reasonix", "Agent", true),
-        ("codewhale", "Agent", false),
+        ("codex", "Agent", false),
         ("reasonix", "Bash: ls", false),
     ] {
         let mut scene = SceneState::uniform(8);
@@ -351,7 +350,10 @@ fn an_untracked_task_end_walks_out_children_only_where_they_end_unannounced() {
             walks_out,
             "{source}: the child's walk-out on its parent's id-less {parent_tool} end"
         );
-        assert!(scene.agents[&parent].exiting_at.is_none(), "{source}");
+        assert!(
+            scene.agents[&parent].exiting_at.is_none(),
+            "{source} {parent_tool}"
+        );
     }
 }
 
@@ -1550,89 +1552,6 @@ fn task_drain_while_parent_waiting_keeps_waiting() {
         matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
         "parent's permission must stay Waiting through a Task drain, got {:?}",
         scene.agents[&id].state
-    );
-}
-
-#[test]
-fn real_codewhale_subagent_payload_nests_the_child_under_its_workspace_parent() {
-    fn feed(r: &mut Reducer, scene: &mut SceneState, v: serde_json::Value, t: SystemTime) {
-        for ev in decode_hook_payload(v).expect("real CodeWhale payload must decode") {
-            r.apply(scene, ev, t, Transport::Hook);
-        }
-    }
-
-    const WS: &str = "/Users/navepnow/dotfiles";
-    let parent = AgentId::from_parts("codewhale", WS);
-    let child = AgentId::from_parts("codewhale", "agent_ad945f4c");
-    assert_ne!(
-        parent, child,
-        "child keys on agent_id, parent on cwd — structurally distinct sprites"
-    );
-
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    feed(
-        &mut r,
-        &mut scene,
-        json!({ "event": "session_start", "cwd": WS, "_pixtuoid_source": "codewhale" }),
-        t0,
-    );
-    assert!(
-        scene.agents.contains_key(&parent),
-        "parent registers on its cwd-keyed sprite"
-    );
-
-    feed(
-        &mut r,
-        &mut scene,
-        json!({
-            "event": "subagent_spawn",
-            "agent_id": "agent_ad945f4c",
-            "session_id": "sess_1a2b3c4d",
-            "workspace": WS,
-            "mode": "Yolo",
-            "model": "deepseek-v4-pro",
-            "total_tokens": 4096,
-            "prompt_preview": "Search the web for how people organize their dotfiles.",
-            "prompt_truncated": true,
-            "_pixtuoid_source": "codewhale"
-        }),
-        t0 + Duration::from_secs(1),
-    );
-    let slot = scene
-        .agents
-        .get(&child)
-        .expect("the subagent registers as its OWN sprite, distinct from the workspace parent");
-    assert_eq!(
-        slot.parent_id,
-        Some(parent),
-        "the workspace-keyed parent link must resolve to the parent's own cwd-keyed AgentId — the byte-match holds for the real captured workspace string"
-    );
-
-    feed(
-        &mut r,
-        &mut scene,
-        json!({
-            "event": "subagent_complete",
-            "agent_id": "agent_ad945f4c",
-            "session_id": "sess_1a2b3c4d",
-            "workspace": WS,
-            "status": "completed",
-            "result_preview": "I cannot proceed with this task because the required tools are not available.",
-            "result_truncated": true,
-            "_pixtuoid_source": "codewhale"
-        }),
-        t0 + Duration::from_secs(11),
-    );
-    assert!(
-        scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "subagent_complete must mark the child exiting (a child end), not leave it live"
-    );
-    assert!(
-        scene.agents.get(&parent).unwrap().exiting_at.is_none(),
-        "ending a subagent must never exit its parent"
     );
 }
 

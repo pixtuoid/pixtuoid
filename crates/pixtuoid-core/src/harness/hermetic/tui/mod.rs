@@ -420,6 +420,7 @@ mod tests {
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
     const OMP_BOOT: &str = include_str!("screens/omp-boot.txt");
     const OMP_NEW: &str = include_str!("screens/omp-new.txt");
+    const CODEWHALE_BOOT: &str = include_str!("screens/codewhale-boot.txt");
     /// Claude Code's blank input line, which it opens with a no-break space.
     const READY_INPUT: &str = "❯\u{a0} ";
     const OMP_INPUT: &str = "╰─";
@@ -815,6 +816,24 @@ mod tests {
                 "permission",
                 include_str!("screens/hermes-boot.txt"),
                 include_str!("screens/hermes-gate.txt"),
+            ),
+            (
+                "codewhale",
+                "tool-run",
+                CODEWHALE_BOOT,
+                include_str!("screens/codewhale-done.txt"),
+            ),
+            (
+                "codewhale",
+                "permission",
+                CODEWHALE_BOOT,
+                include_str!("screens/codewhale-gate.txt"),
+            ),
+            (
+                "codewhale",
+                "child-error",
+                CODEWHALE_BOOT,
+                include_str!("screens/codewhale-child-failed.txt"),
             ),
         ];
         let scenarios: Vec<(&str, &str)> = super::super::PROFILES

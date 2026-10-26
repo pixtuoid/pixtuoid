@@ -1,0 +1,7 @@
+{"event":"session_start","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","_shim_ts_ms":1792984406519,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"message_submit","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","_shim_ts_ms":1792984406798,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"tool_call_before","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","tool":"bash","tool_args":"{\"command\":\"rm NOTE.txt\"}","tool_call_id":"8fd4b2d8-047d-44f8-8f51-296cefb4273c","_shim_ts_ms":1792984408870,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"waiting_for_user","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","_shim_ts_ms":1792984408936,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"tool_call_after","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","tool":"","tool_args":"","tool_call_id":"8fd4b2d8-047d-44f8-8f51-296cefb4273c","_shim_ts_ms":1792984410019,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"session_idle","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","_shim_ts_ms":1792984410968,"_pixtuoid_source":"codewhale","_pid":68757}
+{"event":"session_end","cwd":"/private/tmp/pixtuoid-capture/proj","session_id":"sess_f09b12b9","_shim_ts_ms":1792984415662,"_pixtuoid_source":"codewhale","_pid":68757}
