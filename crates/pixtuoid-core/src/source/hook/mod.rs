@@ -834,9 +834,9 @@ mod tests {
         // repeat is what arms the watch (#896).
         let line = format!(
             "{{\"_pixtuoid_source\":\"codewhale\",\"event\":\"session_start\",\
-             \"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
+             \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
              {{\"_pixtuoid_source\":\"codewhale\",\"event\":\"tool_call_before\",\
-             \"cwd\":\"/repo\",\"tool\":\"read_file\",\"_pid\":{pid}}}\n"
+             \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"tool\":\"read_file\",\"_pid\":{pid}}}\n"
         );
         client.write_all(line.as_bytes()).await.unwrap();
 
@@ -845,7 +845,7 @@ mod tests {
 
         child.kill().expect("kill the watched child");
         let _ = child.wait();
-        let expected = AgentId::from_parts("codewhale", "/repo");
+        let expected = AgentId::from_parts("codewhale", "sess_t");
         let end = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             // The decoded payloads land first; the pid's death arrives behind them.
             loop {
@@ -1074,7 +1074,7 @@ mod tests {
         // unallocatable one guarantees `started: None`.
         let line = format!(
             "{{\"_pixtuoid_source\":\"codewhale\",\"event\":\"tool_call_before\",\
-             \"cwd\":\"/repo\",\"tool\":\"exec_shell\",\"_pid\":{}}}\n",
+             \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"tool\":\"exec_shell\",\"_pid\":{}}}\n",
             i32::MAX
         );
         client.write_all(line.as_bytes()).await.unwrap();

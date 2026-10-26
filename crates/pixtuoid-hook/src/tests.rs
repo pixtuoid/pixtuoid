@@ -199,12 +199,14 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
         ("DEEPSEEK_TOOL_NAME", "exec_shell"),
         ("DEEPSEEK_TOOL_ARGS", r#"{"command":"ls -la"}"#),
         ("DEEPSEEK_TOOL_CALL_ID", "call-1"),
+        ("DEEPSEEK_SESSION_ID", "sess_1a2b3c4d"),
     ]
     .into_iter()
     .collect();
     let map = env_payload_from("tool_call_before", None, |k| env.get(k).map(OsString::from));
     assert_eq!(map["event"], json!("tool_call_before"));
     assert_eq!(map["cwd"], json!("/repo"));
+    assert_eq!(map["session_id"], json!("sess_1a2b3c4d"));
     assert_eq!(map["tool"], json!("exec_shell"));
     assert_eq!(map["tool_args"], json!(r#"{"command":"ls -la"}"#));
     assert_eq!(map["tool_call_id"], json!("call-1"));

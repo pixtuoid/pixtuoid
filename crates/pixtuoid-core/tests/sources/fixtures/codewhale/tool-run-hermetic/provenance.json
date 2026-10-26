@@ -6,7 +6,7 @@
   "command": "just hermetic --record codewhale",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 2
+    "blanked": 5
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codewhale/tool-run.json",

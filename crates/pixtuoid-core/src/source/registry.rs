@@ -719,7 +719,7 @@ const DSH: SourceDescriptor = SourceDescriptor {
 /// `codewhale exec` fires no session lifecycle — only the TUI does). Its hook
 /// envelope is ALIEN (snake_case `event` discriminator, identity via
 /// `DEEPSEEK_*` env vars), so the custom decoder claims every event — keyed on
-/// cwd, the one identity the shim's envelope carries.
+/// the session id the shim forwards.
 const CODEWHALE: SourceDescriptor = SourceDescriptor {
     name: codewhale::SOURCE_NAME,
     label_prefix: "cw",

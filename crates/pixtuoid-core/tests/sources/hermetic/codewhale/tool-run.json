@@ -2,7 +2,7 @@
   "fixtures": [
     {
       "match": {"hasToolResult": false},
-      "response": {"toolCalls": [{"name": "read", "arguments": {"path": "NOTE.txt"}}]},
+      "response": {"toolCalls": [{"name": "file_search", "arguments": {"query": "NOTE"}}, {"name": "read", "arguments": {"path": "NOTE.txt"}}]},
       "latency": 300
     },
     {

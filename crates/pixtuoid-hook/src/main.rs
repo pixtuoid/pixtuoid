@@ -133,11 +133,9 @@ fn env_payload_from(
     let get = |k: &str| get(k).map(|v| v.to_string_lossy().into_owned());
     let mut map = serde_json::Map::new();
     map.insert("event".into(), Value::from(event));
-    // cwd is the AgentId KEY (the decoder drops a cwd-less event), and
-    // DEEPSEEK_WORKSPACE is UNSET for a fresh `codewhale` launched without `-C`
-    // until the workspace resolves — so `session_start` would otherwise never
-    // register a sprite. The fallback resolves to the same path the workspace
-    // eventually does, so a session's events coalesce on one AgentId.
+    // The decoder drops a cwd-less event, and a hook runs in the workspace
+    // (`docs/HOOKS.md:95` at codewhale v0.10.2), so its own cwd stands in for an
+    // unset DEEPSEEK_WORKSPACE.
     if let Some(cwd) = get("DEEPSEEK_WORKSPACE")
         .filter(|v| !v.is_empty())
         .or_else(|| cwd_fallback.filter(|v| !v.is_empty()))
@@ -145,6 +143,7 @@ fn env_payload_from(
         map.insert("cwd".into(), Value::from(cap_env_field(cwd)));
     }
     for (env_key, field) in [
+        ("DEEPSEEK_SESSION_ID", "session_id"),
         ("DEEPSEEK_TOOL_NAME", "tool"),
         ("DEEPSEEK_TOOL_ARGS", "tool_args"),
         ("DEEPSEEK_TOOL_CALL_ID", "tool_call_id"),

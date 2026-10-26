@@ -6,7 +6,7 @@
   "command": "just hermetic --record codewhale",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 16
+    "blanked": 15
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codewhale/child-error.json",

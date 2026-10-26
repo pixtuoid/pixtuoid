@@ -777,10 +777,11 @@ command = "echo hi"
     fn every_registered_codewhale_event_decodes() {
         use pixtuoid_core::source::decoder::decode_hook_payload;
         for (ev, _env_mode) in CODEWHALE_EVENTS {
-            // Carry every identity field a decoder arm might need: `cwd` for the
+            // Every identity field a decoder arm reads: `session_id`/`cwd` for the
             // env-mode events, `agent_id`/`workspace` for the subagent events.
             let payload = serde_json::json!({
                 "event": ev,
+                "session_id": "sess_1",
                 "cwd": "/repo",
                 "agent_id": "agent-1",
                 "workspace": "/repo",

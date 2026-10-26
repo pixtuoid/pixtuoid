@@ -3,36 +3,55 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 17405793843075578558
+    agent_id: 10312337544826068059
     source: codewhale
-    session_id: /private/tmp/pixtuoid-capture/proj
+    session_id: sess_78e9cea2
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 17405793843075578558
+    agent_id: 10312337544826068059
     source: codewhale
-    session_id: /private/tmp/pixtuoid-capture/proj
+    session_id: sess_78e9cea2
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 17405793843075578558
+    agent_id: 10312337544826068059
     source: codewhale
-    session_id: /private/tmp/pixtuoid-capture/proj
+    session_id: sess_78e9cea2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 17405793843075578558
-    tool_use_id: 4294b651-af1f-4150-ba0d-a8ef3f7ee443
+    agent_id: 10312337544826068059
+    tool_use_id: a3bd5645-5cdc-4b03-a814-6c59640be1d6
+    detail:
+      Generic:
+        display: file_search
+- Identity:
+    agent_id: 10312337544826068059
+    source: codewhale
+    session_id: sess_78e9cea2
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 10312337544826068059
+    tool_use_id: 6d0b3aab-a059-4a09-95bc-a36cbb325901
     detail:
       Generic:
         display: "read: NOTE.txt"
 - Identity:
-    agent_id: 17405793843075578558
+    agent_id: 10312337544826068059
     source: codewhale
-    session_id: /private/tmp/pixtuoid-capture/proj
+    session_id: sess_78e9cea2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 17405793843075578558
-    tool_use_id: 4294b651-af1f-4150-ba0d-a8ef3f7ee443
+    agent_id: 10312337544826068059
+    tool_use_id: a3bd5645-5cdc-4b03-a814-6c59640be1d6
+- Identity:
+    agent_id: 10312337544826068059
+    source: codewhale
+    session_id: sess_78e9cea2
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 10312337544826068059
+    tool_use_id: 6d0b3aab-a059-4a09-95bc-a36cbb325901
 - SessionEnd:
-    agent_id: 17405793843075578558
+    agent_id: 10312337544826068059
     as_child: false

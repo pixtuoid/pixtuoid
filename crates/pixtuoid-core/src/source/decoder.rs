@@ -1435,7 +1435,8 @@ mod tests {
                 codewhale::SOURCE_NAME,
                 Box::new(|| {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
-                        "event":"tool_call_before","cwd":"/r","tool":name,"tool_args":cw_args})))
+                        "event":"tool_call_before","session_id":"s","cwd":"/r","tool":name,
+                        "tool_args":cw_args})))
                     .expect("codewhale decodes")
                 }),
             ),
@@ -1661,7 +1662,7 @@ mod tests {
                 ReasonKind::Fixed,
                 Box::new(|| {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
-                        "event":"waiting_for_user","cwd":"/r","message":raw})))
+                        "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw})))
                     .expect("codewhale decodes")
                 }),
             ),
