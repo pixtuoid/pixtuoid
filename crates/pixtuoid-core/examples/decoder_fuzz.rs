@@ -8,9 +8,6 @@
 //! A TOOL, not a committed corpus — point it at any JSONL tree, e.g.
 //! `just fuzz claude-code ~/.claude/projects`. `Driven` retains every decoded
 //! event, so memory scales with the piped corpus; split a huge tree.
-//!
-//! Decode `Err` is allowed (the watcher logs + skips malformed lines); only a
-//! PANIC is a contract violation.
 
 use std::io::BufRead;
 
@@ -51,11 +48,10 @@ fn main() {
     let driven = drive.lines(lines.flatten());
 
     eprintln!(
-        "decoder_fuzz[{source}]: {} lines, {} parsed, {} events, {} decode-err",
+        "decoder_fuzz[{source}]: {} lines, {} parsed, {} events",
         driven.lines,
         driven.lines - driven.unparseable,
-        driven.events.len(),
-        driven.decode_errors.len()
+        driven.events.len()
     );
     // An empty corpus tested nothing, yet would exit 0 as "never-panic verified".
     if driven.lines == 0 {

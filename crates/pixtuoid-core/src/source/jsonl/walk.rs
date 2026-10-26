@@ -378,10 +378,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
                 continue;
             }
         };
-        match decode_line(&transcript_path_str, source, v) {
-            Ok(events) => decoded.extend(events),
-            Err(e) => warn!(path = ?path, error = %e, "decode error"),
-        }
+        decoded.extend(decode_line(&transcript_path_str, source, v));
     }
 
     // A trailer flushed after the end line (grok's `hook_execution{stop}`)
@@ -422,8 +419,7 @@ fn tail_shows_activity(
         .skip(1)
         .filter_map(|line| std::str::from_utf8(line).ok())
         .filter_map(|line| serde_json::from_str(line).ok())
-        .filter_map(|v| decode_line(&transcript, source, v).ok())
-        .flatten()
+        .flat_map(|v| decode_line(&transcript, source, v))
         .any(|ev| ev.shows_activity())
 }
 
@@ -579,14 +575,7 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
         let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
             continue;
         };
-        let events = match (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
-            Ok(events) => events,
-            Err(e) => {
-                debug!(path = ?path, error = %e, "task-scan decode error");
-                continue;
-            }
-        };
-        for ev in events {
+        for ev in (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
             match &ev {
                 AgentEvent::ActivityStart {
                     tool_use_id: Some(tuid),

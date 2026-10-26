@@ -333,20 +333,16 @@ fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 /// line's `sessionId`: the path is the watcher's id space, and the two are
 /// equal by construction. The hook transport keys on the same string, so
 /// cross-transport dedup (hook `toolUseId` == ACP `toolCallId`) actually fires.
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec<AgentEvent>> {
+pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &grok_id_from_path(Path::new(path)));
     let Some(method) = v.get("method").and_then(|m| m.as_str()) else {
-        return Ok(vec![]);
+        return vec![];
     };
     let Some(update) = v.pointer("/params/update").and_then(|u| u.as_object()) else {
-        return Ok(vec![]);
+        return vec![];
     };
     let Some(tag) = update.get("sessionUpdate").and_then(|t| t.as_str()) else {
-        return Ok(vec![]);
+        return vec![];
     };
     let str_field = |key: &str| update.get(key).and_then(|s| s.as_str());
 
@@ -360,7 +356,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
             XAI_SUBAGENT_SPAWNED => {
                 let Some(child_key) = transcript_child_key(update) else {
                     crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
-                    return Ok(vec![]);
+                    return vec![];
                 };
                 let child = AgentId::from_parts(SOURCE_NAME, child_key);
                 let mut evs = vec![AgentEvent::SessionStart {
@@ -387,7 +383,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
             XAI_SUBAGENT_FINISHED => {
                 let Some(child_key) = transcript_child_key(update) else {
                     crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
-                    return Ok(vec![]);
+                    return vec![];
                 };
                 vec![AgentEvent::SessionEnd {
                     agent_id: AgentId::from_parts(SOURCE_NAME, child_key),
@@ -430,7 +426,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Result<Vec
             effort: None,
         });
     }
-    Ok(evs)
+    evs
 }
 
 /// grok transcript lines carry NO cwd anywhere in their content — it exists
@@ -906,7 +902,7 @@ mod tests {
         "/home/u/.grok/sessions/%2Fhome%2Fu%2Fproj/0197fa30-sess/updates.jsonl";
 
     fn decode_line(v: Value) -> Vec<AgentEvent> {
-        decode_grok_line(TRANSCRIPT, SOURCE_NAME, v).expect("decodes")
+        decode_grok_line(TRANSCRIPT, SOURCE_NAME, v)
     }
 
     fn acp_line(update: Value) -> Value {
@@ -1221,11 +1217,7 @@ mod tests {
             json!({"method": "session/update", "params": {"update": {"noTag": true}}}),
             json!({"method": "bogus/method", "params": {"update": {"sessionUpdate": "tool_call"}}}),
         ] {
-            assert!(
-                decode_grok_line(TRANSCRIPT, SOURCE_NAME, v)
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(decode_grok_line(TRANSCRIPT, SOURCE_NAME, v).is_empty());
         }
     }
 

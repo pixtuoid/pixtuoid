@@ -103,8 +103,8 @@ pub struct Driven {
     /// Lines that were not valid JSON — a torn write, outside the decoder
     /// contract (the watcher skips them too).
     pub unparseable: usize,
-    /// Lines whose decoder returned `Err`. ALWAYS a defect on bytes the source
-    /// itself wrote: the contract is log-and-continue, never a hard error.
+    /// Hook lines the dispatcher returned `Err` for. ALWAYS a defect on bytes the
+    /// source itself wrote: the contract is log-and-continue, never a hard error.
     pub decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
@@ -365,7 +365,7 @@ impl Drive {
                 decode,
                 source,
                 logical,
-            } => decode(logical, source, v),
+            } => Ok(decode(logical, source, v)),
             Decode::Hooks => decode_hook_payload(v),
         }
     }
@@ -579,43 +579,20 @@ mod tests {
         assert!(Drive::transcript("not-a-source", "/x.jsonl").is_none());
     }
 
-    /// A `Drive` over a STAND-IN decoder: no real decoder rejects any corpus
-    /// bytes, so the error lane below has no real fixture.
-    fn drive_with(decode: LineDecoder) -> Drive {
-        Drive {
-            transport: Transport::Jsonl,
-            decode: Decode::Transcript {
-                decode,
-                source: SOURCE.to_string(),
-                logical: TRANSCRIPT.to_string(),
-            },
-            seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
-        }
-    }
-
-    /// A line carrying prose under a key — what the failure report must NOT
-    /// echo back to a terminal.
-    const PROSE_LINE: &str = r#"{"type":"assistant","secret":"do not print me"}"#;
+    /// A hook envelope the dispatcher rejects (no `hook_event_name`), carrying
+    /// prose under a key — what the failure report must NOT echo back to a terminal.
+    const PROSE_LINE: &str =
+        r#"{"_pixtuoid_source":"claude-code","type":"assistant","secret":"do not print me"}"#;
 
     #[test]
     fn a_decoder_error_is_recorded_with_the_lines_shape_not_its_content() {
-        fn refuse(
-            _p: &str,
-            _s: &str,
-            _v: Value,
-        ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-            Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "event",
-            ))
-        }
-        let d = drive_with(refuse).lines([PROSE_LINE]);
+        let d = Drive::hooks().lines([PROSE_LINE]);
 
         assert_eq!(d.decode_errors.len(), 1);
         assert_eq!(d.decode_errors[0].line, 1);
         assert_eq!(
             d.decode_errors[0].message,
-            "unsupported fixture event: event"
+            "claude-code payload has no hook_event_name"
         );
         let shape = &d.decode_errors[0].shape;
         assert!(
@@ -658,21 +635,12 @@ mod tests {
 
     #[test]
     fn line_failure_display_carries_position_and_shape_not_content() {
-        fn refuse(
-            _p: &str,
-            _s: &str,
-            _v: Value,
-        ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-            Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "event",
-            ))
-        }
-        let d = drive_with(refuse).lines([PROSE_LINE]);
+        let d = Drive::hooks().lines([PROSE_LINE]);
         let rendered = d.decode_errors[0].to_string();
         assert!(rendered.starts_with("line 1: "), "got {rendered}");
         assert!(rendered.contains("type=\"assistant\""), "got {rendered}");
         assert!(
-            rendered.ends_with(": unsupported fixture event: event"),
+            rendered.ends_with(": claude-code payload has no hook_event_name"),
             "got {rendered}"
         );
         assert!(

@@ -346,26 +346,18 @@ fn cc_head_scan_ignores_codex_shaped_payload_cwd() {
     );
 }
 
-fn t_decode(
-    _t: &str,
-    _s: &str,
-    _v: serde_json::Value,
-) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-    Ok(vec![])
+fn t_decode(_t: &str, _s: &str, _v: serde_json::Value) -> Vec<AgentEvent> {
+    vec![]
 }
-fn t_decode_lifecycle(
-    t: &str,
-    s: &str,
-    v: serde_json::Value,
-) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
+fn t_decode_lifecycle(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent> {
     if v.get("subtype").and_then(|x| x.as_str()) == Some("session_end") {
-        return Ok(vec![AgentEvent::SessionEnd {
+        return vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(s, t),
             as_child: false,
-        }]);
+        }];
     }
     let agent_id = AgentId::from_parts(s, t);
-    Ok(match v.get("type").and_then(|x| x.as_str()) {
+    match v.get("type").and_then(|x| x.as_str()) {
         Some("tool_use") => vec![AgentEvent::ActivityStart {
             agent_id,
             tool_use_id: None,
@@ -376,7 +368,7 @@ fn t_decode_lifecycle(
             fresh_tokens: 1,
         }],
         _ => vec![],
-    })
+    }
 }
 fn t_label(_p: &Path, _s: &str, _c: &Path) -> String {
     "t".to_string()
@@ -3307,53 +3299,6 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     );
 }
 
-#[tokio::test]
-async fn walk_jsonl_skips_a_line_whose_decoder_errors_and_advances_cursor() {
-    fn err_decode(
-        _t: &str,
-        _s: &str,
-        v: serde_json::Value,
-    ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        if v.get("boom").is_some() {
-            return Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "boom",
-            ));
-        }
-        Ok(vec![])
-    }
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("badline.jsonl");
-    let body = "{\"boom\":1}\n{\"type\":\"assistant\",\"cwd\":\"/r\"}\n";
-    tokio::fs::write(&path, body).await.unwrap();
-    let file_len = body.len() as u64;
-    let cursors = Arc::new(Mutex::new(HashMap::new()));
-    let seen = Arc::new(Mutex::new(HashMap::new()));
-
-    let events = walk_once_with(
-        &path,
-        Duration::from_secs(3600),
-        err_decode,
-        t_ended,
-        &cursors,
-        &seen,
-    )
-    .await;
-    let expected = AgentId::from_parts("test", &default_id_from_path(&path));
-    assert!(
-        events.iter().any(|(_, e)| matches!(
-            e,
-            AgentEvent::SessionStart { agent_id, .. } if *agent_id == expected
-        )),
-        "the erroring line is non-fatal; first-sight registration must still run, got {events:?}"
-    );
-    assert_eq!(
-        cursors.lock().await.get(&path).copied(),
-        Some(file_len),
-        "the cursor must advance to EOF despite the decode error"
-    );
-}
-
 fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
     let mut full = Vec::from(HEAD_LINE_BYTES);
     while full.len() <= (1usize << 20) + 4096 {
@@ -3386,44 +3331,6 @@ async fn task_scan_skips_empty_and_non_utf8_lines_and_still_seeds_a_dispatch() {
         task_start_tuids(&events),
         vec!["tu_x".to_string()],
         "the garbage lines must be skipped and the valid dispatch still seed, got {events:?}"
-    );
-}
-
-#[tokio::test]
-async fn task_scan_skips_a_decoder_error_line_and_still_seeds_a_later_dispatch() {
-    fn deco(
-        t: &str,
-        s: &str,
-        v: serde_json::Value,
-    ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        if v.get("boom").is_some() {
-            return Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "x",
-            ));
-        }
-        crate::source::omp::decode_omp_line(t, s, v)
-    }
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("deleg-decode-err.jsonl");
-    let full = oversized_body(&["{\"boom\":1}\n".to_string(), task_dispatch_line("tu_y")]);
-    tokio::fs::write(&path, &full).await.unwrap();
-    let cursors = Arc::new(Mutex::new(HashMap::new()));
-    let seen = Arc::new(Mutex::new(HashMap::new()));
-
-    let events = walk_once_with(
-        &path,
-        Duration::from_secs(3600),
-        deco,
-        t_ended,
-        &cursors,
-        &seen,
-    )
-    .await;
-    assert_eq!(
-        task_start_tuids(&events),
-        vec!["tu_y".to_string()],
-        "the decoder-error line must be skipped and the valid dispatch still seed, got {events:?}"
     );
 }
 

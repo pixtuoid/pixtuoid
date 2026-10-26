@@ -7,8 +7,8 @@
 //!
 //! It REPORTS rather than asserts. Corpus content is unbounded and partly
 //! historical, so a failing file is not automatically a bug — the value is the
-//! census: decode errors (which ARE bugs, always; a panic aborts the run), how many
-//! transcripts register, how many render, and the provenance spread.
+//! census: how many transcripts register, how many render, and the provenance
+//! spread. A decoder panic aborts the run.
 //!
 //! Usage: `corpus_check <source> [root] [--json]`, plus `--roster` — the
 //! transcript-bearing ids `just corpus-all` reads instead of keeping a second
@@ -37,9 +37,6 @@ struct Verdict {
     lines: usize,
     /// Lines that were not valid JSON at all — a torn write, not our problem.
     unparseable: usize,
-    /// The decoder returned Err. ALWAYS a defect: the contract is
-    /// log-and-continue, never a hard error on a line the source wrote.
-    decode_errors: usize,
     /// Events the WIRE produced — the first-sight seed is NOT counted.
     events: usize,
     /// Slots on the floor, reported only when the wire produced events — the
@@ -99,7 +96,6 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
 
     v.lines = driven.lines;
     v.unparseable = driven.unparseable;
-    v.decode_errors = driven.decode_errors.len();
     v.events = driven.wire_events();
     if v.events == 0 {
         return v;
@@ -203,13 +199,11 @@ fn main() {
     let mut drove_files = 0usize;
     let mut drawn_files = 0usize;
     let mut gap_buckets: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut error_files: Vec<(PathBuf, usize)> = Vec::new();
 
     for f in &files {
         let v = check_file(source, f, &pack);
         totals.lines += v.lines;
         totals.unparseable += v.unparseable;
-        totals.decode_errors += v.decode_errors;
         totals.events += v.events;
         if v.registered > 0 {
             registered_files += 1;
@@ -219,9 +213,6 @@ fn main() {
         }
         if v.drawn > 0 {
             drawn_files += 1;
-        }
-        if v.decode_errors > 0 {
-            error_files.push((f.clone(), v.decode_errors));
         }
         let bucket = match v.provenance_gap_secs() {
             None => "no-stamp",
@@ -235,11 +226,10 @@ fn main() {
 
     if json {
         println!(
-            r#"{{"source":"{source}","files":{},"lines":{},"unparseable":{},"decode_errors":{},"events":{},"registered_files":{registered_files},"drove_files":{drove_files},"drawn_files":{drawn_files}}}"#,
+            r#"{{"source":"{source}","files":{},"lines":{},"unparseable":{},"events":{},"registered_files":{registered_files},"drove_files":{drove_files},"drawn_files":{drawn_files}}}"#,
             files.len(),
             totals.lines,
             totals.unparseable,
-            totals.decode_errors,
             totals.events
         );
     } else {
@@ -250,7 +240,6 @@ fn main() {
             "  unparseable       {} (torn writes; not ours)",
             totals.unparseable
         );
-        println!("  DECODE ERRORS     {}  <- must be 0", totals.decode_errors);
         println!(
             "  events decoded    {} (the wire's own; first-sight seeds excluded)",
             totals.events
@@ -269,16 +258,5 @@ fn main() {
         for (k, n) in &gap_buckets {
             println!("      {k:<9} {n}");
         }
-        // Paths + line SHAPES only — a transcript line carries real prose/code.
-        for (p, n) in error_files.iter().take(10) {
-            println!("  decode error x{n}: {}", p.display());
-        }
-    }
-
-    // A decoder that PANICS on bytes its own source wrote aborts the census;
-    // the only other hard failure is one that returns Err there (the contract
-    // is log-and-continue).
-    if totals.decode_errors > 0 {
-        std::process::exit(1);
     }
 }

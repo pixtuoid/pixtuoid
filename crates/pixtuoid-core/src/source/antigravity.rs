@@ -57,14 +57,10 @@ fn step_tool_id(step: i64) -> String {
 }
 
 /// Decode one Antigravity CLI transcript line into `AgentEvent`s (the step_index / tool_calls JSONL schema).
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<Vec<AgentEvent>> {
+pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &ag_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
+        return vec![];
     };
 
     // A present-but-non-integer OR negative `step_index` must skip the line: a
@@ -75,7 +71,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
         .and_then(|v| v.as_i64())
         .filter(|&s| s >= 0)
     else {
-        return Ok(vec![]);
+        return vec![];
     };
     let step_type = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
@@ -126,7 +122,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Result<V
         }
     }
 
-    Ok(out)
+    out
 }
 
 /// Decode one tool call, from either transport: a permission/question prompt
@@ -292,7 +288,7 @@ mod tests {
             "step_index": -1,
             "tool_calls": [ { "name": "read_file", "args": {} } ],
         });
-        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v).unwrap();
+        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
         assert!(
             out.is_empty(),
             "negative step_index must emit nothing: {out:?}"
@@ -303,7 +299,7 @@ mod tests {
             "step_index": 0,
             "tool_calls": [ { "name": "read_file", "args": {} } ],
         });
-        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v).unwrap();
+        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
         assert_eq!(out.len(), 1, "step_index 0 still emits: {out:?}");
     }
 
@@ -315,14 +311,14 @@ mod tests {
             ("EXECUTION_RESULT", 0),
         ] {
             let v = serde_json::json!({ "type": ty, "step_index": idx });
-            let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v).unwrap();
+            let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
             assert!(
                 out.is_empty(),
                 "{ty} at step {idx} must not end anything: {out:?}"
             );
         }
         let v = serde_json::json!({ "type": "EXECUTION_RESULT", "step_index": 2 });
-        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v).unwrap();
+        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
         assert_eq!(out.len(), 1);
         match &out[0] {
             AgentEvent::ActivityEnd { tool_use_id, .. } => {
@@ -343,7 +339,6 @@ mod tests {
             ],
         });
         let ids: Vec<_> = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v)
-            .unwrap()
             .into_iter()
             .map(|e| match e {
                 AgentEvent::ActivityStart { tool_use_id, .. } => tool_use_id,
@@ -361,7 +356,7 @@ mod tests {
             "tool_calls": [ { "name": "read_file", "args": {} } ],
         });
         let logs = crate::test_capture::capture_logs(|| {
-            let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, renamed).unwrap();
+            let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, renamed);
             assert_eq!(out.len(), 1, "renamed step must mint no start: {out:?}");
             match &out[0] {
                 AgentEvent::ActivityEnd { tool_use_id, .. } => {
@@ -377,7 +372,7 @@ mod tests {
 
         let result_step = serde_json::json!({ "type": "TOOL_RESULT", "step_index": 2 });
         let quiet = crate::test_capture::capture_logs(|| {
-            decode_ag_line("/x/t.jsonl", SOURCE_NAME, result_step).unwrap();
+            decode_ag_line("/x/t.jsonl", SOURCE_NAME, result_step);
         });
         assert!(
             !quiet.contains("unknown_event"),
@@ -397,7 +392,7 @@ mod tests {
                 { "name": "view_file", "args": {} },
             ],
         });
-        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v).unwrap();
+        let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
         let displays: Vec<&str> = out
             .iter()
             .map(|e| match e {
