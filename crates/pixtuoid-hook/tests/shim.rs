@@ -314,7 +314,7 @@ fn stalled_listener_shim_exits_zero_within_watchdog_bound() {
 }
 
 #[test]
-fn non_utf8_argv_exits_zero() {
+fn non_utf8_argv_still_delivers_the_event() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
     // Non-UTF-8 bytes are legal in Unix argv, and `std::env::args()` PANICS
@@ -334,7 +334,7 @@ fn non_utf8_argv_exits_zero() {
     );
     assert!(
         out.status.success(),
-        "non-UTF-8 argv must not panic the shim; got {:?}",
+        "the shim exits 0; got {:?}",
         out.status
     );
     assert!(out.stderr.is_empty());
