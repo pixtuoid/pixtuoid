@@ -723,7 +723,7 @@ const DSH: SourceDescriptor = SourceDescriptor {
 const CODEWHALE: SourceDescriptor = SourceDescriptor {
     name: codewhale::SOURCE_NAME,
     label_prefix: "cw",
-    verified_version: "0.10.1",
+    verified_version: "0.10.2",
     version_probe: Some(&["codewhale", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,

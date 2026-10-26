@@ -7,6 +7,7 @@ use serde_json::Value;
 
 pub(super) mod antigravity;
 pub(super) mod claude_code;
+pub(super) mod codewhale;
 pub(super) mod codex;
 pub(super) mod copilot;
 pub(super) mod dsh;

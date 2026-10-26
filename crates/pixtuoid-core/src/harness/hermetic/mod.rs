@@ -466,9 +466,6 @@ pub struct Manifest {
 pub enum Absence {
     /// Its model endpoint cannot be redirected, so no scripted turn can run.
     NoModelEndpoint,
-    /// Its headless run fires no session lifecycle, so no headless shape can
-    /// pass.
-    NoHeadlessLifecycle,
 }
 
 /// The profiled CLIs.
@@ -485,15 +482,13 @@ pub const PROFILES: &[Profile] = &[
     profiles::hermes::PROFILE,
     profiles::antigravity::PROFILE,
     profiles::openclaw::PROFILE,
+    profiles::codewhale::PROFILE,
 ];
 
 /// Every registered source without a profile, and why.
 pub const NOT_HERMETIC: &[(&str, Absence)] = &[
     // Owner, 2026-10-13: no custom model endpoint, so no upstream detection.
     ("cursor", Absence::NoModelEndpoint),
-    // Owner, 2026-10-18: `exec --hooks` fires only `tool_call_before` and
-    // `shell_env` (codewhale-hq/Codewhale `docs/HOOKS.md:33-42` at v0.10.1).
-    ("codewhale", Absence::NoHeadlessLifecycle),
 ];
 
 /// The profile for `source`, if it has one.
@@ -504,7 +499,14 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
 /// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
 /// selects the `n`th: whole sources, split for about equal run time.
 pub const SHARDS: &[&[&str]] = &[
-    &["openclaw", "codex", "omp", "dsh", "antigravity"],
+    &[
+        "openclaw",
+        "codex",
+        "omp",
+        "dsh",
+        "antigravity",
+        "codewhale",
+    ],
     &[
         "grok",
         "copilot",
@@ -529,6 +531,24 @@ impl Profile {
         matches!(self.package, Package::UpdaterManifest { .. })
             .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
     }
+
+    /// The scenario its install lifecycle turns under its last uninstall on a
+    /// leg on `windows`.
+    pub fn lifecycle_turn(&self, windows: bool) -> Option<&'static Scenario> {
+        lifecycle_turn_of(self.scenarios, windows)
+    }
+}
+
+/// The first of `scenarios` a leg on `windows` runs and no dialog stops, since
+/// a TUI's gate waits on a hook.
+fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario> {
+    scenarios.iter().find(|s| {
+        s.not_run_on(windows).is_none()
+            && match s.surface {
+                Surface::Headless => true,
+                Surface::Tui { answer, .. } => answer == tui::Answer::Nothing,
+            }
+    })
 }
 
 impl Scenario {
@@ -668,23 +688,52 @@ mod tests {
     /// What the runner's source selection, the lifecycle's turn and the bump
     /// plan take for granted.
     #[test]
-    fn no_leg_skips_a_whole_source() {
+    fn no_leg_skips_a_whole_source_or_its_lifecycle() {
         for p in PROFILES {
-            assert!(
-                p.scenarios
-                    .iter()
-                    .any(|s| matches!(s.surface, Surface::Headless)),
-                "{}: no Headless scenario, which every leg runs and the lifecycle turns",
-                p.source
-            );
             for windows in [false, true] {
                 assert!(
-                    p.scenarios.iter().any(|s| s.not_run_on(windows).is_none()),
-                    "{}: a leg (windows: {windows}) runs none of its scenarios",
+                    p.lifecycle_turn(windows).is_some(),
+                    "{}: a leg (windows: {windows}) runs no scenario its lifecycle can turn",
                     p.source
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_lifecycle_turns_a_scenario_its_leg_runs_and_no_dialog_stops() {
+        let tui = |source: &str, name: &str, answer| match profile(source)
+            .and_then(|p| p.scenario(name))
+            .expect("profiled")
+            .surface
+        {
+            Surface::Tui { row, .. } => Surface::Tui { row, answer },
+            Surface::Headless => panic!("{source}/{name} drives no TUI"),
+        };
+        let scenario = |name, surface| Scenario {
+            name,
+            shape: Shape::ToolRun,
+            surface,
+            expects: &[],
+            fixture: name,
+            turn: Turn::PROFILE,
+        };
+        let scenarios = [
+            scenario("gated", tui("claude-code", "permission", tui::Answer::Deny)),
+            scenario("unpainted", tui("grok", "permission", tui::Answer::Nothing)),
+            scenario("ungated", tui("omp", "new-session", tui::Answer::Nothing)),
+            scenario("headless", Surface::Headless),
+        ];
+        let picked = |s: &[Scenario], windows| lifecycle_turn_of(s, windows).map(|s| s.name);
+        assert_eq!(picked(&scenarios[..1], false), None);
+        assert_eq!(picked(&scenarios[..2], false), Some("unpainted"));
+        assert_eq!(
+            picked(&scenarios[..2], true),
+            None,
+            "ConPTY paints it nothing"
+        );
+        assert_eq!(picked(&scenarios[..3], true), Some("ungated"));
+        assert_eq!(picked(&scenarios[3..], true), Some("headless"));
     }
 
     #[test]
@@ -1101,10 +1150,17 @@ mod tests {
                     "{}: the child's request never errs",
                     p.source
                 );
+                // codewhale hands its parent a child's failure in a user-role
+                // message (`crates/tui/src/runtime_handoff.rs:3-4`, `:556-567` at v0.10.2).
+                let waits = |f: &Value| {
+                    ["toolResultContains", "userMessage"].iter().any(|k| {
+                        f["match"][k]
+                            .as_str()
+                            .is_some_and(|t| errors.iter().any(|e| e.contains(t)))
+                    })
+                };
                 assert!(
-                    replies.iter().any(|f| f["match"]["toolResultContains"]
-                        .as_str()
-                        .is_some_and(|t| errors.iter().any(|e| e.contains(t)))),
+                    replies.iter().any(waits),
                     "{}: no reply waits for the child's error",
                     p.source
                 );

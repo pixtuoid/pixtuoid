@@ -1,0 +1,9 @@
+{"event":"session_start","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977465103,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"message_submit","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977465426,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"tool_call_before","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"agent","tool_args":"","_shim_ts_ms":1792977468564,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"subagent_spawn","agent_id":"agent_7ca434ad","session_id":"","workspace":"/private/tmp/pixtuoid-capture/proj","mode":"","model":"","total_tokens":0,"prompt_preview":"","prompt_truncated":false,"_shim_ts_ms":1792977468679,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"tool_call_after","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"","tool_args":"","_shim_ts_ms":1792977468691,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"subagent_complete","agent_id":"agent_7ca434ad","session_id":"","workspace":"","mode":"","model":"","total_tokens":0,"result_preview":"","result_truncated":false,"status":"","_shim_ts_ms":1792977468917,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"tool_call_before","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"agent","tool_args":"","_shim_ts_ms":1792977470200,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"tool_call_after","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"","tool_args":"","_shim_ts_ms":1792977470269,"_pixtuoid_source":"codewhale","_pid":12348}
+{"event":"session_end","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977475838,"_pixtuoid_source":"codewhale","_pid":12348}

@@ -15,7 +15,8 @@ const CHILD: &str = "agent_d50b1b7e";
 
 fn hook_events() -> Vec<AgentEvent> {
     super::captures::fixture_lines(
-        &super::captures::sources_root().join("codewhale/fixtures/hook-payloads.jsonl"),
+        &super::captures::sources_root()
+            .join("codewhale/fixtures/subagent-recorded/hook-payloads.jsonl"),
     )
     .iter()
     .flat_map(|l| {

@@ -868,6 +868,7 @@ mod tests {
             "ULTRA_EXIT_LABEL",
             "a label we write, not one CC sends",
         ),
+        item("codewhale.rs", "KEYS", LABEL_DETAIL),
         item("copilot.rs", "KEYS", LABEL_DETAIL),
         literal(
             "decoder.rs",

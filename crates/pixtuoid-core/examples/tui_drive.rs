@@ -31,8 +31,9 @@ const QUIT_GRACE: Duration = Duration::from_secs(10);
 /// How often the screen is re-judged when no output arrives.
 const TICK: Duration = Duration::from_millis(100);
 /// The pause between two writes, so a TUI reads keys one at a time, never as
-/// a paste.
-const KEY_GAP: Duration = Duration::from_millis(80);
+/// a paste: past codewhale's `PASTE_ENTER_SUPPRESS_WINDOW`, in which an Enter
+/// after typed text is a newline (`crates/tui/src/tui/paste_burst.rs:7` at v0.10.2).
+const KEY_GAP: Duration = Duration::from_millis(200);
 /// A size every CLI lays out in: a 0x0 pty renders nothing at all.
 const SIZE: PtySize = PtySize {
     rows: 40,

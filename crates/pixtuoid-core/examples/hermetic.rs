@@ -362,7 +362,7 @@ mod run {
         };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
-        let lifecycle = lifecycle_turn(args, p);
+        let lifecycle = lifecycle_turn(args, p, windows);
         if selected.is_empty() && lifecycle.is_none() {
             return Ok((entries, None));
         }
@@ -568,11 +568,11 @@ mod run {
     /// The scenario `p`'s install lifecycle goes on from and turns under its
     /// last uninstall, when `args` selects the lifecycle. `--record` writes
     /// scenarios alone.
-    fn lifecycle_turn<'a>(args: &Args, p: &'a Profile) -> Option<&'a Scenario> {
+    fn lifecycle_turn(args: &Args, p: &Profile, windows: bool) -> Option<&'static Scenario> {
         if args.record || !args.selects(p.source, LIFECYCLE) {
             return None;
         }
-        headless_first(p.scenarios.iter())
+        p.lifecycle_turn(windows)
     }
 
     /// The sandbox a lifecycle goes on in, when its scenario's `verdict` was
@@ -580,12 +580,6 @@ mod run {
     /// uninstall.
     fn lifecycle_goes_on<T>(verdict: &Verdict, run: T) -> Option<T> {
         verdict.judged().then_some(run)
-    }
-
-    /// The first of `scenarios`, a headless one first, since a TUI's gate waits
-    /// on a hook.
-    fn headless_first<'a>(scenarios: impl Iterator<Item = &'a Scenario>) -> Option<&'a Scenario> {
-        scenarios.min_by_key(|s| !matches!(s.surface, Surface::Headless))
     }
 
     /// Every run of the sources `args` selects that a leg on `windows` never
@@ -3283,34 +3277,17 @@ mod run {
         }
 
         #[test]
-        fn the_lifecycle_turns_a_headless_scenario_and_never_records() {
-            let tui = PROFILES
-                .iter()
-                .flat_map(|p| p.scenarios)
-                .find(|s| matches!(s.surface, Surface::Tui { .. }))
-                .expect("a TUI scenario");
-            let scenario = |surface, fixture| Scenario {
-                name: tui.name,
-                shape: tui.shape,
-                surface,
-                expects: &[],
-                fixture,
-                turn: hermetic::Turn::PROFILE,
-            };
-            let tui_first = [
-                scenario(tui.surface, "tui"),
-                scenario(Surface::Headless, "headless"),
-            ];
-            let picked = |s: &[Scenario]| headless_first(s.iter()).map(|s| s.fixture);
-            assert_eq!(picked(&tui_first), Some("headless"));
-            assert_eq!(picked(&tui_first[..1]), Some("tui"));
+        fn the_lifecycle_runs_where_selected_and_never_records() {
             let codex = hermetic::profile("codex").expect("profiled");
             let record = parse(&args(&["--record", "codex"])).expect("parse");
-            assert!(lifecycle_turn(&record, codex).is_none());
+            assert!(lifecycle_turn(&record, codex, false).is_none());
             let all = parse(&args(&[])).expect("parse");
-            assert!(lifecycle_turn(&all, codex).is_some());
+            assert!(lifecycle_turn(&all, codex, false).is_some());
             let other = parse(&args(&["codex", "tool-run"])).expect("parse");
-            assert!(lifecycle_turn(&other, codex).is_none(), "not selected");
+            assert!(
+                lifecycle_turn(&other, codex, false).is_none(),
+                "not selected"
+            );
         }
 
         #[test]

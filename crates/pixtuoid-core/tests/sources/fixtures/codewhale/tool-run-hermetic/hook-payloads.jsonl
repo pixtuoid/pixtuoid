@@ -1,0 +1,5 @@
+{"event":"session_start","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977449208,"_pixtuoid_source":"codewhale","_pid":11505}
+{"event":"message_submit","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977449504,"_pixtuoid_source":"codewhale","_pid":11505}
+{"event":"tool_call_before","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"read","tool_args":"{\"path\":\"NOTE.txt\"}","_shim_ts_ms":1792977451361,"_pixtuoid_source":"codewhale","_pid":11505}
+{"event":"tool_call_after","cwd":"/private/tmp/pixtuoid-capture/proj","tool":"","tool_args":"","_shim_ts_ms":1792977451431,"_pixtuoid_source":"codewhale","_pid":11505}
+{"event":"session_end","cwd":"/private/tmp/pixtuoid-capture/proj","_shim_ts_ms":1792977456995,"_pixtuoid_source":"codewhale","_pid":11505}

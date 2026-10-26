@@ -1,0 +1,40 @@
+▎ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                    
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+✓ ▷ read done · Reading NOTE.txt                                                                                        
+                                                                                                                        
+                                                                                                                        
+● pong                                                                                                                  
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                            ⣀⣀⣀⡀                                                        
+                                                          ⣠⢏⠵⠒⢿⡳⠆                                                       
+                                                          ⡇⣏ ⣀⡤⠴⢒⣒⣲                                                     
+                                                          ⢣⡈⠉⢁⠰⡶⢋⣴⠇                                                     
+                                                           ⠉⠛⠿⠾⠗⠛⠁                                                      
+                                                       other · drift                                                    
+                                                                                                     ⣰⣒⣆                
+                                                                                                     ⢠⢃⠇                
+                                                                                                     ⠁⠈                 
+                                                                 °                                                      
+˚                                                                            ˚                                          
+                                              ˚             ⡢⢔⡢⠄    ⠈⠖⠭⠒ ⠜⠪⠕⠂                                           
+                                           ·             ·     ⠠⠓⠭⠒          ⢔⢔⡢⠄                                       
+                                                                  ⢔⢔⡢⠄ ⢐⠤⣒⠤                                             
+                                                                                                                        
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯ Type a message…                                                                                                     │
+│                                                                                                                  [·] │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ● ask  Shift+Tab to change   work (Tab)   Work bar (Ctrl+])                                                            
+ aimock · hermetic   context 5%   cost: unknown (billing basis unknown)   ttft 611ms   3.3 avg tok/s

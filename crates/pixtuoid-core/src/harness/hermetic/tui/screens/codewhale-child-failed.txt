@@ -1,0 +1,39 @@
+▎ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                    
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+◐ explore                                                                                                               
+╰ failed · 58ms · Invalid request (400): hermetic model error                                                           
+                                                                                                                        
+                                                                                                                        
+✓ ◐ agent waited · subagent                                                                                             
+                                                                                                                        
+                                                                                                                        
+● the child failed                                                                                                      
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                            ⣀⣀⣀⡀                                                        
+                                                          ⣠⢏⠵⠒⢿⡳⠆                                                       
+                                                          ⡇⣏ ⣀⡤⠴⢒⣒⣲                                                     
+                                                          ⢣⡈⠉⢁⠰⡶⢋⣴⠇                                                     
+                                                           ⠉⠛⠿⠾⠗⠛⠁                                  ⢴⠭⡭⠦                
+                                                       other · drift                                ⠘⡄⠘⡄                
+                                                                                                                        
+                                           °                                                                            
+                                                                                                                        
+˚                                                                   ⠐⠕⠭⠒    ⡰⢔⡢⠄  ⢢⢔⡢⠄                                  
+                                               ·                 ·     ⢢⢔⡢⠄  ·       ⠨⠒⠭⠒                               
+                                                          ·                ⠕⠪⠕⠂⠐⠕⠭⠒                                     
+                                                                                                                        
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯ Type a message…                                                                                                     │
+│                                                                                                                  [·] │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ● ask  Shift+Tab to change   work (Tab)   ← for agents · ↓ to manage                                                   
+ aimock · hermetic   context 6%   cost: unknown (billing basis unknown)   ttft 609ms   7.9 avg tok/s                    
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Fleet 1    Terminal    Context    Git    Cost                                                                       × 
+ ▾ Subagents 1                                                                                                          
+ ◆ Amazon River  failed  Invalid request (400): hermetic model error                                                 2s
