@@ -4,10 +4,11 @@ licenses beside it: crates/pixtuoid-scene/fonts/fusion-pixel-8px.bin, every text
 cutaway and the floating window draw, from Fusion Pixel 8px; and the site's
 copy of its Latin, site/src/assets/fonts/, the live office's captions' face.
 
-Usage: python3 scripts/gen-fonts.py   (just gen-fonts)
+Usage: .venv/bin/python3 scripts/gen-fonts.py   (just gen-fonts)
 
 Fusion Pixel 8px is the one open pixel font whose CJK fits a terminal cell's
-art (an 8x8 box); it has no Cyrillic or Greek, which draw as tofu. A glyph is
+art (an 8x8 box); it has no Cyrillic or Greek, which draw as tofu bar the
+`Σ` `text.rs` draws by hand. A glyph is
 baseline-aligned into the face's line box, which `text.rs` and `grid.rs`
 paint, and one whose ink leaves the box or the cells `unicode-width` gives it
 is dropped, not cropped.
@@ -148,15 +149,14 @@ def rows_of(ink, n_cells):
     return rows
 
 
-def write(path, rows_per_glyph, picked, row_bytes):
+def write(path, picked):
     order = sorted(picked)
-    out = bytearray([rows_per_glyph])
+    out = bytearray([LINE_H])
     out += len(order).to_bytes(2, "little")
     for cp in order:
         out += cp.to_bytes(2, "little")
     for cp in order:
-        for row in picked[cp]:
-            out += row.to_bytes(row_bytes, "little")
+        out += bytes(picked[cp])
     path.write_bytes(out)
     print(f"{path.relative_to(ROOT)}: {len(order)} glyphs, {len(out)} bytes")
 
@@ -190,9 +190,12 @@ def main():
                         picked[cp] = rows
                         break
 
-    write(OUT, LINE_H, picked, 1)
+    write(OUT, picked)
 
-    face = TTFont(io.BytesIO(unzip(SITE_URL, SITE_SHA256, SITE_FONTS).read(SITE_MEMBER)))
+    # The release's own timestamp, so a rerun writes the same bytes.
+    face = TTFont(
+        io.BytesIO(unzip(SITE_URL, SITE_SHA256, SITE_FONTS).read(SITE_MEMBER)), recalcTimestamp=False
+    )
     # Every name kept: the copyright and license notice the OFL requires.
     latin = subset.Subsetter(subset.Options(flavor="woff2", name_IDs=["*"], name_languages=["*"]))
     latin.populate(unicodes=[cp for lo, hi in SITE_RANGES for cp in range(lo, hi + 1)])

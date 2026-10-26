@@ -53,8 +53,9 @@ pub(crate) fn glyph(c: char) -> Option<Rows> {
     ruled(c).or_else(|| fusion(c)).or_else(|| by_hand(c))
 }
 
-/// `c`'s glyph where Fusion Pixel 8px draws it only full-width or not at
-/// all: a glyph it reads as where three pixels draw no other, else drawn here.
+/// `c`'s glyph where Fusion Pixel 8px has none that fits its cell: the narrow
+/// glyph it reads as where three columns can't tell them apart (`“`→`"`,
+/// `—`→`-`), else one drawn here.
 fn by_hand(c: char) -> Option<Rows> {
     match c {
         '\u{201c}' | '\u{201d}' | '\u{2033}' => return fusion('"'),
@@ -407,6 +408,27 @@ mod tests {
             columns(2),
             "a rule ends at its cell's edge"
         );
+    }
+
+    /// A glyph drawn by hand stands on Fusion Pixel's own rows: a capital
+    /// spans its `E`'s, a lowercase letter its `o`'s.
+    #[cfg(feature = "cutaway-assets")]
+    #[test]
+    fn hand_drawn_glyphs_stand_on_the_fonts_rows() {
+        let rows = |c: char| {
+            let inked: Vec<usize> = (0..)
+                .zip(glyph(c).expect("drawn"))
+                .filter(|&(_, ink)| ink != 0)
+                .map(|(row, _)| row)
+                .collect();
+            (inked.first().copied(), inked.last().copied())
+        };
+        for c in ['\u{3a3}', '\u{d8}'] {
+            assert_eq!(rows(c), rows('E'), "{c:?}");
+        }
+        for c in ['\u{e6}', '\u{f8}'] {
+            assert_eq!(rows(c), rows('o'), "{c:?}");
+        }
     }
 
     /// Block elements fill their share of the whole cell: a full block every

@@ -473,7 +473,7 @@ const officeDriverUrl = asset('office-driver.js');
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
       // reflow every frame.
-      // The 9-20 px band, snapped to 8 or 16.
+      // At least 9 px, snapped to the face's em, at most two ems.
       const labelPx = Math.min(2 * PIXEL_EM, pixelEm(Math.max(9, map.s * 2.2), Math.round));
       if (labelPx !== lastLabelPx) {
         lastLabelPx = labelPx;

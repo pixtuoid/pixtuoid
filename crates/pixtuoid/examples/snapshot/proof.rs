@@ -361,7 +361,7 @@ fn dot(img: &mut RgbaImage, (cx, cy): (i32, i32), r: i32, c: Rgba<u8>) {
     }
 }
 
-/// The top of a [`text_cell`] centred in a band `h` tall from `y`.
+/// The top of a [`terminal_cell`] centred in a band `h` tall from `y`.
 fn centred_in(y: u32, h: u32) -> i32 {
     (y + (h - u32::from(terminal_cell().h)) / 2) as i32
 }

@@ -137,7 +137,7 @@
 "W" = { of = "B", level = 2 }    # shirt, lit shoulder
 "U" = { of = "B", level = -5 }   # shirt, deepest shade: a sleeve's crease
 "ϊ" = { of = "ι", level = 4 }    # icon ink, lit: a lamp's glint
-"ί" = { of = "ι", level = -4 }   # icon ink, dim: a dot's rounded corner
+"ί" = { of = "ι", level = -4 }   # icon ink, dim: a dot's rounded corner, the clock's sides
 "p" = { of = "P", level = -2 }   # pants, shaded
 "(" = { of = "P", level = 2 }    # pants, lit thigh
 "Ъ" = { of = "Б", level = 2 }    # vending machine body, lit top
