@@ -54,7 +54,7 @@ pub(crate) fn glyph(c: char) -> Option<Rows> {
 }
 
 /// `c`'s glyph where Fusion Pixel 8px has none that fits its cell: the narrow
-/// glyph it reads as where three columns can't tell them apart (`“`→`"`,
+/// glyph it reads as where [`GLYPH_W`] columns can't tell them apart (`“`→`"`,
 /// `—`→`-`), else one drawn here.
 fn by_hand(c: char) -> Option<Rows> {
     match c {

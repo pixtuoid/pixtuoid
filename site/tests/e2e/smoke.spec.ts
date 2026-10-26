@@ -849,6 +849,20 @@ test('the neon board keeps its rows inside its box on a landscape phone', async 
   expect(errors()).toEqual([]);
 });
 
+// A face that fails to load falls back, as every site face does, never
+// leaving the office uncaptioned.
+test('the captions show in a fallback when their face fails to load', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.route('**/fusion-pixel-8px*.woff2', (route) => route.abort());
+  await gotoLive(page);
+  await expect(page.locator('#office-overlay.is-on')).toBeAttached({ timeout: 10_000 });
+  await expect(page.locator('#office-overlay .ov-label').first()).toHaveText(/\S/, {
+    timeout: 10_000,
+  });
+  // The one error is the aborted fetch itself.
+  expect(errors().filter((e) => !e.includes('net::ERR_FAILED'))).toEqual([]);
+});
+
 test('reduced motion hides the caption overlay (still poster, no captions)', async ({
   browser,
 }) => {

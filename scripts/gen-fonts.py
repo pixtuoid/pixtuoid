@@ -8,15 +8,15 @@ Usage: .venv/bin/python3 scripts/gen-fonts.py   (just gen-fonts)
 
 Fusion Pixel 8px is the one open pixel font whose CJK fits a terminal cell's
 art (an 8x8 box); it has no Cyrillic or Greek, which draw as tofu bar the
-`Σ` `text.rs` draws by hand. A glyph is
-baseline-aligned into the face's line box, which `text.rs` and `grid.rs`
+`Σ` `cutaway/text.rs` draws by hand. A glyph is
+baseline-aligned into the face's line box, which `cutaway/text.rs` and `grid.rs`
 paint, and one whose ink leaves the box or the cells `unicode-width` gives it
 is dropped, not cropped.
 
 The format, which `cutaway::text` reads: one byte, the rows per glyph; a u16
 LE glyph count n; n u16 LE code points, ascending; then n glyphs, a byte a row
 from the top, the high bit the leftmost pixel. A symbol Fusion Pixel draws only
-full-width fails the width check and is drawn by hand in `text.rs`.
+full-width fails the width check and is drawn by hand in `cutaway/text.rs`.
 """
 
 import hashlib
@@ -59,7 +59,7 @@ SITE_OUT = SITE_FONTS / "fusion-pixel-8px.woff2"
 # What the captions write: Latin, as the site's other faces load, and the
 # board's symbols; the whole face is past the site's Lighthouse budgets.
 SITE_RANGES = [(0x0020, 0x007E), (0x00A0, 0x017F), (0x2000, 0x206F), (0x2190, 0x26FF)]
-# `text.rs`'s LINE_H and the art pixels a cell is wide (its ADVANCE).
+# `display/text.rs`'s LINE_H and the art pixels a cell is wide (its ADVANCE).
 LINE_H = 8
 CELL_W = 4
 # Rows down to and including the baseline: Fusion Pixel's own, `display/text.rs`'s
