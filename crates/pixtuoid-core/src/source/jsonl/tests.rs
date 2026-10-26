@@ -4209,10 +4209,6 @@ mod follow {
         Follower::spawn(|_: notify::Result<notify::Event>| {}).unwrap()
     }
 
-    fn stem_id(path: &Path) -> String {
-        path.file_stem().unwrap().to_string_lossy().into_owned()
-    }
-
     /// A walk with the follower follows a first sight it admits, before the
     /// early return an empty file takes (codex writes its first line after
     /// `git`).
