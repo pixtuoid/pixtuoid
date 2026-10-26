@@ -84,15 +84,15 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
         ..Verdict::default()
     };
 
-    let Ok(body) = std::fs::read_to_string(path) else {
+    let Ok(body) = std::fs::read(path) else {
         return v;
     };
-    v.newest_activity = newest_activity(source, body.as_bytes());
+    v.newest_activity = newest_activity(source, &body);
 
     let Some(drive) = Drive::transcript_at(source, path) else {
         return v;
     };
-    let driven = drive.seeded().at(now()).lines(body.lines());
+    let driven = drive.seeded().at(now()).body(&body);
 
     v.lines = driven.lines;
     v.unparseable = driven.unparseable;
@@ -258,5 +258,34 @@ fn main() {
         for (k, n) in &gap_buckets {
             println!("      {k:<9} {n}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_non_utf8_line_loses_only_itself_not_its_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir
+            .path()
+            .join("0b9f3c1e-1111-4222-8333-944455556666.jsonl");
+        let mut body = br#"{"type":"assistant","cwd":"/r","message":{"model":"m","content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{}}]}}"#.to_vec();
+        body.extend_from_slice(b"\n{\"type\":\"user\",\"x\":\"\xff\"}\n");
+        std::fs::write(&path, &body).expect("write the transcript");
+        let pack = std::sync::Arc::new(load_bundled_pack().expect("bundled pack"));
+
+        let v = check_file(
+            pixtuoid_core::source::claude_code::SOURCE_NAME,
+            &path,
+            &pack,
+        );
+        assert_eq!(
+            (v.lines, v.unparseable),
+            (2, 1),
+            "the census reads lines as walk_jsonl does"
+        );
+        assert!(v.events > 0, "the valid line still decodes");
     }
 }

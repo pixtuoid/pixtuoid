@@ -2946,6 +2946,7 @@ dependencies = [
  "snapbox",
  "strum",
  "syn 3.0.9",
+ "tempfile",
  "thiserror 2.0.21",
  "toml_edit",
  "tracing",

@@ -295,6 +295,21 @@ impl Drive {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        self.run(lines.into_iter().map(Some))
+    }
+
+    /// [`Self::lines`] over a transcript's bytes, split as the watcher splits
+    /// them: a line that is not UTF-8 is unparseable, and costs only itself.
+    pub fn body(&self, body: &[u8]) -> Driven {
+        self.run(crate::source::admit::lines(body).map(Result::ok))
+    }
+
+    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
+    fn run<I, S>(&self, lines: I) -> Driven
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
         let mut d = Driven {
             scene: SceneState::uniform(DRIVEN_DESKS),
             events: Vec::new(),
@@ -313,7 +328,7 @@ impl Drive {
 
     fn drive<I, S>(&self, lines: I, d: &mut Driven)
     where
-        I: IntoIterator<Item = S>,
+        I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
         if let (
@@ -334,12 +349,12 @@ impl Drive {
         }
 
         for line in lines {
-            let line = line.as_ref();
-            if line.trim().is_empty() {
+            let line = line.as_ref().map(|l| l.as_ref());
+            if line.is_some_and(|l| l.trim().is_empty()) {
                 continue;
             }
             d.lines += 1;
-            let Ok(v) = serde_json::from_str::<Value>(line) else {
+            let Some((line, Ok(v))) = line.map(|l| (l, serde_json::from_str::<Value>(l))) else {
                 d.unparseable += 1;
                 continue;
             };

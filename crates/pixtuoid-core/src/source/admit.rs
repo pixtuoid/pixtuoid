@@ -1,4 +1,5 @@
-//! The one per-entry rule for "is this file a transcript this source watches".
+//! The one rule for what the watcher reads of a source's tree: which entries are
+//! its transcripts ([`classify`]) and which bytes of one are its lines ([`lines`]).
 //!
 //! Compiled whenever `native` or `harness` is on, either alone being enough: the
 //! production watcher is behind `native` and the offline drivers behind
@@ -46,6 +47,14 @@ pub(crate) fn classify(
         return Entry::Skip;
     }
     Entry::Take
+}
+
+/// A transcript body's lines: split on `\n`, empty ones dropped, and one that is
+/// not UTF-8 an `Err` costing that line alone, never the rest of its file.
+pub(crate) fn lines(body: &[u8]) -> impl Iterator<Item = Result<&str, std::str::Utf8Error>> {
+    body.split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+        .map(std::str::from_utf8)
 }
 
 #[cfg(test)]

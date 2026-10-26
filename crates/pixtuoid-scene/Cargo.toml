@@ -54,6 +54,7 @@ toml_edit = { workspace = true }
 pixtuoid-core = { path = "../pixtuoid-core", version = "0.20.0", default-features = false, features = ["harness"] }
 serde_json = { workspace = true }
 proptest   = { workspace = true }
+tempfile   = { workspace = true }
 snapbox    = { workspace = true }
 # tests/model_boundary.rs parses the source.
 syn         = { workspace = true }
@@ -73,3 +74,4 @@ harness = false
 [[example]]
 name = "corpus_check"
 required-features = ["native"]
+test = true

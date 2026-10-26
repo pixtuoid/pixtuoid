@@ -360,16 +360,10 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         matches!(ev, AgentEvent::SessionEnd { .. }) && ev.agent_id() == path_agent_id
     };
     let mut decoded = Vec::new();
-    for line in new_bytes.split(|b| *b == b'\n') {
-        if line.is_empty() {
+    for line in crate::source::admit::lines(new_bytes) {
+        let Ok(s) = line else {
+            warn!(path = ?path, "non-utf8 line skipped");
             continue;
-        }
-        let s = match std::str::from_utf8(line) {
-            Ok(s) => s,
-            Err(_) => {
-                warn!(path = ?path, "non-utf8 line skipped");
-                continue;
-            }
         };
         let v: serde_json::Value = match serde_json::from_str(s) {
             Ok(v) => v,
