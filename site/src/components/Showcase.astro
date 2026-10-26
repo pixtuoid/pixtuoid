@@ -484,10 +484,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           img.alt = c.dataset.alt;
           if (title) title.textContent = c.dataset.title;
           if (c.dataset.accent) st.style.setProperty('--accent', c.dataset.accent);
-          // guard on c.dataset.accent too, so an accent-less chip never stamps the
-          // string "undefined" onto --coral and invalidates every var(--coral).
-          if (st.dataset.retint && c.dataset.accent)
-            retintPage(c.dataset.accent, c.dataset.accent2);
           st.classList.remove('retint-pulse');
           void st.offsetWidth;
           st.classList.add('retint-pulse');
@@ -498,15 +494,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           });
         });
       });
-      if (st.dataset.retint) {
-        // a theme change elsewhere clears the retint, so no chip may still read active
-        document.addEventListener('pix:theme', function () {
-          chips.forEach(function (x) {
-            x.classList.remove('is-active');
-            x.setAttribute('aria-pressed', 'false');
-          });
-        });
-      }
     });
 
     function fromHash() {

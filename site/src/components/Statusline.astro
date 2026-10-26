@@ -545,8 +545,8 @@ const FEED_ROTATE_MS = 6000;
     const keysToggle = bar.querySelector('[data-keys-toggle]');
     const keysState = bar.querySelector('[data-keys-state]');
     function renderKeys(on) {
-      if (keysToggle) keysToggle.setAttribute('aria-checked', on ? 'true' : 'false');
-      if (keysState) keysState.textContent = on ? 'on' : 'off';
+      keysToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+      keysState.textContent = on ? 'on' : 'off';
     }
     if (keysToggle && window.__pixKeys) {
       renderKeys(window.__pixKeys.enabled());
@@ -695,7 +695,7 @@ const FEED_ROTATE_MS = 6000;
     const copyLabel = bar.querySelector('.sl__copy-label');
     const copyStatus = bar.querySelector('[data-sl-copy-status]');
     const CHIP_FLASH_MS = 2000;
-    const CHIP_REST = 'install';
+    const CHIP_REST = copyLabel.textContent;
     let chipTimer = 0;
     function chipFlash(text, announce) {
       copyLabel.textContent = text;

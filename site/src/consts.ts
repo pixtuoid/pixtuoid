@@ -126,7 +126,6 @@ export interface ShowcaseChannel {
   w?: number;
   h?: number;
   variants?: ShowcaseVariant[];
-  retint?: boolean; // chips retint the page (themes only)
   variantGroups?: VariantGroup[]; // live channel only
   timeSlider?: boolean; // live channel: exposes a time-of-day scrub control
   poster?: string; // live channel: public/demos/-relative static fallback image
