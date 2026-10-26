@@ -214,9 +214,9 @@ pub enum TurnEnd {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Budget {
-    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`]: the CLI hung,
-    /// so its source runs no more turns that leg. The kill takes its Job
-    /// Object on Windows, and on Unix its process group when nobody attended it.
+    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`]: the CLI hung, so
+    /// its source runs no more turns that leg. The kill takes the turn's Job Object
+    /// (Windows) or, unattended, its process group (Unix), not a pty's own session.
     Recorder,
     /// Its TUI driver's own, inside the recorder's: the screen never settled.
     Driver,

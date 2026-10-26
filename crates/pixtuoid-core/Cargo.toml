@@ -124,8 +124,8 @@ tracing-subscriber = { workspace = true }
 criterion = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
-# An unattended child of the tier runs in its own process group, which the
-# terminal's Ctrl-C never reaches: the process waiting on it forwards it.
+# An unattended child runs in its own process group, which Ctrl-C never reaches:
+# its waiter forwards it, which a pty CLI's own session hears as the pty's hangup.
 signal-hook = { workspace = true }
 
 [[bench]]

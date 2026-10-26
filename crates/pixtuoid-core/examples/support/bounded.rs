@@ -12,8 +12,7 @@ use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::wait_until;
 
-/// The process group of the child running now with nobody attending, 0
-/// between children.
+/// The running unattended child's process group, 0 between children.
 #[cfg(unix)]
 static GROUP: AtomicI32 = AtomicI32::new(0);
 
@@ -39,9 +38,9 @@ pub(crate) struct Ended {
 /// it reads nothing and runs in its own process group (Unix), which the kill
 /// takes whole; attended, it keeps the terminal and its foreground group, so a
 /// TUI reads the keys typed into it and Ctrl-C reaches it, and the kill takes
-/// it alone. Either way a Windows child runs in a Job Object of its own, which
-/// the kill takes whole. A CLI that leads its own session under a driver's pty
-/// is in neither: the pty's hangup when its driver dies is what ends it.
+/// it alone. Either way a Windows child, a ConPTY one's included, runs in a Job
+/// Object of its own, which the kill takes whole; a Unix CLI that leads a pty's
+/// session is outside the group, and its driver's give-up kills that session's.
 pub(crate) fn run(mut cmd: Command, seat: Seat, budget: Duration) -> std::io::Result<Ended> {
     if seat == Seat::Unattended {
         // A background process group that read the terminal would stop on SIGTTIN.

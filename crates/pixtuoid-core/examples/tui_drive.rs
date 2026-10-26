@@ -204,7 +204,8 @@ fn shown(screen: &vt100::Screen) -> String {
     rows.join("\n").trim_end().to_owned()
 }
 
-/// Kill the CLI, logging why and the screen it stood at; then exit `code`.
+/// Kill the CLI with the group it leads, as portable-pty `setsid`s it, logging
+/// why and the screen it stood at; then exit `code`.
 fn give_up(
     log: &mut std::fs::File,
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
@@ -217,6 +218,13 @@ fn give_up(
         &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
     say_why(why);
+    #[cfg(unix)]
+    if let Some(group) = child
+        .process_id()
+        .and_then(|pid| rustix::process::Pid::from_raw(i32::try_from(pid).ok()?))
+    {
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
     child.kill()?;
     Ok(code)
 }
@@ -265,6 +273,34 @@ mod tests {
     #[test]
     fn the_driver_gives_up_before_the_recorder_kills_it() {
         assert!(BUDGET + QUIT_GRACE <= *hermetic::TURN_BUDGET.here());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn giving_up_kills_what_the_cli_started_under_its_pty() {
+        use pixtuoid_core::harness::{BOOT, wait_until};
+        let dir = tempfile::tempdir().expect("dir");
+        let beats = dir.path().join("beats");
+        let script = format!(
+            "(trap '' HUP; while :; do printf . >>'{}'; sleep 0.1; done) & sleep 600",
+            beats.display()
+        );
+        let argv = ["sh".into(), "-c".into(), script.into()];
+        let pair = NativePtySystem::default().openpty(SIZE).expect("a pty");
+        let mut child = pair
+            .slave
+            .spawn_command(command(&argv, std::env::vars_os()).expect("cwd"))
+            .expect("the CLI");
+        drop(pair.slave);
+        let beaten = || std::fs::metadata(&beats).map_or(0, |m| m.len());
+        wait_until("its child's beat", BOOT, || Ok(beaten() > 0)).expect("it beats");
+        let mut log = tempfile::tempfile().expect("a log");
+        give_up(&mut log, &mut child, "a test", &parser(), GAVE_UP).expect("gave up");
+        std::thread::sleep(Duration::from_millis(300));
+        let before = beaten();
+        std::thread::sleep(Duration::from_secs(1));
+        assert_eq!(beaten(), before, "the CLI's child outlived its give-up");
+        drop(pair.master);
     }
 
     #[test]
