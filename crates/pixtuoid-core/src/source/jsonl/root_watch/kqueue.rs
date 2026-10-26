@@ -39,7 +39,8 @@ struct Shared {
     closed: AtomicBool,
 }
 
-/// Opened `O_EVTONLY`, so the watch never blocks an unmount of its volume.
+/// Opened `O_EVTONLY`, so the watch never blocks an unmount of its volume
+/// (`open(2)`: xnu `bsd/man/man2/open.2:237-240`, tag `xnu-12377.121.6`).
 fn open_for_events(path: &Path) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()

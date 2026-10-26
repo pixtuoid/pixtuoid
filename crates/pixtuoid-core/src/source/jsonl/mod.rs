@@ -343,9 +343,10 @@ impl JsonlWatcher {
         self
     }
 
-    /// The initial seed and the `DEFAULT_POLL_INTERVAL` poll both run this SAME
-    /// sequence; only the seed skips the un-claim drain (`drain = false` —
-    /// nothing has been pushed at startup).
+    /// The initial seed, the `DEFAULT_POLL_INTERVAL` poll and the pass after a
+    /// nudge re-attaches the watch root all run this SAME sequence; only the seed
+    /// skips the un-claim drain (`drain = false` — nothing has been pushed at
+    /// startup).
     async fn run_scan_pass(
         &self,
         ctx: &WatchCtx<'_>,
@@ -373,8 +374,8 @@ impl JsonlWatcher {
     }
 
     /// Consume the watcher and drive the watch loop — initial seed, the
-    /// `DEFAULT_POLL_INTERVAL` poll backstop, and notify events — feeding each decoded
-    /// event to `tx`.
+    /// `DEFAULT_POLL_INTERVAL` poll backstop, root-attach nudges, and notify
+    /// events — feeding each decoded event to `tx`.
     ///
     /// # Errors
     ///
