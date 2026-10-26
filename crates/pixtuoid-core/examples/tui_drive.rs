@@ -7,9 +7,9 @@
 //! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; when the driver gave up, with what
-//! [`Driver::gave_up`] says, or [`OUT_OF_TIME`] once the `BUDGET` ran out, and
-//! why at [`GAVE_UP_NOTE`]; and `USAGE_ERROR` on a bad command line.
+//! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
+//! out, with what [`Driver::gave_up`] says, and why at [`GAVE_UP_NOTE`]; and
+//! `USAGE_ERROR` on a bad command line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -19,7 +19,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic::tui::{
-    Action, Answer, CommandLine, Driver, GAVE_UP, Key, OUT_OF_TIME, Tui,
+    Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
 };
 use pixtuoid_core::harness::hermetic::{self, Surface};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
@@ -145,11 +145,11 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
         let now = Instant::now();
         if now.duration_since(started) >= budget {
             let why = format!("the {budget:?} budget ran out");
-            return give_up(&mut log, &mut child, &why, &screen, OUT_OF_TIME);
+            return give_up(&mut log, &mut child, &why, &screen, &driver);
         }
         if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
             let why = format!("the CLI was still up {QUIT_GRACE:?} after its quit keys");
-            return give_up(&mut log, &mut child, &why, &screen, driver.gave_up());
+            return give_up(&mut log, &mut child, &why, &screen, &driver);
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -182,9 +182,7 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
                 send_keys(&mut writer, keys)?;
                 quit_at = Some(Instant::now());
             }
-            Action::Fail(why) => {
-                return give_up(&mut log, &mut child, why, &screen, driver.gave_up());
-            }
+            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen, &driver),
         }
     }
 }
@@ -204,29 +202,21 @@ fn shown(screen: &vt100::Screen) -> String {
     rows.join("\n").trim_end().to_owned()
 }
 
-/// Kill the CLI with the group it leads, as portable-pty `setsid`s it, logging
-/// why and the screen it stood at; then exit `code`.
+/// Kill the CLI, logging why and the screen it stood at.
 fn give_up(
     log: &mut std::fs::File,
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     why: &str,
     screen: &vt100::Parser,
-    code: i32,
+    driver: &Driver<'_>,
 ) -> std::io::Result<i32> {
     note(
         log,
         &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
     say_why(why);
-    #[cfg(unix)]
-    if let Some(group) = child
-        .process_id()
-        .and_then(|pid| rustix::process::Pid::from_raw(i32::try_from(pid).ok()?))
-    {
-        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-    }
     child.kill()?;
-    Ok(code)
+    Ok(driver.gave_up())
 }
 
 /// Tell the recorder that runs this driver why it gave up.
@@ -277,35 +267,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn giving_up_kills_what_the_cli_started_under_its_pty() {
-        use pixtuoid_core::harness::{BOOT, wait_until};
-        let dir = tempfile::tempdir().expect("dir");
-        let beats = dir.path().join("beats");
-        let script = format!(
-            "(trap '' HUP; while :; do printf . >>'{}'; sleep 0.1; done) & sleep 600",
-            beats.display()
-        );
-        let argv = ["sh".into(), "-c".into(), script.into()];
-        let pair = NativePtySystem::default().openpty(SIZE).expect("a pty");
-        let mut child = pair
-            .slave
-            .spawn_command(command(&argv, std::env::vars_os()).expect("cwd"))
-            .expect("the CLI");
-        drop(pair.slave);
-        let beaten = || std::fs::metadata(&beats).map_or(0, |m| m.len());
-        wait_until("its child's beat", BOOT, || Ok(beaten() > 0)).expect("it beats");
-        let mut log = tempfile::tempfile().expect("a log");
-        give_up(&mut log, &mut child, "a test", &parser(), GAVE_UP).expect("gave up");
-        std::thread::sleep(Duration::from_millis(300));
-        let before = beaten();
-        std::thread::sleep(Duration::from_secs(1));
-        assert_eq!(beaten(), before, "the CLI's child outlived its give-up");
-        drop(pair.master);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_run_past_its_budget_exits_out_of_time_and_tells_the_recorder_why() {
+    fn a_run_past_its_budget_gives_up_as_its_driver_says_and_tells_the_recorder_why() {
         let dir = tempfile::tempdir().expect("dir");
         let line = CommandLine {
             source: "claude-code".into(),
@@ -314,10 +276,12 @@ mod tests {
             prompt: "hi".into(),
             program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
         };
+        let (tui, answer) = tui_of(&line.source, &line.scenario).expect("a TUI row");
+        let unprompted = Driver::new(tui, answer, line.prompt.clone(), Instant::now());
         let budget = Duration::from_millis(500);
         let code = temp_env::with_var(DRIVER_DIR_ENV, Some(dir.path()), || drive(line, budget))
             .expect("it drove");
-        assert_eq!(code, OUT_OF_TIME);
+        assert_eq!(code, unprompted.gave_up());
         assert_eq!(
             std::fs::read_to_string(dir.path().join(GAVE_UP_NOTE)).expect("its note"),
             format!("the {budget:?} budget ran out")

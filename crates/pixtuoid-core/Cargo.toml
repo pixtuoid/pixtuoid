@@ -124,8 +124,7 @@ tracing-subscriber = { workspace = true }
 criterion = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
-# An unattended child runs in its own process group, which Ctrl-C never reaches:
-# its waiter SIGKILLs it on SIGINT, SIGTERM or SIGHUP, which a pty CLI's session hears as hangup.
+# `examples/support/bounded.rs`'s `kill_child_on_signal`.
 signal-hook = { workspace = true }
 
 [[bench]]

@@ -206,32 +206,8 @@ pub enum TurnEnd {
     Exited(i32),
     /// A signal ended it.
     Signalled,
-    /// A budget killed it.
-    OutOfTime(Budget),
-}
-
-/// Whose budget killed a turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Budget {
-    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`]: the CLI hung, so
-    /// its source runs no more turns that leg. The kill takes the turn's Job Object
-    /// (Windows) or, unattended, its process group (Unix), not a pty's own session.
-    Recorder,
-    /// Its TUI driver's own, inside the recorder's: the screen never settled.
-    Driver,
-}
-
-impl TurnEnd {
-    /// Whether a budget killed it, whoever's.
-    pub fn outran(self) -> bool {
-        matches!(self, Self::OutOfTime(_))
-    }
-
-    /// Whether the recorder's budget killed it.
-    pub(crate) fn hung(self) -> bool {
-        self == Self::OutOfTime(Budget::Recorder)
-    }
+    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`] killed it.
+    OutOfTime,
 }
 
 impl From<std::process::ExitStatus> for TurnEnd {
@@ -245,8 +221,7 @@ impl std::fmt::Display for TurnEnd {
         match self {
             Self::Exited(code) => write!(f, "exit {code}"),
             Self::Signalled => f.write_str("killed by a signal"),
-            Self::OutOfTime(Budget::Recorder) => f.write_str("killed at its budget"),
-            Self::OutOfTime(Budget::Driver) => f.write_str("killed at its driver's budget"),
+            Self::OutOfTime => f.write_str("killed at its budget"),
         }
     }
 }
@@ -265,8 +240,7 @@ pub struct CaptureRecord {
     /// Why the turn's driver gave up on it, in its own words, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub give_up_reason: Option<String>,
-    /// Why the recorder could not complete the capture, when it could not: the
-    /// record is its one channel to the runner, which reads no exit past it.
+    /// Why the recorder could not complete the capture, when it could not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incomplete: Option<String>,
     /// Its second turn, for a run that had one.
@@ -279,9 +253,19 @@ pub struct CaptureRecord {
 }
 
 impl CaptureRecord {
-    /// Whether the recorder's budget killed either of its turns.
-    pub fn hung(&self) -> bool {
-        self.end.hung() || self.second_turn.as_ref().is_some_and(|r| r.end.hung())
+    /// Which of its turns the recorder's budget killed, if one did.
+    pub fn killed_turn(&self) -> Option<&'static str> {
+        if self.end == TurnEnd::OutOfTime {
+            Some("turn")
+        } else if self
+            .second_turn
+            .as_ref()
+            .is_some_and(|r| r.end == TurnEnd::OutOfTime)
+        {
+            Some("second turn")
+        } else {
+            None
+        }
     }
 
     /// Whether the CLI ran `shape`'s turn as scripted, and its second turn

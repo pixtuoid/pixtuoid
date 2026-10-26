@@ -1,7 +1,7 @@
-//! What bounds a child the hermetic tier waits on: past its budget it is
-//! killed, and so is it when a signal ends the process waiting on it.
-//! `capture_fixture` and `hermetic` both `#[path]`-include it: its deps are
-//! dev-only, and in the lib they would join `deny-arch.toml`'s allowlist.
+//! What bounds a child the recorder waits on: past its budget it is killed,
+//! and so is it when a signal ends the recorder. `capture_fixture`
+//! `#[path]`-includes it: its deps are dev-only, and in the lib they would
+//! join `deny-arch.toml`'s allowlist.
 
 use std::process::{Command, ExitStatus, Stdio};
 #[cfg(unix)]
@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use pixtuoid_core::harness::wait_until;
 
-/// The running unattended child's process group, 0 between children.
+/// The running child's process group, 0 between children.
 #[cfg(unix)]
 static GROUP: AtomicI32 = AtomicI32::new(0);
 
@@ -19,52 +19,28 @@ static GROUP: AtomicI32 = AtomicI32::new(0);
 /// so the kill's own wait for one could block forever.
 const REAP: Duration = Duration::from_secs(10);
 
-/// Who is at a child.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Seat {
-    /// An operator at the terminal, recording a TUI or watching a turn.
-    Attended,
-    /// Nobody: the hermetic tier, CI.
-    Unattended,
-}
-
 /// How `cmd` ended within `budget`, or `None` once the budget ran out and it
-/// was killed. With nobody attending it reads nothing and runs in its own
-/// process group (Unix), which the kill takes whole; attended, it keeps the
-/// terminal and its foreground group, so a TUI reads the keys typed into it
-/// and Ctrl-C reaches it, and the kill takes it alone. Either way a Windows
-/// child, a ConPTY one's included, runs in a Job Object of its own, which the
-/// kill takes whole; a Unix CLI that leads a pty's session is outside the
-/// group, and its driver's give-up kills that session's.
-pub(crate) fn run(
-    mut cmd: Command,
-    seat: Seat,
-    budget: Duration,
-) -> std::io::Result<Option<ExitStatus>> {
-    if seat == Seat::Unattended {
-        // A background process group that read the terminal would stop on SIGTTIN.
-        cmd.stdin(Stdio::null());
-    }
+/// was killed. It reads nothing and runs in a process group (Unix) or a Job
+/// Object (Windows) of its own, which the kill takes whole.
+pub(crate) fn run(mut cmd: Command, budget: Duration) -> std::io::Result<Option<ExitStatus>> {
+    // A background process group that read the terminal would stop on SIGTTIN.
+    cmd.stdin(Stdio::null());
     let mut cmd = process_wrap::std::CommandWrap::from(cmd);
     #[cfg(unix)]
-    if seat == Seat::Unattended {
-        cmd.wrap(process_wrap::std::ProcessGroup::leader());
-    }
+    cmd.wrap(process_wrap::std::ProcessGroup::leader());
     #[cfg(windows)]
     cmd.wrap(process_wrap::std::JobObject);
     let mut child = cmd.spawn()?;
     #[cfg(unix)]
-    if seat == Seat::Unattended {
-        GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
-    }
-    let status = waited(child.as_mut(), budget);
+    GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
+    let status = wait_or_kill(child.as_mut(), budget);
     #[cfg(unix)]
     GROUP.store(0, Ordering::SeqCst);
     status
 }
 
 /// [`run`]'s wait: `child`'s status, or `None` once it was killed at `budget`.
-fn waited(
+fn wait_or_kill(
     child: &mut dyn process_wrap::std::ChildWrapper,
     budget: Duration,
 ) -> std::io::Result<Option<ExitStatus>> {
@@ -81,12 +57,11 @@ fn waited(
     Ok(None)
 }
 
-/// Kill the running unattended child's process group when a signal ends this
-/// process, then die by the signal's default: the terminal's Ctrl-C never
-/// reaches that group, and once this process is gone nothing holds the child
-/// to its budget.
+/// Kill the running child's process group when a signal ends this process,
+/// then die by the signal's default: the terminal's Ctrl-C never reaches that
+/// group, and once this process is gone nothing holds the child to its budget.
 #[cfg(unix)]
-pub(crate) fn forward_endings() -> std::io::Result<()> {
+pub(crate) fn kill_child_on_signal() -> std::io::Result<()> {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     let mut signals = signal_hook::iterator::Signals::new([SIGHUP, SIGINT, SIGTERM])?;
     std::thread::spawn(move || {

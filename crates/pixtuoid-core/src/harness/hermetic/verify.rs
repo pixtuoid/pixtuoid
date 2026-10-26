@@ -22,9 +22,7 @@ use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{
-    Budget, CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures,
-};
+use crate::harness::{CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -58,7 +56,6 @@ pub enum Label {
 pub struct Verdict {
     findings: Vec<(Label, String)>,
     unjudged: Option<Unjudged>,
-    outran: bool,
 }
 
 impl Verdict {
@@ -68,17 +65,6 @@ impl Verdict {
         Self {
             findings,
             unjudged: None,
-            outran: false,
-        }
-    }
-
-    /// This verdict, of a run a budget killed: whatever it found, nothing of
-    /// pixtuoid's was judged.
-    #[must_use]
-    pub(crate) fn outran(self) -> Self {
-        Self {
-            outran: true,
-            ..self
         }
     }
 
@@ -112,11 +98,10 @@ impl Verdict {
         self.label() <= Label::New
     }
 
-    /// Whether the run was judged: never one a budget killed, and a Blocked
-    /// finding returns before any check, though a Script found first may
-    /// outrank it.
+    /// Whether the run was judged: a Blocked finding returns before any check,
+    /// though a Script found first may outrank it.
     pub fn judged(&self) -> bool {
-        !self.outran && !self.findings.iter().any(|f| f.0 == Label::Blocked)
+        !self.findings.iter().any(|f| f.0 == Label::Blocked)
     }
 }
 
@@ -140,10 +125,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG))?;
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    let verdict = match outran(&manifest.capture) {
-        Some(_) => Verdict::new(findings).outran(),
-        None => Verdict::new(findings),
-    };
+    let verdict = Verdict::new(findings);
     Ok(match unjudged {
         Some(why) => verdict.unjudged_because(why),
         None => verdict,
@@ -212,9 +194,9 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
             ))
         })?;
     // A budget's kill or an incomplete capture says nothing of the uninstall.
-    if outran(&manifest.capture).is_some() {
-        findings.push(incomplete(&manifest, scenario));
-        return Ok(Verdict::new(findings).outran());
+    if manifest.capture.killed_turn().is_some() {
+        findings.push((Label::Blocked, uncompleted_turn(&manifest, scenario)));
+        return Ok(Verdict::new(findings));
     }
     if let Some(finding) = incomplete_capture(&manifest.capture) {
         findings.push(finding);
@@ -634,49 +616,23 @@ fn incomplete_capture(capture: &CaptureRecord) -> Option<(Label, String)> {
         .map(|why| (Label::Blocked, format!("the capture is incomplete: {why}")))
 }
 
-/// Which of `capture`'s turns a budget killed, if one did.
-fn outran(capture: &CaptureRecord) -> Option<&'static str> {
-    if capture.end.outran() {
-        Some("turn")
-    } else if capture.second_turn.as_ref().is_some_and(|r| r.end.outran()) {
-        Some("second turn")
-    } else {
-        None
-    }
-}
-
-/// Why `manifest`'s turn did not complete. One a budget killed is the
-/// script's once it asked the model anything, since the script no longer ends
-/// the CLI's flow; one its driver gave up on is blocked for the driver's reason.
-fn incomplete(manifest: &Manifest, scenario: &Scenario) -> (Label, String) {
+/// Why `manifest`'s turn did not complete, in its driver's words when it
+/// gave up on it.
+fn uncompleted_turn(manifest: &Manifest, scenario: &Scenario) -> String {
     let capture = &manifest.capture;
     let requests = manifest.requests;
-    if let Some(turn) = outran(capture) {
-        let budget = match (&capture.give_up_reason, capture.end) {
-            (Some(why), TurnEnd::OutOfTime(Budget::Driver)) => why.clone(),
-            _ => format!("the {:?} budget ran out", TURN_BUDGET.here()),
-        };
-        return if requests > 0 {
-            (
-                Label::Script,
-                format!(
-                    "the CLI's {turn} was killed ({budget}) after {requests} model requests: \
-                     the script no longer ends its flow"
-                ),
-            )
-        } else {
-            (
-                Label::Blocked,
-                format!("the CLI's {turn} was killed ({budget}) with no model request"),
-            )
-        };
+    if let Some(turn) = capture.killed_turn() {
+        return format!(
+            "the CLI's {turn} was killed: the {:?} budget ran out after {requests} model requests",
+            TURN_BUDGET.here()
+        );
     }
     let second = capture
         .second_turn
         .as_ref()
         .map_or(String::new(), |r| format!(", second turn {}", r.end));
     let end = capture.end;
-    let why = match &capture.give_up_reason {
+    match &capture.give_up_reason {
         Some(why) => format!(
             "the turn's driver gave up on it ({end}{second}, {requests} model requests): {why}"
         ),
@@ -686,8 +642,7 @@ fn incomplete(manifest: &Manifest, scenario: &Scenario) -> (Label, String) {
              through a home the sandbox did not redirect"
         ),
         None => format!("the CLI did not complete its turn ({end}{second}): it could not run"),
-    };
-    (Label::Blocked, why)
+    }
 }
 
 fn judge(
@@ -711,7 +666,7 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
-        findings.push(incomplete(manifest, scenario));
+        findings.push((Label::Blocked, uncompleted_turn(manifest, scenario)));
         return Ok(None);
     }
     if let Some(finding) = incomplete_capture(&manifest.capture) {
@@ -2461,11 +2416,8 @@ mod tests {
             "second turn exit 1"
         ));
         assert!(has(
-            &judged(
-                TurnEnd::Exited(0),
-                second(TurnEnd::OutOfTime(Budget::Recorder))
-            ),
-            Label::Script,
+            &judged(TurnEnd::Exited(0), second(TurnEnd::OutOfTime)),
+            Label::Blocked,
             "second turn was killed"
         ));
         let v = judged(TurnEnd::Exited(1), None);
@@ -2629,7 +2581,7 @@ mod tests {
             "a signal ends no turn"
         );
         assert!(
-            !completed(Shape::Succession, TurnEnd::OutOfTime(Budget::Recorder), 0),
+            !completed(Shape::Succession, TurnEnd::OutOfTime, 0),
             "nor does the budget"
         );
         assert!(
@@ -2832,47 +2784,38 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_killed_at_its_budget_is_the_scripts_once_it_asked_the_model() {
-        let budget = format!("{:?}", TURN_BUDGET.here());
-        let judged = |requests| {
+    fn a_turn_killed_at_its_budget_is_blocked_and_judges_nothing() {
+        let judged = |unmatched| {
             let d = run_from("codex", "tool-run-recorded", CX_SCENE);
             write_manifest(d.path(), "codex", |m| {
-                m.capture.end = TurnEnd::OutOfTime(Budget::Recorder);
-                m.requests = requests;
+                m.capture.end = TurnEnd::OutOfTime;
+                m.requests = 4210;
+                m.unmatched = unmatched;
             });
             verify(d.path()).expect("verify")
         };
-        let v = judged(4210);
-        assert_eq!(v.label(), Label::Script, "{:?}", v.findings());
-        assert!(
-            has(&v, Label::Script, "4210 model requests"),
-            "{:?}",
-            v.findings()
-        );
-        assert!(has(&v, Label::Script, &budget), "{:?}", v.findings());
-        assert!(
-            !v.judged(),
-            "a killed run judges nothing of pixtuoid's, its lifecycle and census included"
-        );
         let v = judged(0);
-        assert_eq!(
-            v.label(),
-            Label::Blocked,
-            "it never reached the model: {:?}",
-            v.findings()
+        let killed = format!(
+            "the {:?} budget ran out after 4210 model requests",
+            TURN_BUDGET.here()
         );
-        assert!(has(&v, Label::Blocked, &budget), "{:?}", v.findings());
+        assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
+        assert!(has(&v, Label::Blocked, &killed), "{:?}", v.findings());
+        assert!(!v.judged(), "its lifecycle and census included");
+        assert_eq!(
+            judged(1).label(),
+            Label::Script,
+            "a request no script line answers is the script's alone"
+        );
     }
 
     #[test]
     fn a_lifecycle_turn_a_budget_killed_blames_no_uninstall() {
         let d = lifecycle_run(&sound(), 0);
-        write_manifest(d.path(), "codex", |m| {
-            m.capture.end = TurnEnd::OutOfTime(Budget::Recorder);
-        });
+        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::OutOfTime);
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(
-            has(&v, Label::Script, "2 model requests"),
+            has(&v, Label::Blocked, "after 2 model requests"),
             "{:?}",
             v.findings()
         );
@@ -2894,11 +2837,10 @@ mod tests {
         let v = judged(TurnEnd::Exited(0));
         assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());
         assert!(!v.judged());
-        let v = judged(TurnEnd::OutOfTime(Budget::Recorder));
-        assert_eq!(
-            v.label(),
-            Label::Script,
-            "the kill outranks it: {:?}",
+        let v = judged(TurnEnd::OutOfTime);
+        assert!(
+            has(&v, Label::Blocked, "turn was killed"),
+            "the kill comes first: {:?}",
             v.findings()
         );
         let d = lifecycle_run(&sound(), 0);
@@ -2908,30 +2850,6 @@ mod tests {
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());
         assert!(!has(&v, Label::Fail, "uninstall"), "{:?}", v.findings());
-    }
-
-    #[test]
-    fn a_tui_turn_its_drivers_budget_killed_is_judged_as_a_recorders_kill() {
-        const WHY: &str = "the 120s budget ran out";
-        let judged = |requests| {
-            let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
-            write_manifest(d.path(), "claude-code", |m| {
-                m.scenario = "permission".into();
-                m.capture.end = TurnEnd::OutOfTime(Budget::Driver);
-                m.capture.give_up_reason = Some(WHY.into());
-                m.requests = requests;
-            });
-            verify(d.path()).expect("verify")
-        };
-        let v = judged(7);
-        assert!(
-            has(&v, Label::Script, "7 model requests"),
-            "{:?}",
-            v.findings()
-        );
-        assert!(has(&v, Label::Script, WHY), "{:?}", v.findings());
-        assert!(!v.judged());
-        assert_eq!(judged(0).label(), Label::Blocked);
     }
 
     #[test]
