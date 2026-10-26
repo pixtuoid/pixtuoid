@@ -12,7 +12,7 @@ import loraLatinWoff2 from '@fontsource/lora/files/lora-latin-400-normal.woff2?u
 import '../styles/fonts.css';
 import 'prismjs/themes/prism-tomorrow.css';
 import '../styles/global.css';
-import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY, VALID_THEMES, SITE_ORIGIN } from '../consts';
+import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY, VALID_THEMES } from '../consts';
 import sources from '../sources.json';
 
 const CLI_COUNT = sources.length;
@@ -31,7 +31,7 @@ const {
   jsonLd,
 } = Astro.props;
 
-const SITE = Astro.site ?? new URL(SITE_ORIGIN);
+const SITE = Astro.site;
 const ogImage = new URL(asset('demos/hero-poster.png'), SITE).href;
 // Astro.url.pathname includes the configured base in the static build, so /config
 // doesn't self-declare the homepage as canonical.
@@ -117,7 +117,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
         shortcutContext: function () {
           const a = document.activeElement;
           if (!a || a === document.body || a === document.documentElement) return true;
-          if (a.hasAttribute && a.hasAttribute('data-floor')) return true;
+          if (a.hasAttribute('data-floor')) return true;
           const sl = document.getElementById('statusline');
           return !!(sl && sl.contains(a));
         },
@@ -360,7 +360,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
           if (!window.__pixKeys.enabled()) return;
           if (!/^[1-6]$/.test(e.key)) return;
           const a = document.activeElement;
-          if (a && a.closest && a.closest('[data-keys-scope]')) return;
+          if (a && a.closest('[data-keys-scope]')) return;
           const sec = document.querySelector('[data-floor="' + e.key + 'F"]');
           if (!sec) return; // docs/404 have no floors — inert, not an error
           const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -381,7 +381,7 @@ const jsonLdSafe = jsonLd ? JSON.stringify(jsonLd).replace(/</g, '\\u003c') : nu
           performance.mark('pixtuoid-revealed');
           document.dispatchEvent(new Event('pix:revealed'));
         }
-        if (root.dataset.booting !== '1' || !boot) {
+        if (root.dataset.booting !== '1') {
           reveal();
           return;
         }

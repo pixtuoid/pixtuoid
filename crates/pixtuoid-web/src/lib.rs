@@ -454,6 +454,9 @@ impl Office {
             OneShotPool::from_wire(pool).map_or(0, |p| a.oneshot_buffer(p, idx).len())
         })
     }
+    pub fn audio_oneshot_wires(&self) -> Vec<u8> {
+        oneshot_wires()
+    }
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
     /// same as `step`) and return the JS glue commands as JSON:
@@ -578,6 +581,14 @@ impl SynthTake {
     pub fn oneshot_len(&self, pool: u8, idx: usize) -> usize {
         OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
     }
+    pub fn oneshot_wires(&self) -> Vec<u8> {
+        oneshot_wires()
+    }
+}
+
+/// Every one-shot pool's wire: JS discovers a pool's slots, but not the pools.
+fn oneshot_wires() -> Vec<u8> {
+    OneShotPool::ALL.map(OneShotPool::wire).to_vec()
 }
 
 /// The `setTargetAtTime` time constant each GainNode approaches a tick's gain
@@ -845,7 +856,7 @@ mod tests {
                 "loop {i} adopted"
             );
         }
-        for wire in 0u8..5 {
+        for wire in take.oneshot_wires() {
             let pool = OneShotPool::from_wire(wire).expect("known wire");
             let mut j = 0;
             while !take.driver.oneshot_buffer(pool, j).is_empty() {

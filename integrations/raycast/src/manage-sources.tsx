@@ -38,13 +38,13 @@ export default function ManageSources() {
     });
     try {
       const row = await toggleSource(item.id, item.connected);
-      if (row?.outcome === "failed") {
+      if (row.outcome === "failed") {
         toast.style = Toast.Style.Failure;
         toast.title = `${item.display_name}: failed`;
         toast.message = row.message ?? undefined;
       } else {
         toast.style = Toast.Style.Success;
-        toast.title = `${item.display_name} — ${row?.outcome ?? "updated"}`;
+        toast.title = `${item.display_name} — ${row.outcome}`;
       }
     } catch (e) {
       toast.style = Toast.Style.Failure;

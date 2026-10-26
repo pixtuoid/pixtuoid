@@ -8,14 +8,9 @@ export type Schema = AnySchema;
 // added field is ignored rather than failing an installed copy.
 const ajv = new Ajv2020({ removeAdditional: true });
 
-/** Whether `value` is an instance of `schema`. A schema ajv can't compile, such
- *  as one with an unresolvable `$ref`, fails closed. */
+/** Whether `value` is an instance of `schema`. */
 export function conforms(value: unknown, schema: Schema): boolean {
-  try {
-    return ajv.validate(schema, value) === true;
-  } catch {
-    return false;
-  }
+  return ajv.validate(schema, value) === true;
 }
 
 /** `out` parsed as rows each conforming to `schema`: the installed binary may be

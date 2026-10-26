@@ -70,7 +70,6 @@ import { asset } from '../consts';
   // but only once the section is NEAR (the markup comment owns why).
   (function () {
     const root = document.getElementById('proof');
-    if (!root) return;
     const wide = root.querySelector('.proof__video--wide');
     const tall = root.querySelector('.proof__video--tall');
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');

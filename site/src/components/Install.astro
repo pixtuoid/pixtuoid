@@ -65,7 +65,6 @@ import tabs from '../install.json';
 <script is:inline>
   (function () {
     const box = document.querySelector('.install__box');
-    if (!box) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     // WAI-ARIA APG tabs: one tab stop, arrows (and Home/End) move and select.
     const tabs = Array.from(box.querySelectorAll('.install__tab'));
@@ -106,23 +105,23 @@ import tabs from '../install.json';
       let restore = 0;
       // capture the resting label ONCE — not after a click, or a rapid second
       // click would capture 'Copied ✓' and the button would stick on it
-      const LABEL = (btn.textContent || 'Copy').trim();
-      const status = btn.parentElement && btn.parentElement.querySelector('[data-copy-status]');
+      const LABEL = btn.textContent.trim();
+      const status = btn.parentElement.querySelector('[data-copy-status]');
       function flash(label, announce) {
         btn.textContent = label;
-        if (status) status.textContent = announce;
+        status.textContent = announce;
         clearTimeout(restore);
         restore = setTimeout(function () {
           btn.textContent = LABEL;
-          if (status) status.textContent = '';
+          status.textContent = '';
         }, 1600);
       }
       function manual() {
         // no / blocked Clipboard API (insecure context, old browser): select
         // the command so the user can copy it — don't fail silently.
-        const code = btn.parentElement && btn.parentElement.querySelector('code');
-        const sel = window.getSelection && window.getSelection();
-        if (code && sel) {
+        const code = btn.parentElement.querySelector('code');
+        const sel = window.getSelection();
+        if (sel) {
           const range = document.createRange();
           range.selectNodeContents(code);
           sel.removeAllRanges();

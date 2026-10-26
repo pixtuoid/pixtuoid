@@ -9,9 +9,6 @@ import { REPO_SLUG } from '../config/gh-stars.mjs';
 export const REPO = `https://github.com/${REPO_SLUG}`;
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
-// The build authority is `site` in astro.config.mjs; this is only the shared
-// type-narrowing fallback for the `Astro.site` undefined arm.
-export const SITE_ORIGIN = 'https://pixtuoid.dev';
 
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => `${BASE.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
@@ -129,14 +126,12 @@ export interface ShowcaseChannel {
   w?: number;
   h?: number;
   variants?: ShowcaseVariant[];
-  retint?: boolean; // chips retint the page (themes only)
   variantGroups?: VariantGroup[]; // live channel only
   timeSlider?: boolean; // live channel: exposes a time-of-day scrub control
   poster?: string; // live channel: public/demos/-relative static fallback image
   // OPTIONAL: a channel whose caption would just restate its joined feature's
   // `desc` omits it and falls back to that desc (ChannelStage's `description`).
   caption?: string;
-  duration?: string; // clip badge, m:ss
   status: 'live' | 'soon'; // soon = dimmed placeholder monitor, no assets needed
   default?: boolean; // exactly one — the channel tuned at load
 }

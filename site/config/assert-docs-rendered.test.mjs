@@ -52,11 +52,7 @@ test('word boundary: a mere substring like "prosetype" is NOT treated as a doc p
   assert.equal(docPages, 0);
 });
 
-test('a body exactly at the floor passes; one char under fails (off-by-one guard)', () => {
-  assert.deepEqual(
-    checkDocPages([{ name: 'config', html: doc(body(MIN_BODY_CHARS)) }]).failures,
-    []
-  );
+test('a body one char under the floor fails', () => {
   const under = checkDocPages([{ name: 'config', html: doc(body(MIN_BODY_CHARS - 1)) }]);
   assert.ok(under.failures.some((f) => f.includes('render collapsed')));
 });

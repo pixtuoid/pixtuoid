@@ -30,7 +30,6 @@ import { FLOORS, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../const
 >
   (function () {
     const shaft = document.querySelector('[data-shaft]');
-    if (!shaft) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const car = shaft.querySelector('[data-shaft-car]');
     const stops = Array.prototype.slice.call(shaft.querySelectorAll('[data-shaft-stop]'));
@@ -121,7 +120,6 @@ import { FLOORS, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../const
     // observer keys off, so at the true scroll max the last floor's LED wins
     // unconditionally, overriding whatever the observer last reported.
     function clampToLastFloorAtBottom() {
-      if (!stops.length) return;
       const atBottom =
         window.scrollY + window.innerHeight >=
         document.documentElement.scrollHeight - bottomClampEpsilonPx;

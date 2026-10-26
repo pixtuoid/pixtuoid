@@ -278,7 +278,6 @@ const badges = sources.filter((s) => s.status === 'supported');
   // Pixel-dust: warm motes drifting up through the hero, echoing the office's dust.
   (function () {
     const c = document.getElementById('dust');
-    if (!c) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const ctx = c.getContext('2d');
     const dpr = Math.min(window.devicePixelRatio || 1, 2);

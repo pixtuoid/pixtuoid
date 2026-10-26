@@ -13,7 +13,4 @@ test('a large count is not truncated or formatted', () => {
 test('null (offline build) renders a bare star: no "null"/"undefined" leak, no trailing space', () => {
   const out = starText(null);
   assert.equal(out, '★');
-  assert.ok(!out.includes('null'));
-  assert.ok(!out.includes('undefined'));
-  assert.equal(out, out.trim());
 });

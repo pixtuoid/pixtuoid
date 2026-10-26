@@ -33,7 +33,7 @@ const channels = SHOWCASE.map((c, i) => ({
   featureDesc: featureForChannel(c.id).desc,
 }));
 const live = channels.filter((c) => c.status === 'live');
-const def = channels.find((c) => c.default) ?? live[0];
+const def = channels.find((c) => c.default)!;
 // The headline count is derived from the dial itself — a hardcoded "Eight" desyncs
 // the moment a demo is added or dropped.
 const COUNT_WORDS = [
@@ -130,7 +130,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
 >
   (function () {
     const studio = document.getElementById('studio');
-    if (!studio) return;
     const stages = studio.querySelectorAll('[data-stage]');
     const monitors = studio.querySelectorAll('button.mon[data-ch]');
     const dialDesc = studio.querySelector('.dial__desc');
@@ -273,7 +272,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       const now = vBase + (Date.now() - vStart);
       vOffice.step(now, vibingCanvas.width, vibingCanvas.height);
       const view = vDriver.officeFrameView(vOffice, vWasm);
-      if (view.length !== vImg.data.length) return;
       vImg.data.set(view);
       vCtx.putImageData(vImg, 0, 0);
     }
@@ -400,13 +398,11 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           const on = m.dataset.ch === id;
           m.setAttribute('aria-selected', on ? 'true' : 'false');
           m.tabIndex = on ? 0 : -1;
-          if (on && dialDesc) dialDesc.textContent = m.dataset.desc || '';
+          if (on) dialDesc.textContent = m.dataset.desc || '';
         });
-        if (dialDesc) {
-          dialDesc.classList.remove('dial__desc--pulse');
-          void dialDesc.offsetWidth;
-          dialDesc.classList.add('dial__desc--pulse');
-        }
+        dialDesc.classList.remove('dial__desc--pulse');
+        void dialDesc.offsetWidth;
+        dialDesc.classList.add('dial__desc--pulse');
         syncVideos();
         syncCanvas();
       }
@@ -488,10 +484,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           img.alt = c.dataset.alt;
           if (title) title.textContent = c.dataset.title;
           if (c.dataset.accent) st.style.setProperty('--accent', c.dataset.accent);
-          // guard on c.dataset.accent too, so an accent-less chip never stamps the
-          // string "undefined" onto --coral and invalidates every var(--coral).
-          if (st.dataset.retint && c.dataset.accent)
-            retintPage(c.dataset.accent, c.dataset.accent2);
           st.classList.remove('retint-pulse');
           void st.offsetWidth;
           st.classList.add('retint-pulse');
@@ -502,15 +494,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
           });
         });
       });
-      if (st.dataset.retint) {
-        // a theme change elsewhere clears the retint, so no chip may still read active
-        document.addEventListener('pix:theme', function () {
-          chips.forEach(function (x) {
-            x.classList.remove('is-active');
-            x.setAttribute('aria-pressed', 'false');
-          });
-        });
-      }
     });
 
     function fromHash() {

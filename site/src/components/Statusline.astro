@@ -486,7 +486,6 @@ const FEED_ROTATE_MS = 6000;
 >
   (function () {
     const bar = document.getElementById('statusline');
-    if (!bar) return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const digit = bar.querySelector('[data-lift-digit]');
     const name = bar.querySelector('[data-lift-name]');
@@ -546,8 +545,8 @@ const FEED_ROTATE_MS = 6000;
     const keysToggle = bar.querySelector('[data-keys-toggle]');
     const keysState = bar.querySelector('[data-keys-state]');
     function renderKeys(on) {
-      if (keysToggle) keysToggle.setAttribute('aria-checked', on ? 'true' : 'false');
-      if (keysState) keysState.textContent = on ? 'on' : 'off';
+      keysToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+      keysState.textContent = on ? 'on' : 'off';
     }
     if (keysToggle && window.__pixKeys) {
       renderKeys(window.__pixKeys.enabled());
@@ -696,39 +695,34 @@ const FEED_ROTATE_MS = 6000;
     const copyLabel = bar.querySelector('.sl__copy-label');
     const copyStatus = bar.querySelector('[data-sl-copy-status]');
     const CHIP_FLASH_MS = 2000;
-    const CHIP_REST = 'install';
+    const CHIP_REST = copyLabel.textContent;
     let chipTimer = 0;
     function chipFlash(text, announce) {
-      if (!copyLabel) return;
       copyLabel.textContent = text;
-      if (copyStatus) copyStatus.textContent = announce || '';
-      if (installLink) {
-        // Restart chip-pulse even if a previous flash's class is still on:
-        // toggle('is-flash', true) is a no-op when the class is already there,
-        // so remove, flush a layout read, then re-add.
-        installLink.classList.remove('is-flash');
-        void installLink.offsetWidth;
-        installLink.classList.add('is-flash');
-      }
+      copyStatus.textContent = announce;
+      // Restart chip-pulse even if a previous flash's class is still on:
+      // toggle('is-flash', true) is a no-op when the class is already there,
+      // so remove, flush a layout read, then re-add.
+      installLink.classList.remove('is-flash');
+      void installLink.offsetWidth;
+      installLink.classList.add('is-flash');
       clearTimeout(chipTimer);
       chipTimer = setTimeout(function () {
         copyLabel.textContent = CHIP_REST;
-        if (copyStatus) copyStatus.textContent = '';
-        if (installLink) installLink.classList.remove('is-flash');
+        copyStatus.textContent = '';
+        installLink.classList.remove('is-flash');
       }, CHIP_FLASH_MS);
     }
-    if (installLink) {
-      installLink.addEventListener('click', function (e) {
-        const sec = document.getElementById('install');
-        // Doc/404 pages have no #install — DON'T preventDefault; let the
-        // cross-page href carry the visitor instead of eating the click.
-        if (!sec) return;
-        e.preventDefault();
-        sec.scrollIntoView({ behavior: mq.matches ? 'auto' : 'smooth', block: 'start' });
-        sec.setAttribute('tabindex', '-1');
-        sec.focus({ preventScroll: true });
-      });
-    }
+    installLink.addEventListener('click', function (e) {
+      const sec = document.getElementById('install');
+      // Doc/404 pages have no #install — DON'T preventDefault; let the
+      // cross-page href carry the visitor instead of eating the click.
+      if (!sec) return;
+      e.preventDefault();
+      sec.scrollIntoView({ behavior: mq.matches ? 'auto' : 'smooth', block: 'start' });
+      sec.setAttribute('tabindex', '-1');
+      sec.focus({ preventScroll: true });
+    });
     document.addEventListener('pix:hired', function () {
       chipFlash('you · hired · just now', 'A coworker walked into the office');
     });

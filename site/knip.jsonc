@@ -16,9 +16,5 @@
     // The #721 shared wasm-Office driver: dynamic-`import()`ed at runtime from
     // both live-office consumers' is:inline scripts — no static import to trace.
     "public/office-driver.js",
-    // The channel dial's documented FALLBACK: if the bare mono dial tests
-    // weak on scannability, MonitorWall returns with one import + one grid
-    // rule (OPEN FLOOR spec, Showcase section). Deliberately unimported.
-    "src/components/MonitorWall.astro",
   ],
 }

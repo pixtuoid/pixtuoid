@@ -42,7 +42,6 @@ function defaultVariant(g: EnrichedVariantGroup): ShowcaseVariant | undefined {
   role="tabpanel"
   aria-labelledby={`dial-${c.id}`}
   data-stage={c.id}
-  data-retint={c.retint ? 'true' : undefined}
   hidden={!active}
   style={defVariant?.accent ? `--accent:${defVariant.accent}` : undefined}
 >
@@ -166,7 +165,6 @@ function defaultVariant(g: EnrichedVariantGroup): ShowcaseVariant | undefined {
         data-title={`pixtuoid — CH ${c.ch} ${c.label} · ${v.name}`}
         data-alt={`pixtuoid office — ${v.name} (${c.label.toLowerCase()})`}
         data-accent={v.accent}
-        data-accent2={v.accent2}
         style={v.accent ? `--chip:${v.accent}` : undefined}
       >
         {v.accent && <span class="osd__swatch" />}

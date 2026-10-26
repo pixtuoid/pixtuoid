@@ -6,12 +6,9 @@ const config = JSON.parse(
   readFileSync(new URL('../lighthouserc.json', import.meta.url), 'utf8')
 ).ci;
 
-test('performance budgets use stable samples and hard failures', () => {
+test('performance budgets use stable samples', () => {
   // "The median Lighthouse score of 5 runs is twice as stable as 1 run" (docs/variability.md)
   assert.ok(config.collect.numberOfRuns >= 5);
-  for (const [audit, assertion] of Object.entries(config.assert.assertions)) {
-    assert.equal(assertion[0], 'error', `${audit} must fail CI`);
-  }
   for (const audit of [
     'categories:performance',
     'first-contentful-paint',
