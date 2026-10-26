@@ -371,7 +371,7 @@ impl JsonlWatcher {
     ///
     /// # Errors
     ///
-    /// If the file-watch backend cannot be created, or the watch root cannot be stat'ed or watched.
+    /// If the watch root cannot be read at boot, or exists but cannot be watched.
     pub async fn run(self, tx: TaggedSender) -> Result<()> {
         let cursors: Arc<Mutex<HashMap<PathBuf, u64>>> = Arc::new(Mutex::new(HashMap::new()));
         let seen_sessions: Arc<Mutex<HashMap<PathBuf, Sight>>> =
@@ -448,7 +448,7 @@ impl JsonlWatcher {
         );
         // The root is another CLI's, and auto-detect keys on its presence, so it
         // is never created: the anchor reports its appearance. One that can't
-        // even be stat'ed or watched at boot is a watch failure (#157).
+        // be read, or exists and can't be watched, at boot is a watch failure (#157).
         root_watch.reconcile(Wake::Poll).await?;
 
         let source_arc: Arc<str> = Arc::from(self.source_name.as_str());

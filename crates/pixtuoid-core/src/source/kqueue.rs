@@ -1,6 +1,5 @@
 //! A kqueue whose blocked `kevent` wait another thread can end: the
-//! `EVFILT_USER` slot both kqueue threads (`exit_watch`, the transcript
-//! watcher's anchor) are woken through.
+//! `EVFILT_USER` slot the crate's kqueue threads are woken through.
 
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::ptr;

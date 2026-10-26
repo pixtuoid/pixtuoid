@@ -37,7 +37,7 @@ pub const SOURCE_NAME: &str = "omp";
 /// those files and then REBUILDS this resolver, so a var set only in `~/.env`
 /// moves the sessions dir and process env alone would watch an empty directory.
 pub fn omp_sessions_dir() -> PathBuf {
-    let env = process_env();
+    let env = overlaid_env();
     resolve_omp_sessions_dir(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -53,7 +53,7 @@ pub fn omp_sessions_dir() -> PathBuf {
 /// migrated-XDG user's extensions still load from here. Exported for the
 /// install target — a second resolver copy is the #880 drift class.
 pub fn omp_agent_dir() -> PathBuf {
-    let env = process_env();
+    let env = overlaid_env();
     resolve_omp_agent_dir(&env)
 }
 
@@ -71,7 +71,7 @@ pub fn omp_extensions_dir() -> PathBuf {
 /// The process env under the `.env` overlay. The read is deliberately
 /// UNBOUNDED, unlike `source/`'s per-refresh probe reads: a cap could truncate
 /// a key upstream's own `parseEnvFile` honors.
-fn process_env() -> OmpEnv {
+fn overlaid_env() -> OmpEnv {
     with_omp_dotenv(&OmpEnv::from_process(), &|p| {
         std::fs::read_to_string(p).ok()
     })
@@ -246,7 +246,7 @@ fn resolve_omp_sessions_dir(
 /// env (upstream freezes the resolver per process the same way), so another
 /// profile's own `.env` relocations are unseen here.
 pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
-    let env = process_env();
+    let env = overlaid_env();
     omp_profile_sessions_dirs_resolved(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -268,7 +268,7 @@ pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
 /// is a new profile.
 #[cfg(feature = "native")]
 pub(crate) fn omp_profiles_dir() -> Option<PathBuf> {
-    let env = process_env();
+    let env = overlaid_env();
     profiles_dir(&env)
 }
 

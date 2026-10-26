@@ -1,14 +1,14 @@
-//! The macOS watch anchor: a [`notify::Watcher`] of single directories over
-//! kqueue `EVFILT_VNODE`, opening nothing but each watched directory itself.
+//! macOS's watcher of one directory's entries — every anchor, and a
+//! non-recursive root — over kqueue `EVFILT_VNODE`, opening nothing but that
+//! directory.
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::mem::MaybeUninit;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use notify::event::{EventKind, ModifyKind, RemoveKind, RenameMode};
@@ -25,49 +25,44 @@ const WATCHED: VnodeEvents = VnodeEvents::WRITE
     .union(VnodeEvents::RENAME)
     .union(VnodeEvents::REVOKE);
 
+/// Watches the one directory its single [`Watcher::watch`] names: a
+/// `RootWatch` builds a watcher per watch.
 pub(super) struct KqueueDirWatcher {
     shared: Arc<Shared>,
 }
 
 struct Shared {
-    /// Declared before `dirs`, so it closes first: rustix's `kevent` wants
+    /// Declared before `dir`, so it closes first: rustix's `kevent` wants
     /// every fd a kqueue refers to valid for the kqueue's lifetime.
     kq: WakeableKqueue,
-    dirs: Mutex<HashMap<PathBuf, File>>,
+    dir: OnceLock<(PathBuf, File)>,
     closed: AtomicBool,
 }
 
-/// A poisoned lock means another thread panicked mid-insert of a map entry,
-/// which leaves the map sound, so take the guard anyway.
-fn dirs(shared: &Shared) -> MutexGuard<'_, HashMap<PathBuf, File>> {
-    shared.dirs.lock().unwrap_or_else(PoisonError::into_inner)
+/// Opened `O_EVTONLY`, so the watch never blocks an unmount of its volume.
+fn open_for_events(path: &Path) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_EVTONLY)
+        .open(path)
 }
 
-fn knote(dir: &File, flags: EventFlags) -> Event {
-    Event::new(
+/// Adds or deletes the knote of `dir`, the fd `Shared` owns.
+fn change_knote(kq: &WakeableKqueue, dir: RawFd, flags: EventFlags) -> notify::Result<()> {
+    let knote = Event::new(
         EventFilter::Vnode {
-            vnode: dir.as_raw_fd(),
+            vnode: dir,
             flags: WATCHED,
         },
         flags,
         ptr::null_mut(),
-    )
-}
-
-/// Deletes `dir`'s knote before closing it, so the kqueue never refers to a
-/// closed fd.
-fn forget(kq: &WakeableKqueue, dir: File) {
+    );
     let eventlist: &mut [Event] = &mut [];
-    // SAFETY: `dir` is open until this returns; afterwards the kqueue no
-    // longer refers to it.
-    let _ = unsafe {
-        kevent(
-            kq,
-            &[knote(&dir, EventFlags::DELETE)],
-            eventlist,
-            Some(Duration::ZERO),
-        )
-    };
+    // SAFETY: `Shared` closes `dir` only after the kqueue.
+    unsafe { kevent(kq, &[knote], eventlist, Some(Duration::ZERO)) }
+        .map(|_| ())
+        .map_err(|e| notify::Error::io(e.into()))
 }
 
 fn kind_of(flags: VnodeEvents) -> EventKind {
@@ -98,17 +93,13 @@ fn run(shared: &Shared, handler: &mut impl EventHandler) {
         if shared.closed.load(Ordering::SeqCst) {
             return;
         }
+        let Some((path, _)) = shared.dir.get() else {
+            continue;
+        };
         for event in events.iter() {
             // The wake slot is the only other filter.
-            let EventFilter::Vnode { vnode, flags } = event.filter() else {
-                continue;
-            };
-            let path = dirs(shared)
-                .iter()
-                .find(|(_, dir)| dir.as_raw_fd() == vnode)
-                .map(|(path, _)| path.clone());
-            if let Some(path) = path {
-                handler.handle_event(Ok(notify::Event::new(kind_of(flags)).add_path(path)));
+            if let EventFilter::Vnode { flags, .. } = event.filter() {
+                handler.handle_event(Ok(notify::Event::new(kind_of(flags)).add_path(path.clone())));
             }
         }
     }
@@ -119,7 +110,7 @@ impl Watcher for KqueueDirWatcher {
         let kq = WakeableKqueue::new().map_err(|e| notify::Error::io(e.into()))?;
         let shared = Arc::new(Shared {
             kq,
-            dirs: Mutex::default(),
+            dir: OnceLock::new(),
             closed: AtomicBool::new(false),
         });
         let thread_shared = Arc::clone(&shared);
@@ -136,41 +127,35 @@ impl Watcher for KqueueDirWatcher {
     }
 
     fn watch(&mut self, path: &Path, recursive_mode: RecursiveMode) -> notify::Result<()> {
-        if recursive_mode == RecursiveMode::Recursive {
-            return Err(
-                notify::Error::generic("a kqueue directory watch is non-recursive")
-                    .add_path(path.to_path_buf()),
-            );
+        let refused = if recursive_mode == RecursiveMode::Recursive {
+            Some("a kqueue directory watch is non-recursive")
+        } else if self.shared.dir.get().is_some() {
+            Some("a kqueue directory watcher watches one directory")
+        } else if self.shared.closed.load(Ordering::SeqCst) {
+            Some("the kqueue watch thread has exited")
+        } else {
+            None
+        };
+        if let Some(why) = refused {
+            return Err(notify::Error::generic(why).add_path(path.to_path_buf()));
         }
-        if self.shared.closed.load(Ordering::SeqCst) {
-            return Err(notify::Error::generic("the kqueue watch thread has exited"));
-        }
-        let dir = super::open_for_events(path)
+        let dir = open_for_events(path)
             .map_err(|e| notify::Error::io_watch(e).add_path(path.to_path_buf()))?;
-        let eventlist: &mut [Event] = &mut [];
-        // SAFETY: `dir` stays open in `dirs` until `forget` deletes this knote.
-        unsafe {
-            kevent(
-                &self.shared.kq,
-                &[knote(&dir, EventFlags::ADD | EventFlags::CLEAR)],
-                eventlist,
-                Some(Duration::ZERO),
-            )
-        }
-        .map_err(|e| notify::Error::io(e.into()).add_path(path.to_path_buf()))?;
-        let replaced = dirs(&self.shared).insert(path.to_path_buf(), dir);
-        if let Some(old) = replaced {
-            forget(&self.shared.kq, old);
-        }
-        Ok(())
+        let fd = dir.as_raw_fd();
+        // Set before the knote is added, so its first event finds the path.
+        // `&mut self` and the `get` above leave the cell empty.
+        let _ = self.shared.dir.set((path.to_path_buf(), dir));
+        change_knote(&self.shared.kq, fd, EventFlags::ADD | EventFlags::CLEAR)
+            .map_err(|e| e.add_path(path.to_path_buf()))
     }
 
     fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
-        let dir = dirs(&self.shared)
-            .remove(path)
-            .ok_or_else(|| notify::Error::watch_not_found().add_path(path.to_path_buf()))?;
-        forget(&self.shared.kq, dir);
-        Ok(())
+        match self.shared.dir.get() {
+            Some((watched, dir)) if watched == path => {
+                change_knote(&self.shared.kq, dir.as_raw_fd(), EventFlags::DELETE)
+            }
+            _ => Err(notify::Error::watch_not_found().add_path(path.to_path_buf())),
+        }
     }
 
     fn kind() -> WatcherKind {
@@ -224,19 +209,18 @@ mod tests {
     }
 
     #[test]
-    fn an_unwatched_dir_goes_quiet_and_recursion_is_refused() {
+    fn watches_one_directory_non_recursively() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut watcher, rx) = watcher();
+        let (mut watcher, _rx) = watcher();
         assert!(watcher.watch(dir.path(), RecursiveMode::Recursive).is_err());
         watcher
             .watch(dir.path(), RecursiveMode::NonRecursive)
             .unwrap();
-        watcher.unwatch(dir.path()).unwrap();
         assert!(
-            watcher.unwatch(dir.path()).is_err(),
-            "nothing left to unwatch"
+            watcher
+                .watch(dir.path(), RecursiveMode::NonRecursive)
+                .is_err(),
+            "a second watch is refused"
         );
-        std::fs::create_dir(dir.path().join("child")).unwrap();
-        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
     }
 }

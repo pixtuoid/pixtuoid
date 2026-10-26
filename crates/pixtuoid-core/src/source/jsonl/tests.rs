@@ -3700,17 +3700,23 @@ fn folded_deriver_folds_separators_and_case_on_windows() {
 #[derive(Debug, Clone, PartialEq)]
 enum WatchCall {
     Watch(PathBuf, RecursiveMode),
+    Refused(PathBuf),
     /// The watcher dropped, which ends its watch.
     Unwatch(PathBuf),
 }
 
-/// A recording [`notify::Watcher`] factory: its `failures` first watches
-/// fail, each removing the watched dir before it does when `remove_on_fail`.
+type WatchHook = Box<dyn FnOnce(&Path) + Send>;
+
+/// A recording [`notify::Watcher`] factory. Its first `failures` watches fail,
+/// each removing the watched dir first when `remove_on_fail`; a `refuse`d path
+/// always fails; `on_watch` runs once, inside the first watch.
 #[derive(Clone, Default)]
 struct FakeWatcher {
     calls: Arc<std::sync::Mutex<Vec<WatchCall>>>,
     failures: Arc<std::sync::Mutex<usize>>,
     remove_on_fail: bool,
+    refuse: Option<PathBuf>,
+    on_watch: Arc<std::sync::Mutex<Option<WatchHook>>>,
 }
 
 impl FakeWatcher {
@@ -3718,11 +3724,27 @@ impl FakeWatcher {
         self.calls.lock().unwrap().clone()
     }
 
-    fn watches(&self) -> usize {
+    fn attempts(&self, path: &Path) -> usize {
         self.calls()
             .iter()
-            .filter(|c| matches!(c, WatchCall::Watch(..)))
+            .filter(|c| matches!(c, WatchCall::Watch(p, _) | WatchCall::Refused(p) if p == path))
             .count()
+    }
+
+    /// The paths watched now.
+    fn live(&self) -> Vec<PathBuf> {
+        let mut live = Vec::new();
+        for call in self.calls() {
+            match call {
+                WatchCall::Watch(path, _) => live.push(path),
+                WatchCall::Unwatch(path) => {
+                    let at = live.iter().position(|p| *p == path).unwrap();
+                    live.remove(at);
+                }
+                WatchCall::Refused(_) => {}
+            }
+        }
+        live
     }
 
     fn builder(&self) -> root_watch::BuildWatcher {
@@ -3730,7 +3752,7 @@ impl FakeWatcher {
         Box::new(move || {
             Ok(Box::new(FakeInstance {
                 fake: fake.clone(),
-                watched: None,
+                watched: Vec::new(),
             }))
         })
     }
@@ -3738,18 +3760,13 @@ impl FakeWatcher {
 
 struct FakeInstance {
     fake: FakeWatcher,
-    watched: Option<PathBuf>,
+    watched: Vec<PathBuf>,
 }
 
 impl Drop for FakeInstance {
     fn drop(&mut self) {
-        if let Some(path) = self.watched.take() {
-            self.fake
-                .calls
-                .lock()
-                .unwrap()
-                .push(WatchCall::Unwatch(path));
-        }
+        let mut calls = self.fake.calls.lock().unwrap();
+        calls.extend(self.watched.drain(..).map(WatchCall::Unwatch));
     }
 }
 
@@ -3757,26 +3774,32 @@ impl notify::Watcher for FakeInstance {
     fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
         Ok(Self {
             fake: FakeWatcher::default(),
-            watched: None,
+            watched: Vec::new(),
         })
     }
 
     fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
-        self.fake
-            .calls
-            .lock()
-            .unwrap()
-            .push(WatchCall::Watch(path.to_path_buf(), mode));
-        let mut failures = self.fake.failures.lock().unwrap();
-        let Some(left) = failures.checked_sub(1) else {
-            self.watched = Some(path.to_path_buf());
-            return Ok(());
-        };
-        *failures = left;
-        if self.fake.remove_on_fail {
-            std::fs::remove_dir(path).unwrap();
+        if let Some(hook) = self.fake.on_watch.lock().unwrap().take() {
+            hook(path);
         }
-        Err(notify::Error::generic("fake watch failure"))
+        let failing = {
+            let mut failures = self.fake.failures.lock().unwrap();
+            let failing = *failures > 0;
+            *failures = failures.saturating_sub(1);
+            failing
+        };
+        if failing || self.fake.refuse.as_deref() == Some(path) {
+            if failing && self.fake.remove_on_fail {
+                std::fs::remove_dir(path).unwrap();
+            }
+            let mut calls = self.fake.calls.lock().unwrap();
+            calls.push(WatchCall::Refused(path.to_path_buf()));
+            return Err(notify::Error::generic("fake watch failure"));
+        }
+        let mut calls = self.fake.calls.lock().unwrap();
+        calls.push(WatchCall::Watch(path.to_path_buf(), mode));
+        self.watched.push(path.to_path_buf());
+        Ok(())
     }
 
     fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
@@ -3788,19 +3811,27 @@ impl notify::Watcher for FakeInstance {
     }
 }
 
+/// A [`RootWatch`] on split fakes: `root_watcher` for the root, a fresh one
+/// for the anchor.
 fn fake_root_watch(
     root: &Path,
     root_watcher: &FakeWatcher,
 ) -> (RootWatch, FakeWatcher, tokio::sync::mpsc::Receiver<()>) {
-    let anchor = FakeWatcher::default();
+    fake_root_watch_with(root, root_watcher, FakeWatcher::default())
+}
+
+fn fake_root_watch_with(
+    root: &Path,
+    root_watcher: &FakeWatcher,
+    anchor: FakeWatcher,
+) -> (RootWatch, FakeWatcher, tokio::sync::mpsc::Receiver<()>) {
     let (nudge, nudges) = Nudge::channel();
-    let watch = RootWatch::with_builders(
-        root.to_path_buf(),
-        RecursiveMode::Recursive,
-        root_watcher.builder(),
-        anchor.builder(),
-        nudge,
-    );
+    let backend = root_watch::Backend::Split {
+        root: root_watcher.builder(),
+        anchor: anchor.builder(),
+    };
+    let watch =
+        RootWatch::with_backend(root.to_path_buf(), RecursiveMode::Recursive, backend, nudge);
     (watch, anchor, nudges)
 }
 
@@ -3819,11 +3850,11 @@ async fn root_watch_follows_the_root_through_appearance_and_removal() {
         Reconciled::Unchanged
     );
     assert_eq!(
-        anchor.calls(),
-        vec![WatchCall::Watch(a.clone(), RecursiveMode::NonRecursive)],
+        anchor.live(),
+        vec![a.clone()],
         "an absent chain anchors at its deepest existing ancestor"
     );
-    assert!(root_fake.calls().is_empty());
+    assert!(root_fake.live().is_empty());
 
     std::fs::create_dir_all(&root).unwrap();
     assert_eq!(
@@ -3831,43 +3862,35 @@ async fn root_watch_follows_the_root_through_appearance_and_removal() {
         Reconciled::Attached
     );
     assert_eq!(
-        anchor.calls()[1..],
-        [
-            WatchCall::Unwatch(a.clone()),
-            WatchCall::Watch(b.clone(), RecursiveMode::NonRecursive)
-        ],
+        anchor.live(),
+        vec![b.clone()],
         "the chain appearing moves the anchor onto the root's parent"
     );
-    assert_eq!(
-        root_fake.calls(),
-        vec![WatchCall::Watch(root.clone(), RecursiveMode::Recursive)]
-    );
+    assert_eq!(root_fake.live(), vec![root.clone()]);
+    let calls = root_fake.calls().len() + anchor.calls().len();
     assert_eq!(
         watch.reconcile(Wake::Nudge).await.unwrap(),
         Reconciled::Unchanged
     );
-    assert_eq!(root_fake.calls().len() + anchor.calls().len(), 4);
+    assert_eq!(root_fake.calls().len() + anchor.calls().len(), calls);
 
     std::fs::remove_dir(&root).unwrap();
     assert_eq!(
         watch.reconcile(Wake::Nudge).await.unwrap(),
-        Reconciled::Unchanged
+        Reconciled::Detached
     );
+    assert!(root_fake.live().is_empty(), "a removed root is detached");
     assert_eq!(
-        root_fake.calls()[1..],
-        [WatchCall::Unwatch(root.clone())],
-        "a removed root is detached"
+        anchor.live(),
+        vec![b.clone()],
+        "its parent stays the anchor"
     );
-    assert_eq!(anchor.calls().len(), 3, "its parent stays the anchor");
 
     std::fs::remove_dir(&b).unwrap();
     watch.reconcile(Wake::Nudge).await.unwrap();
     assert_eq!(
-        anchor.calls()[3..],
-        [
-            WatchCall::Unwatch(b.clone()),
-            WatchCall::Watch(a.clone(), RecursiveMode::NonRecursive)
-        ],
+        anchor.live(),
+        vec![a.clone()],
         "a removed anchor re-anchors one level up"
     );
 }
@@ -3894,27 +3917,43 @@ async fn root_watch_reattaches_a_replaced_root_and_anchor() {
         Reconciled::Attached
     );
     assert_eq!(
-        root_fake.calls()[1..],
-        [
-            WatchCall::Unwatch(root.clone()),
-            WatchCall::Watch(root.clone(), RecursiveMode::Recursive)
-        ]
+        root_fake.attempts(&root),
+        2,
+        "the recreated root is watched afresh"
     );
+    assert_eq!(root_fake.live(), vec![root.clone()]);
 
+    let anchored = anchor.attempts(&parent);
     std::fs::remove_dir_all(&parent).unwrap();
     std::fs::create_dir_all(&root).unwrap();
     assert_eq!(
         watch.reconcile(Wake::Nudge).await.unwrap(),
         Reconciled::Attached
     );
-    assert_eq!(
-        anchor.calls()[1..],
-        [
-            WatchCall::Unwatch(parent.clone()),
-            WatchCall::Watch(parent.clone(), RecursiveMode::NonRecursive)
-        ],
+    assert!(
+        anchor.attempts(&parent) > anchored,
         "a recreated anchor is watched afresh"
     );
+    assert_eq!(anchor.live(), vec![parent.clone()]);
+}
+
+/// A directory created while the anchor moves is under no watch yet, so the
+/// reconcile re-reads until the anchor stays put.
+#[tokio::test]
+async fn root_watch_reanchors_past_a_dir_created_while_it_moved() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a");
+    let b = a.join("b");
+    std::fs::create_dir(&a).unwrap();
+    let anchor = FakeWatcher::default();
+    let mkdir = b.clone();
+    *anchor.on_watch.lock().unwrap() = Some(Box::new(move |_| {
+        std::fs::create_dir(&mkdir).unwrap();
+    }));
+    let (mut watch, anchor, _nudges) =
+        fake_root_watch_with(&b.join("root"), &FakeWatcher::default(), anchor);
+    watch.reconcile(Wake::Poll).await.unwrap();
+    assert_eq!(anchor.live(), vec![b]);
 }
 
 #[tokio::test]
@@ -3935,7 +3974,7 @@ async fn root_watch_warns_a_failed_attach_once_and_retries_it_on_the_poll() {
         assert_eq!(watch.reconcile_logged(wake).await, Reconciled::Unchanged);
     }
     assert_eq!(
-        root_fake.watches(),
+        root_fake.attempts(&root),
         3,
         "a nudge leaves the failed directory to the poll"
     );
@@ -3950,6 +3989,118 @@ async fn root_watch_warns_a_failed_attach_once_and_retries_it_on_the_poll() {
         1,
         "a persistent failure warns once: {}",
         logs.contents()
+    );
+}
+
+#[tokio::test]
+async fn root_watch_keeps_the_root_when_its_anchor_cannot_be_watched() {
+    let (logs, _guard) = crate::test_capture::capture_warns();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let anchor = FakeWatcher {
+        refuse: Some(dir.path().to_path_buf()),
+        ..FakeWatcher::default()
+    };
+    let root_fake = FakeWatcher::default();
+    let (mut watch, anchor, _nudges) = fake_root_watch_with(&root, &root_fake, anchor);
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Attached,
+        "an anchor failure never fails the boot attach"
+    );
+    assert_eq!(root_fake.live(), vec![root.clone()]);
+    assert_eq!(
+        watch.reconcile_logged(Wake::Nudge).await,
+        Reconciled::Unchanged
+    );
+    assert_eq!(anchor.attempts(dir.path()), 1, "only the poll retries it");
+    watch.reconcile_logged(Wake::Poll).await;
+    assert_eq!(anchor.attempts(dir.path()), 2);
+    assert_eq!(
+        logs.contents()
+            .matches("watch anchor could not be attached")
+            .count(),
+        1,
+        "a persistent failure warns once: {}",
+        logs.contents()
+    );
+}
+
+/// A shared watcher hosts both watches, the root's first.
+#[tokio::test]
+async fn root_watch_shares_one_watcher_root_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let fake = FakeWatcher::default();
+    let (nudge, _nudges) = Nudge::channel();
+    let backend = root_watch::Backend::Shared(fake.builder());
+    let mut watch = RootWatch::with_backend(root.clone(), RecursiveMode::Recursive, backend, nudge);
+    assert_eq!(
+        watch.reconcile(Wake::Poll).await.unwrap(),
+        Reconciled::Attached
+    );
+    assert_eq!(
+        fake.calls(),
+        vec![
+            WatchCall::Watch(root.clone(), RecursiveMode::Recursive),
+            WatchCall::Watch(dir.path().to_path_buf(), RecursiveMode::NonRecursive),
+        ]
+    );
+}
+
+#[test]
+fn routed_events_reach_the_root_only_from_inside_it() {
+    use notify::EventHandler;
+    use notify::event::{CreateKind, DataChange, ModifyKind, RenameMode};
+    let root = PathBuf::from("/home/u/.claude/projects");
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (nudge, mut nudges) = Nudge::channel();
+    let mut routed = root_watch::Routed {
+        root: root.clone(),
+        root_events: {
+            let seen = seen.clone();
+            move |res: notify::Result<notify::Event>| seen.lock().unwrap().push(res.unwrap().paths)
+        },
+        nudge,
+    };
+    let mut send = |kind, paths: &[&str]| {
+        let mut event = notify::Event::new(kind);
+        event.paths = paths.iter().map(PathBuf::from).collect();
+        routed.handle_event(Ok(event));
+        let nudged = nudges.try_recv().is_ok();
+        (std::mem::take(&mut *seen.lock().unwrap()), nudged)
+    };
+    let inside = "/home/u/.claude/projects/p/s.jsonl";
+    let beside = "/home/u/.claude/history.jsonl";
+    let data = notify::EventKind::Modify(ModifyKind::Data(DataChange::Any));
+    let create = notify::EventKind::Create(CreateKind::Any);
+    assert_eq!(
+        send(data, &[inside]),
+        (vec![vec![PathBuf::from(inside)]], false)
+    );
+    assert_eq!(
+        send(data, &[beside]),
+        (vec![], false),
+        "a file beside the root is no transcript"
+    );
+    assert_eq!(
+        send(create, &["/home/u/.claude/projects"]),
+        (vec![], true),
+        "the root itself nudges"
+    );
+    assert_eq!(
+        send(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            &[beside, inside]
+        ),
+        (vec![vec![PathBuf::from(inside)]], true)
+    );
+    assert_eq!(
+        send(notify::EventKind::Other, &[]),
+        (vec![], true),
+        "a rescan nudges"
     );
 }
 
@@ -3992,7 +4143,7 @@ async fn root_watch_never_anchors_a_filesystem_root() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn root_watch_fails_on_a_root_it_cannot_stat() {
+async fn root_watch_fails_on_a_root_it_cannot_read() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let sealed = dir.path().join("sealed");

@@ -2907,6 +2907,7 @@ dependencies = [
  "tracing-subscriber",
  "vec1",
  "vt100",
+ "winapi-util",
  "windows-sys 0.61.2",
 ]
 

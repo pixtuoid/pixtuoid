@@ -78,6 +78,86 @@ async fn a_recreated_root_is_rewatched() {
     handle.abort();
 }
 
+/// An empty anchor's own removal must wake a reconcile: on Linux an open
+/// handle on it would hold back inotify's `DELETE_SELF` until it closed
+/// (`fs/dcache.c`'s `d_delete`), leaving the recreated root to the poll.
+/// Windows reports nothing for a watched dir's own removal (notify's
+/// `windows.rs` unwatches it silently), so there it does wait for the poll.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_root_recreated_under_a_removed_empty_anchor_is_watched() {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().join(".copilot");
+    tokio::fs::create_dir(&home).await.unwrap();
+    let root = home.join("session-state");
+    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
+    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_| {
+        false
+    })
+    .with_initial_window(Duration::from_secs(60))
+    .with_poll_interval(Duration::from_secs(3600));
+    let handle = tokio::spawn(async move { watcher.run(tx).await });
+
+    // Each step lands after the reconcile the previous one woke.
+    let settle = Duration::from_millis(300);
+    tokio::time::sleep(settle).await;
+    tokio::fs::remove_dir(&home).await.unwrap();
+    tokio::time::sleep(settle).await;
+    tokio::fs::create_dir_all(&root).await.unwrap();
+    let uuid = "cc000000-0000-7000-8000-0000000000c3";
+    write_session(&root, uuid).await;
+    assert!(
+        session_started(&mut rx, uuid, Duration::from_secs(5)).await,
+        "a session under the recreated root was not seen"
+    );
+    assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
+    handle.abort();
+}
+
+/// The anchor watches the root's parent, whose own files (CC's
+/// `history.jsonl` beside its projects root) are no transcripts — on Linux
+/// and Windows one watcher hosts both watches and routes by path.
+#[tokio::test]
+async fn a_file_beside_the_root_is_never_decoded() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("projects");
+    tokio::fs::create_dir(&root).await.unwrap();
+    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
+    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_| {
+        false
+    })
+    .with_initial_window(Duration::from_secs(60))
+    .with_poll_interval(Duration::from_secs(3600));
+    let handle = tokio::spawn(async move { watcher.run(tx).await });
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let beside = "dd000000-0000-7000-8000-0000000000d4";
+    write_session(dir.path(), beside).await;
+    let inside = "ee000000-0000-7000-8000-0000000000e5";
+    write_session(&root, inside).await;
+    let mut started = Vec::new();
+    let deadline = tokio::time::Instant::now() + RUN_DEADLINE;
+    let inside_id = AgentId::from_parts("codex", inside);
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
+            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) => started.push(agent_id),
+            Ok(Some(_)) => {}
+            // Quiet once the session inside has landed: nothing else is coming.
+            _ if started.contains(&inside_id) => break,
+            _ => {}
+        }
+    }
+    assert!(
+        started.contains(&inside_id),
+        "the session inside was not seen"
+    );
+    assert!(
+        !started.contains(&AgentId::from_parts("codex", beside)),
+        "a file beside the root was decoded as a session"
+    );
+    handle.abort();
+}
+
 async fn write_session(root: &std::path::Path, uuid: &str) {
     let meta = serde_json::json!({
         "type": "session_meta",

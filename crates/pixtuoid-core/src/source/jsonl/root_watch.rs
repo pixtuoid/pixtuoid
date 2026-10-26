@@ -1,18 +1,19 @@
 //! A watch root's attach state, reconciled against the filesystem so the root
 //! is watched exactly while it exists. No notify backend can watch an absent
 //! path, and inotify and Windows drop a watch whose directory is deleted, so a
-//! second, non-recursive watch sits on the root's nearest existing ancestor —
+//! non-recursive watch also sits on the root's nearest existing ancestor —
 //! notify's advice for a watched path that may be removed (`Watcher::watch`'s
 //! docs). Its events only wake [`RootWatch::reconcile`], which re-reads the
 //! filesystem, so a lost or coalesced event can't leave the watch stale.
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use notify::event::{EventKind, ModifyKind};
 use notify::{Config, EventHandler, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use super::health::FailureLatch;
 
@@ -36,29 +37,34 @@ impl Nudge {
     }
 
     /// Nudges on an event that can change which directories exist, or an error
-    /// (events may have been lost). An open, a content or a metadata write
-    /// can't, and an anchor such as `$HOME` sees a stream of them — inotify
-    /// reports the reconcile's own opens, so nudging on those would loop.
+    /// (events may have been lost).
     pub(crate) fn on_event(&self, res: &notify::Result<notify::Event>) {
-        let structural = match res {
-            Ok(event) => !matches!(
-                event.kind,
-                EventKind::Access(_)
-                    | EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Metadata(_))
-                    // Windows' FILE_ACTION_MODIFIED: a write, never a new entry.
-                    | EventKind::Modify(ModifyKind::Any)
-            ),
-            Err(_) => true,
-        };
+        match res {
+            Ok(event) => self.on_kind(&event.kind),
+            Err(_) => self.send(),
+        }
+    }
+
+    /// An open, a content or a metadata write can't change which directories
+    /// exist, and an anchor such as `$HOME` sees a stream of them — inotify
+    /// reports the reconcile's own opens, so nudging on those would loop.
+    fn on_kind(&self, kind: &EventKind) {
+        let structural = !matches!(
+            kind,
+            EventKind::Access(_)
+                | EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Metadata(_))
+                // Windows' FILE_ACTION_MODIFIED: a write, never a new entry.
+                | EventKind::Modify(ModifyKind::Any)
+        );
         if structural {
             self.send();
         }
     }
 }
 
-/// What woke a reconcile. A nudge leaves an attach that failed on the same
-/// directory to the poll, so a persistent failure (inotify's watch limit on a
-/// big tree) isn't re-walked on every event of a busy anchor.
+/// What woke a reconcile. A nudge leaves watches that failed on the same
+/// directories to the poll, so a persistent failure (inotify's watch limit on
+/// a big tree) isn't re-walked on every event of a busy anchor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Wake {
     Nudge,
@@ -70,30 +76,25 @@ pub(crate) enum Reconciled {
     /// The root watch was (re)placed: files written before it existed are
     /// the caller's to scan.
     Attached,
+    /// The root went away, and its watch with it.
+    Detached,
     Unchanged,
 }
 
-/// Which directory a path named. Equal ids are the same directory, so a root
-/// deleted and recreated between two reconciles reads as replaced. On Unix
-/// the open handle pins the inode, so the recreation can't reuse its number;
-/// NTFS ids carry a reuse sequence number instead, and an open Windows handle
-/// would keep a deleted directory's name from being recreated.
-#[derive(Debug)]
+/// Which directory a path named. The birth time joins the id because an id
+/// alone can name a recreated directory: a freed inode number is reused, and
+/// Windows file ids are "not guaranteed to be unique over time", nor on ReFS
+/// (`BY_HANDLE_FILE_INFORMATION`'s docs).
+#[derive(Clone, Debug, PartialEq)]
 struct DirId {
-    key: (u64, u64),
-    #[cfg(unix)]
-    _pin: std::fs::File,
-}
-
-impl PartialEq for DirId {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
-    }
+    volume: u64,
+    index: u64,
+    born: Option<SystemTime>,
 }
 
 /// `None` when nothing is at `path`.
 fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
-    match open_dir_id(path) {
+    match read_dir_id(path) {
         Ok(id) => Ok(Some(id)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
@@ -101,54 +102,25 @@ fn dir_id(path: &Path) -> io::Result<Option<DirId>> {
 }
 
 #[cfg(unix)]
-fn open_dir_id(path: &Path) -> io::Result<DirId> {
+fn read_dir_id(path: &Path) -> io::Result<DirId> {
     use std::os::unix::fs::MetadataExt;
-    let pin = open_for_events(path)?;
-    let meta = pin.metadata()?;
+    let meta = std::fs::metadata(path)?;
     Ok(DirId {
-        key: (meta.dev(), meta.ino()),
-        _pin: pin,
+        volume: meta.dev(),
+        index: meta.ino(),
+        born: meta.created().ok(),
     })
 }
 
 #[cfg(windows)]
-fn open_dir_id(path: &Path) -> io::Result<DirId> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, GetFileInformationByHandle,
-    };
-    // A directory opens only with backup semantics; reading its id needs no
-    // access right.
-    let dir = std::fs::OpenOptions::new()
-        .access_mode(0)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(path)?;
-    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
-    // SAFETY: `dir` is an open handle for the whole call, and `info` is
-    // writable storage of the struct the call fills.
-    if unsafe { GetFileInformationByHandle(dir.as_raw_handle(), info.as_mut_ptr()) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: a nonzero return filled `info`.
-    let info = unsafe { info.assume_init() };
+fn read_dir_id(path: &Path) -> io::Result<DirId> {
+    let dir = winapi_util::Handle::from_path_any(path)?;
+    let info = winapi_util::file::information(&dir)?;
     Ok(DirId {
-        key: (
-            u64::from(info.dwVolumeSerialNumber),
-            (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-        ),
+        volume: info.volume_serial_number(),
+        index: info.file_index(),
+        born: dir.as_file().metadata()?.created().ok(),
     })
-}
-
-/// Opens a directory only to identify or watch it: `O_EVTONLY` on macOS, so
-/// the handle never blocks an unmount of its volume.
-#[cfg(unix)]
-fn open_for_events(path: &Path) -> io::Result<std::fs::File> {
-    let mut opts = std::fs::OpenOptions::new();
-    opts.read(true);
-    #[cfg(target_os = "macos")]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut opts, libc::O_EVTONLY);
-    opts.open(path)
 }
 
 async fn identify(path: &Path) -> io::Result<Option<DirId>> {
@@ -158,20 +130,145 @@ async fn identify(path: &Path) -> io::Result<Option<DirId>> {
         .map_err(io::Error::other)?
 }
 
-/// The deepest existing proper ancestor of `root`, short of a filesystem root:
+/// Where a root's watches belong: on the root's directory while it exists,
+/// and on its deepest existing proper ancestor short of a filesystem root —
 /// anchored at `/`, every change at the top of the disk would wake it, so a
 /// root with no other existing ancestor is left to the poll.
-async fn find_anchor(root: &Path) -> Option<(PathBuf, DirId)> {
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Placement {
+    root: Option<DirId>,
+    anchor: Option<(PathBuf, DirId)>,
+}
+
+async fn read_placement(root: &Path) -> io::Result<Placement> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        root.ancestors()
+        let anchor = root
+            .ancestors()
             .skip(1)
             .take_while(|a| a.parent().is_some())
-            .find_map(|a| Some((a.to_path_buf(), dir_id(a).ok()??)))
+            .find_map(|a| Some((a.to_path_buf(), dir_id(a).ok()??)));
+        Ok(Placement {
+            root: dir_id(&root)?,
+            anchor,
+        })
     })
     .await
-    .ok()
-    .flatten()
+    .map_err(io::Error::other)?
+}
+
+/// Builds a watcher the watches go on.
+pub(super) type BuildWatcher = Box<dyn Fn() -> notify::Result<Box<dyn Watcher + Send>> + Send>;
+
+/// How a [`Placement`]'s watches are hosted. Each placement gets fresh
+/// watchers: notify's backends key watches by path, so re-watching a recreated
+/// directory on a kept watcher lets the dead one's late removal (inotify's
+/// `DELETE_SELF`, Windows' silent unwatch) take the new watch with it.
+pub(super) enum Backend {
+    /// Both watches on one watcher, its events routed by [`Routed`]: one
+    /// inotify instance per root, under the per-user cap.
+    Shared(BuildWatcher),
+    /// Each watch on its own watcher: a macOS anchor is a kqueue one, and a
+    /// polled test root can't host a native anchor.
+    Split {
+        root: BuildWatcher,
+        anchor: BuildWatcher,
+    },
+}
+
+struct Started {
+    watchers: Vec<Box<dyn Watcher + Send>>,
+    root: notify::Result<()>,
+    anchor: notify::Result<()>,
+}
+
+impl Backend {
+    /// The root is watched before the anchor, so an anchor that can't be
+    /// watched never costs the root its watch.
+    fn start(&self, root: Option<(&Path, RecursiveMode)>, anchor: Option<&Path>) -> Started {
+        let mut watchers = Vec::new();
+        let (root, anchor) = match self {
+            Self::Shared(build) => match build() {
+                Ok(mut watcher) => {
+                    let root = root.map_or(Ok(()), |(path, mode)| watcher.watch(path, mode));
+                    let anchor = anchor.map_or(Ok(()), |path| {
+                        watcher.watch(path, RecursiveMode::NonRecursive)
+                    });
+                    watchers.push(watcher);
+                    (root, anchor)
+                }
+                // One watcher failed both: the root's copy keeps the error.
+                Err(e) => match root {
+                    Some(_) => (
+                        Err(e),
+                        Err(notify::Error::generic("watcher creation failed")),
+                    ),
+                    None => (Ok(()), anchor.map_or(Ok(()), |_| Err(e))),
+                },
+            },
+            Self::Split {
+                root: build_root,
+                anchor: build_anchor,
+            } => {
+                let mut start = |build: &BuildWatcher,
+                                 path: &Path,
+                                 mode: RecursiveMode|
+                 -> notify::Result<()> {
+                    let mut watcher = build()?;
+                    watcher.watch(path, mode)?;
+                    watchers.push(watcher);
+                    Ok(())
+                };
+                let root = root.map_or(Ok(()), |(path, mode)| start(build_root, path, mode));
+                let anchor = anchor.map_or(Ok(()), |path| {
+                    start(build_anchor, path, RecursiveMode::NonRecursive)
+                });
+                (root, anchor)
+            }
+        };
+        Started {
+            watchers,
+            root,
+            anchor,
+        }
+    }
+}
+
+/// A shared watcher's events, routed by path: those strictly inside the root
+/// are the root's; the rest — the root itself, the anchor and its other
+/// entries, such as CC's `history.jsonl` beside its projects root — only
+/// nudge. Exact on inotify and Windows, which report the spelling they were
+/// given: notify's `inotify.rs` joins the watched path, `windows.rs` the
+/// watched dir.
+#[derive(Clone)]
+pub(super) struct Routed<H> {
+    pub(super) root: PathBuf,
+    pub(super) root_events: H,
+    pub(super) nudge: Nudge,
+}
+
+impl<H: EventHandler> EventHandler for Routed<H> {
+    fn handle_event(&mut self, res: notify::Result<notify::Event>) {
+        let mut event = match res {
+            Ok(event) => event,
+            Err(e) => {
+                self.nudge.send();
+                self.root_events.handle_event(Err(e));
+                return;
+            }
+        };
+        let (inside, outside): (Vec<_>, Vec<_>) = std::mem::take(&mut event.paths)
+            .into_iter()
+            .partition(|p| *p != self.root && p.starts_with(&self.root));
+        // A pathless event is a rescan: events were lost.
+        if !outside.is_empty() || inside.is_empty() {
+            self.nudge.on_kind(&event.kind);
+        }
+        if !inside.is_empty() {
+            event.paths = inside;
+            self.root_events.handle_event(Ok(event));
+        }
+    }
 }
 
 fn tree_watcher<H: EventHandler>(handler: H) -> notify::Result<Box<dyn Watcher + Send>> {
@@ -200,55 +297,26 @@ fn dir_watcher<H: EventHandler>(handler: H) -> notify::Result<Box<dyn Watcher + 
     Ok(Box::new(watcher))
 }
 
-/// Builds the watcher a [`RootWatch`] puts on one directory.
-pub(super) type BuildWatcher = Box<dyn Fn() -> notify::Result<Box<dyn Watcher + Send>> + Send>;
-
-/// A watcher on one directory, alive exactly as long as that watch: notify's
-/// backends key their watches by path, so re-watching a recreated directory
-/// on a kept watcher lets the dead one's late removal (inotify's
-/// `DELETE_SELF`, Windows' silent unwatch) take the new watch with it.
-struct Watch {
-    _watcher: Box<dyn Watcher + Send>,
-    path: PathBuf,
-    id: DirId,
-}
-
-impl Watch {
-    fn start(
-        build: &BuildWatcher,
-        path: &Path,
-        mode: RecursiveMode,
-    ) -> notify::Result<Box<dyn Watcher + Send>> {
-        let mut watcher = build()?;
-        watcher.watch(path, mode)?;
-        Ok(watcher)
-    }
-
-    fn is_on(&self, path: &Path, id: &DirId) -> bool {
-        self.path == path && self.id == *id
-    }
-}
-
 /// One root's watch plus the anchor that reports the root's appearance and
 /// removal. Nothing is watched until the first [`Self::reconcile`].
 pub(crate) struct RootWatch {
     root: PathBuf,
     mode: RecursiveMode,
-    build_root: BuildWatcher,
-    build_anchor: BuildWatcher,
+    backend: Backend,
     nudge: Nudge,
-    attached: Option<Watch>,
-    /// The directory whose attach last failed, left to [`Wake::Poll`].
-    failed: Option<DirId>,
-    anchor: Option<Watch>,
+    /// What `watchers` were started for.
+    placed: Placement,
+    watchers: Vec<Box<dyn Watcher + Send>>,
+    root_watched: bool,
+    /// A watch of `placed` failed: retried only by a [`Wake::Poll`].
+    broken: bool,
     root_health: FailureLatch,
     anchor_health: FailureLatch,
 }
 
 impl RootWatch {
     /// `root_events` receives the root watch's events; the anchor's only wake
-    /// `nudge`'s receiver. Two watchers rather than one, so an ancestor's own
-    /// files (CC's `history.jsonl` beside its projects root) never reach
+    /// `nudge`'s receiver, so an ancestor's own files never reach
     /// `root_events`.
     pub(crate) fn new<H: EventHandler + Clone>(
         root: PathBuf,
@@ -256,100 +324,137 @@ impl RootWatch {
         root_events: H,
         nudge: Nudge,
     ) -> Self {
-        let build_root: BuildWatcher = Box::new(move || match mode {
-            RecursiveMode::Recursive => tree_watcher(root_events.clone()),
-            RecursiveMode::NonRecursive => dir_watcher(root_events.clone()),
-        });
-        let anchor_nudge = nudge.clone();
-        let build_anchor: BuildWatcher = Box::new(move || {
-            let nudge = anchor_nudge.clone();
-            dir_watcher(move |res: notify::Result<notify::Event>| nudge.on_event(&res))
-        });
-        Self::with_builders(root, mode, build_root, build_anchor, nudge)
+        let backend = if cfg!(target_os = "macos") || super::TEST_POLL_OVERRIDE.get().is_some() {
+            let anchor_nudge = nudge.clone();
+            Backend::Split {
+                root: Box::new(move || match mode {
+                    RecursiveMode::Recursive => tree_watcher(root_events.clone()),
+                    RecursiveMode::NonRecursive => dir_watcher(root_events.clone()),
+                }),
+                anchor: Box::new(move || {
+                    let nudge = anchor_nudge.clone();
+                    dir_watcher(move |res: notify::Result<notify::Event>| nudge.on_event(&res))
+                }),
+            }
+        } else {
+            let routed = Routed {
+                root: root.clone(),
+                root_events,
+                nudge: nudge.clone(),
+            };
+            Backend::Shared(Box::new(move || {
+                Ok(Box::new(RecommendedWatcher::new(
+                    routed.clone(),
+                    Config::default(),
+                )?))
+            }))
+        };
+        Self::with_backend(root, mode, backend, nudge)
     }
 
-    pub(super) fn with_builders(
+    pub(super) fn with_backend(
         root: PathBuf,
         mode: RecursiveMode,
-        build_root: BuildWatcher,
-        build_anchor: BuildWatcher,
+        backend: Backend,
         nudge: Nudge,
     ) -> Self {
         Self {
             root,
             mode,
-            build_root,
-            build_anchor,
+            backend,
             nudge,
-            attached: None,
-            failed: None,
-            anchor: None,
+            placed: Placement::default(),
+            watchers: Vec::new(),
+            root_watched: false,
+            broken: false,
             root_health: FailureLatch::default(),
             anchor_health: FailureLatch::default(),
         }
     }
 
     pub(crate) fn is_attached(&self) -> bool {
-        self.attached.is_some()
+        self.root_watched
     }
 
-    /// Brings both watches in line with the filesystem: the anchor on the
-    /// root's deepest existing ancestor, the root watch on the directory the
-    /// root names now.
+    /// Brings the watches in line with the filesystem: the anchor on the root's
+    /// deepest existing ancestor, the root watch on the directory the root
+    /// names now. It re-reads until a read finds what the last one placed, so
+    /// a directory created while the watches moved still wakes a reconcile.
     ///
     /// # Errors
     ///
-    /// The root could not be stat'ed or watched. An anchor failure only warns:
-    /// the poll still finds the root.
+    /// The root could not be read, or exists and could not be watched. An
+    /// anchor failure only warns: the poll still finds the root.
     pub(crate) async fn reconcile(&mut self, wake: Wake) -> anyhow::Result<Reconciled> {
-        if wake == Wake::Poll {
-            self.failed = None;
-        }
-        self.reanchor().await;
-        // Read only once the anchor is watched, so a root created or replaced
-        // after this read wakes the next reconcile.
-        let Some(id) = identify(&self.root).await? else {
-            self.attached = None;
-            self.failed = None;
-            return Ok(Reconciled::Unchanged);
-        };
-        if self
-            .attached
-            .as_ref()
-            .is_some_and(|w| w.is_on(&self.root, &id))
-            || self.failed.as_ref() == Some(&id)
-        {
-            return Ok(Reconciled::Unchanged);
-        }
-        self.attached = None;
-        match Watch::start(&self.build_root, &self.root, self.mode) {
-            Ok(watcher) => {
-                self.attached = Some(Watch {
-                    _watcher: watcher,
-                    path: self.root.clone(),
-                    id,
-                });
-                Ok(Reconciled::Attached)
+        let mut retry = wake == Wake::Poll && self.broken;
+        let mut outcome = Reconciled::Unchanged;
+        // A round per level the anchor can move; a chain still changing after
+        // that is left to the next wake.
+        for _ in 0..self.root.ancestors().count() {
+            let now = read_placement(&self.root).await?;
+            if now == self.placed && !retry {
+                return Ok(outcome);
             }
-            // Removed mid-attach: the anchor reports it.
-            Err(_) if identify(&self.root).await?.is_none() => Ok(Reconciled::Unchanged),
-            Err(e) => {
-                self.failed = Some(id);
-                Err(e.into())
+            retry = false;
+            let had_root = self.root_watched;
+            self.watchers.clear();
+            let started = self.backend.start(
+                now.root.as_ref().map(|_| (self.root.as_path(), self.mode)),
+                now.anchor.as_ref().map(|(path, _)| path.as_path()),
+            );
+            self.watchers = started.watchers;
+            self.placed = now;
+            self.root_watched = self.placed.root.is_some() && started.root.is_ok();
+            self.broken = false;
+            if let (Err(e), Some((path, _))) = (started.anchor, &self.placed.anchor) {
+                // Removed since the read: the next round moves the anchor.
+                if identify(path).await?.is_some() {
+                    self.broken = true;
+                    if self.anchor_health.on_failure() {
+                        warn!(
+                            root = ?self.root,
+                            anchor = ?path,
+                            error = ?e,
+                            "watch anchor could not be attached; the root's appearance waits for the poll"
+                        );
+                    }
+                }
+            } else if self.placed.anchor.is_some() && self.anchor_health.on_success() {
+                info!(root = ?self.root, "watch anchor attached after a failure");
+            }
+            if let Err(e) = started.root {
+                // Removed since the read: the next round detaches it.
+                if identify(&self.root).await?.is_some() {
+                    self.broken = true;
+                    return Err(e.into());
+                }
+            }
+            if self.root_watched {
+                outcome = Reconciled::Attached;
+            } else if had_root {
+                outcome = Reconciled::Detached;
             }
         }
+        self.nudge.send();
+        Ok(outcome)
     }
 
     /// [`Self::reconcile`] after boot, where a failure must not end the source:
     /// warned once while it persists.
     pub(crate) async fn reconcile_logged(&mut self, wake: Wake) -> Reconciled {
         match self.reconcile(wake).await {
-            Ok(reconciled) => {
-                if self.failed.is_none() && self.root_health.on_success() {
+            Ok(Reconciled::Attached) => {
+                if self.root_health.on_success() {
                     info!(root = ?self.root, "watch root attached after a failure");
                 }
-                reconciled
+                Reconciled::Attached
             }
+            Ok(Reconciled::Detached) => {
+                self.root_health.on_success();
+                debug!(root = ?self.root, "watch root removed; its watch detached");
+                Reconciled::Detached
+            }
+            Ok(Reconciled::Unchanged) => Reconciled::Unchanged,
             Err(e) => {
                 if self.root_health.on_failure() {
                     warn!(
@@ -359,46 +464,6 @@ impl RootWatch {
                     );
                 }
                 Reconciled::Unchanged
-            }
-        }
-    }
-
-    async fn reanchor(&mut self) {
-        let want = find_anchor(&self.root).await;
-        let unchanged = match (&want, &self.anchor) {
-            (Some((path, id)), Some(anchor)) => anchor.is_on(path, id),
-            (None, None) => true,
-            _ => false,
-        };
-        if unchanged {
-            return;
-        }
-        self.anchor = None;
-        let Some((path, id)) = want else {
-            return;
-        };
-        match Watch::start(&self.build_anchor, &path, RecursiveMode::NonRecursive) {
-            Ok(watcher) => {
-                if self.anchor_health.on_success() {
-                    info!(root = ?self.root, anchor = ?path, "watch anchor attached after a failure");
-                }
-                self.anchor = Some(Watch {
-                    _watcher: watcher,
-                    path,
-                    id,
-                });
-            }
-            // Removed since the walk, and nothing else would wake a re-walk.
-            Err(_) if matches!(identify(&path).await, Ok(None)) => self.nudge.send(),
-            Err(e) => {
-                if self.anchor_health.on_failure() {
-                    warn!(
-                        root = ?self.root,
-                        anchor = ?path,
-                        error = ?e,
-                        "watch anchor could not be attached; the root's appearance waits for the poll"
-                    );
-                }
             }
         }
     }

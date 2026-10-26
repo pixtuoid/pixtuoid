@@ -16,8 +16,9 @@ use crate::source::jsonl::{
 };
 use crate::source::{Source, TaggedSender};
 
-/// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile,
-/// injectable so tests can grow the set without touching process env.
+/// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile
+/// and backstop tick, injectable so tests can grow the set without touching
+/// process env.
 pub(crate) type OmpProfileEnumerate = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 
 /// omp appends a [`super::CUSTOM`] entry whose `customType` is
@@ -180,7 +181,7 @@ impl Source for OmpSource {
                 Some(()) = nudges.recv() => {
                     if let Some(watch) = profiles.as_mut() {
                         watch.reconcile_logged(Wake::Nudge).await;
-                        // An absent profiles dir has no profile to list.
+                        // An unwatched profiles dir, absent or failing, reports no profile.
                         if watch.is_attached() {
                             rescan_into(&rescan, &mut set, &mut started, &tx).await;
                         }
