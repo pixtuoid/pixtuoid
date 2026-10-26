@@ -26,6 +26,9 @@ pub const GAVE_UP: i32 = 3;
 /// `tui_drive`'s exit when it gave up on a submitted turn that raised no gate
 /// it knows to refuse: a verdict on the CLI, not a run that could not happen.
 pub(crate) const UNREFUSED: i32 = 4;
+/// `tui_drive`'s exit when its own budget ran out with the turn unfinished:
+/// judged as a recorder's budget kill is.
+pub const OUT_OF_TIME: i32 = 5;
 
 /// A key the driver writes to the pty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

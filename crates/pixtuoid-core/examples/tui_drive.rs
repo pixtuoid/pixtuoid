@@ -7,24 +7,27 @@
 //! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
-//! out, with what [`Driver::gave_up`] says; and `USAGE_ERROR` on a bad command
-//! line.
+//! Exits with the CLI's status; when the driver gave up, with what
+//! [`Driver::gave_up`] says, or [`OUT_OF_TIME`] once the `BUDGET` ran out, and
+//! why at [`GAVE_UP_NOTE`]; and `USAGE_ERROR` on a bad command line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::num::NonZeroU16;
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic::tui::{
-    Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
+    Action, Answer, CommandLine, Driver, GAVE_UP, Key, OUT_OF_TIME, Tui,
 };
 use pixtuoid_core::harness::hermetic::{self, Surface};
+use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
-/// How long one run may take, end to end, before the CLI is killed: well under
-/// the hermetic job's timeout, which every scenario of every CLI shares.
+/// How long one run may take, end to end, before the CLI is killed: inside
+/// the recorder's [`hermetic::TURN_BUDGET`] with a [`QUIT_GRACE`] to spare, so
+/// the driver gives up first and logs the screen it stood at.
 const BUDGET: Duration = Duration::from_secs(120);
 /// How long a CLI may take to exit after its quit keys.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
@@ -59,7 +62,9 @@ fn main() {
         std::process::exit(USAGE_ERROR);
     };
     let code = drive(line).unwrap_or_else(|e| {
-        eprintln!("tui_drive: {e}");
+        let why = format!("tui_drive: {e}");
+        eprintln!("{why}");
+        say_why(&why);
         GAVE_UP
     });
     std::process::exit(code);
@@ -138,10 +143,13 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
             return Ok(i32::try_from(status.exit_code()).unwrap_or(GAVE_UP));
         }
         let now = Instant::now();
-        let out_of_time = now.duration_since(started) >= BUDGET
-            || quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE);
-        if out_of_time {
-            return give_up(&mut log, &mut child, "out of time", &screen, &driver);
+        if now.duration_since(started) >= BUDGET {
+            let why = format!("the {BUDGET:?} budget ran out");
+            return give_up(&mut log, &mut child, &why, &screen, OUT_OF_TIME);
+        }
+        if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
+            let why = format!("the CLI was still up {QUIT_GRACE:?} after its quit keys");
+            return give_up(&mut log, &mut child, &why, &screen, driver.gave_up());
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -174,7 +182,9 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
                 send_keys(&mut writer, keys)?;
                 quit_at = Some(Instant::now());
             }
-            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen, &driver),
+            Action::Fail(why) => {
+                return give_up(&mut log, &mut child, why, &screen, driver.gave_up());
+            }
         }
     }
 }
@@ -194,20 +204,36 @@ fn shown(screen: &vt100::Screen) -> String {
     rows.join("\n").trim_end().to_owned()
 }
 
-/// Kill the CLI, logging why and the screen it stood at.
+/// Kill the CLI with the group it leads, as portable-pty `setsid`s it, logging
+/// why and the screen it stood at; then exit `code`.
 fn give_up(
     log: &mut std::fs::File,
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     why: &str,
     screen: &vt100::Parser,
-    driver: &Driver<'_>,
+    code: i32,
 ) -> std::io::Result<i32> {
     note(
         log,
         &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
+    say_why(why);
+    #[cfg(unix)]
+    if let Some(group) = child
+        .process_id()
+        .and_then(|pid| rustix::process::Pid::from_raw(i32::try_from(pid).ok()?))
+    {
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
     child.kill()?;
-    Ok(driver.gave_up())
+    Ok(code)
+}
+
+/// Tell the recorder that runs this driver why it gave up.
+fn say_why(why: &str) {
+    if let Some(dir) = std::env::var_os(DRIVER_DIR_ENV) {
+        let _ = std::fs::write(Path::new(&dir).join(GAVE_UP_NOTE), why);
+    }
 }
 
 fn send(writer: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {
@@ -242,6 +268,39 @@ mod tests {
             driver.step(&shown(screen.screen()), now),
             Action::Type("hi".to_owned())
         );
+    }
+
+    #[test]
+    fn the_driver_gives_up_before_the_recorder_kills_it() {
+        assert!(BUDGET + QUIT_GRACE <= *hermetic::TURN_BUDGET.here());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn giving_up_kills_what_the_cli_started_under_its_pty() {
+        use pixtuoid_core::harness::{BOOT, wait_until};
+        let dir = tempfile::tempdir().expect("dir");
+        let beats = dir.path().join("beats");
+        let script = format!(
+            "(trap '' HUP; while :; do printf . >>'{}'; sleep 0.1; done) & sleep 600",
+            beats.display()
+        );
+        let argv = ["sh".into(), "-c".into(), script.into()];
+        let pair = NativePtySystem::default().openpty(SIZE).expect("a pty");
+        let mut child = pair
+            .slave
+            .spawn_command(command(&argv, std::env::vars_os()).expect("cwd"))
+            .expect("the CLI");
+        drop(pair.slave);
+        let beaten = || std::fs::metadata(&beats).map_or(0, |m| m.len());
+        wait_until("its child's beat", BOOT, || Ok(beaten() > 0)).expect("it beats");
+        let mut log = tempfile::tempfile().expect("a log");
+        give_up(&mut log, &mut child, "a test", &parser(), GAVE_UP).expect("gave up");
+        std::thread::sleep(Duration::from_millis(300));
+        let before = beaten();
+        std::thread::sleep(Duration::from_secs(1));
+        assert_eq!(beaten(), before, "the CLI's child outlived its give-up");
+        drop(pair.master);
     }
 
     #[test]
