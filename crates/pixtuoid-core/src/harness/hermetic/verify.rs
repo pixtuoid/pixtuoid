@@ -15,14 +15,14 @@ use serde_json::Value;
 use super::dropped::{self, Unjudged};
 use super::{
     LIFECYCLE_RECORD, MANIFEST, Manifest, Profile, SCENE_LOG, STEPS, Scenario, Shape, StepRecord,
-    Surface, literals, profile, tui,
+    Surface, TURN_BUDGET, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
 use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{Drive, Driven, HOOK_PAYLOADS, Reach, captures};
+use crate::harness::{Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -200,9 +200,9 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
         findings.push((
             Label::Fail,
             format!(
-                "the turn after the last uninstall did not complete (exit {:?}, {} model \
+                "the turn after the last uninstall did not complete ({}, {} model \
                  requests): the uninstall left the CLI unable to run",
-                manifest.capture.exit_code, manifest.requests
+                manifest.capture.end, manifest.requests
             ),
         ));
         return Ok(Verdict::new(findings));
@@ -600,6 +600,53 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
     manifest.capture.exited_as_scripted(shape) && (manifest.requests > 0 || !shape.asks_the_model())
 }
 
+/// Why `manifest`'s turn did not complete. One its budget cut short is the
+/// script's once it asked the model anything, since the script no longer ends
+/// the CLI's flow; one its driver gave up on is blocked for the driver's reason.
+fn incomplete(manifest: &Manifest, shape: Shape) -> (Label, String) {
+    let capture = &manifest.capture;
+    let requests = manifest.requests;
+    let second = capture.second_turn.as_ref().map(|r| r.end);
+    let out_of_time = if capture.end == TurnEnd::OutOfTime {
+        Some("turn")
+    } else if second == Some(TurnEnd::OutOfTime) {
+        Some("second turn")
+    } else {
+        None
+    };
+    if let Some(turn) = out_of_time {
+        let budget = TURN_BUDGET.here();
+        return if requests > 0 {
+            (
+                Label::Script,
+                format!(
+                    "the CLI's {turn} outran the {budget:?} budget after {requests} model \
+                     requests: the script no longer ends its flow"
+                ),
+            )
+        } else {
+            (
+                Label::Blocked,
+                format!("the CLI's {turn} outran the {budget:?} budget with no model request"),
+            )
+        };
+    }
+    let second = second.map_or(String::new(), |end| format!(", second turn {end}"));
+    let end = capture.end;
+    let why = match &capture.gave_up {
+        Some(why) => format!(
+            "the turn's driver gave up on it ({end}{second}, {requests} model requests): {why}"
+        ),
+        None if shape.asks_the_model() => format!(
+            "the CLI did not complete a turn against the scripted model ({end}{second}, \
+             {requests} model requests): it could not run, or its model calls went elsewhere \
+             through a home the sandbox did not redirect"
+        ),
+        None => format!("the CLI did not complete its turn ({end}{second}): it could not run"),
+    };
+    (Label::Blocked, why)
+}
+
 fn judge(
     p: &Profile,
     scenario: &Scenario,
@@ -611,7 +658,7 @@ fn judge(
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui { .. })
-        && manifest.capture.exit_code == Some(tui::UNREFUSED);
+        && manifest.capture.end == TurnEnd::Exited(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
             Label::Fail,
@@ -621,25 +668,7 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
-        let second = manifest
-            .capture
-            .second_turn
-            .as_ref()
-            .map_or(String::new(), |r| {
-                format!(", second turn exit {:?}", r.exit_code)
-            });
-        let exit = manifest.capture.exit_code;
-        let why = if scenario.shape.asks_the_model() {
-            format!(
-                "the CLI did not complete a turn against the scripted model (exit {exit:?}{second}, \
-                 {} model requests): it could not run, or its model calls went elsewhere \
-                 through a home the sandbox did not redirect",
-                manifest.requests
-            )
-        } else {
-            format!("the CLI did not complete its turn (exit {exit:?}{second}): it could not run")
-        };
-        findings.push((Label::Blocked, why));
+        findings.push(incomplete(manifest, scenario.shape));
         return Ok(None);
     }
     // A second turn that never ran had no session the first turn's wire named,
@@ -1290,7 +1319,7 @@ fn canonical(p: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::CaptureRecord;
+    use crate::harness::{CaptureRecord, TurnEnd};
 
     const RECORDED_WORKSPACE: &str = "/private/tmp/pixtuoid-capture/proj";
 
@@ -1315,7 +1344,9 @@ mod tests {
         if scenario.turn.second.is_some() {
             write_manifest(d.path(), source, |m| {
                 m.scenario = name.into();
-                m.capture.second_turn = Some(crate::harness::SecondTurn { exit_code: Some(0) });
+                m.capture.second_turn = Some(crate::harness::SecondTurn {
+                    end: TurnEnd::Exited(0),
+                });
             });
         }
         d
@@ -1349,7 +1380,8 @@ mod tests {
                 workspace: PathBuf::from(RECORDED_WORKSPACE),
                 cli: "test".into(),
                 version: "test".into(),
-                exit_code: Some(0),
+                end: TurnEnd::Exited(0),
+                gave_up: None,
                 second_turn: None,
                 note_survived: true,
             },
@@ -1477,7 +1509,7 @@ mod tests {
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(has(&v, Label::Blocked, "did not run"), "{:?}", v.findings());
         let d = lifecycle_run(&sound(), 0);
-        write_manifest(d.path(), "codex", |m| m.capture.exit_code = Some(1));
+        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::Exited(1));
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "did not complete"),
@@ -1591,15 +1623,11 @@ mod tests {
         write_manifest(d.path(), "omp", |m| {
             m.scenario = "new-session".into();
             m.requests = 0;
-            m.capture.exit_code = Some(1);
+            m.capture.end = TurnEnd::Exited(1);
         });
         let v = verify(d.path()).expect("verify");
         assert!(
-            has(
-                &v,
-                Label::Blocked,
-                "did not complete its turn (exit Some(1))"
-            ),
+            has(&v, Label::Blocked, "did not complete its turn (exit 1)"),
             "{:?}",
             v.findings()
         );
@@ -2329,29 +2357,34 @@ mod tests {
     #[test]
     fn a_second_turn_passes_only_once_it_ran_and_exited_clean() {
         let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
-        let judged = |exit_code, second: Option<crate::harness::SecondTurn>| {
+        let judged = |end, second: Option<crate::harness::SecondTurn>| {
             let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "ultra-effort".into();
-                m.capture.exit_code = exit_code;
+                m.capture.end = end;
                 m.capture.second_turn = second;
             });
             verify(d.path()).expect("verify")
         };
-        let second = |exit_code| Some(crate::harness::SecondTurn { exit_code });
-        let v = judged(Some(0), second(Some(0)));
+        let second = |end| Some(crate::harness::SecondTurn { end });
+        let v = judged(TurnEnd::Exited(0), second(TurnEnd::Exited(0)));
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         assert!(has(
-            &judged(Some(0), None),
+            &judged(TurnEnd::Exited(0), None),
             Label::Fail,
             "named no session for its second turn"
         ));
         assert!(has(
-            &judged(Some(0), second(Some(1))),
+            &judged(TurnEnd::Exited(0), second(TurnEnd::Exited(1))),
             Label::Blocked,
-            "second turn exit Some(1)"
+            "second turn exit 1"
         ));
-        let v = judged(Some(1), None);
+        assert!(has(
+            &judged(TurnEnd::Exited(0), second(TurnEnd::OutOfTime)),
+            Label::Script,
+            "second turn outran"
+        ));
+        let v = judged(TurnEnd::Exited(1), None);
         assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
         assert!(
             !has(&v, Label::Fail, "named no session"),
@@ -2498,21 +2531,25 @@ mod tests {
 
     #[test]
     fn a_succession_completes_with_no_model_request_and_only_on_a_clean_exit() {
-        let completed = |shape, exit_code, requests| {
+        let completed = |shape, end, requests| {
             let m = manifest("omp", |m| {
-                m.capture.exit_code = exit_code;
+                m.capture.end = end;
                 m.requests = requests;
             });
             completed_turn(&m, shape, &mut Vec::new())
         };
-        assert!(completed(Shape::Succession, Some(0), 0));
-        assert!(!completed(Shape::Succession, Some(1), 0));
+        assert!(completed(Shape::Succession, TurnEnd::Exited(0), 0));
+        assert!(!completed(Shape::Succession, TurnEnd::Exited(1), 0));
         assert!(
-            !completed(Shape::Succession, None, 0),
+            !completed(Shape::Succession, TurnEnd::Signalled, 0),
             "a signal ends no turn"
         );
         assert!(
-            !completed(Shape::ToolRun, Some(0), 0),
+            !completed(Shape::Succession, TurnEnd::OutOfTime, 0),
+            "nor does the budget"
+        );
+        assert!(
+            !completed(Shape::ToolRun, TurnEnd::Exited(0), 0),
             "a turn that asks the model"
         );
     }
@@ -2651,7 +2688,7 @@ mod tests {
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
-                m.capture.exit_code = Some(tui::UNREFUSED);
+                m.capture.end = TurnEnd::Exited(tui::UNREFUSED);
                 m.requests = requests;
                 m.unmatched = unmatched;
             });
@@ -2671,7 +2708,7 @@ mod tests {
         );
         let h = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(h.path(), "codex", |m| {
-            m.capture.exit_code = Some(tui::UNREFUSED)
+            m.capture.end = TurnEnd::Exited(tui::UNREFUSED)
         });
         assert_eq!(
             verify(h.path()).expect("verify").label(),
@@ -2695,18 +2732,65 @@ mod tests {
         let d = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(d.path(), "codex", |m| m.unmatched = 1);
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Script);
-        write_manifest(d.path(), "codex", |m| m.capture.exit_code = Some(1));
+        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::Exited(1));
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Blocked);
         write_manifest(d.path(), "codex", |m| m.requests = 0);
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Blocked);
         write_manifest(d.path(), "codex", |m| {
-            m.capture.exit_code = Some(1);
+            m.capture.end = TurnEnd::Exited(1);
             m.unmatched = 1;
         });
         assert_eq!(
             verify(d.path()).expect("verify").label(),
             Label::Script,
             "a CLI the script lost and that then exited is the script's finding"
+        );
+    }
+
+    #[test]
+    fn a_turn_killed_at_its_budget_is_the_scripts_once_it_asked_the_model() {
+        let budget = format!("{:?}", TURN_BUDGET.here());
+        let judged = |requests| {
+            let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+            write_manifest(d.path(), "codex", |m| {
+                m.capture.end = TurnEnd::OutOfTime;
+                m.requests = requests;
+            });
+            verify(d.path()).expect("verify")
+        };
+        let v = judged(4210);
+        assert_eq!(v.label(), Label::Script, "{:?}", v.findings());
+        assert!(
+            has(&v, Label::Script, "4210 model requests"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(has(&v, Label::Script, &budget), "{:?}", v.findings());
+        let v = judged(0);
+        assert_eq!(
+            v.label(),
+            Label::Blocked,
+            "it never reached the model: {:?}",
+            v.findings()
+        );
+        assert!(has(&v, Label::Blocked, &budget), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_tui_turn_its_driver_gave_up_on_is_blocked_for_the_drivers_reason() {
+        const WHY: &str = "the screen stood still with the turn unfinished";
+        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        write_manifest(d.path(), "claude-code", |m| {
+            m.scenario = "permission".into();
+            m.capture.end = TurnEnd::Exited(tui::GAVE_UP);
+            m.capture.gave_up = Some(WHY.into());
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());
+        assert!(
+            !has(&v, Label::Blocked, "did not redirect"),
+            "the driver said why: {:?}",
+            v.findings()
         );
     }
 
@@ -2745,7 +2829,7 @@ mod tests {
             let d = recorded("openclaw", "model-error", scene);
             write_manifest(d.path(), "openclaw", |m| {
                 m.scenario = "model-error".into();
-                m.capture.exit_code = Some(1);
+                m.capture.end = TurnEnd::Exited(1);
             });
             verify(d.path()).expect("verify").findings().to_vec()
         };
@@ -2772,11 +2856,11 @@ mod tests {
         let scene = "agents=[] daemons=[openclaw@55306:busy]\n\
                      agents=[] daemons=[openclaw@55306:degraded]\n\
                      agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
-        let judged = |scenario: &str, exit_code, requests| {
+        let judged = |scenario: &str, end, requests| {
             let d = recorded("openclaw", "model-error", scene);
             write_manifest(d.path(), "openclaw", |m| {
                 m.scenario = scenario.into();
-                m.capture.exit_code = exit_code;
+                m.capture.end = end;
                 m.requests = requests;
             });
             has(
@@ -2785,13 +2869,16 @@ mod tests {
                 "did not complete",
             )
         };
-        assert!(!judged("model-error", Some(1), 1));
+        assert!(!judged("model-error", TurnEnd::Exited(1), 1));
         assert!(
-            judged("model-error", Some(1), 0),
+            judged("model-error", TurnEnd::Exited(1), 0),
             "it never reached the model"
         );
-        assert!(judged("model-error", None, 1), "a signal ends no turn");
-        assert!(judged("tool-run", Some(1), 1));
+        assert!(
+            judged("model-error", TurnEnd::Signalled, 1),
+            "a signal ends no turn"
+        );
+        assert!(judged("tool-run", TurnEnd::Exited(1), 1));
     }
 
     #[test]
@@ -2804,7 +2891,7 @@ mod tests {
             );
             write_manifest(d.path(), "opencode", |m| {
                 m.scenario = "model-error".into();
-                m.capture.exit_code = Some(1);
+                m.capture.end = TurnEnd::Exited(1);
             });
             edit(d.path());
             verify(d.path()).expect("verify")

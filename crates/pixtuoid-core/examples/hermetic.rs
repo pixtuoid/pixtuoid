@@ -339,6 +339,10 @@ mod run {
             &not_run(&args, cfg!(windows)),
         );
         std::fs::write(runs.join(REPORT), &report)?;
+        std::fs::write(
+            runs.join(hermetic::VERDICTS),
+            verdicts(args.shard.map(|(n, _)| n), &entries).to_string(),
+        )?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
         std::fs::write(
             runs.join(hermetic::NEW_TYPES),
@@ -682,6 +686,28 @@ mod run {
             .flat_map(|e| e.verdict.findings())
             .filter(|(label, _)| *label == Label::New)
             .count()
+    }
+
+    /// `entries` as [`hermetic::VERDICTS`] holds them: one row per run, with the
+    /// leg it ran on.
+    fn verdicts(shard: Option<usize>, entries: &[Entry]) -> serde_json::Value {
+        let runs: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "key": e.key,
+                    "version": e.version,
+                    "label": format!("{:?}", e.verdict.label()),
+                    "findings": e
+                        .verdict
+                        .findings()
+                        .iter()
+                        .map(|(label, text)| format!("{label:?}: {text}"))
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        serde_json::json!({ "os": std::env::consts::OS, "shard": shard, "runs": runs })
     }
 
     /// One section of the report: one run, or a source's runs together.
@@ -2422,6 +2448,28 @@ mod run {
         }
 
         #[test]
+        fn each_run_files_under_its_key_with_its_leg_verdict_and_findings() {
+            let blocked = Entry::new(
+                "opencode/tool-run".into(),
+                Some("1.0.0".into()),
+                Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
+            );
+            assert_eq!(
+                verdicts(Some(2), &[blocked]),
+                serde_json::json!({
+                    "os": std::env::consts::OS,
+                    "shard": 2,
+                    "runs": [{
+                        "key": "opencode/tool-run",
+                        "version": "1.0.0",
+                        "label": "Blocked",
+                        "findings": ["Blocked: npm view failed"],
+                    }],
+                })
+            );
+        }
+
+        #[test]
         fn the_reports_title_is_the_worst_verdict_or_that_nothing_ran() {
             let os = std::env::consts::OS;
             let host = ["git version 2.55.0".to_string()];
@@ -2464,7 +2512,7 @@ mod run {
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
             );
-            // A shard's leg names it, so the issue tells two legs of one OS apart.
+            // A shard's leg names it, so two legs of one OS tell apart.
             let r = report(&Versions::Latest, Some(2), &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),

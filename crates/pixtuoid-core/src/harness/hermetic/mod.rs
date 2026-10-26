@@ -6,13 +6,14 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::harness::CaptureRecord;
 use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
+use crate::harness::{CaptureRecord, TurnEnd};
 use crate::source::registry;
 
 pub mod bump;
@@ -49,6 +50,15 @@ impl<T> PerOs<T> {
         }
     }
 }
+
+/// How long one turn the recorder runs may take before it is killed with every
+/// process it started: well past the slowest turn a leg has run, and short
+/// enough that a leg losing one turn to it still ends inside its `timeout`
+/// (`hermetic.yml`). A billed capture's turn is held to it too.
+pub const TURN_BUDGET: PerOs<Duration> = PerOs {
+    unix: Duration::from_secs(240),
+    windows: Duration::from_secs(480),
+};
 
 /// Where a CLI reads policy or config that no sandbox variable redirects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,12 +138,13 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
-    /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
-        match code {
-            Some(0) => true,
-            Some(_) => match self {
+    /// Whether a CLI whose turn ended as `end` ran this shape's turn as
+    /// scripted: one scripted to fail may exit non-zero, but neither a signal
+    /// nor the budget ends a turn.
+    pub(crate) const fn exits_as_scripted(self, end: TurnEnd) -> bool {
+        match end {
+            TurnEnd::Exited(0) => true,
+            TurnEnd::Exited(_) => match self {
                 Self::ModelError => true,
                 Self::ToolRun
                 | Self::Permission
@@ -141,7 +152,7 @@ impl Shape {
                 | Self::ChildError
                 | Self::Succession => false,
             },
-            None => false,
+            TurnEnd::Signalled | TurnEnd::OutOfTime => false,
         }
     }
 
@@ -382,6 +393,9 @@ pub const TUI_LOG: &str = "tui.log";
 /// The file beside a run's report counting its New findings, which
 /// `hermetic.yml` reads to upload a run that passed with one.
 pub const NEW_TYPES: &str = "new-types.json";
+/// The file beside a run's report holding each run's verdict and the leg it
+/// ran on, which `hermetic-nightly.yml` files an issue from per failing run.
+pub const VERDICTS: &str = "verdicts.json";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -565,6 +579,28 @@ mod tests {
         assert!(
             yml.contains(&format!("runs/{NEW_TYPES}")),
             "a run that passed with a New finding uploads only as this file says"
+        );
+    }
+
+    #[test]
+    fn the_nightly_files_from_the_verdicts_and_the_upload_every_leg_names() {
+        let root = bump::repo_root().join(".github/workflows");
+        let nightly = std::fs::read_to_string(root.join("hermetic-nightly.yml"))
+            .expect("hermetic-nightly.yml");
+        assert!(nightly.contains(VERDICTS), "the file the tier writes");
+        let yml = std::fs::read_to_string(root.join("hermetic.yml")).expect("hermetic.yml");
+        let declared = |output: &str| {
+            yml.lines()
+                .filter_map(|l| l.trim().strip_prefix(output)?.split_once(':'))
+                .map(|(leg, _)| leg.to_owned())
+                .collect::<Vec<_>>()
+        };
+        let moved = declared("moved_");
+        assert!(!moved.is_empty(), "the legs' moved rows");
+        assert_eq!(
+            declared("artifact_"),
+            moved,
+            "each leg's upload is an output wherever its moved rows are"
         );
     }
 

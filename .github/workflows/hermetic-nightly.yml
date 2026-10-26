@@ -191,7 +191,7 @@ jobs:
           body: "${{ matrix.source }}'s latest release passed every hermetic scenario each OS runs, re-recorded here (`hermetic-nightly.yml`). A session reads the whole diff, fixtures included, then queues it."
 
   file:
-    name: file the hermetic report
+    name: file the hermetic issues
     needs: drift
     # A dispatch on a branch is a pre-merge proof, not the nightly's verdict.
     # A passing run with a New finding uploads its report too, so this files
@@ -206,43 +206,79 @@ jobs:
         with:
           pattern: ${{ needs.drift.outputs.runs-stem }}*
 
-      - name: Open or update tracking issue
+      - name: File an issue per failing run
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          DRIFT: ${{ toJSON(needs.drift.outputs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           # One uploaded leg lands flat, several each in their artifact's
           # directory (download-artifact v8.0.2 `src/download-artifact.ts:188-193`).
-          legs=()
-          if [ -f report.md ]; then
-            reports=(report.md)
+          if [ -f verdicts.json ]; then
+            legs=(verdicts.json)
           else
-            legs=(*/)
-            # None uploaded: nothing to file.
-            [ ${#legs[@]} -gt 0 ] || exit 0
-            reports=(*/report.md)
+            legs=(*/verdicts.json)
           fi
-          # The orchestrator owns the title, as each uploaded leg's report H1
-          # naming its OS and shard, and they carry the disposition: retitle on the dedup
-          # path too. A leg whose runs hold no report.md never finished its run
-          # (it timed out, was cancelled or crashed): red, once the others are filed.
-          [ ${#reports[@]} -gt 0 ] || { echo "::error::no uploaded leg holds a report.md"; exit 1; }
-          title=$(for r in "${reports[@]}"; do head -1 "$r" | sed 's/^# //'; done | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')
-          num=$(gh issue list --label hermetic --state open \
-            --json number --jq '.[0].number // empty')
-          if [ -n "$num" ]; then
-            gh issue edit "$num" --title "$title"
-            filed=0
+          if [ ${#legs[@]} -gt 0 ]; then
+            verdicts=$(jq -s . "${legs[@]}")
           else
-            url=$(gh issue create --title "$title" --label hermetic --body-file "${reports[0]}")
-            num=${url##*/}
-            filed=1
+            verdicts='[]'
           fi
-          for r in "${reports[@]:filed}"; do
-            gh issue comment "$num" --body-file "$r"
-          done
-          for d in ${legs[@]+"${legs[@]}"}; do
-            [ -f "${d}report.md" ] || { echo "::error::${d%/} holds no report.md"; exit 1; }
-          done
+          open=$(gh issue list --label hermetic --state open --limit 500 --json number,title)
+          # One issue per run that did not pass, titled by its key, and one per
+          # leg that never finished: a leg sets its `moved_<os>_<shard>` only
+          # once its run finished, so an empty one timed out, was cancelled or
+          # crashed, uploaded or not. An issue no leg files tonight closes, a
+          # run's only once every leg finished, since a lost leg's runs are unknown.
+          plan=$(jq -c --argjson drift "$DRIFT" --argjson open "$open" --arg run "$RUN_URL" '
+            def leg: "\(.os), shard \(.shard)";
+            def rank: . as $label | ["Pass", "New", "Stale", "Blocked", "Script", "Fail"] | index($label);
+            def link($artifact): if $artifact == "" then "" else "\nIts runs: \($artifact)\n" end;
+            def issue_of($title): [$open[] | select(.title == $title) | .number] | first;
+            [$drift | to_entries[] | select(.key | startswith("moved_"))
+              | (.key | capture("^moved_(?<os>.+)_(?<shard>[0-9]+)$"))
+              | . + {done: ($drift["moved_\(.os)_\(.shard)"] != ""), artifact: ($drift["artifact_\(.os)_\(.shard)"] // "")}] as $legs
+            | [$legs[] | select(.done | not)] as $lost
+            | [.[] | leg as $leg | ($drift["artifact_\(.os)_\(.shard)"] // "") as $artifact
+                | .runs[] | select(.label != "Pass") | . + {leg: $leg, artifact: $artifact}]
+            | group_by(.key)
+            | [(.[] | {
+                  title: "hermetic: \(.[0].key)",
+                  body: ("**\(max_by(.label | rank) | .label)** in \($run), on \([.[].leg] | unique | join("; ")).\n"
+                    + ([.[] | "\n### \(.leg)\(if .version then " (\(.version))" else "" end): \(.label)\n"
+                        + ([.findings[] | "- \(.)\n"] | join("")) + link(.artifact)] | join("")))
+                }),
+               ($lost[] | {
+                  title: "hermetic: \(leg) never finished its run",
+                  body: ("**Unfinished** in \($run): no verdict names what it ran.\n" + link(.artifact))
+                })] as $filed
+            | {
+                lost: [$lost[] | leg],
+                actions: (
+                  [$filed[] | issue_of(.title) as $n
+                    | if $n then {do: "comment", number: $n, body} else {do: "create", title, body} end]
+                  + [$open[] | select(.title | startswith("hermetic: "))
+                      | select(.title as $t | [$filed[].title] | index($t) | not)
+                      | (.title | ltrimstr("hermetic: ")) as $key
+                      | ([$key | capture("^(?<os>[^,]+), shard (?<shard>[0-9]+) never finished its run$")] | first) as $unfinished
+                      | if $unfinished then
+                          select(any($legs[]; .done and leg == ($unfinished | leg)))
+                          | {do: "close", number, body: "\($unfinished | leg) finished its run in \($run)."}
+                        elif ($lost | length) == 0 then
+                          {do: "close", number, body: "No leg reported \($key) failing in \($run)."}
+                        else empty end])
+              }' <<<"$verdicts")
+          while IFS= read -r action; do
+            jq -r '.body' <<<"$action" >"$RUNNER_TEMP/issue.md"
+            case $(jq -r '.do' <<<"$action") in
+              create) gh issue create --title "$(jq -r '.title' <<<"$action")" --label hermetic --body-file "$RUNNER_TEMP/issue.md" ;;
+              comment) gh issue comment "$(jq -r '.number' <<<"$action")" --body-file "$RUNNER_TEMP/issue.md" ;;
+              close) gh issue close "$(jq -r '.number' <<<"$action")" --comment "$(<"$RUNNER_TEMP/issue.md")" ;;
+            esac
+          done < <(jq -c '.actions[]' <<<"$plan")
+          # Red once the rest are filed.
+          lost=$(jq -r '.lost[]' <<<"$plan")
+          [ -z "$lost" ] || { awk '{ print "::error::" $0 " never finished its run" }' <<<"$lost"; exit 1; }

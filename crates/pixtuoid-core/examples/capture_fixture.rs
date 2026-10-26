@@ -17,6 +17,8 @@ mod recorder {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
+    use std::sync::atomic::{AtomicI32, Ordering};
     use std::time::{Duration, SystemTime};
 
     use pixtuoid_core::harness::provenance::{
@@ -25,17 +27,18 @@ mod recorder {
     use pixtuoid_core::harness::reads;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs};
+    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
     use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY, Drive,
-        HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn, canonical_capture, capture_base,
-        capture_workspace, capture_workspace_tail, files_under, jsonl_files_under,
-        required_version_probe, slashed_under, version_answer, wait_until,
+        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
+        DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn,
+        TurnEnd, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
+        files_under, jsonl_files_under, required_version_probe, slashed_under, version_answer,
+        wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -46,23 +49,24 @@ mod recorder {
     /// driver that installs its CLI: a capture must anchor that version.
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
-    /// Where the recorder names the dir a driver keeps its own logs and homes
-    /// in, [`driver_dir`]: gone with a capture that worked, or whose whole
-    /// redacted copy is in the run dir; kept, and named, for one that did not
-    /// work and has no whole copy, since only the recorder knows which.
-    const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
-
     /// The driver's own part of the recorder's scratch, apart from everything the
-    /// recorder and its listener create there.
+    /// recorder and its listener create there: what it names at [`DRIVER_DIR_ENV`].
     fn driver_dir(scratch: &Path) -> PathBuf {
         scratch.join("driver")
+    }
+
+    /// Why the driver of a run in `scratch` gave up on its turn, if it said.
+    fn gave_up(scratch: &Path) -> Option<String> {
+        std::fs::read_to_string(driver_dir(scratch).join(GAVE_UP_NOTE))
+            .ok()
+            .map(|why| why.trim().to_owned())
     }
 
     /// [`CaptureRecord::exited_as_scripted`] for `source`'s profiled `scenario`.
     fn exited_as_scripted(source: &str, scenario: &str, record: &CaptureRecord) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(record.exit_code == Some(0), |s| {
+            .map_or(record.end == TurnEnd::Exited(0), |s| {
                 record.exited_as_scripted(s.shape)
             })
     }
@@ -316,6 +320,8 @@ mod recorder {
             eprintln!("{why}");
             std::process::exit(2);
         }
+        #[cfg(unix)]
+        end_turns_with_the_recorder()?;
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
         let run_copy = driver_destination(plan);
@@ -382,8 +388,12 @@ mod recorder {
                 return Err(e);
             }
         };
-        let status =
-            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?.status()?;
+        let budget = *TURN_BUDGET.here();
+        let end = run_turn(
+            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
+            budget,
+        )?;
+        let gave_up = gave_up(sandbox.path());
         let second_outcome = if let Some(words) = plan.second_turn() {
             tap.settle();
             let born = root.as_deref().map_or_else(Vec::new, |r| {
@@ -393,16 +403,15 @@ mod recorder {
                 Some(session) => {
                     let turn: Vec<String> =
                         words.words().iter().map(|w| w.filled(&session)).collect();
-                    let exit = wired(
+                    let second = wired(
                         &turn,
                         &workspace,
                         &wiring,
                         descriptor.verified_version,
                         &env,
-                    )?
-                    .status()?;
+                    )?;
                     Some(SecondTurn {
-                        exit_code: exit.code(),
+                        end: run_turn(second, budget)?,
                     })
                 }
                 None => {
@@ -461,7 +470,8 @@ mod recorder {
                 workspace: std::fs::canonicalize(&workspace).unwrap_or(workspace),
                 cli,
                 version,
-                exit_code: status.code(),
+                end,
+                gave_up,
                 second_turn: second_outcome,
                 note_survived,
             };
@@ -520,8 +530,8 @@ mod recorder {
             Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
-        if !status.success() {
-            eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
+        if end != TurnEnd::Exited(0) {
+            eprintln!("WARNING: the CLI's turn ended ({end}) — this capture may be truncated");
             keep_scratch(
                 sandbox,
                 run_copy.as_deref(),
@@ -967,6 +977,68 @@ mod recorder {
         }
         c.envs(env.iter().map(|(k, v)| (k, v)));
         Ok(c)
+    }
+
+    /// How `turn` ended within `budget`. One that outran it is killed with
+    /// every process it started, which its own process group (Unix) or Job
+    /// Object (Windows) holds, so a child it left cannot hold the run open.
+    fn run_turn(mut turn: std::process::Command, budget: Duration) -> std::io::Result<TurnEnd> {
+        // Its own process group may not read the terminal: SIGTTIN would stop it.
+        turn.stdin(std::process::Stdio::null());
+        let mut turn = process_wrap::std::CommandWrap::from(turn);
+        #[cfg(unix)]
+        turn.wrap(process_wrap::std::ProcessGroup::leader());
+        #[cfg(windows)]
+        turn.wrap(process_wrap::std::JobObject);
+        let mut child = turn.spawn()?;
+        #[cfg(unix)]
+        TURN_GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
+        let end = turn_end(child.as_mut(), budget);
+        #[cfg(unix)]
+        TURN_GROUP.store(0, Ordering::SeqCst);
+        end
+    }
+
+    /// [`run_turn`]'s wait, its process group's bookkeeping aside.
+    fn turn_end(
+        child: &mut dyn process_wrap::std::ChildWrapper,
+        budget: Duration,
+    ) -> std::io::Result<TurnEnd> {
+        // An Err is the budget running out or a poll's error, which the poll
+        // below meets again.
+        let _ = wait_until("its exit", budget, || Ok(child.try_wait()?.is_some()));
+        // A poll's status, never `wait`'s: a Job Object's waits on every
+        // process the turn left behind.
+        if let Some(status) = child.try_wait()? {
+            return Ok(status.into());
+        }
+        child.kill()?;
+        Ok(TurnEnd::OutOfTime)
+    }
+
+    /// The process group of the turn running now, 0 between turns.
+    #[cfg(unix)]
+    static TURN_GROUP: AtomicI32 = AtomicI32::new(0);
+
+    /// Kill the running turn's process group with the recorder when a signal
+    /// ends it: the terminal's Ctrl-C never reaches that group, and a billed
+    /// turn left running has no budget to stop it.
+    #[cfg(unix)]
+    fn end_turns_with_the_recorder() -> std::io::Result<()> {
+        use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+        let mut signals = signal_hook::iterator::Signals::new([SIGHUP, SIGINT, SIGTERM])?;
+        std::thread::spawn(move || {
+            for signal in signals.forever() {
+                if let Some(group) =
+                    rustix::process::Pid::from_raw(TURN_GROUP.load(Ordering::SeqCst))
+                {
+                    let _ =
+                        rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+                }
+                let _ = signal_hook::low_level::emulate_default_handler(signal);
+            }
+        });
+        Ok(())
     }
 
     /// How long a daemon gets to serve: its cold boot and a cold-starting probe
@@ -1480,7 +1552,8 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    gave_up: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1595,7 +1668,8 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "copilot".into(),
                     version: "1.0.98".into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    gave_up: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1782,7 +1856,8 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: versions.0.into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    gave_up: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -2736,6 +2811,155 @@ mod recorder {
             assert!(started.elapsed() < boot * 2, "the probe outlived its boot");
         }
 
+        /// Where a re-run of this test binary as a fake turn keeps its markers:
+        /// the env var marks the re-run.
+        const FAKE_TURN: &str = "PIXTUOID_TEST_FAKE_TURN";
+        /// A second libtest filter, naming no test, that marks the fake turn's
+        /// grandchild.
+        const FAKE_GRANDCHILD: &str = "fake-turn-grandchild";
+        /// A third, marking a re-run as the recorder running the fake turn.
+        const FAKE_RECORDER: &str = "fake-recorder";
+        /// Past any budget a test gives a fake turn.
+        const OUTLIVES: Duration = Duration::from_secs(600);
+        /// How often the fake turn's grandchild says it still runs.
+        const BEAT: Duration = Duration::from_millis(100);
+        /// The file the grandchild beats into.
+        const BEATS: &str = "beats";
+
+        /// This test binary, re-run as `test`'s fake turn with its markers in
+        /// `dir`: it starts a grandchild that beats until it is killed, and
+        /// outlives any budget.
+        fn fake_turn(test: &str, dir: &Path) -> std::process::Command {
+            let mut turn =
+                std::process::Command::new(std::env::current_exe().expect("the test binary"));
+            turn.args(["--exact", &this_test(test), "--nocapture"])
+                .env(FAKE_TURN, dir);
+            turn
+        }
+
+        /// In a re-run as `test`'s fake turn or its grandchild, plays it and
+        /// returns its marker dir.
+        fn as_fake_turn(test: &str) -> Option<PathBuf> {
+            let dir = PathBuf::from(std::env::var_os(FAKE_TURN)?);
+            if std::env::args().any(|a| a == FAKE_GRANDCHILD) {
+                let started = std::time::Instant::now();
+                while started.elapsed() < OUTLIVES {
+                    let mut beats = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(dir.join(BEATS))
+                        .expect("beats");
+                    beats.write_all(b".").expect("beat");
+                    std::thread::sleep(BEAT);
+                }
+            } else if !std::env::args().any(|a| a == FAKE_RECORDER) {
+                let mut grandchild = fake_turn(test, &dir)
+                    .arg(FAKE_GRANDCHILD)
+                    .spawn()
+                    .expect("the grandchild");
+                std::thread::sleep(OUTLIVES);
+                let _ = grandchild.wait();
+            }
+            Some(dir)
+        }
+
+        /// How many beats the grandchild in `dir` has beaten.
+        fn beaten(dir: &Path) -> u64 {
+            std::fs::metadata(dir.join(BEATS)).map_or(0, |m| m.len())
+        }
+
+        #[test]
+        fn a_turn_past_its_budget_is_killed_with_its_children() {
+            const TEST: &str = "a_turn_past_its_budget_is_killed_with_its_children";
+            if as_fake_turn(TEST).is_some() {
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let budget = Duration::from_secs(4);
+            let started = std::time::Instant::now();
+            let end = run_turn(fake_turn(TEST, dir.path()), budget).expect("it ran");
+            assert_eq!(end, TurnEnd::OutOfTime);
+            assert!(started.elapsed() < budget * 2, "it outlived its budget");
+            let before = beaten(dir.path());
+            assert!(before > 0, "the grandchild never ran, so it proves nothing");
+            std::thread::sleep(BEAT * 10);
+            assert_eq!(
+                beaten(dir.path()),
+                before,
+                "the turn's grandchild outlived it"
+            );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_signal_that_ends_the_recorder_ends_its_turn() {
+            const TEST: &str = "a_signal_that_ends_the_recorder_ends_its_turn";
+            if let Some(dir) = as_fake_turn(TEST) {
+                if std::env::args().any(|a| a == FAKE_RECORDER) {
+                    end_turns_with_the_recorder().expect("forwarding");
+                    let _ = run_turn(fake_turn(TEST, &dir), OUTLIVES);
+                }
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let mut recorder = fake_turn(TEST, dir.path())
+                .arg(FAKE_RECORDER)
+                .spawn()
+                .expect("the recorder");
+            wait_until("the grandchild", BOOT, || Ok(beaten(dir.path()) > 0)).expect("it beats");
+            let pid = rustix::process::Pid::from_child(&recorder);
+            rustix::process::kill_process(pid, rustix::process::Signal::INT).expect("Ctrl-C");
+            wait_until("the recorder's end", BOOT, || {
+                Ok(recorder.try_wait()?.is_some())
+            })
+            .expect("Ctrl-C ends the recorder");
+            let before = beaten(dir.path());
+            std::thread::sleep(BEAT * 10);
+            assert_eq!(
+                beaten(dir.path()),
+                before,
+                "the turn outlived the recorder Ctrl-C ended"
+            );
+        }
+
+        #[test]
+        fn a_turn_inside_its_budget_ends_as_it_exited() {
+            let exited = |code: i32| {
+                let mut turn = if cfg!(windows) {
+                    std::process::Command::new("cmd")
+                } else {
+                    std::process::Command::new("sh")
+                };
+                let flag = if cfg!(windows) { "/C" } else { "-c" };
+                turn.args([flag, &format!("exit {code}")]);
+                run_turn(turn, *TURN_BUDGET.here()).expect("it ran")
+            };
+            assert_eq!(exited(0), TurnEnd::Exited(0));
+            assert_eq!(exited(3), TurnEnd::Exited(3));
+        }
+
+        /// A driver is a Unix shell script.
+        #[cfg(unix)]
+        #[test]
+        fn a_driver_that_gave_up_says_why_in_the_record() {
+            const WHY: &str = "the screen stood still";
+            let sandbox = tempfile::tempdir().expect("sandbox");
+            let ws = tempfile::tempdir().expect("workspace");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            };
+            let script = format!("printf '{WHY}\\n' >\"${DRIVER_DIR_ENV}/{GAVE_UP_NOTE}\"; exit 3");
+            let cmd = ["sh", "-c", &script].map(String::from);
+            let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
+            assert_eq!(
+                run_turn(turn, *TURN_BUDGET.here()).expect("it ran"),
+                TurnEnd::Exited(3)
+            );
+            assert_eq!(gave_up(sandbox.path()).as_deref(), Some(WHY));
+        }
+
         #[test]
         fn a_slow_probe_answers_inside_the_boot_deadline() {
             const TEST: &str = "a_slow_probe_answers_inside_the_boot_deadline";
@@ -2765,43 +2989,44 @@ mod recorder {
 
         #[test]
         fn only_a_profiled_failing_turn_may_exit_non_zero() {
-            let exited = |exit_code, second: Option<i32>| CaptureRecord {
+            let exited = |code, second: Option<i32>| CaptureRecord {
                 workspace: PathBuf::from("/ws"),
                 cli: "cli".into(),
                 version: "1".into(),
-                exit_code,
+                end: TurnEnd::Exited(code),
+                gave_up: None,
                 second_turn: second.map(|code| SecondTurn {
-                    exit_code: Some(code),
+                    end: TurnEnd::Exited(code),
                 }),
                 note_survived: true,
             };
             assert!(exited_as_scripted(
                 "openclaw",
                 "model-error",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(!exited_as_scripted(
                 "openclaw",
                 "tool-run",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(!exited_as_scripted(
                 "unprofiled",
                 "model-error",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(exited_as_scripted(
                 "unprofiled",
                 "model-error",
-                &exited(Some(0), None)
+                &exited(0, None)
             ));
             assert!(exited_as_scripted(
                 "claude-code",
                 "ultra-effort",
-                &exited(Some(0), Some(0))
+                &exited(0, Some(0))
             ));
             assert!(
-                !exited_as_scripted("claude-code", "ultra-effort", &exited(Some(0), Some(1))),
+                !exited_as_scripted("claude-code", "ultra-effort", &exited(0, Some(1))),
                 "its second turn is held to the same bar"
             );
         }

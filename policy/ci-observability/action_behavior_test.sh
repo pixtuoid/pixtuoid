@@ -351,75 +351,110 @@ git init -q "$test_dir/no-parent" && echo a >"$test_dir/no-parent/lock" && git -
 grep -q 'bad revision' "$test_dir/no-parent.err" ||
     fail "the parentless repo's diff did not fail on its missing parent: $(<"$test_dir/no-parent.err")"
 
-# ── hermetic-nightly.yml: one issue, titled by every uploaded leg, each report on it ──
-file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "Open or update tracking issue")"
+# ── hermetic-nightly.yml: one issue per run that did not pass, and per leg that never finished ──
+file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "File an issue per failing run")"
 file_bin="$test_dir/file-bin"
 mkdir -p "$file_bin"
 cat >"$file_bin/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
-case "$1 $2" in
-"issue list") echo "${FAKE_OPEN:-}" ;;
+verb="$1 $2"
+while [ $# -gt 1 ]; do
+    if [ "$1" = --body-file ]; then cat "$2" >>"$GH_BODIES"; fi
+    shift
+done
+case "$verb" in
+"issue list") echo "${FAKE_OPEN:-[]}" ;;
 "issue create") echo "https://github.com/o/r/issues/9" ;;
 esac
 STUB
 chmod +x "$file_bin/gh"
-file_runs="$test_dir/file-runs"
-for os in macos windows; do
-    mkdir -p "$file_runs/hermetic-runs-1-1-$os"
-    printf '# hermetic, latest CLIs on %s: Fail\n\nbody %s\n' "$os" "$os" >"$file_runs/hermetic-runs-1-1-$os/report.md"
-done
-filed() {
+# The drift outputs of a night whose every leg finished its run, the shard 2
+# legs having uploaded theirs.
+finished='{"runs-stem":"hermetic-runs-1-1-","moved_macos_1":"[]","moved_macos_2":"[]","moved_windows_1":"[]","moved_windows_2":"[]","artifact_macos_1":"","artifact_macos_2":"https://a/m2","artifact_windows_1":"","artifact_windows_2":"https://a/w2"}'
+# A leg's verdicts: its OS and shard, then each run as `key label finding`.
+verdicts() {
+    local os=$1 shard=$2
+    shift 2
+    printf '%s\n' "$@" | jq -R 'split(" ") | {key: .[0], version: "1.0", label: .[1], findings: (.[2:] | if . == [] then [] else [join(" ")] end)}' |
+        jq -s --arg os "$os" --argjson shard "$shard" '{os: $os, shard: $shard, runs: .}'
+}
+night="$test_dir/file-night"
+mkdir -p "$night/hermetic-runs-1-1-macos-2" "$night/hermetic-runs-1-1-windows-2"
+verdicts macos 2 "hermes/tool-run Fail Fail: no on_session_finalize" "hermes/permission Blocked Blocked: the turn's driver gave up on it (exit 3, 3 model requests): the screen stood still" \
+    "grok/tool-run Pass" >"$night/hermetic-runs-1-1-macos-2/verdicts.json"
+verdicts windows 2 "hermes/tool-run Fail Fail: no on_session_finalize" "grok/tool-run Pass" >"$night/hermetic-runs-1-1-windows-2/verdicts.json"
+# The file step in $1, $2 the open issues and $3 the drift outputs: its status.
+file_in() {
     : >"$test_dir/gh.log"
-    (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN="$1" GH_TOKEN=t GH_REPO=o/r \
-        bash -c "$file_script") >/dev/null 2>&1 || fail "the file step exited non-zero"
+    : >"$test_dir/gh.bodies"
+    (cd "$1" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_BODIES="$test_dir/gh.bodies" FAKE_OPEN="$2" \
+        DRIFT="$3" GH_TOKEN=t GH_REPO=o/r RUN_URL=https://github.com/o/r/actions/runs/1 RUNNER_TEMP="$test_dir" \
+        bash -c "$file_script") >"$test_dir/file.out" 2>&1
+}
+filed() {
+    file_in "$night" "$1" "$finished" || fail "the file step exited non-zero: $(<"$test_dir/file.out")"
     cat "$test_dir/gh.log"
 }
-title='hermetic, latest CLIs on macos: Fail; hermetic, latest CLIs on windows: Fail'
-log="$(filed '')"
-if ! { grep -qxF "issue create --title $title --label hermetic --body-file hermetic-runs-1-1-macos/report.md" <<<"$log" &&
-    grep -qxF "issue comment 9 --body-file hermetic-runs-1-1-windows/report.md" <<<"$log"; }; then
-    fail "a new issue is not titled by both legs' H1s with both reports on it: $log"
+# Each run that did not pass opens its own issue, keyed by its title, with the
+# legs it failed on, each one's verdict, findings and runs; a run that passed
+# opens none.
+log="$(filed '[]')"
+[[ $(grep -c '^issue create' <<<"$log") == 2 ]] || fail "not one issue per run that did not pass: $log"
+grep -qxF 'issue create --title hermetic: hermes/tool-run --label hermetic --body-file '"$test_dir/issue.md" <<<"$log" ||
+    fail "a failing run opened no issue under its key: $log"
+! grep -q 'grok/tool-run' <<<"$log" || fail "a run that passed was filed: $log"
+grep -qF 'issue create --title hermetic: hermes/permission' <<<"$log" || fail "a Blocked run opened no issue: $log"
+for line in '**Fail** in https://github.com/o/r/actions/runs/1, on macos, shard 2; windows, shard 2.' \
+    '### macos, shard 2 (1.0): Fail' '### windows, shard 2 (1.0): Fail' '- Fail: no on_session_finalize' \
+    'Its runs: https://a/m2' 'Its runs: https://a/w2' \
+    "- Blocked: the turn's driver gave up on it (exit 3, 3 model requests): the screen stood still"; do
+    grep -qxF -- "$line" "$test_dir/gh.bodies" || fail "no issue's body holds \`$line\`: $(<"$test_dir/gh.bodies")"
+done
+# An open issue of the same key takes the night's result as a comment.
+log="$(filed '[{"number":7,"title":"hermetic: hermes/tool-run"}]')"
+if ! { grep -qxF "issue comment 7 --body-file $test_dir/issue.md" <<<"$log" && ! grep -qF 'create --title hermetic: hermes/tool-run' <<<"$log"; }; then
+    fail "an open issue of the key was not reused: $log"
 fi
-log="$(filed 7)"
-if ! { grep -qxF "issue edit 7 --title $title" <<<"$log" && [[ $(grep -c '^issue comment 7 --body-file' <<<"$log") == 2 ]]; }; then
-    fail "an open issue is not retitled with both legs' reports added: $log"
+# An open issue no leg files tonight closes, naming the run; an issue under any
+# other title is left alone.
+log="$(filed '[{"number":8,"title":"hermetic: grok/permission"},{"number":5,"title":"hermetic, latest CLIs on macos: Fail"}]')"
+grep -qxF 'issue close 8 --comment No leg reported grok/permission failing in https://github.com/o/r/actions/runs/1.' <<<"$log" ||
+    fail "a run no leg reported failing kept its issue open: $log"
+! grep -qE '^issue (comment|close|edit) 5' <<<"$log" || fail "an issue the step does not key was touched: $log"
+# A leg whose run never finished, whether it uploaded runs with no verdicts or
+# nothing at all: it opens its own issue, closes no run's (its runs are
+# unknown), and the step goes red once the rest are filed.
+lost_night="$(jq -c '.moved_windows_1 = "" | .moved_macos_1 = "" | .artifact_macos_1 = "https://a/m1"' <<<"$finished")"
+mkdir -p "$night/hermetic-runs-1-1-macos-1"
+if file_in "$night" '[{"number":8,"title":"hermetic: grok/permission"}]' "$lost_night"; then
+    fail "the file step passed with legs that never finished"
 fi
-# A leg whose run never finished uploads runs with no report.md: the others still file, and the step goes red.
-mkdir -p "$file_runs/hermetic-runs-1-1-linux"
-: >"$test_dir/gh.log"
-if (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1; then
-    fail "the file step passed with a leg that wrote no report"
-fi
-[[ $(grep -c '^issue comment 7 --body-file' "$test_dir/gh.log") == 2 ]] ||
-    fail "a leg with no report kept the others' reports off the issue: $(<"$test_dir/gh.log")"
-# A lone uploaded leg lands flat: it files under its own H1.
+for leg in 'macos, shard 1' 'windows, shard 1'; do
+    grep -qxF "issue create --title hermetic: $leg never finished its run --label hermetic --body-file $test_dir/issue.md" "$test_dir/gh.log" ||
+        fail "$leg never finished and opened no issue: $(<"$test_dir/gh.log")"
+done
+[[ $(grep -c '^issue create' "$test_dir/gh.log") == 4 ]] || fail "a lost leg kept a run's issue from opening: $(<"$test_dir/gh.log")"
+! grep -q '^issue close' "$test_dir/gh.log" || fail "a night with a lost leg closed an issue: $(<"$test_dir/gh.log")"
+grep -qF '::error::macos, shard 1 never finished its run' "$test_dir/file.out" || fail "a lost leg is not red: $(<"$test_dir/file.out")"
+# Its issue closes once the leg finishes.
+log="$(filed '[{"number":10,"title":"hermetic: windows, shard 1 never finished its run"}]')"
+grep -qxF 'issue close 10 --comment windows, shard 1 finished its run in https://github.com/o/r/actions/runs/1.' <<<"$log" ||
+    fail "a leg that finished again kept its issue open: $log"
+# A lone uploaded leg lands flat: its runs file the same.
 flat="$test_dir/file-flat"
 mkdir -p "$flat/copilot"
-printf '# hermetic, latest CLIs on macos, shard 1: New\n\nbody\n' >"$flat/report.md"
-: >"$test_dir/gh.log"
-(cd "$flat" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN='' GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a lone leg that landed flat"
-grep -qxF "issue create --title hermetic, latest CLIs on macos, shard 1: New --label hermetic --body-file report.md" "$test_dir/gh.log" ||
-    fail "a lone flat leg is not filed under its H1: $(<"$test_dir/gh.log")"
-# None uploaded: nothing is filed.
+verdicts macos 1 "copilot/tool-run New New: /type: x" >"$flat/verdicts.json"
+file_in "$flat" '[]' "$finished" || fail "the file step failed a lone leg that landed flat: $(<"$test_dir/file.out")"
+grep -qF 'issue create --title hermetic: copilot/tool-run' "$test_dir/gh.log" ||
+    fail "a lone flat leg's run was not filed: $(<"$test_dir/gh.log")"
+# Every leg finished and none uploaded: nothing opens, and what was open closes.
 empty="$test_dir/file-empty"
 mkdir -p "$empty"
-: >"$test_dir/gh.log"
-(cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a night nothing uploaded on"
-[[ ! -s "$test_dir/gh.log" ]] || fail "a night nothing uploaded on filed something: $(<"$test_dir/gh.log")"
-# Every uploaded leg failed before its report: red, and no issue retitled or opened.
-bare="$test_dir/file-bare"
-mkdir -p "$bare/hermetic-runs-1-1-linux"
-: >"$test_dir/gh.log"
-if (cd "$bare" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1; then
-    fail "the file step passed with no uploaded leg holding a report"
-fi
-! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
-    fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
+file_in "$empty" '[{"number":8,"title":"hermetic: grok/permission"}]' "$finished" ||
+    fail "the file step failed a night nothing uploaded on: $(<"$test_dir/file.out")"
+! grep -qE '^issue (create|comment)' "$test_dir/gh.log" || fail "a clean night filed something: $(<"$test_dir/gh.log")"
+grep -q '^issue close 8 ' "$test_dir/gh.log" || fail "a clean night closed nothing: $(<"$test_dir/gh.log")"
 
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
 # packages.

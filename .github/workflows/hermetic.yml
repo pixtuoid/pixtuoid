@@ -30,6 +30,18 @@ on:
       moved_windows_2:
         description: 'The Windows shard 2 leg''s `bump::MOVED` rows'
         value: ${{ jobs.run.outputs.moved_windows_2 }}
+      artifact_macos_1:
+        description: 'The URL of the runs the macOS shard 1 leg uploaded, when it uploaded'
+        value: ${{ jobs.run.outputs.artifact_macos_1 }}
+      artifact_macos_2:
+        description: 'The macOS shard 2 leg''s uploaded runs'
+        value: ${{ jobs.run.outputs.artifact_macos_2 }}
+      artifact_windows_1:
+        description: 'The Windows shard 1 leg''s uploaded runs'
+        value: ${{ jobs.run.outputs.artifact_windows_1 }}
+      artifact_windows_2:
+        description: 'The Windows shard 2 leg''s uploaded runs'
+        value: ${{ jobs.run.outputs.artifact_windows_2 }}
 
 # `run` executes third-party CLIs, so no job here saves a cache
 # (https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode).
@@ -70,6 +82,10 @@ jobs:
       moved_macos_2: ${{ steps.moved.outputs.moved_macos_2 }}
       moved_windows_1: ${{ steps.moved.outputs.moved_windows_1 }}
       moved_windows_2: ${{ steps.moved.outputs.moved_windows_2 }}
+      artifact_macos_1: ${{ steps.uploaded.outputs.artifact_macos_1 }}
+      artifact_macos_2: ${{ steps.uploaded.outputs.artifact_macos_2 }}
+      artifact_windows_1: ${{ steps.uploaded.outputs.artifact_windows_1 }}
+      artifact_windows_2: ${{ steps.uploaded.outputs.artifact_windows_2 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -110,12 +126,23 @@ jobs:
           any=$(jq '. > 0' target/hermetic/runs/new-types.json)
           echo "any=$any" >> "$GITHUB_OUTPUT"
       - if: always() && steps.run.outcome != 'skipped' && (steps.run.outcome != 'success' || steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true')
+        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error
+      # The issues the nightly files link it (upload-artifact v7 `action.yml`'s
+      # `artifact-url`, empty when the upload failed).
+      - name: Report the uploaded runs
+        id: uploaded
+        if: always() && steps.upload.outputs.artifact-url != ''
+        env:
+          OS: ${{ matrix.os }}
+          SHARD: ${{ matrix.shard }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: echo "artifact_${OS}_${SHARD}=${URL}" >> "$GITHUB_OUTPUT"
       - name: Fail on a failing verdict
         if: steps.run.outputs.exit != '0'
         env:
