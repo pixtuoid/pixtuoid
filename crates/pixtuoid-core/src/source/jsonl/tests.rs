@@ -426,7 +426,7 @@ async fn walk_once_with_recency(
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
@@ -468,7 +468,7 @@ async fn first_sight_cwd_falls_back_to_the_path_deriver_when_content_has_none() 
             tx: &tx,
             window: Duration::from_secs(3600),
             live: &live,
-            tail: None,
+            follower: None,
         };
         walk_jsonl(&path, decoders, &ctx).await;
         drop(tx);
@@ -518,7 +518,7 @@ async fn walk_once_live(
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
@@ -823,7 +823,7 @@ async fn walk_jsonl_honors_the_path_filter() {
         tx: &tx,
         window: Duration::from_secs(60),
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(dir.path(), decoders, &ctx).await;
 
@@ -994,7 +994,7 @@ async fn walk_once_with_head_label(
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
@@ -1047,7 +1047,7 @@ async fn codex_first_sights(
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(path, decoders, &ctx).await;
     drop(tx);
@@ -1436,7 +1436,7 @@ async fn session_exit_drains_pending_bytes_so_a_straggler_walk_cannot_resurrect(
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     let id = default_id_from_path(&path);
     emit_session_exit(&id, decoders, &ctx).await;
@@ -1513,7 +1513,7 @@ async fn session_exit_purges_live_so_a_probe_failure_pass_cannot_revouch() {
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     walk_jsonl(&path, decoders, &ctx).await;
@@ -1617,7 +1617,7 @@ async fn child_end_unclaim_drains_stragglers_then_ends_the_claim_without_session
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     let events = drain_events(&mut rx);
@@ -1690,7 +1690,7 @@ async fn an_ended_claim_is_not_revouched_into_a_full_replay() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     let events = drain_events(&mut rx);
@@ -1775,7 +1775,7 @@ async fn a_decoded_terminators_ended_claim_is_not_revouched_into_a_full_replay()
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     let mut health = FailureLatch::default();
     scan_root(dir.path(), decoders, &ctx, &mut health).await;
@@ -1814,7 +1814,7 @@ async fn unclaim_for_foreign_id_stays_pending_and_leaves_local_claims_alone() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
@@ -1886,7 +1886,7 @@ async fn child_end_unclaim_ends_only_the_matched_ids_own_path() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     drain_child_end_unclaims(Some(&unclaims), t_decoders(), &ctx).await;
     assert_eq!(
@@ -2029,7 +2029,7 @@ async fn known_oversized_tail_emits_session_end_if_the_skipped_span_ended() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     walk_jsonl(&path, decoders, &ctx).await;
     drop(tx);
@@ -2296,7 +2296,7 @@ async fn scan_pass_re_vouches_a_transiently_gated_live_file() {
         tx: &tx,
         window: Duration::from_secs(60),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     let mut health = FailureLatch::default();
@@ -2408,7 +2408,7 @@ async fn revouch_does_not_replay_a_probe_vouched_ended_transcript() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     let mut health = FailureLatch::default();
@@ -2852,7 +2852,7 @@ async fn walk_refuses_symlinked_entries() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
     let mut health = FailureLatch::default();
     scan_root(root.path(), t_decoders(), &ctx, &mut health).await;
@@ -2920,7 +2920,7 @@ async fn session_exit_parks_truncated_transcript_so_a_straggler_walk_cannot_resu
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     let id = default_id_from_path(&path);
     let decoders = SourceDecoders {
@@ -3009,7 +3009,7 @@ async fn child_end_unclaim_parks_truncated_transcript_before_the_end() {
         tx: &tx,
         window,
         live: &live,
-        tail: None,
+        follower: None,
     };
     let decoders = SourceDecoders {
         decode_line: t_decode_lifecycle,
@@ -3071,7 +3071,7 @@ async fn park_if_truncated_below_cursor_lands_exactly_at_new_eof() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     park_if_truncated_below_cursor(&path, &ctx).await;
@@ -3108,7 +3108,7 @@ async fn scan_root_on_unreadable_root_latches_failure_and_emits_nothing() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     let mut health = FailureLatch::default();
@@ -3141,7 +3141,7 @@ async fn scan_root_on_absent_root_is_healthy_and_emits_nothing() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     let mut health = FailureLatch::default();
@@ -3179,7 +3179,7 @@ async fn scan_root_recovers_after_a_failed_root_reports_success_once() {
         tx: &tx,
         window: Duration::from_secs(3600),
         live: &live,
-        tail: None,
+        follower: None,
     };
 
     let mut health = FailureLatch::default();
@@ -3506,7 +3506,7 @@ async fn revouch_pass_prunes_deleted_files_from_cursors() {
         tx: &tx,
         window: Duration::from_secs(60),
         live: &live,
-        tail: None,
+        follower: None,
     };
     revouch_gated_files(decoders, &ctx).await;
     assert!(
@@ -4201,34 +4201,162 @@ fn nudge_wakes_only_on_a_change_to_which_directories_exist() {
     assert!(nudges.try_recv().is_ok(), "an error may hide a lost event");
 }
 
-/// A walk with the tail follows a first sight it admits, before the early
-/// return an empty file takes (codex writes its first line after `git`).
 #[cfg(target_os = "macos")]
-#[tokio::test]
-async fn an_admitted_first_sight_is_followed_and_a_gated_one_is_not() {
-    let tail = Tail::spawn(|_: notify::Result<notify::Event>| {}).unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let fresh = dir.path().join("fresh.jsonl");
-    std::fs::File::create(&fresh).unwrap();
-    let old = dir.path().join("old.jsonl");
-    std::fs::write(&old, "{}\n").unwrap();
-    backdate_one_hour(&old);
-    let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
-    let source: Arc<str> = Arc::from("test");
-    let cursors = Arc::new(Mutex::new(HashMap::new()));
-    let seen = Arc::new(Mutex::new(HashMap::new()));
-    let live = Arc::new(Mutex::new(HashSet::new()));
-    let ctx = WatchCtx {
-        source: &source,
-        cursors: &cursors,
-        seen: &seen,
-        tx: &tx,
-        window: Duration::from_secs(60),
-        live: &live,
-        tail: Some(&tail),
-    };
-    walk_jsonl(&fresh, t_decoders(), &ctx).await;
-    walk_jsonl(&old, t_decoders(), &ctx).await;
-    assert!(tail.follows(&fresh), "the admitted empty file is followed");
-    assert!(!tail.follows(&old), "the gated file is not");
+mod follow {
+    use super::*;
+
+    fn follower() -> Follower {
+        Follower::spawn(|_: notify::Result<notify::Event>| {}).unwrap()
+    }
+
+    fn stem_id(path: &Path) -> String {
+        path.file_stem().unwrap().to_string_lossy().into_owned()
+    }
+
+    /// A walk with the follower follows a first sight it admits, before the
+    /// early return an empty file takes (codex writes its first line after
+    /// `git`).
+    #[tokio::test]
+    async fn an_admitted_first_sight_is_followed_and_a_gated_one_is_not() {
+        let follower = follower();
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.jsonl");
+        std::fs::File::create(&fresh).unwrap();
+        let old = dir.path().join("old.jsonl");
+        std::fs::write(&old, "{}\n").unwrap();
+        backdate_one_hour(&old);
+        let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+        let source: Arc<str> = Arc::from("test");
+        let cursors = Arc::new(Mutex::new(HashMap::new()));
+        let seen = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(Mutex::new(HashSet::new()));
+        let ctx = WatchCtx {
+            source: &source,
+            cursors: &cursors,
+            seen: &seen,
+            tx: &tx,
+            window: Duration::from_secs(60),
+            live: &live,
+            follower: Some(&follower),
+        };
+        walk_jsonl(&fresh, t_decoders(), &ctx).await;
+        walk_jsonl(&old, t_decoders(), &ctx).await;
+        assert!(
+            follower.follows(&fresh),
+            "the admitted empty file is followed"
+        );
+        assert!(!follower.follows(&old), "the gated file is not");
+    }
+
+    /// Admitted and followed by an event-driven walk, an empty transcript's
+    /// first line may land between the walk's stat and the knote: no note
+    /// carries it, so the walk itself must read it.
+    #[tokio::test]
+    async fn a_write_that_beats_the_knote_is_read_by_the_walk_that_follows() {
+        let follower = follower();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh.jsonl");
+        std::fs::File::create(&path).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+        let source: Arc<str> = Arc::from("test");
+        let cursors = Arc::new(Mutex::new(HashMap::new()));
+        let seen = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(Mutex::new(HashSet::new()));
+        let ctx = WatchCtx {
+            source: &source,
+            cursors: &cursors,
+            seen: &seen,
+            tx: &tx,
+            window: Duration::from_secs(60),
+            live: &live,
+            follower: Some(&follower),
+        };
+        // `probe_admits` takes `live` after the walk's stat and before its
+        // follow, so holding it parks the walk in that window.
+        let parked = live.lock().await;
+        let first_line = async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(b"{}\n")
+                .unwrap();
+            drop(parked);
+        };
+        tokio::join!(walk_jsonl(&path, t_decoders(), &ctx), first_line);
+        assert!(follower.follows(&path));
+        assert!(
+            drain_events(&mut rx)
+                .iter()
+                .any(|(_, e)| matches!(e, AgentEvent::SessionStart { .. })),
+            "the first line was left for a note that never comes"
+        );
+    }
+
+    /// A scan admits every transcript in the initial window; following them
+    /// all would hold an fd for each.
+    #[tokio::test]
+    async fn a_scan_admits_a_fresh_transcript_without_following_it() {
+        let follower = follower();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh.jsonl");
+        std::fs::write(&path, "{}\n").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+        let source: Arc<str> = Arc::from("test");
+        let cursors = Arc::new(Mutex::new(HashMap::new()));
+        let seen = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(Mutex::new(HashSet::new()));
+        let ctx = WatchCtx {
+            source: &source,
+            cursors: &cursors,
+            seen: &seen,
+            tx: &tx,
+            window: Duration::from_secs(60),
+            live: &live,
+            follower: Some(&follower),
+        };
+        scan_root(dir.path(), t_decoders(), &ctx, &mut FailureLatch::default()).await;
+        assert_eq!(seen.lock().await.get(&path), Some(&Sight::Claimed));
+        assert!(!follower.follows(&path));
+    }
+
+    fn vouch_child(_root: &Path) -> Option<ProbeSnapshot> {
+        Some(snap(&[("child", 1)]))
+    }
+
+    /// A multi-turn codex child's claim ends at each turn while its parent
+    /// still holds the rollout open; the pass follows it on the probe's word.
+    #[tokio::test]
+    async fn a_pass_follows_an_ended_transcript_a_live_writer_holds() {
+        let follower = follower();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("child.jsonl");
+        std::fs::write(&path, "{}\n").unwrap();
+        let watcher = JsonlWatcher::new(dir.path().to_path_buf(), "test".into(), t_decode, t_ended)
+            .with_root_probe(vouch_child);
+        let decoders = SourceDecoders {
+            id_derive: super::folded::FoldedDeriver::new(stem_id),
+            ..t_decoders()
+        };
+        let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+        let source: Arc<str> = Arc::from("test");
+        let cursors = Arc::new(Mutex::new(HashMap::from([(path.clone(), 3)])));
+        let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Ended)])));
+        let live = Arc::new(Mutex::new(HashSet::new()));
+        let ctx = WatchCtx {
+            source: &source,
+            cursors: &cursors,
+            seen: &seen,
+            tx: &tx,
+            window: Duration::from_secs(60),
+            live: &live,
+            follower: Some(&follower),
+        };
+        let mut scan_state = ScanState::new(Duration::from_secs(60));
+        watcher
+            .run_scan_pass(&ctx, &mut scan_state, None, None, decoders, false)
+            .await;
+        assert!(follower.follows(&path));
+    }
 }

@@ -94,7 +94,7 @@ fn open_for_events(path: &Path) -> io::Result<File> {
 #[derive(Debug)]
 pub(crate) enum VnodeNote<'a> {
     Changed(&'a Path, VnodeEvents),
-    /// The wait failed, and the thread has exited.
+    /// The wait failed; the thread exits after this note.
     Failed(io::Error),
 }
 
@@ -149,9 +149,6 @@ impl Vnodes {
 
     /// Watches `path` for `flags`; `Ok(false)` when it already is.
     pub(crate) fn add(&self, path: &Path, flags: VnodeEvents) -> io::Result<bool> {
-        if self.0.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::other("the vnode watch thread has exited"));
-        }
         let mut files = self.files();
         if files.by_path.contains_key(path) {
             return Ok(false);
@@ -224,12 +221,7 @@ impl VnodeWatch {
         let thread_vnodes = vnodes.clone();
         std::thread::Builder::new()
             .name(name.into())
-            .spawn(move || {
-                run(&thread_vnodes, &mut sink);
-                // Every exit lands here, so `add` refuses instead of
-                // registering with a kqueue nothing reads.
-                thread_vnodes.0.closed.store(true, Ordering::SeqCst);
-            })?;
+            .spawn(move || run(&thread_vnodes, &mut sink))?;
         Ok(Self { vnodes })
     }
 
@@ -382,17 +374,6 @@ mod tests {
             }
         });
         assert_eq!(named, Vec::<PathBuf>::new());
-    }
-
-    #[test]
-    fn add_refuses_once_the_watch_is_dropped() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("t.jsonl");
-        drop(held(&path));
-        let (watch, _notes) = watch();
-        let vnodes = watch.vnodes().clone();
-        drop(watch);
-        assert!(vnodes.add(&path, VnodeEvents::WRITE).is_err());
     }
 
     #[test]

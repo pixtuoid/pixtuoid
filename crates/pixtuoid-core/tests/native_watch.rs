@@ -424,24 +424,6 @@ mod held_open {
         assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
         handle.abort();
     }
-
-    /// Whether an event matching `done` arrives within `bound`.
-    async fn within(
-        rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-        bound: Duration,
-        done: impl Fn(&AgentEvent) -> bool,
-    ) -> bool {
-        let deadline = tokio::time::Instant::now() + bound;
-        while tokio::time::Instant::now() < deadline {
-            if let Ok(Some((_, event))) =
-                tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-                && done(&event)
-            {
-                return true;
-            }
-        }
-        false
-    }
 }
 
 fn is_start(event: &AgentEvent, id: &AgentId) -> bool {
@@ -482,14 +464,23 @@ async fn write_session(root: &std::path::Path, uuid: &str) {
 async fn session_started(
     rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
     uuid: &str,
-    within: Duration,
+    bound: Duration,
 ) -> bool {
     let want = AgentId::from_parts("codex", uuid);
-    let deadline = tokio::time::Instant::now() + within;
+    within(rx, bound, |e| is_start(e, &want)).await
+}
+
+/// Whether an event matching `done` arrives within `bound`.
+async fn within(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    bound: Duration,
+    done: impl Fn(&AgentEvent) -> bool,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + bound;
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
+        if let Ok(Some((_, event))) =
             tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-            && agent_id == want
+            && done(&event)
         {
             return true;
         }

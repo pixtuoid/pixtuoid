@@ -91,6 +91,12 @@ pub(super) async fn scan_root(
     ctx: &WatchCtx<'_>,
     root_health: &mut FailureLatch,
 ) {
+    // A scan admits every transcript in the initial window, and a followed one
+    // costs an fd; its pass's reconcile follows only what a live writer holds.
+    let ctx = &WatchCtx {
+        follower: None,
+        ..*ctx
+    };
     revouch_gated_files(decoders, ctx).await;
     match tokio::fs::read_dir(root).await {
         Ok(mut read) => {
@@ -141,7 +147,7 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
         tx,
         window,
         live: _,
-        tail,
+        follower,
     } = *ctx;
     let SourceDecoders {
         decode_line,
@@ -222,8 +228,8 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
     // writes FSEvents reports only at close: codex's first line among them,
     // written after it runs `git`. Re-measured once followed, so a write that
     // landed before the knote is this walk's to read.
-    let file_len = match tail {
-        Some(tail) if !known && tail.follow(path) => tokio::fs::symlink_metadata(path)
+    let file_len = match follower {
+        Some(follower) if !known && follower.follow(path) => tokio::fs::symlink_metadata(path)
             .await
             .map_or(file_len, |meta| meta.len()),
         _ => file_len,

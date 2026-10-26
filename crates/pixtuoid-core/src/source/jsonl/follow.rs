@@ -1,4 +1,4 @@
-//! The tail of transcripts their writer holds open. macOS's FSEvents reports a
+//! Follows transcripts their writer holds open. macOS's FSEvents reports a
 //! file's writes only at its close (xnu `bsd/vfs/vfs_vnops.c:887-893` at
 //! `f6217f89`), so a source whose writer keeps its transcript open (one with an
 //! open-fd liveness probe) gets a kqueue knote per followed transcript, each
@@ -40,20 +40,18 @@ pub(super) fn plan<'a>(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) use imp::Tail;
+pub(crate) use imp::Follower;
 
 #[cfg(target_os = "macos")]
 mod imp {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
-    use std::sync::{Mutex, PoisonError};
 
     use notify::EventHandler;
     use notify::event::{DataChange, EventKind, ModifyKind};
     use rustix::event::kqueue::VnodeEvents;
     use tracing::warn;
 
-    use super::super::health::FailureLatch;
     use crate::source::kqueue::{VnodeNote, VnodeWatch, Vnodes};
 
     const FOLLOWED: VnodeEvents = VnodeEvents::WRITE
@@ -61,9 +59,8 @@ mod imp {
         .union(VnodeEvents::RENAME)
         .union(VnodeEvents::REVOKE);
 
-    pub(crate) struct Tail {
+    pub(crate) struct Follower {
         watch: VnodeWatch,
-        follow_health: Mutex<FailureLatch>,
     }
 
     fn written(path: &Path) -> notify::Event {
@@ -71,7 +68,7 @@ mod imp {
             .add_path(path.to_path_buf())
     }
 
-    impl Tail {
+    impl Follower {
         /// `handler` is the root watch's own, so a write takes the path an
         /// FSEvents event takes.
         pub(crate) fn spawn(mut handler: impl EventHandler) -> Option<Self> {
@@ -88,16 +85,13 @@ mod imp {
                     handler.handle_event(Ok(written(path)));
                 }
                 VnodeNote::Failed(error) => {
-                    warn!(error = %error, "transcript tail stopped; held-open appends wait for the poll");
+                    warn!(error = %error, "following held-open transcripts stopped; their appends wait for the poll");
                 }
             };
-            match VnodeWatch::spawn("pixtuoid-tail", sink) {
-                Ok(watch) => Some(Self {
-                    watch,
-                    follow_health: Mutex::default(),
-                }),
+            match VnodeWatch::spawn("pixtuoid-follow", sink) {
+                Ok(watch) => Some(Self { watch }),
                 Err(error) => {
-                    warn!(error = %error, "transcript tail unavailable; held-open appends wait for the poll");
+                    warn!(error = %error, "cannot follow held-open transcripts; their appends wait for the poll");
                     None
                 }
             }
@@ -105,22 +99,14 @@ mod imp {
 
         /// Whether this call started following `path`, so its writes before
         /// the knote are the caller's to read.
+        #[must_use = "a write that beat the knote is unread until the caller walks the path"]
         pub(crate) fn follow(&self, path: &Path) -> bool {
-            let mut health = self
-                .follow_health
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
             match self.watch.vnodes().add(path, FOLLOWED) {
-                Ok(started) => {
-                    health.on_success();
-                    started
-                }
+                Ok(started) => started,
                 // The walk that finds it gone retires it.
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
                 Err(error) => {
-                    if health.on_failure() {
-                        warn!(path = ?path, error = %error, "cannot follow a held-open transcript; its appends wait for the poll");
-                    }
+                    warn!(path = ?path, error = %error, "cannot follow a held-open transcript; its appends wait for the poll");
                     false
                 }
             }
@@ -128,6 +114,7 @@ mod imp {
 
         /// Applies [`super::plan`]; returns the paths it started following,
         /// whose writes before the knote are the caller's to read.
+        #[must_use = "a write that beat the knote is unread until the caller walks the path"]
         pub(crate) fn reconcile<'a>(
             &self,
             known: impl IntoIterator<Item = &'a PathBuf>,
@@ -152,21 +139,24 @@ mod imp {
     }
 }
 
-/// No tail off macOS: inotify reports each write to a held-open file (Linux
-/// `IN_MODIFY`), and on Windows the open-fd probe a release rides is a no-op.
+/// Nothing to follow off macOS: inotify reports each write to a held-open file
+/// (Linux `IN_MODIFY`), and on Windows the open-fd probe a release rides is a
+/// no-op.
 #[cfg(not(target_os = "macos"))]
-pub(crate) enum Tail {}
+pub(crate) enum Follower {}
 
 #[cfg(not(target_os = "macos"))]
-impl Tail {
+impl Follower {
     pub(crate) fn spawn(_handler: impl notify::EventHandler) -> Option<Self> {
         None
     }
 
+    #[must_use = "a write that beat the knote is unread until the caller walks the path"]
     pub(crate) fn follow(&self, _path: &Path) -> bool {
         match *self {}
     }
 
+    #[must_use = "a write that beat the knote is unread until the caller walks the path"]
     pub(crate) fn reconcile<'a>(
         &self,
         _known: impl IntoIterator<Item = &'a PathBuf>,
@@ -244,20 +234,20 @@ mod tests {
         use std::sync::mpsc::{Receiver, channel};
         use std::time::Duration;
 
-        use super::super::Tail;
+        use super::super::Follower;
         use super::*;
 
         const DEADLINE: Duration = Duration::from_secs(5);
 
-        fn tail() -> (Tail, Receiver<PathBuf>) {
+        fn follower() -> (Follower, Receiver<PathBuf>) {
             let (tx, rx) = channel();
-            let tail = Tail::spawn(move |res: notify::Result<notify::Event>| {
-                for path in res.expect("a healthy tail reports no error").paths {
+            let follower = Follower::spawn(move |res: notify::Result<notify::Event>| {
+                for path in res.expect("a healthy follower reports no error").paths {
                     let _ = tx.send(path);
                 }
             })
             .unwrap();
-            (tail, rx)
+            (follower, rx)
         }
 
         fn held(path: &Path) -> File {
@@ -273,9 +263,9 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("t.jsonl");
             let mut file = held(&path);
-            let (tail, reported) = tail();
-            assert!(tail.follow(&path), "the first follow starts it");
-            assert!(!tail.follow(&path), "a second follow is a no-op");
+            let (follower, reported) = follower();
+            assert!(follower.follow(&path), "the first follow starts it");
+            assert!(!follower.follow(&path), "a second follow is a no-op");
             file.write_all(b"{}\n").unwrap();
             assert_eq!(reported.recv_timeout(DEADLINE), Ok(path));
         }
@@ -287,8 +277,8 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("t.jsonl");
             drop(held(&path));
-            let (tail, reported) = tail();
-            tail.follow(&path);
+            let (follower, reported) = follower();
+            assert!(follower.follow(&path));
             let rewrite = dir.path().join("t.jsonl.tmp");
             std::fs::write(&rewrite, "{}\n").unwrap();
             std::fs::rename(&rewrite, &path).unwrap();
@@ -306,11 +296,11 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("t.jsonl");
             drop(held(&path));
-            let (tail, reported) = tail();
-            tail.follow(&path);
+            let (follower, reported) = follower();
+            assert!(follower.follow(&path));
             std::fs::rename(&path, dir.path().join("t.jsonl.1")).unwrap();
             assert_eq!(reported.recv_timeout(DEADLINE), Ok(path.clone()));
-            assert!(!tail.follows(&path));
+            assert!(!follower.follows(&path));
         }
 
         #[test]
@@ -318,11 +308,11 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("t.jsonl");
             drop(held(&path));
-            let (tail, reported) = tail();
-            tail.follow(&path);
+            let (follower, reported) = follower();
+            assert!(follower.follow(&path));
             std::fs::remove_file(&path).unwrap();
             assert_eq!(reported.recv_timeout(DEADLINE), Ok(path.clone()));
-            assert!(!tail.follows(&path));
+            assert!(!follower.follows(&path));
         }
 
         #[test]
@@ -332,13 +322,13 @@ mod tests {
             let held_open = dir.path().join("held.jsonl");
             drop(held(&gone));
             drop(held(&held_open));
-            let (tail, _reported) = tail();
-            tail.follow(&gone);
+            let (follower, _reported) = follower();
+            assert!(follower.follow(&gone));
             let known = [gone.clone(), held_open.clone()];
-            let started = tail.reconcile(&known, &live(&["held"]), id_for);
+            let started = follower.reconcile(&known, &live(&["held"]), id_for);
             assert_eq!(started, vec![held_open.clone()]);
-            assert!(!tail.follows(&gone));
-            assert!(tail.follows(&held_open));
+            assert!(!follower.follows(&gone));
+            assert!(follower.follows(&held_open));
         }
     }
 }

@@ -11,10 +11,10 @@ use tracing::{debug, warn};
 use crate::source::TaggedSender;
 use crate::source::exit_watch::ExitWatch;
 
+mod follow;
 mod health;
 mod liveness;
 mod root_watch;
-mod tail;
 #[cfg(test)]
 mod tests;
 mod unclaim;
@@ -26,13 +26,13 @@ pub use liveness::LivenessProbe;
 pub use liveness::ProbeSnapshot;
 pub use unclaim::ChildEndUnclaims;
 
+use follow::Follower;
 pub(crate) use health::FailureLatch;
 use liveness::{
     NEGATIVE_VOUCH_MIN_SPAN, ProbeLadder, emit_proof_of_life, emit_session_exit,
     refresh_probe_snapshot,
 };
 pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
-use tail::Tail;
 use unclaim::drain_child_end_unclaims;
 use walk::{scan_root, walk_jsonl};
 
@@ -151,9 +151,9 @@ struct WatchCtx<'a> {
     /// never gate). `emit_session_exit` is a second writer: it purges a
     /// confirmed-dead id so a probe-failure pass can't re-admit it.
     live: &'a Arc<Mutex<HashSet<String>>>,
-    /// What an event-driven walk follows a first sight with. `None` on every
-    /// scan pass, so a boot never follows an initial window of history.
-    tail: Option<&'a Tail>,
+    /// What an event-driven walk follows a first sight with; `scan_root`
+    /// drops it.
+    follower: Option<&'a Follower>,
 }
 
 struct ScanState {
@@ -163,8 +163,6 @@ struct ScanState {
     /// instant-exit arm joins on.
     ladder: ProbeLadder,
     root_health: FailureLatch,
-    /// The followed held-open transcripts, which each healthy probe retains.
-    tail: Option<Tail>,
 }
 
 impl ScanState {
@@ -172,7 +170,6 @@ impl ScanState {
         Self {
             ladder: ProbeLadder::new(negative_vouch_min_span),
             root_health: FailureLatch::default(),
-            tail: None,
         }
     }
 }
@@ -196,7 +193,7 @@ pub struct JsonlWatcher {
     poll_interval: Duration,
     negative_vouch_min_span: Duration,
     child_end_unclaims: Option<ChildEndUnclaims>,
-    holds_transcripts_open: bool,
+    writer_holds_open: bool,
 }
 
 impl std::fmt::Debug for JsonlWatcher {
@@ -257,7 +254,7 @@ impl JsonlWatcher {
             poll_interval: DEFAULT_POLL_INTERVAL,
             negative_vouch_min_span: NEGATIVE_VOUCH_MIN_SPAN,
             child_end_unclaims: None,
-            holds_transcripts_open: false,
+            writer_holds_open: false,
         }
     }
 
@@ -340,9 +337,9 @@ impl JsonlWatcher {
     /// Attach a liveness probe over the watch root itself (an open-fd scan),
     /// handed the root as this watcher spells it. An open fd vouches only
     /// because the writer holds its transcript open, which is also what needs
-    /// the [`Tail`].
+    /// the [`Follower`].
     pub(crate) fn with_root_probe(mut self, probe: fn(&Path) -> Option<ProbeSnapshot>) -> Self {
-        self.holds_transcripts_open = true;
+        self.writer_holds_open = true;
         let root = self.root.clone();
         self.with_liveness_probe(Arc::new(move || probe(&root)))
     }
@@ -382,8 +379,8 @@ impl JsonlWatcher {
         }
         scan_root(&self.root, decoders, ctx, &mut scan_state.root_health).await;
         if healthy {
-            if let Some(tail) = &scan_state.tail {
-                let started = tail.reconcile(
+            if let Some(follower) = ctx.follower {
+                let started = follower.reconcile(
                     ctx.seen.lock().await.keys(),
                     &*ctx.live.lock().await,
                     |path| decoders.id_derive.id_for(path),
@@ -470,9 +467,9 @@ impl JsonlWatcher {
                 }
             }
         };
-        scan_state.tail = self
-            .holds_transcripts_open
-            .then(|| Tail::spawn(event_handler.clone()))
+        let follower = self
+            .writer_holds_open
+            .then(|| Follower::spawn(event_handler.clone()))
             .flatten();
         let (nudge, mut nudges) = Nudge::channel();
         let mut root_watch = RootWatch::new(
@@ -510,7 +507,7 @@ impl JsonlWatcher {
                 tx: &tx,
                 window: self.initial_window,
                 live: &live,
-                tail: None,
+                follower: follower.as_ref(),
             };
             self.run_scan_pass(
                 &ctx,
@@ -541,7 +538,7 @@ impl JsonlWatcher {
                 tx: &tx,
                 window: self.initial_window,
                 live: &live,
-                tail: None,
+                follower: follower.as_ref(),
             };
             tokio::select! {
                 Some(()) = nudges.recv() => {
@@ -559,10 +556,6 @@ impl JsonlWatcher {
                     // of waiting out the 60s poll while turn-N+1 bytes stream past
                     // as unknown-id no-ops.
                     drain_child_end_unclaims(unclaims.as_ref(), decoders, &ctx).await;
-                    let ctx = WatchCtx {
-                        tail: scan_state.tail.as_ref(),
-                        ..ctx
-                    };
                     walk_jsonl(&path, decoders, &ctx).await;
                 }
                 _ = poll.tick() => {

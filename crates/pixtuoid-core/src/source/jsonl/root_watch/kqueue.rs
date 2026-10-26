@@ -1,7 +1,7 @@
-//! macOS's watcher of one directory's entries — every anchor, and a
-//! non-recursive root — over a [`VnodeWatch`] of that directory alone.
+//! macOS's watcher of a directory's entries — every anchor, and a
+//! non-recursive root — over a [`VnodeWatch`] of the directory itself.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use notify::event::{EventKind, ModifyKind, RemoveKind, RenameMode};
 use notify::{Config, EventHandler, RecursiveMode, Watcher, WatcherKind};
@@ -16,12 +16,8 @@ const WATCHED: VnodeEvents = VnodeEvents::WRITE
     .union(VnodeEvents::RENAME)
     .union(VnodeEvents::REVOKE);
 
-/// Watches the one directory its single [`Watcher::watch`] names: a
-/// `RootWatch` builds a watcher per watch.
-pub(super) struct KqueueDirWatcher {
-    watch: VnodeWatch,
-    dir: Option<PathBuf>,
-}
+/// Watches each directory a [`Watcher::watch`] call names, non-recursively.
+pub(super) struct KqueueDirWatcher(VnodeWatch);
 
 fn kind_of(flags: VnodeEvents) -> EventKind {
     if flags.intersects(VnodeEvents::DELETE | VnodeEvents::REVOKE) {
@@ -44,30 +40,25 @@ impl Watcher for KqueueDirWatcher {
             VnodeNote::Failed(e) => handler.handle_event(Err(notify::Error::io(e))),
         })
         .map_err(notify::Error::io)?;
-        Ok(Self { watch, dir: None })
+        Ok(Self(watch))
     }
 
     fn watch(&mut self, path: &Path, recursive_mode: RecursiveMode) -> notify::Result<()> {
-        let refused = if recursive_mode == RecursiveMode::Recursive {
-            Some("a kqueue directory watch is non-recursive")
-        } else if self.dir.is_some() {
-            Some("a kqueue directory watcher watches one directory")
-        } else {
-            None
-        };
-        if let Some(why) = refused {
-            return Err(notify::Error::generic(why).add_path(path.to_path_buf()));
+        if recursive_mode == RecursiveMode::Recursive {
+            return Err(
+                notify::Error::generic("a kqueue directory watch is non-recursive")
+                    .add_path(path.to_path_buf()),
+            );
         }
-        self.watch
+        self.0
             .vnodes()
             .add(path, WATCHED)
-            .map_err(|e| notify::Error::io_watch(e).add_path(path.to_path_buf()))?;
-        self.dir = Some(path.to_path_buf());
-        Ok(())
+            .map(|_| ())
+            .map_err(|e| notify::Error::io_watch(e).add_path(path.to_path_buf()))
     }
 
     fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
-        if self.dir.as_deref() == Some(path) && self.watch.vnodes().remove(path) {
+        if self.0.vnodes().remove(path) {
             Ok(())
         } else {
             Err(notify::Error::watch_not_found().add_path(path.to_path_buf()))
@@ -120,18 +111,12 @@ mod tests {
     }
 
     #[test]
-    fn watches_one_directory_non_recursively() {
+    fn watches_a_directory_only_non_recursively() {
         let dir = tempfile::tempdir().unwrap();
         let (mut watcher, _rx) = watcher();
         assert!(watcher.watch(dir.path(), RecursiveMode::Recursive).is_err());
         watcher
             .watch(dir.path(), RecursiveMode::NonRecursive)
             .unwrap();
-        assert!(
-            watcher
-                .watch(dir.path(), RecursiveMode::NonRecursive)
-                .is_err(),
-            "a second watch is refused"
-        );
     }
 }
