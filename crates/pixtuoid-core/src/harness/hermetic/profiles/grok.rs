@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::AIMOCK_V1;
 use crate::harness::hermetic::{
-    HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
@@ -114,7 +114,14 @@ pub(crate) const PROFILE: Profile = Profile {
     // (`crates/codegen/xai-grok-agent/src/repo.rs:23-52`), which the
     // recorder's `git init` makes the workspace.
     ancestor_config: &[],
-    config: &[],
+    // The TUI asks to trust a folder its home's trust store does not name,
+    // keyed on the git root's realpath (at main 2bdd1d6a:
+    // `crates/codegen/xai-grok-permission-rules/src/trust.rs:7-12`, `:389-397`, `:447-450`).
+    config: &[ConfigFile {
+        home: "GROK_HOME",
+        path: "trusted_folders.toml",
+        template: "[folders.'{workspace}']\ntrusted = true\n",
+    }],
     scenarios: &[
         Scenario {
             name: "tool-run",

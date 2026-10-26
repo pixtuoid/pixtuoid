@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "grok",
-  "version": "grok 1.0.62 (1474f9cbdd91)",
-  "captured": "2026-10-20",
+  "version": "grok 1.0.70 (f50904eaee6c)",
+  "captured": "2026-10-26",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 112
+    "blanked": 110
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/grok/tool-run.json",

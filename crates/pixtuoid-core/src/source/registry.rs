@@ -904,7 +904,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
 const GROK: SourceDescriptor = SourceDescriptor {
     name: grok::SOURCE_NAME,
     label_prefix: "gk",
-    verified_version: "1.0.62",
+    verified_version: "1.0.70",
     version_probe: Some(&["grok", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("GROK_HOME"),

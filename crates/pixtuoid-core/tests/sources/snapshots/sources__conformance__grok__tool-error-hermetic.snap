@@ -3,61 +3,61 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     model: grok-4.6
     effort: ~
 - ActivityStart:
-    agent_id: 9557746717011201252
-    tool_use_id: call_HMsG_oJYYAvbMmjO
+    agent_id: 4826445730311160067
+    tool_use_id: call_bVSAjlOdCyMUsi4D
     detail:
       Generic:
         display: use_tool
 - ActivityEnd:
-    agent_id: 9557746717011201252
-    tool_use_id: call_HMsG_oJYYAvbMmjO
+    agent_id: 4826445730311160067
+    tool_use_id: call_bVSAjlOdCyMUsi4D
 - ActivityEnd:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     as_child: false
 - SessionStart:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     source: grok
-    session_id: 01a15849-080e-74b1-a7d3-e4a92568e3e7
+    session_id: 01a17609-391d-7b41-9412-58f813a98a0b
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     source: grok
-    session_id: 01a15849-080e-74b1-a7d3-e4a92568e3e7
+    session_id: 01a17609-391d-7b41-9412-58f813a98a0b
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     source: grok
-    session_id: 01a15849-080e-74b1-a7d3-e4a92568e3e7
+    session_id: 01a17609-391d-7b41-9412-58f813a98a0b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 9557746717011201252
-    tool_use_id: call_HMsG_oJYYAvbMmjO
+    agent_id: 4826445730311160067
+    tool_use_id: call_bVSAjlOdCyMUsi4D
     detail:
       Generic:
         display: hermetic__probe
 - Identity:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     source: grok
-    session_id: 01a15849-080e-74b1-a7d3-e4a92568e3e7
+    session_id: 01a17609-391d-7b41-9412-58f813a98a0b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 9557746717011201252
-    tool_use_id: call_HMsG_oJYYAvbMmjO
+    agent_id: 4826445730311160067
+    tool_use_id: call_bVSAjlOdCyMUsi4D
 - ActivityEnd:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     as_child: false
 - ActivityEnd:
-    agent_id: 9557746717011201252
+    agent_id: 4826445730311160067
     tool_use_id: ~
