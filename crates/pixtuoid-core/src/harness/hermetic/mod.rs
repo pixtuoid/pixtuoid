@@ -215,7 +215,7 @@ pub enum Second {
 
 impl Turn {
     /// The profile's invocation as it stands.
-    pub const PROFILE: Self = Self {
+    pub(crate) const PROFILE: Self = Self {
         args: &[],
         prompt: None,
         second: None,
