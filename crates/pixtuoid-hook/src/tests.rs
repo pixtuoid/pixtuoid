@@ -474,21 +474,32 @@ fn a_panic_on_any_thread_exits_zero_silently() {
         Some("spawned") => {
             silence_panics();
             let _ = std::thread::spawn(|| panic!("probe")).join();
-            return;
+            // Only the hook's exit(0) may end the child with 0; a hook that merely
+            // silences stderr lets `join` return, and this fails the case.
+            std::process::exit(1);
         }
         _ => {}
     }
+    // The module path less the crate, so a re-exec still finds the test after this module moves.
+    let module = module_path!()
+        .split_once("::")
+        .map_or(module_path!(), |(_, m)| m);
     for case in ["caller", "spawned"] {
         let out = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "tests::a_panic_on_any_thread_exits_zero_silently",
+                &format!("{module}::a_panic_on_any_thread_exits_zero_silently"),
                 "--nocapture",
             ])
             .env(CHILD, case)
             .output()
             .unwrap();
         assert!(out.status.success(), "{case}: {:?}", out.status);
+        // A filter matching nothing also exits 0 with empty stderr.
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("running 1 test"),
+            "{case}: the child never ran the probe"
+        );
         assert!(
             out.stderr.is_empty(),
             "{case}: {}",

@@ -14,7 +14,7 @@ pub(crate) const WRITE_TIMEOUT: Duration = Duration::from_millis(WRITE_TIMEOUT_M
 pub(crate) struct TimeBound(());
 
 /// Arm the shim's hard time bound — exit(0)-on-timeout IS the contract.
-/// `Builder::spawn` so thread exhaustion drops the event instead of aborting.
+/// `Builder::spawn` so thread exhaustion yields `None` rather than a panic.
 ///
 /// Armed before the shim's own OS work, not just the send (#882). Reading stdin
 /// stays OUTSIDE it: that is the CLI writing to us, and a large slow payload

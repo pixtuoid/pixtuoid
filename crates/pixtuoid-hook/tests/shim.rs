@@ -318,10 +318,12 @@ fn non_utf8_argv_exits_zero() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
     // Non-UTF-8 bytes are legal in Unix argv, and `std::env::args()` PANICS
-    // while collecting such an argument — exit 101 + stderr, breaching
-    // invariant #5's silent exit-0 contract.
+    // while collecting such an argument; the panic hook exits 0, so only the
+    // delivered envelope shows `args_os` kept the event.
     let path = sock_path("nonutf8");
-    let status = run_shim_inner(
+    let listener = UnixListener::bind(&path).expect("bind listener");
+    listener.set_nonblocking(true).unwrap();
+    let out = run_shim_inner(
         &path,
         None,
         &[
@@ -329,11 +331,16 @@ fn non_utf8_argv_exits_zero() {
             OsStr::from_bytes(b"\xff\xfe not utf8"),
         ],
         br#"{"hook_event_name":"Stop"}"#,
-    )
-    .status;
+    );
     assert!(
-        status.success(),
-        "non-UTF-8 argv must not panic the shim; got {status:?}"
+        out.status.success(),
+        "non-UTF-8 argv must not panic the shim; got {:?}",
+        out.status
+    );
+    assert!(out.stderr.is_empty());
+    assert_eq!(
+        recv_delivered_json(&listener)["_pixtuoid_source"],
+        "\u{FFFD}\u{FFFD} not utf8"
     );
 }
 

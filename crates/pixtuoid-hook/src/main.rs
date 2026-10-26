@@ -1,8 +1,8 @@
 // Invariant #5 (non-negotiable): the shim must never block CC — it always exits 0
-// silently on any error. A prod `unwrap()`/`expect()`/`panic!` violates that, so
-// they are compiler-denied here (tests unwrap freely).
-// Indexing joins them: a panic still drops the event, and the parsers this crate
-// feeds on untrusted process rows are exactly where an out-of-bounds slice would land.
+// silently (`silence_panics` makes even a panic do so). A panic still drops the
+// event, so `unwrap()`/`expect()`/`panic!` and indexing are compiler-denied here
+// (tests unwrap freely); the parsers fed untrusted process rows are where an
+// out-of-bounds slice would land.
 #![cfg_attr(
     not(test),
     deny(
@@ -52,7 +52,7 @@ fn main() {
     let socket = default_socket_path();
 
     // `args_os` + lossy, NOT `args()`: `std::env::args()` PANICS on any
-    // non-Unicode argument (legal Unix argv), breaching invariant #5. Lossy
+    // non-Unicode argument (legal Unix argv), dropping the event. Lossy
     // rather than filter_map: dropping a non-UTF-8 arg would shift
     // `--source <value>` pairing so the NEXT arg gets read as the value.
     let args: Vec<String> = std::env::args_os()
