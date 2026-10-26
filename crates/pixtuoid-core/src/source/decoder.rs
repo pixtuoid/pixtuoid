@@ -1657,14 +1657,11 @@ mod tests {
                 }),
             ),
             (
-                // CodeWhale's ApprovalRequired shows UI + writes the audit log but
-                // fires NO hook — proven upstream, not a scope cut.
                 codewhale::SOURCE_NAME,
-                ReasonKind::NoWaiting,
+                ReasonKind::Fixed,
                 Box::new(|| {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
-                        "event":"tool_call_before","cwd":"/r","tool":"bash",
-                        "tool_args":"{}","message":raw})))
+                        "event":"waiting_for_user","cwd":"/r","message":raw})))
                     .expect("codewhale decodes")
                 }),
             ),

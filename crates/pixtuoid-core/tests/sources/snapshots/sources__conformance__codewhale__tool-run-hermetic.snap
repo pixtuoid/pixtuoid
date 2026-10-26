@@ -21,7 +21,7 @@ expression: events
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
     agent_id: 17405793843075578558
-    tool_use_id: ~
+    tool_use_id: 4294b651-af1f-4150-ba0d-a8ef3f7ee443
     detail:
       Generic:
         display: "read: NOTE.txt"
@@ -32,7 +32,7 @@ expression: events
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
     agent_id: 17405793843075578558
-    tool_use_id: ~
+    tool_use_id: 4294b651-af1f-4150-ba0d-a8ef3f7ee443
 - SessionEnd:
     agent_id: 17405793843075578558
     as_child: false

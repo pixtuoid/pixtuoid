@@ -198,6 +198,7 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
         ("DEEPSEEK_WORKSPACE", "/repo"),
         ("DEEPSEEK_TOOL_NAME", "exec_shell"),
         ("DEEPSEEK_TOOL_ARGS", r#"{"command":"ls -la"}"#),
+        ("DEEPSEEK_TOOL_CALL_ID", "call-1"),
     ]
     .into_iter()
     .collect();
@@ -206,6 +207,7 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
     assert_eq!(map["cwd"], json!("/repo"));
     assert_eq!(map["tool"], json!("exec_shell"));
     assert_eq!(map["tool_args"], json!(r#"{"command":"ls -la"}"#));
+    assert_eq!(map["tool_call_id"], json!("call-1"));
 }
 
 /// env-mode's envelope still carries `_pid` — via the ONE stamping site, which

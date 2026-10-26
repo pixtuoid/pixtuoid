@@ -29,13 +29,13 @@ use crate::install::target::MergeOutcome;
 /// `false` events (the subagent observer hooks) are forwarded RAW on stdin.
 ///
 /// turn_end / mode_change / on_error / shell_env are deliberately absent
-/// (per-turn noise / no lifecycle meaning). CodeWhale has NO approval hook in the
-/// TUI path, so there is no Waiting event to register — no signal exists.
+/// (per-turn noise / no lifecycle meaning).
 pub(crate) const CODEWHALE_EVENTS: &[(&str, bool)] = &[
     ("session_start", true),
     ("message_submit", true),
     ("tool_call_before", true),
     ("tool_call_after", true),
+    ("waiting_for_user", true),
     ("session_end", true),
     ("subagent_spawn", false),
     ("subagent_complete", false),
@@ -806,6 +806,7 @@ command = "echo hi"
                 ("message_submit", true),
                 ("tool_call_before", true),
                 ("tool_call_after", true),
+                ("waiting_for_user", true),
                 ("session_end", true),
                 ("subagent_spawn", false),
                 ("subagent_complete", false),

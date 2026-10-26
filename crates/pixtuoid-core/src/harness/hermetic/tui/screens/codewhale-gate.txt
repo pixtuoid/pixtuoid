@@ -1,0 +1,40 @@
+▎ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                    
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+● $ rm NOTE.txt · waiting for approval                                                                                  
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Runs a command   Run `rm NOTE.txt`                                                                                   
+  Command:                                                                                                              
+    rm NOTE.txt                                                                                                         
+  Save:   always ask first                                                                                              
+    run rm NOTE.txt                                                                                                     
+  Do you want to proceed?                                                                                               
+  [1 / y] Allow once                                                                                                    
+  [2 / a] Allow for this conversation                                                                                   
+❯ [3 / d / n] Don't allow (Enter)                                                                                       
+  [Esc] Stop this turn                                                                                                  
+  Pg↑/↓ review  ·  ⌥V details  ·  Esc stop  ·  s allow now, and always ask before this again

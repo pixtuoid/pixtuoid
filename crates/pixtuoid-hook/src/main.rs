@@ -147,6 +147,7 @@ fn env_payload_from(
     for (env_key, field) in [
         ("DEEPSEEK_TOOL_NAME", "tool"),
         ("DEEPSEEK_TOOL_ARGS", "tool_args"),
+        ("DEEPSEEK_TOOL_CALL_ID", "tool_call_id"),
     ] {
         if let Some(val) = get(env_key).filter(|v| !v.is_empty()) {
             map.insert(field.into(), Value::from(cap_env_field(val)));

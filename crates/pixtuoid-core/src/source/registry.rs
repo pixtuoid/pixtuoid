@@ -716,10 +716,10 @@ const DSH: SourceDescriptor = SourceDescriptor {
 
 /// HOOK-ONLY: CodeWhale has NO tailable transcript (`rollout_path` is an unused
 /// `state.db` column; saved sessions are full-snapshot rewrites; headless
-/// `codewhale exec` runs hooks-off — only the TUI fires hooks). Its hook
+/// `codewhale exec` fires no session lifecycle — only the TUI does). Its hook
 /// envelope is ALIEN (snake_case `event` discriminator, identity via
 /// `DEEPSEEK_*` env vars), so the custom decoder claims every event — keyed on
-/// cwd, because `session_id` is inconsistent across events.
+/// cwd, the one identity the shim's envelope carries.
 const CODEWHALE: SourceDescriptor = SourceDescriptor {
     name: codewhale::SOURCE_NAME,
     label_prefix: "cw",
@@ -739,7 +739,9 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
             // The recorded dispatch fires nothing of the child's own between
             // `subagent_spawn` and `subagent_complete`.
             delegations_are_hook_silent: true,
-            child_end_inference: ChildEndInference::TaskDrain,
+            // `agent start` returns at dispatch, its child running on until its
+            // own `subagent_complete`.
+            child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),

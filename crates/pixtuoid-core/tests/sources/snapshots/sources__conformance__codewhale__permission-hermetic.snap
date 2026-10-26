@@ -1,0 +1,46 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 17405793843075578558
+    source: codewhale
+    session_id: /private/tmp/pixtuoid-capture/proj
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- SessionStart:
+    agent_id: 17405793843075578558
+    source: codewhale
+    session_id: /private/tmp/pixtuoid-capture/proj
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 17405793843075578558
+    source: codewhale
+    session_id: /private/tmp/pixtuoid-capture/proj
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityStart:
+    agent_id: 17405793843075578558
+    tool_use_id: 36eec316-2cdb-4399-a748-9c860c4766ee
+    detail:
+      Generic:
+        display: "bash: rm NOTE.txt"
+- Identity:
+    agent_id: 17405793843075578558
+    source: codewhale
+    session_id: /private/tmp/pixtuoid-capture/proj
+    cwd: /private/tmp/pixtuoid-capture/proj
+- Waiting:
+    agent_id: 17405793843075578558
+    reason: waiting for the user
+- Identity:
+    agent_id: 17405793843075578558
+    source: codewhale
+    session_id: /private/tmp/pixtuoid-capture/proj
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ActivityEnd:
+    agent_id: 17405793843075578558
+    tool_use_id: 36eec316-2cdb-4399-a748-9c860c4766ee
+- SessionEnd:
+    agent_id: 17405793843075578558
+    as_child: false

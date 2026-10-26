@@ -19,7 +19,16 @@ const TUI: tui::Tui = tui::Tui {
             corners: Some(('╭', '╮')),
         },
     },
-    gates: &[],
+    gates: &[tui::Gate {
+        // `crates/tui/src/tui/widgets/approval_band_legacy.rs:753-756`.
+        shows: "Do you want to proceed?",
+        // "Don't allow" (`crates/tui/src/tui/approval/view.rs:399-408`).
+        deny: &[tui::Key::Text("n")],
+        // Its event loop fires `waiting_for_user` on its next pass
+        // (`crates/tui/src/tui/ui/event_loop.rs:2087`): answered on sight, the
+        // wait resolves unobserved (measured).
+        dwell: std::time::Duration::from_secs(1),
+    }],
     // A graceful shutdown, which fires `session_end` (`docs/HOOKS.md:236`,
     // `crates/tui/src/commands/groups/core/exit.rs:9-14`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
@@ -95,6 +104,24 @@ model = "hermetic"
                 "session_end",
             ],
             fixture: "fixtures/codewhale/tool-run-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "permission",
+            shape: Shape::Permission,
+            surface: Surface::Tui {
+                row: &TUI,
+                answer: tui::Answer::Deny,
+            },
+            expects: &[
+                "session_start",
+                "message_submit",
+                "tool_call_before",
+                "waiting_for_user",
+                "tool_call_after",
+                "session_end",
+            ],
+            fixture: "fixtures/codewhale/permission-hermetic",
             turn: Turn::PROFILE,
         },
         // Not a `Subagent`: a child's own tools fire no hook

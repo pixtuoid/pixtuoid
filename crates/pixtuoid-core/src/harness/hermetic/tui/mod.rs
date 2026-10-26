@@ -754,6 +754,12 @@ mod tests {
             ),
             (
                 "codewhale",
+                "permission",
+                CODEWHALE_BOOT,
+                include_str!("screens/codewhale-gate.txt"),
+            ),
+            (
+                "codewhale",
                 "child-error",
                 CODEWHALE_BOOT,
                 include_str!("screens/codewhale-child-failed.txt"),

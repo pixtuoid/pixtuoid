@@ -1,30 +1,25 @@
 //! CodeWhale source — HOOK-ONLY. There is no tailable per-session transcript
 //! to watch: `rollout_path` is never written in production, saved sessions are
 //! full-snapshot `{id}.json` rewrites, and headless `codewhale exec` fires no
-//! hooks at all.
+//! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.2`.
 //!
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
-//! identity travels as `DEEPSEEK_*` ENV VARS, and only
-//! `message_submit`/`turn_end`/`subagent_*` pass any stdin. So the shim runs in
-//! **env-mode** (`pixtuoid-hook --event <name>`): it reads the env vars and
-//! synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
+//! identity travels as `DEEPSEEK_*` ENV VARS (`docs/HOOKS.md:291-315`). So the
+//! shim runs in **env-mode** (`pixtuoid-hook --event <name>`): it reads the env
+//! vars and synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
 //!
 //! ```json
-//! {"event":"tool_call_before","cwd":"/repo","tool":"exec_shell","tool_args":"{\"command\":\"ls -la\"}"}
+//! {"event":"tool_call_before","cwd":"/repo","tool":"exec_shell","tool_args":"{\"command\":\"ls -la\"}","tool_call_id":"7f7a…"}
 //! ```
 //!
-//! - **Key on `cwd`, NOT `session_id`.** `DEEPSEEK_SESSION_ID` is INCONSISTENT
-//!   across a single session's events — `sess_<8hex>` on session/turn/tool-after
-//!   events but a raw turn UUID on `tool_call_before`, which a different code
-//!   path builds — so keying on it splits every ActivityStart into a second
-//!   ghost sprite. `DEEPSEEK_WORKSPACE` (the cwd) is the ONE field present and
-//!   identical on EVERY event. Two deliberate consequences: two concurrent
-//!   sessions in ONE workspace render as one sprite, and `tool_use_id` is always
-//!   `None` (harmless under a single transport with no JSONL twin).
+//! - **Key on `cwd`.** Every event carries one stable `DEEPSEEK_SESSION_ID`
+//!   (`docs/HOOKS.md:278-285`), but the envelope carries `DEEPSEEK_WORKSPACE`
+//!   alone, so two concurrent sessions in ONE workspace render as one sprite. A
+//!   tool call's before and after share `DEEPSEEK_TOOL_CALL_ID` (`:308`).
 //!
-//! - **No Waiting/permission state.** CodeWhale exposes no approval hook to the
-//!   TUI shell-command system, so a tool parked on an approval prompt shows
-//!   Active until the user approves. No signal exists to do better.
+//! - **Waiting.** `waiting_for_user` fires as an approval prompt opens, a
+//!   question is asked or a goal continuation parks (`:248`); its `reason` rides
+//!   stdin (`:251-252`), which env-mode never reads, so every wait reads alike.
 //!
 //! - **Exit profile.** `session_end` fires on a clean quit, so
 //!   `has_exit_signal: true`. An ABRUPT exit fires none — the shim resolves
@@ -102,9 +97,14 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "cwd"))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, cwd);
 
-    // No usable upstream session id exists; the cwd IS the session key, so this
-    // mirrors the SessionStart arm and coalescing holds.
+    // The cwd IS the session key, so this mirrors the SessionStart arm and
+    // coalescing holds.
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, cwd, Some(cwd.into()));
+    let tool_use_id = || {
+        obj.get("tool_call_id")
+            .and_then(|s| s.as_str())
+            .map(str::to_owned)
+    };
 
     match event {
         // message_submit (every prompt) is the RESURRECT path — a stale-swept
@@ -126,7 +126,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 identity(),
                 AgentEvent::ActivityStart {
                     agent_id,
-                    tool_use_id: None,
+                    tool_use_id: tool_use_id(),
                     detail: Some(cw_tool_detail(tool, obj.get("tool_args"))),
                 },
             ])
@@ -135,6 +135,14 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             identity(),
             AgentEvent::ActivityEnd {
                 agent_id,
+                tool_use_id: tool_use_id(),
+            },
+        ]),
+        "waiting_for_user" => Ok(vec![
+            identity(),
+            AgentEvent::Waiting {
+                agent_id,
+                reason: "waiting for the user".into(),
                 tool_use_id: None,
             },
         ]),
