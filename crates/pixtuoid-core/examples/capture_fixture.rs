@@ -389,8 +389,7 @@ mod recorder {
                 return Err(e);
             }
         };
-        // Measured on hermetic turns alone: a billed one runs as long as it takes.
-        let budget = matches!(plan.sink, Sink::Raw { .. }).then(|| *TURN_BUDGET.here());
+        let budget = turn_budget(plan);
         let end = run_turn(
             wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
             budget,
@@ -490,7 +489,7 @@ mod recorder {
             for p in &wrote {
                 println!("wrote raw {} ({} lines)", p.display(), count_lines(p));
             }
-            if record.incomplete.is_some()
+            if incomplete.is_some()
                 || second_turn_skipped
                 || !exited_as_scripted(&source, &scenario, &record)
             {
@@ -501,7 +500,7 @@ mod recorder {
                     &mut std::io::stderr(),
                 );
             }
-            return Ok(());
+            return incomplete.map_or(Ok(()), Err);
         };
         if wrote.is_empty() {
             eprintln!(
@@ -987,6 +986,11 @@ mod recorder {
         Ok(c)
     }
 
+    /// `plan`'s turn budget: measured on hermetic turns, so a billed one has none.
+    fn turn_budget(plan: &CapturePlan) -> Option<Duration> {
+        plan.sandboxed().then(|| *TURN_BUDGET.here())
+    }
+
     /// How `turn` ended: killed once it outran `budget`, when it has one.
     fn run_turn(
         mut turn: std::process::Command,
@@ -1027,9 +1031,10 @@ mod recorder {
         lifeline: Option<std::process::ChildStdin>,
         /// Its start, which names it.
         start: String,
-        /// Where its output goes.
-        log: PathBuf,
     }
+
+    /// A daemon's log, in its driver's dir.
+    const DAEMON_LOG: &str = "daemon.log";
 
     impl RunningDaemon {
         /// `daemon` started, once its probe exits 0 within `boot`.
@@ -1046,7 +1051,7 @@ mod recorder {
             };
             let own = driver_dir(wiring.scratch);
             std::fs::create_dir_all(&own)?;
-            let log_path = own.join("daemon.log");
+            let log_path = own.join(DAEMON_LOG);
             let log = std::fs::File::create(&log_path)?;
             let (start, ready) = (daemon.start.strings(), daemon.ready.strings());
             let mut child = wired(&start, ws, wiring, verified, env)?
@@ -1059,7 +1064,6 @@ mod recorder {
                 lifeline: child.stdin.take(),
                 child,
                 start: start.join(" "),
-                log: log_path.clone(),
             };
             // Every probe's output, each followed by how it ended.
             let probe_log = own.join("probe.log");
@@ -1107,9 +1111,8 @@ mod recorder {
             let _ = self.child.kill();
             let _ = self.child.wait();
             Err(std::io::Error::other(format!(
-                "the daemon `{}` outlived its stdin by {grace:?} and was killed; its log ends:\n{}",
-                self.start,
-                tail(&self.log)
+                "the daemon `{}` outlived its stdin by {grace:?} and was killed",
+                self.start
             )))
         }
     }
@@ -1130,11 +1133,10 @@ mod recorder {
         lines[lines.len().saturating_sub(DAEMON_LOG_TAIL)..].join("\n")
     }
 
-    /// Why a capture is incomplete, if it is: its tap stopped accepting, its
-    /// daemon had to be killed, or both.
+    /// Why a capture is incomplete, in one line, if it is: its tap stopped
+    /// accepting, its daemon had to be killed, or both.
     fn incomplete(tap: Option<String>, daemon: std::io::Result<()>) -> Option<std::io::Error> {
-        let tap = tap
-            .map(|why| format!("the tap stopped accepting, so this capture is incomplete: {why}"));
+        let tap = tap.map(|why| format!("the tap stopped accepting: {why}"));
         let whys: Vec<String> = tap
             .into_iter()
             .chain(daemon.err().map(|e| e.to_string()))
@@ -2021,6 +2023,20 @@ mod recorder {
         }
 
         #[test]
+        fn only_a_hermetic_turn_has_a_budget() {
+            let mut raw = operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
+            assert_eq!(turn_budget(&raw), None, "an operator's billed raw capture");
+            assert_eq!(
+                turn_budget(&operator_plan(&["kimi", "tool-run", "kimi"])),
+                None
+            );
+            raw.within = Some(
+                pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir()).expect("abs"),
+            );
+            assert_eq!(turn_budget(&raw), Some(*TURN_BUDGET.here()));
+        }
+
+        #[test]
         fn a_plan_the_host_may_not_run_is_refused_before_it_starts() {
             let committed = operator_plan(&["kimi", "tool-run", "kimi"]);
             assert_eq!(plan_refusal(&committed).is_some(), !cfg!(unix));
@@ -2692,6 +2708,7 @@ mod recorder {
             let markers = tempfile::tempdir().expect("markers");
             let running = start_fake(TEST, markers.path(), *DAEMON_BOOT.here()).expect("starts");
             let grace = Duration::from_secs(1);
+            let log = driver_dir(markers.path()).join(DAEMON_LOG);
             let started = std::time::Instant::now();
             let why = running.stop(grace).expect_err("a killed daemon fails");
             assert!(started.elapsed() >= grace, "killed before its grace");
@@ -2701,7 +2718,9 @@ mod recorder {
                 why.contains(&format!("{grace:?}")),
                 "names the grace: {why}"
             );
-            assert!(why.contains(SAYS), "its log: {why}");
+            assert!(!why.contains('\n'), "a report's one line: {why}");
+            let said = std::fs::read_to_string(&log).expect("its log");
+            assert!(said.contains(SAYS), "its log keeps what it said: {said}");
             assert!(
                 incomplete(None, Err(std::io::Error::other(why))).is_some(),
                 "a capture whose daemon was killed is incomplete"
@@ -2718,6 +2737,7 @@ mod recorder {
                 .to_string();
             assert!(why.contains(TAP), "{why}");
             assert!(why.contains(KILL), "{why}");
+            assert!(!why.contains('\n'), "a report's one line: {why}");
         }
 
         #[cfg(unix)]

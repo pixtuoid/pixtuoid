@@ -692,8 +692,8 @@ mod run {
             name: &'static str,
             run: impl FnOnce(&'a Version) -> std::io::Result<(Manifest, T)>,
         ) -> std::io::Result<(Manifest, T)> {
-            let ran = match (self.hung, self.installed) {
-                (Some(_), _) => Err(std::io::Error::other(self.not_run(p, name))),
+            let ran = match (self.hung_in(p), self.installed) {
+                (Some(why), _) => Err(std::io::Error::other(why)),
                 (None, Ok(v)) => run(v),
                 (None, Err(e)) => Err(std::io::Error::other(e.clone())),
             };
@@ -706,12 +706,16 @@ mod run {
             ran
         }
 
-        /// Why a run after `before`, which went on from it, never ran.
+        /// Why `p`'s runs are skipped, once a turn of one hung it.
+        fn hung_in(&self, p: &Profile) -> Option<String> {
+            self.hung
+                .map(|hung| format!("skipped: {} hung in {hung}", p.source))
+        }
+
+        /// Why a run that goes on from `before` never ran.
         fn not_run(&self, p: &Profile, before: &str) -> String {
-            self.hung.map_or_else(
-                || format!("its {before} run was not judged"),
-                |hung| format!("skipped: {} hung in {hung}", p.source),
-            )
+            self.hung_in(p)
+                .unwrap_or_else(|| format!("its {before} run was not judged"))
         }
     }
 

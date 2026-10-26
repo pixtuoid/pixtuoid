@@ -240,7 +240,7 @@ pub struct CaptureRecord {
     /// Why the turn's driver gave up on it, in its own words, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub give_up_reason: Option<String>,
-    /// Why the recorder could not complete the capture, when it could not.
+    /// Why the recorder could not complete the capture, in one line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incomplete: Option<String>,
     /// Its second turn, for a run that had one.
