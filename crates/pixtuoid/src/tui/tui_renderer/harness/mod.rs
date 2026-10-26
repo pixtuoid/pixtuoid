@@ -165,8 +165,8 @@ pub(super) fn region_diff(a: &RgbBuffer, b: &RgbBuffer, x0: u16, y0: u16, w: u16
     d
 }
 
-/// A backend that forwards every call to `inner`, its [`Tap`] seeing each
-/// draw's cells, and answering the window's pixel size.
+/// A backend that forwards every call to `inner` unless its [`Tap`] sees the
+/// draw's cells or answers the window size or cursor position.
 /// `append_lines` is forwarded too: ratatui defaults it to a no-op.
 pub(super) struct Tapped<B, T> {
     pub(super) inner: B,
