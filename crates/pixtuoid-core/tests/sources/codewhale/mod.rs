@@ -1,9 +1,11 @@
-//! Regression for the CodeWhale subagent hook lifecycle, driving the tier's
-//! recorded child-error run through the reducer at its own clock (the
-//! conformance harness's one-AgentId rule can't hold a two-sprite scenario).
+//! Regressions for the CodeWhale hook lifecycle: the tier's recorded child-error
+//! run through the reducer at its own clock (the conformance harness's
+//! one-AgentId rule can't hold a two-sprite scenario), and a cold `session_idle`.
 
 use std::time::{Duration, SystemTime};
 
+use pixtuoid_core::AgentId;
+use pixtuoid_core::harness::Drive;
 use pixtuoid_core::source::decoder::decode_hook_payload;
 use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
@@ -115,5 +117,30 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
     assert!(
         completed_seen,
         "the recorded run must complete its subagent"
+    );
+}
+
+#[test]
+fn a_cold_session_idle_registers_its_own_session_not_a_blank_slot() {
+    let idle = super::captures::fixture_lines(
+        &super::captures::fixtures_root().join("codewhale/permission-hermetic/hook-payloads.jsonl"),
+    )
+    .into_iter()
+    .find(|l| l.contains(r#""event":"session_idle""#))
+    .expect("the recorded run settles idle");
+    let v: serde_json::Value = serde_json::from_str(&idle).expect("valid hook json");
+    let d = Drive::hooks().lines([&idle]);
+    d.assert_clean("a cold codewhale session_idle");
+    let id = AgentId::from_parts("codewhale", v["session_id"].as_str().expect("session_id"));
+    let slot = d
+        .scene
+        .agents
+        .get(&id)
+        .expect("the idle registers its session");
+    assert_eq!(&*slot.source, "codewhale");
+    assert_eq!(
+        &*slot.cwd,
+        std::path::Path::new(v["cwd"].as_str().expect("cwd")),
+        "the session's own cwd, not the unknown-cwd ghost"
     );
 }

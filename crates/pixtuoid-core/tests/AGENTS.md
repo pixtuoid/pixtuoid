@@ -19,9 +19,7 @@ tests/
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
-│   ├── codewhale/       subagent lifecycle, over its OWN two-sprite
-│   │                    fixtures/<scenario>/ (NOT scanned)
-│   ├── claude/ codex/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
+│   ├── claude/ codex/ codewhale/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
 │   │                    an independent session (two sprites), so these can't live under the one-AgentId rule
 │   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel) and a failed child's own end
 │   ├── omp/             the bridge-extension rounds (#951) — hook keys FOLD

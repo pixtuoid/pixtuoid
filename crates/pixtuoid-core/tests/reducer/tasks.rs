@@ -287,16 +287,11 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
 }
 
 /// A reasonix skill call (`explore`, `research`, …) is an id-less Task whose
-/// child fires no end of its own, so the call returning is the child's end. An
-/// id-less Task end walks no codewhale child out, under `None` and `TaskDrain`
-/// alike; its tracked ends are `tests/sources/codewhale`'s to pin.
+/// child fires no end of its own, so the call returning is the child's end.
 #[test]
-fn an_untracked_task_end_walks_out_children_only_where_they_end_unannounced() {
-    for (source, parent_tool, walks_out) in [
-        ("reasonix", "Agent", true),
-        ("codewhale", "Agent", false),
-        ("reasonix", "Bash: ls", false),
-    ] {
+fn only_an_untracked_task_end_walks_out_a_reasonix_child() {
+    let source = "reasonix";
+    for (parent_tool, walks_out) in [("Agent", true), ("Bash: ls", false)] {
         let mut scene = SceneState::uniform(8);
         let mut r = Reducer::new();
         let parent = AgentId::from_parts(source, "root");
@@ -349,9 +344,9 @@ fn an_untracked_task_end_walks_out_children_only_where_they_end_unannounced() {
         assert_eq!(
             scene.agents[&child].exiting_at.is_some(),
             walks_out,
-            "{source}: the child's walk-out on its parent's id-less {parent_tool} end"
+            "the child's walk-out on its parent's id-less {parent_tool} end"
         );
-        assert!(scene.agents[&parent].exiting_at.is_none(), "{source}");
+        assert!(scene.agents[&parent].exiting_at.is_none(), "{parent_tool}");
     }
 }
 

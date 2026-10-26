@@ -33,6 +33,11 @@ expression: events
 - ActivityEnd:
     agent_id: 2696241138168164515
     tool_use_id: 45c9b55c-e270-45e4-9f60-06acc6da71d0
+- Identity:
+    agent_id: 2696241138168164515
+    source: codewhale
+    session_id: sess_deb38b44
+    cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
     agent_id: 2696241138168164515
     tool_use_id: ~

@@ -146,10 +146,13 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 tool_use_id: None,
             },
         ]),
-        "session_idle" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        "session_idle" => Ok(vec![
+            identity(),
+            AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id: None,
+            },
+        ]),
         "session_end" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,

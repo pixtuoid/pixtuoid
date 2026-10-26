@@ -59,7 +59,7 @@ Rust example" below.
 
 **It records at the shim's OUTPUT**, via a `PIXTUOID_SOCKET` listener,
 which is the seam that does not care how the payload reached the shim: codewhale
-passes identity in `DEEPSEEK_*` env vars and the shim never reads stdin for it, so
+passes identity in its hook env vars and the shim never reads stdin for it, so
 recording the INPUT would have captured a file of empty payloads. Two consequences
 for the bytes: a capture carries production's own `_shim_ts_ms` / `_pid` stamps
 (fixtures older than this seam do not), and the CLI's installed config is never
