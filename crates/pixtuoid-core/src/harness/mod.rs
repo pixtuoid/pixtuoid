@@ -105,7 +105,7 @@ pub struct Driven {
     pub unparseable: usize,
     /// Hook lines the dispatcher refused. A refusal of bytes the source itself
     /// wrote is drift in our decoder.
-    pub decode_errors: Vec<LineFailure>,
+    pub(crate) decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
     pub reaches: Vec<(AgentId, Reach)>,
