@@ -1,13 +1,14 @@
 //! What bounds a child the hermetic tier waits on: past its budget it is
 //! killed, and so is it when a signal ends the process waiting on it.
-//! `capture_fixture` and `hermetic` both `#[path]`-include it, as examples
-//! share no lib.
+//! `capture_fixture` and `hermetic` both `#[path]`-include it: its deps are
+//! dev-only, and in the lib they would join `deny-arch.toml`'s allowlist.
 
 use std::io::Read;
 use std::process::{Command, ExitStatus, Stdio};
 #[cfg(unix)]
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::Duration;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::wait_until;
 
@@ -15,6 +16,15 @@ use pixtuoid_core::harness::wait_until;
 /// between children.
 #[cfg(unix)]
 static GROUP: AtomicI32 = AtomicI32::new(0);
+
+/// Who is at a child, as the stdin of the process waiting on it tells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Seat {
+    /// An operator at the terminal, recording a TUI or watching a turn.
+    Attended,
+    /// Nobody: the hermetic tier, CI.
+    Unattended,
+}
 
 /// How a bounded child ended, and what it wrote to a piped stdout and stderr.
 #[derive(Debug)]
@@ -32,38 +42,59 @@ pub(crate) struct Ended {
 /// it alone. Either way a Windows child runs in a Job Object of its own, which
 /// the kill takes whole. A CLI that leads its own session under a driver's pty
 /// is in neither: the pty's hangup when its driver dies is what ends it.
-pub(crate) fn run(mut cmd: Command, attended: bool, budget: Duration) -> std::io::Result<Ended> {
-    if !attended {
+pub(crate) fn run(mut cmd: Command, seat: Seat, budget: Duration) -> std::io::Result<Ended> {
+    if seat == Seat::Unattended {
         // A background process group that read the terminal would stop on SIGTTIN.
         cmd.stdin(Stdio::null());
     }
     let mut cmd = process_wrap::std::CommandWrap::from(cmd);
     #[cfg(unix)]
-    if !attended {
+    if seat == Seat::Unattended {
         cmd.wrap(process_wrap::std::ProcessGroup::leader());
     }
     #[cfg(windows)]
     cmd.wrap(process_wrap::std::JobObject);
+    let started = Instant::now();
     let mut child = cmd.spawn()?;
     #[cfg(unix)]
-    if !attended {
+    if seat == Seat::Unattended {
         GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
     }
+    // Drained as it runs, as `wait_with_output` does: a child that filled a
+    // pipe nobody read would block on it until its budget ran out.
+    let (out, err) = (drain(child.stdout().take()), drain(child.stderr().take()));
     let status = waited(child.as_mut(), budget);
+    if status.as_ref().is_ok_and(Option::is_some)
+        && seat == Seat::Unattended
+        && (out.is_some() || err.is_some())
+    {
+        // What it left holding its pipes would keep them open past its exit.
+        let _ = child.start_kill();
+    }
     #[cfg(unix)]
     GROUP.store(0, Ordering::SeqCst);
-    let mut ended = Ended {
-        status: status?,
-        stdout: Vec::new(),
-        stderr: Vec::new(),
+    let left = budget.saturating_sub(started.elapsed());
+    let read = |pipe: Option<mpsc::Receiver<Vec<u8>>>| {
+        pipe.and_then(|rx| rx.recv_timeout(left).ok())
+            .unwrap_or_default()
     };
-    if let Some(mut out) = child.stdout().take() {
-        out.read_to_end(&mut ended.stdout)?;
-    }
-    if let Some(mut err) = child.stderr().take() {
-        err.read_to_end(&mut ended.stderr)?;
-    }
-    Ok(ended)
+    Ok(Ended {
+        status: status?,
+        stdout: read(out),
+        stderr: read(err),
+    })
+}
+
+/// What `pipe` delivers until it closes, read on a thread of its own.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> Option<mpsc::Receiver<Vec<u8>>> {
+    let mut pipe = pipe?;
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut read = Vec::new();
+        let _ = pipe.read_to_end(&mut read);
+        let _ = tx.send(read);
+    });
+    Some(rx)
 }
 
 /// [`run`]'s wait: `child`'s status, or `None` once it was killed at `budget`.

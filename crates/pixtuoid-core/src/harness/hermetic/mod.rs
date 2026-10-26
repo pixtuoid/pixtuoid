@@ -592,7 +592,7 @@ impl Scenario {
     /// How its turn ended, `end` read as its surface means it: on a TUI one,
     /// `tui_drive`'s [`tui::OUT_OF_TIME`] with the reason it gave is its own
     /// budget's kill. A CLI's own exit, or one with no reason, is just that.
-    pub fn turn_end(&self, end: TurnEnd, give_up_reason: Option<&str>) -> TurnEnd {
+    pub fn read_end(&self, end: TurnEnd, give_up_reason: Option<&str>) -> TurnEnd {
         match (self.surface, end, give_up_reason) {
             (Surface::Tui { .. }, TurnEnd::Exited(tui::OUT_OF_TIME), Some(_)) => {
                 TurnEnd::OutOfTime(Budget::Driver)
@@ -647,17 +647,17 @@ mod tests {
         let ran_out = TurnEnd::Exited(tui::OUT_OF_TIME);
         let why = Some("the 120s budget ran out");
         assert_eq!(
-            tui.turn_end(ran_out, why),
+            tui.read_end(ran_out, why),
             TurnEnd::OutOfTime(Budget::Driver)
         );
-        assert_eq!(tui.turn_end(ran_out, None), ran_out, "the CLI's own exit");
+        assert_eq!(tui.read_end(ran_out, None), ran_out, "the CLI's own exit");
         assert_eq!(
-            headless.turn_end(ran_out, why),
+            headless.read_end(ran_out, why),
             ran_out,
             "a headless CLI's own exit"
         );
         let killed = TurnEnd::OutOfTime(Budget::Recorder);
-        assert_eq!(tui.turn_end(killed, why), killed);
+        assert_eq!(tui.read_end(killed, why), killed);
     }
 
     #[test]

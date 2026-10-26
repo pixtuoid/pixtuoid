@@ -14,6 +14,7 @@
 //! 1 on any other verdict (a recording refused after its runs included), and
 //! anything else when the tier could not run or refused a recording first.
 
+#[expect(dead_code, reason = "the recorder alone runs an attended turn")]
 #[path = "support/bounded.rs"]
 mod bounded;
 
@@ -36,6 +37,7 @@ mod run {
     use std::process::{Child, Command, ExitStatus, Stdio};
     use std::time::Duration;
 
+    use crate::bounded::Seat;
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::dropped::Unjudged;
@@ -528,7 +530,7 @@ mod run {
             Ok(v) => live_once(ctx, p, live, &v, &dir),
             Err(e) => Err(std::io::Error::other(e)),
         };
-        let hung = ran.as_ref().err().filter(|e| outran(e)).map(|_| LIVE);
+        let hung = ran.as_ref().err().filter(|e| is_hung(e)).map(|_| LIVE);
         let (banner, verdict) = match ran {
             Ok((banner, verdict)) => (Some(banner), verdict),
             Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
@@ -715,7 +717,7 @@ mod run {
     fn hangs<T>(ran: &std::io::Result<(Manifest, T)>) -> bool {
         match ran {
             Ok((manifest, _)) => manifest.capture.hung(),
-            Err(e) => outran(e),
+            Err(e) => is_hung(e),
         }
     }
 
@@ -742,14 +744,13 @@ mod run {
         }
     }
 
-    /// Whether `e` is a [`Hung`].
-    fn outran(e: &std::io::Error) -> bool {
+    fn is_hung(e: &std::io::Error) -> bool {
         e.get_ref().is_some_and(|inner| inner.is::<Hung>())
     }
 
     /// How `cmd`, named `what`, exited within [`TURN_BUDGET`], nobody attending.
     fn bounded_status(cmd: Command, what: &str) -> std::io::Result<ExitStatus> {
-        crate::bounded::run(cmd, false, *TURN_BUDGET.here())?
+        crate::bounded::run(cmd, Seat::Unattended, *TURN_BUDGET.here())?
             .status
             .ok_or_else(|| Hung(what.to_owned()).into())
     }
@@ -2044,7 +2045,7 @@ mod run {
             .envs(launch.env.iter().map(|(k, v)| (k, v)))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let ended = crate::bounded::run(version, false, *TURN_BUDGET.here())?;
+        let ended = crate::bounded::run(version, Seat::Unattended, *TURN_BUDGET.here())?;
         let Some(status) = ended.status else {
             return Err(Hung(format!("{:?} {:?}", launch.program, &probe[1..])).into());
         };

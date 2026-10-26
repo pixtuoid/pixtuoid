@@ -12,7 +12,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{OSES, PROFILES, Profile, legs, pin};
+use super::{Leg, OSES, PROFILES, Profile, legs, pin};
 use crate::harness::sources_root;
 
 /// The file beside a run's reports naming each source that moved.
@@ -20,8 +20,8 @@ pub const MOVED: &str = "moved.json";
 
 /// The `hermetic.yml` output the drift leg on `os` running [`super::SHARDS`]' `shard`th
 /// reports its [`MOVED`] rows as, counting from 1 as `--shard` does.
-pub(crate) fn moved_output(os: &str, shard: usize) -> String {
-    format!("moved_{os}_{shard}")
+pub(crate) fn moved_output(leg: Leg) -> String {
+    format!("moved_{}_{}", leg.os, leg.shard)
 }
 
 /// The file a bump leg writes its patch for `source` to, and check reads it from.
@@ -82,10 +82,7 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
     for os in OSES {
         let mut rows: Vec<Moved> = Vec::new();
         for leg in legs().filter(|leg| leg.os == *os) {
-            match drift
-                .get(&moved_output(leg.os, leg.shard))
-                .and_then(Value::as_str)
-            {
+            match drift.get(&moved_output(leg)).and_then(Value::as_str) {
                 None | Some("") => {}
                 Some(json) => rows.extend(
                     serde_json::from_str::<Vec<Moved>>(json).map_err(|e| format!("{leg}: {e}"))?,
@@ -238,7 +235,7 @@ mod tests {
                     })
                     .collect();
                 let json = serde_json::to_string(&rows).expect("rows");
-                out.insert(moved_output(os, leg.shard), Value::from(json));
+                out.insert(moved_output(leg), Value::from(json));
             }
         }
         out
@@ -285,7 +282,13 @@ mod tests {
         let next = Version::new(up.major, up.minor, up.patch + 1).to_string();
         let up = up.to_string();
         let mut silent = drift(&[("macos", &[("codex", &up)]), ("windows", &[])]);
-        silent.insert(moved_output("windows", shard_of("codex")), Value::from(""));
+        silent.insert(
+            moved_output(Leg {
+                os: "windows",
+                shard: shard_of("codex"),
+            }),
+            Value::from(""),
+        );
         for legs in [
             drift(&[("macos", &[("codex", &up)]), ("windows", &[])]),
             drift(&[("macos", &[("codex", &up)])]),
@@ -312,7 +315,10 @@ mod tests {
         .to_string();
         let mut garbled = drift(&[("macos", &[]), ("windows", &[])]);
         garbled.insert(
-            moved_output("macos", shard_of("codex")),
+            moved_output(Leg {
+                os: "macos",
+                shard: shard_of("codex"),
+            }),
             Value::from("[{\"source\":\"codex\"}]"),
         );
         for legs in [
@@ -353,8 +359,7 @@ mod tests {
         }
         for leg in legs() {
             assert_eq!(
-                yml.matches(&format!("{}:", moved_output(leg.os, leg.shard)))
-                    .count(),
+                yml.matches(&format!("{}:", moved_output(leg))).count(),
                 2,
                 "{leg}'s rows, as the job's output and the workflow's"
             );

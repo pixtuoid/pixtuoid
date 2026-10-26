@@ -13,6 +13,7 @@ fn main() -> std::io::Result<()> {
     recorder::main()
 }
 
+#[expect(dead_code, reason = "a turn pipes no output for the recorder to read")]
 #[path = "support/bounded.rs"]
 mod bounded;
 
@@ -22,6 +23,7 @@ mod recorder {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
 
+    use crate::bounded::Seat;
     use pixtuoid_core::harness::provenance::{
         Deidentified, Dropped, NonEmpty, Provenance, Recorded,
     };
@@ -991,31 +993,20 @@ mod recorder {
         Ok(c)
     }
 
-    /// Who is at a turn, as the recorder's stdin tells.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum Seat {
-        /// An operator at the terminal, recording a TUI or watching a turn.
-        Attended,
-        /// Nobody: the hermetic tier, CI.
-        Unattended,
-    }
-
     /// How `turn` ended within `budget`, the recorder's (`bounded::run`).
     fn run_turn(
         turn: std::process::Command,
         budget: Duration,
         seat: Seat,
     ) -> std::io::Result<TurnEnd> {
-        Ok(
-            match crate::bounded::run(turn, seat == Seat::Attended, budget)?.status {
-                Some(status) => status.into(),
-                None => TurnEnd::OutOfTime(Budget::Recorder),
-            },
-        )
+        Ok(match crate::bounded::run(turn, seat, budget)?.status {
+            Some(status) => status.into(),
+            None => TurnEnd::OutOfTime(Budget::Recorder),
+        })
     }
 
     /// How `source`'s `scenario` turn ended, `ended` read as its profiled
-    /// surface means it (`hermetic::Scenario::turn_end`); as it is for a turn
+    /// surface means it (`hermetic::Scenario::read_end`); as it is for a turn
     /// no profile names.
     fn read_end(
         source: &str,
@@ -1025,7 +1016,7 @@ mod recorder {
     ) -> TurnEnd {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(ended, |s| s.turn_end(ended, give_up_reason))
+            .map_or(ended, |s| s.read_end(ended, give_up_reason))
     }
 
     /// Whether a second turn runs after a first that ended `first`: one a
@@ -2833,6 +2824,12 @@ mod recorder {
         const FAKE_GRANDCHILD: &str = "fake-turn-grandchild";
         /// A third, marking a re-run as the recorder running the fake turn.
         const FAKE_RECORDER: &str = "fake-recorder";
+        /// A fourth, marking a fake child that writes [`CHATTER`] bytes and exits.
+        const FAKE_CHATTY: &str = "fake-chatty";
+        /// A fifth, marking a fake child that starts the grandchild and exits.
+        const FAKE_LEAVER: &str = "fake-leaver";
+        /// More than any pipe buffer holds.
+        const CHATTER: usize = 1 << 20;
         /// Past any budget a test gives a fake turn.
         const OUTLIVES: Duration = Duration::from_secs(600);
         /// How often the fake turn's grandchild says it still runs.
@@ -2855,7 +2852,18 @@ mod recorder {
         /// returns its marker dir.
         fn as_fake_turn(test: &str) -> Option<PathBuf> {
             let dir = PathBuf::from(std::env::var_os(FAKE_TURN)?);
-            if std::env::args().any(|a| a == FAKE_GRANDCHILD) {
+            let plays = |role: &str| std::env::args().any(|a| a == role);
+            if plays(FAKE_CHATTY) {
+                std::io::stdout()
+                    .write_all(&vec![b'.'; CHATTER])
+                    .expect("chatter");
+            } else if plays(FAKE_LEAVER) {
+                let mut grandchild = fake_turn(test, &dir)
+                    .arg(FAKE_GRANDCHILD)
+                    .spawn()
+                    .expect("the grandchild");
+                let _ = grandchild.try_wait();
+            } else if plays(FAKE_GRANDCHILD) {
                 let started = std::time::Instant::now();
                 while started.elapsed() < OUTLIVES {
                     let mut beats = std::fs::OpenOptions::new()
@@ -2866,7 +2874,7 @@ mod recorder {
                     beats.write_all(b".").expect("beat");
                     std::thread::sleep(BEAT);
                 }
-            } else if !std::env::args().any(|a| a == FAKE_RECORDER) {
+            } else if !plays(FAKE_RECORDER) {
                 let mut grandchild = fake_turn(test, &dir)
                     .arg(FAKE_GRANDCHILD)
                     .spawn()
@@ -2935,6 +2943,50 @@ mod recorder {
                 before,
                 "the turn outlived the recorder Ctrl-C ended"
             );
+        }
+
+        #[test]
+        fn a_child_that_writes_past_a_pipe_buffer_is_read_as_it_runs() {
+            const TEST: &str = "a_child_that_writes_past_a_pipe_buffer_is_read_as_it_runs";
+            if as_fake_turn(TEST).is_some() {
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let mut chatty = fake_turn(TEST, dir.path());
+            chatty.arg(FAKE_CHATTY).stdout(std::process::Stdio::piped());
+            let ended = crate::bounded::run(chatty, Seat::Unattended, Duration::from_secs(10))
+                .expect("it ran");
+            assert!(
+                ended.status.is_some_and(|s| s.success()),
+                "its own full pipe held it, and it was killed as hung"
+            );
+            assert!(
+                ended.stdout.len() >= CHATTER,
+                "{} bytes",
+                ended.stdout.len()
+            );
+        }
+
+        #[test]
+        fn a_child_that_exits_with_its_pipe_still_held_ends_inside_its_budget() {
+            const TEST: &str = "a_child_that_exits_with_its_pipe_still_held_ends_inside_its_budget";
+            if as_fake_turn(TEST).is_some() {
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let mut leaver = fake_turn(TEST, dir.path());
+            leaver.arg(FAKE_LEAVER).stdout(std::process::Stdio::piped());
+            let budget = Duration::from_secs(10);
+            let started = std::time::Instant::now();
+            let ended = crate::bounded::run(leaver, Seat::Unattended, budget).expect("it ran");
+            assert!(ended.status.is_some_and(|s| s.success()));
+            assert!(
+                started.elapsed() < budget,
+                "the grandchild holding its pipe held the run"
+            );
+            let before = beaten(dir.path());
+            std::thread::sleep(BEAT * 10);
+            assert_eq!(beaten(dir.path()), before, "its grandchild outlived it");
         }
 
         #[test]

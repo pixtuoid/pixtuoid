@@ -1,5 +1,5 @@
 //! The nightly's hermetic issues: one per source a leg judged anything but
-//! Pass, one per leg that reported no verdicts, and what each night does to
+//! Pass, one per leg that lost its verdicts, and what each night does to
 //! them. The workflow only carries a [`Plan`] out with `gh`. Every input is
 //! untrusted, since the legs ran just-published CLIs: what one could forge is
 //! a `hermetic`-labelled issue's text, never code.
@@ -107,7 +107,7 @@ pub enum Action {
 pub struct Plan {
     /// Each issue's action, in order.
     pub actions: Vec<Action>,
-    /// Each leg that reported no verdicts, and why, which turns the filing red.
+    /// Each leg that lost its verdicts, and why, which turns the filing red.
     pub lost: Vec<String>,
 }
 
@@ -164,7 +164,7 @@ impl Key {
     fn title(&self) -> String {
         match self {
             Self::Source(source) => format!("hermetic: {source}"),
-            Self::Leg(leg) => format!("hermetic: {leg} reported no verdicts"),
+            Self::Leg(leg) => format!("hermetic: {leg} lost its verdicts"),
         }
     }
 }
@@ -178,7 +178,6 @@ struct Night<'a> {
 
 /// What a leg reported.
 enum Report<'a> {
-    /// Nothing.
     Missing,
     /// Verdicts of the sources its shard runs.
     Valid(&'a Verdicts),
@@ -216,7 +215,7 @@ pub fn plan(
     let mut nights: BTreeMap<Leg, Night<'_>> = legs()
         .map(|leg| {
             let night = Night {
-                finished: output(moved_output(leg.os, leg.shard)).is_some(),
+                finished: output(moved_output(leg)).is_some(),
                 report: Report::Missing,
                 runs: output(artifact_output(leg)),
             };
@@ -399,7 +398,7 @@ mod tests {
     fn drift(uploaded: &[(&str, usize)]) -> Map<String, Value> {
         let mut drift = Map::new();
         for leg in legs() {
-            drift.insert(moved_output(leg.os, leg.shard), "[]".into());
+            drift.insert(moved_output(leg), "[]".into());
             let url = if uploaded.contains(&(leg.os, leg.shard)) {
                 format!("https://a/{}-{}", leg.os, leg.shard)
             } else {
@@ -573,7 +572,13 @@ mod tests {
             "both its legs judged it Pass"
         );
         let mut lost_leg = all.clone();
-        lost_leg.insert(moved_output("windows", 1), "".into());
+        lost_leg.insert(
+            moved_output(Leg {
+                os: "windows",
+                shard: 1,
+            }),
+            "".into(),
+        );
         assert!(
             !closes(&night(|_, _| {}), &lost_leg),
             "a lost leg's runs are unknown"
@@ -604,7 +609,13 @@ mod tests {
     #[test]
     fn a_leg_that_reported_no_verdicts_files_its_own_issue_and_closes_nothing() {
         let mut lost = drift(&[("macos", 1)]);
-        lost.insert(moved_output("macos", 1), "".into());
+        lost.insert(
+            moved_output(Leg {
+                os: "macos",
+                shard: 1,
+            }),
+            "".into(),
+        );
         let unreported: Vec<Verdicts> = night(|_, _| {})
             .into_iter()
             .filter(|v| !(v.os == "windows" && v.shard == Some(2)))
@@ -629,8 +640,8 @@ mod tests {
         assert_eq!(
             titles,
             [
-                "hermetic: macos, shard 1 reported no verdicts",
-                "hermetic: windows, shard 2 reported no verdicts",
+                "hermetic: macos, shard 1 lost its verdicts",
+                "hermetic: windows, shard 2 lost its verdicts",
             ]
         );
         assert!(
@@ -691,7 +702,7 @@ mod tests {
             ]
         );
         assert!(
-            matches!(&p.actions[..], [Action::Open { title, .. }] if title == "hermetic: windows, shard 1 reported no verdicts"),
+            matches!(&p.actions[..], [Action::Open { title, .. }] if title == "hermetic: windows, shard 1 lost its verdicts"),
             "one issue for the leg, none for what it forged, and no close: {:?}",
             p.actions
         );
