@@ -1,0 +1,40 @@
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          browser-use: browser_exec                                   │
+│  ⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀                          clarify: clarify                                            │
+│  ⠀⢀⣠⣴⣶⠿⠋⣩⡿⣿⡿⠻⣿⡇⢠⡄⢸⣿⠟⢿⣿⢿⣍⠙⠿⣶⣦⣄⡀⠀                          code_execution: execute_code                                │
+│  ⠀⠀⠉⠉⠁⠶⠟⠋⠀⠉⠀⢀⣈⣁⡈⢁⣈⣁⡀⠀⠉⠀⠙⠻⠶⠈⠉⠉⠀⠀                          computer_use: computer_use                                  │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⡿⠛⢁⡈⠛⢿⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          connections: manage_connections                             │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⣿⣦⣤⣈⠁⢠⣴⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          delegation: delegate_task                                   │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠻⢿⣿⣦⡉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          file: patch, read_file, search_files, write_file            │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢷⣦⣈⠛⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          image_gen: image_generate                                   │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⠦⠈⠙⠿⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          (and 7 more toolsets...)                                    │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣤⡈⠁⢤⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                                                                      │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          Available Skills                                            │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          apple: apple-notes, apple-reminders, findmy, imessage       │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          autonomous-ai-agents: claude-code, codex, +3 more           │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          creative: architecture-diagram, ascii-video, +8 more        │
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          devops: sdlc-review                                         │
+│                                                          email: email-inbox-triage, himalaya                         │
+│  hermetic · Nous Research                                media: gif-search, songsee, youtube-content                 │
+│  /private/tmp/pixtuoid-run-rmmvVG/pixtuoid-capture/proj  note-taking: obsidian                                       │
+│  Session: 2ffb3211                                       productivity: airtable, box, +12 more                       │
+│                                                          research: arxiv, competitor-news-monitor, +2 more           │
+│                                                          social-media: xurl                                          │
+│                                                          software-development: codebase-inspection, dogfood, +10     │
+│                                                          more                                                        │
+│                                                          web: blocked-page-recovery                                  │
+│                                                                                                                      │
+│                                                          21 tools · 58 skills · /help for commands                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Welcome to Hermes Agent! Type your message or /help for commands.
+✦ Tip: display.tool_progress_command: true exposes /verbose on messaging platforms; it's CLI-only by default.
+
+
+
+────────────────────────────────────────
+❯ Read NOTE.txt, then list this directory, then read NOTE.txt again.
+────────────────────────────────────────
+── ⠹ Working… · 1s ─────────────────────────────────────────────────────────────────────────────────────────────────────
+☤ ❯ type to redirect this turn · Tab queues it for after
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☤ hermetic · ctx -- · [░░░░░░░░░░] -- · 8s · ⏱ 0s · …id-capture/proj (main)  enter interrupt · tab queue · ctrl+c stop

@@ -91,6 +91,11 @@ pub(crate) enum Above {
         glyph: char,
         corners: Option<(char, char)>,
     },
+    /// A rule of `glyph`, which may carry a title, with another under the
+    /// input line: the input line is the one under the screen's next-to-last
+    /// rule, since a pair of them also frames the conversation's echo of a
+    /// prompt.
+    Framed { glyph: char },
     /// Nothing: the input line is the screen's last marked line, which only a
     /// dialog drawn below it displaces, its numbered choice then the last.
     Nothing,
@@ -207,7 +212,9 @@ impl<'a> Driver<'a> {
                 self.phase = Phase::Submitted { enter_at: now };
                 Action::Keys(&[Key::Enter])
             }
-            Phase::Submitted { enter_at } if self.composer_holds_prompt() => {
+            // A turn that raised its dialog was submitted: a prompt shown after
+            // it is the conversation's echo.
+            Phase::Submitted { enter_at } if !self.answered && self.composer_holds_prompt() => {
                 if now.duration_since(enter_at) < ENTER_RETRY {
                     return Action::Wait;
                 }
@@ -292,6 +299,15 @@ impl<'a> Driver<'a> {
                     .then(|| pair[1].strip_prefix(composer.marker))
                     .flatten()
             }),
+            Above::Framed { glyph } => {
+                let (top, _) = lines
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .filter(|(_, l)| is_titled_rule(l, glyph))
+                    .nth(1)?;
+                lines.get(top + 1)?.strip_prefix(composer.marker)
+            }
             Above::Nothing => {
                 let typed = lines
                     .iter()
@@ -323,6 +339,13 @@ fn is_rule(line: &str, glyph: char, corners: Option<(char, char)>) -> bool {
         line = inner;
     }
     !line.is_empty() && line.chars().all(|c| c == glyph)
+}
+
+/// Whether `line` opens and closes with `glyph`, with a title or nothing more
+/// between.
+fn is_titled_rule(line: &str, glyph: char) -> bool {
+    let line = line.trim_end();
+    line.starts_with(glyph) && line.ends_with(glyph)
 }
 
 /// Whether the text after a marker is a dialog's numbered choice (`1. Yes`).
@@ -535,6 +558,40 @@ mod tests {
         assert_eq!(d.step(DONE, t2 + SETTLE * 2), Action::Wait, "quits once");
     }
 
+    /// hermes's run, its screens each a second apart: the echo of the prompt
+    /// sits between two rules too, and a working turn's redirect line, which
+    /// an Enter would interrupt, is no composer.
+    #[test]
+    fn hermes_sends_nothing_into_its_turn_and_quits_under_its_titled_rule() {
+        let (tui, answer) = tui_scenario("hermes", "permission");
+        let [refused] = tui.gates else {
+            panic!("one gate");
+        };
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        let boot = include_str!("screens/hermes-boot.txt");
+        assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
+        let mut t = t0;
+        let mut next = |screen| {
+            t += ENTER_RETRY;
+            d.step(screen, t)
+        };
+        assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
+        assert_eq!(
+            next(include_str!("screens/hermes-gate.txt")),
+            Action::Keys(refused.deny)
+        );
+        assert_eq!(
+            next(include_str!("screens/hermes-echo.txt")),
+            Action::Wait,
+            "a frame showing only the echo"
+        );
+        let done = include_str!("screens/hermes-done.txt");
+        assert_eq!(next(done), Action::Wait, "the screen just changed");
+        assert_eq!(d.step(done, t + SETTLE), Action::Quit(tui.quit));
+    }
+
     #[test]
     fn a_turn_answering_nothing_quits_once_the_screen_settles_after_its_prompt() {
         let (tui, answer) = omp();
@@ -711,6 +768,16 @@ mod tests {
         assert!(!boxed("│ ❯ 1. Allow once │"));
         assert!(!boxed("╭─ title ─╮"));
         assert!(!plain("  "));
+    }
+
+    #[test]
+    fn a_titled_rule_opens_and_closes_on_its_glyph() {
+        let titled = |l| is_titled_rule(l, '─');
+        assert!(titled("────"));
+        assert!(titled("──── Hermetic ─  "));
+        assert!(!titled("─ 4.6s · 12:48 PM"));
+        assert!(!titled("❯ ──"));
+        assert!(!titled(""));
     }
 
     /// Each row over its run's recorded boot screen and the screen its turn

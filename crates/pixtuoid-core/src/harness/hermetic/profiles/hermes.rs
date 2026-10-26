@@ -12,10 +12,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--accept-hooks", "--cli", "chat"],
     composer: tui::Composer {
         marker: "❯",
-        above: tui::Above::Rule {
-            glyph: '─',
-            corners: None,
-        },
+        above: tui::Above::Framed { glyph: '─' },
     },
     gates: &[tui::Gate {
         shows: "Dangerous Command",

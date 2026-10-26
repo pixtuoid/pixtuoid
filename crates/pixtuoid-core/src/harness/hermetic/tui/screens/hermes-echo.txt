@@ -1,0 +1,22 @@
+│  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                          devops: sdlc-review                                         │
+│                                                          email: email-inbox-triage, himalaya                         │
+│  hermetic · Nous Research                                media: gif-search, songsee, youtube-content                 │
+│  /private/tmp/pixtuoid-run-tjg75u/pixtuoid-capture/proj  note-taking: obsidian                                       │
+│  Session: 907e38d9                                       productivity: airtable, box, +12 more                       │
+│                                                          research: arxiv, competitor-news-monitor, +2 more           │
+│                                                          social-media: xurl                                          │
+│                                                          software-development: codebase-inspection, dogfood, +10     │
+│                                                          more                                                        │
+│                                                          web: blocked-page-recovery                                  │
+│                                                                                                                      │
+│                                                          21 tools · 58 skills · /help for commands                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Welcome to Hermes Agent! Type your message or /help for commands.
+✦ Tip: patch supports V4A format for bulk multi-file edits in a single call.
+
+
+
+────────────────────────────────────────
+❯ Read NOTE.txt, then list this directory, then read NOTE.txt again.
+────────────────────────────────────────
