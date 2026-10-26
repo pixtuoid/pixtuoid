@@ -208,10 +208,7 @@ pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a
 /// end-marker predicate, never a substring scan (user-controllable content — a
 /// tool result QUOTING the marker — must not drive lifecycle).
 pub(crate) fn parsed_tail_lines(tail: &[u8]) -> impl Iterator<Item = Value> + '_ {
-    tail.split(|b| *b == b'\n').filter_map(|line| {
-        let s = std::str::from_utf8(line).ok()?;
-        serde_json::from_str::<Value>(s).ok()
-    })
+    crate::source::admit::lines(tail).filter_map(|line| serde_json::from_str(line.ok()?).ok())
 }
 
 /// What a transcript tail says about when its SESSION last wrote — the per-source

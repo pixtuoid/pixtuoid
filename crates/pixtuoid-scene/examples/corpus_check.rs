@@ -10,7 +10,7 @@
 //! census: how many transcripts register, how many render, and the provenance
 //! spread. A decoder panic aborts the run.
 //!
-//! Usage: `corpus_check <source> [root] [--json]`, plus `--roster` — the
+//! Usage: `corpus_check <source> [root]`, plus `--roster` — the
 //! transcript-bearing ids `just corpus-all` reads instead of keeping a second
 //! copy of the roster.
 
@@ -89,10 +89,11 @@ fn check_file(source: &str, path: &Path, pack: &std::sync::Arc<OfficeArt>) -> Ve
     };
     v.newest_activity = newest_activity(source, &body);
 
-    let Some(drive) = Drive::transcript_at(source, path) else {
-        return v;
-    };
-    let driven = drive.seeded().at(now()).body(&body);
+    let driven = Drive::transcript_at(source, path)
+        .expect("main admits only a transcript-bearing source")
+        .seeded()
+        .at(now())
+        .body(&body);
 
     v.lines = driven.lines;
     v.unparseable = driven.unparseable;
@@ -154,10 +155,9 @@ fn main() {
         }
         return;
     }
-    let json = args.iter().any(|a| a == "--json");
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     if positional.is_empty() {
-        eprintln!("usage: corpus_check <source> [root] [--json]  |  --roster");
+        eprintln!("usage: corpus_check <source> [root]  |  --roster");
         std::process::exit(2);
     }
     let source = positional[0].as_str();
@@ -224,40 +224,30 @@ fn main() {
         *gap_buckets.entry(bucket).or_default() += 1;
     }
 
-    if json {
-        println!(
-            r#"{{"source":"{source}","files":{},"lines":{},"unparseable":{},"events":{},"registered_files":{registered_files},"drove_files":{drove_files},"drawn_files":{drawn_files}}}"#,
-            files.len(),
-            totals.lines,
-            totals.unparseable,
-            totals.events
-        );
-    } else {
-        println!("corpus: {source}  root={}", root.display());
-        println!("  files             {}", files.len());
-        println!("  lines             {}", totals.lines);
-        println!(
-            "  unparseable       {} (torn writes; not ours)",
-            totals.unparseable
-        );
-        println!(
-            "  events decoded    {} (the wire's own; first-sight seeds excluded)",
-            totals.events
-        );
-        println!(
-            "  registered        {registered_files}/{} files with >=1 wire event AND a slot on the floor",
-            files.len()
-        );
-        println!(
-            "  drove the slot    {drove_files}/{registered_files} reached >=1 lifecycle class (Active/Waiting/Delegating)"
-        );
-        println!(
-            "  reached the UI    {drawn_files}/{registered_files} registered files would paint a sprite"
-        );
-        println!("  provenance (mtime ahead of the newest turn):");
-        for (k, n) in &gap_buckets {
-            println!("      {k:<9} {n}");
-        }
+    println!("corpus: {source}  root={}", root.display());
+    println!("  files             {}", files.len());
+    println!("  lines             {}", totals.lines);
+    println!(
+        "  unparseable       {} (torn writes; not ours)",
+        totals.unparseable
+    );
+    println!(
+        "  events decoded    {} (the wire's own; first-sight seeds excluded)",
+        totals.events
+    );
+    println!(
+        "  registered        {registered_files}/{} files with >=1 wire event AND a slot on the floor",
+        files.len()
+    );
+    println!(
+        "  drove the slot    {drove_files}/{registered_files} reached >=1 lifecycle class (Active/Waiting/Delegating)"
+    );
+    println!(
+        "  reached the UI    {drawn_files}/{registered_files} registered files would paint a sprite"
+    );
+    println!("  provenance (mtime ahead of the newest turn):");
+    for (k, n) in &gap_buckets {
+        println!("      {k:<9} {n}");
     }
 }
 

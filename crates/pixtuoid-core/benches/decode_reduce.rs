@@ -65,7 +65,7 @@ fn decode_reduce(c: &mut Criterion) {
         .seeded();
     let hook = Drive::hooks();
 
-    // Exact counts, not a floor: a decoder arm that DECLINES (`Ok(vec![])`, the
+    // Exact counts, not a floor: a decoder arm that DECLINES (an empty result, the
     // shape of the documented quiet-drop paths) halves this while leaving
     // `assert_clean` green, and a floor would not notice.
     for (what, driven, want) in [

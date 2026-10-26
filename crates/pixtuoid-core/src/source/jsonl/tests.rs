@@ -3299,6 +3299,42 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     );
 }
 
+#[tokio::test]
+async fn an_unterminated_last_record_is_held_back_by_the_watcher_and_the_census_alike() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("held-back.jsonl");
+    let body = task_dispatch_line("tu_done") + task_dispatch_line("tu_pending").trim_end();
+    tokio::fs::write(&path, &body).await.unwrap();
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+
+    let watched = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::omp::decode_omp_line,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let censused = crate::harness::Drive::transcript_at(crate::source::omp::SOURCE_NAME, &path)
+        .expect("omp is transcript-bearing")
+        .body(body.as_bytes());
+    let census_tuids: Vec<String> = censused
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ActivityStart {
+                tool_use_id: Some(t),
+                ..
+            } => Some(t.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(task_start_tuids(&watched), ["tu_done"]);
+    assert_eq!(census_tuids, task_start_tuids(&watched));
+}
+
 fn oversized_body_bytes(tail_chunks: &[Vec<u8>]) -> Vec<u8> {
     let mut full = Vec::from(HEAD_LINE_BYTES);
     while full.len() <= (1usize << 20) + 4096 {

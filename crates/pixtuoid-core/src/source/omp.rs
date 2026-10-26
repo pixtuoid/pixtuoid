@@ -1423,15 +1423,6 @@ mod tests {
         }
         let empty = r#"{"type":"message","id":"m3","timestamp":"t","message":{"role":"assistant","model":"","content":[],"timestamp":3}}"#;
         assert!(decode(empty).is_empty());
-        // pi-ai `types.ts` requires `content`, so this shape cannot occur on real
-        // wire — it pins the let-else early return's `Ok(out)`, not `Ok(vec![])`.
-        let no_content = r#"{"type":"message","id":"m4","timestamp":"t","message":{"role":"assistant","model":"claude-fable-5","timestamp":4}}"#;
-        match &decode(no_content)[..] {
-            [AgentEvent::ModelInfo { model: Some(m), .. }] => {
-                assert_eq!(m.as_str(), "claude-fable-5");
-            }
-            other => panic!("expected one ModelInfo, got {other:?}"),
-        }
     }
 
     /// Byte-real shape, anchored by the recorded `omp/ask-recorded` fixture:

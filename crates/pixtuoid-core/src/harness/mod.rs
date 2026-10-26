@@ -69,7 +69,7 @@ pub enum Reach {
 
 /// One line the pipeline could not carry, identified by position and SHAPE.
 ///
-/// Never by content: a real transcript line carries the user's prose, code and
+/// Never by content: a real hook payload carries the user's prompts, code and
 /// paths, and these render on a terminal.
 #[derive(Clone, Debug)]
 pub struct LineFailure {
@@ -103,8 +103,8 @@ pub struct Driven {
     /// Lines that were not valid JSON — a torn write, outside the decoder
     /// contract (the watcher skips them too).
     pub unparseable: usize,
-    /// Hook lines the dispatcher returned `Err` for. ALWAYS a defect on bytes the
-    /// source itself wrote: the contract is log-and-continue, never a hard error.
+    /// Hook lines the dispatcher refused. A refusal of bytes the source itself
+    /// wrote is drift in our decoder.
     pub decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
@@ -228,8 +228,7 @@ impl Drive {
     /// [`Drive::transcript_at`], which applies production's normalization.
     ///
     /// `None` when the source is hook-only, a daemon, or unregistered: a caller
-    /// that silently fell back to some other decoder would report a green
-    /// never-panic run having exercised the wrong one.
+    /// that silently fell back to some other decoder would census the wrong one.
     pub fn transcript(source: &str, logical: &str) -> Option<Self> {
         let decode = registry::descriptor_for(source)?.line_decoder()?;
         Some(Self {
@@ -298,10 +297,11 @@ impl Drive {
         self.run(lines.into_iter().map(Some))
     }
 
-    /// [`Self::lines`] over a transcript's bytes, split as the watcher splits
-    /// them: a line that is not UTF-8 is unparseable, and costs only itself.
+    /// [`Self::lines`] over a transcript's bytes, cut into lines as the watcher
+    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
     pub fn body(&self, body: &[u8]) -> Driven {
-        self.run(crate::source::admit::lines(body).map(Result::ok))
+        use crate::source::admit::{lines, whole};
+        self.run(lines(whole(body)).map(Result::ok))
     }
 
     /// `None` is a line whose bytes are not UTF-8, so not JSON either.
@@ -358,31 +358,24 @@ impl Drive {
                 d.unparseable += 1;
                 continue;
             };
-            // `v` moves into the decoder: keeping a copy for the failure shape
-            // would clone whole transcript bodies on the corpus path, and a
-            // failure is rare enough to re-parse for.
-            match self.decode_one(v) {
-                Ok(evs) => d.events.extend(evs),
-                Err(e) => d.decode_errors.push(LineFailure {
-                    line: d.lines,
-                    shape: shape_of(line),
-                    message: e.to_string(),
-                }),
+            match &self.decode {
+                Decode::Transcript {
+                    decode,
+                    source,
+                    logical,
+                } => d.events.extend(decode(logical, source, v)),
+                Decode::Hooks => match decode_hook_payload(v) {
+                    Ok(evs) => d.events.extend(evs),
+                    Err(e) => d.decode_errors.push(LineFailure {
+                        line: d.lines,
+                        shape: shape_of(line),
+                        message: e.to_string(),
+                    }),
+                },
             }
         }
 
         self.fold(d);
-    }
-
-    fn decode_one(&self, v: Value) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        match &self.decode {
-            Decode::Transcript {
-                decode,
-                source,
-                logical,
-            } => Ok(decode(logical, source, v)),
-            Decode::Hooks => decode_hook_payload(v),
-        }
     }
 
     /// Each event is observed BEFORE and AFTER a settle tick, so a transient
