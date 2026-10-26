@@ -1017,9 +1017,9 @@ mod recorder {
         unix: Duration::from_secs(30),
         windows: Duration::from_secs(150),
     };
-    /// How many last lines of its log, and of its probes' when it never served,
-    /// a daemon that never served or never stopped carries in its error: a failed
-    /// run's uploaded dir keeps the recorder's error; both logs stay in its scratch.
+    /// How many last lines of its log, and of its probes', a daemon that never
+    /// served carries in its error: a failed run's uploaded dir keeps the
+    /// recorder's error; both logs stay in its scratch.
     const DAEMON_LOG_TAIL: usize = 40;
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
