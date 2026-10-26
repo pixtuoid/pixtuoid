@@ -192,8 +192,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             });
             Ok(events)
         }
-        // Deliberately Identity-LESS: an end doesn't prove a session worth
-        // registering, so an unknown id here rides the reducer's fallback.
+        // Identity-less: an end alone proves too little to label a session, so
+        // an unknown id registers blank (`shows_activity`).
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,

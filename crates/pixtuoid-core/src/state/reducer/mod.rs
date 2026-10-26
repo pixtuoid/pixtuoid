@@ -245,8 +245,8 @@ struct TaskTracking {
 enum Ended<'a> {
     /// A call's own end.
     Call(&'a str),
-    /// A tool end whose wire names no call: Reasonix's PostToolUse, or an id
-    /// the wire dropped.
+    /// A tool end naming no call: its wire carries none (Reasonix's
+    /// PostToolUse), or its decoder drops it (Cursor, deliberately).
     Unnamed,
     /// An [`AgentEvent::TurnEnd`].
     Turn,
@@ -630,8 +630,9 @@ impl Reducer {
         }
     }
 
-    /// Whether `ended` answers the slot's wait. A transcript line may race
-    /// the hook's prompt, so only a HOOK end naming no call answers one.
+    /// Whether `ended` answers the slot's wait: a call's end only when it is
+    /// the gated call, on any transport; of ends naming no call, only a hook's,
+    /// since a transcript line may race the hook's prompt.
     fn wait_resolved_by(
         &self,
         scene: &SceneState,

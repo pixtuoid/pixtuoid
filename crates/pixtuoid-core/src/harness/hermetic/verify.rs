@@ -1792,6 +1792,45 @@ mod tests {
     }
 
     #[test]
+    fn the_turns_end_is_counted_apart_from_the_calls_ends() {
+        let agent_id = AgentId::from_parts("reasonix", "p");
+        let start = AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: None,
+            detail: None,
+        };
+        let end = AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let wait = AgentEvent::Waiting {
+            agent_id,
+            reason: "approval".into(),
+            tool_use_id: None,
+        };
+        let turn = AgentEvent::turn_end(agent_id);
+        let judged = |events: Vec<AgentEvent>| {
+            let mut findings = Vec::new();
+            permission(&events, &[Reach::Waiting], true, &mut findings);
+            findings
+        };
+        let lost_turn = vec![start.clone(), end.clone(), end.clone(), wait.clone()];
+        let control = vec![start, end, wait, turn.clone()];
+        assert!(judged(control.clone()).is_empty());
+        let mut two_turns = control;
+        two_turns.push(turn);
+        for (events, why) in [
+            (lost_turn, "a surplus End stands in for a lost turn's end"),
+            (two_turns, "the run's one turn ends once"),
+        ] {
+            assert!(
+                judged(events).iter().any(|f| f.1.contains("never ended")),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
     fn an_end_no_call_owns_fails() {
         let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         reorder_hooks(d.path(), |lines| {

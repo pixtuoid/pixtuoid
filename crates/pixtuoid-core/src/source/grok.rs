@@ -209,7 +209,9 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // All three of upstream's turn-end causes land here.
+        // Identity-less: an end alone proves too little to label a session, so
+        // an unknown id registers blank (`shows_activity`). All three of
+        // upstream's turn-end causes land here.
         "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
@@ -866,6 +868,17 @@ mod tests {
         }));
         assert!(matches!(ev, AgentEvent::TurnEnd { agent_id }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
+    }
+
+    #[test]
+    fn every_turn_end_cause_is_a_bare_turn_end() {
+        for event in ["stop", "stop_failure", "stop_cancelled"] {
+            let evs = decode_all(envelope(event));
+            assert!(
+                matches!(evs.as_slice(), [AgentEvent::TurnEnd { .. }]),
+                "{event}: {evs:?}"
+            );
+        }
     }
 
     #[test]
