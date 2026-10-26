@@ -326,7 +326,7 @@ pub(crate) fn build_script(fixture: &Path) -> Result<ProofScript> {
                 }
             }
         }
-        for ev in decode_cc_line(&path_str, SOURCE_NAME, v.clone())? {
+        for ev in decode_cc_line(&path_str, SOURCE_NAME, v.clone()) {
             events.push((rel, ev));
         }
     }

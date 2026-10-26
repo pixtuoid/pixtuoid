@@ -88,9 +88,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
                 {"type": "tool_use", "id": "s1", "name": "Read", "input": {"file_path": "/x"}}
             ]}
         }),
-    )
-    .unwrap()
-    {
+    ) {
         r.apply(&mut scene, ev, now, Transport::Jsonl);
     }
 

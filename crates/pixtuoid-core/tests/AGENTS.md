@@ -58,7 +58,7 @@ captures the one-AgentId rule cannot host.
 Real wire bytes ride `pixtuoid_core::harness::Drive` (dev-only `harness`
 feature): `conformance.rs`, `sources/{grok,cursor,opencode,copilot,delegation}`,
 `pixtuoid/tests/wire_to_pixels.rs`, and the on-demand
-tools (`decoder_fuzz`, `corpus_check`). A shell supplies bytes and asserts;
+`corpus_check`. A shell supplies bytes and asserts;
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
 `AgentId` (that comes from the source's row in `source/registry.rs`; a driver
 keyed off anything else registers NOTHING).

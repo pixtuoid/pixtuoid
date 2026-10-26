@@ -618,7 +618,7 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     );
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str, at: SystemTime| {
-        for ev in decode_omp_line(path, "omp", serde_json::from_str(line).unwrap()).unwrap() {
+        for ev in decode_omp_line(path, "omp", serde_json::from_str(line).unwrap()) {
             r.apply(scene, ev, at, Transport::Jsonl);
         }
     };
@@ -673,10 +673,10 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
     fn feed(r: &mut Reducer, scene: &mut SceneState, wire: &[(Value, Transport)], at: SystemTime) {
         for (v, tp) in wire {
             let events = match tp {
-                Transport::Hook => decode_hook_payload(v.clone()),
+                Transport::Hook => decode_hook_payload(v.clone()).expect("agy's hook decodes"),
                 _ => decode_ag_line(TRANSCRIPT, SOURCE_NAME, v.clone()),
             };
-            for ev in events.expect("agy's wire decodes") {
+            for ev in events {
                 r.apply(scene, ev, at, *tp);
             }
         }

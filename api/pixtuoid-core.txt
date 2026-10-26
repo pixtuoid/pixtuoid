@@ -94,7 +94,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::antigrav
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::antigravity::AntigravitySource
 pub const pixtuoid_core::source::antigravity::CLI_APP_DATA_DIR: &str
 pub const pixtuoid_core::source::antigravity::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::antigravity::decode_ag_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub fn pixtuoid_core::source::antigravity::decode_ag_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub fn pixtuoid_core::source::antigravity::gemini_dir() -> std::path::PathBuf
 pub mod pixtuoid_core::source::claude_code
 pub struct pixtuoid_core::source::claude_code::ClaudeCodeSource
@@ -121,7 +121,7 @@ pub fn pixtuoid_core::source::claude_code::cc_derive_label(&std::path::Path, &st
 pub fn pixtuoid_core::source::claude_code::cc_id_from_path(&std::path::Path) -> alloc::string::String
 pub fn pixtuoid_core::source::claude_code::cc_session_ended(&[u8]) -> bool
 pub fn pixtuoid_core::source::claude_code::cc_watcher(std::path::PathBuf) -> pixtuoid_core::source::jsonl::JsonlWatcher
-pub fn pixtuoid_core::source::claude_code::decode_cc_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub fn pixtuoid_core::source::claude_code::decode_cc_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub fn pixtuoid_core::source::claude_code::live_cc_session_ids(&std::path::Path) -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot>
 pub mod pixtuoid_core::source::codewhale
 pub const pixtuoid_core::source::codewhale::SOURCE_NAME: &str
@@ -145,7 +145,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::codex::C
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::codex::CodexSource
 pub const pixtuoid_core::source::codex::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::codex::codex_home() -> std::path::PathBuf
-pub fn pixtuoid_core::source::codex::decode_codex_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub fn pixtuoid_core::source::codex::decode_codex_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub mod pixtuoid_core::source::copilot
 pub struct pixtuoid_core::source::copilot::CopilotSource
 pub pixtuoid_core::source::copilot::CopilotSource::sessions_root: std::path::PathBuf
@@ -347,7 +347,7 @@ pub const pixtuoid_core::source::decoder::EVENT_STAMP: &str
 pub fn pixtuoid_core::source::decoder::decode_hook_payload(serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
 pub type pixtuoid_core::source::decoder::DecodeResult<T> = core::result::Result<T, pixtuoid_core::source::decoder::DecodeError>
 pub type pixtuoid_core::source::decoder::IdDeriver = fn(&std::path::Path) -> alloc::string::String
-pub type pixtuoid_core::source::decoder::LineDecoder = fn(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub type pixtuoid_core::source::decoder::LineDecoder = fn(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub type pixtuoid_core::source::decoder::PathFilter = fn(&std::path::Path) -> bool
 pub mod pixtuoid_core::source::drift
 pub enum pixtuoid_core::source::drift::DriftKind
@@ -549,7 +549,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::jsonl::P
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::ProbeSnapshot
 pub type pixtuoid_core::source::jsonl::IdDeriver = fn(&std::path::Path) -> alloc::string::String
 pub type pixtuoid_core::source::jsonl::LabelDeriver = fn(&std::path::Path, &str, &std::path::Path) -> alloc::string::String
-pub type pixtuoid_core::source::jsonl::LineDecoder = fn(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub type pixtuoid_core::source::jsonl::LineDecoder = fn(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub type pixtuoid_core::source::jsonl::LivenessProbe = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn() -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot> + core::marker::Send + core::marker::Sync)>
 pub type pixtuoid_core::source::jsonl::PathFilter = fn(&std::path::Path) -> bool
 pub type pixtuoid_core::source::jsonl::SessionEndChecker = fn(&[u8]) -> bool
@@ -611,7 +611,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::omp::OmpSource
 impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::omp::OmpSource
 impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::omp::OmpSource
 pub const pixtuoid_core::source::omp::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::omp::decode_omp_line(&str, &str, serde_json::value::Value) -> pixtuoid_core::source::decoder::DecodeResult<alloc::vec::Vec<pixtuoid_core::source::AgentEvent>>
+pub fn pixtuoid_core::source::omp::decode_omp_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub fn pixtuoid_core::source::omp::omp_agent_dir() -> std::path::PathBuf
 pub fn pixtuoid_core::source::omp::omp_extensions_dir() -> std::path::PathBuf
 pub fn pixtuoid_core::source::omp::omp_id_from_path(&std::path::Path) -> alloc::string::String
