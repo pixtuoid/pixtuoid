@@ -6,7 +6,7 @@ description            = "Backend-agnostic render + simulation engine for pixtuo
 exclude                = ["tests/site_badge_colors.rs", "tests/readme_chart_palette.rs"]
 version.workspace      = true
 edition.workspace      = true
-# Fusion Pixel's two faces, embedded: fonts/.
+# Fusion Pixel 8px, embedded: fonts/
 license                = "MIT AND OFL-1.1"
 repository.workspace   = true
 authors.workspace      = true
@@ -27,7 +27,7 @@ default        = ["native", "cutaway-assets"]
 native         = ["pixtuoid-core/native"]
 # The bundled `@Nx` art and hair dressing, which only a render scale above
 # `RenderScale::ONE` reaches (`densest_frame`, `dress_for`), and the text's
-# Fusion Pixel faces. The wasm hero draws only the classic, so building without
+# Fusion Pixel face. The wasm hero draws only the classic, so building without
 # this keeps those bytes out of the page.
 cutaway-assets = []
 

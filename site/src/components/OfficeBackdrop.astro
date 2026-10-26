@@ -127,8 +127,10 @@ const officeDriverUrl = asset('office-driver.js');
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.35s ease;
-    font-family: var(--font-mono);
-    --ov-label-px: 12px;
+    font-family: 'Fusion Pixel 8px', var(--font-mono);
+    /* One weight: a synthesized bold smears its pixels. */
+    font-synthesis: none;
+    --ov-label-px: 16px;
   }
   .backdrop__overlay.is-on {
     opacity: 1;
@@ -144,9 +146,7 @@ const officeDriverUrl = asset('office-driver.js');
     top: 0;
     white-space: nowrap;
     font-size: var(--ov-label-px);
-    font-weight: 600;
     line-height: 1;
-    letter-spacing: -0.01em;
     text-shadow:
       0 1px 2px rgba(0, 0, 0, 0.9),
       0 0 3px rgba(0, 0, 0, 0.75);
@@ -163,8 +163,14 @@ const officeDriverUrl = asset('office-driver.js');
     color: transparent;
     text-shadow: none;
   }
-  /* A status lamp with a glint, glowing in its tone, where the glyph was. */
+  /* A status lamp with a glint, glowing in its tone, where the glyph was:
+     one column, though the face draws the glyph full-width. */
   .ov-lamp {
+    display: inline-block;
+    width: 1ch;
+    height: 1em;
+    overflow: hidden;
+    vertical-align: top;
     color: transparent;
     text-shadow: none;
     background: radial-gradient(
@@ -184,8 +190,6 @@ const officeDriverUrl = asset('office-driver.js');
     justify-content: space-between;
     overflow: hidden;
     line-height: 1;
-    font-weight: 700;
-    letter-spacing: -0.02em;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
     will-change: transform;
   }
@@ -449,6 +453,13 @@ const officeDriverUrl = asset('office-driver.js');
       return { s, ox: r.left + (r.width - bufW * s) / 2, oy: r.top + (r.height - BUF_H * s) / 2 };
     }
 
+    // Fusion Pixel 8px's em: its glyph pixels land on whole CSS pixels only at
+    // a multiple, so a size snaps to one (`round` it, or `floor` to fit a box).
+    const PIXEL_EM = 8;
+    function pixelEm(px, snap) {
+      return PIXEL_EM * Math.max(1, snap(px / PIXEL_EM));
+    }
+
     function updateOverlay() {
       if (!overlayEl || bufW < 1) return;
       let data;
@@ -460,7 +471,7 @@ const officeDriverUrl = asset('office-driver.js');
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
       // reflow every frame.
-      const labelPx = Math.max(9, Math.min(20, map.s * 2.2));
+      const labelPx = pixelEm(Math.max(9, Math.min(20, map.s * 2.2)), Math.round);
       if (labelPx !== lastLabelPx) {
         lastLabelPx = labelPx;
         overlayEl.style.setProperty('--ov-label-px', labelPx + 'px');
@@ -518,7 +529,7 @@ const officeDriverUrl = asset('office-driver.js');
       boardWrap.style.transform = 'translate(' + bx + 'px,' + by + 'px)';
       boardWrap.style.width = bw + 'px';
       boardWrap.style.height = bh + 'px';
-      boardWrap.style.fontSize = Math.max(4, (bh / 3) * 0.82) + 'px';
+      boardWrap.style.fontSize = pixelEm((bh / 3) * 0.82, Math.floor) + 'px';
       boardBrand.textContent = b.brand.text;
       boardBrand.style.color = b.brand.color;
       boardStar.textContent = b.star.text;

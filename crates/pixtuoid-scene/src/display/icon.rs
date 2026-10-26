@@ -150,25 +150,15 @@ mod tests {
     use crate::display::text::{LINE_H, cells, columns};
     use strum::VariantArray;
 
-    /// Each icon's world art is one cell wide less the gap per cell its
-    /// terminal glyph takes, a line tall; every icon has art in some face,
-    /// and the pack draws no icon nothing names.
+    /// Each icon's art is one cell wide less the gap per cell its terminal
+    /// glyph takes, a line tall, and the pack draws no icon nothing names.
     #[test]
     fn every_icon_has_its_art_and_every_art_an_icon() {
         let pack = crate::pack::test_office();
         for icon in Icon::VARIANTS {
-            let Some(art) = pack.icon(*icon).world().map(|s| s.first()) else {
-                continue;
-            };
+            let art = pack.icon(*icon).first();
             let w = columns(cells(icon.terminal())).0 - 1;
             assert_eq!((art.width(), art.height()), (w, LINE_H), "{icon:?}");
-        }
-        for icon in Icon::VARIANTS {
-            let art = pack.icon(*icon);
-            assert!(
-                art.world().is_some() || art.screen().is_some(),
-                "{icon:?} has no art"
-            );
         }
         let named: std::collections::BTreeSet<&str> =
             Icon::VARIANTS.iter().map(|i| i.art()).collect();
@@ -182,14 +172,12 @@ mod tests {
     fn every_icon_draws_in_its_texts_ink() {
         let pack = crate::pack::test_office();
         for icon in Icon::VARIANTS {
-            let art = pack.icon(*icon);
-            for face in [art.world(), art.screen()].into_iter().flatten() {
-                let inked = face
-                    .recolorable_at(0)
-                    .drawn_in(&[crate::pack::ICON_INK_KEY])
-                    .contains(&true);
-                assert!(inked, "{icon:?}");
-            }
+            let inked = pack
+                .icon(*icon)
+                .recolorable_at(0)
+                .drawn_in(&[crate::pack::ICON_INK_KEY])
+                .contains(&true);
+            assert!(inked, "{icon:?}");
         }
     }
 }

@@ -3,7 +3,7 @@ name                   = "pixtuoid"
 description            = "Terminal pixel-art office for AI coding agents"
 version.workspace      = true
 edition.workspace      = true
-# Links pixtuoid-scene's Fusion Pixel faces (OFL-1.1).
+# Links pixtuoid-scene's Fusion Pixel face (OFL-1.1).
 license                = "MIT AND OFL-1.1"
 repository.workspace   = true
 authors.workspace      = true

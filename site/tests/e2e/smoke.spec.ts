@@ -758,7 +758,10 @@ test('crisp AA captions overlay the live office (name badges + neon board)', asy
   const label = page.locator('#office-overlay .ov-label').first();
   await expect(label).toHaveText(/\S/, { timeout: 10_000 });
   const labelFont = await label.evaluate((el) => getComputedStyle(el).fontFamily);
-  expect(labelFont).toContain('Monaspace Neon');
+  expect(labelFont).toContain('Fusion Pixel 8px');
+  // A glyph pixel lands on whole CSS pixels only at a multiple of the face's em.
+  const labelPx = await label.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(labelPx % 8).toBe(0);
   const parts = await label.evaluate((el) =>
     Array.from(el.children).map((c) => ({
       text: c.textContent,
@@ -772,7 +775,8 @@ test('crisp AA captions overlay the live office (name badges + neon board)', asy
   const brand = page.locator('#office-overlay .ov-board .ov-brow--top span').first();
   await expect(brand).toHaveText(/\S/, { timeout: 10_000 });
   const brandFont = await brand.evaluate((el) => getComputedStyle(el).fontFamily);
-  expect(brandFont).toContain('Monaspace Neon');
+  expect(brandFont).toContain('Fusion Pixel 8px');
+  expect(await page.evaluate(() => document.fonts.check('8px "Fusion Pixel 8px"'))).toBe(true);
   expect(errors()).toEqual([]);
 });
 

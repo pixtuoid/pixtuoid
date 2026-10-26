@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
-"""Generate the scene's two pixel faces from pinned open bitmap fonts, and
-write their licenses beside them: crates/pixtuoid-scene/fonts/world.bin, the
-text drawn into the office's art, and screen.bin, the floating window's own
-text, from Fusion Pixel 12px.
+"""Generate the one pixel face from a pinned open bitmap font, and write its
+licenses beside it: crates/pixtuoid-scene/fonts/world.bin, every text the
+cutaway and the floating window draw, from Fusion Pixel 8px; and the site's
+copy of it, site/src/assets/fonts/, which the live office's captions draw in.
 
 Usage: python3 scripts/gen-fonts.py   (just gen-fonts)
 
 Fusion Pixel 8px is the one open pixel font whose CJK fits a terminal cell's
 art (an 8x8 box); it has no Cyrillic or Greek, which draw as tofu. A glyph is
-baseline-aligned into its face's line box, which `text.rs` and `grid.rs`
+baseline-aligned into the face's line box, which `text.rs` and `grid.rs`
 paint, and one whose ink leaves the box or the cells `unicode-width` gives it
 is dropped, not cropped.
 
-The format, which `cutaway::text` and `cutaway::grid` read: one byte, the rows
-per glyph; a u16 LE glyph count n; n u16 LE code points, ascending; then n
-glyphs, a row at a time from the top, the high bit the leftmost pixel: a byte
-a row in world.bin, a u16 LE in screen.bin, whose glyphs are wider than a byte.
-A symbol Fusion Pixel draws only full-width fails the width check and is drawn
-by hand in `text.rs` and `grid.rs`.
+The format, which `cutaway::text` reads: one byte, the rows per glyph; a u16
+LE glyph count n; n u16 LE code points, ascending; then n glyphs, a byte a row
+from the top, the high bit the leftmost pixel. A symbol Fusion Pixel draws only
+full-width fails the width check and is drawn by hand in `text.rs`.
 """
 
 import hashlib
@@ -31,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FONTS = ROOT / "crates/pixtuoid-scene/fonts"
 OUT = FONTS / "world.bin"
-SCREEN_OUT = FONTS / "screen.bin"
+SITE_FONTS = ROOT / "site/src/assets/fonts"
 
 FETCH_TIMEOUT_S = 30
 
@@ -41,7 +39,7 @@ FUSION_URL = (
     f"{FUSION_TAG}/fusion-pixel-font-8px-monospaced-bdf-v{FUSION_TAG}.zip"
 )
 FUSION_SHA256 = "bd76834c43d6882184356394cfdd8c9c5e5623d9d1c9020564fe545b7ba769ce"
-# Latin's half-width punctuation (`·`, `…`) first; then Simplified Chinese
+# Latin's half-width punctuation (`·`) first; then Simplified Chinese
 # forms, since a language variant redraws only shared ideographs.
 FUSION_MEMBERS = (
     "fusion-pixel-8px-monospaced-latin.bdf",
@@ -49,24 +47,17 @@ FUSION_MEMBERS = (
 )
 # The font's license and its sources' licenses, as its release ships them.
 FUSION_LICENSES = {"OFL.txt": "OFL-Fusion-Pixel.txt", "LICENSES/": "LICENSES-Fusion-Pixel/"}
-SCREEN_URL = FUSION_URL.replace("8px", "12px")
-SCREEN_SHA256 = "d75f5262f108757edb0f47ee8e3d2dfdfbecfd94558faf5ffb0c06dc5866fb3b"
-SCREEN_MEMBERS = tuple(m.replace("8px", "12px") for m in FUSION_MEMBERS)
-# Its sources join the 8px's: the OFL and the shared ones are the same text.
-SCREEN_LICENSES = {"LICENSES/": "LICENSES-Fusion-Pixel/"}
-# `grid.rs`'s SCREEN_LINE_H and SCREEN_CELL_W, and Fusion Pixel 12px's ascent.
-SCREEN_LINE_H = 12
-SCREEN_CELL_W = 6
-SCREEN_ASCENT = 10
+WEB_URL = FUSION_URL.replace("bdf", "otf.woff2")
+WEB_SHA256 = "5a2e0c345d83124a962772ecc7f04748bea14978f02ac1474d5fd38a00f3de56"
+# Latin, for the half-width `·` a badge's `cc·<id4>` writes.
+WEB_MEMBER = "fusion-pixel-8px-monospaced-latin.otf.woff2"
+WEB_OUT = SITE_FONTS / "fusion-pixel-8px.woff2"
 # `text.rs`'s LINE_H and the art pixels a cell is wide (its ADVANCE).
 LINE_H = 8
 CELL_W = 4
 # Rows down to and including the baseline: Fusion Pixel's own, capitals
 # five rows under two of accent room.
 ASCENT = 7
-
-# Screen text adds the symbol blocks Fusion Pixel 12px draws half-width.
-SCREEN_RANGES = [(0x2190, 0x2BFF)]
 
 RANGES = [
     (0x0020, 0x007E),  # ASCII
@@ -167,22 +158,22 @@ def write(path, rows_per_glyph, picked, row_bytes):
     print(f"{path.relative_to(ROOT)}: {len(order)} glyphs, {len(out)} bytes")
 
 
-def unzip(url, sha256, members, licenses):
-    """The parsed `members` of the pinned zip at `url`, its licenses written."""
-    with zipfile.ZipFile(io.BytesIO(fetch(url, sha256))) as z:
-        fonts = [parse_bdf(z.read(m).decode("utf-8")) for m in members]
-        for name in z.namelist():
-            for prefix, dest in licenses.items():
-                if name.startswith(prefix) and not name.endswith("/"):
-                    path = FONTS / (dest + name[len(prefix):])
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(z.read(name))
-    return fonts
+def unzip(url, sha256, into):
+    """The pinned zip at `url`, its licenses written under `into`."""
+    z = zipfile.ZipFile(io.BytesIO(fetch(url, sha256)))
+    for name in z.namelist():
+        for prefix, dest in FUSION_LICENSES.items():
+            if name.startswith(prefix) and not name.endswith("/"):
+                path = into / (dest + name[len(prefix):])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(z.read(name))
+    return z
 
 
 def main():
     FONTS.mkdir(parents=True, exist_ok=True)
-    fusion = unzip(FUSION_URL, FUSION_SHA256, FUSION_MEMBERS, FUSION_LICENSES)
+    bdfs = unzip(FUSION_URL, FUSION_SHA256, FONTS)
+    fusion = [parse_bdf(bdfs.read(m).decode("utf-8")) for m in FUSION_MEMBERS]
 
     picked = {}
     for lo, hi in RANGES:
@@ -198,21 +189,8 @@ def main():
 
     write(OUT, LINE_H, picked, 1)
 
-    screen_fonts = unzip(SCREEN_URL, SCREEN_SHA256, SCREEN_MEMBERS, SCREEN_LICENSES)
-    screen = {}
-    for lo, hi in SCREEN_RANGES + RANGES:
-        for cp in range(lo, hi + 1):
-            if not wanted(cp):
-                continue
-            for source in screen_fonts:
-                if cp in source:
-                    rows = rows_of(
-                        *source[cp], cells(cp), SCREEN_CELL_W, SCREEN_LINE_H, SCREEN_ASCENT, 16
-                    )
-                    if rows is not None:
-                        screen[cp] = rows
-                        break
-    write(SCREEN_OUT, SCREEN_LINE_H, screen, 2)
+    WEB_OUT.write_bytes(unzip(WEB_URL, WEB_SHA256, SITE_FONTS).read(WEB_MEMBER))
+    print(f"{WEB_OUT.relative_to(ROOT)}: {WEB_OUT.stat().st_size} bytes")
 
 
 if __name__ == "__main__":

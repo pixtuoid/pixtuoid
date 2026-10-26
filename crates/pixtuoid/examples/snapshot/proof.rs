@@ -20,7 +20,7 @@ use std::path::Path;
 
 use crate::encode::{FrameSink, ImageCanvas, Timeline, cells_to_rgba, fill_rect};
 use crate::{CELL_H, CELL_W};
-use pixtuoid_scene::cutaway::{CellPx, Face, GridInk, paint_grid};
+use pixtuoid_scene::cutaway::{CellPx, GridInk, glyph_cell, paint_grid};
 use pixtuoid_scene::display::cells::CellGrid;
 use pixtuoid_scene::display::text::cells;
 
@@ -111,10 +111,10 @@ fn wrap_text(text: &str, max_width: i32, width_fn: impl Fn(&str) -> i32) -> Vec<
     lines
 }
 
-/// The cell the frames' text draws in: the window's screen face, a glyph
-/// pixel to a pixel.
+/// The cell the frames' text draws in: a glyph pixel two pixels square, as
+/// the office's terminal cells draw theirs.
 fn text_cell() -> CellPx {
-    Face::Screen.cell(1)
+    glyph_cell(2)
 }
 
 /// `s`'s width in pixels in [`text_cell`]s.
@@ -122,7 +122,7 @@ fn text_width(s: &str) -> i32 {
     i32::from(cells(s)) * i32::from(text_cell().w)
 }
 
-/// Draw `s` in the screen face, top-left at `(x, top_y)`, over what is
+/// Draw `s` in the window's face, top-left at `(x, top_y)`, over what is
 /// there, with an optional one-pixel `halo` under each glyph. Returns its
 /// width so the typing-cursor block needn't recompute it.
 fn draw_text(
@@ -143,7 +143,7 @@ fn draw_text(
         &mut ImageCanvas(img),
         &grid,
         ((x, top_y), text_cell()),
-        (Face::Screen, crate::icons()),
+        crate::icons(),
         GridInk {
             text: rgb(color),
             halo: halo.map(rgb),
@@ -731,7 +731,7 @@ mod tests {
         let (ww, wh) = canvas_dims(&ProofLayout::Wide, 960, 832);
         assert_eq!((ww, wh), (1720, 902));
         let (tw, th) = canvas_dims(&ProofLayout::Tall, 960, 832);
-        assert_eq!((tw, th), (960, 1334));
+        assert_eq!((tw, th), (960, 1352));
         for d in [ww, wh, tw, th] {
             assert_eq!(d % 2, 0, "yuv420p needs even dims");
         }
@@ -749,13 +749,9 @@ mod tests {
     }
 
     #[test]
-    fn coda_fits_one_line_at_both_reference_canvas_widths() {
-        // 1720px = the wide reference canvas, 960px = tall at cols=120.
-        for w in [1720, 960] {
-            let lines = coda_lines(w);
-            assert_eq!(lines.len(), 1, "canvas_w={w}");
-            assert_eq!(lines[0], CODA_TEXT);
-        }
+    fn coda_fits_one_line_at_the_wide_reference_canvas() {
+        let lines = coda_lines(1720);
+        assert_eq!(lines, [CODA_TEXT]);
     }
 
     #[test]

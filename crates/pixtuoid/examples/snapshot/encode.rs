@@ -6,7 +6,7 @@ use image::codecs::gif::{GifEncoder, Repeat};
 use image::{Delay, Frame as GifFrame, Rgb as ImgRgb, RgbImage, Rgba, RgbaImage};
 use pixtuoid::dev::{DrawCtx, draw_scene};
 use pixtuoid_core::SceneState;
-use pixtuoid_scene::cutaway::{Canvas, CellPx, Face, GridInk, paint_grid};
+use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, paint_grid};
 use pixtuoid_scene::floor::{FloorMeta, PerFloor};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::theme::Theme;
@@ -270,7 +270,7 @@ const TERMINAL_FG: pixtuoid_core::sprite::Rgb = pixtuoid_core::sprite::Rgb {
 };
 
 /// Paint `area`'s cells of `term_buf` onto `img` from its origin, one
-/// [`CELL_W`]×[`CELL_H`] cell each, in the window's screen face: the ONE
+/// [`CELL_W`]×[`CELL_H`] cell each, in the window's face: the ONE
 /// rasterizer behind the PNG and RGBA outputs. A cell with no colour of its
 /// own leaves `img`'s ground and takes [`TERMINAL_FG`].
 fn rasterize_cells<I: image::GenericImage>(
@@ -288,7 +288,7 @@ fn rasterize_cells<I: image::GenericImage>(
         &mut ImageCanvas(img),
         &pixtuoid::dev::grid_of(term_buf, area),
         ((0, 0), cell),
-        (Face::Screen, crate::icons()),
+        crate::icons(),
         GridInk {
             text: TERMINAL_FG,
             halo: None,

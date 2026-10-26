@@ -16,6 +16,16 @@
   src: url('@fontsource/lora/files/lora-latin-600-normal.woff2') format('woff2');
 }
 
+/* The office's own face (`just gen-fonts`). The captions fade in after the
+   wasm boots, so `block` never shows them in a fallback it then swaps from. */
+@font-face {
+  font-family: 'Fusion Pixel 8px';
+  font-style: normal;
+  font-display: block;
+  font-weight: 400;
+  src: url('../assets/fonts/fusion-pixel-8px.woff2') format('woff2');
+}
+
 @font-face {
   font-family: 'Monaspace Neon';
   font-style: normal;

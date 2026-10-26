@@ -1,7 +1,7 @@
 //! The window's chrome over the office: its footer, tooltip and panels, and the panel geometry a press maps through.
 
 use pixtuoid_core::state::SceneState;
-use pixtuoid_scene::cutaway::{Canvas, CellPx, Face, GridInk, paint_grid};
+use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, chrome_cell, paint_grid};
 use pixtuoid_scene::display::cells::{CARD_SHADOW, CellGrid, CellRect};
 use pixtuoid_scene::footer::FooterModel;
 use pixtuoid_scene::pack::OfficeArt;
@@ -70,7 +70,7 @@ pub(crate) fn modal_press(
     shown: Option<PixelFit>,
 ) -> crate::panels::ModalMouse {
     let cells = shown.map(|at| {
-        let cell = Face::chrome(at);
+        let cell = chrome_cell(at);
         (cell_at(cursor, cell), panel_cells(window, cell))
     });
     let popup_scale = crate::panels::ui_state::popup_whole(ui.modal().version_popup_open);
@@ -150,13 +150,7 @@ pub(crate) fn paint_tooltip(
         halo: None,
         shadow: Some(CARD_SHADOW),
     };
-    paint_grid(
-        canvas,
-        &placed.card,
-        (placed.at, cell),
-        (Face::Screen, pack),
-        ink,
-    );
+    paint_grid(canvas, &placed.card, (placed.at, cell), pack, ink);
 }
 
 /// The panel `name` (`help`, `dashboard`, `sources` or `theme`) open over
@@ -236,7 +230,7 @@ pub(crate) fn paint_panels(
         halo: None,
         shadow: None,
     };
-    paint_grid(canvas, panels, ((0, 0), cell), (Face::Screen, pack), ink);
+    paint_grid(canvas, panels, ((0, 0), cell), pack, ink);
 }
 
 /// How many screen cells of `cell` fit across a `win_w`-pixel window
@@ -270,7 +264,7 @@ pub(crate) fn paint_footer(
     at: PixelFit,
     window: (u32, u32),
 ) {
-    let cell = Face::chrome(at);
+    let cell = chrome_cell(at);
     let band = footer_rect(at, window);
     let ground = theme.surface.bg_fallback;
     for y in band.y..band.y.saturating_add_unsigned(band.h) {
@@ -288,7 +282,7 @@ pub(crate) fn paint_footer(
         canvas,
         &model.line(theme),
         ((margin, band.y + margin), cell),
-        (Face::Screen, pack),
+        pack,
         ink,
     );
 }
@@ -362,7 +356,7 @@ impl OverlayLayers {
             panels,
         } = next;
         let look = Look { theme, at, window };
-        let cell = Face::chrome(at);
+        let cell = chrome_cell(at);
         refresh(&mut self.footer, Some((footer, look)), |(model, _)| {
             let mut layer = RgbaLayer::new(footer_rect(at, window));
             paint_footer(&mut layer, model, (theme, pack), at, window);
@@ -423,6 +417,7 @@ mod tests {
     use super::super::fixtures::{active_on, density, scene_with};
     use super::super::geometry::{Zoom, window_geometry};
     use super::*;
+    use pixtuoid_scene::cutaway::glyph_cell;
     use pixtuoid_scene::footer::{FooterInputs, build_footer};
     use winit::dpi::PhysicalSize;
 
@@ -439,7 +434,7 @@ mod tests {
             let mut px = vec![0u32; w * h];
             let mut sb = XrgbSurface::new(&mut px, w, h).expect("sized");
             let look = (theme, &pack);
-            let cell = Face::Screen.cell(1);
+            let cell = glyph_cell(2);
             let placed = PlacedTip::new(tip, cursor, theme, cell, (w as u32, h as u32));
             paint_tooltip(&mut sb, &placed, look, cell);
             let rows: Vec<usize> = (0..h)
@@ -539,7 +534,7 @@ mod tests {
             density(),
             Zoom::default(),
         );
-        let model = build_footer(&inputs, footer_budget(w, Face::chrome(at)));
+        let model = build_footer(&inputs, footer_budget(w, chrome_cell(at)));
         let pack = pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack loads");
         // The office as the window draws it, then the footer over it.
         const OFFICE: u32 = 0x0012_3456;
@@ -638,7 +633,7 @@ mod tests {
             density(),
             Zoom::default(),
         );
-        let cell = Face::chrome(at);
+        let cell = chrome_cell(at);
         let tip = pixtuoid_scene::tooltip::coffee();
         for cursor in [(100.0, 4.0), (630.0, 390.0), (0.0, 200.0)] {
             let placed = PlacedTip::new(&tip, cursor, theme, cell, window);

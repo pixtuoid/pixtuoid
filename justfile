@@ -769,7 +769,7 @@ gen-banner-check:
     python3 scripts/gen-banner.py --check docs/images/banner
 
 # Not in `gen`: it downloads its pinned fonts.
-[doc("Regenerate the scene's Fusion Pixel faces + their licenses (crates/pixtuoid-scene/fonts/) from scripts/gen-fonts.py")]
+[doc("Regenerate Fusion Pixel 8px + its licenses for the scene (crates/pixtuoid-scene/fonts/) and the site (site/src/assets/fonts/) from scripts/gen-fonts.py")]
 [group('gen')]
 gen-fonts:
     python3 scripts/gen-fonts.py

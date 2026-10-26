@@ -1,13 +1,10 @@
-//! Every character the office can write is one the window's faces draw: the
-//! screen face all of it, the world face what the office's own signs and
-//! names write. Read from the literals of everything that renders text,
-//! parsed so a comment, a doc, a pattern, a test or the dev-only `harness`
-//! never counts.
+//! Every character the office can write is one the window draws. Read from
+//! the literals of everything that renders text, parsed so a comment, a doc,
+//! a pattern, a test or the dev-only `harness` never counts.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use pixtuoid_scene::cutaway::Face;
 use syn::visit::Visit;
 
 /// The source trees whose literals reach the screen, core's decoded labels
@@ -19,25 +16,13 @@ const RENDERERS: [&str; 4] = [
     "src/floating",
 ];
 
-/// What world text (the badges, the board, the bubbles, the floor sign) is
-/// written by: core's labels and the scene's signs.
-const WORLD_WRITERS: [&str; 6] = [
-    "../pixtuoid-core/src",
-    "../pixtuoid-scene/src/neon_sign.rs",
-    "../pixtuoid-scene/src/chitchat.rs",
-    "../pixtuoid-scene/src/badge.rs",
-    "../pixtuoid-scene/src/display/text.rs",
-    "../pixtuoid-scene/src/layout",
+/// What no text writes: the icons' terminal glyphs, which a pixel painter
+/// draws as their art and nothing writes as text the gate could check, and
+/// the pack's palette keys.
+const NOT_TEXT: [&str; 2] = [
+    "../pixtuoid-scene/src/display/icon.rs",
+    "../pixtuoid-scene/src/pack/lookup.rs",
 ];
-
-/// The icons' terminal glyphs: the screen face draws an icon's art by its
-/// glyph, and the world names its icons, so nothing writes this file's
-/// glyphs as text the gate could check.
-const TERMINAL_ONLY: &str = "../pixtuoid-scene/src/display/icon.rs";
-
-/// What world text writes that no badge reaches: core's cap mark, which ends
-/// only a label longer than a badge keeps (`badge.rs` asserts it).
-const PAST_A_BADGE: [char; 1] = [pixtuoid_core::source::decoder::ELLIPSIS];
 
 /// The characters of a file's string and char literals outside tests, the
 /// `harness`, attributes and patterns, and the off-screen modules it declares
@@ -188,7 +173,7 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
     for tree in RENDERERS {
         rust_files(&root.join(tree), &mut files);
     }
-    files.retain(|file| *file != root.join(TERMINAL_ONLY));
+    files.retain(|file| !NOT_TEXT.iter().any(|t| *file == root.join(t)));
     let parsed: Vec<(PathBuf, Written)> = files
         .into_iter()
         .map(|file| {
@@ -215,18 +200,17 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
         .collect()
 }
 
-/// The characters of `files` that `face` draws as tofu, with where each is
+/// The characters of `files` the window draws as tofu, with where each is
 /// written.
 fn tofu<'a>(
     files: impl IntoIterator<Item = &'a (PathBuf, Vec<char>)>,
-    face: Face,
 ) -> BTreeMap<String, Vec<String>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pack = pixtuoid_scene::pack::load_bundled_pack().expect("the bundled pack loads");
     let mut tofu = BTreeMap::<String, Vec<String>>::new();
     for (file, chars) in files {
         for &c in chars {
-            if drawn(c) && !face.draws(c, &pack) {
+            if drawn(c) && !pixtuoid_scene::cutaway::draws(c, &pack) {
                 let at = file
                     .strip_prefix(root)
                     .unwrap_or(file)
@@ -245,29 +229,10 @@ fn tofu<'a>(
 }
 
 #[test]
-fn the_screen_face_draws_every_character_the_office_writes() {
-    let missing = tofu(&written(), Face::Screen);
+fn the_window_draws_every_character_the_office_writes() {
+    let missing = tofu(&written());
     assert!(
         missing.is_empty(),
-        "the screen face draws these as tofu: {missing:#?}"
-    );
-}
-
-#[test]
-fn the_world_face_draws_every_character_the_signs_and_names_write() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let writers: Vec<PathBuf> = WORLD_WRITERS.iter().map(|w| root.join(w)).collect();
-    let world: Vec<(PathBuf, Vec<char>)> = written()
-        .into_iter()
-        .filter(|(file, _)| writers.iter().any(|w| file.starts_with(w)))
-        .map(|(file, chars)| {
-            let reached = chars.into_iter().filter(|c| !PAST_A_BADGE.contains(c));
-            (file, reached.collect())
-        })
-        .collect();
-    let missing = tofu(&world, Face::World);
-    assert!(
-        missing.is_empty(),
-        "the world face draws these as tofu: {missing:#?}"
+        "the window draws these as tofu: {missing:#?}"
     );
 }

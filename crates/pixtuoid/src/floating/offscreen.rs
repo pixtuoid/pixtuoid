@@ -444,7 +444,7 @@ mod tests {
     use super::super::overlays::footer_budget;
     use super::*;
     use pixtuoid_core::sprite::Rgb;
-    use pixtuoid_scene::cutaway::Face;
+    use pixtuoid_scene::cutaway::glyph_cell;
     use pixtuoid_scene::floor::{FloorMeta, PetInputs};
     use winit::dpi::PhysicalSize;
 
@@ -1189,7 +1189,7 @@ mod tests {
         let slot = active_on("/p/a.jsonl", 0, 0);
         scene.agents.insert(slot.agent_id, slot);
         let warning = crate::doctor::footer_warning(&[], &["cc"]);
-        let budget = footer_budget(960, Face::Screen.cell(1));
+        let budget = footer_budget(960, glyph_cell(2));
         let calm = renderer.footer(&scene, budget, true, None, None).text();
         let warned = renderer
             .footer(&scene, budget, true, None, warning.as_deref())

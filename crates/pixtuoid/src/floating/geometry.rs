@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use pixtuoid_core::sprite::format::Density;
 use pixtuoid_core::state::MAX_FLOORS;
-use pixtuoid_scene::cutaway::Face;
+use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::render_scale::PixelFit;
 use winit::dpi::{LogicalSize, PhysicalSize};
@@ -178,7 +178,7 @@ pub fn window_geometry(size: PhysicalSize<u32>, density: Density, zoom: Zoom) ->
 /// cell of `fit`'s chrome and a margin over and under it, as the terminal
 /// gives its footer a row of its own.
 pub(crate) fn footer_band(fit: PixelFit) -> u16 {
-    Face::chrome(fit).h + 2 * FOOTER_MARGIN_PX
+    chrome_cell(fit).h + 2 * FOOTER_MARGIN_PX
 }
 
 /// The smallest window, in logical px, whose office lays out:
@@ -421,12 +421,12 @@ mod tests {
         // footer band. `office_scale` ROUNDS before the density fit, so the
         // office is NOT monotone in sf — no logical-side seed is sound.
         let measured = [
-            (1.00_f64, (120u32, 74u32), 6usize),
-            (1.25, (150, 94), 12),
-            (1.50, (180, 114), 20),
-            (1.75, (210, 134), 24),
-            (2.00, (240, 154), 30),
-            (3.00, (360, 234), 80),
+            (1.00_f64, (120u32, 73u32), 6usize),
+            (1.25, (150, 93), 12),
+            (1.50, (180, 113), 20),
+            (1.75, (210, 133), 24),
+            (2.00, (240, 153), 30),
+            (3.00, (360, 233), 80),
         ];
         for (sf, want_buf, want_floor0) in measured {
             let physical: PhysicalSize<u32> = logical.to_physical(sf);

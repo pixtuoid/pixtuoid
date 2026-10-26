@@ -13,7 +13,7 @@ use std::num::NonZeroU16;
 use enum_map::EnumMap;
 use pixtuoid_core::sprite::Sprite;
 use pixtuoid_core::sprite::error::PackError;
-use pixtuoid_core::sprite::format::{Density, IconArt, Pack, Piece, load_pack_from_strings};
+use pixtuoid_core::sprite::format::{Density, Pack, Piece, load_pack_from_strings};
 use strum::VariantArray as _;
 
 use crate::display::Icon;
@@ -202,7 +202,7 @@ pub struct OfficeArt {
     desks: EnumMap<Desk, Densities<DeskArt>>,
     bulb_offsets: EnumMap<Desk, (u16, i16)>,
     clock: Densities<ClockArt>,
-    icons: EnumMap<Icon, IconArt>,
+    icons: EnumMap<Icon, Sprite>,
 }
 
 impl OfficeArt {
@@ -339,7 +339,7 @@ impl OfficeArt {
     }
 
     /// `icon`'s art.
-    pub(crate) fn icon(&self, icon: Icon) -> &IconArt {
+    pub(crate) fn icon(&self, icon: Icon) -> &Sprite {
         &self.icons[icon]
     }
 }
@@ -1061,7 +1061,7 @@ mod tests {
     /// An icon the pack leaves out of `[icons]` has no art to draw.
     #[test]
     fn an_icon_missing_from_the_pack_does_not_parse() {
-        let err = OfficeArt::parse(test_pack_declaring("[icons.alert]", "[icons.alarm]"))
+        let err = OfficeArt::parse(test_pack_declaring("\nalert ", "\nalarm "))
             .expect_err("no alert icon");
         assert!(
             matches!(err, ArtError::IconArt { icon: Icon::Alert }),

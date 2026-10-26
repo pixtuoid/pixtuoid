@@ -5,7 +5,7 @@
 //! Box-drawing lines and block elements are [`ruled`], and every character
 //! Fusion Pixel 8px draws as a terminal's cells comes from it
 //! (`scripts/gen-fonts.py`); a symbol is an icon, not a glyph
-//! ([`paint_icon`]). It is [`grid`](super::grid)'s world face.
+//! ([`paint_icon`]). [`grid`](super::grid) paints screen text in it too.
 
 use pixtuoid_core::sprite::{Rgb, RgbBuffer};
 
@@ -50,25 +50,30 @@ fn fusion(c: char) -> Option<Rows> {
 
 /// `c`'s glyph, `None` when the face lacks it.
 pub(crate) fn glyph(c: char) -> Option<Rows> {
-    ruled(c).or_else(|| fusion(c))
+    ruled(c).or_else(|| fusion(c)).or_else(|| by_hand(c))
+}
+
+/// `c`'s capitals, for what the office writes that Fusion Pixel 8px draws
+/// only full-width or not at all.
+fn by_hand(c: char) -> Option<Rows> {
+    let capitals: [u8; CAP_H as usize] = match c {
+        // Three dots take five columns: two keep the glyph's gap.
+        '\u{2026}' => [0, 0, 0, 0, 0b101],
+        '\u{3a3}' => [0b111, 0b100, 0b010, 0b100, 0b111],
+        _ => return None,
+    };
+    let mut rows = Rows::default();
+    for (row, ink) in rows.iter_mut().skip(usize::from(ACCENT_ROWS)).zip(capitals) {
+        *row = ink << (u8::BITS - u32::from(GLYPH_W));
+    }
+    Some(rows)
 }
 
 /// What `cluster`'s `n` cells show, each glyph with the cells it takes. When
 /// its characters' own cells add up to `n`, each draws in its own: a letter
 /// under a combining accent, or a letter and a halfwidth sound mark. Otherwise,
 /// as with a VS16 heart or a ZWJ sequence, it is one box `n` cells wide.
-fn glyphs(cluster: &str, n: u16) -> impl Iterator<Item = (Rows, u16)> + '_ {
-    glyphs_by(cluster, n, glyph, tofu)
-}
-
-/// [`glyphs`] in any face: its `glyph` for a character, else its `tofu` box
-/// as wide as the cells given.
-pub(crate) fn glyphs_by<'a, G: 'a>(
-    cluster: &'a str,
-    n: u16,
-    glyph: impl Fn(char) -> Option<G> + Copy + 'a,
-    tofu: impl Fn(u16) -> G + Copy + 'a,
-) -> impl Iterator<Item = (G, u16)> + 'a {
+pub(crate) fn glyphs(cluster: &str, n: u16) -> impl Iterator<Item = (Rows, u16)> + '_ {
     let own = |c: char| cells(c.encode_utf8(&mut [0; 4]));
     let fits = cluster.chars().map(own).sum::<u16>() == n;
     let each = cluster
@@ -238,9 +243,8 @@ pub(crate) fn paint(pen: Pen, buf: &mut RgbBuffer, (x, y): (ArtPx, ArtPx), text:
     }
 }
 
-/// `icon`'s world art from `pack` in the cell whose top-left is `(x, y)`, its
-/// [`ICON_INK_KEY`](crate::pack::ICON_INK_KEY) pixels in `ink`; nothing where
-/// the icon has no world face.
+/// `icon`'s art from `pack` in the cell whose top-left is `(x, y)`, its
+/// [`ICON_INK_KEY`](crate::pack::ICON_INK_KEY) pixels in `ink`.
 pub(crate) fn paint_icon(
     pen: Pen,
     buf: &mut RgbBuffer,
@@ -248,10 +252,8 @@ pub(crate) fn paint_icon(
     (pack, icon): (&crate::pack::OfficeArt, crate::display::Icon),
     ink: Rgb,
 ) {
-    let Some(world) = pack.icon(icon).world() else {
-        return;
-    };
-    let frame = world
+    let frame = pack
+        .icon(icon)
         .recolorable_at(0)
         .recolored(&[(crate::pack::ICON_INK_KEY, Some(ink))]);
     for dy in 0..frame.height() {
@@ -389,7 +391,7 @@ mod tests {
             );
         }
         let ruled_chars = ('\u{2500}'..='\u{259f}').filter(|&c| ruled(c).is_some());
-        for c in ruled_chars.chain(['I', '\u{25cf}']) {
+        for c in ruled_chars.chain(['I', '\u{25cf}', '\u{2026}', '\u{3a3}']) {
             let text = c.to_string();
             let reach = ink(&text).iter().map(|&(x, _)| x + 1).max().unwrap_or(0);
             assert!(reach <= width(&text).0, "{c:?} inks to {reach}");

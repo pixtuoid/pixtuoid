@@ -21,7 +21,7 @@ use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
-use pixtuoid_scene::cutaway::Face;
+use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
 use pixtuoid_scene::theme::theme_by_name;
 
@@ -289,7 +289,7 @@ fn main() -> Result<()> {
     }
     let buf = renderer.buf().context("a frame")?;
     let (bw, bh) = (buf.width(), buf.height());
-    let cell = Face::chrome(at);
+    let cell = chrome_cell(at);
     let world = FloorInputs {
         scene: &scene,
         now,

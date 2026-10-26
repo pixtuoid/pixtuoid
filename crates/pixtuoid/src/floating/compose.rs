@@ -731,7 +731,7 @@ mod tests {
                 .render(at, super::super::fixtures::frame(&scene, theme, now))
                 .expect("a frame")
                 .clone();
-            let cell = pixtuoid_scene::cutaway::Face::chrome(at);
+            let cell = pixtuoid_scene::cutaway::chrome_cell(at);
             let footer = renderer.footer(
                 &scene,
                 footer_budget(window.0 as usize, cell),

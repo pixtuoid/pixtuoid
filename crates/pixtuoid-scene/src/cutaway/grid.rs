@@ -1,174 +1,52 @@
-//! Screen text in pixels: a [`CellGrid`] painted cell by cell in a [`Face`],
-//! for the painters a terminal draws no text for (the floating window).
-//!
-//! Two faces of Fusion Pixel (`scripts/gen-fonts.py`, licenses in
-//! `fonts/`): [`Face::World`], 8px, the cutaway's own (`text.rs`), whose cell
-//! is one layout column of the art, and [`Face::Screen`], 12px, which reads at
-//! a screen's size. A symbol is an [`Icon`]: screen text writes its terminal
-//! glyph, which the screen face draws as the icon's art from the pack.
+//! Screen text in pixels: a [`CellGrid`] painted cell by cell in the
+//! cutaway's own face (`text.rs`), for the painters a terminal draws no text
+//! for (the floating window). A symbol is an [`Icon`]: screen text writes its
+//! terminal glyph, which draws as the icon's art from the pack.
 
 use crate::pack::OfficeArt;
-use pixtuoid_core::sprite::{Frame, Rgb, RgbBuffer};
+use pixtuoid_core::sprite::{Frame, Rgb, RgbBuffer, Sprite};
 
-use super::text::{self, LEFTMOST_PIXEL as WORLD_LEFTMOST, Rows};
+use super::text::{self, LEFTMOST_PIXEL};
 use crate::display::Icon;
 use crate::display::cells::{CellGrid, CellPx};
 use crate::display::text::{ADVANCE, LINE_H, clusters};
 
-/// A glyph in either face: rows of ink from the cell's top, the high bit its
-/// leftmost pixel, [`SCREEN_LINE_H`] rows deep.
-type Bitmap = [u16; SCREEN_LINE_H as usize];
-const LEFTMOST: u16 = 1 << (u16::BITS - 1);
-
-/// The screen face's cell, in its pixels.
-const SCREEN_CELL_W: u16 = 6;
-const SCREEN_LINE_H: u16 = 12;
-/// Its capitals' top row and height.
-const SCREEN_CAP_TOP: u16 = 2;
-const SCREEN_CAP_H: u16 = 8;
-
-/// The screen face, written by `scripts/gen-fonts.py`: a byte, the
-/// rows per glyph; a u16 LE count n; n u16 LE code points, ascending; n
-/// glyphs of u16 LE rows.
-#[cfg(feature = "cutaway-assets")]
-static SCREEN: &[u8] = include_bytes!("../../fonts/screen.bin");
-#[cfg(not(feature = "cutaway-assets"))]
-static SCREEN: &[u8] = &[];
-
-/// Which glyphs a grid draws in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Face {
-    /// Fusion Pixel 8px, the cutaway's own, in a cell one layout column of
-    /// the art wide.
-    World,
-    /// Fusion Pixel 12px, for text that reads at a screen's size.
-    Screen,
-}
-
-impl Face {
-    /// Its cell, one glyph pixel to a pixel.
-    fn unit(self) -> CellPx {
-        match self {
-            Self::World => CellPx {
-                w: ADVANCE,
-                h: LINE_H,
-            },
-            Self::Screen => CellPx {
-                w: SCREEN_CELL_W,
-                h: SCREEN_LINE_H,
-            },
-        }
-    }
-
-    /// The cell that draws a glyph pixel `scale` pixels square.
-    pub fn cell(self, scale: u16) -> CellPx {
-        let unit = self.unit();
-        CellPx {
-            w: unit.w * scale,
-            h: unit.h * scale,
-        }
-    }
-
-    /// The whole-number scale its glyphs draw at to fit `cell`, at least 1:
-    /// pixel art scales by whole numbers only (Godot, "Multiple
-    /// resolutions": stretch scale mode `integer`).
-    pub(crate) fn scale(self, cell: CellPx) -> u16 {
-        let unit = self.unit();
-        (cell.w / unit.w).min(cell.h / unit.h).max(1)
-    }
-
-    /// The scale its glyphs draw at in a cell `w` pixels wide, at least 1.
-    pub(crate) fn scale_across(self, w: u16) -> u16 {
-        (w / self.unit().w).max(1)
-    }
-
-    /// The cell the window's footer and tooltips draw in over `fit`, in
-    /// [`Face::Screen`]: a glyph pixel the badges' (a layout unit holds a
-    /// world cell).
-    pub fn chrome(fit: crate::render_scale::PixelFit) -> CellPx {
-        Self::Screen.cell(Self::World.scale_across(fit.scale().get()))
-    }
-
-    /// Whether it draws `c`, rather than tofu.
-    pub fn draws(self, c: char, pack: &OfficeArt) -> bool {
-        self.glyph(c).is_some() || self.icon(c.encode_utf8(&mut [0; 4]), pack).is_some()
-    }
-
-    /// The art of the icon whose terminal glyph `symbol` is, where this face
-    /// draws one: only the screen face reads symbols as icons, the world
-    /// face's text naming its icons ([`Content::Icon`](crate::display::Content::Icon)).
-    fn icon<'p>(
-        self,
-        symbol: &str,
-        pack: &'p OfficeArt,
-    ) -> Option<&'p pixtuoid_core::sprite::Sprite> {
-        if self != Self::Screen {
-            return None;
-        }
-        <Icon as strum::VariantArray>::VARIANTS
-            .iter()
-            .filter(|i| i.terminal() == symbol)
-            .find_map(|&i| pack.icon(i).screen())
-    }
-
-    fn glyph(self, c: char) -> Option<Bitmap> {
-        match self {
-            Self::World => text::glyph(c).map(widen),
-            Self::Screen => text::ruled(c).map(widen).or_else(|| screen_font(c)),
-        }
-    }
-
-    /// A box `n` cells wide and a capital high, for a character it lacks.
-    fn tofu(self, n: u16) -> Bitmap {
-        let (top, h) = match self {
-            Self::World => (
-                crate::display::text::ACCENT_ROWS,
-                crate::display::text::CAP_H,
-            ),
-            Self::Screen => (SCREEN_CAP_TOP, SCREEN_CAP_H),
-        };
-        let w = self.unit().w * n - 1;
-        let ink = !u16::MAX.checked_shr(u32::from(w)).unwrap_or(0);
-        let mut rows = Bitmap::default();
-        for row in rows.iter_mut().skip(usize::from(top)).take(usize::from(h)) {
-            *row = ink;
-        }
-        rows
+/// The cell that draws a glyph pixel `scale` pixels square.
+pub fn glyph_cell(scale: u16) -> CellPx {
+    CellPx {
+        w: ADVANCE * scale,
+        h: LINE_H * scale,
     }
 }
 
-/// The world face's rows, in a [`Bitmap`].
-fn widen(rows: Rows) -> Bitmap {
-    let mut out = Bitmap::default();
-    for (o, r) in out.iter_mut().zip(rows) {
-        *o = u16::from(r) << (u16::BITS - u8::BITS);
-    }
-    debug_assert_eq!(u16::from(WORLD_LEFTMOST) << 8, LEFTMOST);
-    out
+/// The whole-number scale glyphs draw at to fit `cell`, at least 1: pixel
+/// art scales by whole numbers only (Godot, "Multiple resolutions": stretch
+/// scale mode `integer`).
+fn scale(cell: CellPx) -> u16 {
+    (cell.w / ADVANCE).min(cell.h / LINE_H).max(1)
 }
 
-/// `c`'s glyph in the generated screen face, if it has one.
-fn screen_font(c: char) -> Option<Bitmap> {
-    let (&rows, rest) = SCREEN.split_first()?;
-    if u16::from(rows) != SCREEN_LINE_H {
-        return None;
-    }
-    let (n, rest) = rest.split_first_chunk::<2>()?;
-    let n = usize::from(u16::from_le_bytes(*n));
-    let (points, glyphs) = rest.split_at_checked(n * size_of::<u16>())?;
-    let point = u16::try_from(u32::from(c)).ok()?;
-    let i = points
-        .as_chunks::<2>()
-        .0
-        .binary_search_by_key(&point, |b| u16::from_le_bytes(*b))
-        .ok()?;
-    let stride = usize::from(SCREEN_LINE_H) * size_of::<u16>();
-    let glyph = glyphs.get(i * stride..(i + 1) * stride)?;
-    let mut out = Bitmap::default();
-    for (o, b) in out.iter_mut().zip(glyph.as_chunks::<2>().0) {
-        *o = u16::from_le_bytes(*b);
-    }
-    Some(out)
+/// The badges' glyph pixels one glyph pixel of the window's chrome spans:
+/// the face's 8px line reads at a screen's size at two.
+const CHROME_SCALE: u16 = 2;
+
+/// The cell the window's footer, tooltips and panels draw in over `fit`
+/// (a layout unit holds a badge's cell).
+pub fn chrome_cell(fit: crate::render_scale::PixelFit) -> CellPx {
+    glyph_cell(CHROME_SCALE * (fit.scale().get() / ADVANCE).max(1))
+}
+
+/// Whether screen text draws `c`, rather than tofu.
+pub fn draws(c: char, pack: &OfficeArt) -> bool {
+    text::glyph(c).is_some() || icon(c.encode_utf8(&mut [0; 4]), pack).is_some()
+}
+
+/// The art of the icon whose terminal glyph `symbol` is.
+fn icon<'p>(symbol: &str, pack: &'p OfficeArt) -> Option<&'p Sprite> {
+    <Icon as strum::VariantArray>::VARIANTS
+        .iter()
+        .find(|i| i.terminal() == symbol)
+        .map(|&i| pack.icon(i))
 }
 
 /// The pixels a grid of screen text paints into; a read or write off it is
@@ -211,9 +89,9 @@ pub struct GridInk {
     pub shadow: Option<f32>,
 }
 
-/// Paint `grid` in `face` with its top-left at pixel `at`, each cell `cell`
-/// big, its icons in `pack`'s art: every cell's fill, then each glyph centred
-/// at `Face::scale`, or
+/// Paint `grid` with its top-left at pixel `at`, each cell `cell` big, its
+/// icons in `pack`'s art: every cell's fill, then each glyph centred at a
+/// whole-number scale, or
 /// stretched to the whole cell for box-drawing lines and block elements so
 /// they join; a bold one struck twice a pixel apart, as a terminal without a
 /// bold face does (xterm(1): "the bold font will be produced by
@@ -222,7 +100,7 @@ pub fn paint_grid(
     canvas: &mut impl Canvas,
     grid: &CellGrid,
     (at, cell): ((i32, i32), CellPx),
-    (face, pack): (Face, &OfficeArt),
+    pack: &OfficeArt,
     ink: GridInk,
 ) {
     let (cw, ch) = (i32::from(cell.w), i32::from(cell.h));
@@ -258,13 +136,13 @@ pub fn paint_grid(
         if let Some(halo) = ink.halo {
             for &dx in strikes {
                 let at = ((x + dx + 1, y + 1), cell);
-                paint_cell_glyph(canvas, &c.symbol, at, (face, pack), Stroke::Shadow(halo));
+                paint_cell_glyph(canvas, &c.symbol, at, pack, Stroke::Shadow(halo));
             }
         }
         for &dx in strikes {
             let fg = c.fg.unwrap_or(ink.text);
             let at = ((x + dx, y), cell);
-            paint_cell_glyph(canvas, &c.symbol, at, (face, pack), Stroke::Ink(fg));
+            paint_cell_glyph(canvas, &c.symbol, at, pack, Stroke::Ink(fg));
         }
     }
 }
@@ -286,12 +164,12 @@ impl Stroke {
     }
 }
 
-/// `symbol`'s glyph in `face` in the cell at `at`, an icon's in `pack`'s art.
+/// `symbol`'s glyph in the cell at `at`, an icon's in `pack`'s art.
 fn paint_cell_glyph(
     canvas: &mut impl Canvas,
     symbol: &str,
     (at, cell): ((i32, i32), CellPx),
-    (face, pack): (Face, &OfficeArt),
+    pack: &OfficeArt,
     stroke: Stroke,
 ) {
     let ink = stroke.rgb();
@@ -305,37 +183,34 @@ fn paint_cell_glyph(
             let row = rows[(u32::from(py) * u32::from(LINE_H) / h) as usize];
             for px in 0..cell.w {
                 let gx = u32::from(px) * u32::from(ADVANCE) / w;
-                if row & (WORLD_LEFTMOST >> gx) != 0 {
+                if row & (LEFTMOST_PIXEL >> gx) != 0 {
                     canvas.set(at.0 + i32::from(px), at.1 + i32::from(py), ink);
                 }
             }
         }
         return;
     }
-    let unit = face.unit();
-    let s = i32::from(face.scale(cell));
-    let top = at.1 + (ch - i32::from(unit.h) * s) / 2;
-    if let Some(art) = face.icon(symbol, pack).map(|a| a.recolorable_at(0)) {
+    let s = i32::from(scale(cell));
+    let top = at.1 + (ch - i32::from(LINE_H) * s) / 2;
+    if let Some(art) = icon(symbol, pack).map(|a| a.recolorable_at(0)) {
         let frame = match stroke {
             Stroke::Ink(rgb) => art.recolored(&[(crate::pack::ICON_INK_KEY, Some(rgb))]),
             Stroke::Shadow(_) => art.recolored(&[]),
         };
         let n = crate::display::text::cells(symbol);
-        let left = at.0 + (cw * i32::from(n) - i32::from(unit.w * n) * s) / 2;
+        let left = at.0 + (cw * i32::from(n) - i32::from(ADVANCE * n) * s) / 2;
         paint_art(canvas, &frame, (left, top), s, stroke);
         return;
     }
     let mut left = at.0;
-    let glyphs = clusters(symbol).flat_map(|(cluster, n)| {
-        text::glyphs_by(cluster, n, move |c| face.glyph(c), move |k| face.tofu(k))
-    });
+    let glyphs = clusters(symbol).flat_map(|(cluster, n)| text::glyphs(cluster, n));
     for (rows, n) in glyphs {
         let span = cw * i32::from(n);
-        let x0 = left + (span - i32::from(unit.w * n) * s) / 2;
+        let x0 = left + (span - i32::from(ADVANCE * n) * s) / 2;
         for (dy, mut bits) in (0i32..).zip(rows) {
             let mut dx = 0;
             while bits != 0 {
-                if bits & LEFTMOST != 0 {
+                if bits & LEFTMOST_PIXEL != 0 {
                     for py in 0..s {
                         for px in 0..s {
                             canvas.set(x0 + dx * s + px, top + dy * s + py, ink);
@@ -397,7 +272,7 @@ mod tests {
         let (w, h) = (grid.width() * cell.w * 2, cell.h * 2);
         let mut buf = RgbBuffer::filled(w, h, BG);
         let pack = crate::pack::test_office();
-        paint_grid(&mut buf, &grid, ((0, 0), cell), (Face::World, &pack), ink);
+        paint_grid(&mut buf, &grid, ((0, 0), cell), &pack, ink);
         buf
     }
 
@@ -412,8 +287,8 @@ mod tests {
     /// its cell: VS Code's 8×18 cell draws at 2, a row of margin above.
     #[test]
     fn a_glyph_draws_whole_scaled_and_centred_in_its_cell() {
-        assert_eq!(Face::World.scale(VS_CODE), 2);
-        let unit = inked(&painted("H", false, Face::World.cell(1), INK), FG);
+        assert_eq!(scale(VS_CODE), 2);
+        let unit = inked(&painted("H", false, glyph_cell(1), INK), FG);
         let margin = (VS_CODE.h - LINE_H * 2) / 2;
         let want: BTreeSet<(u16, u16)> = unit
             .iter()
@@ -472,10 +347,10 @@ mod tests {
         let mut grid = CellGrid::new(2, 1);
         grid.fill(BG);
         grid.put((0, 0), "\u{65e5}", None, false);
-        let cell = Face::Screen.cell(1);
+        let cell = glyph_cell(1);
         let mut buf = RgbBuffer::filled(2 * cell.w, cell.h, BG);
         let pack = crate::pack::test_office();
-        paint_grid(&mut buf, &grid, ((0, 0), cell), (Face::Screen, &pack), INK);
+        paint_grid(&mut buf, &grid, ((0, 0), cell), &pack, INK);
         assert!(
             inked(&buf, FG).iter().any(|&(x, _)| x >= cell.w),
             "the second cell lost its ink"
@@ -495,13 +370,7 @@ mod tests {
             ..INK
         };
         let pack = crate::pack::test_office();
-        paint_grid(
-            &mut buf,
-            &grid,
-            ((0, 0), VS_CODE),
-            (Face::World, &pack),
-            ink,
-        );
+        paint_grid(&mut buf, &grid, ((0, 0), VS_CODE), &pack, ink);
         assert_eq!(buf.get(0, 0), fill);
         assert_eq!(
             buf.get(VS_CODE.w, VS_CODE.h / 2),
@@ -511,28 +380,26 @@ mod tests {
         assert_eq!(buf.get(2 * VS_CODE.w, 2 * VS_CODE.h), BG);
     }
 
-    /// A symbol draws as its icon in the screen face, in its text's ink and
-    /// inside the cells a terminal gives it, though Fusion Pixel draws it
-    /// full-width.
+    /// A symbol draws as its icon, in its text's ink and inside the cells a
+    /// terminal gives it, though Fusion Pixel draws it full-width.
     #[test]
     fn a_symbol_draws_in_the_one_cell_a_terminal_gives_it() {
-        let cell = Face::Screen.cell(2);
-        let ink = inked(&painted_in("\u{25cf}", Face::Screen, cell), FG);
+        let cell = glyph_cell(2);
+        let ink = inked(&painted_in("\u{25cf}", cell), FG);
         assert!(!ink.is_empty());
         assert!(ink.iter().all(|&(x, _)| x < cell.w), "{ink:?}");
     }
 
-    /// The screen face draws ASCII and CJK from Fusion Pixel 12px, each as
-    /// wide as its cells.
+    /// Screen text draws ASCII and CJK, each as wide as its cells.
     #[cfg(feature = "cutaway-assets")]
     #[test]
-    fn the_screen_face_draws_latin_and_cjk_in_their_cells() {
+    fn screen_text_draws_latin_and_cjk_in_their_cells() {
         let pack = crate::pack::test_office();
-        for c in ['M', 'g', '\u{5c0f}', '\u{660e}', '\u{d55c}', '\u{416}'] {
-            assert!(Face::Screen.draws(c, &pack), "{c:?}");
+        for c in ['M', 'g', '\u{5c0f}', '\u{660e}', '\u{d55c}'] {
+            assert!(draws(c, &pack), "{c:?}");
         }
-        let cell = Face::Screen.cell(1);
-        let wide = inked(&painted_in("\u{5c0f}", Face::Screen, cell), FG);
+        let cell = glyph_cell(1);
+        let wide = inked(&painted_in("\u{5c0f}", cell), FG);
         assert!(
             wide.iter().any(|&(x, _)| x >= cell.w),
             "a CJK glyph spans two cells"
@@ -540,36 +407,37 @@ mod tests {
         assert!(wide.iter().all(|&(x, _)| x < 2 * cell.w));
     }
 
-    /// Each icon's screen art is a screen cell wide less the gap per cell its
-    /// terminal glyph takes, a line tall; and no two icons screen text reads
-    /// by glyph share one, or the screen face could not tell them apart.
+    /// Screen text finds an icon by its terminal glyph, so icons that write
+    /// one glyph draw one art, or the first would stand for the rest.
     #[test]
-    fn every_screen_icon_fits_its_cells_and_owns_its_glyph() {
+    fn icons_that_share_a_glyph_share_art() {
         let pack = crate::pack::test_office();
-        let cell = Face::Screen.cell(1);
+        let art = |icon: Icon| {
+            let frame = pack.icon(icon).first();
+            let rows = (0..frame.height()).map(|y| {
+                (0..frame.width())
+                    .map(|x| frame.get(x, y).copied())
+                    .collect()
+            });
+            rows.collect::<Vec<Vec<_>>>()
+        };
         let mut seen = std::collections::HashMap::new();
-        for icon in <crate::display::Icon as strum::VariantArray>::VARIANTS {
-            let Some(art) = pack.icon(*icon).screen().map(|s| s.first()) else {
-                continue;
-            };
-            let n = crate::display::text::cells(icon.terminal());
-            assert_eq!(
-                (art.width(), art.height()),
-                (cell.w * n - 1, cell.h),
-                "{icon:?}"
+        for &icon in <Icon as strum::VariantArray>::VARIANTS {
+            let first = *seen.entry(icon.terminal()).or_insert(icon);
+            assert!(
+                art(icon) == art(first),
+                "{icon:?} and {first:?} both write {:?}",
+                icon.terminal()
             );
-            if let Some(other) = seen.insert(icon.terminal(), icon) {
-                panic!("{icon:?} and {other:?} both draw {:?}", icon.terminal());
-            }
         }
     }
 
-    fn painted_in(text: &str, face: Face, cell: CellPx) -> RgbBuffer {
+    fn painted_in(text: &str, cell: CellPx) -> RgbBuffer {
         let mut grid = CellGrid::new(crate::display::text::cells(text), 1);
         grid.put((0, 0), text, None, false);
         let mut buf = RgbBuffer::filled(grid.width() * cell.w * 2, cell.h * 2, BG);
         let pack = crate::pack::test_office();
-        paint_grid(&mut buf, &grid, ((0, 0), cell), (face, &pack), INK);
+        paint_grid(&mut buf, &grid, ((0, 0), cell), &pack, INK);
         buf
     }
 
@@ -590,19 +458,13 @@ mod tests {
         }
         let pack = crate::pack::test_office();
         let card = CellGrid::new(2, 1);
-        let cell = Face::Screen.cell(1);
+        let cell = glyph_cell(1);
         let mut shades = Shades(Vec::new());
         let ink = GridInk {
             shadow: Some(crate::display::cells::CARD_SHADOW),
             ..INK
         };
-        paint_grid(
-            &mut shades,
-            &card,
-            ((0, 0), cell),
-            (Face::Screen, &pack),
-            ink,
-        );
+        paint_grid(&mut shades, &card, ((0, 0), cell), &pack, ink);
         let (cw, ch) = (i32::from(cell.w), i32::from(cell.h));
         assert_eq!(shades.0.len(), usize::try_from(2 * cw * ch).expect("small"));
         assert_eq!(shades.0[0], (cw, ch / 2), "a cell right, half a cell down");
