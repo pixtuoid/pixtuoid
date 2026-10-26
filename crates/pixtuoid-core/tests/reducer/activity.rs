@@ -548,10 +548,10 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_parts("codex", "sess-1");
+    let id = AgentId::from_parts("claude-code", "sess-1");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    start_as(&mut r, &mut scene, id, "codex");
+    start_as(&mut r, &mut scene, id, "claude-code");
     waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     act_end(
         &mut r,
@@ -570,8 +570,51 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
             scene.agents.get(&id).unwrap().state,
             ActivityState::Waiting { .. }
         ),
-        "a racing JSONL None-id end must keep the permission prompt up"
+        "a racing transcript tool end naming no call must keep the permission prompt up"
     );
+}
+
+// An end naming no call that answers a wait leaves no gate behind, so the gated
+// call's late transcript Start is plain work, not a re-observed approval.
+#[test]
+fn an_end_naming_no_call_that_answers_a_wait_clears_its_gates() {
+    use crate::waiting_for;
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for turn in [true, false] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "sess-1");
+        start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+        waiting_for(
+            &mut r,
+            &mut scene,
+            id,
+            "permission",
+            Some("call_1"),
+            t0,
+            Transport::Hook,
+        );
+        let end = t0 + Duration::from_millis(200);
+        if turn {
+            turn_end(&mut r, &mut scene, id, end, Transport::Hook);
+        } else {
+            act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
+        }
+        act_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some("call_1"),
+            Some("Bash: ls"),
+            end + Duration::from_millis(100),
+            Transport::Jsonl,
+        );
+        assert!(
+            matches!(scene.agents[&id].state, ActivityState::Active { .. }),
+            "turn: {turn}, got {:?}",
+            scene.agents[&id].state
+        );
+    }
 }
 
 // Codex's rollout ends its turn (`task_complete`) on the JSONL transport.

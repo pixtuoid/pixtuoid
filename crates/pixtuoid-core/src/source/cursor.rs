@@ -132,8 +132,6 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 tool_use_id: None,
             },
         ]),
-        // Deliberately Identity-LESS: an end doesn't prove a session worth
-        // registering.
         "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,

@@ -107,9 +107,10 @@ pub enum AgentEvent {
         /// The completing tool call's id (pairs with its `ActivityStart`).
         tool_use_id: Option<String>,
     },
-    /// The agent's turn ended — the end of whatever it ran, so it names no call.
+    /// The agent's foreground work ended: its turn, or a wait outside one
+    /// (codewhale `session_idle`). It names no call.
     TurnEnd {
-        /// The agent whose turn ended.
+        /// The agent whose work ended.
         agent_id: AgentId,
     },
     /// The agent is blocked on a permission/input prompt — the slot goes Waiting.
@@ -282,10 +283,10 @@ impl AgentEvent {
     }
 
     /// Whether this event shows its session working now: the creation
-    /// polarity's evidence for a slot no start announced. A start carries its
-    /// own authority, and an end, a model, usage or title line shows nothing,
-    /// nor does [`ProofOfLife`](Self::ProofOfLife), which vouches a visible
-    /// slot past the sweeps and must never create one.
+    /// polarity's evidence for a slot no start announced. A session start
+    /// carries its own authority, and a session end, a model, usage or title
+    /// line shows nothing, nor does [`ProofOfLife`](Self::ProofOfLife), which
+    /// vouches a visible slot past the sweeps and must never create one.
     pub(crate) fn shows_activity(&self) -> bool {
         match self {
             AgentEvent::ActivityStart { .. }

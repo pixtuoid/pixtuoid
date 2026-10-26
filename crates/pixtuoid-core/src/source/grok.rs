@@ -209,8 +209,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // Identity-LESS: an end for an unknown agent proves nothing worth
-        // registering. All three of upstream's turn-end causes land here.
+        // All three of upstream's turn-end causes land here.
         "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {

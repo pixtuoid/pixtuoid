@@ -904,10 +904,13 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     if !reached.contains(&Reach::Active) {
         findings.push((Label::Fail, "the slot never went Active".into()));
     }
-    if !events
-        .iter()
-        .any(|e| matches!(e, AgentEvent::ActivityEnd { .. }))
-    {
+    // A turn's end settles a call whose own end never comes.
+    if !events.iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::ActivityEnd { .. } | AgentEvent::TurnEnd { .. }
+        )
+    }) {
         findings.push((Label::Fail, "the tool never ended".into()));
     }
 }
@@ -2656,6 +2659,26 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_tool_its_turn_ended_has_ended() {
+        let agent_id = AgentId::from_parts("kimi", "session");
+        let start = AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some("call_1".into()),
+            detail: Some("Bash: ls".into()),
+        };
+        let judged = |events: &[AgentEvent]| {
+            let mut findings = Vec::new();
+            tool_run(events, &[Reach::Active], &mut findings);
+            findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            judged(&[start.clone(), AgentEvent::turn_end(agent_id)]),
+            Vec::<String>::new()
+        );
+        assert_eq!(judged(&[start]), ["the tool never ended"]);
     }
 
     #[test]
