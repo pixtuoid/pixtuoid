@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::dropped::{self, Unjudged};
@@ -30,7 +31,7 @@ use crate::{AgentEvent, AgentId};
 const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 
 /// A verdict's outcome, ordered by severity: a verdict is its worst finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Label {
     /// Every check held.
     Pass,
