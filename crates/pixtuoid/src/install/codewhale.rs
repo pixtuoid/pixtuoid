@@ -24,18 +24,19 @@ use crate::install::io;
 use crate::install::target::MergeOutcome;
 
 /// Events we register == events we decode (`source/codewhale.rs`). The `bool` is
-/// `env_mode`: `true` events carry identity via `DEEPSEEK_*` env vars, so their
+/// `env_mode`: `true` events carry identity via env vars, so their
 /// command bakes `--event <name>` and the shim builds the envelope from env;
 /// `false` events (the subagent observer hooks) are forwarded RAW on stdin.
 ///
-/// turn_end / mode_change / on_error / shell_env are deliberately absent
-/// (per-turn noise / no lifecycle meaning).
+/// `session_idle` ends a turn or a wait, so turn_end and session_busy are
+/// absent, as are mode_change / on_error / shell_env (no lifecycle meaning).
 pub(crate) const CODEWHALE_EVENTS: &[(&str, bool)] = &[
     ("session_start", true),
     ("message_submit", true),
     ("tool_call_before", true),
     ("tool_call_after", true),
     ("waiting_for_user", true),
+    ("session_idle", true),
     ("session_end", true),
     ("subagent_spawn", false),
     ("subagent_complete", false),
@@ -808,6 +809,7 @@ command = "echo hi"
                 ("tool_call_before", true),
                 ("tool_call_after", true),
                 ("waiting_for_user", true),
+                ("session_idle", true),
                 ("session_end", true),
                 ("subagent_spawn", false),
                 ("subagent_complete", false),

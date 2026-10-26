@@ -1,8 +1,13 @@
 {
   "fixtures": [
     {
-      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "match": {"userMessage": "CHILD-TASK", "toolResultContains": "{note}"},
       "response": {"error": {"message": "hermetic model error", "type": "invalid_request_error"}, "status": 400}
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "response": {"toolCalls": [{"name": "read", "arguments": {"path": "NOTE.txt"}}]},
+      "latency": 1500
     },
     {
       "match": {"userMessage": "hermetic model error"},
@@ -12,7 +17,7 @@
     {
       "match": {"toolResultContains": "status=running"},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "wait", "until": "all"}}]},
-      "latency": 300
+      "latency": 1500
     },
     {
       "match": {"hasToolResult": false},

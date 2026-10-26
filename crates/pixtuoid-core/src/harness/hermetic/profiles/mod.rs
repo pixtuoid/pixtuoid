@@ -29,3 +29,7 @@ fn hook_event_name(v: &Value) -> Option<Cow<'_, str>> {
 fn type_field(v: &Value) -> Option<Cow<'_, str>> {
     v.get("type")?.as_str().map(Cow::Borrowed)
 }
+
+fn event_field(v: &Value) -> Option<Cow<'_, str>> {
+    v.get("event")?.as_str().map(Cow::Borrowed)
+}

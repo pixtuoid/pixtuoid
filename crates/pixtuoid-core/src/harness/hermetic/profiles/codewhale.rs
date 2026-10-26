@@ -1,9 +1,6 @@
 //! codewhale's cites are `codewhale-hq/Codewhale` at `v0.10.2`.
 
-use std::borrow::Cow;
-
-use serde_json::Value;
-
+use super::event_field;
 use crate::harness::hermetic::{
     ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
@@ -34,12 +31,6 @@ const TUI: tui::Tui = tui::Tui {
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
 };
-
-/// The hook event an envelope is: the shim stamps its install's name as
-/// `event` (`source/codewhale.rs`).
-fn event_field(v: &Value) -> Option<Cow<'_, str>> {
-    v.get("event")?.as_str().map(Cow::Borrowed)
-}
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "codewhale",
@@ -101,6 +92,7 @@ model = "hermetic"
                 "message_submit",
                 "tool_call_before",
                 "tool_call_after",
+                "session_idle",
                 "session_end",
             ],
             fixture: "fixtures/codewhale/tool-run-hermetic",
@@ -119,6 +111,7 @@ model = "hermetic"
                 "tool_call_before",
                 "waiting_for_user",
                 "tool_call_after",
+                "session_idle",
                 "session_end",
             ],
             fixture: "fixtures/codewhale/permission-hermetic",
@@ -140,6 +133,7 @@ model = "hermetic"
                 "tool_call_after",
                 "subagent_spawn",
                 "subagent_complete",
+                "session_idle",
                 "session_end",
             ],
             fixture: "codewhale/fixtures/child-error-hermetic",
@@ -150,9 +144,7 @@ model = "hermetic"
     not_yet: &[],
     event_name: event_field,
     not_yet_fields: &[],
-    // `child-error`'s start and wait decode as a call naming no action does,
-    // so the strip blanks their args.
-    not_yet_literals: &["start", "spawn", "run", "wait", "join", "await", "block"],
+    not_yet_literals: &[],
     children_inherit_cwd: false,
     result_unseen: false,
     live: None,

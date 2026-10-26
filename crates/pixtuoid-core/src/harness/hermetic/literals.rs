@@ -869,6 +869,11 @@ mod tests {
             "a label we write, not one CC sends",
         ),
         item("codewhale.rs", "KEYS", LABEL_DETAIL),
+        item(
+            "codewhale.rs",
+            "DELEGATING_ACTIONS",
+            "an agent call naming one decodes as one naming none, so the strip blanks it",
+        ),
         item("copilot.rs", "KEYS", LABEL_DETAIL),
         literal(
             "decoder.rs",

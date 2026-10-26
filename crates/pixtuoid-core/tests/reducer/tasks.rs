@@ -287,9 +287,9 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
 }
 
 /// A reasonix skill call (`explore`, `research`, …) is an id-less Task whose
-/// child fires no end of its own, so the call returning is the child's end;
-/// codewhale's `agent start` returns at dispatch, its child still running, and
-/// the parent's own tool ending is no delegation's.
+/// child fires no end of its own, so the call returning is the child's end. An
+/// id-less Task end walks no codewhale child out, under `None` and `TaskDrain`
+/// alike; its tracked ends are `tests/sources/codewhale`'s to pin.
 #[test]
 fn an_untracked_task_end_walks_out_children_only_where_they_end_unannounced() {
     for (source, parent_tool, walks_out) in [

@@ -4,22 +4,25 @@
 //! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.2`.
 //!
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
-//! identity travels as `DEEPSEEK_*` ENV VARS (`docs/HOOKS.md:291-315`). So the
-//! shim runs in **env-mode** (`pixtuoid-hook --event <name>`): it reads the env
-//! vars and synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
+//! identity travels as ENV VARS (`docs/HOOKS.md:291-315`). So the shim runs in
+//! **env-mode** (`pixtuoid-hook --event <name>`): it reads the env vars and
+//! synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
 //!
 //! ```json
 //! {"event":"tool_call_before","session_id":"sess_1a2b3c4d","cwd":"/repo","tool":"exec_shell","tool_args":"{\"command\":\"ls -la\"}","tool_call_id":"7f7a…"}
 //! ```
 //!
 //! - **Key on `session_id`.** Every event of one TUI session carries the same
-//!   `DEEPSEEK_SESSION_ID` (`docs/HOOKS.md:278-285`), so two sessions in one
+//!   `CODEWHALE_SESSION_ID` (`docs/HOOKS.md:278-285`), so two sessions in one
 //!   workspace are two sprites. A tool call's before and after share
-//!   `DEEPSEEK_TOOL_CALL_ID` (`:308`).
+//!   `CODEWHALE_TOOL_CALL_ID` (`crates/tui/src/hooks/executor.rs:371-374`).
 //!
 //! - **Waiting.** `waiting_for_user` fires as an approval prompt opens, a
-//!   question is asked or a goal continuation parks (`:248`); its `reason` rides
-//!   stdin (`:251-252`), which env-mode never reads, so every wait reads alike.
+//!   question is asked or a goal continuation parks (`docs/HOOKS.md:248`); its
+//!   `reason` rides stdin (`:251-252`), which env-mode never reads, so every wait
+//!   reads alike. `session_idle` fires as a turn or a wait settles to idle
+//!   (`crates/tui/src/tui/ui/observer_hooks.rs:178-196`): the end of a wait no
+//!   tool end resolves.
 //!
 //! - **Exit profile.** `session_end` fires on a clean quit, so
 //!   `has_exit_signal: true`. An ABRUPT exit fires none — the shim resolves
@@ -75,7 +78,7 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 ///
 /// # Errors
 ///
-/// If the payload lacks `event`, names an unhandled event, or lacks a non-empty `session_id` or `cwd` (a subagent event needs a non-empty `agent_id` instead).
+/// If the payload lacks `event`, names an unhandled event, or lacks a non-empty field its event carries.
 pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = obj
         .get("event")
@@ -89,14 +92,8 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         return Ok(events);
     }
 
-    let field = |key| {
-        obj.get(key)
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, key))
-    };
-    let session = field("session_id")?;
-    let cwd = field("cwd")?;
+    let session = required(obj, event, "session_id")?;
+    let cwd = required(obj, event, "cwd")?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session);
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, session, Some(cwd.into()));
     let tool_use_id = || {
@@ -145,6 +142,10 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 tool_use_id: None,
             },
         ]),
+        "session_idle" => Ok(vec![AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        }]),
         "session_end" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
@@ -156,24 +157,25 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
     }
 }
 
+/// `key`'s non-empty string, which `event`'s payload carries.
+fn required<'a>(obj: &'a HookObject, event: &str, key: &'static str) -> Result<&'a str> {
+    obj.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, key))
+}
+
 /// CodeWhale's `subagent_spawn` / `subagent_complete` observer hooks, forwarded
 /// RAW from stdin so the payload is CodeWhale's own shape: `agent_id` = the
 /// CHILD, `session_id` = its parent's session, `workspace` = the parent's cwd
 /// (`docs/HOOKS.md:648-665`). `Ok(None)` for any other event.
-fn decode_cw_subagent(
-    event: &str,
-    obj: &serde_json::Map<String, Value>,
-) -> Result<Option<Vec<AgentEvent>>> {
+fn decode_cw_subagent(event: &str, obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let is_spawn = match event {
         "subagent_spawn" => true,
         "subagent_complete" => false,
         _ => return Ok(None),
     };
-    let child = obj
-        .get("agent_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "agent_id"))?;
+    let child = required(obj, event, "agent_id")?;
     let child_id = AgentId::from_parts(SOURCE_NAME, child);
 
     if !is_spawn {
@@ -185,21 +187,13 @@ fn decode_cw_subagent(
         }]));
     }
 
-    let named = |key| {
-        obj.get(key)
-            .and_then(|s: &Value| s.as_str())
-            .filter(|s| !s.is_empty())
-    };
-    // A child no session names registers as a parentless root rather than being
-    // dropped: it still shows, just not nested.
-    let parent_id = named("session_id").map(|s| AgentId::from_parts(SOURCE_NAME, s));
-    let workspace = named("workspace");
+    let parent = required(obj, event, "session_id")?;
     Ok(Some(vec![AgentEvent::SessionStart {
         agent_id: child_id,
         source: SOURCE_NAME.to_string(),
         session_id: child.to_string(),
-        cwd: workspace.unwrap_or("").into(),
-        parent_id,
+        cwd: required(obj, event, "workspace")?.into(),
+        parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
     }]))
 }
 
@@ -345,23 +339,17 @@ mod tests {
     }
 
     #[test]
-    fn subagent_spawn_naming_no_session_registers_a_parentless_root() {
-        let ev =
-            decode(json!({"event": "subagent_spawn", "agent_id": "agent-xy", "workspace": "/r"}));
-        assert!(
-            matches!(ev, AgentEvent::SessionStart { parent_id: None, agent_id, .. }
-            if agent_id == AgentId::from_parts(SOURCE_NAME, "agent-xy"))
-        );
-    }
-
-    #[test]
-    fn subagent_event_without_agent_id_is_malformed() {
-        assert!(
-            decode_cw_hook_payload(test_obj(
-                &json!({"event": "subagent_spawn", "workspace": "/r"})
-            ))
-            .is_err()
-        );
+    fn a_subagent_event_missing_a_field_it_carries_is_malformed() {
+        let spawn = json!({
+            "event": "subagent_spawn", "agent_id": "agent-xy",
+            "session_id": "sess_dead", "workspace": "/r"
+        });
+        assert!(decode_cw_hook_payload(test_obj(&spawn)).is_ok());
+        for key in ["agent_id", "session_id", "workspace"] {
+            let mut v = spawn.clone();
+            v[key] = json!("");
+            assert!(decode_cw_hook_payload(test_obj(&v)).is_err(), "{key}");
+        }
         assert!(decode_cw_hook_payload(test_obj(&json!({"event": "subagent_complete"}))).is_err());
     }
 

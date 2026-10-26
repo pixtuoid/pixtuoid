@@ -55,12 +55,10 @@ fn main() {
         .collect();
 
     let mut payload: Value = match event_from_argv(&args) {
-        // CodeWhale env-mode: identity arrives as `DEEPSEEK_*` env vars with
-        // `--event <name>` baked into the registered command. Critically,
-        // CodeWhale does NOT pipe stdin for these events, so the hook child
-        // inherits the TUI's terminal stdin and a blind `read_to_string` would
-        // BLOCK (freezing the synchronous tool call until the hook timeout) —
-        // when `--event` is present we never touch stdin.
+        // CodeWhale env-mode: identity arrives as env vars with `--event <name>`
+        // baked into the registered command, so the envelope needs no stdin, and
+        // a read it doesn't need is a wait the watchdog (armed below) never
+        // bounds: invariant 5.
         Some(event) => Value::Object(env_payload_from(&event, |k| std::env::var_os(k))),
         None => {
             let mut buf = String::new();
@@ -124,10 +122,10 @@ fn env_payload_from(
     map.insert("event".into(), Value::from(event));
     for (env_key, field) in [
         ("DEEPSEEK_WORKSPACE", "cwd"),
-        ("DEEPSEEK_SESSION_ID", "session_id"),
+        ("CODEWHALE_SESSION_ID", "session_id"),
         ("DEEPSEEK_TOOL_NAME", "tool"),
         ("DEEPSEEK_TOOL_ARGS", "tool_args"),
-        ("DEEPSEEK_TOOL_CALL_ID", "tool_call_id"),
+        ("CODEWHALE_TOOL_CALL_ID", "tool_call_id"),
     ] {
         if let Some(val) = get(env_key).filter(|v| !v.is_empty()) {
             map.insert(field.into(), Value::from(cap_env_field(val)));

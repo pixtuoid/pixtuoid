@@ -198,8 +198,8 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
         ("DEEPSEEK_WORKSPACE", "/repo"),
         ("DEEPSEEK_TOOL_NAME", "exec_shell"),
         ("DEEPSEEK_TOOL_ARGS", r#"{"command":"ls -la"}"#),
-        ("DEEPSEEK_TOOL_CALL_ID", "call-1"),
-        ("DEEPSEEK_SESSION_ID", "sess_1a2b3c4d"),
+        ("CODEWHALE_TOOL_CALL_ID", "call-1"),
+        ("CODEWHALE_SESSION_ID", "sess_1a2b3c4d"),
     ]
     .into_iter()
     .collect();
@@ -272,11 +272,7 @@ fn env_payload_caps_oversized_fields_at_a_char_boundary() {
         args.chars().all(|c| c == 'é'),
         "no mid-scalar split → still valid é runs"
     );
-    assert_eq!(
-        map["cwd"],
-        json!("/repo"),
-        "the AgentId key (a real path) is untouched"
-    );
+    assert_eq!(map["cwd"], json!("/repo"), "cwd (a real path) is untouched");
 }
 
 #[test]

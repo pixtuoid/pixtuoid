@@ -1,13 +1,10 @@
 //! reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
 
-use crate::harness::plan::Placeholder;
-use std::borrow::Cow;
-
-use serde_json::Value;
-
+use super::event_field;
 use crate::harness::hermetic::{
     ConfigFile, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
+use crate::harness::plan::Placeholder;
 
 /// reasonix's TUI. A named mode skips the folder-trust question, whose yes
 /// would run commands unasked
@@ -31,10 +28,6 @@ const TUI: tui::Tui = tui::Tui {
     quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
     renders_under_conpty: true,
 };
-
-fn event_field(v: &Value) -> Option<Cow<'_, str>> {
-    v.get("event")?.as_str().map(Cow::Borrowed)
-}
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "reasonix",

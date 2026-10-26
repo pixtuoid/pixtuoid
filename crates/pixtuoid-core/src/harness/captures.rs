@@ -363,6 +363,18 @@ const ID_FAMILIES: &[IdFamily] = &[
         )],
     },
     IdFamily {
+        name: "codewhale-session",
+        pattern: r"\bsess_[0-9a-f]{8}\b",
+        seen_in: "fixtures/codewhale/tool-run-hermetic",
+        renamed: &[("sess_45ce9c9f", "sess_411948cd")],
+    },
+    IdFamily {
+        name: "codewhale-subagent",
+        pattern: r"\bagent_[0-9a-f]{8}\b",
+        seen_in: "codewhale/fixtures/child-error-hermetic",
+        renamed: &[("agent_7ca434ad", "agent_66a9c2b8")],
+    },
+    IdFamily {
         name: "reasonix-subagent",
         pattern: r"sa_\d{8}_\d{6}_\d{9}_[0-9a-f]{12}",
         seen_in: "reasonix/fixtures/subagent-hermetic",

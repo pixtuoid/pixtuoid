@@ -155,7 +155,7 @@ async fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
     assert!(line.contains(r#""event":"tool_call_before""#), "{line:?}");
     assert!(
         line.contains(r#""cwd":"C:\\repo\\myproj""#),
-        "AgentId key from DEEPSEEK_WORKSPACE, not stdin: {line:?}"
+        "cwd from DEEPSEEK_WORKSPACE, not stdin: {line:?}"
     );
     assert!(line.contains(r#""tool":"exec_shell""#), "{line:?}");
     assert!(
