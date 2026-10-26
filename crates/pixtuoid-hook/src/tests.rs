@@ -461,3 +461,38 @@ fn default_socket_path_branches_windows() {
         });
     });
 }
+
+/// Re-execs itself: the hook's `exit(0)` must stay out of the shared test process.
+#[test]
+fn a_panic_on_any_thread_exits_zero_silently() {
+    const CHILD: &str = "PIXTUOID_HOOK_PANIC_CHILD";
+    match std::env::var_os(CHILD).as_deref().and_then(|v| v.to_str()) {
+        Some("caller") => {
+            silence_panics();
+            panic!("probe");
+        }
+        Some("spawned") => {
+            silence_panics();
+            let _ = std::thread::spawn(|| panic!("probe")).join();
+            return;
+        }
+        _ => {}
+    }
+    for case in ["caller", "spawned"] {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::a_panic_on_any_thread_exits_zero_silently",
+                "--nocapture",
+            ])
+            .env(CHILD, case)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{case}: {:?}", out.status);
+        assert!(
+            out.stderr.is_empty(),
+            "{case}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

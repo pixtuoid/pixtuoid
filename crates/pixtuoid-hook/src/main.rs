@@ -1,9 +1,8 @@
 // Invariant #5 (non-negotiable): the shim must never block CC — it always exits 0
 // silently on any error. A prod `unwrap()`/`expect()`/`panic!` violates that, so
 // they are compiler-denied here (tests unwrap freely).
-// Indexing joins them because `release` sets `panic = "abort"`: an out-of-bounds
-// slice is a SIGABRT the agent CLI sees, and the parsers this crate feeds on
-// untrusted process rows are exactly where one would land.
+// Indexing joins them: a panic still drops the event, and the parsers this crate
+// feeds on untrusted process rows are exactly where an out-of-bounds slice would land.
 #![cfg_attr(
     not(test),
     deny(
@@ -43,7 +42,13 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
+/// Runs before the panic runtime, so a panic exits 0 silently under abort and unwind.
+fn silence_panics() {
+    std::panic::set_hook(Box::new(|_| std::process::exit(0)));
+}
+
 fn main() {
+    silence_panics();
     let socket = default_socket_path();
 
     // `args_os` + lossy, NOT `args()`: `std::env::args()` PANICS on any

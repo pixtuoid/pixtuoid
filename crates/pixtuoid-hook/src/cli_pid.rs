@@ -255,10 +255,10 @@ mod tests {
         move |pid| rows.get(&pid).cloned()
     }
 
-    /// The only parser over bytes we do not control. `panic = "abort"` makes an
-    /// out-of-bounds slice here a SIGABRT the agent CLI sees, and the walk now
-    /// runs off-thread where a panic would be INVISIBLE to the suite — so the
-    /// hostile rows are pinned directly rather than through `proc_row`'s read.
+    /// The only parser over bytes we do not control. A panic here drops the whole
+    /// envelope, and the walk runs off-thread where a panic would be INVISIBLE to
+    /// the suite — so the hostile rows are pinned directly rather than through
+    /// `proc_row`'s read.
     #[test]
     fn a_hostile_stat_row_is_no_answer_not_a_panic() {
         for row in [
