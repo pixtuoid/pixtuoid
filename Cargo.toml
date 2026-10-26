@@ -165,7 +165,8 @@ portable-pty       = "0.9"
 vt100              = "0.18"
 # Dev-only: `crates/pixtuoid-core/examples/support/bounded.rs`.
 process-wrap       = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
-signal-hook        = "0.4"
+# 0.3, crossterm's major, so no second crate.
+signal-hook        = "0.3"
 # regex is already built through criterion; sha2 checks the hermetic tier's
 # release downloads, where a platform hasher would need a seam of its own to
 # keep the sums check testable.
