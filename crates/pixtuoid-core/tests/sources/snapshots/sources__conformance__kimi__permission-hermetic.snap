@@ -3,45 +3,45 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     source: kimi
-    session_id: session_7fa769f8-8e49-4e46-b654-dc8c0f8b0ed8
+    session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     source: kimi
-    session_id: session_7fa769f8-8e49-4e46-b654-dc8c0f8b0ed8
+    session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 4995361903814759386
-    tool_use_id: call_UV0TkQrWvK5yhnC0
+    agent_id: 7779058935064654820
+    tool_use_id: call_FPU3PAD0BBfBWolT
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     source: kimi
-    session_id: session_7fa769f8-8e49-4e46-b654-dc8c0f8b0ed8
+    session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     reason: permission
 - Identity:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     source: kimi
-    session_id: session_7fa769f8-8e49-4e46-b654-dc8c0f8b0ed8
+    session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 4995361903814759386
-    tool_use_id: call_UV0TkQrWvK5yhnC0
+    agent_id: 7779058935064654820
+    tool_use_id: call_FPU3PAD0BBfBWolT
 - ActivityEnd:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     tool_use_id: ~
 - SessionEnd:
-    agent_id: 4995361903814759386
+    agent_id: 7779058935064654820
     as_child: false
