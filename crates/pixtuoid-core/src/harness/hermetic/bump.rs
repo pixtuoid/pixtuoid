@@ -18,8 +18,7 @@ use crate::harness::sources_root;
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
 
-/// The `hermetic.yml` output the drift leg on `os` running [`super::SHARDS`]' `shard`th
-/// reports its [`MOVED`] rows as, counting from 1 as `--shard` does.
+/// The `hermetic.yml` output `leg` reports its [`MOVED`] rows as.
 pub(crate) fn moved_output(leg: Leg) -> String {
     format!("moved_{}_{}", leg.os, leg.shard)
 }

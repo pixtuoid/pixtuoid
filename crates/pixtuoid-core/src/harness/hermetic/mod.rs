@@ -610,6 +610,16 @@ mod tests {
         }
     }
 
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn the_matrix_names_this_os_as_its_legs_report_it() {
+        let os = std::env::consts::OS;
+        assert!(
+            OSES.contains(&os),
+            "a leg reports {os:?}, which no leg of {OSES:?} is"
+        );
+    }
+
     #[test]
     fn every_registered_source_is_profiled_or_says_why_not_and_never_both() {
         let registered: BTreeSet<&str> = registry::registered_source_names().collect();

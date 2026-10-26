@@ -51,11 +51,11 @@ pub struct RunVerdict {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Issue {
     /// Its number.
-    pub number: u64,
+    pub(crate) number: u64,
     /// Whether it is open.
-    pub state: State,
+    pub(crate) state: State,
     /// Its body, whose marker says which of the plan's it is.
-    pub body: String,
+    pub(crate) body: String,
 }
 
 /// An issue's state, as `gh` spells it.
@@ -106,7 +106,7 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Plan {
     /// Each issue's action, in order.
-    pub actions: Vec<Action>,
+    pub(crate) actions: Vec<Action>,
     /// Why the night's verdicts are incomplete; any entry turns the filing red.
     pub lost: Vec<String>,
 }
