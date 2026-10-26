@@ -2060,7 +2060,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tracked_dispatch_end_ends_the_child_only_where_task_drain_does() {
+    fn a_tracked_dispatch_end_ends_the_child_only_under_task_drain_or_any_task_end() {
         use crate::source::ToolDetail;
         let (parent, child) = (
             AgentId::from_parts("copilot", "root"),
@@ -2094,11 +2094,12 @@ mod tests {
                 tool_use_id: Some("call_1".into()),
             },
         ];
-        assert_eq!(
-            subagent_findings(&run, ChildEndInference::TaskDrain),
-            vec![]
-        );
-        assert!(child_unended(&run, ChildEndInference::None));
+        for inference in [ChildEndInference::TaskDrain, ChildEndInference::AnyTaskEnd] {
+            assert_eq!(subagent_findings(&run, inference), vec![], "{inference:?}");
+        }
+        for inference in [ChildEndInference::None, ChildEndInference::Durable] {
+            assert!(child_unended(&run, inference), "{inference:?}");
+        }
     }
 
     #[test]
@@ -2263,25 +2264,24 @@ mod tests {
 
     #[test]
     fn a_child_that_names_no_parent_or_never_ends_fails() {
-        // The line that ends the child: its own end, which none of these infer
-        // from the drained dispatch.
+        // The one line that ends each child: dsh's and claude-code's own end,
+        // reasonix's SubagentStop (its dispatch's end, under AnyTaskEnd).
         let dsh: fn(&Value) -> bool =
             |v| v["type"] == "session_end" && v.get("parentSession").is_some();
         let reasonix: fn(&Value) -> bool = |v| v["event"] == "SubagentStop";
         let claude: fn(&Value) -> bool = |v| v["hook_event_name"] == "SubagentStop";
+        let never = "child session never ended";
         for (source, scene, end) in [
             ("dsh", DS_DELEGATE_SCENE, dsh),
             ("reasonix", RX_DELEGATE_SCENE, reasonix),
             ("claude-code", CC_DELEGATE_SCENE, claude),
         ] {
             let d = recorded(source, "subagent", scene);
+            let v = verify(d.path()).expect("verify");
+            assert!(!has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
             edit_hooks(d.path(), |v| (!end(&v)).then_some(v));
             let v = verify(d.path()).expect("verify");
-            assert!(
-                has(&v, Label::Fail, "child session never ended"),
-                "{source}: {:?}",
-                v.findings()
-            );
+            assert!(has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
         }
         let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         edit_hooks(d.path(), |mut v| {

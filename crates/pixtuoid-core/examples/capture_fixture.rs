@@ -1685,9 +1685,14 @@ mod recorder {
             );
         }
 
-        /// The version the committed dsh recordings record.
-        const DSH_VERSION: &str = "0.2.0-rc.2";
         const AIMOCK: &str = "1.45.1";
+
+        fn dsh_version() -> &'static str {
+            hermetic::profile("dsh")
+                .expect("dsh's profile")
+                .descriptor()
+                .verified_version
+        }
 
         /// `c` moved one step within its class (digit, `a`-`f`, `g`-`z`,
         /// `A`-`Z`), so a renamed id keeps its family's shape.
@@ -1763,7 +1768,7 @@ mod recorder {
             }
             let mut over = serde_json::json!({
                 "origin": "recorded",
-                "version": DSH_VERSION,
+                "version": dsh_version(),
                 "deidentified": {"method": "decoder-allowlist", "blanked": 0},
                 "aimock": AIMOCK,
                 "script": format!("tests/sources/hermetic/dsh/{scenario}.json"),
@@ -1835,7 +1840,7 @@ mod recorder {
 
         #[test]
         fn a_re_record_that_renamed_only_ids_keeps_the_fixture_whole() {
-            let p = rerun("tool-run", (DSH_VERSION, AIMOCK), |_| {}, unchanged);
+            let p = rerun("tool-run", (dsh_version(), AIMOCK), |_| {}, unchanged);
             assert!(kept(&p), "only ids differ");
         }
 
@@ -1843,7 +1848,7 @@ mod recorder {
         fn a_re_record_that_reparented_an_id_is_rewritten() {
             let p = rerun(
                 "subagent",
-                (DSH_VERSION, AIMOCK),
+                (dsh_version(), AIMOCK),
                 |_| {},
                 |text| {
                     let parent = text
@@ -1873,7 +1878,7 @@ mod recorder {
 
         #[test]
         fn a_re_record_under_another_aimock_is_rewritten() {
-            let p = rerun("tool-run", (DSH_VERSION, "1.46.0"), |_| {}, unchanged);
+            let p = rerun("tool-run", (dsh_version(), "1.46.0"), |_| {}, unchanged);
             assert!(!kept(&p));
         }
 
@@ -1881,7 +1886,7 @@ mod recorder {
         fn a_re_record_of_a_moved_script_is_rewritten() {
             let p = rerun(
                 "tool-run",
-                (DSH_VERSION, AIMOCK),
+                (dsh_version(), AIMOCK),
                 |r| r["script"] = "tests/sources/hermetic/dsh/moved.json".into(),
                 unchanged,
             );
@@ -1893,7 +1898,7 @@ mod recorder {
             for committed in [None, Some(serde_json::json!({"os": "plan9", "at": {}}))] {
                 let p = rerun(
                     "tool-run",
-                    (DSH_VERSION, AIMOCK),
+                    (dsh_version(), AIMOCK),
                     |r| match committed.clone() {
                         Some(d) => r["dropped"] = d,
                         None => {
