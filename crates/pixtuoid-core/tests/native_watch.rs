@@ -234,6 +234,216 @@ async fn a_relative_root_keys_each_transcript_once() {
     handle.abort();
 }
 
+/// codex and omp hold their transcript open for the whole session, and macOS's
+/// FSEvents reports a file's writes only at its close (xnu
+/// `bsd/vfs/vfs_vnops.c:887-893` at `f6217f89`). Each source's own poll is
+/// `DEFAULT_POLL_INTERVAL`, far past [`ATTACH_BOUND`].
+///
+/// Not on Windows: NTFS reports a held-open file's writes "when the last
+/// handle to a file object is closed"
+/// (<https://devblogs.microsoft.com/oldnewthing/20111226-00/?p=8813>), and
+/// the open-fd probe the tail's release rides is a no-op there.
+#[cfg(unix)]
+mod held_open {
+    use std::io::Write;
+    use std::path::Path;
+
+    use pixtuoid_core::source::Source;
+    use pixtuoid_core::source::codex::CodexSource;
+    use pixtuoid_core::source::omp::OmpSource;
+
+    use super::*;
+
+    /// What a source whose writer holds its transcript open writes, and where.
+    struct Wire {
+        source: &'static str,
+        id: &'static str,
+        /// The transcript, relative to the source's root.
+        path: &'static str,
+        head: serde_json::Value,
+        activity: serde_json::Value,
+    }
+
+    impl Wire {
+        /// The same session under another id, for a canary beside it.
+        fn renamed(&self, from: &str, to: &str) -> (String, String, String) {
+            (
+                self.id.replace(from, to),
+                self.path.replace(from, to),
+                self.head.to_string().replace(from, to),
+            )
+        }
+    }
+
+    const CODEX_ID: &str = "01a10000-0000-7000-8000-0000000000a1";
+
+    fn codex() -> Wire {
+        Wire {
+            source: "codex",
+            id: CODEX_ID,
+            path: "2026/10/26/rollout-2026-10-26T00-00-00-01a10000-0000-7000-8000-0000000000a1.jsonl",
+            head: serde_json::json!({
+                "type": "session_meta",
+                "payload": { "id": CODEX_ID, "cwd": "/Users/me/proj" }
+            }),
+            activity: serde_json::json!({
+                "type": "event_msg",
+                "payload": { "type": "task_started", "turn_id": "t" }
+            }),
+        }
+    }
+
+    fn omp() -> Wire {
+        Wire {
+            source: "omp",
+            id: "2026-10-26T00-00-00-000Z_01a10000-0000-7000-8000-0000000000b2",
+            path: "--Users-me-proj--/2026-10-26T00-00-00-000Z_01a10000-0000-7000-8000-0000000000b2.jsonl",
+            head: serde_json::json!({
+                "type": "session", "version": 3, "id": "01a10000-0000-7000-8000-0000000000b2",
+                "timestamp": "2026-10-26T00:00:00.000Z", "cwd": "/Users/me/proj"
+            }),
+            activity: serde_json::json!({
+                "type": "message", "id": "m1", "parentId": null,
+                "timestamp": "2026-10-26T00:00:01.000Z",
+                "message": { "role": "assistant", "content": [
+                    { "type": "toolCall", "id": "call_1", "name": "read",
+                      "arguments": { "path": "NOTE.txt" } }
+                ] }
+            }),
+        }
+    }
+
+    /// A root whose transcript directory exists before the watch, as a live
+    /// session's does: inotify reports nothing written into a directory it
+    /// has not yet watched.
+    fn root_for(dir: &TempDir, wire: &Wire) -> std::path::PathBuf {
+        let root = dunce::canonicalize(dir.path()).unwrap().join("sessions");
+        std::fs::create_dir_all(root.join(wire.path).parent().unwrap()).unwrap();
+        root
+    }
+
+    /// Returns once a closed write beside the transcript registers, so the
+    /// watch is live before a test times its own write.
+    async fn live_canary(
+        root: &Path,
+        wire: &Wire,
+        rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    ) {
+        let (id, path, head) = wire.renamed("01a10000", "01a1cafe");
+        tokio::fs::write(root.join(path), format!("{head}\n"))
+            .await
+            .unwrap();
+        let id = AgentId::from_parts(wire.source, &id);
+        assert!(
+            collect_until(rx, &mut Vec::new(), |e| is_start(e, &id)).await,
+            "the watch never went live"
+        );
+    }
+
+    fn held(path: &Path) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap()
+    }
+
+    async fn an_append_decodes_while_held_open<S: Source>(source: S, root: &Path, wire: Wire) {
+        let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
+        let handle = tokio::spawn(Box::new(source).run(tx));
+        live_canary(root, &wire, &mut rx).await;
+
+        let mut file = held(&root.join(wire.path));
+        file.write_all(format!("{}\n", wire.head).as_bytes())
+            .unwrap();
+        let id = AgentId::from_parts(wire.source, wire.id);
+        assert!(
+            within(&mut rx, ATTACH_BOUND, |e| is_start(e, &id)).await,
+            "{}: the held-open transcript never registered",
+            wire.source
+        );
+        file.write_all(format!("{}\n", wire.activity).as_bytes())
+            .unwrap();
+        file.flush().unwrap();
+        let is_activity = |e: &AgentEvent| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == id);
+        assert!(
+            within(&mut rx, ATTACH_BOUND, is_activity).await,
+            "{}: an append to the still-open transcript waited for close or the poll",
+            wire.source
+        );
+        assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_held_open_codex_append_decodes_without_close_or_poll() {
+        let dir = TempDir::new().unwrap();
+        let root = root_for(&dir, &codex());
+        let source = CodexSource {
+            sessions_root: root.clone(),
+            child_end_unclaims: None,
+        };
+        an_append_decodes_while_held_open(source, &root, codex()).await;
+    }
+
+    #[tokio::test]
+    async fn a_held_open_omp_append_decodes_without_close_or_poll() {
+        let dir = TempDir::new().unwrap();
+        let root = root_for(&dir, &omp());
+        let source = OmpSource::single_root(root.clone());
+        an_append_decodes_while_held_open(source, &root, omp()).await;
+    }
+
+    /// codex opens its rollout, then runs `git` before writing the first line
+    /// (`codex-rs/rollout/src/recorder.rs:1906-1917`, `:2022-2049` at
+    /// `rust-v0.164.0`): the create event's walk finds an empty file.
+    #[tokio::test]
+    async fn a_late_first_line_registers_without_close_or_poll() {
+        let dir = TempDir::new().unwrap();
+        let wire = codex();
+        let root = root_for(&dir, &wire);
+        let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
+        let source = CodexSource {
+            sessions_root: root.clone(),
+            child_end_unclaims: None,
+        };
+        let handle = tokio::spawn(Box::new(source).run(tx));
+        live_canary(&root, &wire, &mut rx).await;
+
+        let mut file = held(&root.join(wire.path));
+        // Past the create event's walk.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        file.write_all(format!("{}\n", wire.head).as_bytes())
+            .unwrap();
+        file.flush().unwrap();
+        let id = AgentId::from_parts("codex", CODEX_ID);
+        assert!(
+            within(&mut rx, ATTACH_BOUND, |e| is_start(e, &id)).await,
+            "a first line written after the create event waited for close or the poll"
+        );
+        assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
+        handle.abort();
+    }
+
+    /// Whether an event matching `done` arrives within `bound`.
+    async fn within(
+        rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+        bound: Duration,
+        done: impl Fn(&AgentEvent) -> bool,
+    ) -> bool {
+        let deadline = tokio::time::Instant::now() + bound;
+        while tokio::time::Instant::now() < deadline {
+            if let Ok(Some((_, event))) =
+                tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
+                && done(&event)
+            {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 fn is_start(event: &AgentEvent, id: &AgentId) -> bool {
     matches!(event, AgentEvent::SessionStart { agent_id, .. } if agent_id == id)
 }
