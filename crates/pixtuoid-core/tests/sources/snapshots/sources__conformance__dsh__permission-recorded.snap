@@ -3,77 +3,77 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - ModelInfo:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     model: deepseek-flash
     effort: high
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     fresh_tokens: 19
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 8380047930242052626
-    tool_use_id: toolu_6pxqw67IwXgcEoWt
+    agent_id: 12573771409002880216
+    tool_use_id: toolu_DJ2HvoSyrOn_fiMW
     detail:
       Generic:
         display: bash
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - Waiting:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     reason: "bash: escalate sandbox to danger-full-access: The note needs wider access."
-    tool_use_id: toolu_6pxqw67IwXgcEoWt
+    tool_use_id: toolu_DJ2HvoSyrOn_fiMW
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 8380047930242052626
-    tool_use_id: toolu_6pxqw67IwXgcEoWt
+    agent_id: 12573771409002880216
+    tool_use_id: toolu_DJ2HvoSyrOn_fiMW
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 8380047930242052626
-    tool_use_id: toolu_6pxqw67IwXgcEoWt
+    agent_id: 12573771409002880216
+    tool_use_id: toolu_DJ2HvoSyrOn_fiMW
 - Identity:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     source: dsh
-    session_id: session-e9e53933-1604-4e4b-b68d-29aa3da69b60
+    session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     fresh_tokens: 19
 - SessionEnd:
-    agent_id: 8380047930242052626
+    agent_id: 12573771409002880216
     as_child: false

@@ -1,4 +1,4 @@
-//! dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.0-rc.2`.
+//! dsh's cites are `deepseek-ai/deepseek-harness` at `dsh-v0.2.1-rc.2`.
 
 use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
@@ -28,9 +28,9 @@ pub(crate) const PROFILE: Profile = Profile {
     invocation: &["dsh", "--profile", "headless", Placeholder::Prompt.as_str()],
     second_turn: None,
     // The Messages endpoint and key come from the launch environment
-    // (`packages/llm/llm-deepseek/src/config.ts:290`,
+    // (`packages/llm/llm-deepseek/src/config.ts:300`,
     // `packages/llm/llm-deepseek-api-key/src/index.ts:20-35`); the feedback
-    // upload's switch (`packages/bundle/base/cordis.patch.yml:193-195`).
+    // upload's switch (`packages/bundle/base/cordis.patch.yml:207-209`).
     env: &[
         ("DEEPSEEK_BASE_URL", "http://127.0.0.1:{port}"),
         ("DEEPSEEK_API_KEY", "{key}"),
@@ -42,7 +42,7 @@ pub(crate) const PROFILE: Profile = Profile {
         windows: &[],
     },
     // AGENTS.md and CLAUDE.md stop at the nearest `.git`
-    // (`packages/context/agent-instructions/README.md:36`), which the
+    // (`packages/context/agent-instructions/README.md:38`), which the
     // recorder's `git init` makes the workspace.
     ancestor_config: &[],
     config: &[],

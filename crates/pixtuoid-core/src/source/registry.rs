@@ -678,7 +678,7 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
 const DSH: SourceDescriptor = SourceDescriptor {
     name: dsh::SOURCE_NAME,
     label_prefix: "ds",
-    verified_version: "0.2.0-rc.2",
+    verified_version: "0.2.1-rc.2",
     version_probe: Some(&["dsh", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     // `DSH_HOME` is honored INSTALLER-side (the plugin file + patch row live
@@ -698,13 +698,11 @@ const DSH: SourceDescriptor = SourceDescriptor {
             // plugin emits a fresh `session_start` on the same id — the
             // SessionStart arm's ordinary re-registration, not this flag.
             resurrects_on_prompt: false,
-            // A delegation freezes the PARENT's stream either way: the
-            // local child's events all carry its OWN session id (the
-            // delegation capture), and a remote provider
-            // (`dsh-subagent-claude-code`/`-codex`/`-acp`) publishes no
-            // local child at all. `true` can only over-retain a dead slot.
-            delegations_are_hook_silent: true,
-            child_end_inference: ChildEndInference::TaskDrain,
+            delegations_are_hook_silent: false,
+            // The dispatch returns the child's id at launch, and the child's
+            // own `session_end` ends it (`packages/subagent/tool-subagent/src/index.ts:215`
+            // at `dsh-v0.2.1-rc.2`; the delegation capture).
+            child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
         },
         // The plugin runs in-process (a cordis plugin in the launcher's one

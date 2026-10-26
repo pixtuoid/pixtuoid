@@ -212,3 +212,54 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
         }
     }
 }
+
+/// dsh's dispatch returns the child's id at launch, so its drain says nothing
+/// about the child: still standing past the b1 grace, gone only on its own
+/// `session_end`.
+#[test]
+fn dsh_s_dispatch_end_leaves_its_running_child_standing() {
+    use std::time::{Duration, SystemTime};
+
+    use pixtuoid_core::source::Transport;
+    use pixtuoid_core::state::SceneState;
+    use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, EXIT_GRACE_WINDOW, Reducer};
+
+    let events = dsh_events();
+    let child = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                parent_id: Some(_),
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        })
+        .expect("the recording's child session");
+    let ends = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child))
+        .expect("the child's own end");
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut events = events.into_iter();
+    for ev in events.by_ref().take(ends) {
+        r.apply(&mut scene, ev, t0, Transport::Hook);
+    }
+    let past = t0 + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.tick(&mut scene, past);
+    assert!(
+        scene
+            .agents
+            .get(&child)
+            .is_some_and(|s| s.exiting_at.is_none()),
+        "the dispatch's drain walked its running child out"
+    );
+    for ev in events {
+        r.apply(&mut scene, ev, past, Transport::Hook);
+    }
+    assert!(
+        scene.agents[&child].exiting_at.is_some(),
+        "its own session_end ends it"
+    );
+}

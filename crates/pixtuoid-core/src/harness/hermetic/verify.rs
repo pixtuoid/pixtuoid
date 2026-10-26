@@ -2060,6 +2060,48 @@ mod tests {
     }
 
     #[test]
+    fn a_tracked_dispatch_end_ends_the_child_only_where_task_drain_does() {
+        use crate::source::ToolDetail;
+        let (parent, child) = (
+            AgentId::from_parts("copilot", "root"),
+            AgentId::from_parts("copilot", "call_1"),
+        );
+        let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
+            agent_id,
+            source: "copilot".into(),
+            session_id: id.into(),
+            cwd: PathBuf::from("/proj"),
+            parent_id,
+        };
+        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some(id.into()),
+            detail: Some(detail),
+        };
+        let run = vec![
+            session(parent, "root", None),
+            started(parent, "call_1", ToolDetail::Task),
+            session(child, "call_1", Some(parent)),
+            started(
+                child,
+                "view_1",
+                ToolDetail::Generic {
+                    display: "view".into(),
+                },
+            ),
+            AgentEvent::ActivityEnd {
+                agent_id: parent,
+                tool_use_id: Some("call_1".into()),
+            },
+        ];
+        assert_eq!(
+            subagent_findings(&run, ChildEndInference::TaskDrain),
+            vec![]
+        );
+        assert!(child_unended(&run, ChildEndInference::None));
+    }
+
+    #[test]
     fn a_child_error_takes_no_child_work_but_the_parents_end() {
         use crate::source::ToolDetail;
         let (parent, child) = (
@@ -2221,34 +2263,25 @@ mod tests {
 
     #[test]
     fn a_child_that_names_no_parent_or_never_ends_fails() {
-        // The lines that end the child: its own end, and its parent's drain of
-        // the Task that spawned it. Any one alone ends it.
-        let dsh: &[fn(&Value) -> bool] = &[
-            |v| v["type"] == "session_end" && v.get("parentSession").is_some(),
-            |v| v["type"] == "tool_result" && v.get("parentSession").is_none(),
-        ];
-        let reasonix: &[fn(&Value) -> bool] = &[|v| v["event"] == "SubagentStop"];
-        // claude-code infers no end from the drained Agent call: its Stop alone.
-        let claude: &[fn(&Value) -> bool] = &[|v| v["hook_event_name"] == "SubagentStop"];
-        let never = "child session never ended";
-        for (source, scene, ends) in [
+        // The line that ends the child: its own end, which none of these infer
+        // from the drained dispatch.
+        let dsh: fn(&Value) -> bool =
+            |v| v["type"] == "session_end" && v.get("parentSession").is_some();
+        let reasonix: fn(&Value) -> bool = |v| v["event"] == "SubagentStop";
+        let claude: fn(&Value) -> bool = |v| v["hook_event_name"] == "SubagentStop";
+        for (source, scene, end) in [
             ("dsh", DS_DELEGATE_SCENE, dsh),
             ("reasonix", RX_DELEGATE_SCENE, reasonix),
             ("claude-code", CC_DELEGATE_SCENE, claude),
         ] {
-            for keep in 0..ends.len() {
-                let d = recorded(source, "subagent", scene);
-                edit_hooks(d.path(), |v| {
-                    let dropped = ends.iter().enumerate().any(|(i, e)| i != keep && e(&v));
-                    (!dropped).then_some(v)
-                });
-                let v = verify(d.path()).expect("verify");
-                assert!(!has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
-            }
             let d = recorded(source, "subagent", scene);
-            edit_hooks(d.path(), |v| (!ends.iter().any(|e| e(&v))).then_some(v));
+            edit_hooks(d.path(), |v| (!end(&v)).then_some(v));
             let v = verify(d.path()).expect("verify");
-            assert!(has(&v, Label::Fail, never), "{source}: {:?}", v.findings());
+            assert!(
+                has(&v, Label::Fail, "child session never ended"),
+                "{source}: {:?}",
+                v.findings()
+            );
         }
         let d = recorded("dsh", "subagent", DS_DELEGATE_SCENE);
         edit_hooks(d.path(), |mut v| {

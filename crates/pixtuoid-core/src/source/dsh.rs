@@ -5,8 +5,7 @@
 //! emit-only events through the shim. A REMOTE subagent provider
 //! (`dsh-subagent-claude-code`/`-codex`/`-acp`) publishes no local child
 //! session, so such a delegation paints nothing here — at most the spawned
-//! CLI's own source shows a parentless sprite while the dsh parent stays
-//! Active on the dispatch call. Wire shape: upstream `packages/core/session/src/types.ts` (the
+//! CLI's own source shows a parentless sprite. Wire shape: upstream `packages/core/session/src/types.ts` (the
 //! `session/event` feed), `packages/interaction/user-approval/src/types.ts`
 //! (the log-only approval audit pair), `packages/core/agent/src/runtime-types.ts`
 //! (#928). One dsh process hosts MANY sessions (the `web` profile is a
@@ -41,7 +40,7 @@ const OUTCOME_ALLOWED: &str = "allowed-once";
 /// dsh's subagent dispatch tools. The first is capture-verified
 /// (`delegation/fixtures/dsh`: the parent streams a `tool_call` naming it,
 /// the child arrives as its own `parentSession`-linked session, and the
-/// parent's `tool_result` lands only after the child's `session_end`). The
+/// parent's `tool_result` lands at launch, before the child's first request). The
 /// second is preset-verified: the tool NAME is
 /// per-instance config (`dsh-tool-subagent` `toolName`, default `subagent`),
 /// and the standard preset ships BOTH instances enabled

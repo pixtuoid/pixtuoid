@@ -3,60 +3,60 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - ModelInfo:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     model: deepseek-flash
     effort: high
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     fresh_tokens: 19
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityStart:
-    agent_id: 7618189062660886101
-    tool_use_id: toolu_l-xL4iQCBtv97NpD
+    agent_id: 3714680499546126493
+    tool_use_id: toolu_D0rRMgLCLpw1J5iZ
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - ActivityEnd:
-    agent_id: 7618189062660886101
-    tool_use_id: toolu_l-xL4iQCBtv97NpD
+    agent_id: 3714680499546126493
+    tool_use_id: toolu_D0rRMgLCLpw1J5iZ
 - Identity:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     source: dsh
-    session_id: session-3e335f66-3b4f-473b-abf2-5b7cb52d7a0d
+    session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     fresh_tokens: 19
 - SessionEnd:
-    agent_id: 7618189062660886101
+    agent_id: 3714680499546126493
     as_child: false
