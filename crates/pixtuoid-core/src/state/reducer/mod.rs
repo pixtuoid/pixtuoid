@@ -240,6 +240,18 @@ struct TaskTracking {
     handled_by_task_start: bool,
 }
 
+/// What an end names, for [`Reducer::apply_end`].
+#[derive(Clone, Copy)]
+enum Ended<'a> {
+    /// A call's own end.
+    Call(&'a str),
+    /// A tool end naming no call: its wire carries none (Reasonix's
+    /// PostToolUse), or its decoder drops it (Cursor, deliberately).
+    Unnamed,
+    /// An [`AgentEvent::TurnEnd`].
+    Turn,
+}
+
 /// The event coordinator: folds `AgentEvent`s into `SceneState`, owning the
 /// cross-slot correlation maps, the Active→Idle debounce, and the stale/exit
 /// sweeps.
@@ -357,8 +369,13 @@ impl Reducer {
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id,
-            } => self.apply_end(scene, agent_id, tool_use_id.as_deref(), from, now),
-            AgentEvent::TurnEnd { agent_id } => self.apply_end(scene, agent_id, None, from, now),
+            } => {
+                let ended = tool_use_id.as_deref().map_or(Ended::Unnamed, Ended::Call);
+                self.apply_end(scene, agent_id, ended, from, now);
+            }
+            AgentEvent::TurnEnd { agent_id } => {
+                self.apply_end(scene, agent_id, Ended::Turn, from, now);
+            }
             AgentEvent::Waiting {
                 agent_id,
                 reason,
@@ -613,17 +630,14 @@ impl Reducer {
         }
     }
 
-    /// A matching tool_use_id means the *gated* tool finished, so a parallel
-    /// tool's end can't false-clear a pending permission. A HOOK end naming no
-    /// call resolves any wait: an [`AgentEvent::TurnEnd`], since a pending
-    /// approval BLOCKS the turn, or a Reasonix PostToolUse, whose prompt names
-    /// no call either. A JSONL one may race the prompt
-    /// (`a_jsonl_turn_end_while_waiting_keeps_waiting`).
+    /// Whether `ended` answers the slot's wait: a call's end only when it is
+    /// the gated call, on any transport; of ends naming no call, only a hook's,
+    /// since a transcript line may race the hook's prompt.
     fn wait_resolved_by(
         &self,
         scene: &SceneState,
         agent_id: AgentId,
-        tool_use_id: Option<&str>,
+        ended: Ended<'_>,
         from: Transport,
     ) -> bool {
         let is_waiting = matches!(
@@ -631,31 +645,43 @@ impl Reducer {
             Some(ActivityState::Waiting { .. })
         );
         is_waiting
-            && match tool_use_id {
-                Some(tuid) => self.corr.gate_matches(&agent_id, tuid),
-                None => from == Transport::Hook,
+            && match ended {
+                // Only the *gated* call's end, so a parallel tool's can't
+                // false-clear a pending permission.
+                Ended::Call(tuid) => self.corr.gate_matches(&agent_id, tuid),
+                // A pending approval BLOCKS the turn, so its end means the
+                // prompt was answered.
+                Ended::Turn => from == Transport::Hook,
+                // Reasonix's prompt names no call, nor does its PostToolUse.
+                Ended::Unnamed => from == Transport::Hook,
             }
     }
 
     /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it, and
-    /// the `TurnEnd` arm, an end naming no call.
+    /// the `TurnEnd` arm.
     fn apply_end(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        tool_use_id: Option<&str>,
+        ended: Ended<'_>,
         from: Transport,
         now: SystemTime,
     ) {
-        let resolves_wait = self.wait_resolved_by(scene, agent_id, tool_use_id, from);
-        if let Some(t) = tool_use_id {
+        let resolves_wait = self.wait_resolved_by(scene, agent_id, ended, from);
+        match ended {
             // A call's End retires ITS gate whether or not it resolved a wait
             // (a denial, or a parallel tool finishing past its own gate).
-            self.corr.remove_gate_member(&agent_id, t);
-        } else if resolves_wait {
-            // It resolved the wait without naming a call: every gate on this
-            // agent is stale.
-            self.corr.gated_before_waiting.remove(&agent_id);
+            Ended::Call(t) => self.corr.remove_gate_member(&agent_id, t),
+            // The turn that answered the wait is over: every gate is stale.
+            Ended::Turn if resolves_wait => {
+                self.corr.gated_before_waiting.remove(&agent_id);
+            }
+            // It answered the wait without naming which gate: every gate is
+            // stale.
+            Ended::Unnamed if resolves_wait => {
+                self.corr.gated_before_waiting.remove(&agent_id);
+            }
+            Ended::Turn | Ended::Unnamed => {}
         }
         // A delegating parent's own parallel tool ending must not settle it to
         // Idle: nothing would restore Delegating for the rest of the run.
@@ -1327,7 +1353,7 @@ impl Reducer {
 
     /// Flip agents with an elapsed `pending_idle_at` to Idle. Resets
     /// `state_started_at` to `now` so the Idle wander state machine starts from
-    /// the visible transition, not the now-stale original ActivityEnd time.
+    /// the visible transition, not the now-stale original end's time.
     fn expire_pending_idles(&mut self, scene: &mut SceneState, now: SystemTime) {
         for slot in scene.agents.values_mut() {
             let Some(pending) = slot.pending_idle_at else {

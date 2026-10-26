@@ -910,10 +910,13 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     if !reached.contains(&Reach::Active) {
         findings.push((Label::Fail, "the slot never went Active".into()));
     }
-    if !events
-        .iter()
-        .any(|e| matches!(e, AgentEvent::ActivityEnd { .. }))
-    {
+    // A turn's end settles a call whose own end never comes.
+    if !events.iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::ActivityEnd { .. } | AgentEvent::TurnEnd { .. }
+        )
+    }) {
         findings.push((Label::Fail, "the tool never ended".into()));
     }
 }
@@ -1801,6 +1804,45 @@ mod tests {
     }
 
     #[test]
+    fn the_turns_end_is_counted_apart_from_the_calls_ends() {
+        let agent_id = AgentId::from_parts("reasonix", "p");
+        let start = AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: None,
+            detail: None,
+        };
+        let end = AgentEvent::ActivityEnd {
+            agent_id,
+            tool_use_id: None,
+        };
+        let wait = AgentEvent::Waiting {
+            agent_id,
+            reason: "approval".into(),
+            tool_use_id: None,
+        };
+        let turn = AgentEvent::turn_end(agent_id);
+        let judged = |events: Vec<AgentEvent>| {
+            let mut findings = Vec::new();
+            permission(&events, &[Reach::Waiting], true, &mut findings);
+            findings
+        };
+        let lost_turn = vec![start.clone(), end.clone(), end.clone(), wait.clone()];
+        let control = vec![start, end, wait, turn.clone()];
+        assert!(judged(control.clone()).is_empty());
+        let mut two_turns = control;
+        two_turns.push(turn);
+        for (events, why) in [
+            (lost_turn, "a surplus End stands in for a lost turn's end"),
+            (two_turns, "the run's one turn ends once"),
+        ] {
+            assert!(
+                judged(events).iter().any(|f| f.1.contains("never ended")),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
     fn an_end_no_call_owns_fails() {
         let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
         reorder_hooks(d.path(), |lines| {
@@ -2668,6 +2710,26 @@ mod tests {
             "{:?}",
             v.findings()
         );
+    }
+
+    #[test]
+    fn a_tool_its_turn_ended_has_ended() {
+        let agent_id = AgentId::from_parts("kimi", "session");
+        let start = AgentEvent::ActivityStart {
+            agent_id,
+            tool_use_id: Some("call_1".into()),
+            detail: Some("Bash: ls".into()),
+        };
+        let judged = |events: &[AgentEvent]| {
+            let mut findings = Vec::new();
+            tool_run(events, &[Reach::Active], &mut findings);
+            findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            judged(&[start.clone(), AgentEvent::turn_end(agent_id)]),
+            Vec::<String>::new()
+        );
+        assert_eq!(judged(&[start]), ["the tool never ended"]);
     }
 
     #[test]

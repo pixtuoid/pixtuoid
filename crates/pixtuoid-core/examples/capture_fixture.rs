@@ -538,7 +538,7 @@ mod recorder {
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
         if end != ProcessExit::Exited(0) {
-            eprintln!("WARNING: the CLI's turn ended ({end}) — this capture may be truncated");
+            eprintln!("WARNING: the CLI exited ({end}) — this capture may be truncated");
             keep_scratch(
                 sandbox,
                 run_copy.as_deref(),

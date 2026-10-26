@@ -235,7 +235,7 @@ pub struct CaptureRecord {
     pub cli: String,
     /// Its `--version`.
     pub version: String,
-    /// How its turn ended.
+    /// How its turn's process exited.
     pub end: ProcessExit,
     /// Why the turn's driver gave up on it, in its own words, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,7 +282,7 @@ impl CaptureRecord {
 /// A second turn, as the recorder ran it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecondTurn {
-    /// How it ended.
+    /// How its process exited.
     pub end: ProcessExit,
 }
 

@@ -158,11 +158,11 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Whether a CLI whose turn's process exited as `end` ran this shape's
+    /// Whether a CLI whose turn's process exited as `exit` ran this shape's
     /// turn as scripted: one scripted to fail may exit non-zero, but neither a
     /// signal nor the budget ends a turn.
-    pub(crate) const fn exits_as_scripted(self, end: ProcessExit) -> bool {
-        match end {
+    pub(crate) const fn exits_as_scripted(self, exit: ProcessExit) -> bool {
+        match exit {
             ProcessExit::Exited(0) => true,
             ProcessExit::Exited(_) => match self {
                 Self::ModelError => true,
