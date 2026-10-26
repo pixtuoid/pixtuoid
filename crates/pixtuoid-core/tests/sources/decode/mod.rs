@@ -77,8 +77,7 @@ fn cc_empty_attribution_agent_emits_no_rename() {
         "/p/parent.jsonl",
         "claude-code",
         json!({"type": "assistant", "attributionAgent": "", "message": {"content": []}}),
-    )
-    .unwrap();
+    );
     assert!(
         !events
             .iter()
@@ -93,8 +92,7 @@ fn cc_trailing_colon_attribution_agent_emits_no_rename() {
         "/p/parent.jsonl",
         "claude-code",
         json!({"type": "assistant", "attributionAgent": "ns:", "message": {"content": []}}),
-    )
-    .unwrap();
+    );
     assert!(
         !events
             .iter()
@@ -400,8 +398,7 @@ fn codex_subagent_hook_coalesces_with_its_windows_rollout_path() {
 #[test]
 fn cc_jsonl_assistant_tool_use_is_activity_start() {
     let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
-    let events =
-        decode_cc_line(transcript, "claude-code", load_jsonl("assistant_tool_use")).unwrap();
+    let events = decode_cc_line(transcript, "claude-code", load_jsonl("assistant_tool_use"));
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityStart {
@@ -419,7 +416,7 @@ fn cc_jsonl_assistant_tool_use_is_activity_start() {
 #[test]
 fn cc_jsonl_tool_result_is_activity_end() {
     let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
-    let events = decode_cc_line(transcript, "claude-code", load_jsonl("tool_result")).unwrap();
+    let events = decode_cc_line(transcript, "claude-code", load_jsonl("tool_result"));
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityEnd { tool_use_id, .. } => {
@@ -546,7 +543,7 @@ fn cc_jsonl_agent_tool_use_is_task() {
              "input": {"description": "x", "subagent_type": "general-purpose"}}
         ]}
     });
-    let events = decode_cc_line("/p/parent.jsonl", "claude-code", line).unwrap();
+    let events = decode_cc_line("/p/parent.jsonl", "claude-code", line);
     let task = events.iter().find_map(|e| match e {
         AgentEvent::ActivityStart { detail, .. } => detail.as_ref(),
         _ => None,
@@ -592,7 +589,7 @@ fn cc_jsonl_subagent_line_with_attribution_emits_rename() {
             ]
         }
     });
-    let events = decode_cc_line(transcript, "claude-code", v).unwrap();
+    let events = decode_cc_line(transcript, "claude-code", v);
     let has_rename = events.iter().any(|e| {
         matches!(
             e,
@@ -610,7 +607,7 @@ fn cc_jsonl_slash_command_user_lines_yield_no_events() {
             "type": "user",
             "message": { "role": "user", "content": format!("<command-name>{cmd}</command-name>") }
         });
-        let events = decode_cc_line(transcript, "claude-code", v).unwrap();
+        let events = decode_cc_line(transcript, "claude-code", v);
         assert!(
             events.is_empty(),
             "{cmd} content must not drive lifecycle: {events:?}"
@@ -630,7 +627,7 @@ fn ag_planner_response_keys_each_call_on_the_step_it_runs_as() {
             { "name": "read_file", "args": { "AbsolutePath": "\"/repo/README.md\"" } }
         ]
     });
-    let events = antigravity::decode_ag_line(transcript, "antigravity", v).unwrap();
+    let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 2);
     match &events[0] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {
@@ -654,7 +651,7 @@ fn ag_tool_result_emits_activity_end() {
         "type": "LIST_DIRECTORY",
         "content": "output"
     });
-    let events = antigravity::decode_ag_line(transcript, "antigravity", v).unwrap();
+    let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityEnd { tool_use_id, .. } => {
@@ -662,19 +659,6 @@ fn ag_tool_result_emits_activity_end() {
         }
         other => panic!("got {other:?}"),
     }
-}
-
-#[test]
-fn ag_uses_source_namespaced_agent_id() {
-    let transcript = "/shared/path.jsonl";
-    let v = serde_json::json!({ "step_index": 1, "type": "PLANNER_RESPONSE", "tool_calls": [] });
-    let _events = antigravity::decode_ag_line(transcript, "antigravity", v).unwrap();
-    let ag_id = AgentId::from_parts("antigravity", transcript);
-    let cc_id = AgentId::from_parts("claude-code", transcript);
-    assert_ne!(
-        ag_id, cc_id,
-        "different sources must produce different AgentIds"
-    );
 }
 
 #[test]
@@ -688,7 +672,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
             { "name": "ask_permission", "args": { "Reason": "read a file" } }
         ]
     });
-    let events_perm = antigravity::decode_ag_line(transcript, "antigravity", v_perm).unwrap();
+    let events_perm = antigravity::decode_ag_line(transcript, "antigravity", v_perm);
     assert_eq!(events_perm.len(), 1);
     match &events_perm[0] {
         AgentEvent::Waiting {
@@ -709,7 +693,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
             { "name": "ask_question", "args": { "questions": [] } }
         ]
     });
-    let events_quest = antigravity::decode_ag_line(transcript, "antigravity", v_quest).unwrap();
+    let events_quest = antigravity::decode_ag_line(transcript, "antigravity", v_quest);
     assert_eq!(events_quest.len(), 1);
     match &events_quest[0] {
         AgentEvent::Waiting {
@@ -875,16 +859,8 @@ fn decode_pre_tool_use_missing_target_field_has_no_suffix() {
 #[test]
 fn ag_non_object_and_missing_step_index_emit_nothing() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
-    assert!(
-        antigravity::decode_ag_line(transcript, "antigravity", json!("x"))
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        antigravity::decode_ag_line(transcript, "antigravity", json!({ "foo": 1 }))
-            .unwrap()
-            .is_empty()
-    );
+    assert!(antigravity::decode_ag_line(transcript, "antigravity", json!("x")).is_empty());
+    assert!(antigravity::decode_ag_line(transcript, "antigravity", json!({ "foo": 1 })).is_empty());
 }
 
 #[test]
@@ -896,9 +872,7 @@ fn ag_non_integer_step_index_is_skipped() {
         "tool_calls": [ { "name": "run_command", "args": { "CommandLine": "ls" } } ]
     });
     assert!(
-        antigravity::decode_ag_line(transcript, "antigravity", v)
-            .unwrap()
-            .is_empty(),
+        antigravity::decode_ag_line(transcript, "antigravity", v).is_empty(),
         "a present-but-non-integer step_index must be skipped, not coerced to 0"
     );
 }
@@ -914,7 +888,7 @@ fn ag_skips_non_object_tool_call_and_keys_run_command() {
             { "name": "run_command", "args": { "CommandLine": "\"git status\"" } }
         ]
     });
-    let events = antigravity::decode_ag_line(transcript, "antigravity", v).unwrap();
+    let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(
         events.len(),
         1,
@@ -932,11 +906,7 @@ fn ag_skips_non_object_tool_call_and_keys_run_command() {
 fn ag_planner_response_without_tool_calls_emits_nothing() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
     let v = json!({ "step_index": 2, "type": "PLANNER_RESPONSE" });
-    assert!(
-        antigravity::decode_ag_line(transcript, "antigravity", v)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(antigravity::decode_ag_line(transcript, "antigravity", v).is_empty());
 }
 
 #[test]
@@ -949,7 +919,7 @@ fn ag_grep_search_decodes_to_activity_start() {
             { "name": "grep_search", "args": { "SearchPath": "/repo", "query": "TODO" } }
         ]
     });
-    let events = antigravity::decode_ag_line(transcript, "antigravity", v).unwrap();
+    let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 1);
     match &events[0] {
         AgentEvent::ActivityStart { tool_use_id, .. } => {

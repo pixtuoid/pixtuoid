@@ -1,14 +1,19 @@
-//! The one per-entry rule for "is this file a transcript this source watches".
+//! The one rule for what the watcher reads of a source's tree: which entries are
+//! its transcripts (`classify`) and which bytes of one are its lines ([`lines`]).
 //!
-//! Compiled whenever `native` or `harness` is on, either alone being enough: the
+//! `lines` is in every build, since the tail checkers read it; `classify` and
+//! `whole` whenever `native` or `harness` is on, either alone being enough: the
 //! production watcher is behind `native` and the offline drivers behind
 //! `harness`, and the whole point is that both ask the same question. The
 //! TRAVERSAL stays with each caller — the watcher's is async and retires a
 //! vanished path's cursor, the harness's is a plain recursion.
 
+#[cfg(any(feature = "native", feature = "harness"))]
 use std::path::Path;
+use std::str::Utf8Error;
 
 /// What the walker should do with one directory entry.
+#[cfg(any(feature = "native", feature = "harness"))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Entry {
     /// A real directory — descend.
@@ -28,6 +33,7 @@ pub(crate) enum Entry {
 /// A symlinked entry is refused before anything else: a directory link would
 /// recurse a loop or drag a foreign tree into this source's id space, and a file
 /// link would double-count one transcript.
+#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn classify(
     meta: &std::fs::Metadata,
     path: &Path,
@@ -46,6 +52,35 @@ pub(crate) fn classify(
         return Entry::Skip;
     }
     Entry::Take
+}
+
+/// `span`'s whole lines: everything through its last `\n`. What follows is a line
+/// still being written, which a reader with a cursor holds back until its `\n`
+/// lands.
+#[cfg(any(feature = "native", feature = "harness"))]
+pub(crate) fn whole(span: &[u8]) -> &[u8] {
+    span.iter()
+        .rposition(|&b| b == b'\n')
+        .map_or(&[], |i| &span[..=i])
+}
+
+/// `span`'s lines: split on `\n`, empty ones dropped, and one that is not UTF-8
+/// an `Err` costing that line alone, never the rest of its file.
+pub(crate) fn lines(span: &[u8]) -> impl Iterator<Item = Result<&str, Utf8Error>> {
+    span.split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+        .map(std::str::from_utf8)
+}
+
+/// [`lines`] of a window read back from mid-file: its first, partial line dropped.
+#[cfg(feature = "native")]
+pub(crate) fn window_lines(window: &[u8]) -> impl Iterator<Item = Result<&str, Utf8Error>> {
+    lines(
+        window
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(&[], |i| &window[i + 1..]),
+    )
 }
 
 #[cfg(test)]
@@ -101,5 +136,24 @@ mod tests {
         assert_eq!(classify(&meta_of(&txt), &txt, &yes), Entry::Skip);
         assert_eq!(classify(&meta_of(&jsonl), &jsonl, &yes), Entry::Take);
         assert_eq!(classify(&meta_of(&jsonl), &jsonl, &no), Entry::Skip);
+    }
+
+    #[test]
+    fn whole_holds_back_an_unterminated_last_line() {
+        assert_eq!(whole(b"{\"a\":1}\n{\"b\":2}"), b"{\"a\":1}\n");
+        assert_eq!(whole(b"{\"b\":2}"), b"");
+        let got: Vec<_> = lines(whole(b"{\"a\":1}\n\n\xff\n{\"b\":2}")).collect();
+        assert_eq!(got.len(), 2, "got {got:?}");
+        assert_eq!(got[0], Ok("{\"a\":1}"));
+        assert!(got[1].is_err(), "the non-UTF-8 line is its own Err");
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn a_window_drops_its_partial_first_line_and_only_that() {
+        let got: Vec<_> = window_lines(b"rt\"}\n{\"a\":1}\n{\"b\":2}").collect();
+        assert_eq!(got, [Ok("{\"a\":1}"), Ok("{\"b\":2}")]);
+        let on_a_newline: Vec<_> = window_lines(b"\n{\"a\":1}\n").collect();
+        assert_eq!(on_a_newline, [Ok("{\"a\":1}")], "no real line is lost");
     }
 }

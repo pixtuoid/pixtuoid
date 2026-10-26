@@ -69,10 +69,10 @@ pub enum Reach {
 
 /// One line the pipeline could not carry, identified by position and SHAPE.
 ///
-/// Never by content: a real transcript line carries the user's prose, code and
+/// Never by content: a real hook payload carries the user's prompts, code and
 /// paths, and these render on a terminal.
 #[derive(Clone, Debug)]
-pub struct LineFailure {
+pub(crate) struct LineFailure {
     /// 1-based index among the non-blank lines driven.
     pub(crate) line: usize,
     /// `type="…" keys=[…]` — structure only.
@@ -100,12 +100,12 @@ pub struct Driven {
     pub(crate) seed_events: usize,
     /// Non-blank lines driven (blank lines are skipped, not counted).
     pub lines: usize,
-    /// Lines that were not valid JSON — a torn write, outside the decoder
-    /// contract (the watcher skips them too).
+    /// Lines the watcher skips too, outside the decoder contract: not UTF-8, or
+    /// not JSON.
     pub unparseable: usize,
-    /// Lines whose decoder returned `Err`. ALWAYS a defect on bytes the source
-    /// itself wrote: the contract is log-and-continue, never a hard error.
-    pub decode_errors: Vec<LineFailure>,
+    /// Hook lines the dispatcher refused. A refusal of bytes the source itself
+    /// wrote is drift in our decoder.
+    pub(crate) decode_errors: Vec<LineFailure>,
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
     pub reaches: Vec<(AgentId, Reach)>,
@@ -228,8 +228,7 @@ impl Drive {
     /// [`Drive::transcript_at`], which applies production's normalization.
     ///
     /// `None` when the source is hook-only, a daemon, or unregistered: a caller
-    /// that silently fell back to some other decoder would report a green
-    /// never-panic run having exercised the wrong one.
+    /// that silently fell back to some other decoder would census the wrong one.
     pub fn transcript(source: &str, logical: &str) -> Option<Self> {
         let decode = registry::descriptor_for(source)?.line_decoder()?;
         Some(Self {
@@ -295,6 +294,22 @@ impl Drive {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        self.run(lines.into_iter().map(Some))
+    }
+
+    /// [`Self::lines`] over a transcript's bytes, cut into lines as the watcher
+    /// cuts them: a line that is not UTF-8 is unparseable, and costs only itself.
+    pub fn body(&self, body: &[u8]) -> Driven {
+        use crate::source::admit::{lines, whole};
+        self.run(lines(whole(body)).map(Result::ok))
+    }
+
+    /// `None` is a line whose bytes are not UTF-8, so not JSON either.
+    fn run<I, S>(&self, lines: I) -> Driven
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
         let mut d = Driven {
             scene: SceneState::uniform(DRIVEN_DESKS),
             events: Vec::new(),
@@ -313,7 +328,7 @@ impl Drive {
 
     fn drive<I, S>(&self, lines: I, d: &mut Driven)
     where
-        I: IntoIterator<Item = S>,
+        I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
         if let (
@@ -334,40 +349,33 @@ impl Drive {
         }
 
         for line in lines {
-            let line = line.as_ref();
-            if line.trim().is_empty() {
+            let line = line.as_ref().map(|l| l.as_ref());
+            if line.is_some_and(|l| l.trim().is_empty()) {
                 continue;
             }
             d.lines += 1;
-            let Ok(v) = serde_json::from_str::<Value>(line) else {
+            let Some((line, Ok(v))) = line.map(|l| (l, serde_json::from_str::<Value>(l))) else {
                 d.unparseable += 1;
                 continue;
             };
-            // `v` moves into the decoder: keeping a copy for the failure shape
-            // would clone whole transcript bodies on the corpus path, and a
-            // failure is rare enough to re-parse for.
-            match self.decode_one(v) {
-                Ok(evs) => d.events.extend(evs),
-                Err(e) => d.decode_errors.push(LineFailure {
-                    line: d.lines,
-                    shape: shape_of(line),
-                    message: e.to_string(),
-                }),
+            match &self.decode {
+                Decode::Transcript {
+                    decode,
+                    source,
+                    logical,
+                } => d.events.extend(decode(logical, source, v)),
+                Decode::Hooks => match decode_hook_payload(v) {
+                    Ok(evs) => d.events.extend(evs),
+                    Err(e) => d.decode_errors.push(LineFailure {
+                        line: d.lines,
+                        shape: shape_of(line),
+                        message: e.to_string(),
+                    }),
+                },
             }
         }
 
         self.fold(d);
-    }
-
-    fn decode_one(&self, v: Value) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-        match &self.decode {
-            Decode::Transcript {
-                decode,
-                source,
-                logical,
-            } => decode(logical, source, v),
-            Decode::Hooks => decode_hook_payload(v),
-        }
     }
 
     /// Each event is observed BEFORE and AFTER a settle tick, so a transient
@@ -579,43 +587,20 @@ mod tests {
         assert!(Drive::transcript("not-a-source", "/x.jsonl").is_none());
     }
 
-    /// A `Drive` over a STAND-IN decoder: no real decoder rejects any corpus
-    /// bytes, so the error lane below has no real fixture.
-    fn drive_with(decode: LineDecoder) -> Drive {
-        Drive {
-            transport: Transport::Jsonl,
-            decode: Decode::Transcript {
-                decode,
-                source: SOURCE.to_string(),
-                logical: TRANSCRIPT.to_string(),
-            },
-            seeded: false,
-            now: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_NOW_EPOCH_SECS),
-        }
-    }
-
-    /// A line carrying prose under a key — what the failure report must NOT
-    /// echo back to a terminal.
-    const PROSE_LINE: &str = r#"{"type":"assistant","secret":"do not print me"}"#;
+    /// A hook envelope the dispatcher rejects (no `hook_event_name`), carrying
+    /// prose under a key — what the failure report must NOT echo back to a terminal.
+    const PROSE_LINE: &str =
+        r#"{"_pixtuoid_source":"claude-code","type":"assistant","secret":"do not print me"}"#;
 
     #[test]
     fn a_decoder_error_is_recorded_with_the_lines_shape_not_its_content() {
-        fn refuse(
-            _p: &str,
-            _s: &str,
-            _v: Value,
-        ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-            Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "event",
-            ))
-        }
-        let d = drive_with(refuse).lines([PROSE_LINE]);
+        let d = Drive::hooks().lines([PROSE_LINE]);
 
         assert_eq!(d.decode_errors.len(), 1);
         assert_eq!(d.decode_errors[0].line, 1);
         assert_eq!(
             d.decode_errors[0].message,
-            "unsupported fixture event: event"
+            "claude-code payload has no hook_event_name"
         );
         let shape = &d.decode_errors[0].shape;
         assert!(
@@ -658,21 +643,12 @@ mod tests {
 
     #[test]
     fn line_failure_display_carries_position_and_shape_not_content() {
-        fn refuse(
-            _p: &str,
-            _s: &str,
-            _v: Value,
-        ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-            Err(crate::source::decoder::DecodeError::unsupported(
-                "fixture", "event",
-            ))
-        }
-        let d = drive_with(refuse).lines([PROSE_LINE]);
+        let d = Drive::hooks().lines([PROSE_LINE]);
         let rendered = d.decode_errors[0].to_string();
         assert!(rendered.starts_with("line 1: "), "got {rendered}");
         assert!(rendered.contains("type=\"assistant\""), "got {rendered}");
         assert!(
-            rendered.ends_with(": unsupported fixture event: event"),
+            rendered.ends_with(": claude-code payload has no hook_event_name"),
             "got {rendered}"
         );
         assert!(

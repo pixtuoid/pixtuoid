@@ -589,30 +589,6 @@ corpus-all:
     fi
     exit "$rc"
 
-# Never-panic fuzz ONE source's transcript decoder over a JSONL corpus DIR
-# (on-demand; not in preflight/CI — points at local or public real sessions, not
-# committed data). SOURCE is a registered source name (see `registered_source_names`):
-# every line is routed through THAT source's registry line_decoder — no shape
-# guessing, so a newer source can't be silently misrouted to decode_cc_line.
-# Exits non-zero on a panic or an empty corpus. Examples:
-#   just fuzz claude-code ~/.claude/projects   # your CC sessions (newest formats)
-#   just fuzz codex ~/.codex/sessions          # your Codex rollouts
-#   just fuzz grok ~/.grok/sessions            # grok ACP transcripts
-#   just fuzz omp ~/.omp/agent/sessions        # omp sessions
-#   # a PUBLIC real-session corpus, so drift shows up without waiting for your own
-#   # sessions to hit the shape. Its codex samples are single .json objects,
-#   # which this recipe's *.jsonl glob does not admit.
-#   git clone --depth 1 https://github.com/daaain/claude-code-log /tmp/ccl && just fuzz claude-code /tmp/ccl/dev-docs/messages
-[doc('Never-panic fuzz a source decoder over a JSONL corpus dir: just fuzz claude-code ~/.claude/projects')]
-[group('rust')]
-fuzz source dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    source="$1"
-    dir="$2"
-    cargo build --release --example decoder_fuzz -p pixtuoid-core
-    find "$dir" -name '*.jsonl' -print0 | xargs -0 cat | ./target/release/examples/decoder_fuzz "$source"
-
 # N REAL `openclaw gateway run` processes, each in its own throwaway
 # OPENCLAW_HOME on its own port, feeding one headless pixtuoid: one
 # `openclaw@<port>` row per gateway, instance-local death, and OpenClaw's OWN

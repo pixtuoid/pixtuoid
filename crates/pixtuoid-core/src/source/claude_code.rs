@@ -214,14 +214,10 @@ fn fresh_spend(message: &serde_json::Map<String, Value>) -> u64 {
 /// There is deliberately NO user-content arm: content is user-controllable and a
 /// message QUOTING the slash-command wrapper would false-positive, so lifecycle
 /// is the SessionEnd hook + the idle sweep.
-///
-/// # Errors
-///
-/// Never: the `Result` is the [`LineDecoder`](crate::source::decoder::LineDecoder) signature, and a malformed line decodes to `vec![]`.
-pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Result<Vec<AgentEvent>> {
+pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &cc_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
-        return Ok(vec![]);
+        return vec![];
     };
 
     let mut out = Vec::new();
@@ -252,7 +248,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Result<V
     }
 
     let Some(message) = message else {
-        return Ok(out);
+        return out;
     };
     // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
     if ty == ASSISTANT {
@@ -322,7 +318,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Result<V
         }
         _ => {}
     }
-    Ok(out)
+    out
 }
 
 /// The CC transcript types whose lines are AGENT TURN activity — membership by
@@ -542,9 +538,7 @@ mod tests {
                     "message": {"role": "assistant", "content": [block(ty)]},
                 });
                 assert!(
-                    !decode_cc_line("/p/s.jsonl", SOURCE_NAME, line)
-                        .expect("a decoded type decodes")
-                        .is_empty(),
+                    !decode_cc_line("/p/s.jsonl", SOURCE_NAME, line).is_empty(),
                     "{ty} is in DECODED_TYPES but reaches no decode arm"
                 );
             }
@@ -713,7 +707,7 @@ mod tests {
             "type": "assistant",
             "message": {"model": "claude-fable-5", "content": []}
         });
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
         assert!(
             evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-fable-5")),
             "assistant model must surface, got {evs:?}"
@@ -728,7 +722,7 @@ mod tests {
                 "input_tokens": 1200, "cache_creation_input_tokens": 50000,
                 "cache_read_input_tokens": 940000, "output_tokens": 5300}}
         });
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
         assert!(
             evs.iter().any(|e| matches!(
                 e,
@@ -744,14 +738,14 @@ mod tests {
     #[test]
     fn usage_free_and_zero_usage_assistant_lines_stay_silent() {
         let v = json!({"type": "assistant", "message": {"content": []}});
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
         assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })));
         let v = json!({
             "type": "assistant",
             "message": {"content": [], "usage": {
                 "input_tokens": 0, "cache_read_input_tokens": 123456, "output_tokens": 0}}
         });
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
         assert!(
             !evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })),
             "cache-read-only reading must be silent, got {evs:?}"
@@ -765,7 +759,7 @@ mod tests {
                 "type": "assistant",
                 "message": {"model": model, "content": []}
             });
-            let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+            let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
             assert!(
                 !evs.iter()
                     .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
@@ -785,14 +779,14 @@ mod tests {
                 "type": "attachment",
                 "attachment": {"type": kind}
             });
-            let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+            let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
             assert!(
                 evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: None, effort: Some(f), .. } if f == label)),
                 "{kind} must synthesize effort {label:?}, got {evs:?}"
             );
         }
         let v = json!({"type": "attachment", "attachment": {"type": "task_reminder"}});
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v).unwrap();
+        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
         assert!(
             evs.is_empty(),
             "unrelated attachments are inert, got {evs:?}"
@@ -1006,8 +1000,7 @@ mod tests {
             path,
             "claude-code",
             serde_json::json!({"type":"assistant","attributionAgent":"explorer","message":{"content":[]}}),
-        )
-        .unwrap();
+        );
         let expected =
             AgentId::from_parts("claude-code", &cc_id_from_path(std::path::Path::new(path)));
         assert_eq!(
@@ -1025,7 +1018,7 @@ mod tests {
             "type": "user",
             "message": { "role": "user", "content": prose }
         });
-        let events = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", v).unwrap();
+        let events = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", v);
         assert!(
             events.is_empty(),
             "quoting the wrapper must not emit SessionEnd: {events:?}"
@@ -1049,7 +1042,7 @@ mod tests {
                 "type": ty,
                 "message": { "role": ty, "content": "just some prose, no tool blocks" }
             });
-            let out = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", v).unwrap();
+            let out = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", v);
             assert!(
                 out.is_empty(),
                 "{ty} turn with string content must emit no events"
@@ -1059,7 +1052,7 @@ mod tests {
             "type": "user",
             "message": { "role": "user", "content": "<command-name>/exit</command-name>" }
         });
-        let out = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", exit).unwrap();
+        let out = decode_cc_line("/x/.claude/projects/p/s.jsonl", "claude-code", exit);
         assert!(
             out.is_empty(),
             "slash-command content must not emit lifecycle events: {out:?}"
@@ -1070,15 +1063,11 @@ mod tests {
     fn decode_cc_line_non_object_value_decodes_to_nothing() {
         let path = "/x/.claude/projects/p/s.jsonl";
         assert!(
-            decode_cc_line(path, "claude-code", serde_json::json!([1, 2, 3]))
-                .unwrap()
-                .is_empty(),
+            decode_cc_line(path, "claude-code", serde_json::json!([1, 2, 3])).is_empty(),
             "a bare array line must emit no events"
         );
         assert!(
-            decode_cc_line(path, "claude-code", serde_json::json!("raw string line"))
-                .unwrap()
-                .is_empty(),
+            decode_cc_line(path, "claude-code", serde_json::json!("raw string line")).is_empty(),
             "a bare string line must emit no events"
         );
     }
@@ -1114,7 +1103,7 @@ mod tests {
                 json!({"type": "attachment", "attachment": {"type": "brand_new_kind_2027"}}),
             ] {
                 assert!(
-                    decode_cc_line(path, "claude-code", v).unwrap().is_empty(),
+                    decode_cc_line(path, "claude-code", v).is_empty(),
                     "a sidecar line decodes to no events"
                 );
             }
@@ -1131,8 +1120,7 @@ mod tests {
             "/x/.claude/projects/p/s.jsonl",
             "claude-code",
             json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1"}]}}),
-        )
-        .unwrap();
+        );
         assert_eq!(out.len(), 1, "one tool_use block → one ActivityStart");
         match &out[0] {
             AgentEvent::ActivityStart {
@@ -1161,8 +1149,7 @@ mod tests {
                 {"type":"text","text":"hi"},
                 {"type":"tool_use","id":"tu","name":"Read","input":{"file_path":"/a"}}
             ]}}),
-        )
-        .unwrap();
+        );
         assert_eq!(
             out.len(),
             1,
@@ -1199,8 +1186,7 @@ mod tests {
                 {"type":"text","text":"hi"},
                 {"type":"tool_result","tool_use_id":"tu"}
             ]}}),
-        )
-        .unwrap();
+        );
         assert_eq!(
             out.len(),
             1,
@@ -1260,8 +1246,7 @@ mod cc_id_tests {
             path,
             "claude-code",
             serde_json::json!({"type":"assistant","attributionAgent": long, "message":{"content":[]}}),
-        )
-        .unwrap();
+        );
         match &events[0] {
             AgentEvent::Rename { label, .. } => {
                 assert_eq!(label.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
@@ -1274,8 +1259,7 @@ mod cc_id_tests {
             path,
             "claude-code",
             serde_json::json!({"type":"assistant","attributionAgent":"explorer","message":{"content":[]}}),
-        )
-        .unwrap();
+        );
         assert!(
             matches!(&events[0], AgentEvent::Rename { label, .. } if label == "explorer"),
             "a short label must pass through unchanged, got {events:?}"
