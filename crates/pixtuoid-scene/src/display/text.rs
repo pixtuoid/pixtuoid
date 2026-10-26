@@ -19,10 +19,11 @@ use crate::theme::Theme;
 pub(crate) const GLYPH_W: u16 = 3;
 /// A cell's width in art pixels: one glyph and its gap.
 pub(crate) const ADVANCE: u16 = GLYPH_W + 1;
-/// The rows above the capitals, which only accents and CJK ink.
-pub(crate) const ACCENT_ROWS: u16 = 2;
+/// The row above the capitals, which only a lowercase letter's tall accent
+/// (`ã`, `å`) inks: an accented capital keeps to the capitals' rows.
+pub(crate) const ACCENT_ROWS: u16 = 1;
 /// Fusion Pixel 8px's capital height in art pixels.
-pub(crate) const CAP_H: u16 = 5;
+pub(crate) const CAP_H: u16 = 6;
 /// A line's height in art pixels: the accent rows, the capitals, and a row for
 /// descenders, Fusion Pixel 8px's own box. Pinned to `fusion-pixel-8px.bin`'s header.
 pub(crate) const LINE_H: u16 = ACCENT_ROWS + CAP_H + 1;

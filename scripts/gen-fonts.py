@@ -62,8 +62,8 @@ SITE_RANGES = [(0x0020, 0x007E), (0x00A0, 0x017F), (0x2000, 0x206F), (0x2190, 0x
 # `text.rs`'s LINE_H and the art pixels a cell is wide (its ADVANCE).
 LINE_H = 8
 CELL_W = 4
-# Rows down to and including the baseline: Fusion Pixel's own, capitals
-# five rows under two of accent room.
+# Rows down to and including the baseline: Fusion Pixel's own, `display/text.rs`'s
+# ACCENT_ROWS + CAP_H.
 ASCENT = 7
 
 RANGES = [

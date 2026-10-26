@@ -410,24 +410,39 @@ mod tests {
         );
     }
 
+    /// The first and last rows `c`'s glyph inks.
+    #[cfg(feature = "cutaway-assets")]
+    fn ink_rows(c: char) -> (Option<usize>, Option<usize>) {
+        let inked: Vec<usize> = (0..)
+            .zip(glyph(c).expect("drawn"))
+            .filter(|&(_, ink)| ink != 0)
+            .map(|(row, _)| row)
+            .collect();
+        (inked.first().copied(), inked.last().copied())
+    }
+
+    /// [`ACCENT_ROWS`] and [`CAP_H`] are Fusion Pixel's own: its capitals
+    /// span the rows they name.
+    #[cfg(feature = "cutaway-assets")]
+    #[test]
+    fn the_capitals_span_the_rows_the_metrics_name() {
+        let top = usize::from(ACCENT_ROWS);
+        let capitals = (Some(top), Some(top + usize::from(CAP_H) - 1));
+        for c in "EHIT".chars() {
+            assert_eq!(ink_rows(c), capitals, "{c:?}");
+        }
+    }
+
     /// A glyph drawn by hand stands on Fusion Pixel's own rows: a capital
     /// spans its `E`'s, a lowercase letter its `o`'s.
     #[cfg(feature = "cutaway-assets")]
     #[test]
     fn hand_drawn_glyphs_stand_on_the_fonts_rows() {
-        let rows = |c: char| {
-            let inked: Vec<usize> = (0..)
-                .zip(glyph(c).expect("drawn"))
-                .filter(|&(_, ink)| ink != 0)
-                .map(|(row, _)| row)
-                .collect();
-            (inked.first().copied(), inked.last().copied())
-        };
         for c in ['\u{3a3}', '\u{d8}'] {
-            assert_eq!(rows(c), rows('E'), "{c:?}");
+            assert_eq!(ink_rows(c), ink_rows('E'), "{c:?}");
         }
         for c in ['\u{e6}', '\u{f8}'] {
-            assert_eq!(rows(c), rows('o'), "{c:?}");
+            assert_eq!(ink_rows(c), ink_rows('o'), "{c:?}");
         }
     }
 
