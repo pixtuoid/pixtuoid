@@ -7,9 +7,9 @@
 //! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
-//! out, with what [`Driver::gave_up`] says, and why at [`GAVE_UP_NOTE`]; and
-//! `USAGE_ERROR` on a bad command line.
+//! Exits with the CLI's status; when the driver gave up, with what
+//! [`Driver::gave_up`] says, or [`OUT_OF_TIME`] once the `BUDGET` ran out, and
+//! why at [`GAVE_UP_NOTE`]; and `USAGE_ERROR` on a bad command line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -19,21 +19,18 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic::tui::{
-    Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
+    Action, Answer, CommandLine, Driver, GAVE_UP, Key, OUT_OF_TIME, Tui,
 };
-use pixtuoid_core::harness::hermetic::{self, Surface, TURN_BUDGET};
+use pixtuoid_core::harness::hermetic::{self, Surface};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
+/// How long one run may take, end to end, before the CLI is killed: inside
+/// the recorder's [`hermetic::TURN_BUDGET`] with a [`QUIT_GRACE`] to spare, so
+/// the driver gives up first and logs the screen it stood at.
+const BUDGET: Duration = Duration::from_secs(120);
 /// How long a CLI may take to exit after its quit keys.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
-/// How long one run may take, end to end, before the CLI is killed: a
-/// [`QUIT_GRACE`] inside the recorder's [`TURN_BUDGET`], so the driver gives up,
-/// and logs the screen it stood at, before the recorder kills it.
-const BUDGET: Duration = match TURN_BUDGET.here().checked_sub(QUIT_GRACE) {
-    Some(budget) => budget,
-    None => panic!("the recorder's turn budget leaves the driver no time"),
-};
 /// How often the screen is re-judged when no output arrives.
 const TICK: Duration = Duration::from_millis(100);
 /// The pause between two writes, so a TUI reads keys one at a time, never as
@@ -146,17 +143,13 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
             return Ok(i32::try_from(status.exit_code()).unwrap_or(GAVE_UP));
         }
         let now = Instant::now();
-        let late = if now.duration_since(started) >= BUDGET {
-            Some(format!("the {BUDGET:?} budget ran out"))
-        } else if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
-            Some(format!(
-                "the CLI was still up {QUIT_GRACE:?} after its quit keys"
-            ))
-        } else {
-            None
-        };
-        if let Some(why) = late {
-            return give_up(&mut log, &mut child, &why, &screen, &driver);
+        if now.duration_since(started) >= BUDGET {
+            let why = format!("the {BUDGET:?} budget ran out");
+            return give_up(&mut log, &mut child, &why, &screen, OUT_OF_TIME);
+        }
+        if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
+            let why = format!("the CLI was still up {QUIT_GRACE:?} after its quit keys");
+            return give_up(&mut log, &mut child, &why, &screen, driver.gave_up());
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -189,7 +182,9 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
                 send_keys(&mut writer, keys)?;
                 quit_at = Some(Instant::now());
             }
-            Action::Fail(why) => return give_up(&mut log, &mut child, why, &screen, &driver),
+            Action::Fail(why) => {
+                return give_up(&mut log, &mut child, why, &screen, driver.gave_up());
+            }
         }
     }
 }
@@ -209,13 +204,13 @@ fn shown(screen: &vt100::Screen) -> String {
     rows.join("\n").trim_end().to_owned()
 }
 
-/// Kill the CLI, logging why and the screen it stood at.
+/// Kill the CLI, logging why and the screen it stood at; then exit `code`.
 fn give_up(
     log: &mut std::fs::File,
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     why: &str,
     screen: &vt100::Parser,
-    driver: &Driver<'_>,
+    code: i32,
 ) -> std::io::Result<i32> {
     note(
         log,
@@ -223,7 +218,7 @@ fn give_up(
     );
     say_why(why);
     child.kill()?;
-    Ok(driver.gave_up())
+    Ok(code)
 }
 
 /// Tell the recorder that runs this driver why it gave up.
@@ -269,7 +264,7 @@ mod tests {
 
     #[test]
     fn the_driver_gives_up_before_the_recorder_kills_it() {
-        assert!(BUDGET + QUIT_GRACE <= *TURN_BUDGET.here());
+        assert!(BUDGET + QUIT_GRACE <= *hermetic::TURN_BUDGET.here());
     }
 
     #[test]

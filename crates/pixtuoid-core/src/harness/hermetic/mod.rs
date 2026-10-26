@@ -19,6 +19,7 @@ use crate::source::registry;
 pub mod bump;
 pub mod digest;
 pub mod dropped;
+pub mod issues;
 mod literals;
 pub mod pin;
 mod profiles;
@@ -51,10 +52,10 @@ impl<T> PerOs<T> {
     }
 }
 
-/// How long one turn the recorder runs may take before it is killed with every
-/// process it started: well past the slowest turn a leg has run, and short
-/// enough that a leg losing one turn to it still ends inside its `timeout`
-/// (`hermetic.yml`). A billed capture's turn is held to it too.
+/// How long one turn the recorder runs may take before it is killed: well past
+/// the slowest turn a leg has run. A source whose turn it killed runs no more
+/// turns that leg, so a hung release costs its leg one budget, not one per
+/// turn. A billed capture's turn is held to it too.
 pub const TURN_BUDGET: PerOs<Duration> = PerOs {
     unix: Duration::from_secs(240),
     windows: Duration::from_secs(480),
@@ -390,12 +391,6 @@ pub const SCENE_LOG: &str = "scene.log";
 /// The pty log of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_LOG: &str = "tui.log";
-/// The file beside a run's report counting its New findings, which
-/// `hermetic.yml` reads to upload a run that passed with one.
-pub const NEW_TYPES: &str = "new-types.json";
-/// The file beside a run's report holding each run's verdict and the leg it
-/// ran on, which `hermetic-nightly.yml` files an issue from per failing run.
-pub const VERDICTS: &str = "verdicts.json";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -515,6 +510,9 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
 }
 
+/// The matrix's `os` axis, as `hermetic.yml` names it.
+pub(crate) const OSES: &[&str] = &["macos", "windows"];
+
 /// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
 /// selects the `n`th: whole sources, split for about equal run time.
 pub const SHARDS: &[&[&str]] = &[
@@ -573,35 +571,28 @@ mod tests {
     use crate::harness::provenance::Provenance;
 
     #[test]
-    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+    fn hermetic_yml_reads_the_verdicts_and_names_the_upload_of_every_leg() {
         let yml = std::fs::read_to_string(bump::repo_root().join(".github/workflows/hermetic.yml"))
             .expect("hermetic.yml");
         assert!(
-            yml.contains(&format!("runs/{NEW_TYPES}")),
-            "a run that passed with a New finding uploads only as this file says"
+            yml.contains(&format!("runs/{}", issues::VERDICTS)),
+            "the file the tier writes"
         );
-    }
-
-    #[test]
-    fn the_nightly_files_from_the_verdicts_and_the_upload_every_leg_names() {
-        let root = bump::repo_root().join(".github/workflows");
-        let nightly = std::fs::read_to_string(root.join("hermetic-nightly.yml"))
-            .expect("hermetic-nightly.yml");
-        assert!(nightly.contains(VERDICTS), "the file the tier writes");
-        let yml = std::fs::read_to_string(root.join("hermetic.yml")).expect("hermetic.yml");
-        let declared = |output: &str| {
-            yml.lines()
-                .filter_map(|l| l.trim().strip_prefix(output)?.split_once(':'))
-                .map(|(leg, _)| leg.to_owned())
-                .collect::<Vec<_>>()
-        };
-        let moved = declared("moved_");
-        assert!(!moved.is_empty(), "the legs' moved rows");
-        assert_eq!(
-            declared("artifact_"),
-            moved,
-            "each leg's upload is an output wherever its moved rows are"
+        let new = serde_json::to_string(&verify::Label::New).expect("a label");
+        assert!(
+            yml.contains(&format!(".label == {new}")),
+            "a run that passed with a New finding uploads only as its label reads"
         );
+        for os in OSES {
+            for shard in 1..=SHARDS.len() {
+                assert_eq!(
+                    yml.matches(&format!("{}:", issues::artifact_output(os, shard)))
+                        .count(),
+                    2,
+                    "{os} {shard}'s uploaded runs, as the job's output and the workflow's"
+                );
+            }
+        }
     }
 
     #[test]

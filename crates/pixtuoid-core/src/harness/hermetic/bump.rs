@@ -12,18 +12,15 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{PROFILES, Profile, SHARDS, pin};
+use super::{OSES, PROFILES, Profile, SHARDS, pin};
 use crate::harness::sources_root;
-
-/// The matrix's `os` axis, as `hermetic.yml` names it.
-const OSES: &[&str] = &["macos", "windows"];
 
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
 
 /// The `hermetic.yml` output the drift leg on `os` running [`SHARDS`]' `shard`th
 /// reports its [`MOVED`] rows as, counting from 1 as `--shard` does.
-fn moved_output(os: &str, shard: usize) -> String {
+pub(crate) fn moved_output(os: &str, shard: usize) -> String {
     format!("moved_{os}_{shard}")
 }
 

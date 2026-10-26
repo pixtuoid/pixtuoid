@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
 
 mod recorder {
     use std::collections::BTreeSet;
-    use std::io::Write;
+    use std::io::{IsTerminal, Write};
     use std::path::{Path, PathBuf};
     #[cfg(unix)]
     use std::sync::atomic::{AtomicI32, Ordering};
@@ -56,7 +56,7 @@ mod recorder {
     }
 
     /// Why the driver of a run in `scratch` gave up on its turn, if it said.
-    fn gave_up(scratch: &Path) -> Option<String> {
+    fn give_up_reason(scratch: &Path) -> Option<String> {
         std::fs::read_to_string(driver_dir(scratch).join(GAVE_UP_NOTE))
             .ok()
             .map(|why| why.trim().to_owned())
@@ -389,38 +389,50 @@ mod recorder {
             }
         };
         let budget = *TURN_BUDGET.here();
+        let seat = if std::io::stdin().is_terminal() {
+            Seat::Attended
+        } else {
+            Seat::Unattended
+        };
         let end = run_turn(
             wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
             budget,
+            seat,
         )?;
-        let gave_up = gave_up(sandbox.path());
-        let second_outcome = if let Some(words) = plan.second_turn() {
-            tap.settle();
-            let born = root.as_deref().map_or_else(Vec::new, |r| {
-                born_transcripts(&source, r, started, plan.sandboxed())
-            });
-            match first_session(&source, &tap.payloads(), &born) {
-                Some(session) => {
-                    let turn: Vec<String> =
-                        words.words().iter().map(|w| w.filled(&session)).collect();
-                    let second = wired(
-                        &turn,
-                        &workspace,
-                        &wiring,
-                        descriptor.verified_version,
-                        &env,
-                    )?;
-                    Some(SecondTurn {
-                        end: run_turn(second, budget)?,
-                    })
-                }
-                None => {
-                    eprintln!("the first turn's wire named no session for its second turn");
-                    None
+        let give_up_reason = give_up_reason(sandbox.path());
+        let second_outcome = match plan.second_turn() {
+            // A release that hung once costs the run one budget, not two.
+            Some(_) if end == TurnEnd::OutOfTime => {
+                eprintln!("the first turn outran its budget, so its second turn did not run");
+                None
+            }
+            Some(words) => {
+                tap.settle();
+                let born = root.as_deref().map_or_else(Vec::new, |r| {
+                    born_transcripts(&source, r, started, plan.sandboxed())
+                });
+                match first_session(&source, &tap.payloads(), &born) {
+                    Some(session) => {
+                        let turn: Vec<String> =
+                            words.words().iter().map(|w| w.filled(&session)).collect();
+                        let second = wired(
+                            &turn,
+                            &workspace,
+                            &wiring,
+                            descriptor.verified_version,
+                            &env,
+                        )?;
+                        Some(SecondTurn {
+                            end: run_turn(second, budget, seat)?,
+                        })
+                    }
+                    None => {
+                        eprintln!("the first turn's wire named no session for its second turn");
+                        None
+                    }
                 }
             }
-        } else {
-            None
+            None => None,
         };
         let second_turn_skipped = plan.second_turn().is_some() && second_outcome.is_none();
         let note_survived = note_survived(&workspace);
@@ -429,18 +441,27 @@ mod recorder {
         let payloads = tap.payloads();
         let incomplete = incomplete(tap.stopped(), daemon_stop);
 
-        // A committed capture is complete or not written at all.
-        let incomplete = match incomplete {
-            Some(e) if matches!(plan.sink, Sink::Committed { .. }) => {
-                keep_scratch(
-                    sandbox,
-                    run_copy.as_deref(),
-                    operator_identity,
-                    &mut std::io::stderr(),
-                );
-                return Err(e);
+        let incomplete = match &plan.sink {
+            // A committed capture is complete or not written at all; a raw one
+            // records a killed turn, which its verdict judges.
+            Sink::Committed { .. } => {
+                let killed = (end == TurnEnd::OutOfTime).then(|| {
+                    std::io::Error::other(format!(
+                        "the turn outran its {budget:?} budget and was killed"
+                    ))
+                });
+                if let Some(e) = incomplete.or(killed) {
+                    keep_scratch(
+                        sandbox,
+                        run_copy.as_deref(),
+                        operator_identity,
+                        &mut std::io::stderr(),
+                    );
+                    return Err(e);
+                }
+                None
             }
-            kept => kept,
+            Sink::Raw { .. } => incomplete,
         };
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
@@ -471,7 +492,7 @@ mod recorder {
                 cli,
                 version,
                 end,
-                gave_up,
+                give_up_reason,
                 second_turn: second_outcome,
                 note_survived,
             };
@@ -979,20 +1000,44 @@ mod recorder {
         Ok(c)
     }
 
-    /// How `turn` ended within `budget`. One that outran it is killed with
-    /// every process it started, which its own process group (Unix) or Job
-    /// Object (Windows) holds, so a child it left cannot hold the run open.
-    fn run_turn(mut turn: std::process::Command, budget: Duration) -> std::io::Result<TurnEnd> {
-        // Its own process group may not read the terminal: SIGTTIN would stop it.
-        turn.stdin(std::process::Stdio::null());
+    /// Who is at a turn, as the recorder's stdin tells.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Seat {
+        /// An operator at the terminal, recording a TUI or watching a turn.
+        Attended,
+        /// Nobody: the hermetic tier, CI.
+        Unattended,
+    }
+
+    /// How `turn` ended within `budget`, past which it is killed. One nobody
+    /// attends reads nothing and runs in its own process group (Unix), and the
+    /// kill takes the whole group; an attended one keeps the terminal and its
+    /// foreground group, so a TUI reads the keys typed into it and Ctrl-C
+    /// reaches it, and the kill takes it alone. Either seat's Windows turn runs
+    /// in a Job Object of its own, which the kill takes whole. A CLI that leads
+    /// its own session under a driver's pty is in neither: the pty's hangup when
+    /// its driver dies is what ends it.
+    fn run_turn(
+        mut turn: std::process::Command,
+        budget: Duration,
+        seat: Seat,
+    ) -> std::io::Result<TurnEnd> {
+        if seat == Seat::Unattended {
+            // A background process group that read the terminal would stop on SIGTTIN.
+            turn.stdin(std::process::Stdio::null());
+        }
         let mut turn = process_wrap::std::CommandWrap::from(turn);
         #[cfg(unix)]
-        turn.wrap(process_wrap::std::ProcessGroup::leader());
+        if seat == Seat::Unattended {
+            turn.wrap(process_wrap::std::ProcessGroup::leader());
+        }
         #[cfg(windows)]
         turn.wrap(process_wrap::std::JobObject);
         let mut child = turn.spawn()?;
         #[cfg(unix)]
-        TURN_GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
+        if seat == Seat::Unattended {
+            TURN_GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
+        }
         let end = turn_end(child.as_mut(), budget);
         #[cfg(unix)]
         TURN_GROUP.store(0, Ordering::SeqCst);
@@ -1020,9 +1065,9 @@ mod recorder {
     #[cfg(unix)]
     static TURN_GROUP: AtomicI32 = AtomicI32::new(0);
 
-    /// Kill the running turn's process group with the recorder when a signal
-    /// ends it: the terminal's Ctrl-C never reaches that group, and a billed
-    /// turn left running has no budget to stop it.
+    /// Kill the running unattended turn's process group with the recorder when
+    /// a signal ends it: the terminal's Ctrl-C never reaches that group, and
+    /// once the recorder is gone nothing holds the turn to its budget.
     #[cfg(unix)]
     fn end_turns_with_the_recorder() -> std::io::Result<()> {
         use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
@@ -1553,7 +1598,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
                     end: TurnEnd::Exited(0),
-                    gave_up: None,
+                    give_up_reason: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1669,7 +1714,7 @@ mod recorder {
                     cli: "copilot".into(),
                     version: "1.0.98".into(),
                     end: TurnEnd::Exited(0),
-                    gave_up: None,
+                    give_up_reason: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1857,7 +1902,7 @@ mod recorder {
                     cli: "dsh".into(),
                     version: versions.0.into(),
                     end: TurnEnd::Exited(0),
-                    gave_up: None,
+                    give_up_reason: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -2877,7 +2922,8 @@ mod recorder {
             let dir = tempfile::tempdir().expect("dir");
             let budget = Duration::from_secs(4);
             let started = std::time::Instant::now();
-            let end = run_turn(fake_turn(TEST, dir.path()), budget).expect("it ran");
+            let end =
+                run_turn(fake_turn(TEST, dir.path()), budget, Seat::Unattended).expect("it ran");
             assert_eq!(end, TurnEnd::OutOfTime);
             assert!(started.elapsed() < budget * 2, "it outlived its budget");
             let before = beaten(dir.path());
@@ -2897,7 +2943,7 @@ mod recorder {
             if let Some(dir) = as_fake_turn(TEST) {
                 if std::env::args().any(|a| a == FAKE_RECORDER) {
                     end_turns_with_the_recorder().expect("forwarding");
-                    let _ = run_turn(fake_turn(TEST, &dir), OUTLIVES);
+                    let _ = run_turn(fake_turn(TEST, &dir), OUTLIVES, Seat::Unattended);
                 }
                 return;
             }
@@ -2932,10 +2978,34 @@ mod recorder {
                 };
                 let flag = if cfg!(windows) { "/C" } else { "-c" };
                 turn.args([flag, &format!("exit {code}")]);
-                run_turn(turn, *TURN_BUDGET.here()).expect("it ran")
+                run_turn(turn, *TURN_BUDGET.here(), Seat::Unattended).expect("it ran")
             };
             assert_eq!(exited(0), TurnEnd::Exited(0));
             assert_eq!(exited(3), TurnEnd::Exited(3));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn only_an_unattended_turn_leaves_the_recorders_process_group() {
+            let dir = tempfile::tempdir().expect("dir");
+            let out = dir.path().join("pgid");
+            let group_of = |seat| {
+                let mut turn = std::process::Command::new("sh");
+                turn.args(["-c", &format!("ps -o pgid= -p $$ >'{}'", out.display())]);
+                run_turn(turn, *TURN_BUDGET.here(), seat).expect("it ran");
+                std::fs::read_to_string(&out)
+                    .expect("its group")
+                    .trim()
+                    .parse::<i32>()
+                    .expect("a pgid")
+            };
+            let ours = rustix::process::getpgrp().as_raw_nonzero().get();
+            assert_eq!(
+                group_of(Seat::Attended),
+                ours,
+                "an attended turn keeps the terminal's foreground group"
+            );
+            assert_ne!(group_of(Seat::Unattended), ours);
         }
 
         /// A driver is a Unix shell script.
@@ -2954,10 +3024,10 @@ mod recorder {
             let cmd = ["sh", "-c", &script].map(String::from);
             let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
             assert_eq!(
-                run_turn(turn, *TURN_BUDGET.here()).expect("it ran"),
+                run_turn(turn, *TURN_BUDGET.here(), Seat::Unattended).expect("it ran"),
                 TurnEnd::Exited(3)
             );
-            assert_eq!(gave_up(sandbox.path()).as_deref(), Some(WHY));
+            assert_eq!(give_up_reason(sandbox.path()).as_deref(), Some(WHY));
         }
 
         #[test]
@@ -2994,7 +3064,7 @@ mod recorder {
                 cli: "cli".into(),
                 version: "1".into(),
                 end: TurnEnd::Exited(code),
-                gave_up: None,
+                give_up_reason: None,
                 second_turn: second.map(|code| SecondTurn {
                     end: TurnEnd::Exited(code),
                 }),

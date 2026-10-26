@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::dropped::{self, Unjudged};
@@ -30,7 +31,7 @@ use crate::{AgentEvent, AgentId};
 const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 
 /// A verdict's outcome, ordered by severity: a verdict is its worst finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Label {
     /// Every check held.
     Pass,
@@ -56,6 +57,7 @@ pub enum Label {
 pub struct Verdict {
     findings: Vec<(Label, String)>,
     unjudged: Option<Unjudged>,
+    cut_short: bool,
 }
 
 impl Verdict {
@@ -65,7 +67,23 @@ impl Verdict {
         Self {
             findings,
             unjudged: None,
+            cut_short: false,
         }
+    }
+
+    /// This verdict, of a run a budget killed: whatever it found, nothing of
+    /// pixtuoid's was judged.
+    #[must_use]
+    pub fn cut_short(self) -> Self {
+        Self {
+            cut_short: true,
+            ..self
+        }
+    }
+
+    /// Whether a budget killed its run.
+    pub fn was_cut_short(&self) -> bool {
+        self.cut_short
     }
 
     /// This verdict, of a run that reached the new-type check and could not
@@ -98,10 +116,11 @@ impl Verdict {
         self.label() <= Label::New
     }
 
-    /// Whether the run was judged: a Blocked finding returns before any check,
-    /// though a Script found first may outrank it.
+    /// Whether the run was judged: never one a budget killed, and a Blocked
+    /// finding returns before any check, though a Script found first may
+    /// outrank it.
     pub fn judged(&self) -> bool {
-        !self.findings.iter().any(|f| f.0 == Label::Blocked)
+        !self.cut_short && !self.findings.iter().any(|f| f.0 == Label::Blocked)
     }
 }
 
@@ -125,7 +144,10 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG))?;
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    let verdict = Verdict::new(findings);
+    let verdict = match outran(&manifest, scenario.surface) {
+        Some(_) => Verdict::new(findings).cut_short(),
+        None => Verdict::new(findings),
+    };
     Ok(match unjudged {
         Some(why) => verdict.unjudged_because(why),
         None => verdict,
@@ -600,44 +622,62 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
     manifest.capture.exited_as_scripted(shape) && (manifest.requests > 0 || !shape.asks_the_model())
 }
 
-/// Why `manifest`'s turn did not complete. One its budget cut short is the
-/// script's once it asked the model anything, since the script no longer ends
-/// the CLI's flow; one its driver gave up on is blocked for the driver's reason.
-fn incomplete(manifest: &Manifest, shape: Shape) -> (Label, String) {
+/// Which of `manifest`'s turns a budget killed, if one did: the recorder's
+/// [`TURN_BUDGET`], or a TUI driver's own, which it exits [`tui::OUT_OF_TIME`]
+/// for.
+fn outran(manifest: &Manifest, surface: Surface) -> Option<&'static str> {
     let capture = &manifest.capture;
-    let requests = manifest.requests;
-    let second = capture.second_turn.as_ref().map(|r| r.end);
-    let out_of_time = if capture.end == TurnEnd::OutOfTime {
+    let driver_ran_out =
+        matches!(surface, Surface::Tui { .. }) && capture.end == TurnEnd::Exited(tui::OUT_OF_TIME);
+    if capture.end == TurnEnd::OutOfTime || driver_ran_out {
         Some("turn")
-    } else if second == Some(TurnEnd::OutOfTime) {
+    } else if capture
+        .second_turn
+        .as_ref()
+        .is_some_and(|r| r.end == TurnEnd::OutOfTime)
+    {
         Some("second turn")
     } else {
         None
-    };
-    if let Some(turn) = out_of_time {
-        let budget = TURN_BUDGET.here();
+    }
+}
+
+/// Why `manifest`'s turn did not complete. One a budget killed is the
+/// script's once it asked the model anything, since the script no longer ends
+/// the CLI's flow; one its driver gave up on is blocked for the driver's reason.
+fn incomplete(manifest: &Manifest, scenario: &Scenario) -> (Label, String) {
+    let capture = &manifest.capture;
+    let requests = manifest.requests;
+    if let Some(turn) = outran(manifest, scenario.surface) {
+        let budget = match &capture.give_up_reason {
+            Some(why) if capture.end == TurnEnd::Exited(tui::OUT_OF_TIME) => why.clone(),
+            _ => format!("the {:?} budget ran out", TURN_BUDGET.here()),
+        };
         return if requests > 0 {
             (
                 Label::Script,
                 format!(
-                    "the CLI's {turn} outran the {budget:?} budget after {requests} model \
-                     requests: the script no longer ends its flow"
+                    "the CLI's {turn} was killed ({budget}) after {requests} model requests: \
+                     the script no longer ends its flow"
                 ),
             )
         } else {
             (
                 Label::Blocked,
-                format!("the CLI's {turn} outran the {budget:?} budget with no model request"),
+                format!("the CLI's {turn} was killed ({budget}) with no model request"),
             )
         };
     }
-    let second = second.map_or(String::new(), |end| format!(", second turn {end}"));
+    let second = capture
+        .second_turn
+        .as_ref()
+        .map_or(String::new(), |r| format!(", second turn {}", r.end));
     let end = capture.end;
-    let why = match &capture.gave_up {
+    let why = match &capture.give_up_reason {
         Some(why) => format!(
             "the turn's driver gave up on it ({end}{second}, {requests} model requests): {why}"
         ),
-        None if shape.asks_the_model() => format!(
+        None if scenario.shape.asks_the_model() => format!(
             "the CLI did not complete a turn against the scripted model ({end}{second}, \
              {requests} model requests): it could not run, or its model calls went elsewhere \
              through a home the sandbox did not redirect"
@@ -668,7 +708,7 @@ fn judge(
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
     if !completed {
-        findings.push(incomplete(manifest, scenario.shape));
+        findings.push(incomplete(manifest, scenario));
         return Ok(None);
     }
     // A second turn that never ran had no session the first turn's wire named,
@@ -1381,7 +1421,7 @@ mod tests {
                 cli: "test".into(),
                 version: "test".into(),
                 end: TurnEnd::Exited(0),
-                gave_up: None,
+                give_up_reason: None,
                 second_turn: None,
                 note_survived: true,
             },
@@ -2382,7 +2422,7 @@ mod tests {
         assert!(has(
             &judged(TurnEnd::Exited(0), second(TurnEnd::OutOfTime)),
             Label::Script,
-            "second turn outran"
+            "second turn was killed"
         ));
         let v = judged(TurnEnd::Exited(1), None);
         assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
@@ -2766,6 +2806,10 @@ mod tests {
             v.findings()
         );
         assert!(has(&v, Label::Script, &budget), "{:?}", v.findings());
+        assert!(
+            !v.judged(),
+            "a killed run judges nothing of pixtuoid's, its lifecycle and census included"
+        );
         let v = judged(0);
         assert_eq!(
             v.label(),
@@ -2777,13 +2821,45 @@ mod tests {
     }
 
     #[test]
+    fn a_tui_turn_its_drivers_budget_killed_is_judged_as_a_recorders_kill() {
+        const WHY: &str = "the 120s budget ran out";
+        let judged = |requests| {
+            let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+            write_manifest(d.path(), "claude-code", |m| {
+                m.scenario = "permission".into();
+                m.capture.end = TurnEnd::Exited(tui::OUT_OF_TIME);
+                m.capture.give_up_reason = Some(WHY.into());
+                m.requests = requests;
+            });
+            verify(d.path()).expect("verify")
+        };
+        let v = judged(7);
+        assert!(
+            has(&v, Label::Script, "7 model requests"),
+            "{:?}",
+            v.findings()
+        );
+        assert!(has(&v, Label::Script, WHY), "{:?}", v.findings());
+        assert!(!v.judged());
+        assert_eq!(judged(0).label(), Label::Blocked);
+        let h = run_from("codex", "tool-run-recorded", CX_SCENE);
+        write_manifest(h.path(), "codex", |m| {
+            m.capture.end = TurnEnd::Exited(tui::OUT_OF_TIME);
+        });
+        assert!(
+            !verify(h.path()).expect("verify").was_cut_short(),
+            "a headless CLI's own exit code"
+        );
+    }
+
+    #[test]
     fn a_tui_turn_its_driver_gave_up_on_is_blocked_for_the_drivers_reason() {
         const WHY: &str = "the screen stood still with the turn unfinished";
         let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         write_manifest(d.path(), "claude-code", |m| {
             m.scenario = "permission".into();
             m.capture.end = TurnEnd::Exited(tui::GAVE_UP);
-            m.capture.gave_up = Some(WHY.into());
+            m.capture.give_up_reason = Some(WHY.into());
         });
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());

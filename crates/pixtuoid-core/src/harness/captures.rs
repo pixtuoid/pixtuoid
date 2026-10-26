@@ -195,7 +195,7 @@ pub const CAPTURE_RECORD: &str = "capture.json";
 pub const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
 
 /// The file in its [`DRIVER_DIR_ENV`] dir where a driver that gave up on its
-/// turn says why, for [`CaptureRecord::gave_up`].
+/// turn says why, for [`CaptureRecord::give_up_reason`].
 pub const GAVE_UP_NOTE: &str = "gave-up.txt";
 
 /// How a turn the recorder ran ended.
@@ -207,7 +207,7 @@ pub enum TurnEnd {
     /// A signal ended it.
     Signalled,
     /// It outran [`crate::harness::hermetic::TURN_BUDGET`], so the recorder
-    /// killed it and every process it started.
+    /// killed it, with its process group or Job Object when nobody attended it.
     OutOfTime,
 }
 
@@ -240,7 +240,7 @@ pub struct CaptureRecord {
     pub end: TurnEnd,
     /// Why the turn's driver gave up on it, in its own words, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gave_up: Option<String>,
+    pub give_up_reason: Option<String>,
     /// Its second turn, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_turn: Option<SecondTurn>,
