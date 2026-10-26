@@ -426,6 +426,8 @@ pub mod hook;
 /// first-sight gate + liveness probe ladder.
 pub mod jsonl;
 pub mod kimi;
+#[cfg(all(target_os = "macos", feature = "native"))]
+pub(crate) mod kqueue;
 #[cfg(feature = "native")]
 /// `SourceManager` — spawns sources and surfaces a fatal source exit as `SourceDeath`.
 pub mod manager;
