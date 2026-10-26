@@ -72,7 +72,7 @@ pub enum Reach {
 /// Never by content: a real hook payload carries the user's prompts, code and
 /// paths, and these render on a terminal.
 #[derive(Clone, Debug)]
-pub struct LineFailure {
+pub(crate) struct LineFailure {
     /// 1-based index among the non-blank lines driven.
     pub(crate) line: usize,
     /// `type="…" keys=[…]` — structure only.
