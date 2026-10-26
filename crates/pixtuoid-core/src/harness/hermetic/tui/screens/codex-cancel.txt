@@ -1,0 +1,40 @@
+
+  >_ OpenAI Codex (v0.164.0)
+     /private/tmp/pixtuoid-capture/proj
+
+
+› Read NOTE.txt, then list this directory, then read NOTE.txt again.
+
+
+• HERMETIC-STREAM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-5.5 high · /private/tmp/pixtuoid-capture/proj
+  ? for shortcuts                                                                             ⚠ 3 warnings · f2 to view

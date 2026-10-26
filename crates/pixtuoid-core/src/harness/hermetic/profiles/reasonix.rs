@@ -13,7 +13,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "ask"],
     composer: tui::Composer {
         marker: " ❯",
-        above: tui::Above::Rule {
+        frame: tui::Frame::Rule {
             glyph: '─',
             corners: None,
         },
@@ -24,6 +24,7 @@ const TUI: tui::Tui = tui::Tui {
         deny: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
+    cancel: &[],
     // `/exit` is its alias (`internal/frontend/cli/slash_registry.go:69`).
     quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
     renders_under_conpty: true,

@@ -12,7 +12,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--accept-hooks", "--cli", "chat"],
     composer: tui::Composer {
         marker: "❯",
-        above: tui::Above::Framed { glyph: '─' },
+        frame: tui::Frame::Between { glyph: '─' },
     },
     gates: &[tui::Gate {
         shows: "Dangerous Command",
@@ -21,6 +21,7 @@ const TUI: tui::Tui = tui::Tui {
         deny: &[tui::Key::Text("4")],
         dwell: std::time::Duration::ZERO,
     }],
+    cancel: &[],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
 };

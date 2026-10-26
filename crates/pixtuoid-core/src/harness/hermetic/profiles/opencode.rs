@@ -3,12 +3,34 @@
 
 use super::type_field;
 use crate::harness::hermetic::{
-    ConfigFile, Daemon, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn,
+    ConfigFile, Daemon, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface,
+    Turn, tui,
 };
 use crate::harness::plan::Placeholder;
 
 /// opencode's daemon, as its `--server` commands name it.
 const SERVER: &str = "http://127.0.0.1:{daemon_port}";
+
+/// opencode's TUI on the daemon, which it takes as `--server` as every
+/// command does (`packages/cli/src/commands/commands.ts:15-24`, `:38-42` at
+/// v2.1.4).
+const TUI: tui::Tui = tui::Tui {
+    args: &["--server", SERVER],
+    composer: tui::Composer {
+        marker: "┃",
+        // The input line, a padding row, then the agent and model above the edge.
+        frame: tui::Frame::Footed {
+            edge: '╹', rows: 3
+        },
+    },
+    gates: &[],
+    // `session.interrupt` is Esc (`packages/tui/src/config/keybind.ts:128` at
+    // v2.1.4), which interrupts only on its second press
+    // (`packages/tui/src/component/prompt/index.tsx:516-527`).
+    cancel: &[tui::Key::Esc, tui::Key::Esc],
+    quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
+    renders_under_conpty: true,
+};
 
 pub(crate) const PROFILE: Profile = Profile {
     source: "opencode",
@@ -75,10 +97,13 @@ pub(crate) const PROFILE: Profile = Profile {
     // A shell command asks, which `opencode run` rejects
     // (`services/www/src/docs/content/permissions.mdx:9-20`,
     // `packages/cli/src/run/noninteractive.ts:158-181`): the permission turn.
+    // `model` is the one a TUI turn runs on, since it names none
+    // (`packages/schema/src/config.ts:33-35` at v2.1.4).
     config: &[ConfigFile {
         home: "OPENCODE_CONFIG_DIR",
         path: "opencode.jsonc",
         template: r#"{
+  "model": "openai/gpt-5.2",
   "providers": {
     "openai": {
       "settings": { "baseURL": "http://127.0.0.1:{port}/v1", "apiKey": "{key}" },
@@ -164,9 +189,24 @@ pub(crate) const PROFILE: Profile = Profile {
                 second: Some(Second::Bare),
             },
         },
+        Scenario {
+            name: "cancel",
+            shape: Shape::Cancel,
+            surface: Surface::Tui {
+                row: &TUI,
+                answer: tui::Answer::Cancel,
+            },
+            expects: &[
+                "session.created",
+                "session.execution.started",
+                "session.execution.interrupted",
+            ],
+            fixture: "fixtures/opencode/cancel-hermetic",
+            turn: Turn::PROFILE,
+        },
     ],
     script_vars: &[],
-    not_yet: &["session.execution.interrupted"],
+    not_yet: &[],
     event_name: type_field,
     not_yet_fields: &[],
     not_yet_literals: &[],
@@ -194,7 +234,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opencodes_model_flag_names_a_model_its_config_declares() {
+    fn opencodes_model_flag_names_a_model_its_config_declares_and_defaults_to() {
         let model = PROFILE
             .invocation
             .windows(2)
@@ -207,5 +247,6 @@ mod tests {
             config["providers"][provider]["models"].get(id).is_some(),
             "{model} is not under the config's providers.{provider}.models"
         );
+        assert_eq!(config["model"], model, "a TUI turn runs on another model");
     }
 }

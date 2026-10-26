@@ -17,7 +17,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "default"],
     composer: tui::Composer {
         marker: "  │ ❯",
-        above: tui::Above::Rule {
+        frame: tui::Frame::Rule {
             glyph: '─',
             corners: Some(('╭', '╮')),
         },
@@ -27,6 +27,7 @@ const TUI: tui::Tui = tui::Tui {
         deny: &[tui::Key::Text("4")],
         dwell: std::time::Duration::ZERO,
     }],
+    cancel: &[],
     // `/exit` is `/quit`'s alias
     // (`crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md:71-73`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],

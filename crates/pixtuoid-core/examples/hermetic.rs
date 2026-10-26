@@ -2109,7 +2109,7 @@ mod run {
                         .launch
                         .argv()
                         .into_iter()
-                        .chain(row.args().iter().map(OsString::from))
+                        .chain(row.args().iter().map(|w| OsString::from(ported(w))))
                         .collect(),
                 };
                 for arg in line.to_args() {
@@ -2962,7 +2962,7 @@ mod run {
 
         #[test]
         fn a_tui_scenario_hands_the_recorder_the_driver_and_the_clis_interactive_launch() {
-            let p = hermetic::profile("claude-code").expect("profile");
+            let p = hermetic::profile("opencode").expect("profile");
             let (scenario, row) = p
                 .scenarios
                 .iter()
@@ -2992,8 +2992,20 @@ mod run {
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
-                .chain(row.args().iter().map(OsString::from))
+                .chain(row.args().iter().map(|w| {
+                    w.replace(
+                        Placeholder::DaemonPort.as_str(),
+                        &TEST_PORTS.daemon.to_string(),
+                    )
+                    .into()
+                }))
                 .collect();
+            assert!(
+                row.args()
+                    .iter()
+                    .any(|w| w.contains(Placeholder::DaemonPort.as_str())),
+                "a row that spells no port proves no expansion"
+            );
             assert_eq!(line.program, program);
         }
 

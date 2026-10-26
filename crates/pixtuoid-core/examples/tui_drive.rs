@@ -7,7 +7,7 @@
 //! tui_drive <source> <scenario> <log> <prompt> -- <program> [args...]
 //! ```
 //!
-//! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
+//! Exits with the CLI's status; when the driver gave up or the [`BUDGET`] ran
 //! out, with what [`Driver::gave_up`] says, and why at [`GAVE_UP_NOTE`]; and
 //! `USAGE_ERROR` on a bad command line.
 
@@ -19,16 +19,12 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use pixtuoid_core::harness::hermetic::tui::{
-    Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
+    Action, Answer, BUDGET, CommandLine, Driver, GAVE_UP, Key, Tui,
 };
 use pixtuoid_core::harness::hermetic::{self, Surface};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
-/// How long one run may take, end to end, before the CLI is killed: inside
-/// the recorder's [`hermetic::TURN_BUDGET`] with a [`QUIT_GRACE`] to spare, so
-/// the driver gives up first and logs the screen it stood at.
-const BUDGET: Duration = Duration::from_secs(120);
 /// How long a CLI may take to exit after its quit keys.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
 /// How often the screen is re-judged when no output arrives.

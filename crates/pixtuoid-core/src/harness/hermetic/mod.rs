@@ -30,6 +30,23 @@ pub mod verify;
 /// any, and a real provider must refuse it.
 pub const DUMMY_KEY: &str = "hermetic-dummy-key";
 
+/// The first line of [`Placeholder::Stream`]'s reply: on screen, the TUI
+/// driver's cue that the turn is mid-stream.
+pub(crate) const STREAM_CUE: &str = "HERMETIC-STREAM";
+/// How many numbered lines follow [`STREAM_CUE`]: enough that, at its
+/// script's pace, the reply outlasts the driver's [`tui::BUDGET`]
+/// (`a_cancel_script_streams_its_reply_past_the_drivers_budget`), so an
+/// uncancelled turn never ends inside a run.
+const STREAM_LINES: usize = 600;
+
+/// [`Placeholder::Stream`]'s reply.
+fn stream_reply() -> String {
+    std::iter::once(STREAM_CUE.to_owned())
+        .chain((1..=STREAM_LINES).map(|n| n.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A fact that differs between Unix and Windows. Both arms are plain data, so
 /// a test on any host reads both, as `platform::resolve_user_home_opt` takes
 /// its `windows` flag.
@@ -134,6 +151,10 @@ pub enum Shape {
     /// A command that starts the CLI's next session in place: the session it
     /// switches away from ends, and a root session succeeds it.
     Succession,
+    /// A turn the user cancels while its reply streams: the session
+    /// registers, and its turn ends. ACP's `cancelled` and A2A's `CANCELED`;
+    /// "interrupt" is a pause for human input in AG-UI and LangGraph.
+    Cancel,
 }
 
 impl Shape {
@@ -149,7 +170,8 @@ impl Shape {
                 | Self::Permission
                 | Self::Subagent
                 | Self::ChildError
-                | Self::Succession => false,
+                | Self::Succession
+                | Self::Cancel => false,
             },
             ProcessExit::Signalled | ProcessExit::OutOfTime => false,
         }
@@ -163,7 +185,8 @@ impl Shape {
             | Self::Permission
             | Self::Subagent
             | Self::ModelError
-            | Self::ChildError => true,
+            | Self::ChildError
+            | Self::Cancel => true,
             Self::Succession => false,
         }
     }
@@ -371,6 +394,7 @@ impl Profile {
                 Placeholder::Note.as_str(),
                 crate::harness::CAPTURE_NOTE.to_owned(),
             ),
+            (Placeholder::Stream.as_str(), stream_reply()),
         ]
         .into_iter()
         .chain(
@@ -811,20 +835,73 @@ mod tests {
     }
 
     #[test]
-    fn a_tui_turn_answers_a_gate_exactly_when_its_shape_is_permission() {
+    fn a_tui_turn_answers_exactly_what_its_shape_raises_and_only_a_tui_cancels() {
         // A turn waiting on a dialog it never raises stalls, and the verdict
-        // blames its CLI.
+        // blames its CLI; a headless run has no way to cancel its turn.
         for p in PROFILES {
             for s in p.scenarios {
-                let Surface::Tui { answer, .. } = s.surface else {
+                let Surface::Tui { row, answer } = s.surface else {
+                    assert_ne!(s.shape, Shape::Cancel, "{}/{}", p.source, s.name);
                     continue;
                 };
-                assert_eq!(
-                    answer != tui::Answer::Nothing,
-                    s.shape == Shape::Permission,
-                    "{}/{}",
-                    p.source,
-                    s.name
+                let raised = match s.shape {
+                    Shape::Permission => tui::Answer::Deny,
+                    Shape::Cancel => tui::Answer::Cancel,
+                    Shape::ToolRun
+                    | Shape::Subagent
+                    | Shape::ModelError
+                    | Shape::ChildError
+                    | Shape::Succession => tui::Answer::Nothing,
+                };
+                assert_eq!(answer, raised, "{}/{}", p.source, s.name);
+                assert!(
+                    answer != tui::Answer::Cancel || !row.cancel.is_empty(),
+                    "{}: its row names no cancel keys",
+                    p.source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_cancel_script_streams_its_reply_past_the_drivers_budget() {
+        // A reply that ends inside the run ends its turn uncancelled, and that
+        // end passes for the cancel's.
+        let reply = stream_reply();
+        assert!(reply.starts_with(&format!("{STREAM_CUE}\n")));
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Cancel) {
+                let script: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let streams: Vec<&Value> = script["fixtures"]
+                    .as_array()
+                    .expect("fixtures")
+                    .iter()
+                    .filter(|f| f["response"]["content"] == Placeholder::Stream.as_str())
+                    .collect();
+                let [stream] = streams[..] else {
+                    panic!("{}: {} replies stream", p.source, streams.len());
+                };
+                // aimock paces every chunk by `latency` alone unless one of
+                // these overrides it (`src/sse-writer.ts`'s `calculateDelay`
+                // at v1.45.1).
+                for pace in ["streamingProfile", "recordedTimings", "replaySpeed"] {
+                    assert!(stream.get(pace).is_none(), "{}: {pace}", p.source);
+                }
+                let per_chunk = |key: &str| {
+                    stream[key]
+                        .as_u64()
+                        .unwrap_or_else(|| panic!("{}: no {key}", p.source))
+                };
+                let chunks = u64::try_from(reply.len())
+                    .expect("a short reply")
+                    .div_ceil(per_chunk("chunkSize"));
+                assert!(
+                    Duration::from_millis(chunks * per_chunk("latency")) > tui::BUDGET,
+                    "{}: its reply ends inside the driver's budget",
+                    p.source
                 );
             }
         }

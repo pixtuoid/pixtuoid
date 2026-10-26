@@ -11,7 +11,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "manual"],
     composer: tui::Composer {
         marker: "❯",
-        above: tui::Above::Rule {
+        frame: tui::Frame::Rule {
             glyph: '─',
             corners: None,
         },
@@ -24,6 +24,7 @@ const TUI: tui::Tui = tui::Tui {
         // ignores keys for (`AM=150`).
         dwell: std::time::Duration::from_secs(7),
     }],
+    cancel: &[],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,
 };

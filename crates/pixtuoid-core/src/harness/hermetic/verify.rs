@@ -656,13 +656,19 @@ fn judge(
 ) -> std::io::Result<Option<Unjudged>> {
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
-    let unrefused = matches!(scenario.surface, Surface::Tui { .. })
-        && manifest.capture.end == ProcessExit::Exited(tui::UNREFUSED);
-    if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
-        findings.push((
-            Label::Fail,
-            "the turn raised no gate the driver knows to refuse".into(),
-        ));
+    let unanswered = match scenario.surface {
+        Surface::Tui { answer, .. }
+            if manifest.capture.end == ProcessExit::Exited(tui::UNANSWERED) =>
+        {
+            answer.owed()
+        }
+        Surface::Tui { .. } | Surface::Headless => None,
+    };
+    if let Some(owed) = unanswered
+        && manifest.requests > 0
+        && manifest.unmatched == 0
+    {
+        findings.push((Label::Fail, format!("the turn never showed {owed}")));
         return Ok(None);
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.
@@ -752,7 +758,7 @@ fn judge(
         return Ok(None);
     }
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission | Shape::ModelError => 1,
+        Shape::ToolRun | Shape::Permission | Shape::ModelError | Shape::Cancel => 1,
         Shape::Subagent | Shape::ChildError | Shape::Succession => 2,
     };
     started_in(
@@ -774,7 +780,7 @@ fn judge(
             p.descriptor().caps().child_end_inference,
             findings,
         ),
-        Shape::ModelError => model_error(&events, findings),
+        Shape::ModelError | Shape::Cancel => turn_ended(&events, findings),
         Shape::ChildError => child_error(
             &events,
             &reaches,
@@ -786,7 +792,7 @@ fn judge(
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent | Shape::ChildError => "active",
         Shape::Permission => "waiting",
-        Shape::ModelError | Shape::Succession => "idle",
+        Shape::ModelError | Shape::Succession | Shape::Cancel => "idle",
     };
     judge_scene(p, scene, shown, findings);
     new_types(p, dir, dropped::baseline_of(scenario)?.as_ref(), findings)
@@ -977,15 +983,17 @@ fn permission(
     }
 }
 
-/// The failed turn ends. Its script answers the turn only with an error
-/// (`a_model_error_script_errs_and_calls_no_tool`), so a run that reached the
-/// model failed.
-fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+/// The turn ends, which its script leaves only one way to: a model error's
+/// answers it with nothing but the error
+/// (`a_model_error_script_errs_and_calls_no_tool`), and a cancel's reply
+/// outlasts the run (`a_cancel_script_streams_its_reply_past_the_drivers_budget`),
+/// so its end is the cancel's.
+fn turn_ended(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
     if !events
         .iter()
         .any(|e| matches!(e, AgentEvent::TurnEnd { .. }))
     {
-        findings.push((Label::Fail, "the failed turn never ended".into()));
+        findings.push((Label::Fail, "the turn never ended".into()));
     }
 }
 
@@ -1231,7 +1239,11 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
         Shape::ToolRun => Some("idle"),
         // `RunFailed` latches it (`crate::source::daemon`).
         Shape::ModelError => Some("degraded"),
-        Shape::Permission | Shape::Subagent | Shape::ChildError | Shape::Succession => None,
+        Shape::Permission
+        | Shape::Subagent
+        | Shape::ChildError
+        | Shape::Succession
+        | Shape::Cancel => None,
     }
 }
 
@@ -2720,14 +2732,18 @@ mod tests {
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
-                m.capture.end = ProcessExit::Exited(tui::UNREFUSED);
+                m.capture.end = ProcessExit::Exited(tui::UNANSWERED);
                 m.requests = requests;
                 m.unmatched = unmatched;
             });
             verify(d.path()).expect("verify")
         };
         let v = unrefused(2, 0);
-        assert!(has(&v, Label::Fail, "no gate"), "{:?}", v.findings());
+        assert!(
+            has(&v, Label::Fail, "never showed a gate"),
+            "{:?}",
+            v.findings()
+        );
         assert_eq!(
             unrefused(0, 0).label(),
             Label::Blocked,
@@ -2740,7 +2756,7 @@ mod tests {
         );
         let h = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(h.path(), "codex", |m| {
-            m.capture.end = ProcessExit::Exited(tui::UNREFUSED)
+            m.capture.end = ProcessExit::Exited(tui::UNANSWERED)
         });
         assert_eq!(
             verify(h.path()).expect("verify").label(),
@@ -2988,11 +3004,11 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_turn_is_held_to_its_end() {
+    fn a_failed_or_cancelled_turn_is_held_to_its_end() {
         let agent_id = AgentId::from_parts("kimi", "session");
         let judged = |end: AgentEvent| {
             let mut findings = Vec::new();
-            model_error(&[end], &mut findings);
+            turn_ended(&[end], &mut findings);
             findings
         };
         assert_eq!(judged(AgentEvent::turn_end(agent_id)), vec![]);
@@ -3006,6 +3022,46 @@ mod tests {
                 .any(|f| f.1.contains("never ended"))
             );
         }
+    }
+
+    #[test]
+    fn a_recorded_codex_cancel_passes_only_on_its_aborted_turn() {
+        let run = |cut: bool| {
+            let d = recorded(
+                "codex",
+                "cancel",
+                "agents=[cx\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
+            );
+            if cut {
+                edit_transcripts(d.path(), |l| !l.contains("\"turn_aborted\""));
+            }
+            verify(d.path()).expect("verify")
+        };
+        let v = run(false);
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = run(true);
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_recorded_opencode_cancel_passes_only_on_its_interrupted_execution() {
+        let run = |cut: bool| {
+            let d = recorded(
+                "opencode",
+                "cancel",
+                "agents=[oc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
+            );
+            if cut {
+                edit_hooks(d.path(), |v| {
+                    (v["type"] != "session.execution.interrupted").then_some(v)
+                });
+            }
+            verify(d.path()).expect("verify")
+        };
+        let v = run(false);
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let v = run(true);
+        assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
     }
 
     #[test]

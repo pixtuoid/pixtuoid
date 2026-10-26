@@ -55,6 +55,8 @@ pub enum Placeholder {
     User,
     /// The note a tool reads.
     Note,
+    /// A reply the user cancels while it streams.
+    Stream,
     /// The platform's shell tool.
     ShellTool,
 }
@@ -72,6 +74,7 @@ impl Placeholder {
             Self::WorkspaceSlashed => "{workspace_slashed}",
             Self::User => "{user}",
             Self::Note => "{note}",
+            Self::Stream => "{stream}",
             Self::ShellTool => "{shell_tool}",
         }
     }

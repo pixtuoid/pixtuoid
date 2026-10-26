@@ -1,0 +1,14 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "You name conversations" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "content": "{stream}" },
+      "latency": 500,
+      "chunkSize": 4
+    }
+  ]
+}

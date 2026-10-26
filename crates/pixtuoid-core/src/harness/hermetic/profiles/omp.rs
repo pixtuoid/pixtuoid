@@ -11,9 +11,10 @@ const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: "╰─",
-        above: tui::Above::Nothing,
+        frame: tui::Frame::Nothing,
     },
     gates: &[],
+    cancel: &[],
     // `src/slash-commands/builtin-lifecycle.ts:835-839`.
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     renders_under_conpty: true,

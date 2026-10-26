@@ -11,7 +11,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: "│❯",
-        above: tui::Above::Rule {
+        frame: tui::Frame::Rule {
             glyph: '─',
             corners: Some(('╭', '╮')),
         },
@@ -26,6 +26,7 @@ const TUI: tui::Tui = tui::Tui {
         // wait resolves unobserved (measured).
         dwell: std::time::Duration::from_secs(1),
     }],
+    cancel: &[],
     // A graceful shutdown, which fires `session_end` (`docs/HOOKS.md:236`,
     // `crates/tui/src/commands/groups/core/exit.rs:9-14`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
