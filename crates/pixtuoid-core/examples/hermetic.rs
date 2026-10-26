@@ -1797,8 +1797,8 @@ mod run {
         );
         wait_until("aimock", BOOT, || Ok(http_get(port, "/v1/models").is_ok()))?;
 
-        // A root absent at boot is watched only from the next poll, so a short
-        // run would reach pixtuoid by hook alone.
+        // A CLI that has run before has its root; create it so the sandbox
+        // matches.
         let mut prepare = sandbox.command(&built.recorder);
         prepare.args(Invocation::prepare_root_args(sandbox.dir.path(), p.source));
         succeed(prepare)?;

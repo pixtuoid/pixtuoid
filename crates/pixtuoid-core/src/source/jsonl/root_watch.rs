@@ -177,7 +177,8 @@ pub(super) type BuildShared = Box<dyn Fn(&Path) -> notify::Result<Box<dyn Watche
 /// `DELETE_SELF`, Windows' silent unwatch) take the new watch with it.
 pub(super) enum Backend {
     /// Both watches on one watcher, its events routed by [`Routed`]: one
-    /// inotify instance per root, under the per-user cap.
+    /// inotify instance per root, against `inotify(7)`'s per-user
+    /// `max_user_instances` (<https://man7.org/linux/man-pages/man7/inotify.7.html>).
     Shared(BuildShared),
     /// Each watch on its own watcher: a macOS anchor is a kqueue one, and a
     /// polled test root can't host a native anchor.

@@ -15,6 +15,22 @@ use tokio::sync::mpsc;
 /// Past any native watch setup, short of hanging CI.
 const RUN_DEADLINE: Duration = Duration::from_secs(30);
 
+/// An attach rides filesystem events, so it lands well inside this.
+const ATTACH_BOUND: Duration = Duration::from_secs(5);
+
+/// Set far past [`ATTACH_BOUND`], so a test passing within it proves the poll
+/// did not do the attaching.
+const POLL: Duration = Duration::from_secs(3600);
+
+/// The first-sight recency window: a transcript a test just wrote is inside it.
+const INITIAL_WINDOW: Duration = Duration::from_secs(60);
+
+fn codex_watcher(root: std::path::PathBuf) -> JsonlWatcher {
+    JsonlWatcher::new(root, "codex".to_string(), decode_codex_line, |_| false)
+        .with_initial_window(INITIAL_WINDOW)
+        .with_poll_interval(POLL)
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn omp_source_run_reports_total_watch_failure_instead_of_swallowing_it() {
@@ -52,11 +68,7 @@ async fn a_recreated_root_is_rewatched() {
     let root = dir.path().join("sessions");
     tokio::fs::create_dir(&root).await.unwrap();
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_| {
-        false
-    })
-    .with_initial_window(Duration::from_secs(60))
-    .with_poll_interval(Duration::from_secs(3600));
+    let watcher = codex_watcher(root.clone());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let first = "aa000000-0000-7000-8000-0000000000a1";
@@ -71,7 +83,7 @@ async fn a_recreated_root_is_rewatched() {
     let second = "bb000000-0000-7000-8000-0000000000b2";
     write_session(&root, second).await;
     assert!(
-        session_started(&mut rx, second, Duration::from_secs(5)).await,
+        session_started(&mut rx, second, ATTACH_BOUND).await,
         "a session under the recreated root was not seen"
     );
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
@@ -91,11 +103,7 @@ async fn a_root_recreated_under_a_removed_empty_anchor_is_watched() {
     tokio::fs::create_dir(&home).await.unwrap();
     let root = home.join("session-state");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_| {
-        false
-    })
-    .with_initial_window(Duration::from_secs(60))
-    .with_poll_interval(Duration::from_secs(3600));
+    let watcher = codex_watcher(root.clone());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     // Each step lands after the reconcile the previous one woke.
@@ -107,7 +115,7 @@ async fn a_root_recreated_under_a_removed_empty_anchor_is_watched() {
     let uuid = "cc000000-0000-7000-8000-0000000000c3";
     write_session(&root, uuid).await;
     assert!(
-        session_started(&mut rx, uuid, Duration::from_secs(5)).await,
+        session_started(&mut rx, uuid, ATTACH_BOUND).await,
         "a session under the recreated root was not seen"
     );
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
@@ -123,11 +131,7 @@ async fn a_file_beside_the_root_is_never_decoded() {
     let root = dir.path().join("projects");
     tokio::fs::create_dir(&root).await.unwrap();
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = JsonlWatcher::new(root.clone(), "codex".to_string(), decode_codex_line, |_| {
-        false
-    })
-    .with_initial_window(Duration::from_secs(60))
-    .with_poll_interval(Duration::from_secs(3600));
+    let watcher = codex_watcher(root.clone());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -184,14 +188,7 @@ async fn a_relative_root_keys_each_transcript_once() {
     std::env::set_current_dir(&base).unwrap();
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let watcher = JsonlWatcher::new(
-        std::path::PathBuf::from("sessions"),
-        "codex".to_string(),
-        decode_codex_line,
-        |_| false,
-    )
-    .with_initial_window(Duration::from_secs(60))
-    .with_poll_interval(Duration::from_secs(3600));
+    let watcher = codex_watcher(std::path::PathBuf::from("sessions"));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let id = AgentId::from_parts("codex", uuid);
