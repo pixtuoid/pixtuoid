@@ -10,6 +10,10 @@ on:
     - cron: "23 7 * * *" # daily 07:23 UTC
   workflow_dispatch:
 permissions: {}
+# Every `gh issue` call's, so the file job admits only what triage listed.
+env:
+  HERMETIC_LABEL: hermetic
+  HERMETIC_LIMIT: 1000
 # Only `build` saves (`hermetic-caches-restore-only-but-their-one-writer`).
 cache-mode: read
 
@@ -215,7 +219,7 @@ jobs:
       - run: cargo build --release -q -p pixtuoid-core --example issues
       - uses: actions/download-artifact@v8
         with:
-          pattern: ${{ needs.drift.outputs.runs-stem }}*-verdicts
+          pattern: ${{ needs.drift.outputs.verdicts-stem }}*
           path: ${{ runner.temp }}/verdicts
       - env:
           GH_TOKEN: ${{ github.token }}
@@ -223,7 +227,8 @@ jobs:
           DRIFT: ${{ toJSON(needs.drift.outputs) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue list --label hermetic --state all --limit 1000 --json number,state,body >"$RUNNER_TEMP/issues.json"
+          gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
+            --json number,state,body >"$RUNNER_TEMP/issues.json"
           printf '%s' "$DRIFT" >"$RUNNER_TEMP/drift.json"
           target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/issues.json" \
             "$RUNNER_TEMP/verdicts" "$RUN_URL" >"$RUNNER_TEMP/plan.json"
@@ -256,9 +261,13 @@ jobs:
           # Every action is tried: one gh error (a rate limit) leaves the rest
           # filed, and the step red, naming what it could not do.
           failed=0
-          # The plan is the triage build's output: it acts only on a number
-          # this job read as a hermetic issue's.
-          gh issue list --label hermetic --state all --limit 1000 --json number >"$RUNNER_TEMP/ours.json" ||
+          # The plan is the triage build's output: it acts only on an issue with a
+          # marker line (`hermetic::issues::Subject::of`), and opens one led by one.
+          markers=(--arg source '<!-- hermetic-source: ' --arg leg '<!-- hermetic-leg: ' --arg end ' -->')
+          # shellcheck disable=SC2016 # jq's own variables
+          is_marker='def is_marker: gsub("^\\s+|\\s+$"; "") | (startswith($source) or startswith($leg)) and endswith($end);'
+          gh issue list --label "$HERMETIC_LABEL" --state all --limit "$HERMETIC_LIMIT" \
+            --json number,body >"$RUNNER_TEMP/labelled.json" ||
             { echo "::error::could not list the hermetic issues"; failed=1; }
           count=$(jq '.actions | length' plan.json)
           for ((i = 0; i < count; i++)); do
@@ -266,13 +275,18 @@ jobs:
             jq -r '.body' <<<"$action" >"$RUNNER_TEMP/body.md"
             number=$(jq -r '.number // empty' <<<"$action")
             what=$(jq -r '.do' <<<"$action")
-            if [[ $what != open ]] && ! jq -e --arg n "$number" 'any(.[]; .number | tostring == $n)' "$RUNNER_TEMP/ours.json" >/dev/null; then
-              echo "::error::refused to $what issue $number: no hermetic issue has that number"
+            if [[ $what == open ]]; then
+              jq -e "${markers[@]}" "$is_marker"' .body | split("\n")[0] | is_marker' <<<"$action" >/dev/null
+            else
+              jq -e "${markers[@]}" --arg n "$number" "$is_marker"' any(.[]; (.number | tostring) == $n and (.body | split("\n") | any(is_marker)))' \
+                "$RUNNER_TEMP/labelled.json" >/dev/null
+            fi || {
+              echo "::error::refused to $what issue ${number:-$(jq -r '.title' <<<"$action")}: no marker of the planner's"
               failed=1
               continue
-            fi
+            }
             case $what in
-            open) gh issue create --title "$(jq -r '.title' <<<"$action")" --label hermetic --body-file "$RUNNER_TEMP/body.md" ;;
+            open) gh issue create --title "$(jq -r '.title' <<<"$action")" --label "$HERMETIC_LABEL" --body-file "$RUNNER_TEMP/body.md" ;;
             comment) gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" ;;
             reopen) gh issue reopen "$number" && gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" ;;
             close) gh issue comment "$number" --body-file "$RUNNER_TEMP/body.md" && gh issue close "$number" ;;

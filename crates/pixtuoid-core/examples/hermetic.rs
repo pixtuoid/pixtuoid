@@ -2431,7 +2431,7 @@ mod run {
         }
 
         #[test]
-        fn each_run_files_under_its_key_with_its_leg_verdict_and_findings() {
+        fn verdicts_hold_each_runs_source_key_version_label_and_findings() {
             let blocked = Entry::new(
                 "opencode",
                 "opencode/tool-run".into(),

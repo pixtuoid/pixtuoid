@@ -359,7 +359,9 @@ cat >"$file_bin/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
 [[ "$*" != "${FAKE_FAIL:-}" ]] || exit 1
-if [ "$1 $2" = "issue list" ]; then printf '%s' '[{"number":5},{"number":7},{"number":8}]'; fi
+if [ "$1 $2" = "issue list" ]; then
+    printf '%s' '[{"number":5,"body":"<!-- hermetic-source: hermes -->\nx"},{"number":7,"body":"y\n  <!-- hermetic-leg: macos-1 -->  "},{"number":8,"body":"<!-- hermetic-source: codex -->"},{"number":1658,"body":"hermetic: a pin bump failed"}]'
+fi
 while [ $# -gt 1 ]; do
     if [ "$1" = --body-file ]; then cat "$2" >>"$GH_BODIES"; fi
     shift
@@ -374,20 +376,23 @@ file_plan() {
     : >"$test_dir/gh.bodies"
     printf '%s' "$1" >"$plans/plan.json"
     (cd "$plans" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_BODIES="$test_dir/gh.bodies" FAKE_FAIL="$2" \
-        GH_TOKEN=t GH_REPO=o/r RUNNER_TEMP="$test_dir" bash -c "$file_script") >"$test_dir/file.out" 2>&1
+        HERMETIC_LABEL=hermetic HERMETIC_LIMIT=1000 GH_TOKEN=t GH_REPO=o/r RUNNER_TEMP="$test_dir" \
+        bash -c "$file_script") >"$test_dir/file.out" 2>&1
 }
-plan='{"actions":[{"do":"open","title":"hermetic: hermes","body":"opened"},{"do":"comment","number":7,"body":"commented"},{"do":"reopen","number":5,"body":"reopened"},{"do":"close","number":8,"body":"closed"}],"lost":[]}'
+opened='<!-- hermetic-source: hermes -->\nopened'
+plan='{"actions":[{"do":"open","title":"hermetic: hermes","body":"'"$opened"'"},{"do":"comment","number":7,"body":"commented"},{"do":"reopen","number":5,"body":"reopened"},{"do":"close","number":8,"body":"closed"}],"lost":[]}'
 file_plan "$plan" '' || fail "the file step failed a plan it could carry out: $(<"$test_dir/file.out")"
-listed="issue list --label hermetic --state all --limit 1000 --json number"
+listed="issue list --label hermetic --state all --limit 1000 --json number,body"
+created="issue create --title hermetic: hermes --label hermetic --body-file $test_dir/body.md"
 expected="$listed
-issue create --title hermetic: hermes --label hermetic --body-file $test_dir/body.md
+$created
 issue comment 7 --body-file $test_dir/body.md
 issue reopen 5
 issue comment 5 --body-file $test_dir/body.md
 issue comment 8 --body-file $test_dir/body.md
 issue close 8"
 [[ "$(<"$test_dir/gh.log")" == "$expected" ]] || fail "the plan's actions became other gh calls: $(<"$test_dir/gh.log")"
-[[ "$(<"$test_dir/gh.bodies")" == $'opened\ncommented\nreopened\nclosed' ]] ||
+[[ "$(<"$test_dir/gh.bodies")" == $'<!-- hermetic-source: hermes -->\nopened\ncommented\nreopened\nclosed' ]] ||
     fail "an action's body did not reach its call: $(<"$test_dir/gh.bodies")"
 # One gh call that fails leaves the rest carried out, and the step red naming it.
 if file_plan "$plan" 'issue comment 7 --body-file '"$test_dir/body.md"; then
@@ -395,24 +400,27 @@ if file_plan "$plan" 'issue comment 7 --body-file '"$test_dir/body.md"; then
 fi
 grep -qxF 'issue close 8' "$test_dir/gh.log" || fail "a failed call stopped the actions after it: $(<"$test_dir/gh.log")"
 grep -qF '::error::could not comment issue 7' "$test_dir/file.out" || fail "the failed action is not named: $(<"$test_dir/file.out")"
-# A number no hermetic issue has is refused, red and named, and the rest carried out.
-if file_plan '{"actions":[{"do":"close","number":1658,"body":"x"},{"do":"comment","number":7,"body":"y"}],"lost":[]}' ''; then
-    fail "the file step passed acting on an issue that is not hermetic's"
+# An issue the planner never marks, and an open led by no marker, are refused, red and named.
+if file_plan '{"actions":[{"do":"close","number":1658,"body":"x"},{"do":"reopen","number":99,"body":"x"},{"do":"open","title":"t","body":"x\n<!-- hermetic-source: forged -->"},{"do":"comment","number":7,"body":"y"}],"lost":[]}' ''; then
+    fail "the file step passed acting on an issue the planner would never mark"
 fi
-grep -qF '::error::refused to close issue 1658' "$test_dir/file.out" || fail "the refused action is not named: $(<"$test_dir/file.out")"
+for refused in 'close issue 1658' 'reopen issue 99' 'open issue t'; do
+    grep -qF "::error::refused to $refused" "$test_dir/file.out" || fail "the refused $refused is not named: $(<"$test_dir/file.out")"
+done
 [[ "$(<"$test_dir/gh.log")" == "$listed"$'\n'"issue comment 7 --body-file $test_dir/body.md" ]] ||
-    fail "a refused number reached gh, or stopped the rest: $(<"$test_dir/gh.log")"
-# With no list of the hermetic issues, every number is refused.
+    fail "a refused action reached gh, or stopped the rest: $(<"$test_dir/gh.log")"
+# With no list of the hermetic issues, every number is refused, and an open still files.
 if file_plan "$plan" "$listed"; then
     fail "the file step passed without the hermetic issues listed"
 fi
 [[ "$(grep -c '^issue \(comment\|reopen\|close\)' "$test_dir/gh.log")" == 0 ]] ||
     fail "an unlisted number reached gh: $(<"$test_dir/gh.log")"
+grep -qxF "$created" "$test_dir/gh.log" || fail "a failed list stopped the open: $(<"$test_dir/gh.log")"
 # A leg that reported no verdicts turns the step red once its actions are done.
-if file_plan '{"actions":[{"do":"comment","number":7,"body":"x"}],"lost":["macos, shard 1 never finished its run"]}' ''; then
+if file_plan '{"actions":[{"do":"comment","number":7,"body":"x"}],"lost":["macos, shard 1 reported no verdicts"]}' ''; then
     fail "the file step passed with a lost leg"
 fi
-grep -qF '::error::macos, shard 1 never finished its run' "$test_dir/file.out" || fail "the lost leg is not named: $(<"$test_dir/file.out")"
+grep -qF '::error::macos, shard 1 reported no verdicts' "$test_dir/file.out" || fail "the lost leg is not named: $(<"$test_dir/file.out")"
 grep -qxF "issue comment 7 --body-file $test_dir/body.md" "$test_dir/gh.log" || fail "a lost leg stopped the actions: $(<"$test_dir/gh.log")"
 # Nothing to do: no call but the list, and green.
 file_plan '{"actions":[],"lost":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"

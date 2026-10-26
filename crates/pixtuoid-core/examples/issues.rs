@@ -5,9 +5,8 @@
 //! issues `gh issue list --json number,state,body` names, as JSON, given the
 //! drift job's outputs and every leg's verdicts under the `verdicts` dir.
 //!
-//! A verdicts file that doesn't parse leaves its leg reporting none, and the
-//! plan names it. Exits 0 on success, 1 when the drift outputs or the issues
-//! can't be read, and 2 on a usage error.
+//! Exits 0 on success, 1 when the drift outputs or the issues can't be read,
+//! and 2 on a usage error.
 
 use std::path::Path;
 
@@ -37,19 +36,15 @@ fn main() {
 }
 
 fn plan(drift: &Path, issues: &Path, verdicts: &Path, run: &str) -> std::io::Result<()> {
-    // One leg's download lands flat, several each in its artifact's dir.
-    let (mut legs, mut unread) = (Vec::new(), Vec::new());
-    for file in files_under(verdicts) {
-        if file.file_name().is_some_and(|n| n == VERDICTS) {
-            match read_json::<Verdicts>(&file) {
-                Ok(leg) => legs.push(leg),
-                Err(e) => unread.push(format!("unreadable verdicts: {e}")),
-            }
-        }
-    }
+    // One leg's download lands flat, several each in its artifact's dir
+    // (download-artifact v8.0.2 `src/download-artifact.ts:188-194`).
+    let reported: Vec<std::io::Result<Verdicts>> = files_under(verdicts)
+        .into_iter()
+        .filter(|file| file.file_name().is_some_and(|n| n == VERDICTS))
+        .map(|file| read_json(&file))
+        .collect();
     let issues: Vec<Issue> = read_json(issues)?;
-    let mut plan = issues::plan(&read_json(drift)?, &legs, &issues, run);
-    plan.lost.extend(unread);
+    let plan = issues::plan(&read_json(drift)?, &reported, &issues, run);
     println!("{}", serde_json::to_string(&plan)?);
     Ok(())
 }

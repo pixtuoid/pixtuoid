@@ -595,14 +595,27 @@ mod tests {
             yml.contains(&format!("runs/{}", issues::VERDICTS)),
             "the file the tier writes"
         );
-        let new = serde_json::to_string(&verify::Label::New).expect("a label");
+        let new = serde_json::to_value(verify::Label::New).expect("a label");
+        let verdicts = serde_json::to_value(issues::Verdicts {
+            os: "macos".into(),
+            shard: Some(1),
+            runs: vec![issues::RunVerdict {
+                source: "codex".into(),
+                key: "codex/tool-run".into(),
+                version: None,
+                label: verify::Label::New,
+                findings: Vec::new(),
+            }],
+        })
+        .expect("verdicts");
+        assert_eq!(verdicts["runs"][0]["label"], new);
         assert!(
-            yml.contains(&format!(".label == {new}")),
-            "a run that passed with a New finding uploads only as its label reads"
+            yml.contains(&format!(".runs | any(.label == {new})")),
+            "a run that passed with a New finding uploads only as its verdicts read"
         );
         for leg in legs() {
             assert_eq!(
-                yml.matches(&format!("{}:", issues::artifact_output(leg)))
+                yml.matches(&format!("{}:", issues::runs_url_output(leg)))
                     .count(),
                 2,
                 "{leg}'s uploaded runs, as the job's output and the workflow's"

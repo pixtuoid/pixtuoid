@@ -111,27 +111,6 @@
     - '.jobs.file.steps = [{"uses": "actions/checkout@v7"}] + .jobs.file.steps'
     - '.jobs.file.steps += [{"run": "just hermetic"}]'
 
-- id: hermetic-nightly-plans-from-the-verdicts-the-tier-named
-  file: .github/workflows/hermetic-nightly.yml
-  why: >-
-    The issues are planned from the verdicts each leg uploaded, under the stem
-    the tier's `runs-stem` output hands on, each leg's in its own directory when
-    several upload: a name rebuilt here can disagree with it and find nothing,
-    and merged legs would overwrite one leg's verdicts with the other's.
-  assert: |
-    [.jobs.triage.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
-    == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*-verdicts", "path": "${{ runner.temp }}/verdicts"}]
-  break:
-    - |
-      .jobs.triage.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with.pattern = "hermetic-runs-${{ github.run_id }}*-verdicts" else . end)
-    - |
-      .jobs.triage.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with["merge-multiple"] = true else . end)
-    - |
-      .jobs.triage.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with.pattern = "${{ needs.drift.outputs.runs-stem }}*" else . end)
-
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
   why: >-

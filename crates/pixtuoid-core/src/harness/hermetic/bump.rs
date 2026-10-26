@@ -19,7 +19,7 @@ use crate::harness::sources_root;
 pub const MOVED: &str = "moved.json";
 
 /// The `hermetic.yml` output `leg` reports its [`MOVED`] rows as.
-pub(crate) fn moved_output(leg: Leg) -> String {
+fn moved_output(leg: Leg) -> String {
     format!("moved_{}_{}", leg.os, leg.shard)
 }
 

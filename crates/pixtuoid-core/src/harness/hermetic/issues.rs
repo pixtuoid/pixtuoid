@@ -2,14 +2,13 @@
 //! Pass, one per leg that lost its verdicts, and what each night does to
 //! them. The workflow only carries a [`Plan`] out with `gh`. Every input is
 //! untrusted, since the legs ran just-published CLIs: what one could forge is
-//! a `hermetic`-labelled issue's text, never code.
+//! a `hermetic`-labelled issue's text and whether it is open, never code.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::bump::moved_output;
 use super::verify::Label;
 use super::{Leg, OSES, legs, shard_of};
 
@@ -108,17 +107,17 @@ pub struct Plan {
     /// Each issue's action, in order.
     pub(crate) actions: Vec<Action>,
     /// Why the night's verdicts are incomplete; any entry turns the filing red.
-    pub lost: Vec<String>,
+    pub(crate) lost: Vec<String>,
 }
 
 /// The `hermetic.yml` output `leg` names its uploaded runs' URL in.
-pub(crate) fn artifact_output(leg: Leg) -> String {
-    format!("artifact_{}_{}", leg.os, leg.shard)
+pub(crate) fn runs_url_output(leg: Leg) -> String {
+    format!("runs_url_{}_{}", leg.os, leg.shard)
 }
 
 /// What one of the plan's issues is about.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Key {
+enum Subject {
     Source(String),
     Leg(Leg),
 }
@@ -130,7 +129,7 @@ const LEG_MARKER: &str = "<!-- hermetic-leg: ";
 /// What closes either hidden line.
 const MARKER_END: &str = " -->";
 
-impl Key {
+impl Subject {
     /// The hidden line that names it in its issue's body: a title someone
     /// else writes can look the same.
     fn marker(&self) -> String {
@@ -140,7 +139,7 @@ impl Key {
         }
     }
 
-    /// The key `body`'s marker names, if it has one.
+    /// The subject `body`'s marker names, if it has one.
     fn of(body: &str) -> Option<Self> {
         body.lines().find_map(|line| {
             let line = line.trim();
@@ -169,15 +168,14 @@ impl Key {
     }
 }
 
-/// One leg's night, as the drift job's outputs and its upload tell it.
+/// One leg's night, as its verdicts and the drift job's outputs tell it.
 struct Night<'a> {
-    finished: bool,
-    report: Report<'a>,
-    artifact: Option<&'a str>,
+    reported: Reported<'a>,
+    runs_url: Option<&'a str>,
 }
 
 /// What a leg reported.
-enum Report<'a> {
+enum Reported<'a> {
     Missing,
     /// Verdicts of the sources its shard runs.
     Valid(&'a Verdicts),
@@ -187,50 +185,55 @@ enum Report<'a> {
 
 impl Night<'_> {
     fn verdicts(&self) -> Option<&Verdicts> {
-        match self.report {
-            Report::Valid(v) => Some(v),
-            Report::Missing | Report::Invalid(_) => None,
+        match self.reported {
+            Reported::Valid(v) => Some(v),
+            Reported::Missing | Reported::Invalid(_) => None,
         }
     }
 }
 
 /// What to do with the `hermetic` issues `issues`, given the drift job's
-/// outputs, every leg's [`Verdicts`] and the run's URL. A leg whose verdicts
-/// are missing, or name a leg or a source the matrix gives it no part in, is
-/// lost: it files an issue of its own, and the night closes nothing. A
-/// source's issue closes only on a night no leg is lost and both legs running
-/// it judged each of its runs Pass; a leg's, once it reported again.
+/// outputs, every verdicts file the legs uploaded and the run's URL. A leg
+/// whose verdicts are missing, or name a leg or a source the matrix gives it no
+/// part in, is lost: it files an issue of its own, and no source's issue closes
+/// that night. A source's closes only on a night no leg is lost and both legs
+/// running it reported its runs, each Pass; a leg's, once it reported again.
 pub fn plan(
     drift: &Map<String, Value>,
-    verdicts: &[Verdicts],
+    reported: &[std::io::Result<Verdicts>],
     issues: &[Issue],
     run_url: &str,
 ) -> Plan {
-    let output = |name: String| {
-        drift
-            .get(&name)
-            .and_then(Value::as_str)
-            .filter(|v| !v.is_empty())
-    };
     let mut nights: BTreeMap<Leg, Night<'_>> = legs()
         .map(|leg| {
+            let runs_url = drift
+                .get(&runs_url_output(leg))
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty());
             let night = Night {
-                finished: output(moved_output(leg)).is_some(),
-                report: Report::Missing,
-                artifact: output(artifact_output(leg)),
+                reported: Reported::Missing,
+                runs_url,
             };
             (leg, night)
         })
         .collect();
     let mut lost = Vec::new();
-    for v in verdicts {
+    for v in reported {
+        let v = match v {
+            Ok(v) => v,
+            Err(e) => {
+                lost.push(format!("unreadable verdicts: {e}"));
+                continue;
+            }
+        };
         let Some((leg, night)) = nights
             .iter_mut()
             .find(|(leg, _)| leg.os == v.os && Some(leg.shard) == v.shard)
         else {
+            let shard = v.shard.map_or("no shard".into(), |n| format!("shard {n}"));
             lost.push(format!(
-                "verdicts named no leg of the matrix: {} shard {:?}",
-                v.os, v.shard
+                "verdicts named no leg of the matrix: {}, {shard}",
+                v.os
             ));
             continue;
         };
@@ -238,31 +241,31 @@ pub fn plan(
             .runs
             .iter()
             .find(|r| shard_of(&r.source) != Some(leg.shard));
-        night.report = match (&night.report, stray) {
-            (Report::Missing, None) => Report::Valid(v),
-            (Report::Missing, Some(r)) => Report::Invalid(format!(
+        night.reported = match (&night.reported, stray) {
+            (Reported::Missing, None) => Reported::Valid(v),
+            (Reported::Missing, Some(r)) => Reported::Invalid(format!(
                 "a run of {}, which its shard does not run",
                 r.source
             )),
-            (Report::Valid(_) | Report::Invalid(_), _) => {
-                Report::Invalid("its verdicts twice".into())
+            (Reported::Valid(_) | Reported::Invalid(_), _) => {
+                Reported::Invalid("its verdicts twice".into())
             }
         };
     }
 
-    let mut ours: BTreeMap<Key, &Issue> = BTreeMap::new();
+    let mut ours: BTreeMap<Subject, &Issue> = BTreeMap::new();
     for issue in issues {
-        let Some(key) = Key::of(&issue.body) else {
+        let Some(subject) = Subject::of(&issue.body) else {
             continue;
         };
-        let kept = ours.entry(key).or_insert(issue);
+        let kept = ours.entry(subject).or_insert(issue);
         let open = |i: &Issue| i.state == State::Open;
         if (open(issue), issue.number) > (open(kept), kept.number) {
             *kept = issue;
         }
     }
 
-    let mut filed: BTreeMap<Key, String> = BTreeMap::new();
+    let mut filed: BTreeMap<Subject, String> = BTreeMap::new();
     let mut failing: BTreeMap<&str, Vec<(Leg, &RunVerdict)>> = BTreeMap::new();
     for (leg, night) in &nights {
         for r in night.verdicts().iter().flat_map(|v| &v.runs) {
@@ -273,30 +276,29 @@ pub fn plan(
     }
     for (source, rows) in failing {
         filed.insert(
-            Key::Source(source.to_owned()),
+            Subject::Source(source.to_owned()),
             source_note(&rows, &nights, run_url),
         );
     }
     for (leg, night) in &nights {
-        let why = match (night.finished, &night.report) {
-            (false, _) => "never finished its run".to_owned(),
-            (true, Report::Missing) => "finished its run but reported no verdicts".to_owned(),
-            (true, Report::Invalid(what)) => format!("finished its run but reported {what}"),
-            (true, Report::Valid(_)) => continue,
+        let why = match &night.reported {
+            Reported::Missing => "reported no verdicts".to_owned(),
+            Reported::Invalid(what) => format!("reported {what}"),
+            Reported::Valid(_) => continue,
         };
         lost.push(format!("{leg} {why}"));
         let runs = night
-            .artifact
+            .runs_url
             .map_or(String::new(), |url| format!(" [Its runs.]({url})"));
         filed.insert(
-            Key::Leg(*leg),
-            format!("**Unfinished** on {leg}, in {run_url}: the leg {why}, so no verdict says what it ran.{runs}\n"),
+            Subject::Leg(*leg),
+            format!("**Lost** on {leg}, in {run_url}: the leg {why}, so no verdict says what it ran.{runs}\n"),
         );
     }
 
     let mut actions = Vec::new();
-    for (key, note) in &filed {
-        actions.push(match ours.get(key) {
+    for (subject, note) in &filed {
+        actions.push(match ours.get(subject) {
             Some(issue) if issue.state == State::Open => Action::Comment {
                 number: issue.number,
                 body: note.clone(),
@@ -306,21 +308,23 @@ pub fn plan(
                 body: note.clone(),
             },
             None => Action::Open {
-                title: key.title(),
-                body: format!("{}\n{note}", key.marker()),
+                title: subject.title(),
+                body: format!("{}\n{note}", subject.marker()),
             },
         });
     }
-    for (key, issue) in &ours {
-        if issue.state != State::Open || filed.contains_key(key) {
+    for (subject, issue) in &ours {
+        if issue.state != State::Open || filed.contains_key(subject) {
             continue;
         }
-        let body = match key {
+        let body = match subject {
             // Not filed tonight, so it reported.
-            Key::Leg(leg) => {
-                format!("{leg} finished its run and reported its verdicts in {run_url}.")
+            Subject::Leg(leg) => {
+                format!("{leg} reported its verdicts in {run_url}.")
             }
-            Key::Source(source) if lost.is_empty() && passed(source, &nights) => {
+            Subject::Source(source)
+                if lost.is_empty() && reported_on_every_leg(source, &nights) =>
+            {
                 format!("Every leg that runs {source} judged each of its runs Pass in {run_url}.")
             }
             _ => continue,
@@ -333,25 +337,20 @@ pub fn plan(
     Plan { actions, lost }
 }
 
-/// Whether both legs of the shard that runs `source` reported its runs, and
-/// judged each Pass.
-fn passed(source: &str, nights: &BTreeMap<Leg, Night<'_>>) -> bool {
+/// Whether both legs of the shard that runs `source` reported its runs.
+fn reported_on_every_leg(source: &str, nights: &BTreeMap<Leg, Night<'_>>) -> bool {
     let Some(shard) = shard_of(source) else {
         return false;
     };
     OSES.iter().all(|&os| {
-        let runs: Vec<&RunVerdict> = nights[&Leg { os, shard }]
+        nights[&Leg { os, shard }]
             .verdicts()
-            .iter()
-            .flat_map(|v| &v.runs)
-            .filter(|r| r.source == source)
-            .collect();
-        !runs.is_empty() && runs.iter().all(|r| r.label == Label::Pass)
+            .is_some_and(|v| v.runs.iter().any(|r| r.source == source))
     })
 }
 
-/// A failing source's note: its worst label and legs, then each run that did
-/// not pass with each leg's version, label, findings and runs.
+/// A failing source's note: its worst label and legs, then each run not
+/// labelled Pass with each leg's version, label, findings and runs.
 fn source_note(
     rows: &[(Leg, &RunVerdict)],
     nights: &BTreeMap<Leg, Night<'_>>,
@@ -377,7 +376,7 @@ fn source_note(
                 .as_ref()
                 .map_or(String::new(), |v| format!(" ({v})"));
             let runs = nights[leg]
-                .artifact
+                .runs_url
                 .map_or(String::new(), |url| format!(" · [its runs]({url})"));
             note += &format!("\n#### {leg}{version}: {:?}{runs}\n", r.label);
             for (label, finding) in &r.findings {
@@ -391,24 +390,23 @@ fn source_note(
 #[cfg(test)]
 mod tests {
     use super::super::SHARDS;
+    use super::super::bump::repo_root;
     use super::*;
 
     const RUN: &str = "https://github.com/o/r/actions/runs/1";
 
-    /// The drift outputs of a night every leg finished, those in `uploaded`
-    /// having uploaded their runs.
+    /// The drift outputs of a night whose legs in `uploaded` uploaded their runs.
     fn drift(uploaded: &[(&str, usize)]) -> Map<String, Value> {
-        let mut drift = Map::new();
-        for leg in legs() {
-            drift.insert(moved_output(leg), "[]".into());
-            let url = if uploaded.contains(&(leg.os, leg.shard)) {
-                format!("https://a/{}-{}", leg.os, leg.shard)
-            } else {
-                String::new()
-            };
-            drift.insert(artifact_output(leg), url.into());
-        }
-        drift
+        legs()
+            .map(|leg| {
+                let url = if uploaded.contains(&(leg.os, leg.shard)) {
+                    format!("https://a/{}-{}", leg.os, leg.shard)
+                } else {
+                    String::new()
+                };
+                (runs_url_output(leg), url.into())
+            })
+            .collect()
     }
 
     fn run(source: &str, scenario: &str, label: Label, finding: &str) -> RunVerdict {
@@ -427,7 +425,7 @@ mod tests {
 
     /// Every leg's verdicts: each source of its shard Pass but those `edit`
     /// rewrites.
-    fn night(edit: impl Fn(&str, &mut Vec<RunVerdict>)) -> Vec<Verdicts> {
+    fn night(edit: impl Fn(&str, &mut Vec<RunVerdict>)) -> Vec<std::io::Result<Verdicts>> {
         legs()
             .map(|leg| {
                 let mut runs: Vec<RunVerdict> = SHARDS[leg.shard - 1]
@@ -435,25 +433,40 @@ mod tests {
                     .map(|source| run(source, "tool-run", Label::Pass, ""))
                     .collect();
                 edit(leg.os, &mut runs);
-                Verdicts {
+                Ok(Verdicts {
                     os: leg.os.into(),
                     shard: Some(leg.shard),
                     runs,
-                }
+                })
             })
             .collect()
     }
 
-    fn issue(number: u64, state: State, key: &Key) -> Issue {
+    fn without(
+        reported: Vec<std::io::Result<Verdicts>>,
+        os: &str,
+        shard: usize,
+    ) -> Vec<std::io::Result<Verdicts>> {
+        reported
+            .into_iter()
+            .filter(|v| !matches!(v, Ok(v) if v.os == os && v.shard == Some(shard)))
+            .collect()
+    }
+
+    fn issue(number: u64, state: State, subject: &Subject) -> Issue {
         Issue {
             number,
             state,
-            body: format!("{}\nbody", key.marker()),
+            body: format!("{}\nbody", subject.marker()),
         }
     }
 
-    fn hermes() -> Key {
-        Key::Source("hermes".into())
+    fn hermes() -> Subject {
+        Subject::Source("hermes".into())
+    }
+
+    fn hermes_shard() -> usize {
+        shard_of("hermes").expect("a sharded source")
     }
 
     /// On hermes's legs: its tool-run Fails on both OSes, and its permission
@@ -479,9 +492,15 @@ mod tests {
         }
     }
 
+    fn closes(plan: &Plan, number: u64) -> bool {
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, Action::Close { number: n, .. } if *n == number))
+    }
+
     #[test]
     fn a_failing_source_opens_one_issue_naming_each_run_its_legs_and_their_runs() {
-        let shard = shard_of("hermes").expect("a sharded source");
+        let shard = hermes_shard();
         let plan = plan(&drift(&[("macos", shard)]), &night(hermes_fails), &[], RUN);
         let [Action::Open { title, body }] = &plan.actions[..] else {
             panic!("one issue for the one failing source: {:?}", plan.actions);
@@ -538,13 +557,13 @@ mod tests {
     #[test]
     fn a_source_with_an_issue_comments_on_it_or_reopens_it() {
         let open = [
-            issue(7, State::Open, &hermes()),
-            issue(3, State::Closed, &hermes()),
+            issue(3, State::Open, &hermes()),
+            issue(7, State::Closed, &hermes()),
         ];
         let plan = plan(&drift(&[]), &night(hermes_fails), &open, RUN);
         assert!(
-            matches!(&plan.actions[..], [Action::Comment { number: 7, .. }]),
-            "the open one of the key: {:?}",
+            matches!(&plan.actions[..], [Action::Comment { number: 3, .. }]),
+            "the open one, though a closed one is newer: {:?}",
             plan.actions
         );
         let closed = [
@@ -562,46 +581,36 @@ mod tests {
     #[test]
     fn a_source_issue_closes_only_on_a_pass_every_leg_reported() {
         let open = [issue(7, State::Open, &hermes())];
-        let closes = |verdicts: &[Verdicts], drift: &Map<String, Value>| {
-            plan(drift, verdicts, &open, RUN)
-                .actions
-                .iter()
-                .any(|a| matches!(a, Action::Close { number: 7, .. }))
+        let closes = |reported: &[std::io::Result<Verdicts>]| {
+            closes(&plan(&drift(&[]), reported, &open, RUN), 7)
         };
-        let all = drift(&[]);
+        assert!(closes(&night(|_, _| {})), "both its legs judged it Pass");
+        let other = 3 - hermes_shard();
         assert!(
-            closes(&night(|_, _| {}), &all),
-            "both its legs judged it Pass"
-        );
-        let mut lost_leg = all.clone();
-        lost_leg.insert(
-            moved_output(Leg {
-                os: "windows",
-                shard: 1,
-            }),
-            "".into(),
-        );
-        assert!(
-            !closes(&night(|_, _| {}), &lost_leg),
+            !closes(&without(night(|_, _| {}), "macos", other)),
             "a lost leg's runs are unknown"
         );
-        let unreported: Vec<Verdicts> = night(|_, _| {})
-            .into_iter()
-            .filter(|v| {
-                !(v.os == "windows"
-                    && v.shard == Some(shard_of("hermes").expect("a sharded source")))
-            })
-            .collect();
-        assert!(!closes(&unreported, &all), "a leg that reported nothing");
+        assert!(
+            !closes(&without(night(|_, _| {}), "windows", hermes_shard())),
+            "a leg that reported nothing"
+        );
         let absent = night(|os, runs| {
             if os == "windows" {
                 runs.retain(|r| r.source != "hermes");
             }
         });
-        assert!(!closes(&absent, &all), "a leg that never judged it");
-        let renamed = [issue(8, State::Open, &Key::Source("gone".into()))];
+        assert!(!closes(&absent), "a leg that never judged it");
+        let new = night(|os, runs| {
+            if os == "windows" {
+                for r in runs.iter_mut().filter(|r| r.source == "hermes") {
+                    *r = run("hermes", "tool-run", Label::New, "/type: `x`");
+                }
+            }
+        });
+        assert!(!closes(&new), "a run that passed with a New finding");
+        let renamed = [issue(8, State::Open, &Subject::Source("gone".into()))];
         assert!(
-            plan(&all, &night(|_, _| {}), &renamed, RUN)
+            plan(&drift(&[]), &night(|_, _| {}), &renamed, RUN)
                 .actions
                 .is_empty(),
             "a source no shard runs has no leg to pass on"
@@ -609,54 +618,64 @@ mod tests {
     }
 
     #[test]
-    fn a_leg_that_reported_no_verdicts_files_its_own_issue_and_closes_nothing() {
-        let mut lost = drift(&[("macos", 1)]);
-        lost.insert(
-            moved_output(Leg {
-                os: "macos",
-                shard: 1,
-            }),
-            "".into(),
-        );
-        let unreported: Vec<Verdicts> = night(|_, _| {})
-            .into_iter()
-            .filter(|v| !(v.os == "windows" && v.shard == Some(2)))
-            .collect();
+    fn a_leg_that_reported_no_verdicts_files_its_own_issue_and_closes_no_source_issue() {
+        let unreported = without(without(night(|_, _| {}), "macos", 1), "windows", 2);
         let open = [issue(7, State::Open, &hermes())];
-        let plan = plan(&lost, &unreported, &open, RUN);
+        let plan = plan(&drift(&[("macos", 1)]), &unreported, &open, RUN);
         assert_eq!(
             plan.lost,
             [
-                "macos, shard 1 never finished its run",
-                "windows, shard 2 finished its run but reported no verdicts",
+                "macos, shard 1 reported no verdicts",
+                "windows, shard 2 reported no verdicts",
             ]
         );
-        let titles: Vec<&str> = plan
+        let opened: Vec<(&str, &str)> = plan
             .actions
             .iter()
             .filter_map(|a| match a {
-                Action::Open { title, .. } => Some(title.as_str()),
+                Action::Open { title, body } => Some((title.as_str(), body.as_str())),
                 _ => None,
             })
             .collect();
         assert_eq!(
-            titles,
+            opened.iter().map(|(title, _)| *title).collect::<Vec<_>>(),
             [
                 "hermetic: macos, shard 1 lost its verdicts",
                 "hermetic: windows, shard 2 lost its verdicts",
             ]
         );
         assert!(
-            !plan
-                .actions
-                .iter()
-                .any(|a| matches!(a, Action::Close { .. }))
+            opened[0].1.contains(&format!(
+                "**Lost** on macos, shard 1, in {RUN}: the leg reported no verdicts, so no \
+                 verdict says what it ran. [Its runs.](https://a/macos-1)"
+            )),
+            "{}",
+            opened[0].1
         );
+        assert!(!closes(&plan, 7));
+    }
+
+    #[test]
+    fn an_unreadable_verdicts_file_is_lost_and_closes_no_source_issue() {
+        let mut reported = without(night(|_, _| {}), "macos", 1);
+        reported.push(Err(std::io::Error::other(
+            "verdicts.json: EOF while parsing",
+        )));
+        let open = [issue(7, State::Open, &hermes())];
+        let plan = plan(&drift(&[]), &reported, &open, RUN);
+        assert_eq!(
+            plan.lost,
+            [
+                "unreadable verdicts: verdicts.json: EOF while parsing",
+                "macos, shard 1 reported no verdicts",
+            ]
+        );
+        assert!(!closes(&plan, 7));
     }
 
     #[test]
     fn a_legs_issue_closes_once_it_reports_again() {
-        let leg = Key::Leg(Leg {
+        let leg = Subject::Leg(Leg {
             os: "windows",
             shard: 1,
         });
@@ -670,9 +689,7 @@ mod tests {
             plan.actions,
             [Action::Close {
                 number: 10,
-                body: format!(
-                    "windows, shard 1 finished its run and reported its verdicts in {RUN}."
-                ),
+                body: format!("windows, shard 1 reported its verdicts in {RUN}."),
             }]
         );
     }
@@ -689,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn a_leg_that_reported_what_it_could_not_have_is_lost_and_closes_nothing() {
+    fn a_leg_that_reported_what_it_could_not_have_is_lost_and_closes_no_source_issue() {
         let open = [issue(7, State::Open, &hermes())];
         let forged = night(|os, runs| {
             if os == "windows" && runs[0].source == SHARDS[0][0] {
@@ -699,9 +716,7 @@ mod tests {
         let p = plan(&drift(&[]), &forged, &open, RUN);
         assert_eq!(
             p.lost,
-            [
-                "windows, shard 1 finished its run but reported a run of fake0, which its shard does not run"
-            ]
+            ["windows, shard 1 reported a run of fake0, which its shard does not run"]
         );
         assert!(
             matches!(&p.actions[..], [Action::Open { title, .. }] if title == "hermetic: windows, shard 1 lost its verdicts"),
@@ -709,34 +724,112 @@ mod tests {
             p.actions
         );
         let mut twice = night(|_, _| {});
-        twice.push(twice[0].clone());
+        let first = twice[0].as_ref().map(Clone::clone).expect("verdicts");
+        twice.push(Ok(first));
         assert_eq!(
             plan(&drift(&[]), &twice, &open, RUN).lost,
-            ["macos, shard 1 finished its run but reported its verdicts twice"]
+            ["macos, shard 1 reported its verdicts twice"]
         );
         let mut stray = night(|_, _| {});
-        stray[0].shard = None;
+        if let Ok(v) = &mut stray[0] {
+            v.shard = None;
+        }
         assert_eq!(
             plan(&drift(&[]), &stray, &open, RUN).lost,
             [
-                "verdicts named no leg of the matrix: macos shard None",
-                "macos, shard 1 finished its run but reported no verdicts",
+                "verdicts named no leg of the matrix: macos, no shard",
+                "macos, shard 1 reported no verdicts",
             ]
         );
     }
 
     #[test]
-    fn a_marker_names_its_key_and_nothing_else_does() {
-        for key in [
+    fn a_marker_names_its_subject_and_nothing_else_does() {
+        for subject in [
             hermes(),
-            Key::Leg(Leg {
+            Subject::Leg(Leg {
                 os: "macos",
                 shard: 2,
             }),
         ] {
-            assert_eq!(Key::of(&format!("text\n{}\n", key.marker())), Some(key));
+            assert_eq!(
+                Subject::of(&format!("text\n{}\n", subject.marker())),
+                Some(subject)
+            );
         }
-        assert_eq!(Key::of("<!-- hermetic-leg: linux-1 -->"), None);
-        assert_eq!(Key::of("hermetic: hermes"), None);
+        assert_eq!(Subject::of("<!-- hermetic-leg: linux-1 -->"), None);
+        assert_eq!(Subject::of("hermetic: hermes"), None);
+    }
+
+    fn file_step() -> String {
+        let yml =
+            std::fs::read_to_string(repo_root().join(".github/workflows/hermetic-nightly.yml"))
+                .expect("hermetic-nightly.yml");
+        let (_, step) = yml
+            .split_once("- name: File the planned issues")
+            .expect("the file step");
+        step.to_owned()
+    }
+
+    #[test]
+    fn the_file_step_reads_every_key_a_plan_holds_and_does_every_action() {
+        let body = || "body".to_owned();
+        let plan = Plan {
+            actions: vec![
+                Action::Open {
+                    title: "hermetic: hermes".into(),
+                    body: body(),
+                },
+                Action::Comment {
+                    number: 1,
+                    body: body(),
+                },
+                Action::Reopen {
+                    number: 2,
+                    body: body(),
+                },
+                Action::Close {
+                    number: 3,
+                    body: body(),
+                },
+            ],
+            lost: vec!["macos, shard 1 reported no verdicts".into()],
+        };
+        let json = serde_json::to_value(&plan).expect("a plan");
+        let step = file_step();
+        let read = |key: &str| {
+            assert!(
+                step.contains(&format!(".{key}")),
+                "the step never reads `.{key}`"
+            )
+        };
+        json.as_object()
+            .expect("an object")
+            .keys()
+            .for_each(|k| read(k));
+        for action in json["actions"].as_array().expect("actions") {
+            let action = action.as_object().expect("an action");
+            action.keys().for_each(|k| read(k));
+            let what = action["do"].as_str().expect("its do");
+            assert!(
+                step.contains(&format!("{what})")),
+                "no case arm does `{what}`"
+            );
+        }
+    }
+
+    #[test]
+    fn the_file_step_admits_only_an_issue_the_planner_would_mark() {
+        let step = file_step();
+        for (name, value) in [
+            ("source", SOURCE_MARKER),
+            ("leg", LEG_MARKER),
+            ("end", MARKER_END),
+        ] {
+            assert!(
+                step.contains(&format!("--arg {name} '{value}'")),
+                "the step's `${name}` is not `{value}`"
+            );
+        }
     }
 }
