@@ -558,11 +558,10 @@ mod tests {
         assert_eq!(d.step(DONE, t2 + SETTLE * 2), Action::Wait, "quits once");
     }
 
-    /// hermes's run, its screens each a second apart: the echo of the prompt
-    /// sits between two rules too, and a working turn's redirect line, which
-    /// an Enter would interrupt, is no composer.
+    /// The echo of the prompt sits between two rules too, and a working turn's
+    /// redirect line, which an Enter would interrupt, is no composer.
     #[test]
-    fn hermes_sends_nothing_into_its_turn_and_quits_under_its_titled_rule() {
+    fn hermes_enters_nothing_into_its_working_turn_nor_onto_its_echo() {
         let (tui, answer) = tui_scenario("hermes", "permission");
         let [refused] = tui.gates else {
             panic!("one gate");
@@ -590,6 +589,11 @@ mod tests {
         let done = include_str!("screens/hermes-done.txt");
         assert_eq!(next(done), Action::Wait, "the screen just changed");
         assert_eq!(d.step(done, t + SETTLE), Action::Quit(tui.quit));
+        assert_eq!(
+            d.composer(),
+            Some(" Explain this error and how to fix it"),
+            "the input line under the titled rule"
+        );
     }
 
     #[test]
