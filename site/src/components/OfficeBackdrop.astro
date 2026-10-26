@@ -645,7 +645,6 @@ const officeDriverUrl = asset('office-driver.js');
     let oneShotBufs = {};
     let audioSR = 44100;
     let gainDezipperS = 0;
-    const ONESHOT_WIRES = [0, 1, 2, 3, 4];
 
     // Copy OUT of wasm memory before the next memory.grow detaches the view — audioSR is a param so no wasm call splits the view from the copy.
     function audioMakeBuffer(ptr, len) {
@@ -678,7 +677,7 @@ const officeDriverUrl = asset('office-driver.js');
       musicGain.gain.value = 0;
       musicGain.connect(audioBus);
       oneShotBufs = {};
-      for (const wire of ONESHOT_WIRES) {
+      for (const wire of office.audio_oneshot_wires()) {
         oneShotBufs[wire] = [];
         // Grow until the engine reports an empty slot, so the Rust-side pool size is never duplicated across the wire.
         for (let j = 0; office.audio_oneshot_len(wire, j) > 0; j++) {
@@ -842,7 +841,7 @@ const officeDriverUrl = asset('office-driver.js');
       const pieces = [];
       // The worker's loop list is sized by the Rust-side loop_count() authority — adopt whatever it sent; audio_adopt_loop validates.
       for (let i = 0; i < data.loops.length; i++) pieces.push({ loop: i, buf: data.loops[i] });
-      for (const wire of ONESHOT_WIRES) {
+      for (const wire of office.audio_oneshot_wires()) {
         for (const buf of data.oneshots[wire] || []) pieces.push({ wire: wire, buf: buf });
       }
       let at = 0;

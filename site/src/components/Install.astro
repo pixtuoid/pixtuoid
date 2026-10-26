@@ -105,7 +105,7 @@ import tabs from '../install.json';
       let restore = 0;
       // capture the resting label ONCE — not after a click, or a rapid second
       // click would capture 'Copied ✓' and the button would stick on it
-      const LABEL = (btn.textContent || 'Copy').trim();
+      const LABEL = btn.textContent.trim();
       const status = btn.parentElement.querySelector('[data-copy-status]');
       function flash(label, announce) {
         btn.textContent = label;

@@ -133,7 +133,6 @@ export interface ShowcaseChannel {
   // OPTIONAL: a channel whose caption would just restate its joined feature's
   // `desc` omits it and falls back to that desc (ChannelStage's `description`).
   caption?: string;
-  duration?: string; // clip badge, m:ss
   status: 'live' | 'soon'; // soon = dimmed placeholder monitor, no assets needed
   default?: boolean; // exactly one — the channel tuned at load
 }

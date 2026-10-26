@@ -7,7 +7,6 @@
     "w": 1664,
     "h": 1408,
     "caption": "every session claims a desk across floors — typing, wandering, coffee runs. swarms scale too: fleets of 100+ agents working on this repo have passed through this very office.",
-    "duration": "0:10",
     "status": "live"
   },
   {
@@ -18,7 +17,6 @@
     "w": 1120,
     "h": 960,
     "caption": "a live OpenClaw gateway walks in as a lobster — its wander is the daemon's pulse: idle ambles, busy shuttles, failing flushes red, shutdown heads for the elevator.",
-    "duration": "0:09",
     "status": "live"
   },
   {
@@ -48,7 +46,6 @@
     "w": 760,
     "h": 640,
     "caption": "idle agents drift to the meeting room — “no tests?” “trust me” “ship it!”",
-    "duration": "0:16",
     "status": "live"
   },
   {
@@ -58,7 +55,6 @@
     "asset": "pets",
     "w": 960,
     "h": 832,
-    "duration": "0:12",
     "status": "live"
   },
   {
