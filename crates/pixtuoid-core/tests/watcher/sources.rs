@@ -399,9 +399,9 @@ async fn omp_source_run_watches_profile_roots_beside_the_primary() {
     handle.abort();
 }
 
-/// An `OmpSource` over `dir`'s primary root, its profiles listed from
-/// `dir/profiles` as omp's enumerator lists them. Its backstop is past every
-/// test deadline, so only the profiles-dir watch can bind a new profile.
+/// An `OmpSource` over `dir`'s primary root, its profile roots every
+/// `dir/profiles/<entry>/agent/sessions`, sorted; a backstop past every test
+/// deadline leaves binding a new profile to the profiles-dir watch.
 fn omp_profiles_source(dir: &std::path::Path) -> pixtuoid_core::source::omp::OmpSource {
     let profiles = dir.join("profiles");
     let mut src =
@@ -441,8 +441,8 @@ async fn write_profile_session(
     pixtuoid_core::AgentId::from_parts("omp", &omp_watcher_key(&transcript))
 }
 
-/// `~/.omp/profiles` usually exists at boot, so a new profile is an entry of the
-/// profiles dir's own watch — not of its anchor, which sees `profiles` only.
+/// Once `profiles` exists, its own watch reports each new profile; its anchor
+/// sees only `profiles` itself.
 #[tokio::test]
 async fn omp_source_rescan_hot_plugs_a_profile_created_mid_run() {
     fast_watch();
@@ -483,8 +483,8 @@ async fn omp_source_rescan_hot_plugs_a_profile_created_mid_run() {
     handle.abort();
 }
 
-/// A fresh install has no `profiles` dir at boot: its anchor reports the dir
-/// appearing with its first profile.
+/// With no `profiles` dir at boot, its anchor reports the dir appearing with its
+/// first profile.
 #[tokio::test]
 async fn omp_source_hot_plugs_a_profiles_dir_created_mid_run() {
     fast_watch();
