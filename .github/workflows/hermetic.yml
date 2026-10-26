@@ -15,9 +15,9 @@ on:
         type: string
         default: pinned
     outputs:
-      runs-stem:
-        description: 'The stem each leg uploads its runs under, as `<runs-stem><os>-<shard>`, when its run fails, times out or is cancelled, or passes with a New finding'
-        value: ${{ jobs.run.outputs.runs-stem }}
+      verdicts-stem:
+        description: 'The stem every leg uploads its verdicts under, as `<verdicts-stem><os>-<shard>`, empty when its run wrote none; a re-run leg replaces its own'
+        value: ${{ jobs.run.outputs.verdicts-stem }}
       moved_macos_1:
         description: 'The macOS shard 1 leg''s `bump::MOVED` rows: each source whose latest passed above its pin'
         value: ${{ jobs.run.outputs.moved_macos_1 }}
@@ -30,6 +30,18 @@ on:
       moved_windows_2:
         description: 'The Windows shard 2 leg''s `bump::MOVED` rows'
         value: ${{ jobs.run.outputs.moved_windows_2 }}
+      runs_url_macos_1:
+        description: 'The URL of the runs the macOS shard 1 leg uploaded, empty when it uploaded none'
+        value: ${{ jobs.run.outputs.runs_url_macos_1 }}
+      runs_url_macos_2:
+        description: 'The macOS shard 2 leg''s uploaded runs'' URL'
+        value: ${{ jobs.run.outputs.runs_url_macos_2 }}
+      runs_url_windows_1:
+        description: 'The Windows shard 1 leg''s uploaded runs'' URL'
+        value: ${{ jobs.run.outputs.runs_url_windows_1 }}
+      runs_url_windows_2:
+        description: 'The Windows shard 2 leg''s uploaded runs'' URL'
+        value: ${{ jobs.run.outputs.runs_url_windows_2 }}
 
 # `run` executes third-party CLIs, so no job here saves a cache
 # (https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#controlling-cache-access-with-cache-mode).
@@ -63,13 +75,18 @@ jobs:
     # contexts, "Context availability") and no step has to reach.
     env:
       RUNS_STEM: hermetic-runs-${{ github.run_id }}-${{ github.run_attempt }}-
+      VERDICTS_STEM: hermetic-verdicts-${{ github.run_id }}-
     outputs:
-      runs-stem: ${{ env.RUNS_STEM }}
+      verdicts-stem: ${{ env.VERDICTS_STEM }}
       # Each leg sets only its own, and a matrix combines its legs' outputs.
       moved_macos_1: ${{ steps.moved.outputs.moved_macos_1 }}
       moved_macos_2: ${{ steps.moved.outputs.moved_macos_2 }}
       moved_windows_1: ${{ steps.moved.outputs.moved_windows_1 }}
       moved_windows_2: ${{ steps.moved.outputs.moved_windows_2 }}
+      runs_url_macos_1: ${{ steps.runs-url.outputs.runs_url_macos_1 }}
+      runs_url_macos_2: ${{ steps.runs-url.outputs.runs_url_macos_2 }}
+      runs_url_windows_1: ${{ steps.runs-url.outputs.runs_url_windows_1 }}
+      runs_url_windows_2: ${{ steps.runs-url.outputs.runs_url_windows_2 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,21 +118,43 @@ jobs:
           OS: ${{ matrix.os }}
           SHARD: ${{ matrix.shard }}
         run: echo "moved_${OS}_${SHARD}=$(cat target/hermetic/runs/moved.json)" >> "$GITHUB_OUTPUT"
-      # A run that passes with a New finding still uploads, for the nightly to
-      # file (`hermetic::NEW_TYPES`).
+      # A run that passes with a New finding still uploads its runs, which the
+      # nightly's issue links.
       - name: Report the new types
         id: new
         if: steps.run.outputs.exit == '0'
         run: |
-          any=$(jq '. > 0' target/hermetic/runs/new-types.json)
+          any=$(jq '.runs | any(.label == "New")' target/hermetic/runs/verdicts.json)
           echo "any=$any" >> "$GITHUB_OUTPUT"
       - if: always() && steps.run.outcome != 'skipped' && (steps.run.outcome != 'success' || steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true')
+        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RUNS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
           path: target/hermetic/runs
           retention-days: 7
           if-no-files-found: error
+      # Every leg's, under a name each attempt replaces, empty when this one wrote
+      # none: the nightly reads the latest (download-artifact v8.0.2 `src/download-artifact.ts:149-150`).
+      - if: always()
+        run: mkdir -p target/hermetic/runs && touch target/hermetic/runs/verdicts.json
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.VERDICTS_STEM }}${{ matrix.os }}-${{ matrix.shard }}
+          path: target/hermetic/runs/verdicts.json
+          retention-days: 1
+          overwrite: true
+      # The issues the nightly files link it (upload-artifact v7 `action.yml`'s
+      # `artifact-url`, empty when the upload failed or never ran).
+      - name: Report the uploaded runs
+        id: runs-url
+        if: always()
+        env:
+          OS: ${{ matrix.os }}
+          SHARD: ${{ matrix.shard }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: echo "runs_url_${OS}_${SHARD}=${URL}" >> "$GITHUB_OUTPUT"
       - name: Fail on a failing verdict
         if: steps.run.outputs.exit != '0'
         env:
