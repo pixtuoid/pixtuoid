@@ -34,9 +34,8 @@ expression: events
     agent_id: 4981741066779379437
     model: gpt-4.1
     effort: ~
-- ActivityEnd:
+- TurnEnd:
     agent_id: 4981741066779379437
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 4981741066779379437
     as_child: false

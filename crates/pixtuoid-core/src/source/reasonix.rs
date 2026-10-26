@@ -194,10 +194,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         }
         // Deliberately Identity-LESS: an end doesn't prove a session worth
         // registering, so an unknown id here rides the reducer's fallback.
-        "Stop" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,
             // Auto Guard (`internal/session/control/approval_orchestration.go:311`,

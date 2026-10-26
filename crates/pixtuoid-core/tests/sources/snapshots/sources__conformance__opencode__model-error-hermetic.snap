@@ -27,6 +27,5 @@ expression: events
     source: opencode
     session_id: ses_e97096053ffehKVNpdavAB968S
     cwd: ~
-- ActivityEnd:
+- TurnEnd:
     agent_id: 13179926787595653109
-    tool_use_id: ~

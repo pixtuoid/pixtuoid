@@ -12,6 +12,5 @@ expression: events
     agent_id: 9187307832883956710
     model: __kimi_env_model__
     effort: ~
-- ActivityEnd:
+- TurnEnd:
     agent_id: 9187307832883956710
-    tool_use_id: ~

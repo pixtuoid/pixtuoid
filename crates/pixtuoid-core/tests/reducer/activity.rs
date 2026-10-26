@@ -7,7 +7,8 @@ use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
 use crate::{
-    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, waiting,
+    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, turn_end,
+    waiting,
 };
 
 #[test]
@@ -436,9 +437,9 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
     );
 }
 
-// An approval prompt BLOCKS a Codex/Reasonix turn, so a turn-end `Stop` (hook,
-// no tool_use_id) arriving while Waiting means the prompt was already resolved
-// upstream — and Reasonix has no second transport to self-heal a stale one.
+// An approval prompt BLOCKS a Codex/Reasonix turn, so a hook `Stop` arriving
+// while Waiting means the prompt was already resolved upstream — and Reasonix has
+// no second transport to self-heal a stale one.
 #[test]
 fn turn_end_stop_hook_resolves_stale_waiting() {
     use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
@@ -462,7 +463,7 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     ));
 
     let end = t0 + Duration::from_millis(800);
-    act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
+    turn_end(&mut r, &mut scene, id, end, Transport::Hook);
     r.tick(
         &mut scene,
         end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
@@ -472,6 +473,26 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
         "turn-end Stop must resolve the stale Waiting to Idle, got {:?}",
         scene.agents.get(&id).unwrap().state
     );
+}
+
+// Reasonix's prompt and its PostToolUse both name no call.
+#[test]
+fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
+    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+    start_as(&mut r, &mut scene, id, "reasonix");
+    waiting(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
+    let end = t0 + Duration::from_millis(800);
+    act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
+    r.tick(
+        &mut scene,
+        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 // kimi kills a still-running PostToolUse(Failure) hook when its turn ends, so a
@@ -507,7 +528,7 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
             );
         }
         let stop = t0 + Duration::from_millis(800);
-        act_end(&mut r, &mut scene, id, None, stop, Transport::Hook);
+        turn_end(&mut r, &mut scene, id, stop, Transport::Hook);
         r.tick(
             &mut scene,
             stop + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
@@ -520,9 +541,8 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
     }
 }
 
-// Codex's JSONL turn end is a None-id ActivityEnd (its output Ends carry the call
-// id), and one can race in just after a fresh PermissionRequest — so only the
-// HOOK-side turn-end signal may resolve a Waiting.
+// A transcript line can race in just after a fresh hook PermissionRequest, so
+// only a HOOK end naming no call may resolve a Waiting.
 #[test]
 fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
@@ -551,6 +571,29 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
             ActivityState::Waiting { .. }
         ),
         "a racing JSONL None-id end must keep the permission prompt up"
+    );
+}
+
+// Codex's rollout ends its turn (`task_complete`) on the JSONL transport.
+#[test]
+fn a_jsonl_turn_end_while_waiting_keeps_waiting() {
+    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("codex", "sess-1");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+    start_as(&mut r, &mut scene, id, "codex");
+    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    let end = t0 + Duration::from_millis(200);
+    turn_end(&mut r, &mut scene, id, end, Transport::Jsonl);
+    r.tick(
+        &mut scene,
+        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
+    );
+    assert!(
+        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+        "a racing JSONL turn end must keep the permission prompt up"
     );
 }
 

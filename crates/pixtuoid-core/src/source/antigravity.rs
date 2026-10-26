@@ -245,10 +245,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             },
         ]),
         // Turn end: the session lives on to the next prompt.
-        "Stop" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))
@@ -474,13 +471,7 @@ mod tests {
         );
         let stop = decode_ag_hook_payload(test_obj(&hook("Stop", serde_json::json!({})))).unwrap();
         assert!(
-            matches!(
-                stop.as_slice(),
-                [AgentEvent::ActivityEnd {
-                    tool_use_id: None,
-                    ..
-                }]
-            ),
+            matches!(stop.as_slice(), [AgentEvent::TurnEnd { .. }]),
             "{stop:?}"
         );
     }

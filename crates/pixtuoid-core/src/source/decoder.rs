@@ -555,12 +555,8 @@ pub(crate) fn shared_hook_arms(
                 parent_id: None,
             }])
         }
-        // Turn end — keep the slot, just settle to idle. Stop must NOT end the
-        // session: turns end many times per session.
-        "Stop" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        // Stop must NOT end the session: turns end many times per session.
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,

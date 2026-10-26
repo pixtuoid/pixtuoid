@@ -568,6 +568,7 @@ mod tests {
                 agent_id: id,
                 tool_use_id: None,
             },
+            AgentEvent::turn_end(id),
             AgentEvent::Waiting {
                 agent_id: id,
                 reason: "x".into(),

@@ -37,6 +37,5 @@ expression: events
 - ActivityEnd:
     agent_id: 8763791353543374442
     tool_use_id: ag-2
-- ActivityEnd:
+- TurnEnd:
     agent_id: 8763791353543374442
-    tool_use_id: ~

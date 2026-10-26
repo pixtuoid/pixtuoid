@@ -357,7 +357,8 @@ impl Reducer {
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id,
-            } => self.apply_activity_end(scene, agent_id, tool_use_id.as_deref(), from, now),
+            } => self.apply_end(scene, agent_id, tool_use_id.as_deref(), from, now),
+            AgentEvent::TurnEnd { agent_id } => self.apply_end(scene, agent_id, None, from, now),
             AgentEvent::Waiting {
                 agent_id,
                 reason,
@@ -439,12 +440,7 @@ impl Reducer {
 
         // `refresh_lineage` stamps the ACTOR too, yet the per-arm `last_event_at`
         // writes are NOT droppable: Rename and SessionStart never reach here.
-        if matches!(
-            event,
-            AgentEvent::ActivityStart { .. }
-                | AgentEvent::ActivityEnd { .. }
-                | AgentEvent::Waiting { .. }
-        ) {
+        if event.refreshes_lineage() {
             scope::refresh_lineage(scene, id, now);
         }
 
@@ -618,10 +614,11 @@ impl Reducer {
     }
 
     /// A matching tool_use_id means the *gated* tool finished, so a parallel
-    /// tool's end can't false-clear a pending permission. A None-id end ON THE
-    /// HOOK transport is a turn-end (Codex/Reasonix `Stop`) and a pending
-    /// approval BLOCKS those CLIs' turns, so the Wait is stale. A JSONL None-id end
-    /// may race the prompt, so only the Hook's resolves it (`jsonl_none_id_end_while_waiting_keeps_waiting`).
+    /// tool's end can't false-clear a pending permission. A HOOK end naming no
+    /// call resolves any wait: an [`AgentEvent::TurnEnd`], since a pending
+    /// approval BLOCKS the turn, or a Reasonix PostToolUse, whose prompt names
+    /// no call either. A JSONL one may race the prompt
+    /// (`a_jsonl_turn_end_while_waiting_keeps_waiting`).
     fn wait_resolved_by(
         &self,
         scene: &SceneState,
@@ -640,8 +637,9 @@ impl Reducer {
             }
     }
 
-    /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it.
-    fn apply_activity_end(
+    /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it, and
+    /// the `TurnEnd` arm, an end naming no call.
+    fn apply_end(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
@@ -655,8 +653,8 @@ impl Reducer {
             // (a denial, or a parallel tool finishing past its own gate).
             self.corr.remove_gate_member(&agent_id, t);
         } else if resolves_wait {
-            // A None-id hook end is a TURN end: every gate on this agent is
-            // stale.
+            // It resolved the wait without naming a call: every gate on this
+            // agent is stale.
             self.corr.gated_before_waiting.remove(&agent_id);
         }
         // A delegating parent's own parallel tool ending must not settle it to
@@ -1170,11 +1168,12 @@ impl Reducer {
     }
 
     /// Hook transport only, on a source whose child hooks arrive unnamed under
-    /// the parent's key: with any Task in flight, hook ActivityStart/End for
-    /// this AgentId is the child's work, so it is dropped. Two exemptions: the
-    /// Task's own PostToolUse (its tool_use_id matches), and a GATED member's
-    /// Start/End — the parent's own approval round (#951), which eating would
-    /// strand in Waiting until the parent's next own event or the stale sweep.
+    /// the parent's key: with any Task in flight, a hook ActivityStart/End or
+    /// TurnEnd for this AgentId is the child's work, so it is dropped. Two
+    /// exemptions: the Task's own PostToolUse (its tool_use_id matches), and a
+    /// GATED member's Start/End — the parent's own approval round (#951), which
+    /// eating would strand in Waiting until the parent's next own event or the
+    /// stale sweep.
     fn suppress_subagent_leak(
         &mut self,
         scene: &mut SceneState,
@@ -1197,6 +1196,7 @@ impl Reducer {
                     .is_some_and(|t| tasks.is_some_and(|s| s.contains(t)));
                 in_task && !is_task_self_end && !is_gated(tool_use_id)
             }
+            AgentEvent::TurnEnd { .. } => in_task,
             _ => false,
         };
         if suppress {

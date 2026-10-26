@@ -209,12 +209,9 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // Turn end, identity-LESS: an end for an unknown agent proves nothing
-        // worth registering. All three of upstream's turn-end causes land here.
-        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        // Identity-LESS: an end for an unknown agent proves nothing worth
+        // registering. All three of upstream's turn-end causes land here.
+        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
@@ -392,10 +389,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             }
             // The transcript twin of the `stop` hook: a tool-less turn's only
             // end signal for transcript-only setups.
-            XAI_TURN_COMPLETED => vec![AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: None,
-            }],
+            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id)],
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some("session_end") {
                     vec![AgentEvent::SessionEnd {
@@ -871,7 +865,7 @@ mod tests {
             "hookEventName": "stop",
             "cwd": "/Users/dev/proj"
         }));
-        assert!(matches!(ev, AgentEvent::ActivityEnd { agent_id, .. }
+        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
     }
 
@@ -1070,13 +1064,10 @@ mod tests {
     #[test]
     fn turn_completed_settles_the_turn_to_idle() {
         let evs = decode_line(xai_line(json!({"sessionUpdate": "turn_completed"})));
-        assert!(matches!(
-            &evs[..],
-            [AgentEvent::ActivityEnd {
-                tool_use_id: None,
-                ..
-            }]
-        ));
+        assert!(
+            matches!(&evs[..], [AgentEvent::TurnEnd { .. }]),
+            "got {evs:?}"
+        );
     }
 
     #[test]

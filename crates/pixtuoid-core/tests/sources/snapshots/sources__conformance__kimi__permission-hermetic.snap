@@ -39,9 +39,8 @@ expression: events
 - ActivityEnd:
     agent_id: 7779058935064654820
     tool_use_id: call_FPU3PAD0BBfBWolT
-- ActivityEnd:
+- TurnEnd:
     agent_id: 7779058935064654820
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 7779058935064654820
     as_child: false

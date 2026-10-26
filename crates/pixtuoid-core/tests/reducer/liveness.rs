@@ -8,7 +8,7 @@ use pixtuoid_core::state::reducer::Reducer;
 
 use crate::{
     DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, proof_of_life,
-    sess_end, waiting,
+    sess_end, turn_end, waiting,
 };
 
 #[test]
@@ -1097,6 +1097,17 @@ fn long_delegation_keeps_parent_and_live_subagent_alive() {
         scene.agents.get(&child).unwrap().exiting_at.is_none(),
         "the live subagent must NOT be cascaded out by a falsely-stale parent"
     );
+}
+
+#[test]
+fn a_childs_turn_end_refreshes_its_parents_lineage() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (parent, child) = delegating_pair(&mut r, &mut scene, "lineage-turn-end", t0);
+    let end = t0 + Duration::from_secs(60);
+    turn_end(&mut r, &mut scene, child, end, Transport::Hook);
+    assert_eq!(scene.agents[&parent].last_event_at, end);
 }
 
 #[test]

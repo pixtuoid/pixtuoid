@@ -24,7 +24,7 @@ use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
 use crate::harness::{
-    CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures, read_json,
+    CaptureRecord, Drive, Driven, HOOK_PAYLOADS, ProcessExit, Reach, captures, read_json,
 };
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
@@ -657,7 +657,7 @@ fn judge(
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
     let unrefused = matches!(scenario.surface, Surface::Tui { .. })
-        && manifest.capture.end == TurnEnd::Exited(tui::UNREFUSED);
+        && manifest.capture.end == ProcessExit::Exited(tui::UNREFUSED);
     if unrefused && manifest.requests > 0 && manifest.unmatched == 0 {
         findings.push((
             Label::Fail,
@@ -961,8 +961,9 @@ fn permission(
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
         let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
+        let turn_ends = count(|e| matches!(e, AgentEvent::TurnEnd { .. }));
         // An End naming a call no Start opened is not this branch's to count.
-        ended_calls.is_empty() && ends == starts + 1
+        ended_calls.is_empty() && ends == starts && turn_ends == 1
     } else {
         // Starts carry call ids (claude-code, whose `PermissionRequest` names
         // none): every started call ends.
@@ -980,15 +981,10 @@ fn permission(
 /// (`a_model_error_script_errs_and_calls_no_tool`), so a run that reached the
 /// model failed.
 fn model_error(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
-    if !events.iter().any(|e| {
-        matches!(
-            e,
-            AgentEvent::ActivityEnd {
-                tool_use_id: None,
-                ..
-            }
-        )
-    }) {
+    if !events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::TurnEnd { .. }))
+    {
         findings.push((Label::Fail, "the failed turn never ended".into()));
     }
 }
@@ -1032,7 +1028,7 @@ fn delegated(
             false
         }
     };
-    // The reducer's untracked site (`apply_activity_end`): an id-less end while
+    // The reducer's untracked site (`apply_end`): an end naming no call while
     // an id-less Task stands.
     let mut standing = BTreeSet::new();
     let mut untracked_ends = BTreeSet::new();
@@ -1050,11 +1046,12 @@ fn delegated(
             }
             AgentEvent::ActivityEnd {
                 agent_id,
-                tool_use_id,
-            } => {
-                if tool_use_id.is_none() && standing.remove(agent_id) {
-                    untracked_ends.insert(*agent_id);
-                }
+                tool_use_id: None,
+            }
+            | AgentEvent::TurnEnd { agent_id } => {
+                untracked_ends.extend(standing.take(agent_id));
+            }
+            AgentEvent::ActivityEnd { agent_id, .. } => {
                 standing.remove(agent_id);
             }
             _ => {}
@@ -1072,10 +1069,7 @@ fn delegated(
                     *agent_id == parent && tasks.contains(&(parent, t.as_str()))
                 }
                 // No run deletes a durable child, so its turn's end is the end a run sees.
-                AgentEvent::ActivityEnd {
-                    agent_id,
-                    tool_use_id: None,
-                } if durable => *agent_id == child,
+                AgentEvent::TurnEnd { agent_id } if durable => *agent_id == child,
                 _ => false,
             })
     };
@@ -1156,11 +1150,9 @@ fn child_error(
     // the session's own (copilot's plain `-p` writes no `session.task_complete`).
     let ended = |parent: AgentId| {
         events.iter().any(|e| match e {
-            AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: None,
+            AgentEvent::TurnEnd { agent_id } | AgentEvent::SessionEnd { agent_id, .. } => {
+                *agent_id == parent
             }
-            | AgentEvent::SessionEnd { agent_id, .. } => *agent_id == parent,
             _ => false,
         })
     };
@@ -1322,7 +1314,7 @@ fn canonical(p: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::{CaptureRecord, TurnEnd};
+    use crate::harness::{CaptureRecord, ProcessExit};
 
     const RECORDED_WORKSPACE: &str = "/private/tmp/pixtuoid-capture/proj";
 
@@ -1348,7 +1340,7 @@ mod tests {
             write_manifest(d.path(), source, |m| {
                 m.scenario = name.into();
                 m.capture.second_turn = Some(crate::harness::SecondTurn {
-                    end: TurnEnd::Exited(0),
+                    end: ProcessExit::Exited(0),
                 });
             });
         }
@@ -1383,7 +1375,7 @@ mod tests {
                 workspace: PathBuf::from(RECORDED_WORKSPACE),
                 cli: "test".into(),
                 version: "test".into(),
-                end: TurnEnd::Exited(0),
+                end: ProcessExit::Exited(0),
                 give_up_reason: None,
                 incomplete: None,
                 second_turn: None,
@@ -1513,7 +1505,9 @@ mod tests {
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(has(&v, Label::Blocked, "did not run"), "{:?}", v.findings());
         let d = lifecycle_run(&sound(), 0);
-        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::Exited(1));
+        write_manifest(d.path(), "codex", |m| {
+            m.capture.end = ProcessExit::Exited(1)
+        });
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "did not complete"),
@@ -1627,7 +1621,7 @@ mod tests {
         write_manifest(d.path(), "omp", |m| {
             m.scenario = "new-session".into();
             m.requests = 0;
-            m.capture.end = TurnEnd::Exited(1);
+            m.capture.end = ProcessExit::Exited(1);
         });
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1772,7 +1766,7 @@ mod tests {
                     reason: "approval".into(),
                     tool_use_id: None,
                 },
-                end(None),
+                AgentEvent::turn_end(agent_id),
             ]
         };
         let judged = |read_ends_as| {
@@ -2080,6 +2074,13 @@ mod tests {
             subagent_findings(&run, ChildEndInference::AnyTaskEnd),
             vec![]
         );
+        let mut turn_ended = run.clone();
+        turn_ended[6] = AgentEvent::turn_end(parent);
+        assert_eq!(
+            subagent_findings(&turn_ended, ChildEndInference::AnyTaskEnd),
+            vec![],
+            "a turn's end is an id-less end too"
+        );
         for inference in [ChildEndInference::None, ChildEndInference::TaskDrain] {
             assert!(child_unended(&run, inference), "{inference:?}");
         }
@@ -2166,10 +2167,7 @@ mod tests {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
             },
-            AgentEvent::ActivityEnd {
-                agent_id: parent,
-                tool_use_id: None,
-            },
+            AgentEvent::turn_end(parent),
         ];
         let judged = |events: &[AgentEvent], reaches: &[(AgentId, Reach)], inference| {
             let mut findings = Vec::new();
@@ -2217,10 +2215,7 @@ mod tests {
             tool_use_id: Some(id.into()),
             detail: Some(detail),
         };
-        let turn_end = |agent_id| AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        };
+        let turn_end = AgentEvent::turn_end;
         let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
             agent_id,
             source: "opencode".into(),
@@ -2404,24 +2399,24 @@ mod tests {
             verify(d.path()).expect("verify")
         };
         let second = |end| Some(crate::harness::SecondTurn { end });
-        let v = judged(TurnEnd::Exited(0), second(TurnEnd::Exited(0)));
+        let v = judged(ProcessExit::Exited(0), second(ProcessExit::Exited(0)));
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         assert!(has(
-            &judged(TurnEnd::Exited(0), None),
+            &judged(ProcessExit::Exited(0), None),
             Label::Fail,
             "named no session for its second turn"
         ));
         assert!(has(
-            &judged(TurnEnd::Exited(0), second(TurnEnd::Exited(1))),
+            &judged(ProcessExit::Exited(0), second(ProcessExit::Exited(1))),
             Label::Blocked,
             "second turn exit 1"
         ));
         assert!(has(
-            &judged(TurnEnd::Exited(0), second(TurnEnd::OutOfTime)),
+            &judged(ProcessExit::Exited(0), second(ProcessExit::OutOfTime)),
             Label::Blocked,
             "second turn was killed"
         ));
-        let v = judged(TurnEnd::Exited(1), None);
+        let v = judged(ProcessExit::Exited(1), None);
         assert_eq!(v.label(), Label::Blocked, "{:?}", v.findings());
         assert!(
             !has(&v, Label::Fail, "named no session"),
@@ -2575,18 +2570,18 @@ mod tests {
             });
             completed_turn(&m, shape, &mut Vec::new())
         };
-        assert!(completed(Shape::Succession, TurnEnd::Exited(0), 0));
-        assert!(!completed(Shape::Succession, TurnEnd::Exited(1), 0));
+        assert!(completed(Shape::Succession, ProcessExit::Exited(0), 0));
+        assert!(!completed(Shape::Succession, ProcessExit::Exited(1), 0));
         assert!(
-            !completed(Shape::Succession, TurnEnd::Signalled, 0),
+            !completed(Shape::Succession, ProcessExit::Signalled, 0),
             "a signal ends no turn"
         );
         assert!(
-            !completed(Shape::Succession, TurnEnd::OutOfTime, 0),
+            !completed(Shape::Succession, ProcessExit::OutOfTime, 0),
             "nor does the budget"
         );
         assert!(
-            !completed(Shape::ToolRun, TurnEnd::Exited(0), 0),
+            !completed(Shape::ToolRun, ProcessExit::Exited(0), 0),
             "a turn that asks the model"
         );
     }
@@ -2725,7 +2720,7 @@ mod tests {
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
-                m.capture.end = TurnEnd::Exited(tui::UNREFUSED);
+                m.capture.end = ProcessExit::Exited(tui::UNREFUSED);
                 m.requests = requests;
                 m.unmatched = unmatched;
             });
@@ -2745,7 +2740,7 @@ mod tests {
         );
         let h = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(h.path(), "codex", |m| {
-            m.capture.end = TurnEnd::Exited(tui::UNREFUSED)
+            m.capture.end = ProcessExit::Exited(tui::UNREFUSED)
         });
         assert_eq!(
             verify(h.path()).expect("verify").label(),
@@ -2769,12 +2764,14 @@ mod tests {
         let d = run_from("codex", "tool-run-recorded", CX_SCENE);
         write_manifest(d.path(), "codex", |m| m.unmatched = 1);
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Script);
-        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::Exited(1));
+        write_manifest(d.path(), "codex", |m| {
+            m.capture.end = ProcessExit::Exited(1)
+        });
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Blocked);
         write_manifest(d.path(), "codex", |m| m.requests = 0);
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Blocked);
         write_manifest(d.path(), "codex", |m| {
-            m.capture.end = TurnEnd::Exited(1);
+            m.capture.end = ProcessExit::Exited(1);
             m.unmatched = 1;
         });
         assert_eq!(
@@ -2789,7 +2786,7 @@ mod tests {
         let judged = |unmatched| {
             let d = run_from("codex", "tool-run-recorded", CX_SCENE);
             write_manifest(d.path(), "codex", |m| {
-                m.capture.end = TurnEnd::OutOfTime;
+                m.capture.end = ProcessExit::OutOfTime;
                 m.requests = 4210;
                 m.unmatched = unmatched;
             });
@@ -2813,7 +2810,9 @@ mod tests {
     #[test]
     fn a_lifecycle_turn_a_budget_killed_blames_no_uninstall() {
         let d = lifecycle_run(&sound(), 0);
-        write_manifest(d.path(), "codex", |m| m.capture.end = TurnEnd::OutOfTime);
+        write_manifest(d.path(), "codex", |m| {
+            m.capture.end = ProcessExit::OutOfTime
+        });
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(
             has(&v, Label::Blocked, "after 2 model requests"),
@@ -2835,10 +2834,10 @@ mod tests {
             });
             verify(d.path()).expect("verify")
         };
-        let v = judged(TurnEnd::Exited(0));
+        let v = judged(ProcessExit::Exited(0));
         assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());
         assert!(!v.judged());
-        let v = judged(TurnEnd::OutOfTime);
+        let v = judged(ProcessExit::OutOfTime);
         assert!(
             has(&v, Label::Blocked, "turn was killed"),
             "the kill comes first: {:?}",
@@ -2859,7 +2858,7 @@ mod tests {
         let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
         write_manifest(d.path(), "claude-code", |m| {
             m.scenario = "permission".into();
-            m.capture.end = TurnEnd::Exited(tui::GAVE_UP);
+            m.capture.end = ProcessExit::Exited(tui::GAVE_UP);
             m.capture.give_up_reason = Some(WHY.into());
         });
         let v = verify(d.path()).expect("verify");
@@ -2906,7 +2905,7 @@ mod tests {
             let d = recorded("openclaw", "model-error", scene);
             write_manifest(d.path(), "openclaw", |m| {
                 m.scenario = "model-error".into();
-                m.capture.end = TurnEnd::Exited(1);
+                m.capture.end = ProcessExit::Exited(1);
             });
             verify(d.path()).expect("verify").findings().to_vec()
         };
@@ -2946,16 +2945,16 @@ mod tests {
                 "did not complete",
             )
         };
-        assert!(!judged("model-error", TurnEnd::Exited(1), 1));
+        assert!(!judged("model-error", ProcessExit::Exited(1), 1));
         assert!(
-            judged("model-error", TurnEnd::Exited(1), 0),
+            judged("model-error", ProcessExit::Exited(1), 0),
             "it never reached the model"
         );
         assert!(
-            judged("model-error", TurnEnd::Signalled, 1),
+            judged("model-error", ProcessExit::Signalled, 1),
             "a signal ends no turn"
         );
-        assert!(judged("tool-run", TurnEnd::Exited(1), 1));
+        assert!(judged("tool-run", ProcessExit::Exited(1), 1));
     }
 
     #[test]
@@ -2968,7 +2967,7 @@ mod tests {
             );
             write_manifest(d.path(), "opencode", |m| {
                 m.scenario = "model-error".into();
-                m.capture.end = TurnEnd::Exited(1);
+                m.capture.end = ProcessExit::Exited(1);
             });
             edit(d.path());
             verify(d.path()).expect("verify")
@@ -2991,23 +2990,22 @@ mod tests {
     #[test]
     fn a_failed_turn_is_held_to_its_end() {
         let agent_id = AgentId::from_parts("kimi", "session");
-        let judged = |tool_use_id: Option<&str>| {
+        let judged = |end: AgentEvent| {
             let mut findings = Vec::new();
-            model_error(
-                &[AgentEvent::ActivityEnd {
-                    agent_id,
-                    tool_use_id: tool_use_id.map(str::to_owned),
-                }],
-                &mut findings,
-            );
+            model_error(&[end], &mut findings);
             findings
         };
-        assert_eq!(judged(None), vec![]);
-        assert!(
-            judged(Some("call"))
+        assert_eq!(judged(AgentEvent::turn_end(agent_id)), vec![]);
+        for tool_use_id in [None, Some("call".to_owned())] {
+            assert!(
+                judged(AgentEvent::ActivityEnd {
+                    agent_id,
+                    tool_use_id
+                })
                 .iter()
                 .any(|f| f.1.contains("never ended"))
-        );
+            );
+        }
     }
 
     #[test]

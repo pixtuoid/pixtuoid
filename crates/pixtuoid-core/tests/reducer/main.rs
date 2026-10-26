@@ -127,6 +127,10 @@ fn act_end(
     );
 }
 
+fn turn_end(r: &mut Reducer, scene: &mut SceneState, id: AgentId, at: SystemTime, tp: Transport) {
+    r.apply(scene, AgentEvent::TurnEnd { agent_id: id }, at, tp);
+}
+
 fn waiting(
     r: &mut Reducer,
     scene: &mut SceneState,

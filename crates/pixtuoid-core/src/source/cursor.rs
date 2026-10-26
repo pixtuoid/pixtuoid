@@ -132,12 +132,9 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 tool_use_id: None,
             },
         ]),
-        // Turn end — deliberately Identity-LESS: an end doesn't prove a session
-        // worth registering.
-        "stop" => Ok(vec![AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id: None,
-        }]),
+        // Deliberately Identity-LESS: an end doesn't prove a session worth
+        // registering.
+        "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
@@ -313,8 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn post_tool_use_and_stop_are_activity_end() {
-        for event in ["postToolUse", "postToolUseFailure", "stop"] {
+    fn post_tool_use_is_an_id_less_activity_end_and_stop_a_turn_end() {
+        for event in ["postToolUse", "postToolUseFailure"] {
             let ev = decode(json!({"hook_event_name": event, "session_id": "s", "cwd": "/r"}));
             assert!(
                 matches!(
@@ -327,6 +324,8 @@ mod tests {
                 "{event} must decode to ActivityEnd with no tool id"
             );
         }
+        let ev = decode(json!({"hook_event_name": "stop", "session_id": "s", "cwd": "/r"}));
+        assert!(matches!(ev, AgentEvent::TurnEnd { .. }), "got {ev:?}");
     }
 
     #[test]

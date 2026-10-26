@@ -655,6 +655,8 @@ pub pixtuoid_core::source::AgentEvent::SessionStart::cwd: std::path::PathBuf
 pub pixtuoid_core::source::AgentEvent::SessionStart::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::source::AgentEvent::SessionStart::session_id: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::SessionStart::source: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::TurnEnd
+pub pixtuoid_core::source::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage
 pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
@@ -2057,6 +2059,8 @@ pub pixtuoid_core::AgentEvent::SessionStart::cwd: std::path::PathBuf
 pub pixtuoid_core::AgentEvent::SessionStart::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::AgentEvent::SessionStart::session_id: alloc::string::String
 pub pixtuoid_core::AgentEvent::SessionStart::source: alloc::string::String
+pub pixtuoid_core::AgentEvent::TurnEnd
+pub pixtuoid_core::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage
 pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64

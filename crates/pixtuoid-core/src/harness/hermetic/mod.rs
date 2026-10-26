@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
-use crate::harness::{CaptureRecord, TurnEnd};
+use crate::harness::{CaptureRecord, ProcessExit};
 use crate::source::registry;
 
 pub mod bump;
@@ -137,13 +137,13 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Whether a CLI whose turn ended as `end` ran this shape's turn as
-    /// scripted: one scripted to fail may exit non-zero, but neither a signal
-    /// nor the budget ends a turn.
-    pub(crate) const fn exits_as_scripted(self, end: TurnEnd) -> bool {
+    /// Whether a CLI whose turn's process exited as `end` ran this shape's
+    /// turn as scripted: one scripted to fail may exit non-zero, but neither a
+    /// signal nor the budget ends a turn.
+    pub(crate) const fn exits_as_scripted(self, end: ProcessExit) -> bool {
         match end {
-            TurnEnd::Exited(0) => true,
-            TurnEnd::Exited(_) => match self {
+            ProcessExit::Exited(0) => true,
+            ProcessExit::Exited(_) => match self {
                 Self::ModelError => true,
                 Self::ToolRun
                 | Self::Permission
@@ -151,7 +151,7 @@ impl Shape {
                 | Self::ChildError
                 | Self::Succession => false,
             },
-            TurnEnd::Signalled | TurnEnd::OutOfTime => false,
+            ProcessExit::Signalled | ProcessExit::OutOfTime => false,
         }
     }
 

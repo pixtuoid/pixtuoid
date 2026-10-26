@@ -45,9 +45,8 @@ expression: events
     source: hermes
     session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- TurnEnd:
     agent_id: 10770421639948276803
-    tool_use_id: ~
 - ModelInfo:
     agent_id: 10770421639948276803
     model: hermetic

@@ -234,10 +234,6 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         tool_use_id: None,
         detail: None,
     };
-    let end = || AgentEvent::ActivityEnd {
-        agent_id,
-        tool_use_id: None,
-    };
 
     match (outer, inner) {
         (EVENT_MSG, i) if EM_TURN_START.contains(&i) => vec![start()],
@@ -280,7 +276,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         // never permission-prompted — no Waiting branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
-        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![end()],
+        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![AgentEvent::turn_end(agent_id)],
         // `last_token_usage` is that turn's reading; the cumulative twin
         // `total_token_usage` must NOT be read — the reducer accumulates
         // deltas, so summing a running total would double-count. codex's
@@ -854,12 +850,12 @@ mod tests {
     }
 
     #[test]
-    fn task_complete_and_abort_end_activity() {
+    fn task_complete_and_abort_end_the_turn() {
         for t in ["task_complete", "turn_aborted"] {
             let out = ev(json!({"type":"event_msg","payload":{"type":t,"turn_id":"t"}}));
             assert!(
-                matches!(out.as_slice(), [AgentEvent::ActivityEnd { .. }]),
-                "{t}"
+                matches!(out.as_slice(), [AgentEvent::TurnEnd { .. }]),
+                "{t}: {out:?}"
             );
         }
     }

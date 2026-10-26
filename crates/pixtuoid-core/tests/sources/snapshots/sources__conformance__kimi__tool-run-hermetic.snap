@@ -31,6 +31,5 @@ expression: events
 - ActivityEnd:
     agent_id: 2084700759427014666
     tool_use_id: call_fOCLg9woHMIi0Vqa
-- ActivityEnd:
+- TurnEnd:
     agent_id: 2084700759427014666
-    tool_use_id: ~

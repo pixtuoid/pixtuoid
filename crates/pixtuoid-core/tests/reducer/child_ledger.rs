@@ -6,7 +6,7 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, Reducer, STRAGGLER_TTL};
 
-use crate::{HOOK_AND_TRANSCRIPT, act_end, act_start, sess_end, start, start_as};
+use crate::{HOOK_AND_TRANSCRIPT, act_end, act_start, sess_end, start, start_as, turn_end};
 
 #[test]
 fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
@@ -68,7 +68,7 @@ fn hook_event_after_the_straggler_window_synthesizes_again() {
 }
 
 /// The 5 s straggler window is the ONLY guard, and past it nothing cares
-/// which arm arrives: a turn-boundary `ActivityEnd` re-registers exactly as an
+/// which arm arrives: a turn-boundary `TurnEnd` re-registers exactly as an
 /// `Identity` does. hermes has no other reaper (`resurrects_on_prompt: false`),
 /// so a turn finishing after the user rotates with `/new` leaves the outgoing id
 /// on the floor until the 30-minute stale sweep — the cost of "a hook is proof of
@@ -83,10 +83,10 @@ fn past_the_straggler_window_any_hook_arm_re_registers_including_a_turn_boundary
     let past = t0 + STRAGGLER_TTL + Duration::from_secs(1);
 
     sess_end(&mut r, &mut scene, ended, false, t0, Transport::Hook);
-    act_end(&mut r, &mut scene, ended, None, past, Transport::Hook);
+    turn_end(&mut r, &mut scene, ended, past, Transport::Hook);
     assert!(
         scene.agents.contains_key(&ended),
-        "an ActivityEnd past the TTL re-registers — the pre-existing behaviour"
+        "a TurnEnd past the TTL re-registers — the pre-existing behaviour"
     );
 
     let with_id = AgentId::from_parts("hermes", "same-but-with-identity");

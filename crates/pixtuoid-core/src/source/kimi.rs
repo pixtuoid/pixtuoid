@@ -63,10 +63,7 @@ pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<Age
         }
         Some("StopFailure") => {
             let agent_id = AgentId::from_parts(SOURCE_NAME, &kimi_session_id(obj)?);
-            Ok(Some(vec![AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: None,
-            }]))
+            Ok(Some(vec![AgentEvent::turn_end(agent_id)]))
         }
         _ => Ok(None),
     }
@@ -168,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_failure_is_activity_end_without_identity() {
+    fn stop_failure_is_a_turn_end_without_identity() {
         let evs = decode_kimi_hook_custom(test_obj(&json!({
             "hook_event_name": "StopFailure",
             "session_id": "s"
@@ -177,7 +174,7 @@ mod tests {
         .unwrap();
         assert_eq!(evs.len(), 1);
         assert!(
-            matches!(&evs[0], AgentEvent::ActivityEnd { tool_use_id: None, agent_id }
+            matches!(&evs[0], AgentEvent::TurnEnd { agent_id }
                 if *agent_id == AgentId::from_parts(SOURCE_NAME, "s")),
             "got {evs:?}"
         );

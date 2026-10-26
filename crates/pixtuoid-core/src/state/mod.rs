@@ -303,7 +303,7 @@ pub struct AgentSlot {
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// Active→Idle debounce mark: set by `ActivityEnd` instead of an immediate
+    /// Active→Idle debounce mark: set by an end instead of an immediate
     /// state flip, expired by `reducer.tick` after `ACTIVE_GRACE_WINDOW`. Hides
     /// the per-tool-call Active flicker rapid PreToolUse → PostToolUse chains
     /// produce in CC.

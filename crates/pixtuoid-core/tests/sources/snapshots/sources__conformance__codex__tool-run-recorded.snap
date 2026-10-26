@@ -65,9 +65,8 @@ expression: events
 - Usage:
     agent_id: 15769043685926036345
     fresh_tokens: 326
-- ActivityEnd:
+- TurnEnd:
     agent_id: 15769043685926036345
-    tool_use_id: ~
 - SessionStart:
     agent_id: 15769043685926036345
     source: codex
@@ -141,9 +140,8 @@ expression: events
 - ActivityEnd:
     agent_id: 15769043685926036345
     tool_use_id: exec-9085f1c8-e2eb-4475-9564-bda3f13e0706
-- ActivityEnd:
+- TurnEnd:
     agent_id: 15769043685926036345
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 15769043685926036345
     as_child: false

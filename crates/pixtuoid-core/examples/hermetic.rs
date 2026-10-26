@@ -2492,9 +2492,9 @@ mod run {
 
         #[test]
         fn a_turn_the_recorder_killed_skips_the_rest_of_its_source() {
-            use pixtuoid_core::harness::{SecondTurn, TurnEnd};
+            use pixtuoid_core::harness::{ProcessExit, SecondTurn};
             let p = hermetic::profile("dsh").expect("dsh's profile");
-            let ended = |end, second: Option<TurnEnd>| Manifest {
+            let ended = |end, second: Option<ProcessExit>| Manifest {
                 source: "dsh".into(),
                 scenario: "subagent".into(),
                 capture: CaptureRecord {
@@ -2522,8 +2522,8 @@ mod run {
                 hung: None,
             };
             let ok = |r: std::io::Result<(Manifest, ())>| r.expect("it ran");
-            ok(release.run(p, "tool-run", ran(ended(TurnEnd::Exited(1), None))));
-            ok(release.run(p, "subagent", ran(ended(TurnEnd::OutOfTime, None))));
+            ok(release.run(p, "tool-run", ran(ended(ProcessExit::Exited(1), None))));
+            ok(release.run(p, "subagent", ran(ended(ProcessExit::OutOfTime, None))));
             let skipped = "skipped: dsh hung in subagent";
             let after = release.run(p, "permission", never).expect_err("skipped");
             assert_eq!(after.to_string(), skipped);
@@ -2535,7 +2535,7 @@ mod run {
                 installed: &installed,
                 hung: None,
             };
-            let second = ended(TurnEnd::Exited(0), Some(TurnEnd::OutOfTime));
+            let second = ended(ProcessExit::Exited(0), Some(ProcessExit::OutOfTime));
             ok(release.run(p, LIFECYCLE, ran(second)));
             assert_eq!(
                 release

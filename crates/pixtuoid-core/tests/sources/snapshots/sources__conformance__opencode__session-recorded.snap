@@ -131,9 +131,8 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: ~
-- ActivityEnd:
+- TurnEnd:
     agent_id: 14713238338899776042
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 14713238338899776042
     as_child: false

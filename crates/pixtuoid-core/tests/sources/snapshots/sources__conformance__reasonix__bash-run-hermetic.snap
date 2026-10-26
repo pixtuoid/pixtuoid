@@ -33,9 +33,8 @@ expression: events
 - ActivityEnd:
     agent_id: 5644278222364037401
     tool_use_id: ~
-- ActivityEnd:
+- TurnEnd:
     agent_id: 5644278222364037401
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 5644278222364037401
     as_child: false

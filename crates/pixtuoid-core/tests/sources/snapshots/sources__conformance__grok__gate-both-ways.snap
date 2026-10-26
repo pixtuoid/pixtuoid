@@ -12,9 +12,8 @@ expression: events
     detail:
       Generic:
         display: run_terminal_command
-- ActivityEnd:
+- TurnEnd:
     agent_id: 9736723902978984545
-    tool_use_id: ~
 - ActivityEnd:
     agent_id: 9736723902978984545
     tool_use_id: call-82befd5f-87a8-4a1b-b5d4-9b1938c92ddc-0
@@ -55,6 +54,5 @@ expression: events
 - SessionEnd:
     agent_id: 9736723902978984545
     as_child: false
-- ActivityEnd:
+- TurnEnd:
     agent_id: 9736723902978984545
-    tool_use_id: ~

@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::{
     DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, delegating_pair,
-    delegating_pair_on, start, start_as, waiting,
+    delegating_pair_on, start, start_as, turn_end, waiting, waiting_for,
 };
 
 #[track_caller]
@@ -95,6 +95,46 @@ fn hook_activity_during_active_task_is_suppressed() {
     assert_eq!(
         scene.agents.get(&parent).unwrap().state,
         ActivityState::Idle
+    );
+}
+
+/// The turn end is the child's, so it must not answer the parent's own prompt.
+#[test]
+fn a_hook_turn_end_during_a_task_is_suppressed() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let parent = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "parent");
+    start_as(&mut r, &mut scene, parent, UNNAMED_CHILD_HOOKS);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        t0,
+        Transport::Hook,
+    );
+    waiting_for(
+        &mut r,
+        &mut scene,
+        parent,
+        "permission",
+        Some("own-1"),
+        t0 + Duration::from_millis(50),
+        Transport::Hook,
+    );
+    let end = t0 + Duration::from_millis(100);
+    turn_end(&mut r, &mut scene, parent, end, Transport::Hook);
+    r.tick(
+        &mut scene,
+        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
+    );
+    assert!(
+        matches!(scene.agents[&parent].state, ActivityState::Waiting { .. }),
+        "got {:?}",
+        scene.agents[&parent].state
     );
 }
 
@@ -355,6 +395,49 @@ fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
             "{source} {parent_tool}"
         );
     }
+}
+
+/// A reasonix skill call returns before its turn can end.
+#[test]
+fn a_turn_end_over_an_untracked_task_walks_out_its_child_under_any_task_end() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let (parent, child) = (
+        AgentId::from_parts("reasonix", "root"),
+        AgentId::from_parts("reasonix", "root:subagent:call_1"),
+    );
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (agent_id, parent_id) in [(parent, None), (child, Some(parent))] {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id,
+                source: "reasonix".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        None,
+        Some("Agent"),
+        t0,
+        Transport::Hook,
+    );
+    let end = t0 + Duration::from_secs(1);
+    turn_end(&mut r, &mut scene, parent, end, Transport::Hook);
+    r.tick(
+        &mut scene,
+        end + B1_CASCADE_GRACE + Duration::from_millis(10),
+    );
+    assert!(scene.agents[&child].exiting_at.is_some());
+    assert!(scene.agents[&parent].exiting_at.is_none());
 }
 
 /// Two reasonix skill calls overlap. The first return walks out the other's
@@ -969,6 +1052,42 @@ fn own_parallel_tool_end_mid_delegation_returns_parent_to_delegating() {
         scene.agents.get(&child).unwrap().exiting_at.is_none(),
         "the own tool's END must not have cascaded the live subtree"
     );
+}
+
+#[test]
+fn a_turn_end_mid_delegation_returns_the_parent_to_delegating() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-turn-end", t0);
+    let t1 = t0 + Duration::from_secs(1);
+
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        t1,
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        Some("Bash: ls"),
+        t1 + Duration::from_millis(100),
+        Transport::Jsonl,
+    );
+    let end = t1 + Duration::from_millis(500);
+    turn_end(&mut r, &mut scene, parent, end, Transport::Hook);
+    r.tick(
+        &mut scene,
+        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
+    );
+    assert_delegating(&scene, parent, "a Task still in flight outlives the turn");
+    assert!(scene.agents[&child].exiting_at.is_none());
 }
 
 #[test]

@@ -49,9 +49,8 @@ expression: events
 - Waiting:
     agent_id: 18041645714302700288
     reason: "approval needed: bash rm NOTE.txt"
-- ActivityEnd:
+- TurnEnd:
     agent_id: 18041645714302700288
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 18041645714302700288
     as_child: false

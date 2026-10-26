@@ -33,9 +33,8 @@ expression: events
 - Usage:
     agent_id: 343160842670398086
     fresh_tokens: 19
-- ActivityEnd:
+- TurnEnd:
     agent_id: 343160842670398086
-    tool_use_id: ~
 - SessionStart:
     agent_id: 343160842670398086
     source: codex
@@ -63,9 +62,8 @@ expression: events
     detail:
       Generic:
         display: apply_patch
-- ActivityEnd:
+- TurnEnd:
     agent_id: 343160842670398086
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 343160842670398086
     as_child: false

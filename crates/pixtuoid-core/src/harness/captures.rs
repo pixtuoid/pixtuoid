@@ -198,10 +198,10 @@ pub const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
 /// turn says why, for [`CaptureRecord::give_up_reason`].
 pub const GAVE_UP_NOTE: &str = "gave-up.txt";
 
-/// How a turn the recorder ran ended.
+/// How the CLI process the recorder ran for a turn exited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TurnEnd {
+pub enum ProcessExit {
     /// It exited with this code.
     Exited(i32),
     /// A signal ended it.
@@ -210,13 +210,13 @@ pub enum TurnEnd {
     OutOfTime,
 }
 
-impl From<std::process::ExitStatus> for TurnEnd {
+impl From<std::process::ExitStatus> for ProcessExit {
     fn from(status: std::process::ExitStatus) -> Self {
         status.code().map_or(Self::Signalled, Self::Exited)
     }
 }
 
-impl std::fmt::Display for TurnEnd {
+impl std::fmt::Display for ProcessExit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Exited(code) => write!(f, "exit {code}"),
@@ -236,7 +236,7 @@ pub struct CaptureRecord {
     /// Its `--version`.
     pub version: String,
     /// How its turn ended.
-    pub end: TurnEnd,
+    pub end: ProcessExit,
     /// Why the turn's driver gave up on it, in its own words, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub give_up_reason: Option<String>,
@@ -255,12 +255,12 @@ pub struct CaptureRecord {
 impl CaptureRecord {
     /// Which of its turns the recorder's budget killed, if one did.
     pub fn killed_turn(&self) -> Option<&'static str> {
-        if self.end == TurnEnd::OutOfTime {
+        if self.end == ProcessExit::OutOfTime {
             Some("turn")
         } else if self
             .second_turn
             .as_ref()
-            .is_some_and(|r| r.end == TurnEnd::OutOfTime)
+            .is_some_and(|r| r.end == ProcessExit::OutOfTime)
         {
             Some("second turn")
         } else {
@@ -283,7 +283,7 @@ impl CaptureRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecondTurn {
     /// How it ended.
-    pub end: TurnEnd,
+    pub end: ProcessExit,
 }
 
 /// Module dirs whose name is NOT the registered source id.

@@ -15,9 +15,8 @@ expression: events
 - ActivityEnd:
     agent_id: 4826445730311160067
     tool_use_id: call_bVSAjlOdCyMUsi4D
-- ActivityEnd:
+- TurnEnd:
     agent_id: 4826445730311160067
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 4826445730311160067
     as_child: false
@@ -52,12 +51,10 @@ expression: events
 - ActivityEnd:
     agent_id: 4826445730311160067
     tool_use_id: call_bVSAjlOdCyMUsi4D
-- ActivityEnd:
+- TurnEnd:
     agent_id: 4826445730311160067
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 4826445730311160067
     as_child: false
-- ActivityEnd:
+- TurnEnd:
     agent_id: 4826445730311160067
-    tool_use_id: ~

@@ -269,10 +269,7 @@ pub(crate) fn decode_copilot_line(
         // Only the root's ends its turn: neither listener of it in 1.0.98's
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
-        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::ActivityEnd {
-            agent_id: root,
-            tool_use_id: None,
-        }],
+        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
         // Copilot's ONLY usage wire is this shutdown summary — one final delta
         // as the session ends. `tokenDetails.input` already EXCLUDES cache
         // reads, so fresh = input + cache_write + output. `cache_write` is an
@@ -907,19 +904,11 @@ mod tests {
     }
 
     #[test]
-    fn session_task_complete_ends_root_activity_with_no_tool_id() {
+    fn session_task_complete_ends_the_roots_turn() {
         let line = r#"{"type":"session.task_complete","data":{},"id":"x","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
-            [
-                AgentEvent::ActivityEnd {
-                    agent_id,
-                    tool_use_id,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert!(tool_use_id.is_none(), "the root settle carries no tool id");
-            }
-            other => panic!("expected one root ActivityEnd, got {other:?}"),
+            [AgentEvent::TurnEnd { agent_id }] => assert_eq!(*agent_id, root()),
+            other => panic!("expected one root TurnEnd, got {other:?}"),
         }
     }
 

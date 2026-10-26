@@ -36,8 +36,8 @@ mod recorder {
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
-        DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn,
-        TurnEnd, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
+        DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
+        SecondTurn, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
         files_under, jsonl_files_under, required_version_probe, slashed_under, version_answer,
         wait_until,
     };
@@ -67,7 +67,7 @@ mod recorder {
     fn exited_as_scripted(source: &str, scenario: &str, record: &CaptureRecord) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(record.end == TurnEnd::Exited(0), |s| {
+            .map_or(record.end == ProcessExit::Exited(0), |s| {
                 record.exited_as_scripted(s.shape)
             })
     }
@@ -396,7 +396,7 @@ mod recorder {
         )?;
         let give_up_reason = give_up_reason(sandbox.path());
         let second_outcome = match plan.second_turn() {
-            Some(_) if end == TurnEnd::OutOfTime => {
+            Some(_) if end == ProcessExit::OutOfTime => {
                 eprintln!("the first turn outran its budget, so its second turn did not run");
                 None
             }
@@ -537,7 +537,7 @@ mod recorder {
             Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
-        if end != TurnEnd::Exited(0) {
+        if end != ProcessExit::Exited(0) {
             eprintln!("WARNING: the CLI's turn ended ({end}) — this capture may be truncated");
             keep_scratch(
                 sandbox,
@@ -995,10 +995,10 @@ mod recorder {
     fn run_turn(
         mut turn: std::process::Command,
         budget: Option<Duration>,
-    ) -> std::io::Result<TurnEnd> {
+    ) -> std::io::Result<ProcessExit> {
         Ok(match budget {
             Some(budget) => {
-                crate::bounded::run(turn, budget)?.map_or(TurnEnd::OutOfTime, TurnEnd::from)
+                crate::bounded::run(turn, budget)?.map_or(ProcessExit::OutOfTime, ProcessExit::from)
             }
             None => turn.status()?.into(),
         })
@@ -1506,7 +1506,7 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
-                    end: TurnEnd::Exited(0),
+                    end: ProcessExit::Exited(0),
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
@@ -1623,7 +1623,7 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "copilot".into(),
                     version: "1.0.98".into(),
-                    end: TurnEnd::Exited(0),
+                    end: ProcessExit::Exited(0),
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
@@ -1817,7 +1817,7 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: versions.0.into(),
-                    end: TurnEnd::Exited(0),
+                    end: ProcessExit::Exited(0),
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
@@ -2859,7 +2859,7 @@ mod recorder {
             let budget = Duration::from_secs(4);
             let started = std::time::Instant::now();
             let end = run_turn(fake_turn(TEST, dir.path()), Some(budget)).expect("it ran");
-            assert_eq!(end, TurnEnd::OutOfTime);
+            assert_eq!(end, ProcessExit::OutOfTime);
             assert!(started.elapsed() < budget * 2, "it outlived its budget");
             let before = beaten(dir.path());
             assert!(before > 0, "the grandchild never ran, so it proves nothing");
@@ -2915,8 +2915,8 @@ mod recorder {
                 turn.args([flag, &format!("exit {code}")]);
                 run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran")
             };
-            assert_eq!(exited(0), TurnEnd::Exited(0));
-            assert_eq!(exited(3), TurnEnd::Exited(3));
+            assert_eq!(exited(0), ProcessExit::Exited(0));
+            assert_eq!(exited(3), ProcessExit::Exited(3));
         }
 
         /// A driver is a Unix shell script.
@@ -2936,7 +2936,7 @@ mod recorder {
             let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
             assert_eq!(
                 run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran"),
-                TurnEnd::Exited(3)
+                ProcessExit::Exited(3)
             );
             assert_eq!(give_up_reason(sandbox.path()).as_deref(), Some(WHY));
         }
@@ -2974,11 +2974,11 @@ mod recorder {
                 workspace: PathBuf::from("/ws"),
                 cli: "cli".into(),
                 version: "1".into(),
-                end: TurnEnd::Exited(code),
+                end: ProcessExit::Exited(code),
                 give_up_reason: None,
                 incomplete: None,
                 second_turn: second.map(|code| SecondTurn {
-                    end: TurnEnd::Exited(code),
+                    end: ProcessExit::Exited(code),
                 }),
                 note_survived: true,
             };

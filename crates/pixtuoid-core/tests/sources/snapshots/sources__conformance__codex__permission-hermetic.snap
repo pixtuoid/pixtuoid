@@ -23,9 +23,8 @@ expression: events
 - Usage:
     agent_id: 13515510818775613026
     fresh_tokens: 19
-- ActivityEnd:
+- TurnEnd:
     agent_id: 13515510818775613026
-    tool_use_id: ~
 - SessionStart:
     agent_id: 13515510818775613026
     source: codex

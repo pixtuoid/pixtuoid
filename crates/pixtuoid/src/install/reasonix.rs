@@ -29,7 +29,7 @@ use crate::install::verify::{SchemaParse, ShimRef};
 /// StopFailure are deliberately ABSENT: the runner re-fires failures to NATIVE
 /// hooks registered under PostToolUse / Stop with the event re-labeled, and ours
 /// are native-format — registering both spellings would double-fire every failed
-/// tool/turn for the same decoded ActivityEnd.
+/// tool/turn for the same decoded end.
 pub(crate) const REASONIX_EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",

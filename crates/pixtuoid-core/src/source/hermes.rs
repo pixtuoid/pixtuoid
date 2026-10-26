@@ -209,13 +209,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // tool-less chat turn this is the ONLY event the session emits, and a
         // daemon attaching mid-session would otherwise get the blank `#N` ghost
         // the module doc names, until the next tool call.
-        "on_session_end" => Ok(vec![
-            identity(),
-            AgentEvent::ActivityEnd {
-                agent_id,
-                tool_use_id: None,
-            },
-        ]),
+        "on_session_end" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))
@@ -305,16 +299,7 @@ mod tests {
     fn on_session_end_is_a_turn_boundary_not_the_sessions_end() {
         let ev =
             decode(json!({"hook_event_name": "on_session_end", "session_id": "s", "cwd": "/r"}));
-        assert!(
-            matches!(
-                ev,
-                AgentEvent::ActivityEnd {
-                    tool_use_id: None,
-                    ..
-                }
-            ),
-            "got {ev:?}"
-        );
+        assert!(matches!(ev, AgentEvent::TurnEnd { .. }), "got {ev:?}");
     }
 
     /// The shape no capture shows: a recorded run ends its only turn and its

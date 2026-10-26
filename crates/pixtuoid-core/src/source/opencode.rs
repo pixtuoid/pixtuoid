@@ -116,13 +116,17 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             agent_id: session(data, event)?.0,
             as_child: false,
         }]),
-        // A turn's end, as cursor's `stop`: no call to pair, so it ends the
-        // session's activity rather than one tool's.
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, None)
+            ended(data, at, event, AgentEvent::turn_end)
         }
         TOOL_STARTED => tool_started(data, at),
-        TOOL_SUCCESS | TOOL_FAILED => ended(data, at, event, field(data, "id").map(str::to_owned)),
+        TOOL_SUCCESS | TOOL_FAILED => {
+            let tool_use_id = field(data, "id").map(str::to_owned);
+            ended(data, at, event, |agent_id| AgentEvent::ActivityEnd {
+                agent_id,
+                tool_use_id,
+            })
+        }
         PERMISSION_ASKED => permission_asked(data, at),
         _ => Ok(vec![]),
     }
@@ -196,16 +200,10 @@ fn ended(
     data: &Map<String, Value>,
     at: Option<&str>,
     event: &str,
-    tool_use_id: Option<String>,
+    end: impl FnOnce(AgentId) -> AgentEvent,
 ) -> Result<Vec<AgentEvent>> {
     let (agent_id, session_id) = session(data, event)?;
-    Ok(vec![
-        identity(agent_id, session_id, at),
-        AgentEvent::ActivityEnd {
-            agent_id,
-            tool_use_id,
-        },
-    ])
+    Ok(vec![identity(agent_id, session_id, at), end(agent_id)])
 }
 
 /// The tool's `id` is the call id its `success`/`failed` pair on. The input
@@ -455,13 +453,7 @@ mod tests {
             assert!(
                 matches!(
                     got.as_slice(),
-                    [
-                        AgentEvent::Identity { .. },
-                        AgentEvent::ActivityEnd {
-                            tool_use_id: None,
-                            ..
-                        }
-                    ]
+                    [AgentEvent::Identity { .. }, AgentEvent::TurnEnd { .. }]
                 ),
                 "{ev}: {got:?}"
             );

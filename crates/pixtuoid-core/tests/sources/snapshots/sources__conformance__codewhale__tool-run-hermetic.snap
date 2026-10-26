@@ -38,9 +38,8 @@ expression: events
     source: codewhale
     session_id: sess_deb38b44
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- TurnEnd:
     agent_id: 2696241138168164515
-    tool_use_id: ~
 - SessionEnd:
     agent_id: 2696241138168164515
     as_child: false
