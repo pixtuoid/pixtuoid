@@ -19,6 +19,7 @@ use crate::source::registry;
 pub mod bump;
 pub mod digest;
 pub mod dropped;
+pub mod issues;
 mod literals;
 pub mod pin;
 mod profiles;
@@ -388,9 +389,6 @@ pub const SCENE_LOG: &str = "scene.log";
 /// The pty log of a [`Surface::Tui`] run: the CLI's raw output and the
 /// driver's every action.
 pub const TUI_LOG: &str = "tui.log";
-/// The file beside a run's report counting its New findings, which
-/// `hermetic.yml` reads to upload a run that passed with one.
-pub const NEW_TYPES: &str = "new-types.json";
 
 /// The name an install lifecycle run is selected and reported by.
 pub const LIFECYCLE: &str = "lifecycle";
@@ -505,6 +503,9 @@ pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
 }
 
+/// The matrix's `os` axis, as `hermetic.yml` names it.
+pub(crate) const OSES: &[&str] = &["macos", "windows"];
+
 /// The sources each of an OS's `hermetic.yml` legs runs, as `--shard <n>`
 /// selects the `n`th: whole sources, split for about equal run time.
 pub const SHARDS: &[&[&str]] = &[
@@ -526,6 +527,34 @@ pub const SHARDS: &[&[&str]] = &[
         "kimi",
     ],
 ];
+
+/// One leg of `hermetic.yml`'s matrix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Leg {
+    pub(crate) os: &'static str,
+    /// Counting from 1, as `--shard` does.
+    pub(crate) shard: usize,
+}
+
+impl std::fmt::Display for Leg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}, shard {}", self.os, self.shard)
+    }
+}
+
+/// Every leg, each of [`OSES`] by each of [`SHARDS`].
+pub(crate) fn legs() -> impl Iterator<Item = Leg> {
+    OSES.iter()
+        .flat_map(|&os| (1..=SHARDS.len()).map(move |shard| Leg { os, shard }))
+}
+
+/// The shard that runs `source`, counting from 1, if one does.
+pub(crate) fn shard_of(source: &str) -> Option<usize> {
+    SHARDS
+        .iter()
+        .position(|s| s.contains(&source))
+        .map(|i| i + 1)
+}
 
 /// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
 /// the scripted model's npm lockfile, under `aimock/`.
@@ -588,12 +617,48 @@ mod tests {
     use crate::harness::provenance::Provenance;
 
     #[test]
-    fn hermetic_yml_reads_the_new_types_the_tier_writes() {
+    fn hermetic_yml_reads_the_verdicts_and_names_the_upload_of_every_leg() {
         let yml = std::fs::read_to_string(bump::repo_root().join(".github/workflows/hermetic.yml"))
             .expect("hermetic.yml");
         assert!(
-            yml.contains(&format!("runs/{NEW_TYPES}")),
-            "a run that passed with a New finding uploads only as this file says"
+            yml.contains(&format!("runs/{}", issues::VERDICTS)),
+            "the file the tier writes"
+        );
+        let new = serde_json::to_value(verify::Label::New).expect("a label");
+        let verdicts = serde_json::to_value(issues::Verdicts {
+            os: "macos".into(),
+            shard: Some(1),
+            runs: vec![issues::RunVerdict {
+                source: "codex".into(),
+                key: "codex/tool-run".into(),
+                version: None,
+                label: verify::Label::New,
+                findings: Vec::new(),
+            }],
+        })
+        .expect("verdicts");
+        assert_eq!(verdicts["runs"][0]["label"], new);
+        assert!(
+            yml.contains(&format!(".runs | any(.label == {new})")),
+            "a run that passed with a New finding uploads only as its verdicts read"
+        );
+        for leg in legs() {
+            assert_eq!(
+                yml.matches(&format!("{}:", issues::runs_url_output(leg)))
+                    .count(),
+                2,
+                "{leg}'s uploaded runs, as the job's output and the workflow's"
+            );
+        }
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn the_matrix_names_this_os_as_its_legs_report_it() {
+        let os = std::env::consts::OS;
+        assert!(
+            OSES.contains(&os),
+            "a leg reports {os:?}, which no leg of {OSES:?} is"
         );
     }
 

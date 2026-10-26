@@ -89,8 +89,8 @@
   file: .github/workflows/hermetic-nightly.yml
   why: >-
     The nightly runs code the repo does not vet: the tree with every
-    dependency's build script, and a third-party CLI's latest release. That
-    job's token only reads. The token that writes issues lives in a job that
+    dependency's build script, and a third-party CLI's latest release. Those
+    jobs' tokens only read. The token that writes issues lives in a job that
     checks nothing out and runs no build, so no code of the tree ever holds it.
   assert: |
     ([.jobs.file.steps[] | .run // "" | split("\n")[] | select(test("^\\s*#") | not)]
@@ -111,40 +111,21 @@
     - '.jobs.file.steps = [{"uses": "actions/checkout@v7"}] + .jobs.file.steps'
     - '.jobs.file.steps += [{"run": "just hermetic"}]'
 
-- id: hermetic-nightly-files-the-runs-the-tier-named
-  file: .github/workflows/hermetic-nightly.yml
-  why: >-
-    The issue is filed from the runs each OS leg uploaded, under the stem the
-    tier's `runs-stem` output hands on, each leg's in its own directory when
-    several upload: a name rebuilt here can disagree with it and find nothing,
-    and merged legs would overwrite one report with the other.
-  assert: |
-    [.jobs.file.steps[] | select((.uses // "") | startswith("actions/download-artifact")) | .with]
-    == [{"pattern": "${{ needs.drift.outputs.runs-stem }}*"}]
-  break:
-    - |
-      .jobs.file.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with.pattern = "hermetic-runs-${{ github.run_id }}*" else . end)
-    - |
-      .jobs.file.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with["merge-multiple"] = true else . end)
-    - |
-      .jobs.file.steps |= map(
-        if (.uses // "") | startswith("actions/download-artifact") then .with = {"name": "${{ needs.drift.outputs.runs-stem }}"} else . end)
-
 - id: hermetic-uploads-every-run-but-a-clean-pass
   file: .github/workflows/hermetic.yml
   why: >-
-    A New finding never fails a run, so a run that passed with one uploads only
-    because its `new` step reads `hermetic::NEW_TYPES`: without it the nightly
-    has no report to file and the new type goes unseen. A run that timed out or
+    A New finding never fails a run, so a run that passed with one uploads its
+    runs only because its `new` step reads `hermetic::issues::VERDICTS`:
+    without them the nightly's issue links no evidence of the new type. A run
+    that timed out or
     was cancelled sets no `exit` and uploads only through `always()`, which
     runs "even when canceled", a job timeout being a cancel
     (docs.github.com/en/actions/reference/workflows-and-actions, `expressions`
     and `workflow-syntax`'s `timeout-minutes`). A run skipped by a failed setup
     left no runs to upload.
   assert: |
-    [.jobs.run.steps[] | select((.uses // "") | startswith("actions/upload-artifact")) | .if]
+    [.jobs.run.steps[] | select((.uses // "") | startswith("actions/upload-artifact"))
+     | select(.with.path == "target/hermetic/runs") | .if]
     == ["always() && steps.run.outcome != 'skipped' && (steps.run.outcome != 'success' || steps.run.outputs.exit != '0' || steps.new.outputs.any == 'true')"]
   break:
     - |
@@ -163,13 +144,14 @@
 - id: hermetic-nightly-files-a-run-that-passed
   file: .github/workflows/hermetic-nightly.yml
   why: >-
-    A leg that passes with a New finding leaves drift green, so a file job
-    gated on drift's failure would never file it.
+    A leg that passes with a New finding leaves drift green, and so does a
+    clean night that closes issues, so issues planned only on drift's failure
+    would never file the one or close the others.
   assert: |
-    .jobs.file.if | test("!cancelled\\(\\)") and (test("needs\\.drift\\.result") | not)
+    .jobs.triage.if | test("!cancelled\\(\\)") and (test("needs\\.drift\\.result") | not)
   break:
     - |
-      .jobs.file.if = "${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}"
+      .jobs.triage.if = "${{ always() && github.ref == 'refs/heads/main' && needs.drift.result == 'failure' }}"
 
 - id: only-main-saves-the-rust-cache
   covers: Swatinem/rust-cache@

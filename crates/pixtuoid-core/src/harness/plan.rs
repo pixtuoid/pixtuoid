@@ -335,8 +335,7 @@ impl CapturePlan {
     ///
     /// The file cannot be read or is not a plan.
     pub fn read(file: &Path) -> std::io::Result<Self> {
-        serde_json::from_str(&std::fs::read_to_string(file)?)
-            .map_err(|e| std::io::Error::other(format!("{}: {e}", file.display())))
+        super::read_json(file)
     }
 }
 

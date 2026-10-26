@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::dropped::{self, Unjudged};
@@ -22,7 +23,9 @@ use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures};
+use crate::harness::{
+    CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures, read_json,
+};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -30,7 +33,7 @@ use crate::{AgentEvent, AgentId};
 const BREADCRUMB_TARGET: &str = crate::source::drift::TARGET;
 
 /// A verdict's outcome, ordered by severity: a verdict is its worst finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Label {
     /// Every check held.
     Pass,
@@ -116,7 +119,7 @@ fn invalid(message: String) -> std::io::Error {
 /// If the manifest, a capture file or the scene log cannot be read, or the
 /// manifest names no profiled scenario.
 pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
-    let manifest: Manifest = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
+    let manifest: Manifest = read_json(&dir.join(MANIFEST))?;
     let p = profile(&manifest.source)
         .ok_or_else(|| invalid(format!("{}: not a profiled source", manifest.source)))?;
     let scenario = p
@@ -140,8 +143,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
 ///
 /// If its record is missing, a present file can't be read, or its scenario is unprofiled.
 pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
-    let records: Vec<StepRecord> =
-        serde_json::from_str(&std::fs::read_to_string(dir.join(LIFECYCLE_RECORD))?)?;
+    let records: Vec<StepRecord> = read_json(&dir.join(LIFECYCLE_RECORD))?;
     let mut findings = Vec::new();
     for (i, want) in STEPS.iter().enumerate() {
         let n = i + 1;
@@ -174,8 +176,8 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
             ));
         }
     }
-    let manifest: Manifest = match std::fs::read_to_string(dir.join(MANIFEST)) {
-        Ok(text) => serde_json::from_str(&text)?,
+    let manifest: Manifest = match read_json(&dir.join(MANIFEST)) {
+        Ok(manifest) => manifest,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             findings.push((
                 Label::Blocked,
@@ -250,8 +252,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
     let mut kept = Fields::default();
     let mut ran = Vec::new();
     for dir in dirs {
-        let manifest: Manifest =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST))?)?;
+        let manifest: Manifest = read_json(&dir.join(MANIFEST))?;
         ran.extend(p.scenarios.iter().filter(|s| s.name == manifest.scenario));
         for file in jsonl_files_under(dir) {
             let mut lines = json_lines(&file)?;

@@ -155,11 +155,7 @@ impl Provenance {
     ///
     /// If it cannot be read or does not parse, naming `path`.
     pub fn read(path: &Path) -> std::io::Result<Self> {
-        let named = |kind, e: &dyn std::fmt::Display| {
-            std::io::Error::new(kind, format!("{}: {e}", path.display()))
-        };
-        let text = std::fs::read_to_string(path).map_err(|e| named(e.kind(), &e))?;
-        serde_json::from_str(&text).map_err(|e| named(std::io::ErrorKind::InvalidData, &e))
+        super::read_json(path)
     }
 
     /// The record at `path`; none where no capture was recorded yet.
