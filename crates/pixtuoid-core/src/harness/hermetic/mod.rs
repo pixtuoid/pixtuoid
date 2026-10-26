@@ -6,13 +6,14 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::harness::CaptureRecord;
 use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
+use crate::harness::{CaptureRecord, TurnEnd};
 use crate::source::registry;
 
 pub mod bump;
@@ -49,6 +50,13 @@ impl<T> PerOs<T> {
         }
     }
 }
+
+/// How long a hermetic turn may run before the recorder kills it: well past
+/// the slowest turn a leg has run.
+pub const TURN_BUDGET: PerOs<Duration> = PerOs {
+    unix: Duration::from_secs(240),
+    windows: Duration::from_secs(480),
+};
 
 /// Where a CLI reads policy or config that no sandbox variable redirects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,12 +136,13 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Whether a CLI that exited with `code` ran this shape's turn as scripted:
-    /// one scripted to fail may exit non-zero, but a signal ends no turn.
-    pub(crate) const fn exits_as_scripted(self, code: Option<i32>) -> bool {
-        match code {
-            Some(0) => true,
-            Some(_) => match self {
+    /// Whether a CLI whose turn ended as `end` ran this shape's turn as
+    /// scripted: one scripted to fail may exit non-zero, but neither a signal
+    /// nor the budget ends a turn.
+    pub(crate) const fn exits_as_scripted(self, end: TurnEnd) -> bool {
+        match end {
+            TurnEnd::Exited(0) => true,
+            TurnEnd::Exited(_) => match self {
                 Self::ModelError => true,
                 Self::ToolRun
                 | Self::Permission
@@ -141,7 +150,7 @@ impl Shape {
                 | Self::ChildError
                 | Self::Succession => false,
             },
-            None => false,
+            TurnEnd::Signalled | TurnEnd::OutOfTime => false,
         }
     }
 

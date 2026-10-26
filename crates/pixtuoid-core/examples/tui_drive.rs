@@ -8,12 +8,13 @@
 //! ```
 //!
 //! Exits with the CLI's status; when the driver gave up or the `BUDGET` ran
-//! out, with what [`Driver::gave_up`] says; and `USAGE_ERROR` on a bad command
-//! line.
+//! out, with what [`Driver::gave_up`] says, and why at [`GAVE_UP_NOTE`]; and
+//! `USAGE_ERROR` on a bad command line.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::num::NonZeroU16;
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -21,10 +22,12 @@ use pixtuoid_core::harness::hermetic::tui::{
     Action, Answer, CommandLine, Driver, GAVE_UP, Key, Tui,
 };
 use pixtuoid_core::harness::hermetic::{self, Surface};
+use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
-/// How long one run may take, end to end, before the CLI is killed: well under
-/// the hermetic job's timeout, which every scenario of every CLI shares.
+/// How long one run may take, end to end, before the CLI is killed: inside
+/// the recorder's [`hermetic::TURN_BUDGET`] with a [`QUIT_GRACE`] to spare, so
+/// the driver gives up first and logs the screen it stood at.
 const BUDGET: Duration = Duration::from_secs(120);
 /// How long a CLI may take to exit after its quit keys.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
@@ -59,8 +62,10 @@ fn main() {
         eprintln!("{USAGE}");
         std::process::exit(USAGE_ERROR);
     };
-    let code = drive(line).unwrap_or_else(|e| {
-        eprintln!("tui_drive: {e}");
+    let code = drive(line, BUDGET).unwrap_or_else(|e| {
+        let why = format!("tui_drive: {e}");
+        eprintln!("{why}");
+        say_why(&why);
         GAVE_UP
     });
     std::process::exit(code);
@@ -95,7 +100,7 @@ fn command(
     Ok(cmd)
 }
 
-fn drive(line: CommandLine) -> std::io::Result<i32> {
+fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
     let (tui, answer) = tui_of(&line.source, &line.scenario)?;
     let mut log = std::fs::File::create(&line.log)?;
     let pair = NativePtySystem::default()
@@ -139,10 +144,13 @@ fn drive(line: CommandLine) -> std::io::Result<i32> {
             return Ok(i32::try_from(status.exit_code()).unwrap_or(GAVE_UP));
         }
         let now = Instant::now();
-        let out_of_time = now.duration_since(started) >= BUDGET
-            || quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE);
-        if out_of_time {
-            return give_up(&mut log, &mut child, "out of time", &screen, &driver);
+        if now.duration_since(started) >= budget {
+            let why = format!("the {budget:?} budget ran out");
+            return give_up(&mut log, &mut child, &why, &screen, &driver);
+        }
+        if quit_at.is_some_and(|at| now.duration_since(at) >= QUIT_GRACE) {
+            let why = format!("the CLI was still up {QUIT_GRACE:?} after its quit keys");
+            return give_up(&mut log, &mut child, &why, &screen, &driver);
         }
         if let Ok(chunk) = rx.recv_timeout(TICK) {
             log.write_all(&chunk)?;
@@ -207,8 +215,16 @@ fn give_up(
         log,
         &format!("gave up: {why}\n--- screen ---\n{}", shown(screen.screen())),
     );
+    say_why(why);
     child.kill()?;
     Ok(driver.gave_up())
+}
+
+/// Tell the recorder that runs this driver why it gave up.
+fn say_why(why: &str) {
+    if let Some(dir) = std::env::var_os(DRIVER_DIR_ENV) {
+        let _ = std::fs::write(Path::new(&dir).join(GAVE_UP_NOTE), why);
+    }
 }
 
 fn send(writer: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {
@@ -242,6 +258,34 @@ mod tests {
         assert_eq!(
             driver.step(&shown(screen.screen()), now),
             Action::Type("hi".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_driver_gives_up_before_the_recorder_kills_it() {
+        assert!(BUDGET + QUIT_GRACE <= *hermetic::TURN_BUDGET.here());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_past_its_budget_gives_up_as_its_driver_says_and_tells_the_recorder_why() {
+        let dir = tempfile::tempdir().expect("dir");
+        let line = CommandLine {
+            source: "claude-code".into(),
+            scenario: "permission".into(),
+            log: dir.path().join("tui.log"),
+            prompt: "hi".into(),
+            program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
+        };
+        let (tui, answer) = tui_of(&line.source, &line.scenario).expect("a TUI row");
+        let unprompted = Driver::new(tui, answer, line.prompt.clone(), Instant::now());
+        let budget = Duration::from_millis(500);
+        let code = temp_env::with_var(DRIVER_DIR_ENV, Some(dir.path()), || drive(line, budget))
+            .expect("it drove");
+        assert_eq!(code, unprompted.gave_up());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(GAVE_UP_NOTE)).expect("its note"),
+            format!("the {budget:?} budget ran out")
         );
     }
 

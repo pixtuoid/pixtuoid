@@ -117,12 +117,17 @@ temp-env = { workspace = true }
 schemars = { workspace = true }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
+process-wrap = { workspace = true }
 filetime = "0.2"
 insta = { workspace = true, features = ["yaml"] }
 tracing-subscriber = { workspace = true }
 # Wire→state benchmarks (`just bench`); same CodSpeed compat passthrough as
 # `pixtuoid-scene`'s.
 criterion = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+# `examples/support/bounded.rs`'s `kill_child_on_signal`.
+signal-hook = { workspace = true }
 
 [[bench]]
 name = "decode_reduce"

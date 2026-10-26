@@ -13,6 +13,9 @@ fn main() -> std::io::Result<()> {
     recorder::main()
 }
 
+#[path = "support/bounded.rs"]
+mod bounded;
+
 mod recorder {
     use std::collections::BTreeSet;
     use std::io::Write;
@@ -25,17 +28,18 @@ mod recorder {
     use pixtuoid_core::harness::reads;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs};
+    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
         RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
     };
     use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY, Drive,
-        HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn, canonical_capture, capture_base,
-        capture_workspace, capture_workspace_tail, files_under, jsonl_files_under,
-        required_version_probe, slashed_under, version_answer, wait_until,
+        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
+        DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn,
+        TurnEnd, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
+        files_under, jsonl_files_under, required_version_probe, slashed_under, version_answer,
+        wait_until,
     };
 
     /// Where a driver names the CLI it drives, a command or the path to its
@@ -46,23 +50,24 @@ mod recorder {
     /// driver that installs its CLI: a capture must anchor that version.
     const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
-    /// Where the recorder names the dir a driver keeps its own logs and homes
-    /// in, [`driver_dir`]: gone with a capture that worked, or whose whole
-    /// redacted copy is in the run dir; kept, and named, for one that did not
-    /// work and has no whole copy, since only the recorder knows which.
-    const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
-
     /// The driver's own part of the recorder's scratch, apart from everything the
-    /// recorder and its listener create there.
+    /// recorder and its listener create there: what it names at [`DRIVER_DIR_ENV`].
     fn driver_dir(scratch: &Path) -> PathBuf {
         scratch.join("driver")
+    }
+
+    /// Why the driver of a run in `scratch` gave up on its turn, if it said.
+    fn give_up_reason(scratch: &Path) -> Option<String> {
+        std::fs::read_to_string(driver_dir(scratch).join(GAVE_UP_NOTE))
+            .ok()
+            .map(|why| why.trim().to_owned())
     }
 
     /// [`CaptureRecord::exited_as_scripted`] for `source`'s profiled `scenario`.
     fn exited_as_scripted(source: &str, scenario: &str, record: &CaptureRecord) -> bool {
         hermetic::profile(source)
             .and_then(|p| p.scenario(scenario))
-            .map_or(record.exit_code == Some(0), |s| {
+            .map_or(record.end == TurnEnd::Exited(0), |s| {
                 record.exited_as_scripted(s.shape)
             })
     }
@@ -316,6 +321,8 @@ mod recorder {
             eprintln!("{why}");
             std::process::exit(2);
         }
+        #[cfg(unix)]
+        crate::bounded::kill_child_on_signal()?;
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
         let run_copy = driver_destination(plan);
@@ -382,36 +389,44 @@ mod recorder {
                 return Err(e);
             }
         };
-        let status =
-            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?.status()?;
-        let second_outcome = if let Some(words) = plan.second_turn() {
-            tap.settle();
-            let born = root.as_deref().map_or_else(Vec::new, |r| {
-                born_transcripts(&source, r, started, plan.sandboxed())
-            });
-            match first_session(&source, &tap.payloads(), &born) {
-                Some(session) => {
-                    let turn: Vec<String> =
-                        words.words().iter().map(|w| w.filled(&session)).collect();
-                    let exit = wired(
-                        &turn,
-                        &workspace,
-                        &wiring,
-                        descriptor.verified_version,
-                        &env,
-                    )?
-                    .status()?;
-                    Some(SecondTurn {
-                        exit_code: exit.code(),
-                    })
-                }
-                None => {
-                    eprintln!("the first turn's wire named no session for its second turn");
-                    None
+        let budget = turn_budget(plan);
+        let end = run_turn(
+            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
+            budget,
+        )?;
+        let give_up_reason = give_up_reason(sandbox.path());
+        let second_outcome = match plan.second_turn() {
+            Some(_) if end == TurnEnd::OutOfTime => {
+                eprintln!("the first turn outran its budget, so its second turn did not run");
+                None
+            }
+            Some(words) => {
+                tap.settle();
+                let born = root.as_deref().map_or_else(Vec::new, |r| {
+                    born_transcripts(&source, r, started, plan.sandboxed())
+                });
+                match first_session(&source, &tap.payloads(), &born) {
+                    Some(session) => {
+                        let turn: Vec<String> =
+                            words.words().iter().map(|w| w.filled(&session)).collect();
+                        let second = wired(
+                            &turn,
+                            &workspace,
+                            &wiring,
+                            descriptor.verified_version,
+                            &env,
+                        )?;
+                        Some(SecondTurn {
+                            end: run_turn(second, budget)?,
+                        })
+                    }
+                    None => {
+                        eprintln!("the first turn's wire named no session for its second turn");
+                        None
+                    }
                 }
             }
-        } else {
-            None
+            None => None,
         };
         let second_turn_skipped = plan.second_turn().is_some() && second_outcome.is_none();
         let note_survived = note_survived(&workspace);
@@ -461,7 +476,9 @@ mod recorder {
                 workspace: std::fs::canonicalize(&workspace).unwrap_or(workspace),
                 cli,
                 version,
-                exit_code: status.code(),
+                end,
+                give_up_reason,
+                incomplete: incomplete.as_ref().map(ToString::to_string),
                 second_turn: second_outcome,
                 note_survived,
             };
@@ -520,8 +537,8 @@ mod recorder {
             Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
         }
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
-        if !status.success() {
-            eprintln!("WARNING: the CLI exited {status} — this capture may be truncated");
+        if end != TurnEnd::Exited(0) {
+            eprintln!("WARNING: the CLI's turn ended ({end}) — this capture may be truncated");
             keep_scratch(
                 sandbox,
                 run_copy.as_deref(),
@@ -969,6 +986,24 @@ mod recorder {
         Ok(c)
     }
 
+    /// `plan`'s turn budget: measured on hermetic turns, so a billed one has none.
+    fn turn_budget(plan: &CapturePlan) -> Option<Duration> {
+        plan.sandboxed().then(|| *TURN_BUDGET.here())
+    }
+
+    /// How `turn` ended: killed once it outran `budget`, when it has one.
+    fn run_turn(
+        mut turn: std::process::Command,
+        budget: Option<Duration>,
+    ) -> std::io::Result<TurnEnd> {
+        Ok(match budget {
+            Some(budget) => {
+                crate::bounded::run(turn, budget)?.map_or(TurnEnd::OutOfTime, TurnEnd::from)
+            }
+            None => turn.status()?.into(),
+        })
+    }
+
     /// How long a daemon gets to serve: its cold boot and a cold-starting probe
     /// after it, which on Windows outlast the rig's [`BOOT`].
     const DAEMON_BOOT: PerOs<Duration> = PerOs {
@@ -982,9 +1017,9 @@ mod recorder {
         unix: Duration::from_secs(30),
         windows: Duration::from_secs(150),
     };
-    /// How many last lines of its log, and of its probes' when it never served,
-    /// a daemon that never served or never stopped carries in its error: a failed
-    /// run's uploaded dir keeps the recorder's error; both logs stay in its scratch.
+    /// How many last lines of its log, and of its probes', a daemon that never
+    /// served carries in its error: a failed run's uploaded dir keeps the
+    /// recorder's error; both logs stay in its scratch.
     const DAEMON_LOG_TAIL: usize = 40;
 
     /// A capture's daemon, run with the CLI's wiring so its hooks reach the
@@ -996,9 +1031,10 @@ mod recorder {
         lifeline: Option<std::process::ChildStdin>,
         /// Its start, which names it.
         start: String,
-        /// Where its output goes.
-        log: PathBuf,
     }
+
+    /// A daemon's log, in its driver's dir.
+    const DAEMON_LOG: &str = "daemon.log";
 
     impl RunningDaemon {
         /// `daemon` started, once its probe exits 0 within `boot`.
@@ -1015,7 +1051,7 @@ mod recorder {
             };
             let own = driver_dir(wiring.scratch);
             std::fs::create_dir_all(&own)?;
-            let log_path = own.join("daemon.log");
+            let log_path = own.join(DAEMON_LOG);
             let log = std::fs::File::create(&log_path)?;
             let (start, ready) = (daemon.start.strings(), daemon.ready.strings());
             let mut child = wired(&start, ws, wiring, verified, env)?
@@ -1028,38 +1064,30 @@ mod recorder {
                 lifeline: child.stdin.take(),
                 child,
                 start: start.join(" "),
-                log: log_path.clone(),
             };
             // Every probe's output, each followed by how it ended.
             let probe_log = own.join("probe.log");
             let mut probes = std::fs::File::create(&probe_log)?;
             let deadline = std::time::Instant::now() + boot;
             wait_until("the daemon", boot, || {
-                let mut probe = wired(&ready, ws, wiring, verified, env)?
-                    .stdin(std::process::Stdio::null())
+                let mut probe = wired(&ready, ws, wiring, verified, env)?;
+                probe
                     .stdout(probes.try_clone()?)
-                    .stderr(probes.try_clone()?)
-                    .spawn()?;
+                    .stderr(probes.try_clone()?);
                 // A probe may take as long as a CLI's cold start; only one that
                 // would hold the wait past `boot` is killed.
                 let left = deadline.saturating_duration_since(std::time::Instant::now());
-                let answered =
-                    wait_until("its probe", left, || Ok(probe.try_wait()?.is_some())).is_ok();
-                if !answered {
-                    let _ = probe.kill();
-                }
-                let status = probe.wait()?;
-                if answered {
-                    writeln!(probes, "[the probe exited {status}]")?;
-                } else {
-                    writeln!(probes, "[the probe was killed at the boot deadline]")?;
+                let status = crate::bounded::run(probe, left)?;
+                match status {
+                    Some(status) => writeln!(probes, "[the probe exited {status}]")?,
+                    None => writeln!(probes, "[the probe was killed at the boot deadline]")?,
                 }
                 match running.child.try_wait()? {
                     // A probe answered by whatever else holds the port.
                     Some(exit) => Err(std::io::Error::other(format!(
                         "the daemon exited {exit} before it served"
                     ))),
-                    None => Ok(answered && status.success()),
+                    None => Ok(status.is_some_and(|s| s.success())),
                 }
             })
             .map_err(|e| {
@@ -1083,9 +1111,8 @@ mod recorder {
             let _ = self.child.kill();
             let _ = self.child.wait();
             Err(std::io::Error::other(format!(
-                "the daemon `{}` outlived its stdin by {grace:?} and was killed; its log ends:\n{}",
-                self.start,
-                tail(&self.log)
+                "the daemon `{}` outlived its stdin by {grace:?} and was killed",
+                self.start
             )))
         }
     }
@@ -1106,11 +1133,10 @@ mod recorder {
         lines[lines.len().saturating_sub(DAEMON_LOG_TAIL)..].join("\n")
     }
 
-    /// Why a capture is incomplete, if it is: its tap stopped accepting, its
-    /// daemon had to be killed, or both.
+    /// Why a capture is incomplete, in one line, if it is: its tap stopped
+    /// accepting, its daemon had to be killed, or both.
     fn incomplete(tap: Option<String>, daemon: std::io::Result<()>) -> Option<std::io::Error> {
-        let tap = tap
-            .map(|why| format!("the tap stopped accepting, so this capture is incomplete: {why}"));
+        let tap = tap.map(|why| format!("the tap stopped accepting: {why}"));
         let whys: Vec<String> = tap
             .into_iter()
             .chain(daemon.err().map(|e| e.to_string()))
@@ -1480,7 +1506,9 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: "0.2.0-rc.2".into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    give_up_reason: None,
+                    incomplete: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1595,7 +1623,9 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "copilot".into(),
                     version: "1.0.98".into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    give_up_reason: None,
+                    incomplete: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1787,7 +1817,9 @@ mod recorder {
                     workspace: capture_workspace().expect("the workspace"),
                     cli: "dsh".into(),
                     version: versions.0.into(),
-                    exit_code: Some(0),
+                    end: TurnEnd::Exited(0),
+                    give_up_reason: None,
+                    incomplete: None,
                     second_turn: None,
                     note_survived: true,
                 },
@@ -1988,6 +2020,20 @@ mod recorder {
                 Invocation::Capture(plan) => *plan,
                 other => panic!("not a capture: {other:?}"),
             }
+        }
+
+        #[test]
+        fn only_a_hermetic_turn_has_a_budget() {
+            let mut raw = operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
+            assert_eq!(turn_budget(&raw), None, "an operator's billed raw capture");
+            assert_eq!(
+                turn_budget(&operator_plan(&["kimi", "tool-run", "kimi"])),
+                None
+            );
+            raw.within = Some(
+                pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir()).expect("abs"),
+            );
+            assert_eq!(turn_budget(&raw), Some(*TURN_BUDGET.here()));
         }
 
         #[test]
@@ -2662,6 +2708,7 @@ mod recorder {
             let markers = tempfile::tempdir().expect("markers");
             let running = start_fake(TEST, markers.path(), *DAEMON_BOOT.here()).expect("starts");
             let grace = Duration::from_secs(1);
+            let log = driver_dir(markers.path()).join(DAEMON_LOG);
             let started = std::time::Instant::now();
             let why = running.stop(grace).expect_err("a killed daemon fails");
             assert!(started.elapsed() >= grace, "killed before its grace");
@@ -2671,7 +2718,9 @@ mod recorder {
                 why.contains(&format!("{grace:?}")),
                 "names the grace: {why}"
             );
-            assert!(why.contains(SAYS), "its log: {why}");
+            assert!(!why.contains('\n'), "a report's one line: {why}");
+            let said = std::fs::read_to_string(&log).expect("its log");
+            assert!(said.contains(SAYS), "its log keeps what it said: {said}");
             assert!(
                 incomplete(None, Err(std::io::Error::other(why))).is_some(),
                 "a capture whose daemon was killed is incomplete"
@@ -2688,6 +2737,7 @@ mod recorder {
                 .to_string();
             assert!(why.contains(TAP), "{why}");
             assert!(why.contains(KILL), "{why}");
+            assert!(!why.contains('\n'), "a report's one line: {why}");
         }
 
         #[cfg(unix)]
@@ -2741,6 +2791,156 @@ mod recorder {
             assert!(started.elapsed() < boot * 2, "the probe outlived its boot");
         }
 
+        /// Where a re-run of this test binary as a fake turn keeps its markers:
+        /// the env var marks the re-run.
+        const FAKE_TURN: &str = "PIXTUOID_TEST_FAKE_TURN";
+        /// A second libtest filter, naming no test, that marks the fake turn's
+        /// grandchild.
+        const FAKE_GRANDCHILD: &str = "fake-turn-grandchild";
+        /// A third, marking a re-run as the recorder running the fake turn.
+        const FAKE_RECORDER: &str = "fake-recorder";
+        /// Past any budget a test gives a fake turn.
+        const OUTLIVES: Duration = Duration::from_secs(600);
+        /// How often the fake turn's grandchild says it still runs.
+        const BEAT: Duration = Duration::from_millis(100);
+        /// The file the grandchild beats into.
+        const BEATS: &str = "beats";
+
+        /// This test binary, re-run as `test`'s fake turn with its markers in
+        /// `dir`: it starts a grandchild that beats until it is killed, and
+        /// outlives any budget.
+        fn fake_turn(test: &str, dir: &Path) -> std::process::Command {
+            let mut turn =
+                std::process::Command::new(std::env::current_exe().expect("the test binary"));
+            turn.args(["--exact", &this_test(test), "--nocapture"])
+                .env(FAKE_TURN, dir);
+            turn
+        }
+
+        /// In a re-run as `test`'s fake turn or its grandchild, plays it and
+        /// returns its marker dir.
+        fn as_fake_turn(test: &str) -> Option<PathBuf> {
+            let dir = PathBuf::from(std::env::var_os(FAKE_TURN)?);
+            let plays = |role: &str| std::env::args().any(|a| a == role);
+            if plays(FAKE_GRANDCHILD) {
+                let started = std::time::Instant::now();
+                while started.elapsed() < OUTLIVES {
+                    let mut beats = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(dir.join(BEATS))
+                        .expect("beats");
+                    beats.write_all(b".").expect("beat");
+                    std::thread::sleep(BEAT);
+                }
+            } else if !plays(FAKE_RECORDER) {
+                let mut grandchild = fake_turn(test, &dir)
+                    .arg(FAKE_GRANDCHILD)
+                    .spawn()
+                    .expect("the grandchild");
+                std::thread::sleep(OUTLIVES);
+                let _ = grandchild.wait();
+            }
+            Some(dir)
+        }
+
+        /// How many beats the grandchild in `dir` has beaten.
+        fn beaten(dir: &Path) -> u64 {
+            std::fs::metadata(dir.join(BEATS)).map_or(0, |m| m.len())
+        }
+
+        #[test]
+        fn a_turn_past_its_budget_is_killed_with_its_children() {
+            const TEST: &str = "a_turn_past_its_budget_is_killed_with_its_children";
+            if as_fake_turn(TEST).is_some() {
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let budget = Duration::from_secs(4);
+            let started = std::time::Instant::now();
+            let end = run_turn(fake_turn(TEST, dir.path()), Some(budget)).expect("it ran");
+            assert_eq!(end, TurnEnd::OutOfTime);
+            assert!(started.elapsed() < budget * 2, "it outlived its budget");
+            let before = beaten(dir.path());
+            assert!(before > 0, "the grandchild never ran, so it proves nothing");
+            std::thread::sleep(BEAT * 10);
+            assert_eq!(
+                beaten(dir.path()),
+                before,
+                "the turn's grandchild outlived it"
+            );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn a_signal_that_ends_the_recorder_ends_its_turn() {
+            const TEST: &str = "a_signal_that_ends_the_recorder_ends_its_turn";
+            if let Some(dir) = as_fake_turn(TEST) {
+                if std::env::args().any(|a| a == FAKE_RECORDER) {
+                    crate::bounded::kill_child_on_signal().expect("its handler");
+                    let _ = run_turn(fake_turn(TEST, &dir), Some(OUTLIVES));
+                }
+                return;
+            }
+            let dir = tempfile::tempdir().expect("dir");
+            let mut recorder = fake_turn(TEST, dir.path())
+                .arg(FAKE_RECORDER)
+                .spawn()
+                .expect("the recorder");
+            wait_until("the grandchild", BOOT, || Ok(beaten(dir.path()) > 0)).expect("it beats");
+            let pid = rustix::process::Pid::from_child(&recorder);
+            rustix::process::kill_process(pid, rustix::process::Signal::INT).expect("Ctrl-C");
+            wait_until("the recorder's end", BOOT, || {
+                Ok(recorder.try_wait()?.is_some())
+            })
+            .expect("Ctrl-C ends the recorder");
+            let before = beaten(dir.path());
+            std::thread::sleep(BEAT * 10);
+            assert_eq!(
+                beaten(dir.path()),
+                before,
+                "the turn outlived the recorder Ctrl-C ended"
+            );
+        }
+
+        #[test]
+        fn a_turn_inside_its_budget_ends_as_it_exited() {
+            let exited = |code: i32| {
+                let mut turn = if cfg!(windows) {
+                    std::process::Command::new("cmd")
+                } else {
+                    std::process::Command::new("sh")
+                };
+                let flag = if cfg!(windows) { "/C" } else { "-c" };
+                turn.args([flag, &format!("exit {code}")]);
+                run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran")
+            };
+            assert_eq!(exited(0), TurnEnd::Exited(0));
+            assert_eq!(exited(3), TurnEnd::Exited(3));
+        }
+
+        /// A driver is a Unix shell script.
+        #[cfg(unix)]
+        #[test]
+        fn a_driver_that_gave_up_says_why_in_the_record() {
+            const WHY: &str = "the screen stood still";
+            let sandbox = tempfile::tempdir().expect("sandbox");
+            let ws = tempfile::tempdir().expect("workspace");
+            let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
+            let wiring = CliWiring {
+                endpoint: &endpoint,
+                scratch: sandbox.path(),
+            };
+            let script = format!("printf '{WHY}\\n' >\"${DRIVER_DIR_ENV}/{GAVE_UP_NOTE}\"; exit 3");
+            let cmd = ["sh", "-c", &script].map(String::from);
+            let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
+            assert_eq!(
+                run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran"),
+                TurnEnd::Exited(3)
+            );
+            assert_eq!(give_up_reason(sandbox.path()).as_deref(), Some(WHY));
+        }
+
         #[test]
         fn a_slow_probe_answers_inside_the_boot_deadline() {
             const TEST: &str = "a_slow_probe_answers_inside_the_boot_deadline";
@@ -2770,43 +2970,45 @@ mod recorder {
 
         #[test]
         fn only_a_profiled_failing_turn_may_exit_non_zero() {
-            let exited = |exit_code, second: Option<i32>| CaptureRecord {
+            let exited = |code, second: Option<i32>| CaptureRecord {
                 workspace: PathBuf::from("/ws"),
                 cli: "cli".into(),
                 version: "1".into(),
-                exit_code,
+                end: TurnEnd::Exited(code),
+                give_up_reason: None,
+                incomplete: None,
                 second_turn: second.map(|code| SecondTurn {
-                    exit_code: Some(code),
+                    end: TurnEnd::Exited(code),
                 }),
                 note_survived: true,
             };
             assert!(exited_as_scripted(
                 "openclaw",
                 "model-error",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(!exited_as_scripted(
                 "openclaw",
                 "tool-run",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(!exited_as_scripted(
                 "unprofiled",
                 "model-error",
-                &exited(Some(1), None)
+                &exited(1, None)
             ));
             assert!(exited_as_scripted(
                 "unprofiled",
                 "model-error",
-                &exited(Some(0), None)
+                &exited(0, None)
             ));
             assert!(exited_as_scripted(
                 "claude-code",
                 "ultra-effort",
-                &exited(Some(0), Some(0))
+                &exited(0, Some(0))
             ));
             assert!(
-                !exited_as_scripted("claude-code", "ultra-effort", &exited(Some(0), Some(1))),
+                !exited_as_scripted("claude-code", "ultra-effort", &exited(0, Some(1))),
                 "its second turn is held to the same bar"
             );
         }

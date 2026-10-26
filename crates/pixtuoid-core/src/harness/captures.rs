@@ -188,6 +188,44 @@ pub const PROVENANCE: &str = "provenance.json";
 /// A raw capture's [`CaptureRecord`].
 pub const CAPTURE_RECORD: &str = "capture.json";
 
+/// Where the recorder names the dir a driver keeps its own logs and homes in:
+/// gone with a capture that worked, or whose whole redacted copy is in the run
+/// dir; kept, and named, for one that did not work and has no whole copy,
+/// since only the recorder knows which.
+pub const DRIVER_DIR_ENV: &str = "PIXTUOID_CAPTURE_DRIVER_DIR";
+
+/// The file in its [`DRIVER_DIR_ENV`] dir where a driver that gave up on its
+/// turn says why, for [`CaptureRecord::give_up_reason`].
+pub const GAVE_UP_NOTE: &str = "gave-up.txt";
+
+/// How a turn the recorder ran ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnEnd {
+    /// It exited with this code.
+    Exited(i32),
+    /// A signal ended it.
+    Signalled,
+    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`] killed it.
+    OutOfTime,
+}
+
+impl From<std::process::ExitStatus> for TurnEnd {
+    fn from(status: std::process::ExitStatus) -> Self {
+        status.code().map_or(Self::Signalled, Self::Exited)
+    }
+}
+
+impl std::fmt::Display for TurnEnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exited(code) => write!(f, "exit {code}"),
+            Self::Signalled => f.write_str("killed by a signal"),
+            Self::OutOfTime => f.write_str("killed at its budget"),
+        }
+    }
+}
+
 /// What only the recorder knows about a raw (`--out`) capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureRecord {
@@ -197,8 +235,14 @@ pub struct CaptureRecord {
     pub cli: String,
     /// Its `--version`.
     pub version: String,
-    /// Its exit code; `None` when a signal ended it.
-    pub exit_code: Option<i32>,
+    /// How its turn ended.
+    pub end: TurnEnd,
+    /// Why the turn's driver gave up on it, in its own words, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub give_up_reason: Option<String>,
+    /// Why the recorder could not complete the capture, in one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incomplete: Option<String>,
     /// Its second turn, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_turn: Option<SecondTurn>,
@@ -209,22 +253,37 @@ pub struct CaptureRecord {
 }
 
 impl CaptureRecord {
+    /// Which of its turns the recorder's budget killed, if one did.
+    pub fn killed_turn(&self) -> Option<&'static str> {
+        if self.end == TurnEnd::OutOfTime {
+            Some("turn")
+        } else if self
+            .second_turn
+            .as_ref()
+            .is_some_and(|r| r.end == TurnEnd::OutOfTime)
+        {
+            Some("second turn")
+        } else {
+            None
+        }
+    }
+
     /// Whether the CLI ran `shape`'s turn as scripted, and its second turn
     /// where one ran.
     pub fn exited_as_scripted(&self, shape: crate::harness::hermetic::Shape) -> bool {
-        shape.exits_as_scripted(self.exit_code)
+        shape.exits_as_scripted(self.end)
             && self
                 .second_turn
                 .as_ref()
-                .is_none_or(|r| shape.exits_as_scripted(r.exit_code))
+                .is_none_or(|r| shape.exits_as_scripted(r.end))
     }
 }
 
 /// A second turn, as the recorder ran it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecondTurn {
-    /// Its exit code; `None` when a signal ended it.
-    pub exit_code: Option<i32>,
+    /// How it ended.
+    pub end: TurnEnd,
 }
 
 /// Module dirs whose name is NOT the registered source id.

@@ -393,15 +393,16 @@ mod run {
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.fixture == s.fixture)) {
             scenarios.insert(0, s);
         }
+        let mut release = Release {
+            installed: &installed,
+            hung: None,
+        };
         for scenario in scenarios {
             let dir = run_dir(runs, p, scenario);
             std::fs::create_dir_all(&dir)?;
             let key = format!("{}/{}", p.source, scenario.name);
             println!("== {key}");
-            let ran = match &installed {
-                Ok(v) => run_one(ctx, p, scenario, v, &dir),
-                Err(e) => Err(std::io::Error::other(e.clone())),
-            };
+            let ran = release.run(p, scenario.name, |v| run_one(ctx, p, scenario, v, &dir));
             let (banner, verdict, run) = match ran {
                 Ok((manifest, run)) => {
                     let verdict = verify::verify(&dir)?;
@@ -427,7 +428,9 @@ mod run {
             let key = format!("{}/{LIFECYCLE}", p.source);
             println!("== {key}");
             let verdict = match run {
-                Some(run) => match run_lifecycle(ctx, p, scenario, &run, &dir) {
+                Some(run) => match release.run(p, LIFECYCLE, |_| {
+                    run_lifecycle(ctx, p, scenario, &run, &dir).map(|m| (m, ()))
+                }) {
                     Ok(_) => verify::verify_lifecycle(&dir)?,
                     // The steps' record is judged though the turn after them failed.
                     Err(e) if dir.join(LIFECYCLE_RECORD).is_file() => {
@@ -437,10 +440,7 @@ mod run {
                     }
                     Err(e) => Verdict::new(vec![(Label::Blocked, e.to_string())]),
                 },
-                None => Verdict::new(vec![(
-                    Label::Blocked,
-                    format!("its {} run was not judged", scenario.name),
-                )]),
+                None => Verdict::new(vec![(Label::Blocked, release.not_run(p, scenario.name))]),
             };
             entries.push(Entry::new(key, None, verdict));
         }
@@ -668,6 +668,50 @@ mod run {
 
     /// The run's report, beside the runs; its H1 is the tracking issue's title.
     const REPORT: &str = "report.md";
+
+    /// The release a source's runs go on with, until a turn the recorder's
+    /// budget killed hangs it: the rest are skipped, so a hung release costs its
+    /// leg one budget.
+    struct Release<'a> {
+        installed: &'a Result<Version, String>,
+        /// The run whose turn hung it.
+        hung: Option<&'static str>,
+    }
+
+    impl<'a> Release<'a> {
+        /// The run `name` on the release, or why it never ran.
+        fn run<T>(
+            &mut self,
+            p: &Profile,
+            name: &'static str,
+            run: impl FnOnce(&'a Version) -> std::io::Result<(Manifest, T)>,
+        ) -> std::io::Result<(Manifest, T)> {
+            let ran = match (self.hung_in(p), self.installed) {
+                (Some(why), _) => Err(std::io::Error::other(why)),
+                (None, Ok(v)) => run(v),
+                (None, Err(e)) => Err(std::io::Error::other(e.clone())),
+            };
+            if ran
+                .as_ref()
+                .is_ok_and(|(m, _)| m.capture.killed_turn().is_some())
+            {
+                self.hung.get_or_insert(name);
+            }
+            ran
+        }
+
+        /// Why `p`'s runs are skipped, once a turn of one hung it.
+        fn hung_in(&self, p: &Profile) -> Option<String> {
+            self.hung
+                .map(|hung| format!("skipped: {} hung in {hung}", p.source))
+        }
+
+        /// Why a run that goes on from `before` never ran.
+        fn not_run(&self, p: &Profile, before: &str) -> String {
+            self.hung_in(p)
+                .unwrap_or_else(|| format!("its {before} run was not judged"))
+        }
+    }
 
     /// How many New findings `entries` hold.
     fn new_count(entries: &[Entry]) -> usize {
@@ -1849,20 +1893,18 @@ mod run {
         let results_seen = results_seen(&entries);
 
         // The recorder writes its record whenever the CLI ran, so a missing
-        // one means the CLI never did; it fails past one only on a capture it
-        // could not complete, which its log's last line names.
+        // one means the CLI never did.
         let capture: CaptureRecord = match std::fs::read_to_string(dir.join(CAPTURE_RECORD)) {
-            Ok(text) if recorder.success() => serde_json::from_str(&text)?,
-            read => {
+            Ok(text) => serde_json::from_str(&text)?,
+            Err(_) => {
                 let log = std::fs::read_to_string(dir.join(RECORDER_LOG)).unwrap_or_default();
                 let last = log
                     .lines()
                     .rev()
                     .find(|l| !l.trim().is_empty())
                     .unwrap_or_default();
-                let relation = if read.is_ok() { "after" } else { "with no" };
                 return Err(std::io::Error::other(format!(
-                    "the recorder exited {recorder} {relation} {CAPTURE_RECORD}: {last}"
+                    "the recorder exited {recorder} with no {CAPTURE_RECORD}: {last}"
                 )));
             }
         };
@@ -2413,6 +2455,78 @@ mod run {
             assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
             assert!(!judges_leg(grok, &judged(5), false));
             assert!(judges_leg(grok, &judged(6), false));
+        }
+
+        #[test]
+        fn a_turn_the_recorder_killed_skips_the_rest_of_its_source() {
+            use pixtuoid_core::harness::{SecondTurn, TurnEnd};
+            let p = hermetic::profile("dsh").expect("dsh's profile");
+            let ended = |end, second: Option<TurnEnd>| Manifest {
+                source: "dsh".into(),
+                scenario: "subagent".into(),
+                capture: CaptureRecord {
+                    workspace: PathBuf::from("/ws"),
+                    cli: "dsh".into(),
+                    version: "0.2.1".into(),
+                    end,
+                    give_up_reason: None,
+                    incomplete: None,
+                    second_turn: second.map(|end| SecondTurn { end }),
+                    note_survived: true,
+                },
+                aimock: "1.45.1".into(),
+                requests: 4210,
+                unmatched: 0,
+                results_seen: 0,
+            };
+            let ran = |m: Manifest| move |_: &Version| Ok((m, ()));
+            let never = |_: &Version| -> std::io::Result<(Manifest, ())> {
+                panic!("a hung release ran again")
+            };
+            let installed = Ok(Version::new(0, 2, 1));
+            let mut release = Release {
+                installed: &installed,
+                hung: None,
+            };
+            let ok = |r: std::io::Result<(Manifest, ())>| r.expect("it ran");
+            ok(release.run(p, "tool-run", ran(ended(TurnEnd::Exited(1), None))));
+            ok(release.run(p, "subagent", ran(ended(TurnEnd::OutOfTime, None))));
+            let skipped = "skipped: dsh hung in subagent";
+            let after = release.run(p, "permission", never).expect_err("skipped");
+            assert_eq!(after.to_string(), skipped);
+            let lifecycle = release.run(p, LIFECYCLE, never).expect_err("skipped");
+            assert_eq!(lifecycle.to_string(), skipped);
+            assert_eq!(release.not_run(p, "permission"), skipped);
+
+            let mut release = Release {
+                installed: &installed,
+                hung: None,
+            };
+            let second = ended(TurnEnd::Exited(0), Some(TurnEnd::OutOfTime));
+            ok(release.run(p, LIFECYCLE, ran(second)));
+            assert_eq!(
+                release
+                    .run(p, "subagent", never)
+                    .expect_err("skipped")
+                    .to_string(),
+                "skipped: dsh hung in lifecycle"
+            );
+            let unresolved = Err("npm view failed".to_owned());
+            let mut release = Release {
+                installed: &unresolved,
+                hung: None,
+            };
+            assert_eq!(
+                release
+                    .run(p, "tool-run", never)
+                    .expect_err("unresolved")
+                    .to_string(),
+                "npm view failed"
+            );
+            assert_eq!(
+                release.not_run(p, "tool-run"),
+                "its tool-run run was not judged"
+            );
         }
 
         #[test]
