@@ -99,6 +99,8 @@ rustix = { workspace = true, features = ["event", "process", "pipe"] }
 # creation-FILETIME marker (the Windows half of the pid-recycle guard), and
 # `exit_watch`'s handle wait, whose cap is SystemServices' MAXIMUM_WAIT_OBJECTS.
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_SystemServices", "Win32_System_Threading"] }
+# The directory id a watch root is reconciled by.
+winapi-util = { workspace = true }
 
 [dev-dependencies]
 # Depending on ourselves BY PATH is how a crate turns its own non-default

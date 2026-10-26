@@ -69,14 +69,13 @@ impl Source for CodexSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let root = self.sessions_root.clone();
         let mut watcher = JsonlWatcher::new(
             self.sessions_root.clone(),
             SOURCE_NAME.to_string(),
             decode_codex_line,
             codex_session_ended,
         )
-        .with_liveness_probe(std::sync::Arc::new(move || live_codex_rollout_ids(&root)));
+        .with_root_probe(live_codex_rollout_ids);
         if let Some(unclaims) = &self.child_end_unclaims {
             watcher = watcher.with_child_end_unclaims(unclaims.clone());
         }

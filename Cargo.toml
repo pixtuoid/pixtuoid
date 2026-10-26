@@ -148,6 +148,8 @@ semver             = "1"
 # 0.61 to match the major tokio already pulls (via mio) on Windows — a second
 # windows-sys major would double-compile the bindings.
 windows-sys        = "0.61"
+# Already in the tree through notify's walkdir: a Windows file id.
+winapi-util        = "0.1"
 criterion          = { package = "codspeed-criterion-compat", version = "6", default-features = false, features = ["cargo_bench_support"] }
 insta              = "1"
 schemars           = "1"

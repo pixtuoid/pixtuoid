@@ -92,7 +92,6 @@ fn spawn_watcher(
     root: PathBuf,
     tx: TaggedSender,
 ) {
-    let probe_root = root.clone();
     let watcher = JsonlWatcher::new(
         root.clone(),
         SOURCE_NAME.to_string(),
@@ -101,7 +100,7 @@ fn spawn_watcher(
     )
     .with_label_deriver(omp_derive_label)
     .with_head_label(omp_head_title)
-    .with_liveness_probe(Arc::new(move || live_omp_session_ids(&probe_root)));
+    .with_root_probe(live_omp_session_ids);
     started.insert(root);
     set.spawn(watcher.run(tx));
 }
