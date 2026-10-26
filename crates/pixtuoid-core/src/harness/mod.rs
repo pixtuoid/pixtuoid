@@ -38,16 +38,26 @@ pub mod reads;
 pub mod tap;
 
 pub use captures::{
-    BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, Capture, CaptureRecord, DRIVER_COPY,
-    DRIVER_DIR_ENV, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn, TurnEnd,
-    canonical_capture, capture_base, capture_root, capture_workspace, capture_workspace_tail,
-    captures, files_under, jsonl_files_under, required_version_probe, slashed_under, transcript_in,
-    transcripts_under, version_answer, wait_until,
+    BOOT, Budget, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, Capture, CaptureRecord,
+    DRIVER_COPY, DRIVER_DIR_ENV, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn,
+    TurnEnd, canonical_capture, capture_base, capture_root, capture_workspace,
+    capture_workspace_tail, captures, files_under, jsonl_files_under, required_version_probe,
+    slashed_under, transcript_in, transcripts_under, version_answer, wait_until,
 };
 
 /// The committed corpus: every recorded capture, fixture and hermetic script.
 pub(crate) fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
+}
+
+/// The `T` the JSON file at `path` holds.
+///
+/// # Errors
+///
+/// The file cannot be read or holds no `T`, either naming `path`.
+pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{path:?}: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("{path:?}: {e}"))
 }
 
 /// A lifecycle CLASS a driven wire pushed the slot through — asserted as

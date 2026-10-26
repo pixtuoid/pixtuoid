@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
-use crate::harness::{CaptureRecord, TurnEnd};
+use crate::harness::{Budget, CaptureRecord, TurnEnd};
 use crate::source::registry;
 
 pub mod bump;
@@ -52,10 +52,10 @@ impl<T> PerOs<T> {
     }
 }
 
-/// How long one turn the recorder runs may take before it is killed: well past
-/// the slowest turn a leg has run. A source whose turn it killed runs no more
-/// turns that leg, so a hung release costs its leg one budget, not one per
-/// turn. A billed capture's turn is held to it too.
+/// How long a turn the recorder runs, or a wait of the runner's on a release,
+/// may take before it is killed: well past the slowest turn a leg has run. A
+/// release that hung runs no more of its source that leg, so it costs one
+/// budget. A billed capture's turn is held to it too.
 pub const TURN_BUDGET: PerOs<Duration> = PerOs {
     unix: Duration::from_secs(240),
     windows: Duration::from_secs(480),
@@ -153,7 +153,7 @@ impl Shape {
                 | Self::ChildError
                 | Self::Succession => false,
             },
-            TurnEnd::Signalled | TurnEnd::OutOfTime => false,
+            TurnEnd::Signalled | TurnEnd::OutOfTime(_) => false,
         }
     }
 
@@ -528,6 +528,34 @@ pub const SHARDS: &[&[&str]] = &[
     ],
 ];
 
+/// One leg of `hermetic.yml`'s matrix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Leg {
+    pub(crate) os: &'static str,
+    /// Counting from 1, as `--shard` does.
+    pub(crate) shard: usize,
+}
+
+impl std::fmt::Display for Leg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}, shard {}", self.os, self.shard)
+    }
+}
+
+/// Every leg, each of [`OSES`] by each of [`SHARDS`].
+pub(crate) fn legs() -> impl Iterator<Item = Leg> {
+    OSES.iter()
+        .flat_map(|&os| (1..=SHARDS.len()).map(move |shard| Leg { os, shard }))
+}
+
+/// The shard that runs `source`, counting from 1, if one does.
+pub(crate) fn shard_of(source: &str) -> Option<usize> {
+    SHARDS
+        .iter()
+        .position(|s| s.contains(&source))
+        .map(|i| i + 1)
+}
+
 /// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
 /// the scripted model's npm lockfile, under `aimock/`.
 pub fn scripts_dir() -> PathBuf {
@@ -560,6 +588,18 @@ impl Scenario {
             _ => None,
         }
     }
+
+    /// How its turn ended, `end` read as its surface means it: on a TUI one,
+    /// `tui_drive`'s [`tui::OUT_OF_TIME`] with the reason it gave is its own
+    /// budget's kill. A CLI's own exit, or one with no reason, is just that.
+    pub fn turn_end(&self, end: TurnEnd, give_up_reason: Option<&str>) -> TurnEnd {
+        match (self.surface, end, give_up_reason) {
+            (Surface::Tui { .. }, TurnEnd::Exited(tui::OUT_OF_TIME), Some(_)) => {
+                TurnEnd::OutOfTime(Budget::Driver)
+            }
+            _ => end,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -583,16 +623,41 @@ mod tests {
             yml.contains(&format!(".label == {new}")),
             "a run that passed with a New finding uploads only as its label reads"
         );
-        for os in OSES {
-            for shard in 1..=SHARDS.len() {
-                assert_eq!(
-                    yml.matches(&format!("{}:", issues::artifact_output(os, shard)))
-                        .count(),
-                    2,
-                    "{os} {shard}'s uploaded runs, as the job's output and the workflow's"
-                );
-            }
+        for leg in legs() {
+            assert_eq!(
+                yml.matches(&format!("{}:", issues::artifact_output(leg)))
+                    .count(),
+                2,
+                "{leg}'s uploaded runs, as the job's output and the workflow's"
+            );
         }
+    }
+
+    #[test]
+    fn only_a_tui_drivers_exit_with_its_reason_reads_as_its_budgets_kill() {
+        let scenario = |source, name| {
+            profile(source)
+                .and_then(|p| p.scenario(name))
+                .expect("a profiled scenario")
+        };
+        let (tui, headless) = (
+            scenario("claude-code", "permission"),
+            scenario("claude-code", "tool-run"),
+        );
+        let ran_out = TurnEnd::Exited(tui::OUT_OF_TIME);
+        let why = Some("the 120s budget ran out");
+        assert_eq!(
+            tui.turn_end(ran_out, why),
+            TurnEnd::OutOfTime(Budget::Driver)
+        );
+        assert_eq!(tui.turn_end(ran_out, None), ran_out, "the CLI's own exit");
+        assert_eq!(
+            headless.turn_end(ran_out, why),
+            ran_out,
+            "a headless CLI's own exit"
+        );
+        let killed = TurnEnd::OutOfTime(Budget::Recorder);
+        assert_eq!(tui.turn_end(killed, why), killed);
     }
 
     #[test]

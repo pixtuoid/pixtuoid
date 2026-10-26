@@ -124,8 +124,8 @@ tracing-subscriber = { workspace = true }
 criterion = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
-# An unattended turn runs in its own process group, which the terminal's
-# Ctrl-C never reaches: the recorder forwards it.
+# An unattended child of the tier runs in its own process group, which the
+# terminal's Ctrl-C never reaches: the process waiting on it forwards it.
 signal-hook = { workspace = true }
 
 [[bench]]

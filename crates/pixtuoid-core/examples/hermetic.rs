@@ -14,6 +14,9 @@
 //! 1 on any other verdict (a recording refused after its runs included), and
 //! anything else when the tier could not run or refused a recording first.
 
+#[path = "support/bounded.rs"]
+mod bounded;
+
 fn main() {
     match run::main() {
         Ok(all_passed) => std::process::exit(i32::from(!all_passed)),
@@ -43,7 +46,7 @@ mod run {
     use pixtuoid_core::harness::hermetic::{
         self, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV, Live,
         MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, SHARDS,
-        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
+        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, TURN_BUDGET,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::plan::{
@@ -294,6 +297,8 @@ mod run {
 
     /// Whether every selected run passed.
     pub(crate) fn main() -> std::io::Result<bool> {
+        #[cfg(unix)]
+        crate::bounded::forward_endings()?;
         let args = match parse(&std::env::args().skip(1).collect::<Vec<_>>()) {
             Ok(a) => a,
             Err(e) => {
@@ -357,9 +362,11 @@ mod run {
         p: &Profile,
         runs: &Path,
     ) -> std::io::Result<(Vec<Entry>, Option<Moved>)> {
-        let mut entries = match &p.live {
+        // Where a bounded wait on the release ran out. The rest of its runs are
+        // skipped, so a hung release costs its leg one budget.
+        let (mut entries, mut hung) = match &p.live {
             Some(live) => run_live(ctx, args, p, live, runs)?,
-            None => Vec::new(),
+            None => (Vec::new(), None),
         };
         let windows = cfg!(windows);
         let selected = selected(args, p, windows);
@@ -390,9 +397,6 @@ mod run {
             _ => None,
         };
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
-        // The scenario a budget killed a turn in: a hung release would hang
-        // the rest too, and the leg's own timeout would lose every later source.
-        let mut hung: Option<&str> = None;
         let mut scenarios = selected;
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.fixture == s.fixture)) {
             scenarios.insert(0, s);
@@ -402,11 +406,13 @@ mod run {
             std::fs::create_dir_all(&dir)?;
             let key = format!("{}/{}", p.source, scenario.name);
             println!("== {key}");
-            let ran = match (hung, &installed) {
-                (Some(hung), _) => Err(std::io::Error::other(skipped(p, hung))),
-                (None, Ok(v)) => run_one(ctx, p, scenario, v, &dir),
-                (None, Err(e)) => Err(std::io::Error::other(e.clone())),
+            let ran = match release_for(p, hung, &installed) {
+                Ok(v) => run_one(ctx, p, scenario, v, &dir),
+                Err(why) => Err(std::io::Error::other(why)),
             };
+            if hangs(&ran) {
+                hung.get_or_insert(scenario.name);
+            }
             let (banner, verdict, run) = match ran {
                 Ok((manifest, run)) => {
                     let verdict = verify::verify(&dir)?;
@@ -421,9 +427,6 @@ mod run {
             };
             if verdict.judged() {
                 judged.push(dir);
-            }
-            if verdict.was_cut_short() {
-                hung.get_or_insert(scenario.name);
             }
             banners.extend(banner.clone());
             entries.push(Entry::new(p.source, key, banner, verdict));
@@ -513,9 +516,9 @@ mod run {
         p: &Profile,
         live: &Live,
         runs: &Path,
-    ) -> std::io::Result<Vec<Entry>> {
+    ) -> std::io::Result<(Vec<Entry>, Option<&'static str>)> {
         if !args.selects(p.source, LIVE) || live.not_run_on(cfg!(windows)).is_some() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), None));
         }
         let key = format!("{}/{LIVE}", p.source);
         println!("== {key}");
@@ -525,11 +528,12 @@ mod run {
             Ok(v) => live_once(ctx, p, live, &v, &dir),
             Err(e) => Err(std::io::Error::other(e)),
         };
+        let hung = ran.as_ref().err().filter(|e| outran(e)).map(|_| LIVE);
         let (banner, verdict) = match ran {
             Ok((banner, verdict)) => (Some(banner), verdict),
             Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
         };
-        Ok(vec![Entry::new(p.source, key, banner, verdict)])
+        Ok((vec![Entry::new(p.source, key, banner, verdict)], hung))
     }
 
     /// What `live`'s exit `code` says.
@@ -556,15 +560,14 @@ mod run {
         let (ports, extra) = Ports::pick(live.ports)?;
         let (_, cli, sandbox) = sandboxed(ctx, p, version, ports)?;
         let banner = cli_version(&sandbox, p, &cli.launch)?;
-        let status = sandbox
-            .command("bash")
-            .arg(bump::repo_root().join(live.script))
+        let mut tier = sandbox.command("bash");
+        tier.arg(bump::repo_root().join(live.script))
             .args(extra.iter().map(u16::to_string))
             .env(LIVE_PIXTUOID_ENV, &ctx.built.pixtuoid)
             .current_dir(sandbox.dir.path())
             .stdout(log(dir, LIVE_LOG)?)
-            .stderr(log(dir, LIVE_LOG)?)
-            .status()?;
+            .stderr(log(dir, LIVE_LOG)?);
+        let status = bounded_status(tier, live.script)?;
         Ok((banner, live_verdict(live, status.code())))
     }
 
@@ -687,9 +690,68 @@ mod run {
     /// The run's report, beside the runs, for whoever opens the upload.
     const REPORT: &str = "report.md";
 
-    /// Why a run of `p` never started: a budget killed its turn in `hung`.
+    /// The release a run of `p` goes on with, or why none: a release that hung
+    /// in a run before it (`hung`), or one that never resolved.
+    fn release_for<'a>(
+        p: &Profile,
+        hung: Option<&str>,
+        installed: &'a Result<Version, String>,
+    ) -> Result<&'a Version, String> {
+        match (hung, installed) {
+            (Some(hung), _) => Err(skipped(p, hung)),
+            (None, Ok(v)) => Ok(v),
+            (None, Err(e)) => Err(e.clone()),
+        }
+    }
+
+    /// Why a run of `p` never started: a bounded wait on its release ran out in `hung`.
     fn skipped(p: &Profile, hung: &str) -> String {
         format!("skipped: {} hung in {hung}", p.source)
+    }
+
+    /// Whether `ran` hung: the recorder's budget killed a turn, or one of the
+    /// runner's own bounded waits ran out. A TUI driver's own budget is no
+    /// hang: it bounds the turn well inside the recorder's.
+    fn hangs<T>(ran: &std::io::Result<(Manifest, T)>) -> bool {
+        match ran {
+            Ok((manifest, _)) => manifest.capture.hung(),
+            Err(e) => outran(e),
+        }
+    }
+
+    /// A wait of the runner's on a release that a budget killed.
+    #[derive(Debug)]
+    struct Hung(String);
+
+    impl std::fmt::Display for Hung {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "{} outran its {:?} budget and was killed",
+                self.0,
+                TURN_BUDGET.here()
+            )
+        }
+    }
+
+    impl std::error::Error for Hung {}
+
+    impl From<Hung> for std::io::Error {
+        fn from(hung: Hung) -> Self {
+            Self::other(hung)
+        }
+    }
+
+    /// Whether `e` is a [`Hung`].
+    fn outran(e: &std::io::Error) -> bool {
+        e.get_ref().is_some_and(|inner| inner.is::<Hung>())
+    }
+
+    /// How `cmd`, named `what`, exited within [`TURN_BUDGET`], nobody attending.
+    fn bounded_status(cmd: Command, what: &str) -> std::io::Result<ExitStatus> {
+        crate::bounded::run(cmd, false, *TURN_BUDGET.here())?
+            .status
+            .ok_or_else(|| Hung(what.to_owned()).into())
     }
 
     /// `entries` as [`issues::VERDICTS`] holds them, from the leg running
@@ -1975,12 +2037,22 @@ mod run {
     /// the recorder cannot repeat a launch through an interpreter.
     fn cli_version(sandbox: &Sandbox, p: &Profile, launch: &Launch) -> std::io::Result<String> {
         let probe = required_version_probe(p.descriptor())?;
-        let out = sandbox
-            .command(&launch.program)
+        let mut version = sandbox.command(&launch.program);
+        version
             .args(&launch.args)
             .args(&probe[1..])
             .envs(launch.env.iter().map(|(k, v)| (k, v)))
-            .output()?;
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let ended = crate::bounded::run(version, false, *TURN_BUDGET.here())?;
+        let Some(status) = ended.status else {
+            return Err(Hung(format!("{:?} {:?}", launch.program, &probe[1..])).into());
+        };
+        let out = std::process::Output {
+            status,
+            stdout: ended.stdout,
+            stderr: ended.stderr,
+        };
         version_answer(&out).ok_or_else(|| {
             std::io::Error::other(format!(
                 "{:?} {:?} answered nothing (exit {})",
@@ -2467,6 +2539,56 @@ mod run {
                     }],
                 }
             );
+        }
+
+        #[test]
+        fn a_release_that_hung_runs_nothing_more_of_its_source() {
+            use pixtuoid_core::harness::{Budget, SecondTurn, TurnEnd};
+            let p = hermetic::profile("dsh").expect("dsh's profile");
+            let release = Version::new(0, 2, 1);
+            let installed = Ok(release.clone());
+            assert_eq!(release_for(p, None, &installed), Ok(&release));
+            assert_eq!(
+                release_for(p, Some("subagent"), &installed),
+                Err("skipped: dsh hung in subagent".to_owned())
+            );
+            assert_eq!(
+                release_for(p, None, &Err("npm view failed".to_owned())),
+                Err("npm view failed".to_owned())
+            );
+            let ran = |end, second: Option<TurnEnd>| -> std::io::Result<(Manifest, ())> {
+                let capture = CaptureRecord {
+                    workspace: PathBuf::from("/ws"),
+                    cli: "dsh".into(),
+                    version: "0.2.1".into(),
+                    end,
+                    give_up_reason: None,
+                    second_turn: second.map(|end| SecondTurn { end }),
+                    note_survived: true,
+                };
+                let manifest = Manifest {
+                    source: "dsh".into(),
+                    scenario: "subagent".into(),
+                    capture,
+                    aimock: "1.45.1".into(),
+                    requests: 4210,
+                    unmatched: 0,
+                    results_seen: 0,
+                };
+                Ok((manifest, ()))
+            };
+            let killed = TurnEnd::OutOfTime(Budget::Recorder);
+            assert!(hangs(&ran(killed, None)));
+            assert!(hangs(&ran(TurnEnd::Exited(0), Some(killed))));
+            assert!(
+                !hangs(&ran(TurnEnd::OutOfTime(Budget::Driver), None)),
+                "a TUI driver's own budget skips nothing of its source"
+            );
+            assert!(!hangs(&ran(TurnEnd::Exited(1), None)));
+            assert!(hangs::<()>(&Err(Hung("dsh --version".into()).into())));
+            assert!(!hangs::<()>(&Err(std::io::Error::other(
+                "the recorder exited 2"
+            ))));
         }
 
         #[test]

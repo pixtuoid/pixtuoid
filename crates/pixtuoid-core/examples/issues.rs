@@ -5,13 +5,14 @@
 //! issues `gh issue list --json number,state,body` names, as JSON, given the
 //! drift job's outputs and every leg's verdicts under the `verdicts` dir.
 //!
-//! Exits 0 on success, 1 when an input can't be read, and 2 on a usage error.
+//! A verdicts file that doesn't parse leaves its leg reporting none, and the
+//! plan names it. Exits 0 on success, 1 when the drift outputs or the issues
+//! can't be read, and 2 on a usage error.
 
 use std::path::Path;
 
-use pixtuoid_core::harness::files_under;
 use pixtuoid_core::harness::hermetic::issues::{self, Issue, VERDICTS, Verdicts};
-use serde::Deserialize;
+use pixtuoid_core::harness::{files_under, read_json};
 
 const USAGE: &str = "usage: issues plan <drift.json> <issues.json> <verdicts> <run-url>";
 
@@ -35,20 +36,20 @@ fn main() {
     }
 }
 
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{path:?}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("{path:?}: {e}"))
-}
-
 fn plan(drift: &Path, issues: &Path, verdicts: &Path, run: &str) -> Result<(), String> {
     // One leg's download lands flat, several each in its artifact's dir.
-    let legs: Vec<Verdicts> = files_under(verdicts)
-        .iter()
-        .filter(|f| f.file_name().is_some_and(|n| n == VERDICTS))
-        .map(|f| read_json(f))
-        .collect::<Result<_, _>>()?;
+    let (mut legs, mut unread) = (Vec::new(), Vec::new());
+    for file in files_under(verdicts) {
+        if file.file_name().is_some_and(|n| n == VERDICTS) {
+            match read_json::<Verdicts>(&file) {
+                Ok(leg) => legs.push(leg),
+                Err(e) => unread.push(format!("unreadable verdicts: {e}")),
+            }
+        }
+    }
     let issues: Vec<Issue> = read_json(issues)?;
-    let plan = issues::plan(&read_json(drift)?, &legs, &issues, run)?;
+    let mut plan = issues::plan(&read_json(drift)?, &legs, &issues, run);
+    plan.lost.extend(unread);
     println!(
         "{}",
         serde_json::to_string(&plan).map_err(|e| e.to_string())?

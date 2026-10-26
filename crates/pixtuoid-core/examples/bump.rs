@@ -17,6 +17,7 @@ use std::process::Command;
 
 use pixtuoid_core::harness::hermetic::bump::{self, Proposal};
 use pixtuoid_core::harness::hermetic::{self, Profile, pin};
+use pixtuoid_core::harness::read_json;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
@@ -44,11 +45,6 @@ fn main() {
 #[derive(Deserialize)]
 struct Titled {
     title: String,
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{path:?}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("{path:?}: {e}"))
 }
 
 fn plan(taken: &Path, drift: &Path) -> Result<(), String> {

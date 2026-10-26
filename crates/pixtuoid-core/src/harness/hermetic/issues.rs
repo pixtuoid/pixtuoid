@@ -5,14 +5,13 @@
 //! a `hermetic`-labelled issue's text, never code.
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::bump::moved_output;
 use super::verify::Label;
-use super::{OSES, SHARDS};
+use super::{Leg, OSES, legs, shard_of};
 
 /// The file beside a leg's report holding its [`Verdicts`].
 pub const VERDICTS: &str = "verdicts.json";
@@ -112,29 +111,9 @@ pub struct Plan {
     pub lost: Vec<String>,
 }
 
-/// One leg of `hermetic.yml`'s matrix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Leg {
-    os: &'static str,
-    shard: usize,
-}
-
-impl fmt::Display for Leg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}, shard {}", self.os, self.shard)
-    }
-}
-
-/// Every leg, [`OSES`] by [`SHARDS`].
-fn matrix() -> impl Iterator<Item = Leg> {
-    OSES.iter()
-        .flat_map(|&os| (1..=SHARDS.len()).map(move |shard| Leg { os, shard }))
-}
-
-/// The `hermetic.yml` output the leg on `os` running [`SHARDS`]' `shard`th
-/// names its uploaded runs' URL in.
-pub(crate) fn artifact_output(os: &str, shard: usize) -> String {
-    format!("artifact_{os}_{shard}")
+/// The `hermetic.yml` output `leg` names its uploaded runs' URL in.
+pub(crate) fn artifact_output(leg: Leg) -> String {
+    format!("artifact_{}_{}", leg.os, leg.shard)
 }
 
 /// What one of the plan's issues is about.
@@ -176,7 +155,7 @@ impl Key {
                 .strip_suffix(MARKER_END)?
                 .rsplit_once('-')?;
             let shard: usize = shard.parse().ok()?;
-            matrix()
+            legs()
                 .find(|leg| leg.os == os && leg.shard == shard)
                 .map(Self::Leg)
         })
@@ -193,54 +172,83 @@ impl Key {
 /// One leg's night, as the drift job's outputs and its upload tell it.
 struct Night<'a> {
     finished: bool,
-    reported: Option<&'a Verdicts>,
+    report: Report<'a>,
     runs: Option<&'a str>,
 }
 
+/// What a leg reported.
+enum Report<'a> {
+    /// Nothing.
+    Missing,
+    /// Verdicts of the sources its shard runs.
+    Valid(&'a Verdicts),
+    /// Verdicts it could not have reported, and why: a leg's are untrusted.
+    Invalid(String),
+}
+
+impl Night<'_> {
+    fn verdicts(&self) -> Option<&Verdicts> {
+        match self.report {
+            Report::Valid(v) => Some(v),
+            Report::Missing | Report::Invalid(_) => None,
+        }
+    }
+}
+
 /// What to do with the `hermetic` issues `issues`, given the drift job's
-/// outputs, every leg's [`Verdicts`] and the run's URL. A source's issue
-/// closes only on a night every leg reported and both legs running it judged
-/// each of its runs Pass; a leg's, once it reported again.
-///
-/// # Errors
-///
-/// When verdicts come from a leg the matrix doesn't run, or twice from one.
+/// outputs, every leg's [`Verdicts`] and the run's URL. A leg whose verdicts
+/// are missing, or name a leg or a source the matrix gives it no part in, is
+/// lost: it files an issue of its own, and the night closes nothing. A
+/// source's issue closes only on a night no leg is lost and both legs running
+/// it judged each of its runs Pass; a leg's, once it reported again.
 pub fn plan(
     drift: &Map<String, Value>,
     verdicts: &[Verdicts],
     issues: &[Issue],
     run: &str,
-) -> Result<Plan, String> {
+) -> Plan {
     let output = |name: String| {
         drift
             .get(&name)
             .and_then(Value::as_str)
             .filter(|v| !v.is_empty())
     };
-    let mut nights: BTreeMap<Leg, Night<'_>> = matrix()
+    let mut nights: BTreeMap<Leg, Night<'_>> = legs()
         .map(|leg| {
             let night = Night {
                 finished: output(moved_output(leg.os, leg.shard)).is_some(),
-                reported: None,
-                runs: output(artifact_output(leg.os, leg.shard)),
+                report: Report::Missing,
+                runs: output(artifact_output(leg)),
             };
             (leg, night)
         })
         .collect();
+    let mut lost = Vec::new();
     for v in verdicts {
-        let night = nights
+        let Some((leg, night)) = nights
             .iter_mut()
             .find(|(leg, _)| leg.os == v.os && Some(leg.shard) == v.shard)
-            .map(|(_, night)| night)
-            .ok_or_else(|| {
-                format!(
-                    "verdicts from no leg the matrix runs: {} {:?}",
-                    v.os, v.shard
-                )
-            })?;
-        if night.reported.replace(v).is_some() {
-            return Err(format!("{} shard {:?} reported twice", v.os, v.shard));
-        }
+        else {
+            lost.push(format!(
+                "verdicts named no leg of the matrix: {} shard {:?}",
+                v.os, v.shard
+            ));
+            continue;
+        };
+        let stray = v
+            .runs
+            .iter()
+            .find(|r| shard_of(&r.source) != Some(leg.shard));
+        night.report = match (&night.report, stray) {
+            (Report::Missing, None) => Report::Valid(v),
+            (Report::Missing, Some(r)) => Report::Invalid(format!(
+                "a run of {}, which its shard does not run",
+                r.source
+            )),
+            (Report::Valid(_) | Report::Invalid(_), _) => {
+                Report::Invalid("its verdicts twice".into())
+            }
+        };
     }
 
     let mut ours: BTreeMap<Key, &Issue> = BTreeMap::new();
@@ -258,7 +266,7 @@ pub fn plan(
     let mut filed: BTreeMap<Key, String> = BTreeMap::new();
     let mut failing: BTreeMap<&str, Vec<(Leg, &RunVerdict)>> = BTreeMap::new();
     for (leg, night) in &nights {
-        for r in night.reported.iter().flat_map(|v| &v.runs) {
+        for r in night.verdicts().iter().flat_map(|v| &v.runs) {
             if r.label > Label::Pass {
                 failing.entry(&r.source).or_default().push((*leg, r));
             }
@@ -270,12 +278,12 @@ pub fn plan(
             source_note(&rows, &nights, run),
         );
     }
-    let mut lost = Vec::new();
     for (leg, night) in &nights {
-        let why = match (night.finished, night.reported) {
-            (false, _) => "never finished its run",
-            (true, None) => "finished its run but reported no verdicts",
-            (true, Some(_)) => continue,
+        let why = match (night.finished, &night.report) {
+            (false, _) => "never finished its run".to_owned(),
+            (true, Report::Missing) => "finished its run but reported no verdicts".to_owned(),
+            (true, Report::Invalid(what)) => format!("finished its run but reported {what}"),
+            (true, Report::Valid(_)) => continue,
         };
         lost.push(format!("{leg} {why}"));
         let runs = night
@@ -321,21 +329,18 @@ pub fn plan(
             body,
         });
     }
-    Ok(Plan { actions, lost })
+    Plan { actions, lost }
 }
 
 /// Whether both legs of the shard that runs `source` reported its runs, and
 /// judged each Pass.
 fn passed(source: &str, nights: &BTreeMap<Leg, Night<'_>>) -> bool {
-    let Some(shard) = SHARDS.iter().position(|s| s.contains(&source)) else {
+    let Some(shard) = shard_of(source) else {
         return false;
     };
     OSES.iter().all(|&os| {
-        let runs: Vec<&RunVerdict> = nights[&Leg {
-            os,
-            shard: shard + 1,
-        }]
-            .reported
+        let runs: Vec<&RunVerdict> = nights[&Leg { os, shard }]
+            .verdicts()
             .iter()
             .flat_map(|v| &v.runs)
             .filter(|r| r.source == source)
@@ -384,6 +389,7 @@ fn source_note(
 
 #[cfg(test)]
 mod tests {
+    use super::super::SHARDS;
     use super::*;
 
     const RUN: &str = "https://github.com/o/r/actions/runs/1";
@@ -392,14 +398,14 @@ mod tests {
     /// having uploaded their runs.
     fn drift(uploaded: &[(&str, usize)]) -> Map<String, Value> {
         let mut drift = Map::new();
-        for leg in matrix() {
+        for leg in legs() {
             drift.insert(moved_output(leg.os, leg.shard), "[]".into());
             let url = if uploaded.contains(&(leg.os, leg.shard)) {
                 format!("https://a/{}-{}", leg.os, leg.shard)
             } else {
                 String::new()
             };
-            drift.insert(artifact_output(leg.os, leg.shard), url.into());
+            drift.insert(artifact_output(leg), url.into());
         }
         drift
     }
@@ -418,19 +424,10 @@ mod tests {
         }
     }
 
-    /// The shard `source` runs on.
-    fn shard_of(source: &str) -> usize {
-        SHARDS
-            .iter()
-            .position(|s| s.contains(&source))
-            .expect("a sharded source")
-            + 1
-    }
-
     /// Every leg's verdicts: each source of its shard Pass but those `edit`
     /// rewrites.
     fn night(edit: impl Fn(&str, &mut Vec<RunVerdict>)) -> Vec<Verdicts> {
-        matrix()
+        legs()
             .map(|leg| {
                 let mut runs: Vec<RunVerdict> = SHARDS[leg.shard - 1]
                     .iter()
@@ -483,9 +480,8 @@ mod tests {
 
     #[test]
     fn a_failing_source_opens_one_issue_naming_each_run_its_legs_and_their_runs() {
-        let shard = shard_of("hermes");
-        let plan =
-            plan(&drift(&[("macos", shard)]), &night(hermes_fails), &[], RUN).expect("a plan");
+        let shard = shard_of("hermes").expect("a sharded source");
+        let plan = plan(&drift(&[("macos", shard)]), &night(hermes_fails), &[], RUN);
         let [Action::Open { title, body }] = &plan.actions[..] else {
             panic!("one issue for the one failing source: {:?}", plan.actions);
         };
@@ -529,7 +525,7 @@ mod tests {
                 .collect();
             runs.extend(extra);
         });
-        let plan = plan(&drift(&[]), &outage, &[], RUN).expect("a plan");
+        let plan = plan(&drift(&[]), &outage, &[], RUN);
         assert_eq!(
             plan.actions.len(),
             super::super::PROFILES.len(),
@@ -544,7 +540,7 @@ mod tests {
             issue(7, State::Open, &hermes()),
             issue(3, State::Closed, &hermes()),
         ];
-        let plan = plan(&drift(&[]), &night(hermes_fails), &open, RUN).expect("a plan");
+        let plan = plan(&drift(&[]), &night(hermes_fails), &open, RUN);
         assert!(
             matches!(&plan.actions[..], [Action::Comment { number: 7, .. }]),
             "the open one of the key: {:?}",
@@ -554,7 +550,7 @@ mod tests {
             issue(3, State::Closed, &hermes()),
             issue(5, State::Closed, &hermes()),
         ];
-        let plan = super::plan(&drift(&[]), &night(hermes_fails), &closed, RUN).expect("a plan");
+        let plan = super::plan(&drift(&[]), &night(hermes_fails), &closed, RUN);
         assert!(
             matches!(&plan.actions[..], [Action::Reopen { number: 5, .. }]),
             "the newest closed one, never a duplicate: {:?}",
@@ -567,7 +563,6 @@ mod tests {
         let open = [issue(7, State::Open, &hermes())];
         let closes = |verdicts: &[Verdicts], drift: &Map<String, Value>| {
             plan(drift, verdicts, &open, RUN)
-                .expect("a plan")
                 .actions
                 .iter()
                 .any(|a| matches!(a, Action::Close { number: 7, .. }))
@@ -585,7 +580,10 @@ mod tests {
         );
         let unreported: Vec<Verdicts> = night(|_, _| {})
             .into_iter()
-            .filter(|v| !(v.os == "windows" && v.shard == Some(shard_of("hermes"))))
+            .filter(|v| {
+                !(v.os == "windows"
+                    && v.shard == Some(shard_of("hermes").expect("a sharded source")))
+            })
             .collect();
         assert!(!closes(&unreported, &all), "a leg that reported nothing");
         let absent = night(|os, runs| {
@@ -597,7 +595,6 @@ mod tests {
         let renamed = [issue(8, State::Open, &Key::Source("gone".into()))];
         assert!(
             plan(&all, &night(|_, _| {}), &renamed, RUN)
-                .expect("a plan")
                 .actions
                 .is_empty(),
             "a source no shard runs has no leg to pass on"
@@ -613,7 +610,7 @@ mod tests {
             .filter(|v| !(v.os == "windows" && v.shard == Some(2)))
             .collect();
         let open = [issue(7, State::Open, &hermes())];
-        let plan = plan(&lost, &unreported, &open, RUN).expect("a plan");
+        let plan = plan(&lost, &unreported, &open, RUN);
         assert_eq!(
             plan.lost,
             [
@@ -655,8 +652,7 @@ mod tests {
             &night(|_, _| {}),
             &[issue(10, State::Open, &leg)],
             RUN,
-        )
-        .expect("a plan");
+        );
         assert_eq!(
             plan.actions,
             [Action::Close {
@@ -675,18 +671,45 @@ mod tests {
             state: State::Open,
             body: "hermetic: a pin bump failed".into(),
         };
-        let plan = plan(&drift(&[]), &night(|_, _| {}), &[theirs], RUN).expect("a plan");
+        let plan = plan(&drift(&[]), &night(|_, _| {}), &[theirs], RUN);
         assert!(plan.actions.is_empty(), "{:?}", plan.actions);
     }
 
     #[test]
-    fn verdicts_from_no_leg_of_the_matrix_or_twice_from_one_are_refused() {
-        let mut stray = night(|_, _| {});
-        stray[0].shard = None;
-        assert!(plan(&drift(&[]), &stray, &[], RUN).is_err());
+    fn a_leg_that_reported_what_it_could_not_have_is_lost_and_closes_nothing() {
+        let open = [issue(7, State::Open, &hermes())];
+        let forged = night(|os, runs| {
+            if os == "windows" && runs[0].source == SHARDS[0][0] {
+                runs.extend((0..500).map(|n| run(&format!("fake{n}"), "x", Label::Fail, "forged")));
+            }
+        });
+        let p = plan(&drift(&[]), &forged, &open, RUN);
+        assert_eq!(
+            p.lost,
+            [
+                "windows, shard 1 finished its run but reported a run of fake0, which its shard does not run"
+            ]
+        );
+        assert!(
+            matches!(&p.actions[..], [Action::Open { title, .. }] if title == "hermetic: windows, shard 1 reported no verdicts"),
+            "one issue for the leg, none for what it forged, and no close: {:?}",
+            p.actions
+        );
         let mut twice = night(|_, _| {});
         twice.push(twice[0].clone());
-        assert!(plan(&drift(&[]), &twice, &[], RUN).is_err());
+        assert_eq!(
+            plan(&drift(&[]), &twice, &open, RUN).lost,
+            ["macos, shard 1 finished its run but reported its verdicts twice"]
+        );
+        let mut stray = night(|_, _| {});
+        stray[0].shard = None;
+        assert_eq!(
+            plan(&drift(&[]), &stray, &open, RUN).lost,
+            [
+                "verdicts named no leg of the matrix: macos shard None",
+                "macos, shard 1 finished its run but reported no verdicts",
+            ]
+        );
     }
 
     #[test]

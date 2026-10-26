@@ -13,12 +13,13 @@ fn main() -> std::io::Result<()> {
     recorder::main()
 }
 
+#[path = "support/bounded.rs"]
+mod bounded;
+
 mod recorder {
     use std::collections::BTreeSet;
     use std::io::{IsTerminal, Write};
     use std::path::{Path, PathBuf};
-    #[cfg(unix)]
-    use std::sync::atomic::{AtomicI32, Ordering};
     use std::time::{Duration, SystemTime};
 
     use pixtuoid_core::harness::provenance::{
@@ -34,7 +35,7 @@ mod recorder {
     use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
-        BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
+        BOOT, Budget, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, SecondTurn,
         TurnEnd, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
         files_under, jsonl_files_under, required_version_probe, slashed_under, version_answer,
@@ -321,7 +322,7 @@ mod recorder {
             std::process::exit(2);
         }
         #[cfg(unix)]
-        end_turns_with_the_recorder()?;
+        crate::bounded::forward_endings()?;
         let (source, scenario) = (plan.source.clone(), plan.scenario.clone());
         let cmd = plan.first_turn.strings();
         let run_copy = driver_destination(plan);
@@ -394,15 +395,15 @@ mod recorder {
         } else {
             Seat::Unattended
         };
-        let end = run_turn(
+        let ended = run_turn(
             wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
             budget,
             seat,
         )?;
         let give_up_reason = give_up_reason(sandbox.path());
+        let end = read_end(&source, &scenario, ended, give_up_reason.as_deref());
         let second_outcome = match plan.second_turn() {
-            // A release that hung once costs the run one budget, not two.
-            Some(_) if end == TurnEnd::OutOfTime => {
+            Some(_) if !second_turn_runs(end) => {
                 eprintln!("the first turn outran its budget, so its second turn did not run");
                 None
             }
@@ -441,27 +442,17 @@ mod recorder {
         let payloads = tap.payloads();
         let incomplete = incomplete(tap.stopped(), daemon_stop);
 
-        let incomplete = match &plan.sink {
-            // A committed capture is complete or not written at all; a raw one
-            // records a killed turn, which its verdict judges.
-            Sink::Committed { .. } => {
-                let killed = (end == TurnEnd::OutOfTime).then(|| {
-                    std::io::Error::other(format!(
-                        "the turn outran its {budget:?} budget and was killed"
-                    ))
-                });
-                if let Some(e) = incomplete.or(killed) {
-                    keep_scratch(
-                        sandbox,
-                        run_copy.as_deref(),
-                        operator_identity,
-                        &mut std::io::stderr(),
-                    );
-                    return Err(e);
-                }
-                None
+        let incomplete = match refusal(&plan.sink, incomplete, end) {
+            Ok(kept) => kept,
+            Err(e) => {
+                keep_scratch(
+                    sandbox,
+                    run_copy.as_deref(),
+                    operator_identity,
+                    &mut std::io::stderr(),
+                );
+                return Err(e);
             }
-            Sink::Raw { .. } => incomplete,
         };
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
@@ -1009,81 +1000,59 @@ mod recorder {
         Unattended,
     }
 
-    /// How `turn` ended within `budget`, past which it is killed. One nobody
-    /// attends reads nothing and runs in its own process group (Unix), and the
-    /// kill takes the whole group; an attended one keeps the terminal and its
-    /// foreground group, so a TUI reads the keys typed into it and Ctrl-C
-    /// reaches it, and the kill takes it alone. Either seat's Windows turn runs
-    /// in a Job Object of its own, which the kill takes whole. A CLI that leads
-    /// its own session under a driver's pty is in neither: the pty's hangup when
-    /// its driver dies is what ends it.
+    /// How `turn` ended within `budget`, the recorder's (`bounded::run`).
     fn run_turn(
-        mut turn: std::process::Command,
+        turn: std::process::Command,
         budget: Duration,
         seat: Seat,
     ) -> std::io::Result<TurnEnd> {
-        if seat == Seat::Unattended {
-            // A background process group that read the terminal would stop on SIGTTIN.
-            turn.stdin(std::process::Stdio::null());
-        }
-        let mut turn = process_wrap::std::CommandWrap::from(turn);
-        #[cfg(unix)]
-        if seat == Seat::Unattended {
-            turn.wrap(process_wrap::std::ProcessGroup::leader());
-        }
-        #[cfg(windows)]
-        turn.wrap(process_wrap::std::JobObject);
-        let mut child = turn.spawn()?;
-        #[cfg(unix)]
-        if seat == Seat::Unattended {
-            TURN_GROUP.store(i32::try_from(child.id()).unwrap_or(0), Ordering::SeqCst);
-        }
-        let end = turn_end(child.as_mut(), budget);
-        #[cfg(unix)]
-        TURN_GROUP.store(0, Ordering::SeqCst);
-        end
+        Ok(
+            match crate::bounded::run(turn, seat == Seat::Attended, budget)?.status {
+                Some(status) => status.into(),
+                None => TurnEnd::OutOfTime(Budget::Recorder),
+            },
+        )
     }
 
-    /// [`run_turn`]'s wait, its process group's bookkeeping aside.
-    fn turn_end(
-        child: &mut dyn process_wrap::std::ChildWrapper,
-        budget: Duration,
-    ) -> std::io::Result<TurnEnd> {
-        // An Err is the budget running out or a poll's error, which the poll
-        // below meets again.
-        let _ = wait_until("its exit", budget, || Ok(child.try_wait()?.is_some()));
-        // A poll's status, never `wait`'s: a Job Object's waits on every
-        // process the turn left behind.
-        if let Some(status) = child.try_wait()? {
-            return Ok(status.into());
-        }
-        child.kill()?;
-        Ok(TurnEnd::OutOfTime)
+    /// How `source`'s `scenario` turn ended, `ended` read as its profiled
+    /// surface means it (`hermetic::Scenario::turn_end`); as it is for a turn
+    /// no profile names.
+    fn read_end(
+        source: &str,
+        scenario: &str,
+        ended: TurnEnd,
+        give_up_reason: Option<&str>,
+    ) -> TurnEnd {
+        hermetic::profile(source)
+            .and_then(|p| p.scenario(scenario))
+            .map_or(ended, |s| s.turn_end(ended, give_up_reason))
     }
 
-    /// The process group of the turn running now, 0 between turns.
-    #[cfg(unix)]
-    static TURN_GROUP: AtomicI32 = AtomicI32::new(0);
+    /// Whether a second turn runs after a first that ended `first`: one a
+    /// budget killed costs its run that budget alone.
+    fn second_turn_runs(first: TurnEnd) -> bool {
+        !first.outran()
+    }
 
-    /// Kill the running unattended turn's process group with the recorder when
-    /// a signal ends it: the terminal's Ctrl-C never reaches that group, and
-    /// once the recorder is gone nothing holds the turn to its budget.
-    #[cfg(unix)]
-    fn end_turns_with_the_recorder() -> std::io::Result<()> {
-        use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
-        let mut signals = signal_hook::iterator::Signals::new([SIGHUP, SIGINT, SIGTERM])?;
-        std::thread::spawn(move || {
-            for signal in signals.forever() {
-                if let Some(group) =
-                    rustix::process::Pid::from_raw(TURN_GROUP.load(Ordering::SeqCst))
-                {
-                    let _ =
-                        rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-                }
-                let _ = signal_hook::low_level::emulate_default_handler(signal);
-            }
-        });
-        Ok(())
+    /// What `sink` makes of a capture that is `incomplete`, its turn ended
+    /// `end`. A committed one is complete or not written at all, so either
+    /// refuses it; a raw one is written, and reports `incomplete` once it is,
+    /// since its verdict judges a killed turn.
+    fn refusal(
+        sink: &Sink,
+        incomplete: Option<std::io::Error>,
+        end: TurnEnd,
+    ) -> std::io::Result<Option<std::io::Error>> {
+        match sink {
+            Sink::Committed { .. } => match incomplete {
+                Some(e) => Err(e),
+                None if end.outran() => Err(std::io::Error::other(format!(
+                    "the turn was {end}, so it is not written"
+                ))),
+                None => Ok(None),
+            },
+            Sink::Raw { .. } => Ok(incomplete),
+        }
     }
 
     /// How long a daemon gets to serve: its cold boot and a cold-starting probe
@@ -2924,7 +2893,7 @@ mod recorder {
             let started = std::time::Instant::now();
             let end =
                 run_turn(fake_turn(TEST, dir.path()), budget, Seat::Unattended).expect("it ran");
-            assert_eq!(end, TurnEnd::OutOfTime);
+            assert_eq!(end, TurnEnd::OutOfTime(Budget::Recorder));
             assert!(started.elapsed() < budget * 2, "it outlived its budget");
             let before = beaten(dir.path());
             assert!(before > 0, "the grandchild never ran, so it proves nothing");
@@ -2942,7 +2911,7 @@ mod recorder {
             const TEST: &str = "a_signal_that_ends_the_recorder_ends_its_turn";
             if let Some(dir) = as_fake_turn(TEST) {
                 if std::env::args().any(|a| a == FAKE_RECORDER) {
-                    end_turns_with_the_recorder().expect("forwarding");
+                    crate::bounded::forward_endings().expect("forwarding");
                     let _ = run_turn(fake_turn(TEST, &dir), OUTLIVES, Seat::Unattended);
                 }
                 return;
@@ -3006,6 +2975,54 @@ mod recorder {
                 "an attended turn keeps the terminal's foreground group"
             );
             assert_ne!(group_of(Seat::Unattended), ours);
+        }
+
+        #[test]
+        fn a_turn_a_budget_killed_runs_no_second_turn() {
+            assert!(second_turn_runs(TurnEnd::Exited(0)));
+            assert!(second_turn_runs(TurnEnd::Exited(1)));
+            assert!(second_turn_runs(TurnEnd::Signalled));
+            assert!(!second_turn_runs(TurnEnd::OutOfTime(Budget::Recorder)));
+            assert!(!second_turn_runs(TurnEnd::OutOfTime(Budget::Driver)));
+        }
+
+        #[test]
+        fn a_committed_capture_a_budget_killed_is_refused_and_a_raw_one_is_written() {
+            use pixtuoid_core::harness::hermetic::tui::OUT_OF_TIME;
+            use pixtuoid_core::harness::plan::AbsPath;
+            let committed = Sink::Committed {
+                command: NonEmpty::try_from("claude -p {prompt}").expect("words"),
+                prompt: None,
+            };
+            let raw = Sink::Raw {
+                out: AbsPath::try_from(std::env::temp_dir().as_path()).expect("absolute"),
+                second_turn: None,
+            };
+            let killed = TurnEnd::OutOfTime(Budget::Recorder);
+            let tap = || Some(std::io::Error::other("the tap stopped"));
+            assert!(refusal(&committed, None, TurnEnd::Exited(0)).is_ok_and(|kept| kept.is_none()));
+            assert!(refusal(&committed, None, killed).is_err());
+            assert!(refusal(&committed, tap(), TurnEnd::Exited(0)).is_err());
+            assert!(
+                refusal(&raw, None, killed).is_ok_and(|kept| kept.is_none()),
+                "its verdict judges it"
+            );
+            assert!(refusal(&raw, tap(), TurnEnd::Exited(0)).is_ok_and(|kept| kept.is_some()));
+            let driver_ran_out = read_end(
+                "claude-code",
+                "permission",
+                TurnEnd::Exited(OUT_OF_TIME),
+                Some("the 120s budget ran out"),
+            );
+            assert!(
+                refusal(&committed, None, driver_ran_out).is_err(),
+                "a billed tui_drive turn its own budget killed"
+            );
+            assert_eq!(
+                read_end("unprofiled", "x", TurnEnd::Exited(OUT_OF_TIME), Some("why")),
+                TurnEnd::Exited(OUT_OF_TIME),
+                "a CLI no profile names exits as it does"
+            );
         }
 
         /// A driver is a Unix shell script.

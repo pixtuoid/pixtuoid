@@ -23,7 +23,9 @@ use crate::harness::provenance::{Dropped, Provenance};
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
-use crate::harness::{Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures};
+use crate::harness::{
+    Budget, CaptureRecord, Drive, Driven, HOOK_PAYLOADS, Reach, TurnEnd, captures,
+};
 use crate::source::registry::ChildEndInference;
 use crate::{AgentEvent, AgentId};
 
@@ -79,11 +81,6 @@ impl Verdict {
             cut_short: true,
             ..self
         }
-    }
-
-    /// Whether a budget killed its run.
-    pub fn was_cut_short(&self) -> bool {
-        self.cut_short
     }
 
     /// This verdict, of a run that reached the new-type check and could not
@@ -144,7 +141,7 @@ pub fn verify(dir: &Path) -> std::io::Result<Verdict> {
     let scene = std::fs::read_to_string(dir.join(SCENE_LOG))?;
     let mut findings = Vec::new();
     let unjudged = judge(p, scenario, &manifest, dir, &scene, &mut findings)?;
-    let verdict = match outran(&manifest, scenario.surface) {
+    let verdict = match outran(&manifest.capture) {
         Some(_) => Verdict::new(findings).cut_short(),
         None => Verdict::new(findings),
     };
@@ -622,20 +619,11 @@ fn completed_turn(manifest: &Manifest, shape: Shape, findings: &mut Vec<(Label, 
     manifest.capture.exited_as_scripted(shape) && (manifest.requests > 0 || !shape.asks_the_model())
 }
 
-/// Which of `manifest`'s turns a budget killed, if one did: the recorder's
-/// [`TURN_BUDGET`], or a TUI driver's own, which it exits [`tui::OUT_OF_TIME`]
-/// for.
-fn outran(manifest: &Manifest, surface: Surface) -> Option<&'static str> {
-    let capture = &manifest.capture;
-    let driver_ran_out =
-        matches!(surface, Surface::Tui { .. }) && capture.end == TurnEnd::Exited(tui::OUT_OF_TIME);
-    if capture.end == TurnEnd::OutOfTime || driver_ran_out {
+/// Which of `capture`'s turns a budget killed, if one did.
+fn outran(capture: &CaptureRecord) -> Option<&'static str> {
+    if capture.end.outran() {
         Some("turn")
-    } else if capture
-        .second_turn
-        .as_ref()
-        .is_some_and(|r| r.end == TurnEnd::OutOfTime)
-    {
+    } else if capture.second_turn.as_ref().is_some_and(|r| r.end.outran()) {
         Some("second turn")
     } else {
         None
@@ -648,9 +636,9 @@ fn outran(manifest: &Manifest, surface: Surface) -> Option<&'static str> {
 fn incomplete(manifest: &Manifest, scenario: &Scenario) -> (Label, String) {
     let capture = &manifest.capture;
     let requests = manifest.requests;
-    if let Some(turn) = outran(manifest, scenario.surface) {
-        let budget = match &capture.give_up_reason {
-            Some(why) if capture.end == TurnEnd::Exited(tui::OUT_OF_TIME) => why.clone(),
+    if let Some(turn) = outran(capture) {
+        let budget = match (&capture.give_up_reason, capture.end) {
+            (Some(why), TurnEnd::OutOfTime(Budget::Driver)) => why.clone(),
             _ => format!("the {:?} budget ran out", TURN_BUDGET.here()),
         };
         return if requests > 0 {
@@ -2420,7 +2408,10 @@ mod tests {
             "second turn exit 1"
         ));
         assert!(has(
-            &judged(TurnEnd::Exited(0), second(TurnEnd::OutOfTime)),
+            &judged(
+                TurnEnd::Exited(0),
+                second(TurnEnd::OutOfTime(Budget::Recorder))
+            ),
             Label::Script,
             "second turn was killed"
         ));
@@ -2585,7 +2576,7 @@ mod tests {
             "a signal ends no turn"
         );
         assert!(
-            !completed(Shape::Succession, TurnEnd::OutOfTime, 0),
+            !completed(Shape::Succession, TurnEnd::OutOfTime(Budget::Recorder), 0),
             "nor does the budget"
         );
         assert!(
@@ -2793,7 +2784,7 @@ mod tests {
         let judged = |requests| {
             let d = run_from("codex", "tool-run-recorded", CX_SCENE);
             write_manifest(d.path(), "codex", |m| {
-                m.capture.end = TurnEnd::OutOfTime;
+                m.capture.end = TurnEnd::OutOfTime(Budget::Recorder);
                 m.requests = requests;
             });
             verify(d.path()).expect("verify")
@@ -2827,7 +2818,7 @@ mod tests {
             let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
-                m.capture.end = TurnEnd::Exited(tui::OUT_OF_TIME);
+                m.capture.end = TurnEnd::OutOfTime(Budget::Driver);
                 m.capture.give_up_reason = Some(WHY.into());
                 m.requests = requests;
             });
@@ -2842,14 +2833,6 @@ mod tests {
         assert!(has(&v, Label::Script, WHY), "{:?}", v.findings());
         assert!(!v.judged());
         assert_eq!(judged(0).label(), Label::Blocked);
-        let h = run_from("codex", "tool-run-recorded", CX_SCENE);
-        write_manifest(h.path(), "codex", |m| {
-            m.capture.end = TurnEnd::Exited(tui::OUT_OF_TIME);
-        });
-        assert!(
-            !verify(h.path()).expect("verify").was_cut_short(),
-            "a headless CLI's own exit code"
-        );
     }
 
     #[test]

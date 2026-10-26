@@ -206,9 +206,32 @@ pub enum TurnEnd {
     Exited(i32),
     /// A signal ended it.
     Signalled,
-    /// It outran [`crate::harness::hermetic::TURN_BUDGET`], so the recorder
-    /// killed it, with its process group or Job Object when nobody attended it.
-    OutOfTime,
+    /// A budget killed it.
+    OutOfTime(Budget),
+}
+
+/// Whose budget killed a turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Budget {
+    /// The recorder's [`crate::harness::hermetic::TURN_BUDGET`]: the CLI hung,
+    /// so its source runs no more turns that leg. The kill takes its Job
+    /// Object on Windows, and on Unix its process group when nobody attended it.
+    Recorder,
+    /// Its TUI driver's own, inside the recorder's: the screen never settled.
+    Driver,
+}
+
+impl TurnEnd {
+    /// Whether a budget killed it, whoever's.
+    pub fn outran(self) -> bool {
+        matches!(self, Self::OutOfTime(_))
+    }
+
+    /// Whether the recorder's budget killed it.
+    pub fn hung(self) -> bool {
+        self == Self::OutOfTime(Budget::Recorder)
+    }
 }
 
 impl From<std::process::ExitStatus> for TurnEnd {
@@ -222,7 +245,8 @@ impl std::fmt::Display for TurnEnd {
         match self {
             Self::Exited(code) => write!(f, "exit {code}"),
             Self::Signalled => f.write_str("killed by a signal"),
-            Self::OutOfTime => f.write_str("killed at its budget"),
+            Self::OutOfTime(Budget::Recorder) => f.write_str("killed at its budget"),
+            Self::OutOfTime(Budget::Driver) => f.write_str("killed at its driver's budget"),
         }
     }
 }
@@ -251,6 +275,11 @@ pub struct CaptureRecord {
 }
 
 impl CaptureRecord {
+    /// Whether the recorder's budget killed either of its turns.
+    pub fn hung(&self) -> bool {
+        self.end.hung() || self.second_turn.as_ref().is_some_and(|r| r.end.hung())
+    }
+
     /// Whether the CLI ran `shape`'s turn as scripted, and its second turn
     /// where one ran.
     pub fn exited_as_scripted(&self, shape: crate::harness::hermetic::Shape) -> bool {

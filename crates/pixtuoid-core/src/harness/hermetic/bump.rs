@@ -12,13 +12,13 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{OSES, PROFILES, Profile, SHARDS, pin};
+use super::{OSES, PROFILES, Profile, legs, pin};
 use crate::harness::sources_root;
 
 /// The file beside a run's reports naming each source that moved.
 pub const MOVED: &str = "moved.json";
 
-/// The `hermetic.yml` output the drift leg on `os` running [`SHARDS`]' `shard`th
+/// The `hermetic.yml` output the drift leg on `os` running [`super::SHARDS`]' `shard`th
 /// reports its [`MOVED`] rows as, counting from 1 as `--shard` does.
 pub(crate) fn moved_output(os: &str, shard: usize) -> String {
     format!("moved_{os}_{shard}")
@@ -81,12 +81,14 @@ pub fn plan(drift: &Map<String, Value>, taken: &[String]) -> Result<Vec<Proposal
     let mut moved = Vec::new();
     for os in OSES {
         let mut rows: Vec<Moved> = Vec::new();
-        for shard in 1..=SHARDS.len() {
-            match drift.get(&moved_output(os, shard)).and_then(Value::as_str) {
+        for leg in legs().filter(|leg| leg.os == *os) {
+            match drift
+                .get(&moved_output(leg.os, leg.shard))
+                .and_then(Value::as_str)
+            {
                 None | Some("") => {}
                 Some(json) => rows.extend(
-                    serde_json::from_str::<Vec<Moved>>(json)
-                        .map_err(|e| format!("{os} {shard}: {e}"))?,
+                    serde_json::from_str::<Vec<Moved>>(json).map_err(|e| format!("{leg}: {e}"))?,
                 ),
             }
         }
@@ -194,6 +196,7 @@ pub fn judge(
 
 #[cfg(test)]
 mod tests {
+    use super::super::SHARDS;
     use super::*;
     use crate::harness::hermetic::profile;
 
@@ -216,10 +219,7 @@ mod tests {
 
     /// The shard `source` runs in, or the first for one no profile names.
     fn shard_of(source: &str) -> usize {
-        SHARDS
-            .iter()
-            .position(|s| s.contains(&source))
-            .map_or(1, |i| i + 1)
+        super::super::shard_of(source).unwrap_or(1)
     }
 
     /// The drift job's outputs, each OS's rows as `hermetic.yml` reports them:
@@ -228,17 +228,17 @@ mod tests {
         let mut out = Map::new();
         out.insert("runs-stem".into(), Value::from("hermetic-runs-1-1-"));
         for (os, rows) in legs {
-            for shard in 1..=SHARDS.len() {
+            for leg in super::legs().filter(|leg| leg.os == *os) {
                 let rows: Vec<Moved> = rows
                     .iter()
-                    .filter(|(source, _)| shard_of(source) == shard)
+                    .filter(|(source, _)| shard_of(source) == leg.shard)
                     .map(|(source, version)| Moved {
                         source: (*source).to_string(),
                         version: (*version).to_string(),
                     })
                     .collect();
                 let json = serde_json::to_string(&rows).expect("rows");
-                out.insert(moved_output(os, shard), Value::from(json));
+                out.insert(moved_output(os, leg.shard), Value::from(json));
             }
         }
         out
@@ -350,14 +350,14 @@ mod tests {
         );
         for os in OSES {
             assert!(yml.contains(&format!("- {{ os: {os}, ")), "{os}'s runner");
-            for shard in 1..=SHARDS.len() {
-                assert_eq!(
-                    yml.matches(&format!("{}:", moved_output(os, shard)))
-                        .count(),
-                    2,
-                    "{os} {shard}'s rows, as the job's output and the workflow's"
-                );
-            }
+        }
+        for leg in legs() {
+            assert_eq!(
+                yml.matches(&format!("{}:", moved_output(leg.os, leg.shard)))
+                    .count(),
+                2,
+                "{leg}'s rows, as the job's output and the workflow's"
+            );
         }
     }
 

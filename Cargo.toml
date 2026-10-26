@@ -163,8 +163,8 @@ temp-env           = "0.3"
 # (ConPTY on Windows) and reads the screen it renders.
 portable-pty       = "0.9"
 vt100              = "0.18"
-# Dev-only: the recorder kills a turn past its budget with its Unix process
-# group or Windows Job Object.
+# Dev-only: the hermetic tier kills a child past its budget with its Unix
+# process group or Windows Job Object (`examples/support/bounded.rs`).
 process-wrap       = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
 signal-hook        = "0.3"
 # regex is already built through criterion; sha2 checks the hermetic tier's

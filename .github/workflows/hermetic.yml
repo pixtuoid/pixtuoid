@@ -117,8 +117,8 @@ jobs:
           OS: ${{ matrix.os }}
           SHARD: ${{ matrix.shard }}
         run: echo "moved_${OS}_${SHARD}=$(cat target/hermetic/runs/moved.json)" >> "$GITHUB_OUTPUT"
-      # A run that passes with a New finding still uploads, for the nightly to
-      # file (`hermetic::issues::VERDICTS`).
+      # A run that passes with a New finding still uploads its runs, which the
+      # nightly's issue links.
       - name: Report the new types
         id: new
         if: steps.run.outputs.exit == '0'
