@@ -4,17 +4,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use notify::RecursiveMode;
 
 use super::{
     SOURCE_NAME, decode_omp_line, omp_derive_label, omp_head_title, omp_id_from_path,
-    omp_profile_sessions_dirs, omp_sessions_dir,
+    omp_profile_sessions_dirs, omp_profiles_dir, omp_sessions_dir,
 };
 use crate::source::decoder::parsed_tail_lines;
-use crate::source::jsonl::{DEFAULT_POLL_INTERVAL, JsonlWatcher, ProbeSnapshot};
+use crate::source::jsonl::{
+    DEFAULT_POLL_INTERVAL, JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root,
+};
 use crate::source::{Source, TaggedSender};
 
-/// The profile-roots lister [`OmpSource::run`] re-invokes on its rescan tick,
-/// injectable so tests can grow the set without touching process env.
+/// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile
+/// and backstop tick, injectable so tests can grow the set without touching
+/// process env.
 pub(crate) type OmpProfileEnumerate = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 
 /// omp appends a [`super::CUSTOM`] entry whose `customType` is
@@ -40,14 +44,17 @@ pub struct OmpSource {
     /// The OTHER profiles' sessions roots, one watcher each. Filled by
     /// [`Self::default_paths`]' enumeration.
     pub profile_sessions_roots: Vec<PathBuf>,
-    /// Re-lists the profile roots each rescan tick (a profile created mid-run
-    /// gains a watcher without a restart).
+    /// Re-lists the profile roots (a profile created mid-run gains a watcher
+    /// without a restart).
     #[doc(hidden)]
     pub rescan: OmpProfileEnumerate,
-    /// How often [`Self::rescan`] runs; production stays on the watcher poll
-    /// authority, tests shrink it.
+    /// The period of [`Self::rescan`]'s backstop; production stays on the
+    /// watcher poll authority.
     #[doc(hidden)]
     pub rescan_interval: Duration,
+    /// The dir whose new entry, a new profile, runs [`Self::rescan`] at once.
+    #[doc(hidden)]
+    pub profiles_dir: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for OmpSource {
@@ -56,6 +63,7 @@ impl std::fmt::Debug for OmpSource {
             .field("sessions_root", &self.sessions_root)
             .field("profile_sessions_roots", &self.profile_sessions_roots)
             .field("rescan_interval", &self.rescan_interval)
+            .field("profiles_dir", &self.profiles_dir)
             .finish_non_exhaustive()
     }
 }
@@ -69,6 +77,7 @@ impl OmpSource {
             rescan: Arc::new(omp_profile_sessions_dirs),
             rescan_interval: DEFAULT_POLL_INTERVAL,
             sessions_root: omp_sessions_dir(),
+            profiles_dir: omp_profiles_dir(),
         }
     }
 
@@ -80,11 +89,12 @@ impl OmpSource {
             profile_sessions_roots: Vec::new(),
             rescan: Arc::new(Vec::new),
             rescan_interval: DEFAULT_POLL_INTERVAL,
+            profiles_dir: None,
         }
     }
 }
 
-/// One watcher over `root`. `started` keeps every
+/// One watcher over `root`, unless one was ever started: `started` keeps every
 /// root ever spawned, so a failed one is not respawn-thrashed by the rescan.
 fn spawn_watcher(
     set: &mut tokio::task::JoinSet<Result<()>>,
@@ -92,8 +102,11 @@ fn spawn_watcher(
     root: PathBuf,
     tx: TaggedSender,
 ) {
+    if !started.insert(root.clone()) {
+        return;
+    }
     let watcher = JsonlWatcher::new(
-        root.clone(),
+        root,
         SOURCE_NAME.to_string(),
         decode_omp_line,
         omp_session_ended,
@@ -101,8 +114,41 @@ fn spawn_watcher(
     .with_label_deriver(omp_derive_label)
     .with_head_label(omp_head_title)
     .with_root_probe(live_omp_session_ids);
-    started.insert(root);
     set.spawn(watcher.run(tx));
+}
+
+async fn rescan_into(
+    rescan: &OmpProfileEnumerate,
+    set: &mut tokio::task::JoinSet<Result<()>>,
+    started: &mut HashSet<PathBuf>,
+    tx: &TaggedSender,
+) {
+    // Off the worker: the enumeration does blocking fs reads
+    // (the liveness probes set the precedent).
+    let listed = tokio::task::spawn_blocking({
+        let rescan = rescan.clone();
+        move || rescan()
+    })
+    .await;
+    for root in listed.unwrap_or_default() {
+        spawn_watcher(set, started, root, tx.clone());
+    }
+}
+
+/// The watch on `dir` that nudges for each new entry, a new profile.
+async fn profiles_watch(dir: PathBuf, nudge: Nudge) -> RootWatch {
+    let events = {
+        let nudge = nudge.clone();
+        move |res: notify::Result<notify::Event>| nudge.on_event(&res)
+    };
+    let mut watch = RootWatch::new(
+        absolute_root(dir),
+        RecursiveMode::NonRecursive,
+        events,
+        nudge,
+    );
+    watch.reconcile_logged(Wake::Poll).await;
+    watch
 }
 
 impl Source for OmpSource {
@@ -116,31 +162,40 @@ impl Source for OmpSource {
             profile_sessions_roots,
             rescan,
             rescan_interval,
+            profiles_dir,
         } = *self;
         let mut set = tokio::task::JoinSet::new();
         let mut started = HashSet::new();
         let mut last_error = None;
-        spawn_watcher(&mut set, &mut started, sessions_root, tx.clone());
-        for root in profile_sessions_roots {
-            if !started.contains(&root) {
-                spawn_watcher(&mut set, &mut started, root, tx.clone());
-            }
+        for root in std::iter::once(sessions_root).chain(profile_sessions_roots) {
+            spawn_watcher(&mut set, &mut started, root, tx.clone());
         }
+        let (nudge, mut nudges) = Nudge::channel();
+        let mut profiles = match profiles_dir {
+            Some(dir) => Some(profiles_watch(dir, nudge).await),
+            None => None,
+        };
+        // An interval, not a per-iteration sleep, which every nudge would reset.
+        let mut backstop = tokio::time::interval(rescan_interval);
+        backstop.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Its first tick completes immediately; the roots above are the boot listing.
+        backstop.tick().await;
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(rescan_interval) => {
-                    // Off the worker: the enumeration does blocking fs reads
-                    // (the liveness probes set the precedent).
-                    let listed = tokio::task::spawn_blocking({
-                        let rescan = rescan.clone();
-                        move || rescan()
-                    })
-                    .await;
-                    for root in listed.unwrap_or_default() {
-                        if !started.contains(&root) {
-                            spawn_watcher(&mut set, &mut started, root, tx.clone());
+                Some(()) = nudges.recv() => {
+                    if let Some(watch) = profiles.as_mut() {
+                        watch.reconcile_logged(Wake::Nudge).await;
+                        // An unwatched profiles dir, absent or failing, reports no profile.
+                        if watch.is_attached() {
+                            rescan_into(&rescan, &mut set, &mut started, &tx).await;
                         }
                     }
+                }
+                _ = backstop.tick() => {
+                    if let Some(watch) = profiles.as_mut() {
+                        watch.reconcile_logged(Wake::Poll).await;
+                    }
+                    rescan_into(&rescan, &mut set, &mut started, &tx).await;
                 }
                 Some(finished) = set.join_next() => {
                     // Log-and-continue per root, but REMEMBER the failure: a

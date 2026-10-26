@@ -391,6 +391,10 @@ impl RootWatch {
         }
     }
 
+    pub(crate) fn is_attached(&self) -> bool {
+        self.root_watched
+    }
+
     /// Brings the watches in line with the filesystem: the anchor on the root's
     /// deepest existing ancestor, the root watch on the directory the root
     /// names now. It re-reads until a read finds what the last one placed, so
