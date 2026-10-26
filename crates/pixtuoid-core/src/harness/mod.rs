@@ -50,6 +50,19 @@ pub(crate) fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
+/// The `T` the JSON file at `path` holds.
+///
+/// # Errors
+///
+/// The file cannot be read or holds no `T`, either naming `path`.
+pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> std::io::Result<T> {
+    let named = |kind, e: &dyn std::fmt::Display| {
+        std::io::Error::new(kind, format!("{}: {e}", path.display()))
+    };
+    let text = std::fs::read_to_string(path).map_err(|e| named(e.kind(), &e))?;
+    serde_json::from_str(&text).map_err(|e| named(std::io::ErrorKind::InvalidData, &e))
+}
+
 /// A lifecycle CLASS a driven wire pushed the slot through — asserted as
 /// reached-at-some-point, never as the terminal state.
 ///

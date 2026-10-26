@@ -17,6 +17,7 @@ use std::process::Command;
 
 use pixtuoid_core::harness::hermetic::bump::{self, Proposal};
 use pixtuoid_core::harness::hermetic::{self, Profile, pin};
+use pixtuoid_core::harness::read_json;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
@@ -46,17 +47,13 @@ struct Titled {
     title: String,
 }
 
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{path:?}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("{path:?}: {e}"))
-}
-
 fn plan(taken: &Path, drift: &Path) -> Result<(), String> {
-    let taken: Vec<String> = read_json::<Vec<Titled>>(taken)?
+    let taken: Vec<String> = read_json::<Vec<Titled>>(taken)
+        .map_err(|e| e.to_string())?
         .into_iter()
         .map(|t| t.title)
         .collect();
-    let proposals = bump::plan(&read_json(drift)?, &taken)?;
+    let proposals = bump::plan(&read_json(drift).map_err(|e| e.to_string())?, &taken)?;
     println!(
         "{}",
         serde_json::to_string(&proposals).map_err(|e| e.to_string())?
@@ -162,7 +159,7 @@ fn check(proposals: &Path, patches: &Path) -> Result<(), String> {
     }
     let registry = std::fs::read_to_string(pin::registry_path()).map_err(|e| e.to_string())?;
     let mut admitted = Vec::new();
-    for proposal in read_json::<Vec<Proposal>>(proposals)? {
+    for proposal in read_json::<Vec<Proposal>>(proposals).map_err(|e| e.to_string())? {
         let file = patches.join(bump::patch_name(&proposal.source));
         if !file.is_file() {
             eprintln!("{}: no patch, so its bump leg failed", proposal.source);

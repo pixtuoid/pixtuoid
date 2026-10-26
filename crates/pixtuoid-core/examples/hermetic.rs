@@ -10,7 +10,7 @@
 //! fixtures, and off the pin moves its pin up to the release recorded.
 //! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
 //!
-//! Exits 0 when every run passed, New findings included (`NEW_TYPES` counts them),
+//! Exits 0 when every run passed, New findings included (`VERDICTS` labels them),
 //! 1 on any other verdict (a recording refused after its runs included), and
 //! anything else when the tier could not run or refused a recording first.
 
@@ -36,6 +36,7 @@ mod run {
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::dropped::Unjudged;
+    use pixtuoid_core::harness::hermetic::issues::{self, RunVerdict, Verdicts};
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
@@ -341,8 +342,8 @@ mod run {
         std::fs::write(runs.join(REPORT), &report)?;
         std::fs::write(runs.join(bump::MOVED), serde_json::to_string(&moved)?)?;
         std::fs::write(
-            runs.join(hermetic::NEW_TYPES),
-            new_count(&entries).to_string(),
+            runs.join(issues::VERDICTS),
+            serde_json::to_string(&verdicts(args.shard.map(|(n, _)| n), &entries))?,
         )?;
         println!("\n{report}");
         Ok(entries.iter().all(|e| e.verdict.passed()))
@@ -419,7 +420,7 @@ mod run {
                 judged.push(dir);
             }
             banners.extend(banner.clone());
-            entries.push(Entry::new(key, banner, verdict));
+            entries.push(Entry::new(p.source, key, banner, verdict));
             if lifecycle.is_none_or(|l| l.fixture != scenario.fixture) {
                 continue;
             }
@@ -442,7 +443,7 @@ mod run {
                 },
                 None => Verdict::new(vec![(Label::Blocked, release.not_run(p, scenario.name))]),
             };
-            entries.push(Entry::new(key, None, verdict));
+            entries.push(Entry::new(p.source, key, None, verdict));
         }
         if !judges_leg(p, &judged, windows) {
             return Ok((entries, None));
@@ -451,7 +452,7 @@ mod run {
             let key = format!("{} (every scenario)", p.source);
             println!("== {key}");
             let verdict = verify::verify_source(p, &judged)?;
-            entries.push(Entry::new(key, None, verdict));
+            entries.push(Entry::new(p.source, key, None, verdict));
         }
         let passed = entries.iter().all(|e| e.verdict.passed());
         let mut moved = None;
@@ -475,6 +476,7 @@ mod run {
                     }
                 }
                 Err(why) if args.record => entries.push(Entry::new(
+                    p.source,
                     format!("{} (recording)", p.source),
                     None,
                     Verdict::new(vec![(Label::Fail, why)]),
@@ -517,7 +519,7 @@ mod run {
             Ok((banner, verdict)) => (Some(banner), verdict),
             Err(e) => (None, Verdict::new(vec![(Label::Blocked, e.to_string())])),
         };
-        Ok(vec![Entry::new(key, banner, verdict)])
+        Ok(vec![Entry::new(p.source, key, banner, verdict)])
     }
 
     /// What `live`'s exit `code` says.
@@ -666,7 +668,7 @@ mod run {
         judged.len() == scenarios
     }
 
-    /// The run's report, beside the runs; its H1 is the tracking issue's title.
+    /// The run's report, beside the runs, for whoever opens the upload.
     const REPORT: &str = "report.md";
 
     /// The release a source's runs go on with, until a turn the recorder's
@@ -713,17 +715,29 @@ mod run {
         }
     }
 
-    /// How many New findings `entries` hold.
-    fn new_count(entries: &[Entry]) -> usize {
-        entries
-            .iter()
-            .flat_map(|e| e.verdict.findings())
-            .filter(|(label, _)| *label == Label::New)
-            .count()
+    /// `entries` as [`issues::VERDICTS`] holds them, from the leg running
+    /// [`SHARDS`]' `shard`th.
+    fn verdicts(shard: Option<usize>, entries: &[Entry]) -> Verdicts {
+        Verdicts {
+            os: std::env::consts::OS.to_owned(),
+            shard,
+            runs: entries
+                .iter()
+                .map(|e| RunVerdict {
+                    source: e.source.to_owned(),
+                    key: e.key.clone(),
+                    version: e.version.clone(),
+                    label: e.verdict.label(),
+                    findings: e.verdict.findings().to_vec(),
+                })
+                .collect(),
+        }
     }
 
     /// One section of the report: one run, or a source's runs together.
     struct Entry {
+        /// The source that ran.
+        source: &'static str,
         key: String,
         /// The CLI's `--version`, for one run.
         version: Option<String>,
@@ -731,9 +745,15 @@ mod run {
     }
 
     impl Entry {
-        fn new(key: String, version: Option<String>, verdict: Verdict) -> Self {
+        fn new(
+            source: &'static str,
+            key: String,
+            version: Option<String>,
+            verdict: Verdict,
+        ) -> Self {
             println!("   {:?}", verdict.label());
             Self {
+                source,
                 key,
                 version,
                 verdict,
@@ -2402,18 +2422,6 @@ mod run {
                 "{r}"
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("Not run"));
-            let entry = |label, finding: &str| {
-                Entry::new(
-                    "copilot/tool-run".into(),
-                    None,
-                    Verdict::new(vec![(label, finding.into())]),
-                )
-            };
-            assert_eq!(
-                new_count(&[entry(Label::New, "/type: `x`"), entry(Label::Fail, "lost")]),
-                1,
-                "the New findings alone"
-            );
             let macos = Unjudged::RecordedOn("macos".into());
             assert_eq!(
                 not_judged(
@@ -2427,9 +2435,10 @@ mod run {
                 ),
                 "copilot/tool-run (no baseline); 2 recorded on macos"
             );
-            let unjudged = |key: &str, why| {
+            let unjudged = |source, scenario: &str, why| {
                 Entry::new(
-                    key.into(),
+                    source,
+                    format!("{source}/{scenario}"),
                     None,
                     Verdict::new(Vec::new()).unjudged_because(why),
                 )
@@ -2439,8 +2448,8 @@ mod run {
                 None,
                 &[],
                 &[
-                    unjudged("copilot/tool-run", Unjudged::NoBaseline),
-                    unjudged("codex/tool-run", Unjudged::RecordedOn("macos".into())),
+                    unjudged("copilot", "tool-run", Unjudged::NoBaseline),
+                    unjudged("codex", "tool-run", Unjudged::RecordedOn("macos".into())),
                 ],
                 &[],
             );
@@ -2455,6 +2464,30 @@ mod run {
             assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
             assert!(!judges_leg(grok, &judged(5), false));
             assert!(judges_leg(grok, &judged(6), false));
+        }
+
+        #[test]
+        fn verdicts_hold_each_runs_source_key_version_label_and_findings() {
+            let blocked = Entry::new(
+                "opencode",
+                "opencode/tool-run".into(),
+                Some("1.0.0".into()),
+                Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
+            );
+            assert_eq!(
+                verdicts(Some(2), &[blocked]),
+                Verdicts {
+                    os: std::env::consts::OS.into(),
+                    shard: Some(2),
+                    runs: vec![RunVerdict {
+                        source: "opencode".into(),
+                        key: "opencode/tool-run".into(),
+                        version: Some("1.0.0".into()),
+                        label: Label::Blocked,
+                        findings: vec![(Label::Blocked, "npm view failed".into())],
+                    }],
+                }
+            );
         }
 
         #[test]
@@ -2534,12 +2567,14 @@ mod run {
             let os = std::env::consts::OS;
             let host = ["git version 2.55.0".to_string()];
             let pass = Entry::new(
+                "codex",
                 "codex/tool-run".into(),
                 Some("codex-cli 0.155.1".into()),
                 Verdict::new(vec![]),
             );
             let blocked = || {
                 Entry::new(
+                    "opencode",
                     "opencode/tool-run".into(),
                     None,
                     Verdict::new(vec![(Label::Blocked, "npm view failed".into())]),
@@ -2560,6 +2595,7 @@ mod run {
             );
             // The script lost a CLI that then exited: it ran, and its drift is the title.
             let lost = Entry::new(
+                "codex",
                 "codex/tool-run".into(),
                 None,
                 Verdict::new(vec![
@@ -2572,7 +2608,7 @@ mod run {
                 r.lines().next(),
                 Some(format!("# hermetic, latest CLIs on {os}: Script").as_str())
             );
-            // A shard's leg names it, so the issue tells two legs of one OS apart.
+            // A shard's leg names it, so a reader tells two legs of one OS apart.
             let r = report(&Versions::Latest, Some(2), &host, &[blocked()], &[]);
             assert_eq!(
                 r.lines().next(),

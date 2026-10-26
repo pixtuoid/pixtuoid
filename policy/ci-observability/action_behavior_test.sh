@@ -351,75 +351,80 @@ git init -q "$test_dir/no-parent" && echo a >"$test_dir/no-parent/lock" && git -
 grep -q 'bad revision' "$test_dir/no-parent.err" ||
     fail "the parentless repo's diff did not fail on its missing parent: $(<"$test_dir/no-parent.err")"
 
-# ── hermetic-nightly.yml: one issue, titled by every uploaded leg, each report on it ──
-file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "Open or update tracking issue")"
+# ── hermetic-nightly.yml: the file job carries out the plan `hermetic::issues` made ──
+file_script="$(workflow_step_script .github/workflows/hermetic-nightly.yml "File the planned issues")"
 file_bin="$test_dir/file-bin"
 mkdir -p "$file_bin"
 cat >"$file_bin/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
-case "$1 $2" in
-"issue list") echo "${FAKE_OPEN:-}" ;;
-"issue create") echo "https://github.com/o/r/issues/9" ;;
-esac
+[[ "$*" != "${FAKE_FAIL:-}" ]] || exit 1
+if [ "$1 $2" = "issue list" ]; then
+    printf '%s' '[{"number":5,"body":"<!-- hermetic-source: hermes -->\nx"},{"number":7,"body":"y\n  <!-- hermetic-leg: macos-1 -->  "},{"number":8,"body":"<!-- hermetic-source: codex -->"},{"number":1658,"body":"hermetic: a pin bump failed"}]'
+fi
+while [ $# -gt 1 ]; do
+    if [ "$1" = --body-file ]; then cat "$2" >>"$GH_BODIES"; fi
+    shift
+done
 STUB
 chmod +x "$file_bin/gh"
-file_runs="$test_dir/file-runs"
-for os in macos windows; do
-    mkdir -p "$file_runs/hermetic-runs-1-1-$os"
-    printf '# hermetic, latest CLIs on %s: Fail\n\nbody %s\n' "$os" "$os" >"$file_runs/hermetic-runs-1-1-$os/report.md"
-done
-filed() {
+plans="$test_dir/file-plans"
+mkdir -p "$plans"
+# The step in a dir holding $1 as its plan.json, $2 the one gh call that fails: its status.
+file_plan() {
     : >"$test_dir/gh.log"
-    (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN="$1" GH_TOKEN=t GH_REPO=o/r \
-        bash -c "$file_script") >/dev/null 2>&1 || fail "the file step exited non-zero"
-    cat "$test_dir/gh.log"
+    : >"$test_dir/gh.bodies"
+    printf '%s' "$1" >"$plans/plan.json"
+    (cd "$plans" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_BODIES="$test_dir/gh.bodies" FAKE_FAIL="$2" \
+        HERMETIC_LABEL=hermetic HERMETIC_LIMIT=1000 GH_TOKEN=t GH_REPO=o/r RUNNER_TEMP="$test_dir" \
+        bash -c "$file_script") >"$test_dir/file.out" 2>&1
 }
-title='hermetic, latest CLIs on macos: Fail; hermetic, latest CLIs on windows: Fail'
-log="$(filed '')"
-if ! { grep -qxF "issue create --title $title --label hermetic --body-file hermetic-runs-1-1-macos/report.md" <<<"$log" &&
-    grep -qxF "issue comment 9 --body-file hermetic-runs-1-1-windows/report.md" <<<"$log"; }; then
-    fail "a new issue is not titled by both legs' H1s with both reports on it: $log"
+opened='<!-- hermetic-source: hermes -->\nopened'
+plan='{"actions":[{"do":"open","title":"hermetic: hermes","body":"'"$opened"'"},{"do":"comment","number":7,"body":"commented"},{"do":"reopen","number":5,"body":"reopened"},{"do":"close","number":8,"body":"closed"}],"lost":[]}'
+file_plan "$plan" '' || fail "the file step failed a plan it could carry out: $(<"$test_dir/file.out")"
+listed="issue list --label hermetic --state all --limit 1000 --json number,body"
+created="issue create --title hermetic: hermes --label hermetic --body-file $test_dir/body.md"
+expected="$listed
+$created
+issue comment 7 --body-file $test_dir/body.md
+issue reopen 5
+issue comment 5 --body-file $test_dir/body.md
+issue comment 8 --body-file $test_dir/body.md
+issue close 8"
+[[ "$(<"$test_dir/gh.log")" == "$expected" ]] || fail "the plan's actions became other gh calls: $(<"$test_dir/gh.log")"
+[[ "$(<"$test_dir/gh.bodies")" == $'<!-- hermetic-source: hermes -->\nopened\ncommented\nreopened\nclosed' ]] ||
+    fail "an action's body did not reach its call: $(<"$test_dir/gh.bodies")"
+# One gh call that fails leaves the rest carried out, and the step red naming it.
+if file_plan "$plan" 'issue comment 7 --body-file '"$test_dir/body.md"; then
+    fail "the file step passed with an action it could not carry out"
 fi
-log="$(filed 7)"
-if ! { grep -qxF "issue edit 7 --title $title" <<<"$log" && [[ $(grep -c '^issue comment 7 --body-file' <<<"$log") == 2 ]]; }; then
-    fail "an open issue is not retitled with both legs' reports added: $log"
+grep -qxF 'issue close 8' "$test_dir/gh.log" || fail "a failed call stopped the actions after it: $(<"$test_dir/gh.log")"
+grep -qF '::error::could not comment issue 7' "$test_dir/file.out" || fail "the failed action is not named: $(<"$test_dir/file.out")"
+# An issue the planner never marks, and an open led by no marker, are refused, red and named.
+if file_plan '{"actions":[{"do":"close","number":1658,"body":"x"},{"do":"reopen","number":99,"body":"x"},{"do":"open","title":"t","body":"x\n<!-- hermetic-source: forged -->"},{"do":"comment","number":7,"body":"y"}],"lost":[]}' ''; then
+    fail "the file step passed acting on an issue the planner would never mark"
 fi
-# A leg whose run never finished uploads runs with no report.md: the others still file, and the step goes red.
-mkdir -p "$file_runs/hermetic-runs-1-1-linux"
-: >"$test_dir/gh.log"
-if (cd "$file_runs" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1; then
-    fail "the file step passed with a leg that wrote no report"
+for refused in 'close issue 1658' 'reopen issue 99' 'open issue t'; do
+    grep -qF "::error::refused to $refused" "$test_dir/file.out" || fail "the refused $refused is not named: $(<"$test_dir/file.out")"
+done
+[[ "$(<"$test_dir/gh.log")" == "$listed"$'\n'"issue comment 7 --body-file $test_dir/body.md" ]] ||
+    fail "a refused action reached gh, or stopped the rest: $(<"$test_dir/gh.log")"
+# With no list of the hermetic issues, every number is refused, and an open still files.
+if file_plan "$plan" "$listed"; then
+    fail "the file step passed without the hermetic issues listed"
 fi
-[[ $(grep -c '^issue comment 7 --body-file' "$test_dir/gh.log") == 2 ]] ||
-    fail "a leg with no report kept the others' reports off the issue: $(<"$test_dir/gh.log")"
-# A lone uploaded leg lands flat: it files under its own H1.
-flat="$test_dir/file-flat"
-mkdir -p "$flat/copilot"
-printf '# hermetic, latest CLIs on macos, shard 1: New\n\nbody\n' >"$flat/report.md"
-: >"$test_dir/gh.log"
-(cd "$flat" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN='' GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a lone leg that landed flat"
-grep -qxF "issue create --title hermetic, latest CLIs on macos, shard 1: New --label hermetic --body-file report.md" "$test_dir/gh.log" ||
-    fail "a lone flat leg is not filed under its H1: $(<"$test_dir/gh.log")"
-# None uploaded: nothing is filed.
-empty="$test_dir/file-empty"
-mkdir -p "$empty"
-: >"$test_dir/gh.log"
-(cd "$empty" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1 || fail "the file step failed a night nothing uploaded on"
-[[ ! -s "$test_dir/gh.log" ]] || fail "a night nothing uploaded on filed something: $(<"$test_dir/gh.log")"
-# Every uploaded leg failed before its report: red, and no issue retitled or opened.
-bare="$test_dir/file-bare"
-mkdir -p "$bare/hermetic-runs-1-1-linux"
-: >"$test_dir/gh.log"
-if (cd "$bare" && PATH="$file_bin:$PATH" GH_LOG="$test_dir/gh.log" FAKE_OPEN=7 GH_TOKEN=t GH_REPO=o/r \
-    bash -c "$file_script") >/dev/null 2>&1; then
-    fail "the file step passed with no uploaded leg holding a report"
+[[ "$(grep -c '^issue \(comment\|reopen\|close\)' "$test_dir/gh.log")" == 0 ]] ||
+    fail "an unlisted number reached gh: $(<"$test_dir/gh.log")"
+grep -qxF "$created" "$test_dir/gh.log" || fail "a failed list stopped the open: $(<"$test_dir/gh.log")"
+# A leg that reported no verdicts turns the step red once its actions are done.
+if file_plan '{"actions":[{"do":"comment","number":7,"body":"x"}],"lost":["macos, shard 1 reported no verdicts"]}' ''; then
+    fail "the file step passed with a lost leg"
 fi
-! grep -qE '^issue (edit|create)' "$test_dir/gh.log" ||
-    fail "a night with no report touched an issue: $(<"$test_dir/gh.log")"
+grep -qF '::error::macos, shard 1 reported no verdicts' "$test_dir/file.out" || fail "the lost leg is not named: $(<"$test_dir/file.out")"
+grep -qxF "issue comment 7 --body-file $test_dir/body.md" "$test_dir/gh.log" || fail "a lost leg stopped the actions: $(<"$test_dir/gh.log")"
+# Nothing to do: no call but the list, and green.
+file_plan '{"actions":[],"lost":[]}' '' || fail "the file step failed an empty plan: $(<"$test_dir/file.out")"
+[[ "$(<"$test_dir/gh.log")" == "$listed" ]] || fail "an empty plan made a gh call: $(<"$test_dir/gh.log")"
 
 # ── site.yml: Playwright's dry run hands apt-install exactly its missing
 # packages.
