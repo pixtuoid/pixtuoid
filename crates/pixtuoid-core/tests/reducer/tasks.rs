@@ -350,7 +350,10 @@ fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
             walks_out,
             "{source}: the child's walk-out on its parent's id-less {parent_tool} end"
         );
-        assert!(scene.agents[&parent].exiting_at.is_none(), "{source}");
+        assert!(
+            scene.agents[&parent].exiting_at.is_none(),
+            "{source} {parent_tool}"
+        );
     }
 }
 
