@@ -36,12 +36,8 @@ pub const SOURCE_NAME: &str = "omp";
 /// read through the `.env` overlay first (`with_omp_dotenv`): upstream applies
 /// those files and then REBUILDS this resolver, so a var set only in `~/.env`
 /// moves the sessions dir and process env alone would watch an empty directory.
-/// The read is deliberately UNBOUNDED, unlike `source/`'s per-refresh probe
-/// reads: a cap could truncate a key upstream's own `parseEnvFile` honors.
 pub fn omp_sessions_dir() -> PathBuf {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     resolve_omp_sessions_dir(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -57,9 +53,7 @@ pub fn omp_sessions_dir() -> PathBuf {
 /// migrated-XDG user's extensions still load from here. Exported for the
 /// install target — a second resolver copy is the #880 drift class.
 pub fn omp_agent_dir() -> PathBuf {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     resolve_omp_agent_dir(&env)
 }
 
@@ -72,6 +66,15 @@ pub(crate) const EXTENSIONS_SUBDIR: &str = "extensions";
 /// to non-public items).
 pub fn omp_extensions_dir() -> PathBuf {
     omp_agent_dir().join(EXTENSIONS_SUBDIR)
+}
+
+/// The process env under the `.env` overlay. The read is deliberately
+/// UNBOUNDED, unlike `source/`'s per-refresh probe reads: a cap could truncate
+/// a key upstream's own `parseEnvFile` honors.
+fn overlaid_env() -> OmpEnv {
+    with_omp_dotenv(&OmpEnv::from_process(), &|p| {
+        std::fs::read_to_string(p).ok()
+    })
 }
 
 /// The process environment omp's resolver reads, injected so every arm — the
@@ -243,9 +246,7 @@ fn resolve_omp_sessions_dir(
 /// env (upstream freezes the resolver per process the same way), so another
 /// profile's own `.env` relocations are unseen here.
 pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
-    let env = with_omp_dotenv(&OmpEnv::from_process(), &|p| {
-        std::fs::read_to_string(p).ok()
-    });
+    let env = overlaid_env();
     omp_profile_sessions_dirs_resolved(
         &env,
         cfg!(any(target_os = "linux", target_os = "macos")),
@@ -263,20 +264,32 @@ pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
     )
 }
 
+/// The dir [`omp_profile_sessions_dirs`] enumerates, so each new entry in it
+/// is a new profile.
+#[cfg(feature = "native")]
+pub(crate) fn omp_profiles_dir() -> Option<PathBuf> {
+    let env = overlaid_env();
+    profiles_dir(&env)
+}
+
+fn profiles_dir(env: &OmpEnv) -> Option<PathBuf> {
+    Some(omp_config_root(env, None)?.join(PROFILES_SUBDIR))
+}
+
 fn omp_profile_sessions_dirs_resolved(
     env: &OmpEnv,
     xdg_platform: bool,
     exists: &dyn Fn(&Path) -> bool,
     list_profiles: &dyn Fn(&Path) -> Vec<String>,
 ) -> Vec<PathBuf> {
-    let Some(base) = omp_config_root(env, None) else {
+    let Some(profiles) = profiles_dir(env) else {
         return Vec::new();
     };
     let primary = resolve_omp_sessions_dir(env, xdg_platform, exists);
     // Through the same validator omp applies: a dir failing its name regex (or
     // a stray `default`) is one omp can never select, so watching it would
     // follow a root omp never writes.
-    let mut names: Vec<String> = list_profiles(&base.join(PROFILES_SUBDIR))
+    let mut names: Vec<String> = list_profiles(&profiles)
         .iter()
         .filter_map(|n| normalize_profile_name(Some(n)))
         .collect();
