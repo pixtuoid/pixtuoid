@@ -61,7 +61,7 @@ fn main() {
         // inherits the TUI's terminal stdin and a blind `read_to_string` would
         // BLOCK (freezing the synchronous tool call until the hook timeout) —
         // when `--event` is present we never touch stdin.
-        Some(event) => Value::Object(env_payload(&event)),
+        Some(event) => Value::Object(env_payload_from(&event, |k| std::env::var_os(k))),
         None => {
             let mut buf = String::new();
             if std::io::stdin()
@@ -102,18 +102,6 @@ fn main() {
     transport::send_line(&bound, &socket, &line);
 }
 
-/// CodeWhale env-mode: synthesize the hook envelope from `DEEPSEEK_*` env vars.
-/// The `std::env` reads live here so `env_payload_from` stays testable without
-/// mutating process-global env.
-fn env_payload(event: &str) -> serde_json::Map<String, Value> {
-    // CodeWhale runs the hook with current_dir = its working dir (= the
-    // workspace), so the shim's own cwd is the reliable fallback.
-    let cwd_fallback = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned());
-    env_payload_from(event, cwd_fallback, |k| std::env::var_os(k))
-}
-
 /// Per-field byte cap on env-mode values. The stdin arm enforces `STDIN_CAP`
 /// before parsing; the env arm has no such gate and `DEEPSEEK_TOOL_ARGS` can be
 /// large, so capping each folded field keeps the serialized line under the
@@ -125,24 +113,17 @@ fn cap_env_field(mut val: String) -> String {
     val
 }
 
+/// CodeWhale env-mode: synthesize the hook envelope from the `DEEPSEEK_*` env
+/// vars `get` reads, so a test need not mutate process-global env.
 fn env_payload_from(
     event: &str,
-    cwd_fallback: Option<String>,
     get: impl Fn(&str) -> Option<OsString>,
 ) -> serde_json::Map<String, Value> {
     let get = |k: &str| get(k).map(|v| v.to_string_lossy().into_owned());
     let mut map = serde_json::Map::new();
     map.insert("event".into(), Value::from(event));
-    // The decoder drops a cwd-less event, and a hook runs in the workspace
-    // (`docs/HOOKS.md:95` at codewhale v0.10.2), so its own cwd stands in for an
-    // unset DEEPSEEK_WORKSPACE.
-    if let Some(cwd) = get("DEEPSEEK_WORKSPACE")
-        .filter(|v| !v.is_empty())
-        .or_else(|| cwd_fallback.filter(|v| !v.is_empty()))
-    {
-        map.insert("cwd".into(), Value::from(cap_env_field(cwd)));
-    }
     for (env_key, field) in [
+        ("DEEPSEEK_WORKSPACE", "cwd"),
         ("DEEPSEEK_SESSION_ID", "session_id"),
         ("DEEPSEEK_TOOL_NAME", "tool"),
         ("DEEPSEEK_TOOL_ARGS", "tool_args"),

@@ -165,7 +165,7 @@ fn argv_source_flag_stamps_source_without_env() {
 }
 
 #[test]
-fn a_non_utf8_workspace_keys_the_session_not_the_fallback() {
+fn a_non_utf8_workspace_is_kept_lossily() {
     use std::os::unix::ffi::OsStrExt;
     let path = sock_path("cwlossy");
     let listener = UnixListener::bind(&path).expect("bind listener");
