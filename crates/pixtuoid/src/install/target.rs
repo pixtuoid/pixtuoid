@@ -214,8 +214,8 @@ pub struct HostRegistration {
     pub unregister: fn(config: &Path) -> Result<Unregistered>,
     /// Whether the CLI reports the plugin installed and enabled.
     pub is_registered: fn() -> Result<bool>,
-    /// How a rewrite of the plugin's files reaches the CLI: `None` when it loads
-    /// them in place at its next start.
+    /// What brings a rewrite of the plugin's files to the CLI: `None` when it picks
+    /// one up on its own.
     pub pickup: Option<Pickup>,
     /// `None` when no released pixtuoid ever merged hooks into the CLI's own config.
     pub legacy: Option<LegacyConfig>,
@@ -230,8 +230,6 @@ impl HostRegistration {
     }
 }
 
-/// How a CLI that won't load a rewrite of the plugin's files at its next start
-/// is brought to it.
 #[derive(Debug)]
 pub enum Pickup {
     Recopy(PluginCopy),

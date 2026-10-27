@@ -257,7 +257,7 @@ fn converge_owned_with(
                 continue;
             }
         };
-        for path in &done.rewritten {
+        for (path, _) in &done.rewritten {
             tracing::info!(cli = t.name, path = ?path, "refreshed a plugin file to this build");
         }
         for (path, error) in &done.failed {
@@ -269,7 +269,13 @@ fn converge_owned_with(
                 false
             }),
             Some((host, Pickup::Reload(reload))) => {
-                !done.rewritten.is_empty() && reload_failed(host, *reload, t)
+                let failed = !done.rewritten.is_empty() && reload_failed(host, *reload, t);
+                // The disk then says what the CLI runs, so the next launch rewrites
+                // and reloads again.
+                if failed && let Err(e) = install::put_back(&done.rewritten) {
+                    tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+                }
+                failed
             }
             None => !done.rewritten.is_empty() && !t.primary.reloads_on_change(),
         };
@@ -802,7 +808,7 @@ mod tests {
         let connected = set(&["claude-code"]);
         let rewrote = || {
             Ok(install::Converged {
-                rewritten: vec![PathBuf::from("/x/hooks.json")],
+                rewritten: vec![(PathBuf::from("/x/hooks.json"), String::new())],
                 failed: Vec::new(),
             })
         };
@@ -857,6 +863,8 @@ mod tests {
     fn a_launch_reloads_a_rewritten_plugin_where_the_cli_can_be_told() {
         use std::sync::atomic::Ordering::SeqCst;
         let connected = set(&["hermes"]);
+        let dir = tempfile::TempDir::new().unwrap();
+        let plugin = dir.path().join("__init__.py");
         for (enabled, fails, rewrote, reloads, announced) in [
             (true, false, true, 1, false),
             (true, true, true, 0, true),
@@ -873,7 +881,7 @@ mod tests {
                 |_| {
                     Ok(install::Converged {
                         rewritten: if rewrote {
-                            vec![PathBuf::from("/x/__init__.py")]
+                            vec![(plugin.clone(), "old".to_owned())]
                         } else {
                             Vec::new()
                         },
@@ -885,6 +893,39 @@ mod tests {
             assert_eq!(RELOADS.load(SeqCst), reloads, "{case}");
             assert_eq!(!refreshed.is_empty(), announced, "{case}");
         }
+    }
+
+    /// A failed reload leaves the CLI on the old plugin, and the rewrite on disk
+    /// would hide that from every later launch.
+    #[test]
+    fn a_failed_reload_puts_the_old_plugin_back_so_the_next_launch_retries() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let dir = tempfile::TempDir::new().unwrap();
+        let plugin = dir.path().join("__init__.py");
+        std::fs::write(&plugin, "old").unwrap();
+        // Converges the plugin to this build's "new".
+        let converge = |_: &'static Target| -> Result<install::Converged> {
+            let prior = std::fs::read_to_string(&plugin)?;
+            if prior == "new" {
+                return Ok(install::Converged::default());
+            }
+            std::fs::write(&plugin, "new")?;
+            Ok(install::Converged {
+                rewritten: vec![(plugin.clone(), prior)],
+                failed: Vec::new(),
+            })
+        };
+        let connected = set(&["hermes"]);
+        let launch = || converge_owned_with(&[&RELOADING], &connected, |_| Ok(false), converge);
+        ENABLED.store(true, SeqCst);
+        RELOADS.store(0, SeqCst);
+        RELOAD_FAILS.store(true, SeqCst);
+        assert_eq!(launch().len(), 1, "a failed reload is announced");
+        assert_eq!(std::fs::read_to_string(&plugin).unwrap(), "old");
+        RELOAD_FAILS.store(false, SeqCst);
+        assert!(launch().is_empty());
+        assert_eq!(RELOADS.load(SeqCst), 1, "the next launch reloads");
+        assert_eq!(std::fs::read_to_string(&plugin).unwrap(), "new");
     }
 
     #[test]
@@ -903,7 +944,7 @@ mod tests {
                 match t.name {
                     "claude" => Err(anyhow::anyhow!("no home")),
                     "opencode" | "dsh" => Ok(install::Converged {
-                        rewritten: vec![PathBuf::from("/x/pixtuoid.ts")],
+                        rewritten: vec![(PathBuf::from("/x/pixtuoid.ts"), String::new())],
                         failed: Vec::new(),
                     }),
                     "omp" => Ok(install::Converged {

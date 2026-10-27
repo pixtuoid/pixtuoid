@@ -2424,6 +2424,10 @@ fn hermes_connect_fails_when_enabling_fails_and_leaves_the_plugin_dir_as_it_foun
     }
 }
 
+fn rewritten_paths(done: &Converged) -> Vec<PathBuf> {
+    done.rewritten.iter().map(|(p, _)| p.clone()).collect()
+}
+
 /// Redirects every CLI state resolver an owned file renders under (OpenClaw's plugin
 /// dir, dsh's plugin file) at temp dirs for `f`, so no test writes a real plugin.
 fn with_owned_homes<R>(f: impl FnOnce() -> R) -> R {
@@ -2607,7 +2611,12 @@ fn converge_rewrites_only_stale_owned_files_with_the_installed_shim() {
                 let rewritten = temp_env::with_var(io::HOOK_OVERRIDE_ENV, Some(&other), || {
                     converge(t, Some(cfg.clone())).unwrap().rewritten
                 });
-                assert_eq!(rewritten, std::slice::from_ref(&entry), "{}", t.name);
+                assert_eq!(
+                    rewritten,
+                    [(entry.clone(), format!("{installed}\n"))],
+                    "{}: it keeps what it replaced",
+                    t.name
+                );
                 assert_eq!(io::read_config(&entry).unwrap(), installed, "{}", t.name);
                 assert_eq!(
                     host_calls(),
@@ -2654,7 +2663,7 @@ fn converge_never_re_enables_an_openclaw_plugin_the_user_disabled() {
         .unwrap();
 
         assert_eq!(
-            converge(&OPENCLAW, Some(cfg.clone())).unwrap().rewritten,
+            rewritten_paths(&converge(&OPENCLAW, Some(cfg.clone())).unwrap()),
             [entry]
         );
         assert_eq!(io::read_config(&cfg).unwrap(), disabled);
@@ -2687,7 +2696,7 @@ fn converge_skips_a_locked_file_and_still_reports_the_rest() {
 
         let _held = io::lock_config(&locked).unwrap();
         let done = converge(&OPENCLAW, Some(cfg.clone())).unwrap();
-        assert_eq!(done.rewritten, [entry]);
+        assert_eq!(rewritten_paths(&done), [entry]);
         assert_eq!(
             done.failed.iter().map(|(p, _)| p).collect::<Vec<_>>(),
             [&locked]
@@ -2800,7 +2809,7 @@ fn converge_heals_a_missing_sibling_but_not_a_missing_entry() {
 
         std::fs::remove_file(sibling).unwrap();
         assert_eq!(
-            converge(&OPENCLAW, Some(cfg.clone())).unwrap().rewritten,
+            rewritten_paths(&converge(&OPENCLAW, Some(cfg.clone())).unwrap()),
             std::slice::from_ref(sibling)
         );
         assert!(sibling.exists());
@@ -2831,7 +2840,7 @@ fn converge_stamps_a_pre_stamp_claude_hooks_file() {
     .unwrap();
 
     assert_eq!(
-        converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap().rewritten,
+        rewritten_paths(&converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap()),
         std::slice::from_ref(&cfg)
     );
     let stamped = (CLAUDE.hook_command)(std::path::Path::new(io::HOOK_BIN), false).unwrap();
@@ -2861,7 +2870,7 @@ fn converge_stamps_a_pre_source_windows_claude_hooks_file() {
     .unwrap();
 
     assert_eq!(
-        converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap().rewritten,
+        rewritten_paths(&converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap()),
         std::slice::from_ref(&cfg)
     );
     let doc: serde_json::Value = serde_json::from_str(&io::read_config(&cfg).unwrap()).unwrap();

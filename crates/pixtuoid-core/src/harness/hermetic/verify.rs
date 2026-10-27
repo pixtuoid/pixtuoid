@@ -2960,7 +2960,8 @@ mod tests {
         assert!(!has(&v, Label::Fail, "uninstall"), "{:?}", v.findings());
     }
 
-    /// The server stop's own exit is judged, whatever else the run shows.
+    /// A server stop fails the run on a non-zero exit or on a stamped pid it left
+    /// running, whatever else the run shows.
     #[test]
     fn a_run_whose_server_was_not_stopped_fails() {
         let d = recorded("hermes", "tool-run", "agents=[] daemons=[]\n");

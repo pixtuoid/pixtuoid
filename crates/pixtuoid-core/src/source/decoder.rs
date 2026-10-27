@@ -149,7 +149,8 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
     i32::try_from(raw).ok().filter(|&p| p > 0)
 }
 
-/// The hook-envelope key the shim, or a plugin, stamps its process's pid under.
+/// The hook-envelope key that carries the agent CLI's pid: a plugin stamps it
+/// from inside the CLI, else the shim from its ancestry (`pixtuoid-hook`'s `cli_pid`).
 pub(crate) const PID_STAMP: &str = "_pid";
 
 pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
