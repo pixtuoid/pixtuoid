@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::AgentId;
 use crate::source::Transport;
+use crate::state::requests::ActionRequests;
 
 /// Window in which a Hook event suppresses a later Jsonl event with the same
 /// tool_use_id. The suppression is asymmetric by event kind — see
@@ -148,17 +149,7 @@ pub(super) struct Correlation {
     /// a slot vouched for within [`PROOF_OF_LIFE_TTL`] is skipped by
     /// `sweep_stale`'s candidate collection.
     pub(super) recent_proof_of_life: HashMap<AgentId, SystemTime>,
-    /// The tool calls an agent's `Waiting` is gated on. Singly populated by
-    /// inference — the `tool_use_id` that was Active immediately before the
-    /// Waiting (a CC permission `Notification` fires mid-tool) — or pushed
-    /// explicitly by a `Waiting` that NAMES its gated call (omp
-    /// `tool_approval_requested`, which can queue several, #951). When a
-    /// member's `ActivityEnd` arrives the permission has been resolved, so
-    /// the Waiting resolves instead of lingering until the agent's next tool;
-    /// a *parallel* tool ending carries a non-member id and cannot
-    /// false-clear a still-pending permission. Codex never populates this —
-    /// its tool events carry no `tool_use_id`.
-    pub(super) gated_before_waiting: HashMap<AgentId, Vec<Arc<str>>>,
+    pub(super) action_requests: ActionRequests,
     /// Tool calls already counted into `tool_call_count`, so the SAME logical
     /// call re-observed on the other transport counts once (#951). Not
     /// [`HOOK_WINS_WINDOW`]'s job: omp's transcript writes the call BEFORE the
@@ -349,21 +340,6 @@ impl Correlation {
             calls.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_WAITING_TIMEOUT));
             !calls.is_empty()
         });
-    }
-
-    /// Whether `tuid` is a live gate member for `id` — THE membership
-    /// predicate, so the member-vs-whole-set decisions can't drift per site.
-    pub(super) fn gate_matches(&self, id: &AgentId, tuid: &str) -> bool {
-        self.gated_before_waiting
-            .get(id)
-            .is_some_and(|g| g.iter().any(|m| &**m == tuid))
-    }
-
-    /// Remove ONE gate member; a parallel approval keeps its own.
-    pub(super) fn remove_gate_member(&mut self, id: &AgentId, tuid: &str) {
-        if let Some(g) = self.gated_before_waiting.get_mut(id) {
-            g.retain(|m| &**m != tuid);
-        }
     }
 
     /// Whether `id` holds a FRESH probe vouch. The single freshness predicate

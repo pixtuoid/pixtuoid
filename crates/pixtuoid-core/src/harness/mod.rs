@@ -175,10 +175,10 @@ impl Driven {
 /// is about to assert on.
 const DEFAULT_NOW_EPOCH_SECS: u64 = 1_800_000_000;
 
-/// How far past `now` the settle tick runs. Long enough for the reducer's
-/// `ACTIVE_GRACE_WINDOW` pending-idle to realize (so a resolved tool really
-/// reads Idle), short enough to stay inside `EXIT_GRACE_WINDOW` (so a wire
-/// carrying its own `SessionEnd` still leaves the slot to observe).
+/// How far past `now` the settle tick runs. Long enough for a deferred b1
+/// cascade ([`B1_CASCADE_GRACE`](crate::state::reducer::B1_CASCADE_GRACE)) to
+/// fire, short enough to stay inside `EXIT_GRACE_WINDOW` (so a wire carrying
+/// its own `SessionEnd` still leaves the slot to observe).
 const SETTLE: Duration = Duration::from_secs(3);
 
 /// PER-FLOOR desk capacity for the driven scene. Registration past the TOTAL is

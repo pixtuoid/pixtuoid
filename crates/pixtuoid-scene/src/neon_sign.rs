@@ -924,7 +924,6 @@ mod tests {
                 last_event_at: SystemTime::UNIX_EPOCH,
                 created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(0),
                 floor_idx: 0,
                 tool_call_count: 0,

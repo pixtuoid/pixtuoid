@@ -63,10 +63,9 @@ fn session_start(i: usize) -> AgentEvent {
     }
 }
 
-const BURST_MS: u64 = 900;
-/// The `BURST_SPACING_MS - BURST_MS` idle gap must stay UNDER the reducer's
-/// `ACTIVE_GRACE_WINDOW` or the whole cast visibly flickers Active↔Idle.
-const BURST_SPACING_MS: u64 = 1200;
+/// One scripted call's length. Calls chain back to back: the reducer settles a
+/// slot the moment its call ends, so any gap between them shows as Idle.
+const BURST_MS: u64 = 1200;
 
 fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
     [
@@ -97,7 +96,7 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
 fn spell(beats: &mut Vec<Beat>, i: usize, at_ms: u64, n: u64, tools: &[&str]) {
     for (k, &display) in (0..n).zip(tools.iter().cycle()) {
         let t = format!("s{at_ms}-{k}");
-        beats.extend(tool(i, at_ms + k * BURST_SPACING_MS, &t, display));
+        beats.extend(tool(i, at_ms + k * BURST_MS, &t, display));
     }
 }
 
@@ -119,9 +118,9 @@ fn usage(i: usize, at_ms: u64, fresh_tokens: u64) -> Beat {
 pub(crate) const HIRE_STAY_MS: u64 = 70_000;
 
 /// One visitor-hired coworker's lifecycle, as offsets from the hire instant.
-/// Reuses the cast's `BURST_MS`/`BURST_SPACING_MS` so the idle gap stays under
-/// the reducer's Active debounce here too. The cwd is the hire's own
-/// ("/work/yours") so Team Palette gives hires a distinct outfit family.
+/// Chains its calls back to back on the cast's `BURST_MS`. The cwd is the
+/// hire's own ("/work/yours") so Team Palette gives hires a distinct outfit
+/// family.
 pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)> {
     let mut out: Vec<(u64, AgentEvent)> = Vec::new();
     out.push((
@@ -137,7 +136,7 @@ pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)>
     // Spaced so the hire also idles/wanders like everyone else.
     for (k, start) in [8_000u64, 28_000, 50_000].into_iter().enumerate() {
         for b in 0..4u64 {
-            let at = start + b * BURST_SPACING_MS;
+            let at = start + b * BURST_MS;
             let tuid = format!("hire-{k}-{b}");
             out.push((
                 at,
@@ -355,7 +354,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(usage(1, 70_000, 160_000));
 
     // A permission park: agent 6 hits a gate mid-loop, resolved by the gated
-    // tool's completion (the reducer's gated_before_waiting path).
+    // tool's completion (a member of the reducer's action request).
     b.push(Beat {
         at_ms: 58_000,
         transport: Transport::Hook,
@@ -441,17 +440,6 @@ mod tests {
         let s = hero_script();
         assert!(s.windows(2).all(|w| w[0].at_ms <= w[1].at_ms));
         assert!(s.last().unwrap().at_ms < LOOP_MS);
-    }
-
-    #[test]
-    fn burst_gap_stays_under_the_reducer_debounce() {
-        assert!(
-            std::time::Duration::from_millis(BURST_SPACING_MS - BURST_MS)
-                < pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW,
-            "burst gap ({}ms) must stay under ACTIVE_GRACE_WINDOW ({:?})",
-            BURST_SPACING_MS - BURST_MS,
-            pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW
-        );
     }
 
     #[test]

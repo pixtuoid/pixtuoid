@@ -1732,7 +1732,6 @@ pub pixtuoid_core::state::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
 pub pixtuoid_core::state::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
-pub pixtuoid_core::state::AgentSlot::pending_idle_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::state::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
 pub pixtuoid_core::state::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::state::AgentSlot::source: alloc::rcs::arc::Arc<str>
@@ -2212,7 +2211,6 @@ pub pixtuoid_core::AgentSlot::last_event_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::last_usage: core::option::Option<pixtuoid_core::state::UsageObservation>
 pub pixtuoid_core::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
-pub pixtuoid_core::AgentSlot::pending_idle_at: core::option::Option<std::time::SystemTime>
 pub pixtuoid_core::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
 pub pixtuoid_core::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::AgentSlot::source: alloc::rcs::arc::Arc<str>

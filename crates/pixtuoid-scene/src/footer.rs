@@ -549,7 +549,6 @@ mod tests {
             created_at: SystemTime::UNIX_EPOCH,
             last_event_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,

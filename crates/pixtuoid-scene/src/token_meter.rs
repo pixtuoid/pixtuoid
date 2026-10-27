@@ -118,7 +118,6 @@ mod tests {
             last_event_at: now,
             created_at: now,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: pixtuoid_core::GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,

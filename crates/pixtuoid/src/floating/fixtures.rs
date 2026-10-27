@@ -50,7 +50,6 @@ pub(super) fn active_on(
         created_at: started,
         last_event_at: started,
         exiting_at: None,
-        pending_idle_at: None,
         desk_index: GlobalDeskIndex(desk),
         floor_idx,
         tool_call_count: 0,

@@ -109,8 +109,7 @@ fn full_scene_serialization_is_stable() {
         at(5),
         Transport::Hook,
     );
-    // Active→Idle debounce: the trailing ActivityEnd arms pending_idle_at but
-    // keeps Active.
+    // The trailing ActivityEnd settles it at once.
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {

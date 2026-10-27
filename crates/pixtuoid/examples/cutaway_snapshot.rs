@@ -62,7 +62,6 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 created_at: seated,
                 last_event_at: recent,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: scene.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,

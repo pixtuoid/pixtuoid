@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
@@ -12,8 +11,7 @@ use crate::{
 };
 
 #[test]
-fn activity_end_arms_debounce_then_tick_flips_to_idle() {
-    use std::time::Duration;
+fn a_tool_end_settles_the_slot_at_once() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
@@ -28,44 +26,38 @@ fn activity_end_arms_debounce_then_tick_flips_to_idle() {
         t0,
         Transport::Hook,
     );
-    act_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        t0 + Duration::from_millis(100),
-        Transport::Hook,
-    );
+    let end = t0 + Duration::from_millis(100);
+    act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
 
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
-    assert!(slot.pending_idle_at.is_some());
-
-    r.tick(&mut scene, t0 + Duration::from_millis(900));
-    assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
-        ActivityState::Active { .. }
-    ));
-
-    r.tick(&mut scene, t0 + Duration::from_millis(2000));
-    assert_eq!(scene.agents.get(&id).unwrap().state, ActivityState::Idle);
-    assert!(scene.agents.get(&id).unwrap().pending_idle_at.is_none());
+    let slot = &scene.agents[&id];
+    assert_eq!(slot.state, ActivityState::Idle);
+    assert_eq!(slot.state_started_at, end);
 }
 
+/// Parallel calls: the end of one that is not shown leaves the shown one
+/// running.
 #[test]
-fn activity_start_inside_grace_window_cancels_debounce() {
-    use std::time::Duration;
+fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
+    let id = AgentId::from_transcript_path("/p/par.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
     act_start(
         &mut r,
         &mut scene,
         id,
-        Some("t1"),
-        None,
+        Some("a"),
+        Some("Read: a"),
+        t0,
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("b"),
+        Some("Read: b"),
         t0,
         Transport::Hook,
     );
@@ -73,31 +65,92 @@ fn activity_start_inside_grace_window_cancels_debounce() {
         &mut r,
         &mut scene,
         id,
-        Some("t1"),
+        Some("a"),
         t0 + Duration::from_millis(100),
         Transport::Hook,
     );
-    assert!(scene.agents.get(&id).unwrap().pending_idle_at.is_some());
+    match &scene.agents[&id].state {
+        ActivityState::Active { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
+        other => panic!("expected b still running, got {other:?}"),
+    }
+    act_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("b"),
+        t0 + Duration::from_millis(200),
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+/// A request naming no call leaves on a start from the transport that raised
+/// it; a start from the other transport only counts.
+#[test]
+fn a_notification_leaves_on_a_start_from_its_own_transport() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/note.jsonl");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::now();
+    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash: ls"),
+        t0 + Duration::from_secs(1),
+        Transport::Jsonl,
+    );
+    let slot = &scene.agents[&id];
+    assert!(
+        matches!(slot.state, ActivityState::Waiting { .. }),
+        "a transcript start must not answer a hook's prompt, got {:?}",
+        slot.state
+    );
+    assert_eq!(slot.tool_call_count, 1, "it still counts");
+
     act_start(
         &mut r,
         &mut scene,
         id,
         Some("t2"),
-        None,
-        t0 + Duration::from_millis(300),
+        Some("Bash: pwd"),
+        t0 + Duration::from_secs(2),
         Transport::Hook,
     );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
-    assert!(
-        slot.pending_idle_at.is_none(),
-        "ActivityStart inside grace must cancel pending idle"
-    );
-    r.tick(&mut scene, t0 + Duration::from_millis(2500));
     assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
+        scene.agents[&id].state,
         ActivityState::Active { .. }
     ));
+}
+
+/// The transcript ends a turn it may have read before a hook's fresh prompt,
+/// so its turn end answers only a prompt the transcript raised.
+#[test]
+fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (raised_on, resolves) in [(Transport::Jsonl, true), (Transport::Hook, false)] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts("codex", "sess-1");
+        start_as(&mut r, &mut scene, id, "codex");
+        waiting(&mut r, &mut scene, id, "permission", t0, raised_on);
+        turn_end(
+            &mut r,
+            &mut scene,
+            id,
+            t0 + Duration::from_millis(200),
+            Transport::Jsonl,
+        );
+        assert_eq!(
+            scene.agents[&id].state == ActivityState::Idle,
+            resolves,
+            "raised on {raised_on:?}: got {:?}",
+            scene.agents[&id].state
+        );
+    }
 }
 
 #[test]
@@ -197,8 +250,8 @@ fn active_ms_does_not_double_count_on_duplicate_activity_end() {
     let slot = scene.agents.get(&id).unwrap();
     // A second folded span would read ~4600.
     assert_eq!(
-        slot.active_ms, 2600,
-        "active_ms should be the single t0→t1+600 span (2600ms), not double-counted"
+        slot.active_ms, 2000,
+        "active_ms should be the single t0→t1 span (2000ms), not double-counted"
     );
 }
 
@@ -276,8 +329,7 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
 // ActivityEnd carries the same tool_use_id that was Active when Waiting began —
 // so PostToolUse(t1) means the permission was granted and the Waiting resolved.
 #[test]
-fn gated_tool_end_while_waiting_resolves_to_idle_after_grace() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
+fn gated_tool_end_while_waiting_resolves_to_idle() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -304,21 +356,6 @@ fn gated_tool_end_while_waiting_resolves_to_idle_after_grace() {
 
     let end = t0 + Duration::from_millis(1000);
     act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
-        "still Waiting during grace, got {:?}",
-        slot.state
-    );
-    assert!(
-        slot.pending_idle_at.is_some(),
-        "gated tool end must arm the resolve debounce"
-    );
-
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
         "resolved permission must settle to Idle, got {:?}",
@@ -332,7 +369,6 @@ fn gated_tool_end_while_waiting_resolves_to_idle_after_grace() {
 /// PostToolUse resolves nothing and the slot never leaves Waiting.
 #[test]
 fn a_second_waiting_keeps_the_gate_the_first_one_remembered() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/gate.jsonl");
@@ -367,10 +403,6 @@ fn a_second_waiting_keeps_the_gate_the_first_one_remembered() {
 
     let end = t0 + Duration::from_millis(1200);
     act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
         "the approved tool's end must still resolve the wait, got {:?}",
@@ -380,7 +412,6 @@ fn a_second_waiting_keeps_the_gate_the_first_one_remembered() {
 
 #[test]
 fn parallel_tool_end_while_waiting_keeps_waiting() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -419,22 +450,6 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
         "parallel tool end must keep Waiting, got {:?}",
         slot.state
     );
-    assert!(
-        slot.pending_idle_at.is_none(),
-        "parallel tool end must not arm the resolve debounce"
-    );
-
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_millis(1000) + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
-    assert!(
-        matches!(
-            scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
-        ),
-        "still Waiting — permission t1 never resolved"
-    );
 }
 
 // An approval prompt BLOCKS a Codex/Reasonix turn, so a hook `Stop` arriving
@@ -442,7 +457,6 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
 // no second transport to self-heal a stale one.
 #[test]
 fn turn_end_stop_hook_resolves_stale_waiting() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
@@ -464,10 +478,6 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
 
     let end = t0 + Duration::from_millis(800);
     turn_end(&mut r, &mut scene, id, end, Transport::Hook);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
         "turn-end Stop must resolve the stale Waiting to Idle, got {:?}",
@@ -478,7 +488,6 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
 // Reasonix's prompt and its PostToolUse both name no call.
 #[test]
 fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
@@ -488,10 +497,6 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
     waiting(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
     let end = t0 + Duration::from_millis(800);
     act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
@@ -500,7 +505,6 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
 #[test]
 fn a_turn_end_settles_a_call_whose_own_end_never_came() {
     use crate::waiting_for;
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for gated in [false, true] {
         let mut scene = SceneState::uniform(4);
@@ -529,10 +533,6 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
         }
         let stop = t0 + Duration::from_millis(800);
         turn_end(&mut r, &mut scene, id, stop, Transport::Hook);
-        r.tick(
-            &mut scene,
-            stop + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-        );
         assert_eq!(
             scene.agents.get(&id).unwrap().state,
             ActivityState::Idle,
@@ -545,7 +545,6 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
 // only a HOOK end naming no call may resolve a Waiting.
 #[test]
 fn jsonl_none_id_end_while_waiting_keeps_waiting() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "sess-1");
@@ -561,10 +560,6 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
         t0 + Duration::from_millis(200),
         Transport::Jsonl,
     );
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_millis(200) + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         matches!(
             scene.agents.get(&id).unwrap().state,
@@ -575,7 +570,8 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
 }
 
 // An end naming no call that answers a wait leaves no gate behind, so the gated
-// call's late transcript Start is plain work, not a re-observed approval.
+// call's late transcript Start is plain work, not a re-observed approval. A
+// tool end naming no call answers only a wait that named none either.
 #[test]
 fn an_end_naming_no_call_that_answers_a_wait_clears_its_gates() {
     use crate::waiting_for;
@@ -585,15 +581,29 @@ fn an_end_naming_no_call_that_answers_a_wait_clears_its_gates() {
         let mut r = Reducer::new();
         let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "sess-1");
         start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-        waiting_for(
-            &mut r,
-            &mut scene,
-            id,
-            "permission",
-            Some("call_1"),
-            t0,
-            Transport::Hook,
-        );
+        if turn {
+            waiting_for(
+                &mut r,
+                &mut scene,
+                id,
+                "permission",
+                Some("call_1"),
+                t0,
+                Transport::Hook,
+            );
+        } else {
+            // Outside the dedup window, so its transcript twin below lands.
+            act_start(
+                &mut r,
+                &mut scene,
+                id,
+                Some("call_1"),
+                None,
+                t0 - HOOK_WINS_WINDOW,
+                Transport::Hook,
+            );
+            waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+        }
         let end = t0 + Duration::from_millis(200);
         if turn {
             turn_end(&mut r, &mut scene, id, end, Transport::Hook);
@@ -617,84 +627,10 @@ fn an_end_naming_no_call_that_answers_a_wait_clears_its_gates() {
     }
 }
 
-// Codex's rollout ends its turn (`task_complete`) on the JSONL transport.
-#[test]
-fn a_jsonl_turn_end_while_waiting_keeps_waiting() {
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts("codex", "sess-1");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    start_as(&mut r, &mut scene, id, "codex");
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    let end = t0 + Duration::from_millis(200);
-    turn_end(&mut r, &mut scene, id, end, Transport::Jsonl);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
-    assert!(
-        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
-        "a racing JSONL turn end must keep the permission prompt up"
-    );
-}
-
-#[test]
-fn codex_permission_then_jsonl_output_resumes_to_active() {
-    // The hook Waiting and the JSONL resume coalesce on the session UUID.
-    let mut reducer = Reducer::new();
-    let mut scene = SceneState::uniform(4);
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-    let uuid = "019e7762-9ded-7e33-be41-946ecf105bf4";
-    let id = AgentId::from_parts("codex", uuid);
-
-    reducer.apply(
-        &mut scene,
-        AgentEvent::SessionStart {
-            agent_id: id,
-            source: "codex".into(),
-            session_id: uuid.into(),
-            cwd: PathBuf::from("/Users/me/dotfiles"),
-            parent_id: None,
-        },
-        now,
-        Transport::Hook,
-    );
-
-    waiting(
-        &mut reducer,
-        &mut scene,
-        id,
-        "permission",
-        now,
-        Transport::Hook,
-    );
-    assert!(
-        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
-        "should be Waiting on permission"
-    );
-
-    act_start(
-        &mut reducer,
-        &mut scene,
-        id,
-        None,
-        Some("exec_command"),
-        now,
-        Transport::Jsonl,
-    );
-    assert!(
-        matches!(scene.agents[&id].state, ActivityState::Active { .. }),
-        "resume must return to Active"
-    );
-}
-
 // Line shapes follow a captured omp ask round, sanitized.
 #[test]
 fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     use pixtuoid_core::source::omp::decode_omp_line;
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let path = "/h/.omp/agent/sessions/-p/2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000001.jsonl";
@@ -734,10 +670,6 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
         r#"{"type":"message","id":"4a4176db","parentId":"98404700","timestamp":"2026-07-05T20:40:39.589Z","message":{"role":"toolResult","toolCallId":"toolu_01ASKASKASKASKASKASKASKA","toolName":"ask","content":[{"type":"text","text":"User selected: Merge"}],"isError":false,"timestamp":1783284039588}}"#,
         t0 + Duration::from_millis(500),
     );
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_millis(500) + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -752,7 +684,6 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
 fn an_answered_agy_question_clears_waiting_on_either_transport() {
     use pixtuoid_core::source::antigravity::{SOURCE_NAME, decode_ag_line};
     use pixtuoid_core::source::decoder::decode_hook_payload;
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     use serde_json::{Value, json};
     const TRANSCRIPT: &str =
         "/h/.gemini/antigravity-cli/brain/c1/.system_generated/logs/transcript.jsonl";
@@ -812,10 +743,6 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
             "{what}: the question parks the slot Waiting"
         );
         feed(&mut r, &mut scene, &answers, t1);
-        r.tick(
-            &mut scene,
-            t1 + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-        );
         assert!(
             matches!(scene.agents[&id].state, ActivityState::Idle),
             "{what}: the answer clears Waiting before the turn ends"
@@ -1042,10 +969,6 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
     act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
     // The resolved wait settles through the ordinary Active→Idle debounce.
-    r.tick(
-        &mut scene,
-        t2 + pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1452,10 +1375,6 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_gate() {
     );
     let t3 = beyond_dedup(t2) + Duration::from_secs(2);
     act_end(&mut r, &mut scene, id, Some("x1"), t3, Transport::Hook);
-    r.tick(
-        &mut scene,
-        t3 + pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,

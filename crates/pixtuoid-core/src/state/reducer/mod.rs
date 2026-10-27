@@ -7,6 +7,8 @@ use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, Transport};
 use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
+use crate::state::fsm::SettleCtx;
+use crate::state::requests::{Ended, Seen};
 use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, fsm, scope};
 
 #[doc(hidden)]
@@ -26,10 +28,6 @@ const _: () = assert!(EXIT_GRACE_WINDOW.as_nanos() < STRAGGLER_TTL.as_nanos());
 /// deliberately NOT the `DEFAULT_POLL_INTERVAL` backstop.
 #[doc(hidden)]
 pub const B1_CASCADE_GRACE: Duration = Duration::from_millis(2500);
-
-/// Active→Idle debounce — hides the flicker of rapid PreToolUse chains.
-#[doc(hidden)]
-pub const ACTIVE_GRACE_WINDOW: Duration = Duration::from_millis(1500);
 
 /// Stale spread by state: Active silence is death mid-tool; Idle/Waiting must
 /// not reap a human on a break or a prompt; unknown-cwd is a seeding ghost.
@@ -240,21 +238,8 @@ struct TaskTracking {
     handled_by_task_start: bool,
 }
 
-/// What an end names, for [`Reducer::apply_end`].
-#[derive(Clone, Copy)]
-enum Ended<'a> {
-    /// A call's own end.
-    Call(&'a str),
-    /// A tool end naming no call: its wire carries none (Reasonix's
-    /// PostToolUse), or its decoder drops it (Cursor, deliberately).
-    Unnamed,
-    /// An [`AgentEvent::TurnEnd`].
-    Turn,
-}
-
 /// The event coordinator: folds `AgentEvent`s into `SceneState`, owning the
-/// cross-slot correlation maps, the Active→Idle debounce, and the stale/exit
-/// sweeps.
+/// cross-slot correlation maps and the stale/exit sweeps.
 #[derive(Debug, Default)]
 pub struct Reducer {
     corr: Correlation,
@@ -275,14 +260,13 @@ impl Reducer {
         Self::default()
     }
 
-    /// Run the GC + exit-sweep + Active→Idle debounce expiry without applying
-    /// an event. Must be called periodically so exiting slots are reclaimed and
-    /// pending-idle timers fire even when no event arrives to drive `apply`.
+    /// Run the GC + exit-sweep without applying an event. Must be called
+    /// periodically so exiting slots are reclaimed and deferred cascades fire
+    /// even when no event arrives to drive `apply`.
     pub fn tick(&mut self, scene: &mut SceneState, now: SystemTime) {
         self.corr.gc(now);
         self.corr.gc_slow(now);
         self.sweep_exited(scene, now);
-        self.expire_pending_idles(scene, now);
         self.fire_pending_b1_cascades(scene, now);
         self.sweep_stale(scene, now);
         // Reap entries for agents that never got a SessionStart — a Task event
@@ -291,8 +275,8 @@ impl Reducer {
             .active_tasks
             .retain(|id, _| scene.agents.contains_key(id));
         self.corr
-            .gated_before_waiting
-            .retain(|id, _| scene.agents.contains_key(id));
+            .action_requests
+            .retain(|id| scene.agents.contains_key(id));
         self.pending_b1_cascades
             .retain(|id, _| scene.agents.contains_key(id));
     }
@@ -381,7 +365,7 @@ impl Reducer {
                 reason,
                 tool_use_id,
             } => {
-                self.apply_waiting(scene, agent_id, &reason, tool_use_id.as_deref(), now);
+                self.apply_waiting(scene, agent_id, &reason, tool_use_id.as_deref(), from, now);
             }
             AgentEvent::Rename { agent_id, label } => {
                 Self::apply_rename(scene, agent_id, &label, now);
@@ -449,7 +433,6 @@ impl Reducer {
     ) -> Preprocessed {
         self.corr.gc(now);
         self.sweep_exited(scene, now);
-        self.expire_pending_idles(scene, now);
 
         if from == Transport::Hook {
             self.synthesize_hook_registration(scene, event, id, now);
@@ -529,7 +512,7 @@ impl Reducer {
                 .insert((id, tuid.to_string()), (now, kind));
         }
 
-        let tracking = self.track_active_tasks(scene, event, now);
+        let tracking = self.track_active_tasks(scene, event, now, from);
 
         self.fire_pending_b1_cascades(scene, now);
 
@@ -537,19 +520,11 @@ impl Reducer {
     }
 
     /// The `ActivityStart` arm, for a Start the pre-pass tracker left to it.
-    ///
-    /// A Start whose id is a GATED member is the same call re-observed across
-    /// an approval round (#951): on Jsonl it is the transcript's Start landing
-    /// while the human still decides — count it, keep Waiting, and drop its
-    /// richer detail, since a Waiting slot has none to set and the hook resume
+    /// A start the agent's action request holds back
+    /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
+    /// only counts: a Waiting slot has no item to set, and the hook resume
     /// re-labels from the wire's `toolName` (a label-only cost, pinned by
-    /// `the_approval_resume_labels_from_the_wire_tool_name`). On Hook it is the
-    /// approval resume — return to Active.
-    ///
-    /// An UNGATED Start moots the gate list, except while the slot still WAITS
-    /// (a parallel auto-approved tool must not strip a pending approval) or for
-    /// an already-counted id — a late transcript twin whose approval round may
-    /// have queued siblings.
+    /// `the_approval_resume_labels_from_the_wire_tool_name`).
     fn apply_activity_start(
         &mut self,
         scene: &mut SceneState,
@@ -559,33 +534,23 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let gated = tool_use_id
-            .as_deref()
-            .is_some_and(|t| self.corr.gate_matches(&agent_id, t));
-        if gated && from == Transport::Jsonl {
-            self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
+        let counted = tool_use_id.as_deref().is_some_and(|t| {
+            self.corr
+                .counted_calls
+                .get(&agent_id)
+                .is_some_and(|calls| calls.contains_key(t))
+        });
+        let runs = self.corr.action_requests.start(
+            agent_id,
+            tool_use_id.as_deref(),
+            from,
+            is_waiting(scene, agent_id),
+            counted,
+        );
+        self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
+        if !runs {
             return;
         }
-        if gated {
-            if let Some(t) = tool_use_id.as_deref() {
-                self.corr.remove_gate_member(&agent_id, t);
-            }
-        } else {
-            let already_counted = tool_use_id.as_deref().is_some_and(|t| {
-                self.corr
-                    .counted_calls
-                    .get(&agent_id)
-                    .is_some_and(|calls| calls.contains_key(t))
-            });
-            let waiting = scene
-                .agents
-                .get(&agent_id)
-                .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }));
-            if !waiting && !already_counted {
-                self.corr.gated_before_waiting.remove(&agent_id);
-            }
-        }
-        self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             // Derive the category from the typed detail BEFORE it is erased to
             // the HUD display string.
@@ -630,35 +595,9 @@ impl Reducer {
         }
     }
 
-    /// Whether `ended` answers the slot's wait: a call's end only when it is
-    /// the gated call, on any transport; of ends naming no call, only a hook's,
-    /// since a transcript line may race the hook's prompt.
-    fn wait_resolved_by(
-        &self,
-        scene: &SceneState,
-        agent_id: AgentId,
-        ended: Ended<'_>,
-        from: Transport,
-    ) -> bool {
-        let is_waiting = matches!(
-            scene.agents.get(&agent_id).map(|s| &s.state),
-            Some(ActivityState::Waiting { .. })
-        );
-        is_waiting
-            && match ended {
-                // Only the *gated* call's end, so a parallel tool's can't
-                // false-clear a pending permission.
-                Ended::Call(tuid) => self.corr.gate_matches(&agent_id, tuid),
-                // A pending approval BLOCKS the turn, so its end means the
-                // prompt was answered.
-                Ended::Turn => from == Transport::Hook,
-                // Reasonix's prompt names no call, nor does its PostToolUse.
-                Ended::Unnamed => from == Transport::Hook,
-            }
-    }
-
     /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it, and
-    /// the `TurnEnd` arm.
+    /// the `TurnEnd` arm. It settles the slot when it answers its request, or
+    /// ends the item it runs: the call it names, or any when it names none.
     fn apply_end(
         &mut self,
         scene: &mut SceneState,
@@ -667,25 +606,11 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let resolves_wait = self.wait_resolved_by(scene, agent_id, ended, from);
-        match ended {
-            // A call's End retires ITS gate whether or not it resolved a wait
-            // (a denial, or a parallel tool finishing past its own gate).
-            Ended::Call(t) => self.corr.remove_gate_member(&agent_id, t),
-            // The turn that answered the wait is over: every gate is stale.
-            Ended::Turn if resolves_wait => {
-                self.corr.gated_before_waiting.remove(&agent_id);
-            }
-            // It answered the wait without naming which gate: every gate is
-            // stale.
-            Ended::Unnamed if resolves_wait => {
-                self.corr.gated_before_waiting.remove(&agent_id);
-            }
-            Ended::Turn | Ended::Unnamed => {}
-        }
-        // A delegating parent's own parallel tool ending must not settle it to
-        // Idle: nothing would restore Delegating for the rest of the run.
-        let delegating_tuid = self.corr.any_active_task(&agent_id);
+        let resolved =
+            self.corr
+                .action_requests
+                .end(agent_id, ended, from, is_waiting(scene, agent_id));
+        let task_in_flight = self.corr.any_active_task(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let untracked_task = matches!(
                 slot.state,
@@ -698,11 +623,18 @@ impl Reducer {
             if untracked_task && child_end_inference(slot).dispatch_end_ends_child(false) {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
-            if matches!(slot.state, ActivityState::Active { .. }) || resolves_wait {
-                match delegating_tuid {
-                    Some(tuid) => fsm::enter_delegating(slot, Some(tuid), now),
-                    None => fsm::arm_pending_idle(slot, now),
-                }
+            let ends_item = match (&slot.state, ended) {
+                (
+                    ActivityState::Active {
+                        tool_use_id: Some(item),
+                        ..
+                    },
+                    Ended::Call(call),
+                ) => **item == *call,
+                (state, _) => matches!(state, ActivityState::Active { .. }),
+            };
+            if resolved || ends_item {
+                fsm::settle(slot, SettleCtx { task_in_flight }, now);
             }
             slot.last_event_at = now;
         }
@@ -714,31 +646,21 @@ impl Reducer {
         agent_id: AgentId,
         reason: &str,
         tool_use_id: Option<&str>,
+        from: Transport,
         now: SystemTime,
     ) {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            if let Some(t) = tool_use_id {
-                // The wire NAMED the gated call (#951): push it, keeping any
-                // sibling gate a parallel approval already queued.
-                let gates = self.corr.gated_before_waiting.entry(agent_id).or_default();
-                if !gates.iter().any(|m| &**m == t) {
-                    gates.push(Arc::from(t));
-                }
-            } else if let ActivityState::Active {
-                tool_use_id: Some(tuid),
-                ..
-            } = &slot.state
-            {
-                // REPLACE, not push: an inferred member is a guess, and stale
-                // guesses would accrete with nothing to clear them.
-                self.corr
-                    .gated_before_waiting
-                    .insert(agent_id, vec![tuid.clone()]);
-            } else if !matches!(slot.state, ActivityState::Waiting { .. }) {
-                // A re-notified Waiting slot is the SAME gate: CC follows its
-                // tool-less PermissionRequest with a Notification.
-                self.corr.gated_before_waiting.remove(&agent_id);
-            }
+            let in_flight = match &slot.state {
+                ActivityState::Active {
+                    tool_use_id: Some(t),
+                    ..
+                } => Some(t),
+                _ => None,
+            };
+            let waiting = matches!(slot.state, ActivityState::Waiting { .. });
+            self.corr
+                .action_requests
+                .raise(agent_id, tool_use_id, in_flight, waiting, from);
             fsm::enter_waiting(slot, Arc::<str>::from(reason), now);
         }
     }
@@ -1174,7 +1096,6 @@ impl Reducer {
                 last_event_at: now,
                 created_at: now,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index,
                 floor_idx,
                 tool_call_count: 0,
@@ -1197,9 +1118,9 @@ impl Reducer {
     /// the parent's key: with any Task in flight, a hook ActivityStart/End or
     /// TurnEnd for this AgentId is the child's work, so it is dropped. Two
     /// exemptions: the Task's own PostToolUse (its tool_use_id matches), and a
-    /// GATED member's Start/End — the parent's own approval round (#951), which
-    /// eating would strand in Waiting until the parent's next own event or the
-    /// stale sweep.
+    /// request member's Start/End — the parent's own approval round (#951),
+    /// which eating would strand in Waiting until the parent's next own event
+    /// or the stale sweep.
     fn suppress_subagent_leak(
         &mut self,
         scene: &mut SceneState,
@@ -1209,38 +1130,34 @@ impl Reducer {
     ) -> bool {
         let tasks = self.corr.active_tasks.get(&id);
         let in_task = tasks.is_some_and(|s| !s.is_empty());
-        let is_gated = |tool_use_id: &Option<String>| {
+        let is_member = |tool_use_id: &Option<String>| {
             tool_use_id
                 .as_deref()
-                .is_some_and(|t| self.corr.gate_matches(&id, t))
+                .is_some_and(|t| self.corr.action_requests.is_member(&id, t))
         };
         let suppress = match event {
-            AgentEvent::ActivityStart { tool_use_id, .. } => in_task && !is_gated(tool_use_id),
+            AgentEvent::ActivityStart { tool_use_id, .. } => in_task && !is_member(tool_use_id),
             AgentEvent::ActivityEnd { tool_use_id, .. } => {
                 let is_task_self_end = tool_use_id
                     .as_ref()
                     .is_some_and(|t| tasks.is_some_and(|s| s.contains(t)));
-                in_task && !is_task_self_end && !is_gated(tool_use_id)
+                in_task && !is_task_self_end && !is_member(tool_use_id)
             }
             AgentEvent::TurnEnd { .. } => in_task,
             _ => false,
         };
-        if suppress {
-            // A suppressed child event means the subagent resumed, so its
-            // misattributed gate resolved — unless the tuid ∉ `active_tasks`.
-            if let Some(slot) = scene.agents.get_mut(&id)
-                && matches!(slot.state, ActivityState::Waiting { .. })
-            {
-                let gate_is_own_tool =
-                    self.corr.gated_before_waiting.get(&id).is_some_and(|g| {
-                        g.iter().any(|m| !tasks.is_some_and(|s| s.contains(&**m)))
-                    });
-                if !gate_is_own_tool {
-                    let task_tuid = self.corr.any_active_task(&id);
-                    fsm::enter_delegating(slot, task_tuid, now);
-                    self.corr.gated_before_waiting.remove(&id);
-                }
-            }
+        if suppress
+            && let Some(tasks) = tasks
+            && let Some(slot) = scene.agents.get_mut(&id)
+            && matches!(slot.state, ActivityState::Waiting { .. })
+            && self
+                .corr
+                .action_requests
+                .resolves(&id, Seen::ChildResumed(tasks), Transport::Hook)
+        {
+            let task_in_flight = self.corr.any_active_task(&id);
+            fsm::settle(slot, SettleCtx { task_in_flight }, now);
+            self.corr.action_requests.close(&id);
         }
         suppress
     }
@@ -1255,6 +1172,7 @@ impl Reducer {
         scene: &mut SceneState,
         event: &AgentEvent,
         now: SystemTime,
+        from: Transport,
     ) -> TaskTracking {
         let mut handled_by_task_tracking = false;
         let mut handled_by_task_start = false;
@@ -1280,7 +1198,18 @@ impl Reducer {
                         .contains_key(&(*agent_id, tuid.clone()))
                     && let Some(slot) = scene.agents.get_mut(agent_id)
                 {
-                    fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                    let waiting = matches!(slot.state, ActivityState::Waiting { .. });
+                    if !waiting
+                        || self.corr.action_requests.start(
+                            *agent_id,
+                            Some(tuid),
+                            from,
+                            waiting,
+                            false,
+                        )
+                    {
+                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                    }
                 }
             }
             AgentEvent::ActivityEnd {
@@ -1294,22 +1223,32 @@ impl Reducer {
                     self.corr
                         .recent_task_drains
                         .insert((*agent_id, tuid.clone()), now);
-                    // #152: the drain skips the main arm, so a gate on THIS
-                    // tuid goes stale. Inline: `set` still borrows `corr`.
-                    if let Some(g) = self.corr.gated_before_waiting.get_mut(agent_id) {
-                        g.retain(|m| &**m != tuid.as_str());
-                    }
+                    // The drain skips the main arm, so it retires this member
+                    // itself.
+                    self.corr.action_requests.retire(agent_id, tuid);
                     if let Some(slot) = scene.agents.get_mut(agent_id) {
                         slot.last_event_at = now;
-                        // Arm the debounce only when actually Active: a
-                        // Waiting parent's expiry would false-clear it.
-                        if set.is_empty() {
-                            if child_end_inference(slot).dispatch_end_ends_child(true) {
-                                self.pending_b1_cascades.insert(*agent_id, now);
+                        if set.is_empty() && child_end_inference(slot).dispatch_end_ends_child(true)
+                        {
+                            self.pending_b1_cascades.insert(*agent_id, now);
+                        }
+                        // A parent showing its own call keeps it for that
+                        // call's own end.
+                        let shown_drained = matches!(
+                            &slot.state,
+                            ActivityState::Active { tool_use_id: Some(t), .. } if **t == **tuid
+                        );
+                        if matches!(
+                            slot.state,
+                            ActivityState::Active {
+                                kind: ToolKind::Task,
+                                ..
                             }
-                            if matches!(slot.state, ActivityState::Active { .. }) {
-                                fsm::arm_pending_idle(slot, now);
-                            }
+                        ) && (set.is_empty() || shown_drained)
+                        {
+                            let task_in_flight =
+                                set.iter().next().map(|t| Arc::<str>::from(t.as_str()));
+                            fsm::settle(slot, SettleCtx { task_in_flight }, now);
                         }
                     }
                 }
@@ -1348,22 +1287,6 @@ impl Reducer {
             tracing::debug!(agent_id = ?id, "b1 grace elapsed — cascading completed subtree");
             // The delegating parent keeps running; only its subtree walks out.
             scope::cascade_exit(scene, id, scope::StampRoot::No, now);
-        }
-    }
-
-    /// Flip agents with an elapsed `pending_idle_at` to Idle. Resets
-    /// `state_started_at` to `now` so the Idle wander state machine starts from
-    /// the visible transition, not the now-stale original end's time.
-    fn expire_pending_idles(&mut self, scene: &mut SceneState, now: SystemTime) {
-        for slot in scene.agents.values_mut() {
-            let Some(pending) = slot.pending_idle_at else {
-                continue;
-            };
-            if elapsed_at_least(now, pending, ACTIVE_GRACE_WINDOW) {
-                // A Waiting slot carries `pending_idle_at` only once its gated
-                // tool resolved; a parallel-prompt Waiting never arms it.
-                fsm::settle_to_idle(slot, pending, now);
-            }
         }
     }
 
@@ -1441,7 +1364,7 @@ impl Reducer {
     /// the sweep site — it must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.active_tasks.remove(id);
-        self.corr.gated_before_waiting.remove(id);
+        self.corr.action_requests.close(id);
         self.corr.counted_calls.remove(id);
         self.pending_b1_cascades.remove(id);
     }
@@ -1469,6 +1392,13 @@ impl Reducer {
             self.corr.note_removed(id, now);
         }
     }
+}
+
+fn is_waiting(scene: &SceneState, id: AgentId) -> bool {
+    scene
+        .agents
+        .get(&id)
+        .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }))
 }
 
 fn event_tool_use_id(ev: &AgentEvent) -> Option<(ToolEventKind, &str)> {

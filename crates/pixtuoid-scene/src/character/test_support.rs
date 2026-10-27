@@ -22,7 +22,6 @@ pub(crate) fn make_slot(
         created_at: now,
         last_event_at: now,
         exiting_at: None,
-        pending_idle_at: None,
 
         desk_index: pixtuoid_core::state::GlobalDeskIndex(0),
         floor_idx: 0,

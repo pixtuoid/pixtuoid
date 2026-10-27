@@ -40,7 +40,6 @@ fn agent_slot(
         created_at: now - Duration::from_secs(60),
         last_event_at: now - Duration::from_secs(60),
         exiting_at: None,
-        pending_idle_at: None,
         desk_index: desk,
         floor_idx: floor,
         tool_call_count: 0,

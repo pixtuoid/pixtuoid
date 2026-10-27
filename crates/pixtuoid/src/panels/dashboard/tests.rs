@@ -27,7 +27,6 @@ fn mk_slot(
         created_at: now,
         last_event_at: now,
         exiting_at: None,
-        pending_idle_at: None,
         desk_index: GlobalDeskIndex(desk_index),
         floor_idx,
         tool_call_count: 0,

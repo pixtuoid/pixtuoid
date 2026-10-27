@@ -26,23 +26,50 @@ use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_core::{AgentEvent, SceneState, Transport};
 use tokio::sync::{mpsc, watch};
 
-use super::ConnectedSources;
 use super::driver::{build_source_set, reducer_task};
+use super::{ConnectedSources, TransitionLog};
 
-/// The live pipeline's caller-facing handles.
+/// Where [`reducer_task`] publishes the scene after each change it applies.
+pub(crate) enum SceneSink {
+    /// A painter's: it draws the newest scene, so one it never read is gone.
+    Latest(watch::Sender<Arc<SceneState>>),
+    /// Headless's: each change, as its [`TransitionLog`] line.
+    Transitions(mpsc::UnboundedSender<String>, TransitionLog),
+}
+
+impl SceneSink {
+    pub(crate) fn transitions(tx: mpsc::UnboundedSender<String>) -> Self {
+        Self::Transitions(tx, TransitionLog::default())
+    }
+
+    /// `false` once the reader is gone.
+    pub(super) fn publish(&mut self, scene: &SceneState) -> bool {
+        match self {
+            Self::Latest(tx) => tx.send(Arc::new(scene.clone())).is_ok(),
+            Self::Transitions(tx, log) => match log.line(scene) {
+                Some(line) => tx.send(line).is_ok(),
+                None => !tx.is_closed(),
+            },
+        }
+    }
+}
+
+/// The live pipeline's caller-facing handles; the scene reaches the caller
+/// through the [`SceneSink`] it handed in.
 pub(crate) struct Pipeline {
-    pub(crate) scene_rx: watch::Receiver<Arc<SceneState>>,
     pub(crate) health_rx: watch::Receiver<Vec<SourceDeath>>,
     pub(crate) floor_caps: Arc<[AtomicUsize; MAX_FLOORS]>,
 }
 
 /// Wire and spawn the whole live pipeline: presence channel + exit watch →
-/// [`build_source_set`] → event/scene/health channels → boot-seeded floor-caps
-/// atomics → [`reducer_task`] → `SourceManager::spawn_with_health`.
+/// [`build_source_set`] → event/health channels → boot-seeded floor-caps
+/// atomics → [`reducer_task`] publishing to `scene` →
+/// `SourceManager::spawn_with_health`.
 pub(crate) fn spawn_pipeline(
     socket_path: PathBuf,
     connected: ConnectedSources,
     boot_caps: [usize; MAX_FLOORS],
+    scene: SceneSink,
 ) -> Pipeline {
     // Daemon-presence SIDE channel (invariant #2: NOT the AgentEvent channel).
     // The demux sends source-tagged presence deltas here and the exit watch drains
@@ -53,12 +80,11 @@ pub(crate) fn spawn_pipeline(
 
     let (tx, rx) =
         mpsc::channel::<(Transport, AgentEvent)>(pixtuoid_core::source::EVENT_CHANNEL_CAPACITY);
-    let (scene_tx, scene_rx) = watch::channel(Arc::new(SceneState::new(boot_caps)));
     let floor_caps: Arc<[AtomicUsize; MAX_FLOORS]> =
         Arc::new(std::array::from_fn(|i| AtomicUsize::new(boot_caps[i])));
     tokio::spawn(reducer_task(
         rx,
-        scene_tx,
+        scene,
         Arc::clone(&floor_caps),
         connected,
         presence_rx,
@@ -76,7 +102,6 @@ pub(crate) fn spawn_pipeline(
     manager.spawn_with_health(tx, health_tx);
 
     Pipeline {
-        scene_rx,
         health_rx,
         floor_caps,
     }

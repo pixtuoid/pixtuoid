@@ -573,8 +573,8 @@ const ROLE_TOOL_RESULT: &str = "toolResult";
 /// case: it could never close its Start, leaking Active forever.
 const BLOCK_TOOL_CALL: &str = "toolCall";
 
-/// The tool that BLOCKS on human input: its `ActivityStart` binds the reducer's
-/// `gated_before_waiting` gate to the ask's own tool_use_id, so the answer's
+/// The tool that BLOCKS on human input: its `ActivityStart` makes the ask's own
+/// tool_use_id a member of the reducer's action request, so the answer's
 /// `toolResult` resolves the Wait. Ask pairs are appended LAST — a sibling's later
 /// ActivityStart would flip the slot back to Active, drop the gate, and strand the
 /// Wait forever.

@@ -294,7 +294,6 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 created_at: now - *since_entry,
                 last_event_at: now - *since_event,
                 exiting_at: None,
-                pending_idle_at: None,
 
                 desk_index: GlobalDeskIndex(i),
                 // Hardcoding 0 here would leave overflow agents invisible.
@@ -493,7 +492,6 @@ pub(crate) fn meeting_scene(
                 created_at: now - back_date,
                 last_event_at: now - back_date,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: s.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
@@ -606,7 +604,6 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 created_at: now - D::from_secs(*desk_index as u64),
                 last_event_at: now,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(*desk_index),
                 floor_idx: s.floor_of(GlobalDeskIndex(*desk_index)),
                 tool_call_count: 0,
@@ -782,7 +779,6 @@ pub(crate) fn anim_scene(
             created_at: now,
             last_event_at: now,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: GlobalDeskIndex(desk_idx),
             floor_idx: 0,
             tool_call_count: 0,

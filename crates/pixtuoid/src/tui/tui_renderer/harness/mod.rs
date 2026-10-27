@@ -30,7 +30,6 @@ pub(super) fn slot(
         created_at: started,
         last_event_at: started,
         exiting_at: None,
-        pending_idle_at: None,
         desk_index: GlobalDeskIndex(desk_index),
         floor_idx,
         tool_call_count: 0,

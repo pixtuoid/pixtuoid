@@ -100,7 +100,7 @@ pub enum AgentEvent {
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
     },
-    /// A tool call finished — arms the debounced return to Idle.
+    /// A tool call finished.
     ActivityEnd {
         /// The acting agent.
         agent_id: AgentId,
@@ -153,8 +153,7 @@ pub enum AgentEvent {
     /// id the probe currently vouches for. The reducer ONLY refreshes a
     /// sweep-exemption timestamp for an existing, non-exiting slot — it must
     /// never create a slot, never touch activity state, and never refresh
-    /// `last_event_at` (the Active→Idle debounce and the label/back-fill logic
-    /// stay driven by real events).
+    /// `last_event_at` (the label/back-fill logic stays driven by real events).
     ProofOfLife {
         /// The vouched-live agent whose sweep-exemption to refresh.
         agent_id: AgentId,

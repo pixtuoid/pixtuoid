@@ -26,7 +26,6 @@ agents:
       secs_since_epoch: 0
       nanos_since_epoch: 0
     exiting_at: ~
-    pending_idle_at: ~
     desk_index: 0
     floor_idx: 0
     tool_call_count: 0
@@ -41,13 +40,9 @@ agents:
     label:
       text: cc·wind
       provenance: CwdDerived
-    state:
-      Active:
-        tool_use_id: w-1
-        detail: Bash · cargo test
-        kind: Bash
+    state: Idle
     state_started_at:
-      secs_since_epoch: 6
+      secs_since_epoch: 7
       nanos_since_epoch: 0
     last_event_at:
       secs_since_epoch: 7
@@ -56,13 +51,10 @@ agents:
       secs_since_epoch: 5
       nanos_since_epoch: 0
     exiting_at: ~
-    pending_idle_at:
-      secs_since_epoch: 7
-      nanos_since_epoch: 0
     desk_index: 4
     floor_idx: 0
     tool_call_count: 1
-    active_ms: 0
+    active_ms: 1000
     unknown_cwd: false
     parent_id: ~
   9732828348925669089:
@@ -86,7 +78,6 @@ agents:
       secs_since_epoch: 3
       nanos_since_epoch: 0
     exiting_at: ~
-    pending_idle_at: ~
     desk_index: 2
     floor_idx: 0
     tool_call_count: 0
@@ -112,7 +103,6 @@ agents:
       secs_since_epoch: 5
       nanos_since_epoch: 0
     exiting_at: ~
-    pending_idle_at: ~
     desk_index: 3
     floor_idx: 0
     tool_call_count: 0
@@ -142,7 +132,6 @@ agents:
       secs_since_epoch: 1
       nanos_since_epoch: 0
     exiting_at: ~
-    pending_idle_at: ~
     desk_index: 1
     floor_idx: 0
     tool_call_count: 1

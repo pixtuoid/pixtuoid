@@ -120,7 +120,6 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 created_at: stamp,
                 last_event_at: stamp,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
                 tool_call_count: if busy { i as u32 * 7 } else { 0 },

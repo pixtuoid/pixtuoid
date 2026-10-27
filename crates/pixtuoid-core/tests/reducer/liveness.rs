@@ -7,8 +7,8 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, proof_of_life,
-    sess_end, turn_end, waiting,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_start, delegating_pair, proof_of_life, sess_end,
+    turn_end, waiting,
 };
 
 #[test]
@@ -330,8 +330,6 @@ fn proof_of_life_does_not_touch_activity_state() {
         t0,
         Transport::Hook,
     );
-    // Arms the idle debounce.
-    act_end(&mut r, &mut scene, id, Some("t1"), t0, Transport::Hook);
     let before = scene.agents.get(&id).unwrap().clone();
 
     proof_of_life(
@@ -349,10 +347,6 @@ fn proof_of_life_does_not_touch_activity_state() {
     assert_eq!(
         after.last_event_at, before.last_event_at,
         "ProofOfLife must not refresh last_event_at — it is not a real event"
-    );
-    assert_eq!(
-        after.pending_idle_at, before.pending_idle_at,
-        "ProofOfLife must not disturb the armed Active→Idle debounce"
     );
 }
 

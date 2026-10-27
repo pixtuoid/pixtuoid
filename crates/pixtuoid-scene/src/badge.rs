@@ -211,7 +211,6 @@ mod tests {
             last_event_at: SystemTime::UNIX_EPOCH,
             created_at: SystemTime::UNIX_EPOCH,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: GlobalDeskIndex(desk),
             floor_idx: 0,
             tool_call_count: 0,

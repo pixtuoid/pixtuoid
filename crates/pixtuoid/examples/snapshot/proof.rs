@@ -603,9 +603,9 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
                 reducer.apply(&mut scene, ev, now, Transport::Jsonl);
             }
         }
-        // `apply` only runs its debounce/expiry pass as a side effect of an
-        // incoming event, so without this nothing would ever settle Active ->
-        // Idle once the fixture's events are drained.
+        // `apply` only runs its expiry pass as a side effect of an incoming
+        // event, so without this nothing would sweep or cascade once the
+        // fixture's events are drained.
         reducer.tick(&mut scene, now);
         let mut draw_ctx = DrawCtx::offscreen(
             &mut floor,

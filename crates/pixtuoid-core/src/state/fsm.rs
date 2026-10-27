@@ -1,12 +1,12 @@
 //! The per-agent **FSM** (Layer A) — the legal single-slot state transitions
-//! (`Idle / Active / Waiting` plus the exit + Active→Idle debounce). The Layer-B
-//! scope tree over `parent_id` lives in [`super::scope`].
+//! (`Idle / Active / Waiting` plus the exit). The Layer-B scope tree over
+//! `parent_id` lives in [`super::scope`].
 //!
 //! **Scope:** these fns mutate ONE `AgentSlot` only. The cross-slot correlation
-//! state — `active_tasks` (Tasks in flight), `gated_before_waiting`
-//! (permission), the hook-wins dedup — stays in the reducer: it spans slots and
-//! is not the FSM. The reducer decides *whether* and *which* transition fires;
-//! these fns decide *how* the slot changes.
+//! state — `active_tasks` (Tasks in flight), the action requests (permission),
+//! the hook-wins dedup — stays in the reducer: it spans slots and is not the
+//! FSM. The reducer decides *whether* and *which* transition fires; these fns
+//! decide *how* the slot changes.
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -15,12 +15,10 @@ use crate::source::ToolDetail;
 use crate::state::{ActivityState, AgentSlot, ToolKind};
 
 /// Fold the time the slot has spent Active into `active_ms`, after which it is
-/// safe to overwrite `state`/`state_started_at`. `until` is the instant the
-/// Active span ends — `now` for a live transition, the debounce `pending` mark
-/// for an idle-expiry, so the grace window isn't counted as work.
-fn accumulate_active_ms(slot: &mut AgentSlot, until: SystemTime) {
+/// safe to overwrite `state`/`state_started_at`.
+fn accumulate_active_ms(slot: &mut AgentSlot, now: SystemTime) {
     if matches!(slot.state, ActivityState::Active { .. }) {
-        let elapsed = until
+        let elapsed = now
             .duration_since(slot.state_started_at)
             .unwrap_or_default()
             .as_millis() as u64;
@@ -45,12 +43,10 @@ pub(crate) fn enter_active(
     };
     slot.state_started_at = now;
     slot.last_event_at = now;
-    slot.pending_idle_at = None;
 }
 
-/// Enter the `Active("Delegating")` state — a parent dispatched a Task, its
-/// own tool ended while one is in flight, or an unnamed child's dropped event
-/// resumed it from the child's gate. Deliberately does NOT stamp
+/// Enter the `Active("Delegating")` state — a parent dispatched a Task, or a
+/// [`settle`] lands on one still in flight. Deliberately does NOT stamp
 /// `last_event_at`: every caller already refreshed lineage.
 pub(crate) fn enter_delegating(
     slot: &mut AgentSlot,
@@ -65,7 +61,6 @@ pub(crate) fn enter_delegating(
         kind: ToolKind::Task,
     };
     slot.state_started_at = now;
-    slot.pending_idle_at = None;
 }
 
 /// Enter `Waiting` (a permission gate). Stamps `last_event_at`.
@@ -74,34 +69,35 @@ pub(crate) fn enter_waiting(slot: &mut AgentSlot, reason: Arc<str>, now: SystemT
     slot.state = ActivityState::Waiting { reason };
     slot.state_started_at = now;
     slot.last_event_at = now;
-    slot.pending_idle_at = None;
 }
 
-/// Arm the Active→Idle debounce: the slot stays visually Active until
-/// `settle_to_idle` fires `ACTIVE_GRACE_WINDOW` later (or a new `ActivityStart`
-/// cancels it). The caller owns `last_event_at` — it differs per call site.
-pub(crate) fn arm_pending_idle(slot: &mut AgentSlot, now: SystemTime) {
-    slot.pending_idle_at = Some(now);
+/// What a [`settle`] lands on beyond the slot itself.
+pub(crate) struct SettleCtx {
+    /// A Task the slot dispatched that is still in flight.
+    pub(crate) task_in_flight: Option<Arc<str>>,
 }
 
-/// Realize an armed debounce: settle an `Active` (normal tool end) or a
-/// `Waiting` slot whose gated permission resolved down to `Idle`. The Active
-/// span that ended at `pending` is folded into `active_ms`. The caller checks
-/// the grace window first.
-pub(crate) fn settle_to_idle(slot: &mut AgentSlot, pending: SystemTime, now: SystemTime) {
-    match &slot.state {
-        ActivityState::Active { .. } => {
-            accumulate_active_ms(slot, pending);
+/// The slot's work or wait ended: land on Delegating while a Task is in
+/// flight, else Idle. Landing on the state the slot is already in keeps its
+/// clock. The caller owns `last_event_at`.
+pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
+    match (ctx.task_in_flight, &mut slot.state) {
+        (
+            Some(task),
+            ActivityState::Active {
+                kind: ToolKind::Task,
+                tool_use_id,
+                ..
+            },
+        ) => *tool_use_id = Some(task),
+        (Some(task), _) => enter_delegating(slot, Some(task), now),
+        (None, ActivityState::Idle) => {}
+        (None, _) => {
+            accumulate_active_ms(slot, now);
             slot.state = ActivityState::Idle;
             slot.state_started_at = now;
         }
-        ActivityState::Waiting { .. } => {
-            slot.state = ActivityState::Idle;
-            slot.state_started_at = now;
-        }
-        ActivityState::Idle => {}
     }
-    slot.pending_idle_at = None;
 }
 
 /// Begin the exit animation (write-once `exiting_at`). The actual slot removal
@@ -119,7 +115,6 @@ pub(crate) fn mark_exiting(slot: &mut AgentSlot, now: SystemTime) {
 pub(crate) fn resurrect_in_place(slot: &mut AgentSlot, now: SystemTime) {
     accumulate_active_ms(slot, now);
     slot.exiting_at = None;
-    slot.pending_idle_at = None;
     slot.state = ActivityState::Idle;
     slot.state_started_at = now;
 }
@@ -151,7 +146,6 @@ mod tests {
             last_event_at: started,
             created_at: started,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: crate::state::GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,
@@ -181,7 +175,6 @@ mod tests {
     fn enter_active_accumulates_prior_active_span_and_resets_timers() {
         let t0 = SystemTime::now();
         let mut s = active(t0);
-        s.pending_idle_at = Some(t0);
         enter_active(
             &mut s,
             None,
@@ -192,10 +185,6 @@ mod tests {
         assert_eq!(s.active_ms, 1000, "prior Active span folded in");
         assert_eq!(s.state_started_at, t0 + Duration::from_secs(1));
         assert_eq!(s.last_event_at, t0 + Duration::from_secs(1));
-        assert_eq!(
-            s.pending_idle_at, None,
-            "an ActivityStart cancels pending idle"
-        );
     }
 
     #[test]
@@ -229,27 +218,34 @@ mod tests {
         enter_waiting(&mut s, Arc::from("perm"), t0 + Duration::from_secs(2));
         assert_eq!(s.active_ms, 2000);
         assert!(matches!(s.state, ActivityState::Waiting { .. }));
-        assert_eq!(s.pending_idle_at, None);
+    }
+
+    fn no_task() -> SettleCtx {
+        SettleCtx {
+            task_in_flight: None,
+        }
+    }
+
+    fn task(id: &str) -> SettleCtx {
+        SettleCtx {
+            task_in_flight: Some(Arc::from(id)),
+        }
     }
 
     #[test]
-    fn settle_to_idle_folds_active_span_up_to_pending_not_now() {
+    fn settle_folds_the_active_span_up_to_now_and_lands_idle() {
         let t0 = SystemTime::now();
-        let pending = t0 + Duration::from_secs(1);
-        let now = t0 + Duration::from_secs(3);
+        let now = t0 + Duration::from_secs(1);
         let mut s = active(t0);
-        s.pending_idle_at = Some(pending);
-        settle_to_idle(&mut s, pending, now);
+        settle(&mut s, no_task(), now);
         assert!(matches!(s.state, ActivityState::Idle));
-        assert_eq!(s.active_ms, 1000, "span ends at pending, not now");
+        assert_eq!(s.active_ms, 1000);
         assert_eq!(s.state_started_at, now);
-        assert_eq!(s.pending_idle_at, None);
     }
 
     #[test]
-    fn settle_to_idle_resolves_a_waiting_slot_without_accumulating() {
+    fn settle_resolves_a_waiting_slot_without_accumulating() {
         let t0 = SystemTime::now();
-        let pending = t0 + Duration::from_secs(1);
         let now = t0 + Duration::from_secs(3);
         let mut s = slot_at(
             ActivityState::Waiting {
@@ -257,24 +253,56 @@ mod tests {
             },
             t0,
         );
-        s.pending_idle_at = Some(pending);
-        settle_to_idle(&mut s, pending, now);
+        settle(&mut s, no_task(), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.active_ms, 0, "Waiting time is not folded into active_ms");
         assert_eq!(s.state_started_at, now);
-        assert_eq!(s.pending_idle_at, None);
     }
 
     #[test]
-    fn settle_to_idle_on_idle_is_a_noop_but_clears_mark() {
+    fn settle_lands_on_delegating_while_a_task_is_in_flight() {
         let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(2);
+        let mut s = active(t0);
+        settle(&mut s, task("task-1"), now);
+        match &s.state {
+            ActivityState::Active {
+                tool_use_id, kind, ..
+            } => {
+                assert_eq!(tool_use_id.as_deref(), Some("task-1"));
+                assert_eq!(*kind, ToolKind::Task);
+            }
+            other => panic!("expected Delegating, got {other:?}"),
+        }
+        assert_eq!(s.active_ms, 2000, "the tool's span ended");
+        assert_eq!(s.state_started_at, now);
+    }
+
+    #[test]
+    fn settle_onto_the_current_state_keeps_its_clock() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(5);
         let mut s = slot_at(ActivityState::Idle, t0);
-        s.pending_idle_at = Some(t0);
-        let started = s.state_started_at;
-        settle_to_idle(&mut s, t0, t0 + Duration::from_secs(1));
+        settle(&mut s, no_task(), now);
         assert!(matches!(s.state, ActivityState::Idle));
-        assert_eq!(s.state_started_at, started, "Idle isn't re-stamped");
-        assert_eq!(s.pending_idle_at, None);
+        assert_eq!(s.state_started_at, t0, "Idle isn't re-stamped");
+
+        let mut s = active(t0);
+        enter_delegating(&mut s, Some(Arc::from("task-1")), t0);
+        let folded = s.active_ms;
+        settle(&mut s, task("task-2"), now);
+        match &s.state {
+            ActivityState::Active { tool_use_id, .. } => {
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some("task-2"),
+                    "it shows a Task still in flight"
+                );
+            }
+            other => panic!("expected Delegating, got {other:?}"),
+        }
+        assert_eq!(s.state_started_at, t0, "Delegating isn't re-stamped");
+        assert_eq!(s.active_ms, folded, "nor its running span folded early");
     }
 
     #[test]

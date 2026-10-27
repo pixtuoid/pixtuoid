@@ -4,9 +4,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::decoder::decode_hook_payload;
 use pixtuoid_core::source::{AgentEvent, ToolDetail, Transport};
-use pixtuoid_core::state::reducer::{
-    ACTIVE_GRACE_WINDOW, B1_CASCADE_GRACE, HOOK_WINS_WINDOW, Reducer,
-};
+use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, HOOK_WINS_WINDOW, Reducer};
 use pixtuoid_core::state::{ActivityState, SceneState};
 use serde_json::json;
 
@@ -70,14 +68,10 @@ fn hook_activity_during_active_task_is_suppressed() {
         t0 + Duration::from_millis(60),
         Transport::Hook,
     );
-    let slot = scene.agents.get(&parent).unwrap();
-    assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
-        "parent must remain Active(Task) while task in flight"
-    );
-    assert!(
-        slot.pending_idle_at.is_none(),
-        "a suppressed subagent End must not arm the parent's pending-idle"
+    assert_delegating(
+        &scene,
+        parent,
+        "a suppressed subagent End must not settle the parent while its task is in flight",
     );
 
     act_end(
@@ -88,10 +82,6 @@ fn hook_activity_during_active_task_is_suppressed() {
         t0 + Duration::from_millis(200),
         Transport::Hook,
     );
-    let slot = scene.agents.get(&parent).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
-    assert!(slot.pending_idle_at.is_some());
-    r.tick(&mut scene, t0 + Duration::from_millis(2000));
     assert_eq!(
         scene.agents.get(&parent).unwrap().state,
         ActivityState::Idle
@@ -127,10 +117,6 @@ fn a_hook_turn_end_during_a_task_is_suppressed() {
     );
     let end = t0 + Duration::from_millis(100);
     turn_end(&mut r, &mut scene, parent, end, Transport::Hook);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
-    );
     assert!(
         matches!(scene.agents[&parent].state, ActivityState::Waiting { .. }),
         "got {:?}",
@@ -579,11 +565,12 @@ fn a_task_end_decoded_before_its_start_does_not_reopen_the_call() {
         let own_end = own + Duration::from_secs(1);
         act_end(&mut r, &mut scene, id, None, own_end, Transport::Hook);
         let shown = match &scene.agents[&id].state {
-            ActivityState::Active { detail, .. } => detail.as_deref().map(str::to_owned),
-            other => panic!("expected Active, got {other:?}"),
+            ActivityState::Active { detail, .. } => detail.as_deref(),
+            ActivityState::Idle => None,
+            other => panic!("expected Active or Idle, got {other:?}"),
         };
-        let want = if dropped { "Bash: ls" } else { "Delegating" };
-        assert_eq!(shown.as_deref(), Some(want), "{after_end:?} after the End");
+        let want = (!dropped).then_some("Delegating");
+        assert_eq!(shown, want, "{after_end:?} after the End");
     }
 }
 
@@ -855,14 +842,6 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
         t1 + Duration::from_secs(1) + HOOK_WINS_WINDOW + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    r.tick(
-        &mut scene,
-        t1 + Duration::from_secs(1)
-            + HOOK_WINS_WINDOW
-            + Duration::from_millis(100)
-            + ACTIVE_GRACE_WINDOW
-            + Duration::from_millis(10),
-    );
     assert!(
         matches!(
             scene.agents.get(&parent).unwrap().state,
@@ -921,10 +900,6 @@ fn task_drain_keeps_parallel_ordinary_tool_gate() {
         Some("bash-1"),
         t1 + Duration::from_secs(2),
         Transport::Jsonl,
-    );
-    r.tick(
-        &mut scene,
-        t1 + Duration::from_secs(2) + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
     );
     assert_eq!(
         scene.agents.get(&parent).unwrap().state,
@@ -992,10 +967,6 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_gate() {
         t1 + Duration::from_secs(1),
         Transport::Jsonl,
     );
-    r.tick(
-        &mut scene,
-        t1 + Duration::from_secs(1) + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
-    );
     assert!(
         !matches!(
             scene.agents.get(&parent).unwrap().state,
@@ -1039,10 +1010,6 @@ fn own_parallel_tool_end_mid_delegation_returns_parent_to_delegating() {
         t1 + Duration::from_millis(500),
         Transport::Jsonl,
     );
-    r.tick(
-        &mut scene,
-        t1 + Duration::from_millis(500) + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
-    );
     assert_delegating(
         &scene,
         parent,
@@ -1082,12 +1049,135 @@ fn a_turn_end_mid_delegation_returns_the_parent_to_delegating() {
     );
     let end = t1 + Duration::from_millis(500);
     turn_end(&mut r, &mut scene, parent, end, Transport::Hook);
-    r.tick(
-        &mut scene,
-        end + ACTIVE_GRACE_WINDOW + Duration::from_millis(10),
-    );
     assert_delegating(&scene, parent, "a Task still in flight outlives the turn");
     assert!(scene.agents[&child].exiting_at.is_none());
+}
+
+/// A settle that lands on Delegating while the slot already delegates is no
+/// new state, so its clock runs on.
+#[test]
+fn a_turn_end_while_delegating_keeps_the_delegating_clock() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-clock", t0);
+    let dispatched = t0 + Duration::from_secs(1);
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        dispatched,
+        Transport::Hook,
+    );
+    turn_end(
+        &mut r,
+        &mut scene,
+        parent,
+        dispatched + Duration::from_secs(5),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, parent, "the Task is still in flight");
+    assert_eq!(scene.agents[&parent].state_started_at, dispatched);
+}
+
+/// The drain settles only a slot showing a Task: a parent showing its own call
+/// keeps it until that call ends.
+#[test]
+fn a_task_drain_leaves_the_parents_own_call_shown() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-drain-own", t0);
+    let t1 = t0 + Duration::from_secs(1);
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        t1,
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        Some("Bash: ls"),
+        t1 + Duration::from_millis(100),
+        Transport::Jsonl,
+    );
+    let drained = t1 + Duration::from_secs(1);
+    act_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        drained,
+        Transport::Hook,
+    );
+    r.tick(&mut scene, drained + Duration::from_secs(2));
+    match &scene.agents[&parent].state {
+        ActivityState::Active { detail, .. } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
+        other => panic!("expected the parent's own call, got {other:?}"),
+    }
+    act_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("bash-1"),
+        drained + Duration::from_secs(3),
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&parent].state, ActivityState::Idle);
+}
+
+/// The shown Task's drain re-points the slot at a Task still in flight, on the
+/// same Delegating clock.
+#[test]
+fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+    let parent = AgentId::from_transcript_path("/p/shown.jsonl");
+    start(&mut r, &mut scene, parent);
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-a"),
+        Some("Agent"),
+        t0,
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-b"),
+        Some("Agent"),
+        t0 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    let since = scene.agents[&parent].state_started_at;
+    act_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-b"),
+        t0 + Duration::from_secs(30),
+        Transport::Hook,
+    );
+    let slot = &scene.agents[&parent];
+    match &slot.state {
+        ActivityState::Active { tool_use_id, .. } => {
+            assert_eq!(tool_use_id.as_deref(), Some("task-a"));
+        }
+        other => panic!("expected Delegating on task-a, got {other:?}"),
+    }
+    assert_eq!(slot.state_started_at, since);
 }
 
 #[test]
@@ -1115,9 +1205,12 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
         t0 + HOOK_WINS_WINDOW / 10,
         Transport::Hook,
     );
-    let armed_at = scene.agents.get(&id).unwrap().pending_idle_at;
-    assert!(armed_at.is_some(), "hook END arms the idle debounce");
-    let count = scene.agents.get(&id).unwrap().tool_call_count;
+    let settled = scene.agents[&id].clone();
+    assert_eq!(
+        settled.state,
+        ActivityState::Idle,
+        "the hook END settles it"
+    );
 
     // These offsets put the lagged pair PAST the START record's expiry (t0 + W) but
     // still inside the END record's window, so only the END record's both-kinds
@@ -1140,13 +1233,14 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
         Transport::Jsonl,
     );
 
-    let slot = scene.agents.get(&id).unwrap();
+    let slot = &scene.agents[&id];
     assert_eq!(
-        slot.pending_idle_at, armed_at,
-        "stale JSONL replay must not cancel or re-arm the idle debounce"
+        (&slot.state, slot.state_started_at),
+        (&settled.state, settled.state_started_at),
+        "stale JSONL replay must not re-run the ended call"
     );
     assert_eq!(
-        slot.tool_call_count, count,
+        slot.tool_call_count, settled.tool_call_count,
         "stale JSONL replay must not double-count the tool"
     );
 }
@@ -1297,10 +1391,6 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
         replay_at,
         Transport::Jsonl,
     );
-    r.tick(
-        &mut scene,
-        replay_at + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
-    );
     assert!(
         matches!(
             scene.agents.get(&parent).unwrap().state,
@@ -1336,9 +1426,10 @@ fn jsonl_ordinary_tool_end_drains_when_hook_end_drops() {
         t0 + HOOK_WINS_WINDOW / 5,
         Transport::Jsonl,
     );
-    assert!(
-        scene.agents.get(&id).unwrap().pending_idle_at.is_some(),
-        "the JSONL END is the fallback for the dropped hook END — it must arm the idle debounce, not be eaten by the START's dedup record"
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "the JSONL END is the fallback for the dropped hook END — it must settle the slot, not be eaten by the START's dedup record"
     );
 }
 
@@ -1620,7 +1711,6 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_ends_a_tool(
 #[test]
 fn task_drain_while_parent_waiting_keeps_waiting() {
     use pixtuoid_core::source::ToolDetail;
-    use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -1657,15 +1747,6 @@ fn task_drain_while_parent_waiting_keeps_waiting() {
         Some("task-T"),
         t0 + Duration::from_millis(1000),
         Transport::Hook,
-    );
-    assert!(
-        scene.agents[&id].pending_idle_at.is_none(),
-        "Task drain must not arm idle-resolve on a Waiting parent"
-    );
-
-    r.tick(
-        &mut scene,
-        t0 + Duration::from_millis(1000) + ACTIVE_GRACE_WINDOW + Duration::from_millis(100),
     );
     assert!(
         matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),

@@ -26,24 +26,12 @@ use pixtuoid_core::source::hook::HookRouter;
 use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
-use pixtuoid_core::state::reducer::ACTIVE_GRACE_WINDOW;
 use pixtuoid_core::{Reducer, SceneState, TaggedReceiver};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use super::gate;
-use super::{
-    ConnectedSources, QuitArms, QuitSignal, RunConfig, SceneRx, resolve_boot_caps, summarize,
-};
-
-/// How often the headless loop samples the scene for a summary line.
-const HEADLESS_SUMMARY_POLL_INTERVAL: Duration = Duration::from_millis(200);
-
-// A resolved wait stays shown for `ACTIVE_GRACE_WINDOW`, and that alone lets a
-// poll see a hermetic Permission row's brief wait.
-const _: () = assert!(
-    ACTIVE_GRACE_WINDOW.as_millis() > HEADLESS_SUMMARY_POLL_INTERVAL.as_millis(),
-    "a resolved wait must outlast one headless poll"
-);
+use super::pipeline::SceneSink;
+use super::{ConnectedSources, QuitArms, QuitSignal, RunConfig, resolve_boot_caps};
 
 /// Boot the TUI (unless headless) and drive the source pipeline until it exits;
 /// the quit signal that ended it, for the caller to re-raise.
@@ -113,15 +101,28 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
     );
     // The shared spine — ONE authority with `floating::run`. The tasks live on
     // this fn's runtime.
-    let super::pipeline::Pipeline {
-        scene_rx,
-        health_rx,
-        floor_caps,
-    } = super::pipeline::spawn_pipeline(socket_path.clone(), connected.clone(), boot_caps);
-
     match tui {
-        None => headless_loop(scene_rx, health_rx).await,
+        None => {
+            let (log_tx, log) = mpsc::unbounded_channel();
+            let pipeline = super::pipeline::spawn_pipeline(
+                socket_path,
+                connected,
+                boot_caps,
+                SceneSink::transitions(log_tx),
+            );
+            headless_loop(log, pipeline.health_rx).await
+        }
         Some((pack, plan, motion)) => {
+            let (scene_tx, scene_rx) = watch::channel(Arc::new(SceneState::new(boot_caps)));
+            let super::pipeline::Pipeline {
+                health_rx,
+                floor_caps,
+            } = super::pipeline::spawn_pipeline(
+                socket_path.clone(),
+                connected.clone(),
+                boot_caps,
+                SceneSink::Latest(scene_tx),
+            );
             crate::tui::run_tui(crate::tui::TuiSession {
                 scene_rx,
                 pack,
@@ -192,7 +193,7 @@ pub(crate) fn build_source_set(
 /// [`super::gate`], which owns every decision.
 pub(crate) async fn reducer_task(
     mut rx: TaggedReceiver,
-    scene_tx: watch::Sender<Arc<SceneState>>,
+    mut sink: SceneSink,
     floor_caps: Arc<[AtomicUsize; MAX_FLOORS]>,
     connected: ConnectedSources,
     mut presence_rx: tokio::sync::mpsc::UnboundedReceiver<PresenceMsg>,
@@ -209,6 +210,9 @@ pub(crate) async fn reducer_task(
     let initial_caps: [usize; MAX_FLOORS] =
         std::array::from_fn(|i| floor_caps[i].load(Ordering::Relaxed));
     let mut scene = SceneState::new(initial_caps);
+    if !sink.publish(&scene) {
+        return;
+    }
     // Ticks so exit-grace sweeps run even when no new events arrive.
     const SWEEP_TICK_INTERVAL_SECS: u64 = 1;
     let mut sweep_interval = tokio::time::interval(Duration::from_secs(SWEEP_TICK_INTERVAL_SECS));
@@ -231,7 +235,7 @@ pub(crate) async fn reducer_task(
                     &connected,
                     SystemTime::now(),
                     &mut gate_logged,
-                ) && scene_tx.send(Arc::new(scene.clone())).is_err()
+                ) && !sink.publish(&scene)
                 {
                     tracing::warn!("scene channel closed — renderer dropped");
                     break;
@@ -257,7 +261,7 @@ pub(crate) async fn reducer_task(
                             if let (Some(ew), Some(pid)) = (presence_exit_watch.as_ref(), arm_pid) {
                                 ew.watch(&key, pid);
                             }
-                            if scene_tx.send(Arc::new(scene.clone())).is_err() {
+                            if !sink.publish(&scene) {
                                 tracing::warn!("scene channel closed — renderer dropped");
                                 break;
                             }
@@ -268,7 +272,7 @@ pub(crate) async fn reducer_task(
             }
             _ = sweep_interval.tick() => {
                 gate::reconcile_sweep_tick(&mut reducer, &mut scene, &connected, SystemTime::now());
-                if scene_tx.send(Arc::new(scene.clone())).is_err() {
+                if !sink.publish(&scene) {
                     tracing::warn!("scene channel closed — renderer dropped");
                     break;
                 }
@@ -278,11 +282,11 @@ pub(crate) async fn reducer_task(
 }
 
 async fn headless_loop(
-    scene_rx: SceneRx,
+    log: mpsc::UnboundedReceiver<String>,
     health_rx: tokio::sync::watch::Receiver<Vec<pixtuoid_core::source::manager::SourceDeath>>,
 ) -> Result<Option<QuitSignal>> {
     headless_loop_with_signal(
-        scene_rx,
+        log,
         health_rx,
         Box::pin(QuitArms::arm().signalled()),
         std::io::stdout(),
@@ -292,7 +296,7 @@ async fn headless_loop(
 
 /// `Ok(None)` when the reader left (`| head`) rather than a quit signal.
 async fn headless_loop_with_signal(
-    mut scene_rx: SceneRx,
+    mut log: mpsc::UnboundedReceiver<String>,
     mut health_rx: tokio::sync::watch::Receiver<Vec<pixtuoid_core::source::manager::SourceDeath>>,
     mut quit: std::pin::Pin<Box<dyn std::future::Future<Output = QuitSignal> + Send>>,
     out: impl std::io::Write,
@@ -300,7 +304,6 @@ async fn headless_loop_with_signal(
     use std::io::Write;
     let mut out = crate::CliOut::new(out);
     tracing::info!("pixtuoid headless mode — Ctrl-C to quit");
-    let mut prev_summary = String::new();
     // Headless has no TUI footer and no stderr subscriber guarantee, so source
     // deaths must surface in the summary stream or a dead transport reads as a
     // silently empty office. Tracked by count: the watch Vec only grows.
@@ -313,14 +316,7 @@ async fn headless_loop_with_signal(
             return Ok(None);
         }
         tokio::select! {
-            _ = tokio::time::sleep(HEADLESS_SUMMARY_POLL_INTERVAL) => {
-                let snapshot = scene_rx.borrow_and_update().clone();
-                let summary = summarize(&snapshot);
-                if summary != prev_summary {
-                    writeln!(out, "{summary}")?;
-                    prev_summary = summary;
-                }
-            }
+            Some(line) = log.recv() => writeln!(out, "{line}")?,
             Ok(()) = health_rx.changed() => {
                 let deaths = health_rx.borrow_and_update().clone();
                 for d in super::unseen_deaths(&deaths, &mut deaths_seen) {
@@ -346,10 +342,13 @@ mod tests {
         watch::Receiver<Vec<SourceDeath>>,
     );
 
-    fn channels() -> (watch::Sender<Arc<SceneState>>, SceneRx, HealthPair) {
-        let (scene_tx, scene_rx) =
-            watch::channel(Arc::new(SceneState::new([FALLBACK_DESKS; MAX_FLOORS])));
-        (scene_tx, scene_rx, watch::channel(Vec::new()))
+    type LogPair = (
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedReceiver<String>,
+    );
+
+    fn channels() -> (LogPair, HealthPair) {
+        (mpsc::unbounded_channel(), watch::channel(Vec::new()))
     }
 
     #[test]
@@ -383,11 +382,68 @@ mod tests {
         );
     }
 
+    /// A transcript read hands over a call's start and end together: both
+    /// states reach the log, though no scene shows the first.
+    #[tokio::test]
+    async fn a_call_that_starts_and_ends_in_one_batch_logs_both_states() {
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::source::{AgentEvent, Transport};
+        let id = AgentId::from_parts("claude-code", "s");
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        for ev in [
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/proj"),
+                parent_id: None,
+            },
+            AgentEvent::ActivityStart {
+                agent_id: id,
+                tool_use_id: Some("t1".into()),
+                detail: Some("Bash".into()),
+            },
+            AgentEvent::ActivityEnd {
+                agent_id: id,
+                tool_use_id: Some("t1".into()),
+            },
+        ] {
+            tx.send((Transport::Jsonl, ev))
+                .await
+                .expect("the batch queues");
+        }
+        drop(tx);
+        let (log_tx, mut log) = tokio::sync::mpsc::unbounded_channel();
+        let (_presence_tx, presence_rx) = tokio::sync::mpsc::unbounded_channel();
+        reducer_task(
+            rx,
+            SceneSink::transitions(log_tx),
+            Arc::new(std::array::from_fn(|_| AtomicUsize::new(FALLBACK_DESKS))),
+            ConnectedSources::new(["claude-code".to_string()].into()),
+            presence_rx,
+            None,
+        )
+        .await;
+        let mut lines = Vec::new();
+        while let Ok(line) = log.try_recv() {
+            lines.push(line);
+        }
+        assert_eq!(
+            lines,
+            [
+                "agents=[] daemons=[]",
+                "agents=[cc\u{b7}proj@0:idle] daemons=[]",
+                "agents=[cc\u{b7}proj@0:active(Bash)] daemons=[]",
+                "agents=[cc\u{b7}proj@0:idle] daemons=[]",
+            ]
+        );
+    }
+
     #[tokio::test(start_paused = true)]
     async fn headless_loop_shuts_down_on_a_delivered_signal() {
-        let (_scene_tx, scene_rx, (_health_tx, health_rx)) = channels();
+        let ((_log_tx, log), (_health_tx, health_rx)) = channels();
         let fired = headless_loop_with_signal(
-            scene_rx,
+            log,
             health_rx,
             Box::pin(async { QuitSignal::test() }),
             std::io::sink(),
@@ -399,11 +455,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn headless_loop_ends_when_the_reader_leaves() {
-        let (_scene_tx, scene_rx, (_health_tx, health_rx)) = channels();
+        let ((log_tx, log), (_health_tx, health_rx)) = channels();
+        log_tx
+            .send("agents=[] daemons=[]".into())
+            .expect("the loop holds the log");
         let res = tokio::time::timeout(
             Duration::from_secs(5),
             headless_loop_with_signal(
-                scene_rx,
+                log,
                 health_rx,
                 Box::pin(std::future::pending()),
                 crate::test_io::FailOnce::new(0, std::io::ErrorKind::BrokenPipe),

@@ -21,7 +21,6 @@ fn stat_slot(path: &str, state: ActivityState, exiting: bool) -> AgentSlot {
         created_at: now,
         last_event_at: now,
         exiting_at: exiting.then_some(now),
-        pending_idle_at: None,
         desk_index: GlobalDeskIndex(0),
         floor_idx: 0,
         tool_call_count: 0,
@@ -333,7 +332,6 @@ fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
         created_at: SystemTime::UNIX_EPOCH,
         last_event_at: SystemTime::UNIX_EPOCH,
         exiting_at: None,
-        pending_idle_at: None,
 
         desk_index: GlobalDeskIndex(0),
         floor_idx: 0,

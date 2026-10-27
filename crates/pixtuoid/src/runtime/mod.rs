@@ -194,6 +194,25 @@ fn summarize(scene: &SceneState) -> String {
     )
 }
 
+/// Headless stdout: one [`summarize`] line per change of the scene. It follows
+/// every applied event, never a sample, so a state that lasts no frame (a call
+/// that starts and ends in one transcript read) is still logged.
+#[derive(Default)]
+pub(crate) struct TransitionLog {
+    last: String,
+}
+
+impl TransitionLog {
+    /// `scene`'s line, when it differs from the last one logged.
+    pub(crate) fn line(&mut self, scene: &SceneState) -> Option<String> {
+        let line = summarize(scene);
+        (line != self.last).then(|| {
+            self.last.clone_from(&line);
+            line
+        })
+    }
+}
+
 /// Format a `SourceDeath` for the headless stdout health line. Both fields are
 /// `sanitize_line`d before printing: `error` is `format!("{e:#}")` of an `anyhow` chain
 /// that can embed external strings carrying terminal escapes, and `source` is sanitized
@@ -555,6 +574,27 @@ mod tests {
     fn boot_capacities_falls_back_to_default_on_tiny_terminal() {
         let caps = boot_capacities_for(classic(), term(10, 10));
         assert_eq!(caps, [FALLBACK_DESKS; MAX_FLOORS]);
+    }
+
+    #[test]
+    fn a_transition_log_writes_a_scene_again_only_once_it_changed() {
+        let mut log = TransitionLog::default();
+        let mut scene = SceneState::new([8; MAX_FLOORS]);
+        assert_eq!(log.line(&scene).as_deref(), Some("agents=[] daemons=[]"));
+        assert_eq!(log.line(&scene), None, "a sweep that changed nothing");
+        Reducer::new().apply(
+            &mut scene,
+            pixtuoid_core::source::AgentEvent::SessionStart {
+                agent_id: pixtuoid_core::AgentId::from_transcript_path("/p/a.jsonl"),
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: std::path::PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            SystemTime::now(),
+            Transport::Hook,
+        );
+        assert!(log.line(&scene).is_some());
     }
 
     #[test]

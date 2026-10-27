@@ -190,7 +190,6 @@ fn office(start: SystemTime) -> SceneState {
                 created_at: started,
                 last_event_at: started,
                 exiting_at: None,
-                pending_idle_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: scene.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,

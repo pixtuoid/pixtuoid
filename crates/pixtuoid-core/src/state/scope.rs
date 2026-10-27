@@ -189,7 +189,6 @@ mod tests {
             last_event_at: now,
             created_at: now,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: crate::state::GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,

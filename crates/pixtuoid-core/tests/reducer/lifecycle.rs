@@ -408,14 +408,11 @@ fn resurrect_in_place_clears_stale_active_tasks_so_the_fresh_session_is_not_dele
         t0 + Duration::from_secs(4),
         Transport::Hook,
     );
-    match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Active { detail, .. } => assert_eq!(
-            detail.as_deref(),
-            Some("Read: /x"),
-            "the dead life's Task residue put the fresh session back to Delegating"
-        ),
-        other => panic!("expected the fresh tool's Active, got {other:?}"),
-    }
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "the dead life's Task residue put the fresh session back to Delegating"
+    );
 }
 
 #[test]

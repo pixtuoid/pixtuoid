@@ -11,6 +11,7 @@ mod correlation;
 mod fsm;
 /// The event coordinator: [`reducer::Reducer`] folds `AgentEvent`s into `SceneState`.
 pub mod reducer;
+mod requests;
 mod scope;
 
 /// Maximum number of office floors a `SceneState` tracks.
@@ -144,9 +145,9 @@ impl ToolKind {
 /// What an agent slot is doing right now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActivityState {
-    /// No tool running (debounced by [`crate::state::reducer::ACTIVE_GRACE_WINDOW`]).
+    /// No tool running.
     Idle,
-    /// A tool call is in flight (or within the Active→Idle grace window).
+    /// A tool call is in flight.
     Active {
         /// The in-flight tool call's id (pairs Start↔End).
         #[serde(with = "opt_arc_str_serde")]
@@ -303,11 +304,6 @@ pub struct AgentSlot {
     /// Set when `SessionEnd` arrived but the slot is held alive long enough for
     /// the exit animation to play.
     pub exiting_at: Option<SystemTime>,
-    /// Active→Idle debounce mark: set by an end instead of an immediate
-    /// state flip, expired by `reducer.tick` after `ACTIVE_GRACE_WINDOW`. Hides
-    /// the per-tool-call Active flicker rapid PreToolUse → PostToolUse chains
-    /// produce in CC.
-    pub pending_idle_at: Option<SystemTime>,
     /// GLOBAL desk index (assigned once at `SessionStart`, never mutated).
     pub desk_index: GlobalDeskIndex,
     /// Floor assigned at desk allocation time. Immutable for the agent's
@@ -802,7 +798,6 @@ mod tests {
             created_at: now,
             last_event_at: now,
             exiting_at: None,
-            pending_idle_at: None,
             desk_index: GlobalDeskIndex(desk_index),
             floor_idx: 0,
             tool_call_count: 0,
