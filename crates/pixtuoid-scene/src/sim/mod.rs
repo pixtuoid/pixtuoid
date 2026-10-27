@@ -68,8 +68,8 @@ pub(crate) struct SimStores<'a> {
 pub(crate) enum CharacterGlow {
     /// No glow.
     None,
-    /// `SeatedTyping` — paint resolves the work's tint (`tool_glow_tint`).
-    Tool,
+    /// `SeatedTyping` — paint resolves the work's tint (`work_glow_tint`).
+    Work,
 }
 
 /// One character's fully resolved placement for this tick — everything the
@@ -935,7 +935,7 @@ pub(crate) fn resolve_characters(
                 ));
             }
             Pose::SeatedTyping => {
-                let (mut placement, cues) = seated(TYPING, CharacterGlow::Tool, None);
+                let (mut placement, cues) = seated(TYPING, CharacterGlow::Work, None);
                 // the art the seat resolved to, a back view's own loop included
                 placement.frame_idx =
                     pose::typing_frame(agent, beat, pack.piece(placement.anim_name));

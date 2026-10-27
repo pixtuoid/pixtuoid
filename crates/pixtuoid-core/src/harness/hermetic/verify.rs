@@ -791,7 +791,8 @@ fn judge(
         bracketed(p, scenario, &events, &reached, findings);
     }
     let shown = match scenario.shape {
-        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "running",
+        // An item, not a bare open turn: the live pipeline delivered its start.
+        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "running(",
         Shape::Permission => "requires_action",
         Shape::ModelError | Shape::Succession | Shape::Cancel => "idle",
     };
@@ -1008,7 +1009,7 @@ fn bracketed(
             .turn_exits
             .iter()
             .find(|e| e.scenario == scenario.name)
-            .map_or_else(String::new, |e| format!(" by its `{}` exit", e.exit));
+            .map_or_else(String::new, |e| format!(" by its {e} exit"));
         findings.push((
             Label::Fail,
             format!("the run ended{by} with turn(s) {open:?} open"),
@@ -2453,6 +2454,18 @@ mod tests {
         let d = recorded("codex", "tool-run", CX_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    #[test]
+    fn a_tool_run_whose_scene_shows_only_its_open_turn_fails() {
+        let scene = "agents=[cx\u{b7}proj@0:running]\nagents=[] daemons=[]\n";
+        let d = recorded("codex", "tool-run", scene);
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "never showed a cx\u{b7} agent running("),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]

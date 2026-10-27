@@ -6,18 +6,13 @@
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+import { HOOK_PLACEHOLDER, POSIX, REPO_ROOT, poll } from "./lib/plugin-harness.mjs";
+
 const PLUGIN_SOURCE = join(REPO_ROOT, "crates", "pixtuoid", "src", "install", "opencode_plugin.ts");
-// Must match `HOOK_PLACEHOLDER` in `crates/pixtuoid/src/install/opencode.rs`.
-const HOOK_PLACEHOLDER = '"{{HOOK_PATH_JSON}}"';
-
-const POSIX = process.platform !== "win32";
-const POLL_DEADLINE_MS = 10_000;
-const POLL_TICK_MS = 25;
 
 async function renderPlugin(t) {
   const root = await mkdtemp(join(tmpdir(), "pixtuoid-opencode-plugin-"));
@@ -68,18 +63,8 @@ function setup(plugin) {
   return { events, cleanup };
 }
 
-async function payloads(file, n) {
-  const deadline = Date.now() + POLL_DEADLINE_MS;
-  for (;;) {
-    const text = await readFile(file, "utf8").catch(() => "");
-    const got = text.split("\n").filter((l) => l.trim().length > 0);
-    if (got.length >= n) return got.slice(0, n).map((l) => JSON.parse(l));
-    if (Date.now() > deadline) {
-      throw new Error(`timed out polling ${file}; got ${got.length} line(s)`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_TICK_MS));
-  }
-}
+const payloads = async (file, n) =>
+  (await poll(file, (got) => got.length >= n)).slice(0, n).map((l) => JSON.parse(l));
 
 const started = (sessionID, seq) => ({
   type: "session.execution.started",

@@ -406,14 +406,17 @@ trust_level = "trusted"
     turn_exits: &[
         TurnExit {
             exit: "task_complete",
+            with: None,
             scenario: "tool-run",
         },
         TurnExit {
-            exit: "task_complete with its error",
+            exit: "task_complete",
+            with: Some("error"),
             scenario: "model-error",
         },
         TurnExit {
             exit: "turn_aborted",
+            with: None,
             scenario: "cancel",
         },
     ],

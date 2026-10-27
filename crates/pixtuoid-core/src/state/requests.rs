@@ -18,11 +18,13 @@ pub(crate) enum Ended<'a> {
     /// A tool end naming no call: its wire carries none (Reasonix's
     /// PostToolUse).
     Unnamed,
-    /// A turn's end: the turn it names, if any, and the open turn it proved
-    /// ended, if that is another.
+    /// A turn's end: the turn it names, if any, the open turn it proved
+    /// ended, if that is another, and whether it also ends what no turn
+    /// scoped: it names none, or its start went unseen.
     Turn {
         turn: Option<&'a TurnKey>,
         implied: Option<&'a TurnKey>,
+        turnless: bool,
     },
 }
 
@@ -259,7 +261,11 @@ impl ActionRequests {
         let resolved = requires_action && self.resolves(&id, Seen::End(ended), from);
         match ended {
             Ended::Call(c) => self.retire(&id, c),
-            Ended::Turn { turn, implied } => self.retire_turn(&id, turn, implied, from),
+            Ended::Turn {
+                turn,
+                implied,
+                turnless,
+            } => self.retire_turn(&id, turn, implied, turnless, from),
             Ended::Unnamed => {}
         }
         if resolved {
@@ -317,13 +323,15 @@ impl ActionRequests {
             Seen::Resolved(Resolution::Call(c)) => req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed) => from == Transport::Hook && !req.named,
-            Seen::End(Ended::Turn { turn, implied }) => match &req.turn {
+            Seen::End(Ended::Turn {
+                turn,
+                implied,
+                turnless,
+            }) => match &req.turn {
                 Some(t) => Some(t) == turn || Some(t) == implied,
                 // The transcript may read a turn's end past a hook's fresh
                 // raise, so it answers only its own.
-                None => {
-                    turn.is_none() && (from == Transport::Hook || req.raised_on == Transport::Jsonl)
-                }
+                None => turnless && (from == Transport::Hook || req.raised_on == Transport::Jsonl),
             },
             Seen::Resolved(Resolution::Turn(k)) => req.turn.as_ref() == Some(k),
             // The child resumed, unless a member is the parent's own call.
@@ -359,14 +367,14 @@ impl ActionRequests {
     }
 
     /// The pending starts a turn's end retires: its turn's and the implied
-    /// one's. An end naming no turn retires the turnless ones, a transcript's
-    /// only its own: grok's transcript reads a turn's end past its hooks' next
-    /// call.
+    /// one's, and the turnless ones when it is `turnless`, a transcript's only
+    /// its own: grok's transcript reads a turn's end past its hooks' next call.
     fn retire_turn(
         &mut self,
         id: &AgentId,
         turn: Option<&TurnKey>,
         implied: Option<&TurnKey>,
+        turnless: bool,
         from: Transport,
     ) {
         let Some(starts) = self.pending.get_mut(id) else {
@@ -375,10 +383,10 @@ impl ActionRequests {
         for p in starts.iter_mut() {
             match &p.turn {
                 Some(t) if Some(t) == turn || Some(t) == implied => p.seen_on.clear(),
-                None if turn.is_none() && from == Transport::Jsonl => {
+                None if turnless && from == Transport::Jsonl => {
                     p.seen_on.retain(|on| *on != Transport::Jsonl);
                 }
-                None if turn.is_none() => p.seen_on.clear(),
+                None if turnless => p.seen_on.clear(),
                 _ => {}
             }
         }
@@ -631,6 +639,7 @@ mod tests {
         Ended::Turn {
             turn: k,
             implied: None,
+            turnless: k.is_none(),
         }
     }
 
@@ -776,6 +785,7 @@ mod tests {
                 Seen::End(Ended::Turn {
                     turn: Some(&t2),
                     implied: Some(&t1),
+                    turnless: false,
                 }),
                 JSONL,
                 true,
@@ -786,6 +796,17 @@ mod tests {
                 Seen::End(turn_end(Some(&t1))),
                 HOOK,
                 false,
+            ),
+            (
+                "a turnless request, the end of a turn whose start went unseen",
+                bound(),
+                Seen::End(Ended::Turn {
+                    turn: Some(&t1),
+                    implied: None,
+                    turnless: true,
+                }),
+                HOOK,
+                true,
             ),
             (
                 "a hook turn end",
@@ -937,8 +958,13 @@ mod tests {
             ["b", "c"],
             "a transcript end leaves the hook's"
         );
-        reqs.end(id(), turn_end(None), HOOK, false);
-        assert_eq!(calls(&reqs), ["b"]);
+        let start_unseen = Ended::Turn {
+            turn: Some(&t1),
+            implied: None,
+            turnless: true,
+        };
+        reqs.end(id(), start_unseen, HOOK, false);
+        assert_eq!(calls(&reqs), ["b"], "a turnless end retires the turnless");
     }
 
     /// A pre-use and its start, or the two transports' starts of one call,

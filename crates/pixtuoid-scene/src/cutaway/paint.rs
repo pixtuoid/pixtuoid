@@ -5512,7 +5512,7 @@ mod tests {
             let variants: [&FigureEdit; 7] = [
                 &|_, _| {},
                 &|c, a| {
-                    c.glow = crate::sim::CharacterGlow::Tool;
+                    c.glow = crate::sim::CharacterGlow::Work;
                     a.state = pixtuoid_core::state::ActivityState::Running {
                         item: Some(pixtuoid_core::state::TurnItem::ToolUse {
                             tool_use_id: None,

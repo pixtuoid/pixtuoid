@@ -19,7 +19,7 @@ tests/
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
-│   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`): a RequiresAction stands until its resolution, a hook-set item survives a lagging transcript turn end
+│   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`)
 │   ├── claude/ codex/ codewhale/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
 │   │                    an independent session (two sprites), so these can't live under the one-AgentId rule
 │   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel) and a failed child's own end

@@ -90,7 +90,7 @@ fn footer_shows_agent_count() {
 }
 
 #[test]
-fn tool_glow_tint_differs_by_tool() {
+fn work_glow_tint_differs_by_tool() {
     let render_tool = |detail: &str| -> (RgbBuffer, Point) {
         // Long-seated (entry walk done) so it's SeatedTyping at the desk and
         // the monitor screen-glow paints.

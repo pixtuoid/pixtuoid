@@ -44,9 +44,9 @@ pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> TurnItem {
     }
 }
 
-/// Enter the `Running("Delegating")` state — a parent dispatched a Task, or a
-/// [`settle`] lands on one still in flight. Deliberately does NOT stamp
-/// `last_event_at`: every caller already refreshed lineage.
+/// Enter the `Running("Delegating")` state — a parent dispatched a Task.
+/// Deliberately does NOT stamp `last_event_at`: every caller already
+/// refreshed lineage.
 pub(crate) fn enter_delegating(
     slot: &mut AgentSlot,
     tool_use_id: Option<Arc<str>>,
@@ -95,26 +95,14 @@ pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
 /// with no item while its turn is open, else on Idle. Landing on the state the
 /// slot is already in keeps its clock. The caller owns `last_event_at`.
 pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
-    if let Some(item) = ctx.in_flight {
-        show(slot, item, now);
-        return;
+    let task = ctx.task_in_flight.map(|task| delegating_item(Some(task)));
+    if let Some(item) = ctx.in_flight.or(task) {
+        return show(slot, item, now);
     }
-    match (ctx.task_in_flight, &mut slot.state) {
-        (
-            Some(task),
-            ActivityState::Running {
-                item:
-                    Some(TurnItem::ToolUse {
-                        kind: ToolKind::Task,
-                        tool_use_id,
-                        ..
-                    }),
-            },
-        ) => *tool_use_id = Some(task),
-        (Some(task), _) => enter_delegating(slot, Some(task), now),
-        (None, ActivityState::Running { item: None }) if ctx.turn_open => {}
-        (None, ActivityState::Idle) if !ctx.turn_open => {}
-        (None, _) => {
+    match slot.state {
+        ActivityState::Running { item: None } if ctx.turn_open => {}
+        ActivityState::Idle if !ctx.turn_open => {}
+        _ => {
             accumulate_running_ms(slot, now);
             slot.state = if ctx.turn_open {
                 ActivityState::Running { item: None }

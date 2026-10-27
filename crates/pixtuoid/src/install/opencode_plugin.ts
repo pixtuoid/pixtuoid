@@ -24,15 +24,19 @@ const DRAIN_MS = 2000
 // published reaches the loop well within it.
 const QUIET_MS = 50
 
+const SETTLES = new Set<string>([
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+])
+
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
 const FORWARD = new Set<string>([
   "session.created",
   "session.deleted",
   "session.execution.started",
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
+  ...SETTLES,
   "session.tool.input.started",
   "session.tool.success",
   "session.tool.failed",
@@ -84,12 +88,6 @@ const record = async (ctx: any, sessionID: unknown) => {
     return {}
   }
 }
-
-const SETTLES = new Set<string>([
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
-])
 
 export default {
   id: "pixtuoid",

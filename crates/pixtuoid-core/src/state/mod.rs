@@ -164,7 +164,7 @@ pub enum ActivityState {
 }
 
 /// One unit of work inside a turn. A kind is added only with a live, paired
-/// wire signal and something that displays it, so every match names each.
+/// wire signal and something that displays it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TurnItem {
     /// A tool call.

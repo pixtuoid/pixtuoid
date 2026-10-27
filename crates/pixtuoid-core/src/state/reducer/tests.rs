@@ -1210,6 +1210,7 @@ mod turn_property {
     use proptest::prelude::*;
 
     use crate::source::{AgentEvent, RequestKeys, ToolDetail, Transport};
+    use crate::state::turns::SeqOracle;
     use crate::state::{ActivityState, TurnKey};
     use crate::{AgentId, Reducer, SceneState};
 
@@ -1270,34 +1271,11 @@ mod turn_property {
         }
     }
 
-    /// What the stream has said about its newest started turn.
-    #[derive(Default)]
-    pub(super) struct Model {
-        newest_start: Option<u64>,
-        newest_end: Option<u64>,
-        newest_ended: bool,
-    }
-
-    impl Model {
-        fn see(&mut self, ev: &Ev) {
-            match ev {
-                Ev::Start(k) if self.newest_start.is_none_or(|m| *k > m) => {
-                    self.newest_start = Some(*k);
-                    self.newest_ended = self.newest_end.is_some_and(|e| e >= *k);
-                }
-                Ev::End(Some(k)) => {
-                    self.newest_end = self.newest_end.max(Some(*k));
-                    self.newest_ended |= self.newest_start.is_some_and(|m| *k >= m);
-                }
-                Ev::End(None) => self.newest_ended = true,
-                _ => {}
-            }
-        }
-
-        fn open(&self) -> Option<TurnKey> {
-            self.newest_start
-                .filter(|_| !self.newest_ended)
-                .map(TurnKey::Seq)
+    fn see(oracle: &mut SeqOracle, ev: &Ev) {
+        match ev {
+            Ev::Start(k) => oracle.start(*k),
+            Ev::End(k) => oracle.end(*k),
+            _ => {}
         }
     }
 
@@ -1323,12 +1301,12 @@ mod turn_property {
     pub(super) fn step(
         r: &mut Reducer,
         scene: &mut SceneState,
-        model: &mut Model,
+        oracle: &mut SeqOracle,
         n: u64,
         ev: &Ev,
     ) -> Result<(), String> {
         r.apply(scene, ev.event(), t(n), Transport::Hook);
-        model.see(ev);
+        see(oracle, ev);
         let state = &scene.agents[&id()].state;
         let open = r.corr.turns.open(&id()).cloned();
         if *state == (ActivityState::Running { item: None }) && open.is_none() {
@@ -1339,10 +1317,10 @@ mod turn_property {
         if open.is_some() && *state == ActivityState::Idle {
             return Err(format!("after {ev:?}: Idle with turn {open:?} open"));
         }
-        if open != model.open() {
+        if open != oracle.open() {
             return Err(format!(
                 "after {ev:?}: turn {open:?} open, the stream's newest unended start is {:?}",
-                model.open()
+                oracle.open()
             ));
         }
         Ok(())
@@ -1365,9 +1343,9 @@ mod turn_property {
         #[test]
         fn every_event_keeps_the_turn_axis_property(evs in proptest::collection::vec(ev(), 0..24)) {
             let (mut r, mut scene) = seeded();
-            let mut model = Model::default();
+            let mut oracle = SeqOracle::default();
             for (n, ev) in (1..).zip(&evs) {
-                if let Err(e) = step(&mut r, &mut scene, &mut model, n, ev) {
+                if let Err(e) = step(&mut r, &mut scene, &mut oracle, n, ev) {
                     return Err(TestCaseError::fail(e));
                 }
             }
@@ -1379,7 +1357,8 @@ mod turn_property {
 /// `Seq` stream, keeps the turn-axis property after each event.
 #[test]
 fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
-    use turn_property::{Ev, Model, seeded, step};
+    use crate::state::turns::SeqOracle;
+    use turn_property::{Ev, seeded, step};
     let events = [
         Ev::Start(1),
         Ev::End(Some(1)),
@@ -1393,9 +1372,9 @@ fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
     let mut orders = 0;
     let mut check = |order: &[usize]| {
         let (mut r, mut scene) = seeded();
-        let mut model = Model::default();
+        let mut oracle = SeqOracle::default();
         for (n, &i) in (1..).zip(order) {
-            if let Err(e) = step(&mut r, &mut scene, &mut model, n, &events[i]) {
+            if let Err(e) = step(&mut r, &mut scene, &mut oracle, n, &events[i]) {
                 panic!("order {order:?}: {e}");
             }
         }

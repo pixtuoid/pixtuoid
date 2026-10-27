@@ -228,14 +228,17 @@ pub(crate) const PROFILE: Profile = Profile {
     turn_exits: &[
         TurnExit {
             exit: "session.execution.succeeded",
+            with: None,
             scenario: "tool-run",
         },
         TurnExit {
             exit: "session.execution.failed",
+            with: None,
             scenario: "model-error",
         },
         TurnExit {
             exit: "session.execution.interrupted",
+            with: None,
             scenario: "cancel",
         },
     ],

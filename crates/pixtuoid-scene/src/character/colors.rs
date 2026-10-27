@@ -356,7 +356,7 @@ pub(crate) fn agent_overrides(
 
 /// The monitor glow color for an agent's work, or `None` when the agent is not
 /// Running.
-pub(crate) fn tool_glow_tint(
+pub(crate) fn work_glow_tint(
     agent: &AgentSlot,
     glow: &crate::theme::ToolGlowColors,
 ) -> Option<Rgb> {
@@ -454,7 +454,7 @@ mod tests {
         ];
         for (detail, expected) in table {
             assert_eq!(
-                tool_glow_tint(&running(detail.as_ref()), glow),
+                work_glow_tint(&running(detail.as_ref()), glow),
                 Some(*expected),
                 "display {:?} must keep its pre-ToolKind tint",
                 detail.as_ref().map(ToolDetail::display),
@@ -464,13 +464,13 @@ mod tests {
         // impossible from production decoders, which type every dispatch as
         // ToolDetail::Task upstream.
         assert_eq!(
-            tool_glow_tint(&running(Some(&generic("Delegating imposter"))), glow),
+            work_glow_tint(&running(Some(&generic("Delegating imposter"))), glow),
             Some(glow.default)
         );
     }
 
     #[test]
-    fn tool_glow_tint_is_none_unless_running() {
+    fn work_glow_tint_is_none_unless_running() {
         let glow = &crate::theme::NORMAL.tool_glow;
         let id = pixtuoid_core::AgentId::from_transcript_path("/g.jsonl");
         let edit = make_slot(
@@ -483,18 +483,18 @@ mod tests {
                 }),
             },
         );
-        assert_eq!(tool_glow_tint(&edit, glow), Some(glow.edit));
+        assert_eq!(work_glow_tint(&edit, glow), Some(glow.edit));
         assert_eq!(
-            tool_glow_tint(&make_slot(id, ActivityState::Running { item: None }), glow),
+            work_glow_tint(&make_slot(id, ActivityState::Running { item: None }), glow),
             Some(glow.default),
             "an open turn between items glows untinted"
         );
         assert_eq!(
-            tool_glow_tint(&make_slot(id, ActivityState::Idle), glow),
+            work_glow_tint(&make_slot(id, ActivityState::Idle), glow),
             None
         );
         assert_eq!(
-            tool_glow_tint(
+            work_glow_tint(
                 &make_slot(id, ActivityState::RequiresAction { reason: None }),
                 glow
             ),

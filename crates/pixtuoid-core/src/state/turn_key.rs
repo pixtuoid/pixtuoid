@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TurnKey {
     /// A position on the agent's ordered bracket stream: opencode's durable
-    /// `seq`, dsh's `turn`.
+    /// `seq`.
     Seq(u64),
     /// An opaque wire id.
     Id(#[serde(with = "super::arc_str_serde")] std::sync::Arc<str>),

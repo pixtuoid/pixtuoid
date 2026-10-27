@@ -3,7 +3,7 @@ use super::drawable::paint_character_at;
 use super::*;
 use crate::anim::{Motion, epoch_ms};
 use crate::character::test_support::{color_of, make_slot, make_slot_cwd};
-use crate::character::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY, tool_glow_tint};
+use crate::character::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY, work_glow_tint};
 use crate::cutaway::wall::paint_wall;
 #[cfg(feature = "cutaway-assets")]
 use crate::display::pen::test_density;
@@ -1088,7 +1088,7 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     );
     let idle = make_slot(id, ActivityState::Idle);
     let theme = &crate::theme::NORMAL;
-    let tool = tool_glow_tint(&editing, &theme.tool_glow);
+    let tool = work_glow_tint(&editing, &theme.tool_glow);
     assert!(tool.is_some(), "the fixture's occupant is using a tool");
     let glow = |occupant, facing, seated| {
         crate::lighting::desk_screen_glow(occupant, facing, seated, theme)
@@ -5720,15 +5720,15 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
         seat_desk: None,
         seated: true,
     };
-    let pose = crate::character::SpritePose::of(&placement(CharacterGlow::Tool), &typing, theme);
+    let pose = crate::character::SpritePose::of(&placement(CharacterGlow::Work), &typing, theme);
     assert_eq!(
         (pose.anim_name, pose.frame_idx, pose.flip_x),
         (Piece::Typing, 3, true)
     );
-    assert_eq!(pose.glow_tint, tool_glow_tint(&typing, &theme.tool_glow));
+    assert_eq!(pose.glow_tint, work_glow_tint(&typing, &theme.tool_glow));
     let between_items = make_slot(id, ActivityState::Running { item: None });
     let turn =
-        crate::character::SpritePose::of(&placement(CharacterGlow::Tool), &between_items, theme);
+        crate::character::SpritePose::of(&placement(CharacterGlow::Work), &between_items, theme);
     assert_eq!(turn.glow_tint, Some(theme.tool_glow.default));
     let unlit = crate::character::SpritePose::of(&placement(CharacterGlow::None), &typing, theme);
     assert_eq!(unlit.glow_tint, None);

@@ -47,11 +47,8 @@ const TOOL_FAILED: &str = "session.tool.failed";
 const PERMISSION_ASKED: &str = "permission.asked";
 
 /// The envelope's turn: an execution start's durable `seq`, which the plugin
-/// also stamps on that execution's settle. One execution runs per session at a
-/// time (`packages/core/src/session/run-coordinator.ts:6` at v2.2.0) and the
-/// plugin reads the bus in order, so a settle is its start's end. A settle
-/// whose start the plugin never saw (a boot sweep's `failed`, a late load)
-/// names none.
+/// also stamps on that execution's settle; one whose start it never saw names
+/// none.
 const TURN: &str = "turn";
 
 /// The subagent dispatch tool (`packages/core/src/tool/plugin/subagent.ts:17`

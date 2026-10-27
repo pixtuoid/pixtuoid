@@ -6,9 +6,7 @@ use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, Resolution, Transport};
-use crate::state::correlation::{
-    Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
-};
+use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
@@ -92,8 +90,8 @@ fn stale_threshold_with_caps(
         ActivityState::Running {
             item: Some(TurnItem::ToolUse { .. }),
         } => STALE_TOOL_TIMEOUT,
-        // An open turn is reaped no sooner than a running tool or an idle
-        // slot would be.
+        // The model's silence mid-turn may last as long as a tool's, and a
+        // turn whose end was lost may hide a human on a break.
         ActivityState::Running { item: None } => STALE_TOOL_TIMEOUT.max(idle_threshold(caps)),
         ActivityState::Idle => idle_threshold(caps),
         ActivityState::RequiresAction { .. } => STALE_BLOCKED_TIMEOUT,
@@ -627,7 +625,7 @@ impl Reducer {
     }
 
     /// Count a tool call ONCE per (agent, call id) life; the id-less path
-    /// (Codex JSONL) counts every time.
+    /// counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
@@ -752,6 +750,7 @@ impl Reducer {
             let ended = Ended::Turn {
                 turn: Some(&open),
                 implied: None,
+                turnless: false,
             };
             let resolved = self.corr.action_requests.end(
                 agent_id,
@@ -779,13 +778,15 @@ impl Reducer {
         if !scene.agents.contains_key(&agent_id) {
             return;
         }
-        let (applies, implied) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
-            End::Applied { implied } => (true, implied),
-            End::Stale => (false, None),
+        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
+            End::Applied { implied } => (true, implied, turn.is_none()),
+            End::StartUnseen => (true, None, true),
+            End::Stale => (false, None, false),
         };
         let ended = Ended::Turn {
             turn: turn.as_ref(),
             implied: implied.as_ref(),
+            turnless,
         };
         let resolved = self.corr.action_requests.end(
             agent_id,
@@ -837,8 +838,8 @@ impl Reducer {
         }
     }
 
-    /// What `id`'s settle lands on: a Task of its still in flight, or its
-    /// open turn.
+    /// What `id`'s settle lands on: its newest call still in flight, a Task
+    /// of its still in flight, or its open turn.
     fn settle_ctx(&self, id: &AgentId) -> SettleCtx {
         SettleCtx {
             in_flight: self.corr.action_requests.newest_in_flight(id),
@@ -1380,12 +1381,7 @@ impl Reducer {
                 matches!(slot.state, ActivityState::RequiresAction { .. }),
             )
         {
-            let ctx = SettleCtx {
-                in_flight: self.corr.action_requests.newest_in_flight(&id),
-                task_in_flight: any_task(tasks),
-                turn_open: self.corr.turns.open(&id).is_some(),
-            };
-            fsm::settle(slot, ctx, now);
+            fsm::settle(slot, self.settle_ctx(&id), now);
         }
         suppress
     }
@@ -1485,12 +1481,7 @@ impl Reducer {
                             }
                         ) && (set.is_empty() || shown_drained)
                         {
-                            let ctx = SettleCtx {
-                                in_flight: self.corr.action_requests.newest_in_flight(agent_id),
-                                task_in_flight: any_task(set),
-                                turn_open: self.corr.turns.open(agent_id).is_some(),
-                            };
-                            fsm::settle(slot, ctx, now);
+                            fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }
                 }

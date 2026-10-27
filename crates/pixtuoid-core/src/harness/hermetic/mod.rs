@@ -379,12 +379,24 @@ pub struct Profile {
 }
 
 /// An in-process exit of a turn, and the scenario recording it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TurnExit {
-    /// The exit, as its CLI names it.
+    /// The `type` of the line that closes the turn.
     pub(crate) exit: &'static str,
+    /// A field that line carries on this exit alone.
+    pub(crate) with: Option<&'static str>,
     /// The scenario of its profile that records it.
     pub(crate) scenario: &'static str,
+}
+
+impl std::fmt::Display for TurnExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "`{}`", self.exit)?;
+        match self.with {
+            Some(field) => write!(f, " with `{field}`"),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Profile {
@@ -1437,10 +1449,41 @@ mod tests {
         events
     }
 
+    /// The exit of `exits` capture `line` takes: its `type`, in a rollout's
+    /// `payload` or else the line's own, is the exit's, and a field it carries
+    /// picks the exit naming it over the bare type's.
+    fn exit_of<'a>(exits: &'a [TurnExit], line: &Value) -> Option<&'a TurnExit> {
+        let typed = line
+            .get("payload")
+            .filter(|p| p.get("type").is_some())
+            .unwrap_or(line);
+        exits
+            .iter()
+            .filter(|e| typed.get("type").and_then(Value::as_str) == Some(e.exit))
+            .filter(|e| {
+                e.with
+                    .is_none_or(|f| typed.get(f).is_some_and(|v| !v.is_null()))
+            })
+            .max_by_key(|e| e.with.is_some())
+    }
+
+    /// Every JSON line of the committed capture in `dir`.
+    fn captured_lines(dir: &Path) -> Vec<Value> {
+        crate::harness::jsonl_files_under(dir)
+            .iter()
+            .flat_map(|file| {
+                let text = std::fs::read_to_string(file).expect("a committed capture reads");
+                text.lines()
+                    .filter_map(|l| serde_json::from_str(l).ok())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     /// The spec's `brackets_turns` conformance: a source brackets its turns
     /// exactly where its profile names a recording of every exit a turn takes,
-    /// each recording closing every turn it opens, and no capture of any other
-    /// source decodes a turn's start.
+    /// each recording closing every turn it opens through its own exit alone,
+    /// and no capture of any other source decodes a turn's start.
     #[test]
     fn a_source_brackets_turns_only_where_every_exit_is_recorded() {
         for source in registry::registered_source_names() {
@@ -1464,16 +1507,24 @@ mod tests {
                     events
                         .iter()
                         .any(|e| matches!(e, crate::AgentEvent::TurnStart { .. })),
-                    "{source}/{}: its recording of `{}` opens no turn",
+                    "{source}/{}: its recording of {exit} opens no turn",
                     exit.scenario,
-                    exit.exit
                 );
                 let open = verify::unclosed_turns(&events);
                 assert!(
                     open.is_empty(),
-                    "{source}/{}: its recording of `{}` leaves {open:?} open",
+                    "{source}/{}: its recording of {exit} leaves {open:?} open",
                     exit.scenario,
-                    exit.exit
+                );
+                let taken: BTreeSet<&TurnExit> = captured_lines(&dir)
+                    .iter()
+                    .filter_map(|line| exit_of(exits, line))
+                    .collect();
+                assert_eq!(
+                    taken,
+                    BTreeSet::from([exit]),
+                    "{source}/{}: its recording takes another exit than {exit}",
+                    exit.scenario,
                 );
             }
         }

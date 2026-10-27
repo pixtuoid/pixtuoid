@@ -1882,6 +1882,72 @@ fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
     }
 }
 
+/// A late attach: the reducer never saw the turn's start, yet the stream keys
+/// its end by it.
+#[test]
+fn the_end_of_a_turn_whose_start_went_unseen_ends_what_the_turn_left() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let start = |id, k| AgentEvent::TurnStart {
+        agent_id: id,
+        turn: TurnKey::Seq(k),
+    };
+    let end = |id, k| AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: Some(TurnKey::Seq(k)),
+    };
+    let opencode = |r: &mut Reducer, scene: &mut SceneState| {
+        let id = AgentId::from_parts("opencode", "ses_p");
+        start_as(r, scene, id, "opencode");
+        id
+    };
+
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = opencode(&mut r, &mut scene);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    apply(&mut r, &mut scene, end(id, 5), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "it answers the request no call did"
+    );
+
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = opencode(&mut r, &mut scene);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c1"),
+        Some("bash"),
+        t0,
+        Transport::Hook,
+    );
+    apply(&mut r, &mut scene, end(id, 5), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "it retires the call whose end never came"
+    );
+    apply(&mut r, &mut scene, start(id, 7), t0, Transport::Hook);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c2"),
+        Some("bash"),
+        t0,
+        Transport::Hook,
+    );
+    tool_use_end(&mut r, &mut scene, id, Some("c2"), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "the next turn shows none of its calls"
+    );
+    apply(&mut r, &mut scene, end(id, 7), t0, Transport::Hook);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
 #[test]
 fn a_codex_request_binds_its_tools_pending_call_and_resolves_on_its_output() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));

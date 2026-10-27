@@ -259,7 +259,7 @@ fn linear_walk_pose(since_ms: u64, from: Point, to: Point) -> Pose {
 
 /// The state→pose tail shared by `derive` and `derive_state_only`, applied
 /// AFTER each caller's own override guards — one place, so the two entry points
-/// can't drift. Every Running types, item or not: the pose follows the state.
+/// can't drift.
 fn state_driven_pose(
     slot: &AgentSlot,
     desk: HomeDesk,

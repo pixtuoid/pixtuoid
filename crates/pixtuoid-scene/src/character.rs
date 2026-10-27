@@ -17,7 +17,7 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 pub(crate) use colors::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY};
-pub(crate) use colors::{agent_overrides, tool_glow_tint};
+pub(crate) use colors::{agent_overrides, work_glow_tint};
 #[cfg(all(test, feature = "cutaway-assets"))]
 pub(crate) use hair::dress;
 pub(crate) use hair::{Dress, dress_for};
@@ -54,7 +54,7 @@ impl SpritePose {
             flip_x: placement.flip_x,
             glow_tint: match placement.glow {
                 CharacterGlow::None => None,
-                CharacterGlow::Tool => tool_glow_tint(agent, &theme.tool_glow),
+                CharacterGlow::Work => work_glow_tint(agent, &theme.tool_glow),
             },
         }
     }

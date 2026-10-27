@@ -759,15 +759,26 @@ pub(crate) fn assert_event_roster<T: Ord + std::fmt::Debug + Copy>(
 /// than hand-copied beside it.
 #[cfg(test)]
 pub(crate) fn forward_set(template: &'static str) -> std::collections::BTreeSet<&'static str> {
+    template_set(template, "FORWARD")
+}
+
+/// The strings a template's `const <name>` set names, a `...OTHER` entry read
+/// out of the template's own `OTHER` set.
+#[cfg(test)]
+fn template_set(template: &'static str, name: &str) -> std::collections::BTreeSet<&'static str> {
     let block = template
-        .split_once("const FORWARD = new Set<string>([")
+        .split_once(&format!("const {name} = new Set<string>(["))
         .and_then(|(_, rest)| rest.split_once("])"))
         .map(|(inner, _)| inner)
-        .expect("the template defines a FORWARD set");
+        .unwrap_or_else(|| panic!("the template defines a {name} set"));
     block
         .split(',')
-        .map(|s| s.trim().trim_matches('"'))
+        .map(str::trim)
         .filter(|s| !s.is_empty())
+        .flat_map(|s| match s.strip_prefix("...") {
+            Some(other) => template_set(template, other),
+            None => std::collections::BTreeSet::from([s.trim_matches('"')]),
+        })
         .collect()
 }
 
