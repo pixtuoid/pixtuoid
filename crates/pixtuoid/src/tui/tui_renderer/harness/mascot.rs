@@ -374,7 +374,7 @@ fn gateway_mascot_running_bubbles_track_turns_not_sessions() {
     let mut session_adds = 0;
     for k in 0..8u64 {
         let now = t0() + Duration::from_millis(k * 130);
-        // Runs are the ONLY difference between the two scenes, so their diff is
+        // Turns are the ONLY difference between the two scenes, so their diff is
         // the bubbles. The session arm is the negative half: a second session
         // with no turns must move nothing.
         turns_add = turns_add.max(p.diff(&running, &idle, now).len());

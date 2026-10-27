@@ -7,8 +7,8 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_start, delegating_pair, proof_of_life,
-    requires_action, sess_end, turn_end,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, proof_of_life, sess_end, tool_use_start,
+    turn_end, user_action_request,
 };
 
 #[test]
@@ -133,7 +133,7 @@ fn stale_running_agent_uses_shorter_timeout_than_idle() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut reducer,
         &mut scene,
         id,
@@ -266,7 +266,7 @@ fn proof_of_life_lapse_restores_normal_sweep() {
         t0,
         Transport::Hook,
     );
-    act_start(&mut r, &mut scene, id, Some("t"), None, t0, Transport::Hook);
+    tool_use_start(&mut r, &mut scene, id, Some("t"), None, t0, Transport::Hook);
 
     // Last vouch lands mid-window; the process then exits, so emissions stop.
     let vouch_at = t0 + STALE_TOOL_TIMEOUT - Duration::from_secs(100);
@@ -318,7 +318,7 @@ fn proof_of_life_does_not_touch_activity_state() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -453,7 +453,7 @@ fn proof_of_life_on_delegating_parent_shields_its_running_subtree() {
         Transport::Jsonl,
     );
     // Dispatching a Task is what makes tasks_in_flight[parent] non-empty.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -462,7 +462,7 @@ fn proof_of_life_on_delegating_parent_shields_its_running_subtree() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         child,
@@ -471,7 +471,7 @@ fn proof_of_life_on_delegating_parent_shields_its_running_subtree() {
         t0 + Duration::from_secs(2),
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         grandchild,
@@ -509,7 +509,7 @@ fn vouch_lapse_restores_subtree_sweep() {
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "pol-lapse-tree", t0);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -518,7 +518,7 @@ fn vouch_lapse_restores_subtree_sweep() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         child,
@@ -590,7 +590,7 @@ fn fresh_event_resets_stale_timer() {
     );
 
     let almost = t0 + STALE_IDLE_TIMEOUT - Duration::from_secs(60);
-    requires_action(
+    user_action_request(
         &mut reducer,
         &mut scene,
         id,
@@ -1052,7 +1052,7 @@ fn long_delegation_keeps_parent_and_live_subagent_alive() {
 
     // The Task-start arm does NOT bump last_event_at: the parent's liveness
     // stays frozen at t0.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1064,7 +1064,7 @@ fn long_delegation_keeps_parent_and_live_subagent_alive() {
 
     // The subagent's own tool calls refresh its parent's lineage.
     for (mins, tuid) in [(5u64, "sub-R1"), (9u64, "sub-R2")] {
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             child,
@@ -1131,7 +1131,7 @@ fn stale_sweep_spares_subagent_blocked_under_a_requires_action_parent() {
         t0 + Duration::from_millis(100),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         child,
@@ -1142,7 +1142,7 @@ fn stale_sweep_spares_subagent_blocked_under_a_requires_action_parent() {
     );
     // The child's tool needs permission, but CC's Notification hook lands on
     // the PARENT.
-    requires_action(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1213,7 +1213,7 @@ fn stale_sweep_spares_grandchild_under_a_requires_action_ancestor() {
         Transport::Hook,
     );
     for id in [parent, child] {
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             id,
@@ -1223,7 +1223,7 @@ fn stale_sweep_spares_grandchild_under_a_requires_action_ancestor() {
             Transport::Hook,
         );
     }
-    requires_action(
+    user_action_request(
         &mut r,
         &mut scene,
         gp,
@@ -1254,7 +1254,7 @@ fn running_subagent_keeps_parent_alive_via_jsonl_events() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "deleg2", t0);
     // The parent's OWN last event is frozen at t0+1s from here on.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1265,7 +1265,7 @@ fn running_subagent_keeps_parent_alive_via_jsonl_events() {
     );
     // The subagent emits ONLY JSONL — no hook event reaches the parent.
     for mins in [4u64, 8, 12] {
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             child,
@@ -1378,7 +1378,7 @@ fn requires_action_parent_cycle_is_still_reaped_by_the_stale_sweep() {
         t0,
         Transport::Hook,
     );
-    requires_action(&mut r, &mut scene, b, "permission", t0, Transport::Hook);
+    user_action_request(&mut r, &mut scene, b, "permission", t0, Transport::Hook);
 
     r.tick(
         &mut scene,
@@ -1449,7 +1449,7 @@ fn mutual_requires_action_parent_cycle_is_refused_at_the_link_seam_and_reaped() 
         "a cycle-closing enrichment must degrade to parentless"
     );
     for id in [a, b] {
-        requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+        user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     }
 
     r.tick(

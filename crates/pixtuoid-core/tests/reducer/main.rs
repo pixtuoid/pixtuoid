@@ -87,7 +87,7 @@ fn delegating_pair_on(
     (parent, child)
 }
 
-fn act_start(
+fn tool_use_start(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,
@@ -108,7 +108,7 @@ fn act_start(
     );
 }
 
-fn act_end(
+fn tool_use_end(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,
@@ -131,7 +131,7 @@ fn turn_end(r: &mut Reducer, scene: &mut SceneState, id: AgentId, at: SystemTime
     r.apply(scene, AgentEvent::TurnEnd { agent_id: id }, at, tp);
 }
 
-fn requires_action(
+fn user_action_request(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,
@@ -151,8 +151,8 @@ fn requires_action(
     );
 }
 
-/// `requires_action` with the wire-named gated call id (#951 approval rounds).
-fn requires_action_for(
+/// `user_action_request` with the wire-named gated call id (#951 approval rounds).
+fn user_action_request_for(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,

@@ -7,8 +7,8 @@ use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, Reducer};
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, requires_action,
-    sess_end, start,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, delegating_pair, sess_end, start, tool_use_end,
+    tool_use_start, user_action_request,
 };
 
 #[test]
@@ -181,7 +181,7 @@ fn session_start_on_exiting_slot_resurrects_in_place() {
         "SessionStart on an exiting slot must cancel the walkout"
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -206,7 +206,7 @@ fn resurrect_in_place_folds_the_running_span_into_running_ms() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start(&mut r, &mut scene, id);
-    act_start(&mut r, &mut scene, id, None, None, t0, Transport::Hook);
+    tool_use_start(&mut r, &mut scene, id, None, None, t0, Transport::Hook);
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
     assert_eq!(
         scene.agents.get(&id).unwrap().running_ms,
@@ -301,7 +301,7 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         root,
@@ -357,7 +357,7 @@ fn resurrect_in_place_clears_stale_tasks_in_flight_so_the_fresh_session_is_not_d
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -391,7 +391,7 @@ fn resurrect_in_place_clears_stale_tasks_in_flight_so_the_fresh_session_is_not_d
         "resurrected"
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -400,7 +400,7 @@ fn resurrect_in_place_clears_stale_tasks_in_flight_so_the_fresh_session_is_not_d
         t0 + Duration::from_secs(3),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -434,7 +434,7 @@ fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -443,7 +443,7 @@ fn resurrect_in_place_cancels_stale_pending_b1_cascade() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -618,7 +618,7 @@ fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_running() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -647,7 +647,7 @@ fn hook_user_action_request_for_unknown_id_synthesizes_slot_in_requires_action_s
     let id = AgentId::from_parts("claude-code", "parked-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
 
     let slot = scene
         .agents
@@ -666,7 +666,7 @@ fn jsonl_event_for_unknown_id_stays_a_no_op() {
     let id = AgentId::from_parts("codex", "replayed-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -675,7 +675,7 @@ fn jsonl_event_for_unknown_id_stays_a_no_op() {
         t0,
         Transport::Jsonl,
     );
-    requires_action(&mut r, &mut scene, id, "perm", t0, Transport::Jsonl);
+    user_action_request(&mut r, &mut scene, id, "perm", t0, Transport::Jsonl);
 
     assert!(
         scene.agents.is_empty(),
@@ -702,7 +702,7 @@ fn session_start_after_hook_synthesis_coalesces_into_same_slot() {
     let id = AgentId::from_parts("claude-code", "revived-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -742,7 +742,7 @@ fn hook_synthesized_slot_is_exempt_from_unknown_cwd_reap() {
     let id = AgentId::from_parts("claude-code", "parked-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     assert!(
         !scene.agents.get(&id).expect("synthesized").unknown_cwd,
         "process-proven slot must not carry the startup-ghost flag"
@@ -786,7 +786,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
 
     let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "gated-sess");
     let th = t0 + EXIT_GRACE_WINDOW - Duration::from_millis(100);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -813,7 +813,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         tj,
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -840,7 +840,7 @@ fn duplicate_session_start_backfills_hook_synthesized_slot() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -954,7 +954,7 @@ fn backfill_does_not_clobber_a_renamed_label() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1035,7 +1035,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -1377,7 +1377,7 @@ fn hook_identity_on_existing_unknown_cwd_slot_clears_ghost_reap() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    requires_action(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -1410,7 +1410,7 @@ fn hook_identity_backfills_blank_synthesized_slot() {
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_end(&mut r, &mut scene, id, None, t0, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, None, t0, Transport::Hook);
     assert_eq!(&*scene.agents.get(&id).unwrap().label, "#1", "blank slot");
 
     r.apply(
@@ -1623,7 +1623,7 @@ fn reconcile_connected_evicts_a_blank_source_gate_slipper() {
     let now = SystemTime::now();
     let blank = AgentId::from_transcript_path("/p/blank.jsonl");
 
-    act_start(
+    tool_use_start(
         &mut reducer,
         &mut scene,
         blank,

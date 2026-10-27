@@ -754,7 +754,7 @@ fn mascot_placements(
                     key,
                     degraded,
                     on_roster,
-                    // The running tell keys on in-flight RUNS, not the (persistent,
+                    // The running tell keys on in-flight TURNS, not the (persistent,
                     // single-user) session count, which sticks at 1 at rest.
                     effects: if turns > 0 {
                         effects::mascot_bubbles(pos, size.h, turns, beat).collect()
