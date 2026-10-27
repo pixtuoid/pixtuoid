@@ -125,15 +125,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 2
           persist-credentials: false
-      - uses: ./.github/actions/setup-npm
+      # The host install is the cost, so a PR that leaves every input of the
+      # verdict alone skips it; path-changed treats a push as unchanged.
+      - uses: ./.github/actions/path-changed
+        id: scope
+        with:
+          paths: crates/pixtuoid/src/install package.json package-lock.json justfile .github/workflows/ci-lint.yml .github/actions/setup-npm site/package.json
+      - if: steps.scope.outputs.changed == 'true'
+        uses: ./.github/actions/setup-npm
         with:
           directory: .
-      - uses: ./.github/actions/setup-npm
+      - if: steps.scope.outputs.changed == 'true'
+        uses: ./.github/actions/setup-npm
         with:
           directory: crates/pixtuoid/src/install
-      - uses: ./.github/actions/setup-tools
-      - run: just plugin-types
+      - if: steps.scope.outputs.changed == 'true'
+        uses: ./.github/actions/setup-tools
+      - if: steps.scope.outputs.changed == 'true'
+        run: just plugin-types
 
   npm-gen:
     name: npm package generator
