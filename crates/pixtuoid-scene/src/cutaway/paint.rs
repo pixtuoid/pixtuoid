@@ -5514,9 +5514,11 @@ mod tests {
                 &|c, a| {
                     c.glow = crate::sim::CharacterGlow::Tool;
                     a.state = pixtuoid_core::state::ActivityState::Running {
-                        tool_use_id: None,
-                        detail: None,
-                        kind: pixtuoid_core::state::ToolKind::Read,
+                        item: Some(pixtuoid_core::state::TurnItem::ToolUse {
+                            tool_use_id: None,
+                            detail: None,
+                            kind: pixtuoid_core::state::ToolKind::Read,
+                        }),
                     };
                 },
                 &|_, a| a.model = Some(std::sync::Arc::from("claude-fable-5")),

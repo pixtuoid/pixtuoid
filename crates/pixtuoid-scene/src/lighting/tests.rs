@@ -200,9 +200,11 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     let id = |p: &str| pixtuoid_core::AgentId::from_transcript_path(p);
     // No tool detail: a screen lights for any tool call.
     let running = pixtuoid_core::state::ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: pixtuoid_core::state::ToolKind::Edit,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: pixtuoid_core::state::ToolKind::Edit,
+        }),
     };
     let at_desk = |path: &str, desk: usize, state: pixtuoid_core::state::ActivityState| {
         let mut a = crate::character::test_support::make_slot(id(path), state);

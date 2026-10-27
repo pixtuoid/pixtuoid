@@ -11,7 +11,7 @@ use crate::state::correlation::{
 };
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
-use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnKey, fsm, scope};
+use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnItem, TurnKey, fsm, scope};
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
@@ -82,8 +82,11 @@ fn stale_threshold_with_caps(
         // `STALE_TOOL_TIMEOUT`. Keyed on the typed `ToolKind::Task`, never the display string:
         // a Generic tool spelling "Delegating" is not a delegation.
         ActivityState::Running {
-            kind: ToolKind::Task,
-            ..
+            item:
+                Some(TurnItem::ToolUse {
+                    kind: ToolKind::Task,
+                    ..
+                }),
         } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_BLOCKED_TIMEOUT,
         ActivityState::Running { .. } => STALE_TOOL_TIMEOUT,
         ActivityState::Idle if caps.is_some_and(|c| c.short_idle_reap()) => {
@@ -682,15 +685,21 @@ impl Reducer {
                 .is_some_and(|slot| match (&slot.state, ended) {
                     (
                         ActivityState::Running {
-                            tool_use_id: Some(shown),
-                            ..
+                            item:
+                                Some(TurnItem::ToolUse {
+                                    tool_use_id: Some(shown),
+                                    ..
+                                }),
                         },
                         Ended::Call(call),
                     ) => **shown == *call,
                     (
                         ActivityState::Running {
-                            tool_use_id: Some(_),
-                            ..
+                            item:
+                                Some(TurnItem::ToolUse {
+                                    tool_use_id: Some(_),
+                                    ..
+                                }),
                         },
                         _,
                     ) => false,
@@ -781,9 +790,11 @@ impl Reducer {
             let untracked_task = matches!(
                 slot.state,
                 ActivityState::Running {
-                    kind: ToolKind::Task,
-                    tool_use_id: None,
-                    ..
+                    item: Some(TurnItem::ToolUse {
+                        kind: ToolKind::Task,
+                        tool_use_id: None,
+                        ..
+                    })
                 }
             );
             if ends_item
@@ -1411,13 +1422,17 @@ impl Reducer {
                         // call's own end.
                         let shown_drained = matches!(
                             &slot.state,
-                            ActivityState::Running { tool_use_id: Some(t), .. } if **t == **tuid
+                            ActivityState::Running {
+                                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. }),
+                            } if **t == **tuid
                         );
                         if matches!(
                             slot.state,
                             ActivityState::Running {
-                                kind: ToolKind::Task,
-                                ..
+                                item: Some(TurnItem::ToolUse {
+                                    kind: ToolKind::Task,
+                                    ..
+                                })
                             }
                         ) && (set.is_empty() || shown_drained)
                         {

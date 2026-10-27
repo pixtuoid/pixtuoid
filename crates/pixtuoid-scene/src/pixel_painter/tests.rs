@@ -21,7 +21,9 @@ use crate::sim::seat::{Seat, settle_seat};
 use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_step};
 use pixtuoid_core::sprite::Frame;
 use pixtuoid_core::sprite::format::Piece;
-use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{
+    ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, TurnItem,
+};
 use std::sync::Arc;
 use std::time::SystemTime;
 use strum::VariantArray as _;
@@ -927,9 +929,11 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
     slot.desk_index = GlobalDeskIndex(north);
     slot.state = ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Edit,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Edit,
+        }),
     };
     let coffee = HashMap::new();
     let mut owned = OwnedSimStores::new();
@@ -1075,9 +1079,11 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     let editing = make_slot(
         id,
         ActivityState::Running {
-            tool_use_id: None,
-            detail: None,
-            kind: ToolKind::Edit,
+            item: Some(TurnItem::ToolUse {
+                tool_use_id: None,
+                detail: None,
+                kind: ToolKind::Edit,
+            }),
         },
     );
     let idle = make_slot(id, ActivityState::Idle);
@@ -4513,9 +4519,11 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
     );
 
     scene.agents.get_mut(&id).expect("slot").state = ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Other,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Other,
+        }),
     };
     scene.agents.get_mut(&id).expect("slot").state_started_at = now;
     let mut stores = owned.stores();
@@ -5685,9 +5693,11 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
     let typing = make_slot(
         id,
         ActivityState::Running {
-            tool_use_id: None,
-            detail: Some(Arc::from("Edit src/main.rs")),
-            kind: ToolKind::Edit,
+            item: Some(TurnItem::ToolUse {
+                tool_use_id: None,
+                detail: Some(Arc::from("Edit src/main.rs")),
+                kind: ToolKind::Edit,
+            }),
         },
     );
     let placement = |glow| CharacterPlacement {

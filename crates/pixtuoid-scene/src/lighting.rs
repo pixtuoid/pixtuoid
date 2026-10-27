@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex};
+use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, TurnItem};
 use pixtuoid_core::{AgentSlot, ToolKind};
 
 use crate::atmosphere::SkyTones;
@@ -457,7 +457,9 @@ impl DeskLights {
 /// share.
 pub(crate) fn lit_screen(agent: &AgentSlot, facing: Facing, seated: bool) -> Option<ToolKind> {
     match agent.state {
-        ActivityState::Running { kind, .. } if seated && facing == Facing::North => Some(kind),
+        ActivityState::Running {
+            item: Some(TurnItem::ToolUse { kind, .. }),
+        } if seated && facing == Facing::North => Some(kind),
         _ => None,
     }
 }

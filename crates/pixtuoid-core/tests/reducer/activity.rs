@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::state::{ActivityState, SceneState};
+use pixtuoid_core::state::{ActivityState, SceneState, TurnItem};
 
 use crate::{
     HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, start, start_as, tool_use_end, tool_use_start,
@@ -70,7 +70,9 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         Transport::Hook,
     );
     match &scene.agents[&id].state {
-        ActivityState::Running { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
+        ActivityState::Running {
+            item: Some(TurnItem::ToolUse { tool_use_id, .. }),
+        } => assert_eq!(tool_use_id.as_deref(), Some("b")),
         other => panic!("expected b still running, got {other:?}"),
     }
     tool_use_end(
@@ -1482,7 +1484,9 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Hook,
     );
     match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Running { detail, .. } => {
+        ActivityState::Running {
+            item: Some(TurnItem::ToolUse { detail, .. }),
+        } => {
             assert_eq!(detail.as_deref(), Some("bash"));
         }
         other => panic!("expected Running after the resume, got {other:?}"),

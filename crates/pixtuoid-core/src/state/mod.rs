@@ -148,11 +148,28 @@ impl ToolKind {
 /// What an agent slot is doing right now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActivityState {
-    /// No tool running.
+    /// Nothing the wire shows in flight.
     Idle,
-    /// A tool call is in flight.
+    /// Working: a turn is open, or an item runs.
     Running {
-        /// The in-flight tool call's id (pairs Start↔End).
+        /// The work in flight; `None` while an open turn shows none.
+        item: Option<TurnItem>,
+    },
+    /// Blocked on a permission/input prompt.
+    RequiresAction {
+        /// Why the agent requires action (the prompt reason), when the wire gave one.
+        #[serde(with = "opt_arc_str_serde")]
+        reason: Option<Arc<str>>,
+    },
+}
+
+/// One unit of work inside a turn. A kind is added only with a live, paired
+/// wire signal and something that displays it, so every match names each.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnItem {
+    /// A tool call.
+    ToolUse {
+        /// The call's id (pairs Start↔End).
         #[serde(with = "opt_arc_str_serde")]
         tool_use_id: Option<Arc<str>>,
         /// The tool's display detail, when known.
@@ -160,12 +177,6 @@ pub enum ActivityState {
         detail: Option<Arc<str>>,
         /// The bucketed tool kind (drives the per-tool glow/tally).
         kind: ToolKind,
-    },
-    /// Blocked on a permission/input prompt.
-    RequiresAction {
-        /// Why the agent requires action (the prompt reason), when the wire gave one.
-        #[serde(with = "opt_arc_str_serde")]
-        reason: Option<Arc<str>>,
     },
 }
 
@@ -824,9 +835,11 @@ mod tests {
         let a = AgentId::from_transcript_path("/p/a.jsonl");
         let mut slot_a = make_slot(a, 0);
         slot_a.state = ActivityState::Running {
-            tool_use_id: Some(Arc::from("tuid-1")),
-            detail: Some(Arc::from("Read · src/main.rs")),
-            kind: ToolKind::Read,
+            item: Some(TurnItem::ToolUse {
+                tool_use_id: Some(Arc::from("tuid-1")),
+                detail: Some(Arc::from("Read · src/main.rs")),
+                kind: ToolKind::Read,
+            }),
         };
         s.agents.insert(a, slot_a);
 

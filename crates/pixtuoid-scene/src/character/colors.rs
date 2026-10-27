@@ -360,9 +360,11 @@ pub(crate) fn tool_glow_tint(
     agent: &AgentSlot,
     glow: &crate::theme::ToolGlowColors,
 ) -> Option<Rgb> {
-    use pixtuoid_core::state::ActivityState;
+    use pixtuoid_core::state::{ActivityState, TurnItem};
     match &agent.state {
-        ActivityState::Running { kind, .. } => Some(glow.for_kind(*kind)),
+        ActivityState::Running {
+            item: Some(TurnItem::ToolUse { kind, .. }),
+        } => Some(glow.for_kind(*kind)),
         _ => None,
     }
 }
@@ -371,7 +373,7 @@ pub(crate) fn tool_glow_tint(
 mod tests {
     use super::*;
     use crate::character::test_support::{color_of, make_slot, make_slot_cwd, override_of};
-    use pixtuoid_core::state::{ActivityState, ToolKind};
+    use pixtuoid_core::state::{ActivityState, ToolKind, TurnItem};
     use std::sync::Arc;
 
     #[test]
@@ -433,9 +435,11 @@ mod tests {
             make_slot(
                 id,
                 ActivityState::Running {
-                    tool_use_id: None,
-                    detail: detail.map(|d| Arc::from(d.display())),
-                    kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
+                    item: Some(TurnItem::ToolUse {
+                        tool_use_id: None,
+                        detail: detail.map(|d| Arc::from(d.display())),
+                        kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
+                    }),
                 },
             )
         };
@@ -478,9 +482,11 @@ mod tests {
         let edit = make_slot(
             id,
             ActivityState::Running {
-                tool_use_id: None,
-                detail: None,
-                kind: ToolKind::Edit,
+                item: Some(TurnItem::ToolUse {
+                    tool_use_id: None,
+                    detail: None,
+                    kind: ToolKind::Edit,
+                }),
             },
         );
         assert_eq!(tool_glow_tint(&edit, glow), Some(glow.edit));

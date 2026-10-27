@@ -2,7 +2,7 @@ use super::*;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, Segment};
 use pixtuoid_core::sprite::format::{Piece, Walk};
-use pixtuoid_core::state::{GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{GlobalDeskIndex, ToolKind, TurnItem};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,9 +40,11 @@ fn layout() -> SceneLayout {
 
 fn typing() -> ActivityState {
     ActivityState::Running {
-        tool_use_id: Some("t".into()),
-        detail: Some("Edit".into()),
-        kind: ToolKind::Edit,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id: Some("t".into()),
+            detail: Some("Edit".into()),
+            kind: ToolKind::Edit,
+        }),
     }
 }
 
@@ -581,9 +583,11 @@ fn derive_state_only_skips_entry_override() {
         ..make_slot(
             id,
             ActivityState::Running {
-                tool_use_id: Some("t".into()),
-                detail: Some("Edit".into()),
-                kind: ToolKind::Edit,
+                item: Some(TurnItem::ToolUse {
+                    tool_use_id: Some("t".into()),
+                    detail: Some("Edit".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
         )
     };

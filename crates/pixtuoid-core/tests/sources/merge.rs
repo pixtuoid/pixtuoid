@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::merge::{Merged, Step};
 use pixtuoid_core::source::AgentEvent;
-use pixtuoid_core::{ActivityState, Transport};
+use pixtuoid_core::{ActivityState, Transport, TurnItem};
 use serde_json::Value;
 
 use super::captures::{fixture_lines, fixtures_root, transcript_in};
@@ -259,15 +259,15 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
                     hook_set.remove(id.as_str());
                 }
                 AgentEvent::TurnEnd { .. } if s.transport == Transport::Jsonl => {
-                    if let Some(ActivityState::Running {
+                    if let Some(ActivityState::Running { item: Some(TurnItem::ToolUse {
                         tool_use_id: Some(id),
                         ..
-                    }) = before
+                    }) }) = before
                         && hook_set.contains(&**id)
                     {
                         lagged = true;
                         assert!(
-                            matches!(&s.state, Some(ActivityState::Running { tool_use_id: Some(after), .. }) if after == id),
+                            matches!(&s.state, Some(ActivityState::Running { item: Some(TurnItem::ToolUse { tool_use_id: Some(after), .. }) }) if after == id),
                             "{}: a Jsonl turn end at line {} took the Hook-set item {id}",
                             run.name,
                             s.line

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::source::ToolDetail;
-use crate::state::{ActivityState, AgentSlot, ToolKind};
+use crate::state::{ActivityState, AgentSlot, ToolKind, TurnItem};
 
 /// Fold the time the slot has spent Running into `running_ms`, after which it is
 /// safe to overwrite `state`/`state_started_at`.
@@ -36,9 +36,11 @@ pub(crate) fn enter_running(
 ) {
     accumulate_running_ms(slot, now);
     slot.state = ActivityState::Running {
-        tool_use_id,
-        detail,
-        kind,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id,
+            detail,
+            kind,
+        }),
     };
     slot.state_started_at = now;
     slot.last_event_at = now;
@@ -54,10 +56,12 @@ pub(crate) fn enter_delegating(
 ) {
     accumulate_running_ms(slot, now);
     slot.state = ActivityState::Running {
-        tool_use_id,
-        // HUD text only — semantics ride on `kind`, never on this string.
-        detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
-        kind: ToolKind::Task,
+        item: Some(TurnItem::ToolUse {
+            tool_use_id,
+            // HUD text only — semantics ride on `kind`, never on this string.
+            detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
+            kind: ToolKind::Task,
+        }),
     };
     slot.state_started_at = now;
 }
@@ -82,9 +86,12 @@ pub(crate) fn settle(slot: &mut AgentSlot, task_in_flight: Option<Arc<str>>, now
         (
             Some(task),
             ActivityState::Running {
-                kind: ToolKind::Task,
-                tool_use_id,
-                ..
+                item:
+                    Some(TurnItem::ToolUse {
+                        kind: ToolKind::Task,
+                        tool_use_id,
+                        ..
+                    }),
             },
         ) => *tool_use_id = Some(task),
         (Some(task), _) => enter_delegating(slot, Some(task), now),
@@ -160,9 +167,11 @@ mod tests {
     fn running(started: SystemTime) -> AgentSlot {
         slot_at(
             ActivityState::Running {
-                tool_use_id: None,
-                detail: None,
-                kind: ToolKind::Other,
+                item: Some(TurnItem::ToolUse {
+                    tool_use_id: None,
+                    detail: None,
+                    kind: ToolKind::Other,
+                }),
             },
             started,
         )
@@ -200,7 +209,9 @@ mod tests {
             "enter_delegating leaves last_event_at to refresh_lineage"
         );
         match &s.state {
-            ActivityState::Running { detail, kind, .. } => {
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { detail, kind, .. }),
+            } => {
                 assert_eq!(detail.as_deref(), Some("Delegating"));
                 assert_eq!(*kind, ToolKind::Task, "delegation is typed, not spelled");
             }
@@ -255,7 +266,10 @@ mod tests {
         settle(&mut s, Some(Arc::from("task-1")), now);
         match &s.state {
             ActivityState::Running {
-                tool_use_id, kind, ..
+                item:
+                    Some(TurnItem::ToolUse {
+                        tool_use_id, kind, ..
+                    }),
             } => {
                 assert_eq!(tool_use_id.as_deref(), Some("task-1"));
                 assert_eq!(*kind, ToolKind::Task);
@@ -280,7 +294,9 @@ mod tests {
         let folded = s.running_ms;
         settle(&mut s, Some(Arc::from("task-2")), now);
         match &s.state {
-            ActivityState::Running { tool_use_id, .. } => {
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { tool_use_id, .. }),
+            } => {
                 assert_eq!(
                     tool_use_id.as_deref(),
                     Some("task-2"),

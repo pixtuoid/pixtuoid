@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::source::manager::SourceDeath;
-use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS};
+use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, TurnItem};
 use ratatui::layout::Size as TermSize;
 use tokio::sync::{Notify, mpsc, watch};
 
@@ -153,12 +153,18 @@ fn summarize(scene: &SceneState) -> String {
             let state = match &a.state {
                 ActivityState::Idle => "idle".to_string(),
                 ActivityState::Running {
-                    detail: Some(detail),
-                    ..
+                    item:
+                        Some(TurnItem::ToolUse {
+                            detail: Some(detail),
+                            ..
+                        }),
                 } => {
                     format!("running({})", sanitize_line(detail))
                 }
-                ActivityState::Running { detail: None, .. } => "running".to_string(),
+                ActivityState::Running {
+                    item: Some(TurnItem::ToolUse { detail: None, .. }),
+                }
+                | ActivityState::Running { item: None } => "running".to_string(),
                 ActivityState::RequiresAction {
                     reason: Some(reason),
                 } => {
