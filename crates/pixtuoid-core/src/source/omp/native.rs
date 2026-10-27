@@ -11,10 +11,8 @@ use super::{
     omp_profile_sessions_dirs, omp_profiles_dir, omp_sessions_dir,
 };
 use crate::source::decoder::parsed_tail_lines;
-use crate::source::jsonl::{
-    DEFAULT_POLL_INTERVAL, JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root,
-};
-use crate::source::{Source, TaggedSender};
+use crate::source::jsonl::{JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root};
+use crate::source::{DEFAULT_POLL_INTERVAL, Source, TaggedSender};
 
 /// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile
 /// and backstop tick, injectable so tests can grow the set without touching

@@ -9,6 +9,7 @@ mod decode;
 mod delegation;
 mod grok;
 mod manager;
+mod merge;
 mod omp;
 mod opencode;
 mod reasonix;

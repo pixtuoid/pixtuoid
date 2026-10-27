@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -204,15 +204,18 @@ pub(crate) fn decode_copilot_line(
                 // persists in the slot + egresses on the headless summary.
                 .map(|k| ellipsize(&format!("permission: {k}"), MAX_DECODED_FIELD_CHARS))
                 .unwrap_or_else(|| "permission".to_string());
-            vec![AgentEvent::UserActionRequest {
-                agent_id: acting,
-                reason: Some(reason),
-                // The gated call (#951), so its own end resolves the wait.
-                tool_use_id: request
-                    .and_then(|p| str_at(p, "toolCallId"))
-                    .filter(|id| !id.is_empty())
-                    .map(str::to_owned),
-            }]
+            vec![AgentEvent::user_action_request(
+                acting,
+                Some(reason),
+                RequestKeys {
+                    // The gated call (#951), so its own end resolves the wait.
+                    tool_use_id: request
+                        .and_then(|p| str_at(p, "toolCallId"))
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_owned),
+                    ..RequestKeys::default()
+                },
+            )]
         }
         // A refusal ends the gated call: a denial's `tool.execution_complete`
         // follows, a cancel's (Esc at the prompt) never does, and the second
@@ -701,6 +704,7 @@ mod tests {
                     agent_id,
                     reason: Some(reason),
                     tool_use_id,
+                    ..
                 },
             ] => {
                 assert_eq!(*agent_id, root());
@@ -907,7 +911,7 @@ mod tests {
     fn session_task_complete_ends_the_roots_turn() {
         let line = r#"{"type":"session.task_complete","data":{},"id":"x","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
-            [AgentEvent::TurnEnd { agent_id }] => assert_eq!(*agent_id, root()),
+            [AgentEvent::TurnEnd { agent_id, .. }] => assert_eq!(*agent_id, root()),
             other => panic!("expected one root TurnEnd, got {other:?}"),
         }
     }

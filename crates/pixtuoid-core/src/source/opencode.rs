@@ -29,7 +29,7 @@ use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
@@ -238,11 +238,14 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
     );
     Ok(vec![
         identity(agent_id, session_id, at),
-        AgentEvent::UserActionRequest {
+        AgentEvent::user_action_request(
             agent_id,
-            reason: Some(reason),
-            tool_use_id: field(data, "source.id").map(str::to_owned),
-        },
+            Some(reason),
+            RequestKeys {
+                tool_use_id: field(data, "source.id").map(str::to_owned),
+                ..RequestKeys::default()
+            },
+        ),
     ])
 }
 

@@ -651,21 +651,36 @@ pub pixtuoid_core::source::AgentEvent::SessionStart::source: alloc::string::Stri
 pub pixtuoid_core::source::AgentEvent::ToolUseEnd
 pub pixtuoid_core::source::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::ToolUsePending
+pub pixtuoid_core::source::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
 pub pixtuoid_core::source::AgentEvent::ToolUseStart
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
 pub pixtuoid_core::source::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::TurnEnd
 pub pixtuoid_core::source::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::TurnEnd::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+pub pixtuoid_core::source::AgentEvent::TurnStart
+pub pixtuoid_core::source::AgentEvent::TurnStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::TurnStart::turn: pixtuoid_core::state::TurnKey
 pub pixtuoid_core::source::AgentEvent::Usage
 pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::source::AgentEvent::UserActionRequest
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+pub pixtuoid_core::source::AgentEvent::UserActionResolved
+pub pixtuoid_core::source::AgentEvent::UserActionResolved::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
@@ -685,6 +700,28 @@ impl core::marker::Unpin for pixtuoid_core::source::AgentEvent
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::AgentEvent
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::AgentEvent
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::AgentEvent
+#[non_exhaustive] pub enum pixtuoid_core::source::Resolution
+pub pixtuoid_core::source::Resolution::Call(alloc::string::String)
+pub pixtuoid_core::source::Resolution::Turn(pixtuoid_core::state::TurnKey)
+impl core::clone::Clone for pixtuoid_core::source::Resolution
+pub fn pixtuoid_core::source::Resolution::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::Resolution
+impl core::cmp::PartialEq for pixtuoid_core::source::Resolution
+pub fn pixtuoid_core::source::Resolution::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::source::Resolution
+pub fn pixtuoid_core::source::Resolution::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::Resolution
+impl serde_core::ser::Serialize for pixtuoid_core::source::Resolution
+pub fn pixtuoid_core::source::Resolution::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::source::Resolution
+pub fn pixtuoid_core::source::Resolution::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::source::Resolution
+impl core::marker::Send for pixtuoid_core::source::Resolution
+impl core::marker::Sync for pixtuoid_core::source::Resolution
+impl core::marker::Unpin for pixtuoid_core::source::Resolution
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::Resolution
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::Resolution
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::Resolution
 #[non_exhaustive] pub enum pixtuoid_core::source::ToolDetail
 pub pixtuoid_core::source::ToolDetail::Generic
 pub pixtuoid_core::source::ToolDetail::Generic::display: alloc::string::String
@@ -757,6 +794,27 @@ impl core::marker::Unpin for pixtuoid_core::source::PidIdentity
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::PidIdentity
+#[non_exhaustive] pub struct pixtuoid_core::source::RequestKeys
+pub pixtuoid_core::source::RequestKeys::tool_name: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::RequestKeys::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::RequestKeys::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+impl core::clone::Clone for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::RequestKeys
+impl core::cmp::PartialEq for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::eq(&self, &Self) -> bool
+impl core::default::Default for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::default() -> Self
+impl core::fmt::Debug for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::RequestKeys
+impl core::marker::Freeze for pixtuoid_core::source::RequestKeys
+impl core::marker::Send for pixtuoid_core::source::RequestKeys
+impl core::marker::Sync for pixtuoid_core::source::RequestKeys
+impl core::marker::Unpin for pixtuoid_core::source::RequestKeys
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::RequestKeys
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::RequestKeys
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::RequestKeys
 pub const pixtuoid_core::source::EVENT_CHANNEL_CAPACITY: usize
 pub trait pixtuoid_core::source::DynSource: core::marker::Send + 'static
 pub fn pixtuoid_core::source::DynSource::name(&self) -> &str
@@ -1730,6 +1788,10 @@ pub fn pixtuoid_core::state::TurnKey::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl core::hash::Hash for pixtuoid_core::state::TurnKey
 pub fn pixtuoid_core::state::TurnKey::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for pixtuoid_core::state::TurnKey
+impl serde_core::ser::Serialize for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl core::marker::Freeze for pixtuoid_core::state::TurnKey
 impl core::marker::Send for pixtuoid_core::state::TurnKey
 impl core::marker::Sync for pixtuoid_core::state::TurnKey
@@ -2073,21 +2135,36 @@ pub pixtuoid_core::AgentEvent::SessionStart::source: alloc::string::String
 pub pixtuoid_core::AgentEvent::ToolUseEnd
 pub pixtuoid_core::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::ToolUsePending
+pub pixtuoid_core::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
+pub pixtuoid_core::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
 pub pixtuoid_core::AgentEvent::ToolUseStart
 pub pixtuoid_core::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
 pub pixtuoid_core::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::TurnEnd
 pub pixtuoid_core::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::TurnEnd::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+pub pixtuoid_core::AgentEvent::TurnStart
+pub pixtuoid_core::AgentEvent::TurnStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::TurnStart::turn: pixtuoid_core::state::TurnKey
 pub pixtuoid_core::AgentEvent::Usage
 pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::AgentEvent::UserActionRequest
 pub pixtuoid_core::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::UserActionRequest::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::UserActionRequest::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+pub pixtuoid_core::AgentEvent::UserActionResolved
+pub pixtuoid_core::AgentEvent::UserActionResolved::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent

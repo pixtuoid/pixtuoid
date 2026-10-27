@@ -14,12 +14,13 @@
 //! and CONSISTENT across every CLI event, so concurrent sessions in one project
 //! stay distinct.
 //!
-//! - **`tool_use_id` IS on the wire and DROPPED deliberately — do not "fix"
+//! - **A start's `tool_use_id` is DROPPED deliberately — do not "fix"
 //!   that.** `Task` fires `preToolUse` and NEVER a post (capture-verified), so
 //!   passing the id through would satisfy `track_tasks_in_flight`' `Some(tuid)` arm,
 //!   insert a tuid nothing drains, and strand the parent Delegating for the rest
-//!   of the session. Pinned by
-//!   `tool_use_id_is_dropped_even_though_the_wire_has_one`.
+//!   of the session. A post's id is kept: it equals its start's, and an id-less
+//!   start's item matches any keyed end. Pinned by
+//!   `only_a_post_keeps_its_tool_use_id`.
 //! - **cursor runs its hook command 4-6x per event, and only ONE keeps the
 //!   `PIXTUOID_SOURCE=` env prefix** its install writes. Unstamped copies fall to
 //!   the claude-code default and bail on these camelCase values, so `decoder`'s
@@ -40,7 +41,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -129,7 +130,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
-                tool_use_id: None,
+                tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
             },
         ]),
         // Identity-less: an end alone proves too little to label a session, so
@@ -228,28 +229,29 @@ mod tests {
         );
     }
 
-    /// The wire HAS a `tool_use_id` and it pairs; we drop it on purpose. Wiring
-    /// it would let `track_tasks_in_flight` claim cursor's `Task` — which never
-    /// gets a `postToolUse` — and strand the parent Delegating. See the module
-    /// doc before changing this.
+    /// The wire's `tool_use_id` pairs a start with its post. A start's is
+    /// dropped on purpose: wiring it would let `track_tasks_in_flight` claim
+    /// cursor's `Task` — which never gets a `postToolUse` — and strand the parent
+    /// Delegating. See the module doc before changing this.
     #[test]
-    fn tool_use_id_is_dropped_even_though_the_wire_has_one() {
-        for event in ["preToolUse", "postToolUse", "postToolUseFailure"] {
+    fn only_a_post_keeps_its_tool_use_id() {
+        const ID: &str = "tool_b3a89c28-dbe4-487e-8c70-ea05a83083a";
+        for (event, kept) in [
+            ("preToolUse", None),
+            ("postToolUse", Some(ID)),
+            ("postToolUseFailure", Some(ID)),
+        ] {
             let ev = decode(json!({
                 "hook_event_name": event, "session_id": "s", "workspace_roots": ["/repo"],
                 "tool_name": "Shell", "tool_input": {"command": "ls"},
-                "tool_use_id": "tool_b3a89c28-dbe4-487e-8c70-ea05a83083a"
+                "tool_use_id": ID
             }));
             let tuid = match &ev {
                 AgentEvent::ToolUseStart { tool_use_id, .. }
                 | AgentEvent::ToolUseEnd { tool_use_id, .. } => tool_use_id.clone(),
                 other => panic!("{event}: expected an activity event, got {other:?}"),
             };
-            assert_eq!(
-                tuid, None,
-                "{event}: the id must stay dropped — passing it through strands \
-                 a Task-delegating parent (module doc)"
-            );
+            assert_eq!(tuid.as_deref(), kept, "{event}");
         }
     }
 
@@ -310,9 +312,12 @@ mod tests {
     }
 
     #[test]
-    fn post_tool_use_is_an_id_less_tool_use_end_and_stop_a_turn_end() {
+    fn post_tool_use_without_an_id_is_an_id_less_end_and_stop_a_turn_end() {
         for event in ["postToolUse", "postToolUseFailure"] {
-            let ev = decode(json!({"hook_event_name": event, "session_id": "s", "cwd": "/r"}));
+            let ev = decode(
+                json!({"hook_event_name": event, "session_id": "s", "cwd": "/r",
+                                   "tool_use_id": ""}),
+            );
             assert!(
                 matches!(
                     &ev,

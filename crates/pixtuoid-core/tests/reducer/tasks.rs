@@ -881,11 +881,14 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
         t1 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    user_action_request(
+    // Its own call, as omp's and kimi's raises name it: a keyless raise
+    // would bind the sole call pending on the hook, the Task.
+    user_action_request_for(
         &mut r,
         &mut scene,
         parent,
         "permission",
+        Some("bash-1"),
         t1 + Duration::from_millis(200),
         Transport::Hook,
     );
@@ -939,11 +942,14 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         t1 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    user_action_request(
+    // Its own call, as omp's and kimi's raises name it: a keyless raise
+    // would bind the sole call pending on the hook, the Task.
+    user_action_request_for(
         &mut r,
         &mut scene,
         parent,
         "permission",
+        Some("bash-1"),
         t1 + Duration::from_millis(200),
         Transport::Hook,
     );
@@ -1258,59 +1264,6 @@ fn a_task_dispatch_answers_a_prompt_holding_no_call() {
         Transport::Hook,
     );
     assert_delegating(&scene, id, "the dispatch is the agent working again");
-}
-
-/// Outside a wait, a Task dispatch is a fresh start like any other: it moots
-/// the request's queued members, so a later transcript start of one runs.
-#[test]
-fn a_task_dispatch_outside_a_wait_moots_queued_members() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/dispatch-moot.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for call in ["x1", "x2"] {
-        user_action_request_for(
-            &mut r,
-            &mut scene,
-            id,
-            "bash",
-            Some(call),
-            t0,
-            Transport::Hook,
-        );
-    }
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        t0 + Duration::from_secs(1),
-        Transport::Hook,
-    );
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("task-T"),
-        Some("Agent"),
-        t0 + Duration::from_secs(2),
-        Transport::Hook,
-    );
-    assert_delegating(&scene, id, "the dispatch runs");
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash: b"),
-        t0 + Duration::from_secs(3),
-        Transport::Jsonl,
-    );
-    match &scene.agents[&id].state {
-        ActivityState::Running { detail, .. } => assert_eq!(detail.as_deref(), Some("bash: b")),
-        other => panic!("x2's start was held as a queued member: {other:?}"),
-    }
 }
 
 #[test]

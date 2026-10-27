@@ -733,7 +733,7 @@ async fn omp_oversized_first_sight_uses_the_head_title_through_source_wiring() {
 }
 
 #[tokio::test]
-async fn codex_permission_hermetic_fixture_drives_the_reducer_through_requires_action() {
+async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn() {
     use pixtuoid_core::state::ActivityState;
     use pixtuoid_core::{Reducer, SceneState};
 
@@ -804,37 +804,26 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_requires_a
         "label derives from the session_meta cwd basename"
     );
 
-    // ORDER, not mere presence: two `any()` checks would also pass for a reducer
-    // that parked the agent on the permission prompt BEFORE the tool ran.
-    let idx = |want: &str| {
-        states.iter().position(|s| {
-            matches!(
-                (s, want),
-                (ActivityState::Idle, "idle")
-                    | (ActivityState::Running { .. }, "running")
-                    | (ActivityState::RequiresAction { .. }, "requires_action")
-            )
-        })
-    };
-    let (first_running, first_requires_action) = (idx("running"), idx("requires_action"));
+    // The approval rides the hooks alone, so the rollout never parks the turn.
     assert!(
         matches!(states.first(), Some(ActivityState::Idle)),
         "registration lands Idle, got {states:?}"
     );
     assert!(
-        first_running.is_some(),
+        states
+            .iter()
+            .any(|s| matches!(s, ActivityState::Running { .. })),
         "task_started must drive Running, got {states:?}"
     );
     assert!(
-        first_requires_action.is_some(),
-        "the escalated exec_command must drive RequiresAction(permission), got {states:?}"
+        !states
+            .iter()
+            .any(|s| matches!(s, ActivityState::RequiresAction { .. })),
+        "the rollout alone must never require action, got {states:?}"
     );
-    assert!(
-        first_running < first_requires_action,
-        "Running must precede RequiresAction — the gate parks the turn after it starts: {states:?}"
-    );
-    assert!(
-        !matches!(states.last(), Some(ActivityState::RequiresAction { .. })),
-        "the agent must not still be RequiresAction after its turn ended, got {states:?}"
+    assert_eq!(
+        states.last(),
+        Some(&ActivityState::Idle),
+        "the turn's end settles the agent"
     );
 }

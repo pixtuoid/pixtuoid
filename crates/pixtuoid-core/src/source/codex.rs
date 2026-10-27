@@ -13,9 +13,13 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, make_tool_detail};
+use crate::source::decoder::{
+    HookSubject, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_identity,
+    hook_session_id, hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
+};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
+use crate::state::TurnKey;
 
 #[cfg(feature = "native")]
 mod native;
@@ -57,11 +61,14 @@ pub(crate) const DISPATCH_TOOL: &str = "spawn_agent";
 /// The `session_meta` field naming a child rollout's parent.
 const PARENT_THREAD_ID: &str = "parent_thread_id";
 
-/// Codex's source-specific hook arms, which change the event's SUBJECT to a
-/// child's AgentId where the shared session-keyed arms cannot:
-/// `SubagentStart`/`SubagentStop`, and any other event a child fires. A
-/// `spawn_agent` call's start is a Task wherever it fires; every other root
-/// event falls through (`Ok(None)`) to the shared arms.
+/// The field naming the turn on codex's rollout payloads and hooks.
+const TURN_ID: &str = "turn_id";
+
+/// Codex's source-specific hook arms. The hooks carry only what the rollout
+/// lacks: a call about to run, the approval prompt, and its answers; the
+/// rollout owns the turns and the items. `SubagentStart`/`SubagentStop`
+/// change the event's SUBJECT to a child's AgentId; every other session event
+/// falls through to the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
@@ -71,18 +78,11 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
     // the real rollout.
     let guards = |obj: &Map<String, Value>| -> Result<(String, Option<String>)> {
-        let session_id = obj
-            .get("session_id")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?
-            .to_string();
-        let child = obj
-            .get(crate::source::decoder::SUBAGENT_ID)
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from);
-        Ok((session_id, child))
+        let subject = HookSubject::of(obj);
+        let session_id = subject
+            .root
+            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?;
+        Ok((session_id.to_owned(), subject.child.map(String::from)))
     };
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
@@ -124,44 +124,97 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
                 as_child: true,
             }]))
         }
+        "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop" => {
+            decode_approval_hook(obj, event).map(Some)
+        }
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
         // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
-        _ => {
-            let dispatch = obj.get("tool_name").and_then(Value::as_str) == Some(DISPATCH_TOOL);
-            let evs = match crate::source::decoder::subagent_fired(obj, SOURCE_NAME, str::to_owned)?
-            {
-                Some(evs) => evs,
-                None if dispatch => crate::source::decoder::shared_hook_arms(
-                    obj,
-                    SOURCE_NAME,
-                    crate::source::registry::descriptor_for(SOURCE_NAME),
-                )?,
-                None => return Ok(None),
-            };
-            Ok(Some(if dispatch {
-                evs.into_iter().map(dispatched).collect()
-            } else {
-                evs
-            }))
-        }
+        _ => crate::source::decoder::subagent_fired(obj, SOURCE_NAME, str::to_owned),
     }
 }
 
-/// The shared arms detail only CC's dispatch as a Task.
-fn dispatched(event: AgentEvent) -> AgentEvent {
-    match event {
-        AgentEvent::ToolUseStart {
-            agent_id,
-            tool_use_id,
-            ..
-        } => AgentEvent::ToolUseStart {
-            agent_id,
-            tool_use_id,
-            detail: Some(ToolDetail::Task),
-        },
-        other => other,
+/// The approval's hooks, which the rollout lacks, on their [`HookSubject`].
+/// `PostToolUse` fires only on success and `PreToolUse` only for a tool with a
+/// pre-use payload (`codex-rs/core/src/tools/registry.rs` at rust-v0.164.0), so
+/// neither is an item: the rollout's call and output are.
+fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
+    let session_id = match HookSubject::of(obj).child {
+        Some(child) => child.to_owned(),
+        None => hook_session_id(obj, SOURCE_NAME, event)?,
+    };
+    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    let turn = turn_of(obj, event);
+    let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
+    let tool_id_key = hook_tool_id_key(crate::source::registry::descriptor_for(SOURCE_NAME));
+    let call = || {
+        let call = non_empty(obj, tool_id_key).map(str::to_owned);
+        if call.is_none() {
+            crate::source::drift::missing_field(SOURCE_NAME, event, tool_id_key);
+        }
+        call
+    };
+    let tool_name = || hook_tool_name(obj, SOURCE_NAME, event);
+    Ok(match event {
+        "PreToolUse" => {
+            let tool_name = tool_name();
+            let pending = call().map(|tool_use_id| AgentEvent::ToolUsePending {
+                agent_id,
+                tool_use_id,
+                tool_name,
+                turn,
+            });
+            [identity()].into_iter().chain(pending).collect()
+        }
+        "PostToolUse" => {
+            let ran = call().map(|c| AgentEvent::UserActionResolved {
+                agent_id,
+                by: Resolution::Call(c),
+            });
+            [identity()].into_iter().chain(ran).collect()
+        }
+        // The rollout never persists an approval (`codex-rs/rollout/src/policy.rs:195-200`
+        // at rust-v0.164.0), so this is its only signal. A `write_stdin`
+        // prompt names its own call (`core/src/tools/approvals.rs:156-187`),
+        // which no `PreToolUse` announces.
+        "PermissionRequest" => vec![
+            identity(),
+            AgentEvent::user_action_request(
+                agent_id,
+                Some("permission".into()),
+                RequestKeys {
+                    tool_use_id: obj
+                        .get("tool_input")
+                        .and_then(Value::as_object)
+                        .and_then(|input| non_empty(input, "approval_id"))
+                        .map(str::to_owned),
+                    tool_name: tool_name(),
+                    turn,
+                },
+            ),
+        ],
+        // Stop runs only with no follow-up pending, yet a blocking Stop hook
+        // continues the turn (`core/src/session/turn.rs:722-759` at
+        // rust-v0.164.0): it answers the turn's requests, and ends nothing.
+        _ => turn
+            .map(|turn| AgentEvent::UserActionResolved {
+                agent_id,
+                by: Resolution::Turn(turn),
+            })
+            .into_iter()
+            .collect(),
+    })
+}
+
+/// The turn a hook or rollout payload names; codex stamps every one
+/// (`codex-rs/hooks/src/schema.rs` at rust-v0.164.0), so a missing one is
+/// drift.
+fn turn_of(obj: &Map<String, Value>, event: &str) -> Option<TurnKey> {
+    let turn = non_empty(obj, TURN_ID).map(|t| TurnKey::Id(t.into()));
+    if turn.is_none() {
+        crate::source::drift::missing_field(SOURCE_NAME, event, TURN_ID);
     }
+    turn
 }
 
 /// `payload.cwd`, on the head `session_meta` and each `turn_context`.
@@ -184,9 +237,6 @@ pub(crate) fn extract_codex_parent(v: &Value) -> Option<String> {
 pub(crate) const EVENT_MSG: &str = "event_msg";
 pub(crate) const RESPONSE_ITEM: &str = "response_item";
 pub(crate) const TURN_CONTEXT: &str = "turn_context";
-
-const SANDBOX_PERMISSIONS_FIELD: &str = "sandbox_permissions";
-const REQUIRE_ESCALATED: &str = "require_escalated";
 
 /// The rollout inners, grouped BY BEHAVIOUR: each group is the matcher (the
 /// arms below guard on `contains`).
@@ -215,8 +265,8 @@ const RI_RESUME: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
 const CALL_ID: &str = "call_id";
 const RI_SEARCH: &[&str] = &["web_search_call", "tool_search_call", "tool_search_output"];
 
-/// Decode one transcript line. Only an output's End carries its call's id
-/// (`tool_use_id`), so only that End meets the hook-wins dedup (#150).
+/// Decode one rollout line: the turns' brackets and the items, each keyed by
+/// the wire's own id.
 pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &codex_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
@@ -235,30 +285,26 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         detail: None,
     };
 
+    // The turns ride the rollout, which is complete and in order; their keys
+    // are `sub_id` (`codex-rs/core/src/tasks/mod.rs:848-850` at rust-v0.164.0).
+    let turn = || payload.and_then(|p| turn_of(p, inner));
     match (outer, inner) {
-        (EVENT_MSG, i) if EM_TURN_START.contains(&i) => vec![start()],
+        (EVENT_MSG, i) if EM_TURN_START.contains(&i) => turn()
+            .map(|turn| AgentEvent::TurnStart { agent_id, turn })
+            .into_iter()
+            .chain([start()])
+            .collect(),
         // `custom_tool_call` is the SAME item under codex's custom-tool API and is
         // what a modern session serializes — `a_custom_tool_call_is_a_tool_call`.
         (RESPONSE_ITEM, i) if RI_TOOL_START.contains(&i) => {
-            if function_call_needs_approval(payload) {
-                vec![AgentEvent::UserActionRequest {
-                    agent_id,
-                    reason: Some("permission".to_string()),
-                    tool_use_id: None,
-                }]
-            } else {
-                vec![codex_tool_start(agent_id, payload)]
-            }
+            vec![codex_tool_start(agent_id, i, payload)]
         }
         // Resume signals: a command/patch finished, or a call was refused. Each
-        // is a ToolUseStart, which answers a permission request holding no
-        // call. A call's output also ENDS that call, answering a request that
-        // holds it: a refused call gets no `PostToolUse`, so this is its only end.
+        // is a ToolUseStart that keeps the turn showing work. A call's output
+        // also ENDS that call, answering a request that holds it: a refused
+        // call gets no `PostToolUse`, so this is its only end.
         (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
-            let call = payload
-                .and_then(|p| p.get(CALL_ID))
-                .and_then(Value::as_str)
-                .filter(|c| !c.is_empty());
+            let call = payload.and_then(|p| non_empty(p, CALL_ID));
             if call.is_none() && i == RI_CUSTOM_OUTPUT {
                 crate::source::drift::missing_field(SOURCE_NAME, i, CALL_ID);
             }
@@ -276,7 +322,10 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         // never permission-prompted — no UserActionRequest branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
-        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![AgentEvent::turn_end(agent_id)],
+        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![match turn() {
+            Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
+            None => AgentEvent::turn_end(agent_id),
+        }],
         // `last_token_usage` is that turn's reading; the cumulative twin
         // `total_token_usage` must NOT be read — the reducer accumulates
         // deltas, so summing a running total would double-count. codex's
@@ -331,55 +380,57 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
     }
 }
 
-/// A Codex `function_call` requesting escalated sandbox permissions
-/// (`arguments` is a JSON string carrying `sandbox_permissions:
-/// "require_escalated"`) is an approval gate → [`AgentEvent::UserActionRequest`]. A bare `justification`
-/// is intentionally NOT a signal: Codex emits it on auto-approved commands too,
-/// so keying on it would false-Wait.
-/// Codex has TWO tool surfaces and only this one marks escalation in the
-/// rollout. A `custom_tool_call` carries `input` — a JS snippet, not JSON args —
-/// and a recorded escalated run on that surface shows no marker anywhere, so
-/// there the gate exists ONLY on the hook wire (`PermissionRequest`). Which
-/// surface a turn takes is model-chosen, so neither is dead: a local rollout
-/// census found real `require_escalated` calls, and codex 0.147.0's system
-/// prompt still instructs the model to send exactly this parameter.
-fn function_call_needs_approval(payload: Option<&Map<String, Value>>) -> bool {
-    let Some(args_str) = payload
-        .and_then(|p| p.get("arguments"))
-        .and_then(|a| a.as_str())
-    else {
-        return false;
-    };
-    let args = match serde_json::from_str::<Value>(args_str) {
-        Ok(v) => v,
-        Err(e) => {
-            crate::source::drift::shape_drift(
-                SOURCE_NAME,
-                &format!("function_call arguments not parseable: {e}"),
-            );
-            return false;
-        }
-    };
-    args.get(SANDBOX_PERMISSIONS_FIELD).and_then(|s| s.as_str()) == Some(REQUIRE_ESCALATED)
-}
+/// codex's code-mode tool: a JavaScript cell whose nested calls run inside it,
+/// so the cell is the item (`codex-rs/code-mode-protocol/src/lib.rs:54` at
+/// rust-v0.164.0).
+const CODE_MODE_TOOL: &str = "exec";
 
-fn codex_tool_start(agent_id: AgentId, payload: Option<&Map<String, Value>>) -> AgentEvent {
-    let name = payload
-        .and_then(|p| p.get("name"))
-        .and_then(|s| s.as_str())
-        .unwrap_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, "tool call", "name");
-            "tool"
-        });
+/// Where a code-mode cell finds its nested tools, each named by a JavaScript
+/// identifier (`codex-rs/code-mode-protocol/src/description.rs:25` at
+/// rust-v0.164.0).
+const CELL_TOOLS: &str = "tools.";
+
+fn codex_tool_start(
+    agent_id: AgentId,
+    inner: &str,
+    payload: Option<&Map<String, Value>>,
+) -> AgentEvent {
+    let field = |k: &str| payload.and_then(|p| p.get(k)).and_then(Value::as_str);
+    let name = field("name").unwrap_or_else(|| {
+        crate::source::drift::missing_field(SOURCE_NAME, "tool call", "name");
+        "tool"
+    });
+    let tool_use_id = payload
+        .and_then(|p| non_empty(p, CALL_ID))
+        .map(str::to_owned);
+    if tool_use_id.is_none() {
+        crate::source::drift::missing_field(SOURCE_NAME, inner, CALL_ID);
+    }
     AgentEvent::ToolUseStart {
         agent_id,
-        tool_use_id: None,
-        detail: Some(if name == DISPATCH_TOOL {
-            ToolDetail::Task
-        } else {
-            make_tool_detail(SOURCE_NAME, name, None)
+        tool_use_id,
+        detail: Some(match name {
+            DISPATCH_TOOL => ToolDetail::Task,
+            CODE_MODE_TOOL => generic_tool_display(name, field("input").and_then(cell_tool)),
+            _ => make_tool_detail(SOURCE_NAME, name, None),
         }),
     }
+}
+
+/// The first nested tool a code-mode cell calls by name, the informative part
+/// of its source.
+fn cell_tool(source: &str) -> Option<&str> {
+    let mut rest = source;
+    while let Some((_, after)) = rest.split_once(CELL_TOOLS) {
+        let end = after
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+            .unwrap_or(after.len());
+        if let Some(name) = after.get(..end).filter(|n| !n.is_empty()) {
+            return Some(name);
+        }
+        rest = after;
+    }
+    None
 }
 
 /// The Codex home dir, matching codex's own precedence (`codex-rs`
@@ -535,12 +586,14 @@ mod tests {
     }
 
     #[test]
-    fn a_roots_events_fall_through_to_shared_arms() {
-        let stop = json!({"hook_event_name": "Stop", "session_id": "s"});
-        assert!(matches!(
-            decode_codex_hook_custom(test_obj(&stop)),
-            Ok(None)
-        ));
+    fn a_roots_session_events_fall_through_to_shared_arms() {
+        for event in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {
+            let v = json!({"hook_event_name": event, "session_id": "s"});
+            assert!(
+                matches!(decode_codex_hook_custom(test_obj(&v)), Ok(None)),
+                "{event}"
+            );
+        }
     }
 
     const ROOT: &str = "01a14e36-774b-7a43-a766-5159e4eb32f6";
@@ -618,36 +671,99 @@ mod tests {
     }
 
     #[test]
-    fn a_spawn_agent_call_is_a_task_on_either_transport() {
-        let spawn = json!({"tool_name": DISPATCH_TOOL, "tool_use_id": "call_Fxnld0qmszdIwSfB",
+    fn a_spawn_agent_call_is_a_task_on_the_rollout_and_only_pending_on_the_hook() {
+        const CALL: &str = "call_Fxnld0qmszdIwSfB";
+        let spawn = json!({"tool_name": DISPATCH_TOOL, "tool_use_id": CALL,
                            "tool_input": {"message": "CHILD-TASK"}});
         for child in [false, true] {
             let evs = hook("PreToolUse", child, spawn.clone());
             assert!(
-                evs.iter().any(|e| matches!(e, AgentEvent::ToolUseStart {
-                    detail: Some(d), tool_use_id: Some(_), .. } if d.is_task())),
+                matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUsePending {
+                    tool_use_id, tool_name, .. }]
+                    if tool_use_id == CALL && tool_name.as_deref() == Some(DISPATCH_TOOL)),
                 "child={child}: {evs:?}"
             );
         }
         let line = json!({"type": "response_item", "payload": {"type": "function_call",
             "name": DISPATCH_TOOL, "namespace": "multi_agent_v1",
-            "arguments": "{\"message\":\"CHILD-TASK\"}", "call_id": "call_Fxnld0qmszdIwSfB"}});
+            "arguments": "{\"message\":\"CHILD-TASK\"}", "call_id": CALL}});
         let evs = decode_codex_line("/p/rollout-2026-10-18T01-52-34-x.jsonl", "codex", line);
         assert!(
-            evs.iter().any(|e| matches!(e, AgentEvent::ToolUseStart {
-                detail: Some(d), .. } if d.is_task())),
+            matches!(&evs[..], [AgentEvent::ToolUseStart {
+                tool_use_id: Some(c), detail: Some(d), .. }] if c == CALL && d.is_task()),
             "{evs:?}"
         );
-        let other = hook(
-            "PreToolUse",
+    }
+
+    #[test]
+    fn the_hooks_carry_only_what_the_rollout_lacks() {
+        const TURN: &str = "01a14e36-7827-7f92-a603-b700dc3aa71c";
+        let turn = Some(TurnKey::Id(TURN.into()));
+        let tool = json!({"tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
+                          "tool_use_id": "call_P60"});
+        let pre = hook("PreToolUse", false, tool.clone());
+        assert!(
+            matches!(&pre[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUsePending {
+                tool_use_id, tool_name, turn: t, .. }]
+                if tool_use_id == "call_P60" && tool_name.as_deref() == Some("Bash") && *t == turn),
+            "{pre:?}"
+        );
+        let post = hook("PostToolUse", false, tool);
+        assert!(
+            matches!(&post[..], [AgentEvent::Identity { .. }, AgentEvent::UserActionResolved {
+                by: Resolution::Call(c), .. }] if c == "call_P60"),
+            "{post:?}"
+        );
+        let stop = hook("Stop", false, json!({"stop_hook_active": false}));
+        assert!(
+            matches!(&stop[..], [AgentEvent::UserActionResolved {
+                by: Resolution::Turn(t), .. }] if Some(t) == turn.as_ref()),
+            "{stop:?}"
+        );
+        let asked = hook(
+            "PermissionRequest",
             false,
-            json!({"tool_name": "Bash", "tool_use_id": "c",
-                                                    "tool_input": {"command": "ls"}}),
+            json!({"tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"}}),
         );
         assert!(
-            !other.iter().any(|e| matches!(e, AgentEvent::ToolUseStart {
-                detail: Some(d), .. } if d.is_task())),
-            "{other:?}"
+            matches!(&asked[..], [AgentEvent::Identity { .. }, AgentEvent::UserActionRequest {
+                tool_use_id: None, tool_name: Some(n), turn: t, .. }]
+                if n == "Bash" && *t == turn),
+            "{asked:?}"
+        );
+        let stdin = hook(
+            "PermissionRequest",
+            false,
+            json!({"tool_name": "write_stdin",
+                   "tool_input": {"chars": "y\n", "approval_id": "call_stdin"}}),
+        );
+        assert!(
+            matches!(&stdin[..], [_, AgentEvent::UserActionRequest {
+                tool_use_id: Some(c), .. }] if c == "call_stdin"),
+            "a write_stdin prompt names its own call: {stdin:?}"
+        );
+    }
+
+    #[test]
+    fn a_hook_missing_its_keys_breadcrumbs_and_decodes_what_it_can() {
+        let logs = crate::test_capture::capture_logs(|| {
+            let mut v = json!({"hook_event_name": "Stop", "session_id": ROOT,
+                               "_pixtuoid_source": SOURCE_NAME});
+            assert!(
+                crate::source::decoder::decode_hook_payload(v.clone())
+                    .expect("decodes")
+                    .is_empty()
+            );
+            v["hook_event_name"] = json!("PreToolUse");
+            v["turn_id"] = json!("t");
+            assert!(matches!(
+                &crate::source::decoder::decode_hook_payload(v).expect("decodes")[..],
+                [AgentEvent::Identity { .. }]
+            ));
+        });
+        assert!(
+            logs.contains(TURN_ID) && logs.contains("tool_use_id"),
+            "{logs}"
         );
     }
 
@@ -685,9 +801,15 @@ mod tests {
     }
 
     #[test]
-    fn task_started_is_tool_use_start() {
+    fn task_started_opens_its_turn_and_shows_work() {
         let out = ev(json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"t"}}));
-        assert!(matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]));
+        assert!(
+            matches!(out.as_slice(), [
+                AgentEvent::TurnStart { turn: TurnKey::Id(t), .. },
+                AgentEvent::ToolUseStart { tool_use_id: None, .. },
+            ] if &**t == "t"),
+            "{out:?}"
+        );
     }
 
     /// codex's serde aliases are read-only (`codex-rs/protocol/src/protocol.rs`
@@ -708,20 +830,13 @@ mod tests {
     #[test]
     fn a_custom_tool_call_is_a_tool_call() {
         let out = ev(json!({"type":"response_item","payload":{
-            "type":"custom_tool_call","call_id":"call_x","name":"exec","input":"ls"}}));
-        match out.as_slice() {
-            [
-                AgentEvent::ToolUseStart {
-                    detail: Some(d), ..
-                },
-            ] => {
-                assert!(
-                    format!("{d:?}").contains("exec"),
-                    "tool name must reach the detail: {d:?}"
-                )
-            }
-            other => panic!("expected a ToolUseStart carrying the tool, got {other:?}"),
-        }
+            "type":"custom_tool_call","call_id":"call_x","name":"apply_patch","input":"*** Begin"}}));
+        assert!(
+            matches!(out.as_slice(), [AgentEvent::ToolUseStart {
+                tool_use_id: Some(c), detail: Some(d), .. }]
+                if c == "call_x" && d.display() == "apply_patch"),
+            "{out:?}"
+        );
         let resumed = ev(json!({"type":"response_item","payload":{
             "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
         assert!(
@@ -808,59 +923,107 @@ mod tests {
         }
     }
 
+    /// A cell's nested calls run inside it, so its detail is the first tool
+    /// it calls: slicing JS for a "first statement" has no answer without a
+    /// parser (a cell opening `try {`, a comment, a `;` inside a string).
     #[test]
-    fn escalated_function_call_is_user_action_request() {
-        let args = format!(
-            r#"{{"cmd":"date","{SANDBOX_PERMISSIONS_FIELD}":"{REQUIRE_ESCALATED}","justification":"allow?"}}"#
-        );
-        let args = args.as_str();
-        let out = ev(
-            json!({"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":args}}),
-        );
-        assert!(matches!(
-            out.as_slice(),
-            [AgentEvent::UserActionRequest { .. }]
-        ));
+    fn a_code_mode_cell_shows_the_first_tool_it_calls() {
+        for (input, want) in [
+            (
+                "// @exec: {}\ntry {\n  text(await tools.exec_command({ cmd: \"cd src; ls\" }));\n} catch (e) {}",
+                Some("exec_command"),
+            ),
+            (
+                "// read the note\nconst r = await tools.mcp__fs__read_file$2({});",
+                Some("mcp__fs__read_file$2"),
+            ),
+            ("text(\"tools. alone\"); yield_control();", None),
+            ("const t = tools[name];", None),
+        ] {
+            assert_eq!(cell_tool(input), want, "{input:?}");
+        }
+        for (input, want) in [
+            ("text(await tools.apply_patch(p))", Some("apply_patch")),
+            ("text(1)", None),
+        ] {
+            let out = ev(json!({"type":"response_item","payload":{
+                "type":"custom_tool_call","call_id":"call_x","name":CODE_MODE_TOOL,"input":input}}));
+            assert!(
+                matches!(out.as_slice(), [AgentEvent::ToolUseStart { detail: Some(d), .. }]
+                    if *d == generic_tool_display(CODE_MODE_TOOL, want)),
+                "{input:?}: {out:?}"
+            );
+        }
     }
 
     #[test]
-    fn plain_function_call_is_tool_use_start() {
-        let args = r#"{"cmd":"ls"}"#;
-        let out = ev(
-            json!({"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":args}}),
+    fn the_approval_hooks_read_the_rows_tool_id_key() {
+        let key = crate::source::decoder::hook_tool_id_key(
+            crate::source::registry::descriptor_for(SOURCE_NAME),
         );
-        assert!(matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]));
-    }
-
-    #[test]
-    fn justification_without_escalation_is_not_user_action_request() {
-        let args = r#"{"cmd":"ls","justification":"because"}"#;
-        let out = ev(
-            json!({"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":args}}),
+        let evs = hook(
+            "PostToolUse",
+            false,
+            json!({"tool_name": "Bash", key: "call_k"}),
         );
         assert!(
-            matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]),
+            matches!(&evs[..], [_, AgentEvent::UserActionResolved {
+                by: Resolution::Call(c), .. }] if c == "call_k"),
+            "{evs:?}"
+        );
+    }
+
+    /// No name on the wire is no binding key: the pending call still counts
+    /// for the sole-pending rule.
+    #[test]
+    fn a_pre_use_naming_no_tool_binds_by_no_name() {
+        let evs = hook("PreToolUse", false, json!({"tool_use_id": "c"}));
+        assert!(
+            matches!(
+                &evs[..],
+                [
+                    _,
+                    AgentEvent::ToolUsePending {
+                        tool_name: None,
+                        ..
+                    }
+                ]
+            ),
+            "{evs:?}"
+        );
+    }
+
+    #[test]
+    fn a_function_call_is_its_calls_start() {
+        let out = ev(
+            json!({"type":"response_item","payload":{"type":"function_call",
+            "name":"exec_command","arguments":r#"{"cmd":"ls"}"#,"call_id":"call_1"}}),
+        );
+        assert!(
+            matches!(out.as_slice(), [AgentEvent::ToolUseStart { tool_use_id: Some(c), .. }]
+                if c == "call_1"),
             "{out:?}"
         );
     }
 
     #[test]
-    fn malformed_arguments_does_not_panic_and_starts_work() {
-        let out = ev(
-            json!({"type":"response_item","payload":{"type":"function_call","name":"x","arguments":"{not json"}}),
-        );
-        assert!(matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]));
-    }
-
-    #[test]
-    fn task_complete_and_abort_end_the_turn() {
+    fn task_complete_and_abort_end_their_turn() {
         for t in ["task_complete", "turn_aborted"] {
             let out = ev(json!({"type":"event_msg","payload":{"type":t,"turn_id":"t"}}));
             assert!(
-                matches!(out.as_slice(), [AgentEvent::TurnEnd { .. }]),
+                matches!(out.as_slice(), [AgentEvent::TurnEnd { turn: Some(TurnKey::Id(k)), .. }]
+                    if &**k == "t"),
                 "{t}: {out:?}"
             );
         }
+        let logs = crate::test_capture::capture_logs(|| {
+            let out = ev(json!({"type":"event_msg","payload":{"type":"task_complete"}}));
+            assert!(
+                matches!(out.as_slice(), [AgentEvent::TurnEnd { turn: None, .. }]),
+                "an end naming no turn still ends the work: {out:?}"
+            );
+        });
+        assert!(logs.contains(TURN_ID), "{logs}");
     }
 
     #[test]
@@ -967,21 +1130,7 @@ mod tests {
     }
 
     #[test]
-    fn function_call_without_arguments_starts_work_not_user_action_request() {
-        let out = ev(json!({
-            "type": "response_item",
-            "payload": { "type": "function_call", "name": "x" }
-        }));
-        assert!(
-            matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]),
-            "{out:?}"
-        );
-    }
-
-    #[test]
     fn function_call_without_name_falls_back_to_tool_label() {
-        // The `arguments` must stay non-escalated so routing reaches
-        // codex_tool_start rather than the UserActionRequest arm.
         use crate::source::ToolDetail;
         let out = ev(json!({
             "type": "response_item",

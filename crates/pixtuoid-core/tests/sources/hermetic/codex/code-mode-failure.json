@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": { "toolResultContains": "HERMETIC-CELL-END" },
+      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [],
+        "customToolCalls": [
+          { "name": "exec", "input": "// @exec: {\"max_output_tokens\": 1000}\ntry {\n  text(await tools.exec_command({ cmd: \"cat MISSING.txt\" }));\n} catch (e) {\n  text(String(e));\n}\ntext(\"HERMETIC-CELL-END\");\n" }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}

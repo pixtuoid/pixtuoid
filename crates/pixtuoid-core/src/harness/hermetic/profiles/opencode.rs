@@ -184,9 +184,8 @@ pub(crate) const PROFILE: Profile = Profile {
             ],
             fixture: "fixtures/opencode/delete-hermetic",
             turn: Turn {
-                args: &[],
-                prompt: None,
                 second: Some(Second::Bare),
+                ..Turn::PROFILE
             },
         },
         Scenario {

@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The Reasonix CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "reasonix";
@@ -202,11 +202,11 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 register(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                },
+                    msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
         // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
@@ -238,11 +238,11 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             };
             Ok(vec![
                 register(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                },
+                    Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {

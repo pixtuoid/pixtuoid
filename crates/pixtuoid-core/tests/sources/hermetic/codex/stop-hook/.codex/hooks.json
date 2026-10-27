@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node .codex/stop-once.js" }] }]
+  }
+}

@@ -579,8 +579,7 @@ const CODEX: SourceDescriptor = SourceDescriptor {
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
-            // A child's events change their SUBJECT, and a root's `spawn_agent`
-            // is a Task: neither is expressible in the shared arms.
+            // Its arms and why: `codex::decode_codex_hook_custom`.
             extend: codex::decode_codex_hook_custom,
         }),
         caps: SourceCaps {
@@ -833,7 +832,7 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
 const CURSOR: SourceDescriptor = SourceDescriptor {
     name: cursor::SOURCE_NAME,
     label_prefix: "cu",
-    verified_version: "2026.09.18",
+    verified_version: "2026.10.22",
     version_probe: Some(&["cursor-agent", "--version"]),
     version_hyphen: Hyphen::Build,
     home_env: None,
