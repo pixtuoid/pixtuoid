@@ -9,8 +9,9 @@ use pixtuoid_core::state::{ActivityState, SceneState};
 use serde_json::json;
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, delegating_pair,
-    delegating_pair_on, start, start_as, turn_end, waiting, waiting_for,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, delegating_pair, delegating_pair_on,
+    start, start_as, tool_use_end, tool_use_start, turn_end, user_action_request,
+    user_action_request_for,
 };
 
 #[track_caller]
@@ -32,7 +33,7 @@ fn hook_activity_during_a_task_in_flight_is_suppressed() {
 
     let t0 = SystemTime::now();
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -42,7 +43,7 @@ fn hook_activity_during_a_task_in_flight_is_suppressed() {
         Transport::Hook,
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -60,7 +61,7 @@ fn hook_activity_during_a_task_in_flight_is_suppressed() {
         other => panic!("expected Active(Delegating), got {other:?}"),
     }
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -74,7 +75,7 @@ fn hook_activity_during_a_task_in_flight_is_suppressed() {
         "a suppressed subagent End must not settle the parent while its task is in flight",
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -97,7 +98,7 @@ fn a_hook_turn_end_during_a_task_is_suppressed() {
     start_as(&mut r, &mut scene, parent, UNNAMED_CHILD_HOOKS);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -106,7 +107,7 @@ fn a_hook_turn_end_during_a_task_is_suppressed() {
         t0,
         Transport::Hook,
     );
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         parent,
@@ -135,7 +136,7 @@ fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
 
     let t0 = SystemTime::now();
 
-    act_end(&mut r, &mut scene, id, Some("task-X"), t0, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("task-X"), t0, Transport::Hook);
 
     r.apply(
         &mut scene,
@@ -148,7 +149,7 @@ fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
         Transport::Jsonl,
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -157,7 +158,7 @@ fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
         Transport::Jsonl,
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -187,7 +188,7 @@ fn jsonl_event_after_dedup_window_is_applied() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
     let t0 = SystemTime::now();
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -197,7 +198,7 @@ fn jsonl_event_after_dedup_window_is_applied() {
         Transport::Hook,
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -227,7 +228,7 @@ fn hook_wins_dedup_drops_jsonl_duplicate_within_window() {
 
     let t0 = SystemTime::now();
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -238,7 +239,7 @@ fn hook_wins_dedup_drops_jsonl_duplicate_within_window() {
     );
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -267,7 +268,7 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch", t0);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -276,7 +277,7 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         child,
@@ -285,7 +286,7 @@ fn subagent_is_removed_promptly_when_its_parent_task_completes() {
         t0 + Duration::from_secs(2),
         Transport::Jsonl,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -341,7 +342,7 @@ fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
             at(0),
             Transport::Hook,
         );
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             parent,
@@ -356,7 +357,7 @@ fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
             at(2),
             Transport::Hook,
         );
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             child,
@@ -365,8 +366,8 @@ fn an_untracked_task_end_walks_out_a_child_only_under_any_task_end() {
             at(2),
             Transport::Hook,
         );
-        act_end(&mut r, &mut scene, child, None, at(3), Transport::Hook);
-        act_end(&mut r, &mut scene, parent, None, at(4), Transport::Hook);
+        tool_use_end(&mut r, &mut scene, child, None, at(3), Transport::Hook);
+        tool_use_end(&mut r, &mut scene, parent, None, at(4), Transport::Hook);
         r.tick(
             &mut scene,
             at(4) + B1_CASCADE_GRACE + Duration::from_millis(10),
@@ -407,7 +408,7 @@ fn a_turn_end_over_an_untracked_task_walks_out_its_child_under_any_task_end() {
             Transport::Hook,
         );
     }
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -541,9 +542,9 @@ fn a_task_end_decoded_before_its_start_does_not_reopen_the_call() {
             Transport::Hook,
         );
         let end = t0 + Duration::from_secs(1);
-        act_end(&mut r, &mut scene, id, Some("call_1"), end, Transport::Hook);
+        tool_use_end(&mut r, &mut scene, id, Some("call_1"), end, Transport::Hook);
         let start = end + after_end;
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             id,
@@ -553,7 +554,7 @@ fn a_task_end_decoded_before_its_start_does_not_reopen_the_call() {
             Transport::Hook,
         );
         let own = start + Duration::from_secs(1);
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             id,
@@ -563,7 +564,7 @@ fn a_task_end_decoded_before_its_start_does_not_reopen_the_call() {
             Transport::Hook,
         );
         let own_end = own + Duration::from_secs(1);
-        act_end(&mut r, &mut scene, id, None, own_end, Transport::Hook);
+        tool_use_end(&mut r, &mut scene, id, None, own_end, Transport::Hook);
         let shown = match &scene.agents[&id].state {
             ActivityState::Active { detail, .. } => detail.as_deref(),
             ActivityState::Idle => None,
@@ -593,9 +594,9 @@ fn a_call_whose_start_lands_after_its_end_still_counts() {
         Transport::Hook,
     );
     let end = t0 + Duration::from_secs(1);
-    act_end(&mut r, &mut scene, id, Some("call_1"), end, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("call_1"), end, Transport::Hook);
     let start = end + HOOK_WINS_WINDOW / 10;
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -632,7 +633,7 @@ fn oversized_attach_synthesized_task_start_arms_b1() {
         );
     }
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -647,7 +648,7 @@ fn oversized_attach_synthesized_task_start_arms_b1() {
         "the synthesized Jsonl Task start must seed tasks_in_flight — no hook record exists at mid-attach to dedup-eat it",
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -681,7 +682,7 @@ fn a_dispatch_inside_the_grace_cancels_the_pending_cascade() {
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-late", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -690,7 +691,7 @@ fn a_dispatch_inside_the_grace_cancels_the_pending_cascade() {
         t1,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -703,7 +704,7 @@ fn a_dispatch_inside_the_grace_cancels_the_pending_cascade() {
         "the drain must not cascade-exit the subtree immediately (#151)"
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -722,7 +723,7 @@ fn a_dispatch_inside_the_grace_cancels_the_pending_cascade() {
     );
     assert_delegating(&scene, parent, "parent stays Delegating on the second Task");
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -748,7 +749,7 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-rearm", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -757,7 +758,7 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
         t1,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -765,7 +766,7 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
         t1 + Duration::from_millis(200),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -774,7 +775,7 @@ fn second_drain_inside_grace_restarts_the_cascade_clock() {
         t1 + Duration::from_secs(1),
         Transport::Jsonl,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -809,7 +810,7 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-152", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -818,7 +819,7 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
         t1,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -826,7 +827,7 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
         t1 + Duration::from_millis(100),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -834,7 +835,7 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
         t1 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -859,7 +860,7 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-keep", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -868,7 +869,7 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
         t1,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -877,7 +878,7 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
         t1 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -885,7 +886,7 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
         t1 + Duration::from_millis(200),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -893,7 +894,7 @@ fn task_drain_keeps_parallel_ordinary_tool_member() {
         t1 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -917,7 +918,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         delegating_pair_on(&mut r, &mut scene, "orch-own-gate", t0, UNNAMED_CHILD_HOOKS);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -926,7 +927,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         t1,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -935,7 +936,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         t1 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -943,7 +944,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         t1 + Duration::from_millis(200),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -959,7 +960,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
         ),
         "a suppressed child event must not hide the parent's own still-pending permission Waiting"
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -984,7 +985,7 @@ fn own_parallel_tool_end_mid_delegation_returns_parent_to_delegating() {
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-own-end", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -993,7 +994,7 @@ fn own_parallel_tool_end_mid_delegation_returns_parent_to_delegating() {
         t1,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1002,7 +1003,7 @@ fn own_parallel_tool_end_mid_delegation_returns_parent_to_delegating() {
         t1 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1029,7 +1030,7 @@ fn a_turn_end_mid_delegation_returns_the_parent_to_delegating() {
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-turn-end", t0);
     let t1 = t0 + Duration::from_secs(1);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1038,7 +1039,7 @@ fn a_turn_end_mid_delegation_returns_the_parent_to_delegating() {
         t1,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1062,7 +1063,7 @@ fn a_turn_end_while_delegating_keeps_the_delegating_clock() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-clock", t0);
     let dispatched = t0 + Duration::from_secs(1);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1091,7 +1092,7 @@ fn a_task_drain_leaves_the_parents_own_call_shown() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-drain-own", t0);
     let t1 = t0 + Duration::from_secs(1);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1100,7 +1101,7 @@ fn a_task_drain_leaves_the_parents_own_call_shown() {
         t1,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1110,7 +1111,7 @@ fn a_task_drain_leaves_the_parents_own_call_shown() {
         Transport::Jsonl,
     );
     let drained = t1 + Duration::from_secs(1);
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1123,7 +1124,7 @@ fn a_task_drain_leaves_the_parents_own_call_shown() {
         ActivityState::Active { detail, .. } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
         other => panic!("expected the parent's own call, got {other:?}"),
     }
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1143,7 +1144,7 @@ fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
     let parent = AgentId::from_transcript_path("/p/shown.jsonl");
     start(&mut r, &mut scene, parent);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1152,7 +1153,7 @@ fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1162,7 +1163,7 @@ fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
         Transport::Hook,
     );
     let since = scene.agents[&parent].state_started_at;
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1190,7 +1191,7 @@ fn a_task_dispatch_over_a_prompt_holding_another_call_keeps_waiting() {
     let id = AgentId::from_transcript_path("/p/dispatch-held.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1199,7 +1200,7 @@ fn a_task_dispatch_over_a_prompt_holding_another_call_keeps_waiting() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -1207,7 +1208,7 @@ fn a_task_dispatch_over_a_prompt_holding_another_call_keeps_waiting() {
         t0 + Duration::from_millis(100),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1221,7 +1222,7 @@ fn a_task_dispatch_over_a_prompt_holding_another_call_keeps_waiting() {
         "got {:?}",
         scene.agents[&id].state
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1240,8 +1241,8 @@ fn a_task_dispatch_answers_a_prompt_holding_no_call() {
     let id = AgentId::from_transcript_path("/p/dispatch-bare.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    act_start(
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1263,7 +1264,7 @@ fn a_task_dispatch_outside_a_wait_moots_queued_members() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for call in ["x1", "x2"] {
-        waiting_for(
+        user_action_request_for(
             &mut r,
             &mut scene,
             id,
@@ -1273,7 +1274,7 @@ fn a_task_dispatch_outside_a_wait_moots_queued_members() {
             Transport::Hook,
         );
     }
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1281,7 +1282,7 @@ fn a_task_dispatch_outside_a_wait_moots_queued_members() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1291,7 +1292,7 @@ fn a_task_dispatch_outside_a_wait_moots_queued_members() {
         Transport::Hook,
     );
     assert_delegating(&scene, id, "the dispatch runs");
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1314,7 +1315,7 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1323,7 +1324,7 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
         t0,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1341,7 +1342,7 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
     // These offsets put the lagged pair PAST the START record's expiry (t0 + W) but
     // still inside the END record's window, so only the END record's both-kinds
     // dominance can drop the stale START.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1350,7 +1351,7 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
         t0 + HOOK_WINS_WINDOW + HOOK_WINS_WINDOW / 20,
         Transport::Jsonl,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1378,7 +1379,7 @@ fn jsonl_task_start_duplicate_does_not_clobber_waiting_parent() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-wait", t0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1387,7 +1388,7 @@ fn jsonl_task_start_duplicate_does_not_clobber_waiting_parent() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1395,7 +1396,7 @@ fn jsonl_task_start_duplicate_does_not_clobber_waiting_parent() {
         t0 + Duration::from_secs(1) + HOOK_WINS_WINDOW / 50,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1421,7 +1422,7 @@ fn jsonl_task_start_replay_outside_dedup_window_does_not_clobber_waiting_parent(
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-wait-late", t0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1430,7 +1431,7 @@ fn jsonl_task_start_replay_outside_dedup_window_does_not_clobber_waiting_parent(
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1438,7 +1439,7 @@ fn jsonl_task_start_replay_outside_dedup_window_does_not_clobber_waiting_parent(
         t0 + Duration::from_secs(1) + HOOK_WINS_WINDOW / 50,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1464,7 +1465,7 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-drained", t0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1473,7 +1474,7 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1482,7 +1483,7 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
         Transport::Hook,
     );
 
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1492,7 +1493,7 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
     );
 
     let replay_at = t0 + Duration::from_secs(2) + B1_CASCADE_GRACE + Duration::from_millis(100);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1509,7 +1510,7 @@ fn lagged_jsonl_task_pair_after_drain_does_not_clobber_waiting_parent() {
         "a replayed Start of an already-drained Task must not re-enter Delegating over a pending Waiting"
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1535,7 +1536,7 @@ fn jsonl_ordinary_tool_end_drains_when_hook_end_drops() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1544,7 +1545,7 @@ fn jsonl_ordinary_tool_end_drains_when_hook_end_drops() {
         t0,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1566,7 +1567,7 @@ fn a_parallel_dispatch_keeps_the_first_drain_from_cascading() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-par", t0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1575,7 +1576,7 @@ fn a_parallel_dispatch_keeps_the_first_drain_from_cascading() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1584,7 +1585,7 @@ fn a_parallel_dispatch_keeps_the_first_drain_from_cascading() {
         t0 + Duration::from_secs(1) + HOOK_WINS_WINDOW / 10,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1610,7 +1611,7 @@ fn a_parallel_dispatch_keeps_the_first_drain_from_cascading() {
         "parent must stay Delegating on the second Task",
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1635,7 +1636,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "orch-drop", t0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1644,7 +1645,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1664,7 +1665,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
         scene.agents.get(&child).unwrap().exiting_at.is_some(),
         "the JSONL Task self-END must drain tasks_in_flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1717,7 +1718,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_resumes() {
         t0 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1726,7 +1727,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_resumes() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1742,7 +1743,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_resumes() {
         "parent goes Waiting on the subagent's permission"
     );
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1793,7 +1794,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_ends_a_tool(
         t0 + Duration::from_millis(100),
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1802,7 +1803,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_ends_a_tool(
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         parent,
@@ -1817,7 +1818,7 @@ fn parent_waiting_on_subagent_permission_resolves_when_the_subagent_ends_a_tool(
         ),
         "parent goes Waiting on the subagent's permission"
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -1853,7 +1854,7 @@ fn task_drain_while_parent_waiting_keeps_waiting() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -1866,7 +1867,7 @@ fn task_drain_while_parent_waiting_keeps_waiting() {
         ActivityState::Waiting { .. }
     ));
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1936,7 +1937,7 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
     start(&mut r, &mut scene, parent);
 
     // TWO Task dispatches in flight — the case no existing test covers.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1945,7 +1946,7 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -1957,7 +1958,7 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
     let armed_at = scene.agents[&parent].state_started_at;
 
     // Drain ONE. The other is still live, so the parent stays Delegating.
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         parent,
@@ -2057,7 +2058,7 @@ fn a_named_childs_parent_shows_its_own_tool_during_a_task() {
     let parent = AgentId::from_parts("claude-code", "parent");
     start(&mut r, &mut scene, parent);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,
@@ -2067,7 +2068,7 @@ fn a_named_childs_parent_shows_its_own_tool_during_a_task() {
         Transport::Hook,
     );
     let own = t0 + Duration::from_secs(1);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         parent,

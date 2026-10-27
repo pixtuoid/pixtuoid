@@ -6,7 +6,7 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
-use crate::{act_start, sess_end, start};
+use crate::{sess_end, start, tool_use_start};
 
 #[test]
 fn session_start_with_cwd_derives_label_from_basename() {
@@ -70,7 +70,7 @@ fn session_start_label_caps_a_pathologically_long_cwd_basename() {
     );
 
     let upgraded = AgentId::from_transcript_path("/p/upgraded.jsonl");
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         upgraded,

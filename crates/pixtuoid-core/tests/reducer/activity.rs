@@ -7,8 +7,8 @@ use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
 use crate::{
-    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, turn_end,
-    waiting,
+    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, start, start_as, tool_use_end, tool_use_start,
+    turn_end, user_action_request,
 };
 
 #[test]
@@ -18,7 +18,7 @@ fn a_tool_end_settles_the_slot_at_once() {
     let id = AgentId::from_transcript_path("/p/a.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -28,7 +28,7 @@ fn a_tool_end_settles_the_slot_at_once() {
         Transport::Hook,
     );
     let end = t0 + Duration::from_millis(100);
-    act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
 
     let slot = &scene.agents[&id];
     assert_eq!(slot.state, ActivityState::Idle);
@@ -44,7 +44,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
     let id = AgentId::from_transcript_path("/p/par.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -53,7 +53,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -62,7 +62,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         t0,
         Transport::Hook,
     );
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -74,7 +74,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         ActivityState::Active { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
         other => panic!("expected b still running, got {other:?}"),
     }
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -94,8 +94,8 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
     let id = AgentId::from_transcript_path("/p/note.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    act_start(
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -110,8 +110,8 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
     ));
 
     let t2 = t0 + Duration::from_secs(2);
-    waiting(&mut r, &mut scene, id, "permission", t2, Transport::Hook);
-    act_start(
+    user_action_request(&mut r, &mut scene, id, "permission", t2, Transport::Hook);
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -127,7 +127,7 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
         slot.state
     );
     assert_eq!(slot.tool_call_count, 2, "t2 still counts");
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -148,7 +148,7 @@ fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
         let mut r = Reducer::new();
         let id = AgentId::from_parts("codex", "sess-1");
         start_as(&mut r, &mut scene, id, "codex");
-        waiting(&mut r, &mut scene, id, "permission", t0, raised_on);
+        user_action_request(&mut r, &mut scene, id, "permission", t0, raised_on);
         turn_end(
             &mut r,
             &mut scene,
@@ -172,7 +172,7 @@ fn user_action_request_sets_state_with_reason() {
     let id = AgentId::from_transcript_path("/p/a.jsonl");
     start(&mut r, &mut scene, id);
 
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -197,7 +197,7 @@ fn tool_call_count_increments_on_tool_use_start() {
 
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 0);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -208,7 +208,7 @@ fn tool_call_count_increments_on_tool_use_start() {
     );
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -216,7 +216,7 @@ fn tool_call_count_increments_on_tool_use_start() {
         t0 + Duration::from_millis(500),
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -236,7 +236,7 @@ fn active_ms_does_not_double_count_on_duplicate_tool_use_end() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -247,9 +247,9 @@ fn active_ms_does_not_double_count_on_duplicate_tool_use_end() {
     );
 
     let t1 = t0 + Duration::from_secs(2);
-    act_end(&mut r, &mut scene, id, Some("t1"), t1, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("t1"), t1, Transport::Hook);
     // The 2nd end is deliberately PAST the hook-wins window, so it is NOT deduped.
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -277,7 +277,7 @@ fn active_ms_preserved_when_task_arrives_during_active_tool() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     start(&mut r, &mut scene, id);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -315,7 +315,7 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     start(&mut r, &mut scene, id);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -326,7 +326,7 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
     );
 
     let t1 = t0 + Duration::from_secs(3);
-    waiting(&mut r, &mut scene, id, "permission", t1, Transport::Hook);
+    user_action_request(&mut r, &mut scene, id, "permission", t1, Transport::Hook);
 
     let slot = scene.agents.get(&id).unwrap();
     assert!(
@@ -348,7 +348,7 @@ fn a_member_end_while_waiting_resolves_to_idle() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start(&mut r, &mut scene, id);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -357,7 +357,7 @@ fn a_member_end_while_waiting_resolves_to_idle() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -367,7 +367,7 @@ fn a_member_end_while_waiting_resolves_to_idle() {
     );
 
     let end = t0 + Duration::from_millis(1000);
-    act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
         "resolved permission must settle to Idle, got {:?}",
@@ -387,7 +387,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start(&mut r, &mut scene, id);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -396,7 +396,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -404,7 +404,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
         t0 + Duration::from_millis(500),
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -414,7 +414,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
     );
 
     let end = t0 + Duration::from_millis(1200);
-    act_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("t1"), end, Transport::Hook);
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
         "the approved tool's end must still resolve the wait, got {:?}",
@@ -430,7 +430,7 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start(&mut r, &mut scene, id);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -439,7 +439,7 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -448,7 +448,7 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
         Transport::Hook,
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -475,7 +475,7 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "reasonix");
-    waiting(
+    user_action_request(
         &mut r,
         &mut scene,
         id,
@@ -506,9 +506,9 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "reasonix");
-    waiting(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
+    user_action_request(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
     let end = t0 + Duration::from_millis(800);
-    act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, None, end, Transport::Hook);
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
@@ -516,14 +516,14 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
 // call may never get its own End; the turn's Stop must still settle the slot.
 #[test]
 fn a_turn_end_settles_a_call_whose_own_end_never_came() {
-    use crate::waiting_for;
+    use crate::user_action_request_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for requested in [false, true] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
         let id = AgentId::from_parts("kimi", "session_abc");
         start_as(&mut r, &mut scene, id, "kimi");
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             id,
@@ -533,7 +533,7 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
             Transport::Hook,
         );
         if requested {
-            waiting_for(
+            user_action_request_for(
                 &mut r,
                 &mut scene,
                 id,
@@ -563,8 +563,8 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "claude-code");
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    act_end(
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -603,7 +603,7 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
         Transport::Hook,
     );
 
-    waiting(
+    user_action_request(
         &mut reducer,
         &mut scene,
         id,
@@ -616,7 +616,7 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
         "should be Waiting on permission"
     );
 
-    act_start(
+    tool_use_start(
         &mut reducer,
         &mut scene,
         id,
@@ -636,7 +636,7 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
 // tool end naming no call answers only a wait that named none either.
 #[test]
 fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
-    use crate::waiting_for;
+    use crate::user_action_request_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for turn in [true, false] {
         let mut scene = SceneState::uniform(4);
@@ -644,7 +644,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
         let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "sess-1");
         start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
         if turn {
-            waiting_for(
+            user_action_request_for(
                 &mut r,
                 &mut scene,
                 id,
@@ -655,7 +655,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
             );
         } else {
             // Outside the dedup window, so its transcript twin below lands.
-            act_start(
+            tool_use_start(
                 &mut r,
                 &mut scene,
                 id,
@@ -664,15 +664,15 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
                 t0 - HOOK_WINS_WINDOW,
                 Transport::Hook,
             );
-            waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+            user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
         }
         let end = t0 + Duration::from_millis(200);
         if turn {
             turn_end(&mut r, &mut scene, id, end, Transport::Hook);
         } else {
-            act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
+            tool_use_end(&mut r, &mut scene, id, None, end, Transport::Hook);
         }
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             id,
@@ -838,7 +838,7 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
 // each must bind the wait to the member call id and count it ONCE.
 // ---------------------------------------------------------------------------
 
-use crate::waiting_for;
+use crate::user_action_request_for;
 use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 
 /// Past the dedup window: the cross-transport pair separated by a human.
@@ -854,7 +854,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -865,7 +865,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     );
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
 
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -881,7 +881,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
 
     // The approval resume.
     let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -906,7 +906,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -922,7 +922,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
 
     // The transcript's Start for the SAME member call, while the human decides.
     let t1 = beyond_dedup(t0);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -939,7 +939,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     assert_eq!(slot.tool_call_count, 1);
 
     let t2 = beyond_dedup(t1) + Duration::from_secs(5);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -961,7 +961,7 @@ fn approval_resume_before_the_transcript_start_counts_once() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -971,7 +971,7 @@ fn approval_resume_before_the_transcript_start_counts_once() {
         Transport::Hook,
     );
     let t1 = beyond_dedup(t0) + Duration::from_secs(5);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -984,7 +984,7 @@ fn approval_resume_before_the_transcript_start_counts_once() {
 
     // The transcript's Start straggles in past the dedup window.
     let t2 = beyond_dedup(t1);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1009,7 +1009,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1018,7 +1018,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
         t0,
         Transport::Jsonl,
     );
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1029,7 +1029,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     );
 
     let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
-    act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1039,7 +1039,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     );
 
     // The transcript's error toolResult follows; it must not disturb anything.
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -1058,7 +1058,7 @@ fn parallel_approvals_resolve_member_by_member() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1067,7 +1067,7 @@ fn parallel_approvals_resolve_member_by_member() {
         t0,
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1079,7 +1079,7 @@ fn parallel_approvals_resolve_member_by_member() {
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 2);
 
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1088,7 +1088,7 @@ fn parallel_approvals_resolve_member_by_member() {
         t1,
         Transport::Hook,
     );
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1100,7 +1100,7 @@ fn parallel_approvals_resolve_member_by_member() {
 
     // Resolving x1 resumes work; x2's membership must survive it.
     let t2 = beyond_dedup(t1) + Duration::from_secs(2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1116,7 +1116,7 @@ fn parallel_approvals_resolve_member_by_member() {
 
     // omp re-raises the still-pending request; its resolve must work identically.
     let t3 = t2 + Duration::from_secs(1);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1130,7 +1130,7 @@ fn parallel_approvals_resolve_member_by_member() {
         ActivityState::Waiting { .. }
     ));
     let t4 = beyond_dedup(t3) + Duration::from_secs(2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1156,7 +1156,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     // A Task in flight arms `suppress_subagent_leak` for this id.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1167,7 +1167,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     );
 
     // The parent's OWN member tool (parallel to the Task), then its approval.
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1177,7 +1177,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Jsonl,
     );
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1192,7 +1192,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     ));
 
     let t2 = beyond_dedup(t1) + Duration::from_secs(5);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1212,7 +1212,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
 
     // Denial path on a second member call: the hook End must clear the wait too.
     let t3 = beyond_dedup(t2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1222,7 +1222,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Jsonl,
     );
     let t4 = beyond_dedup(t3);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1232,7 +1232,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Hook,
     );
     let t5 = beyond_dedup(t4) + Duration::from_secs(5);
-    act_end(&mut r, &mut scene, id, Some("x2"), t5, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("x2"), t5, Transport::Hook);
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1254,7 +1254,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1263,7 +1263,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         t0,
         Transport::Jsonl,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1273,7 +1273,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         Transport::Jsonl,
     );
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1282,7 +1282,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         t1,
         Transport::Hook,
     );
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1294,9 +1294,9 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
 
     // Denying x1 must not forget x2's still-pending membership.
     let t2 = beyond_dedup(t1) + Duration::from_secs(3);
-    act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
     let t3 = t2 + Duration::from_secs(1);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1306,7 +1306,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         Transport::Hook,
     );
     let t4 = beyond_dedup(t3) + Duration::from_secs(3);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1336,7 +1336,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
 
     // x1's whole round runs hook-first; its transcript Start straggles in
     // AFTER x1 resolved, while x2's approval is still pending.
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1346,7 +1346,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
         Transport::Hook,
     );
     let t1 = beyond_dedup(t0) + Duration::from_secs(2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1356,7 +1356,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
         Transport::Hook,
     );
     let t2 = t1 + Duration::from_secs(1);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1367,7 +1367,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
     );
 
     let t3 = beyond_dedup(t2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1378,7 +1378,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
     );
     // The straggler must not have wiped x2's membership.
     let t4 = beyond_dedup(t3) + Duration::from_secs(2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1403,7 +1403,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1414,7 +1414,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
     // A rules-approved sibling runs while x1 still awaits the human.
     let t1 = beyond_dedup(t0);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1425,7 +1425,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
     // x1's denial must still resolve the (re-raised) wait as a member's End.
     let t2 = beyond_dedup(t1);
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1435,7 +1435,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
         Transport::Hook,
     );
     let t3 = beyond_dedup(t2) + Duration::from_secs(2);
-    act_end(&mut r, &mut scene, id, Some("x1"), t3, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("x1"), t3, Transport::Hook);
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1456,7 +1456,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    user_action_request_for(
         &mut r,
         &mut scene,
         id,
@@ -1466,7 +1466,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Hook,
     );
     let t1 = beyond_dedup(t0);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1476,7 +1476,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Jsonl,
     );
     let t2 = beyond_dedup(t1) + Duration::from_secs(2);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1504,7 +1504,7 @@ fn a_transcript_twin_past_the_dedup_window_counts_once() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -1513,7 +1513,7 @@ fn a_transcript_twin_past_the_dedup_window_counts_once() {
         t0,
         Transport::Hook,
     );
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,

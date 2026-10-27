@@ -6,7 +6,9 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, Reducer, STRAGGLER_TTL};
 
-use crate::{HOOK_AND_TRANSCRIPT, act_end, act_start, sess_end, start, start_as, turn_end};
+use crate::{
+    HOOK_AND_TRANSCRIPT, sess_end, start, start_as, tool_use_end, tool_use_start, turn_end,
+};
 
 #[test]
 fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
@@ -17,7 +19,7 @@ fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         id,
@@ -30,7 +32,7 @@ fn hook_session_end_blocks_reordered_trailing_event_synthesis() {
         "a reordered trailing event must not resurrect a session that just ended"
     );
 
-    act_end(
+    tool_use_end(
         &mut r,
         &mut scene,
         other,
@@ -52,7 +54,7 @@ fn hook_event_after_the_straggler_window_synthesizes_again() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         id,
@@ -419,7 +421,7 @@ fn walked_out_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentI
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let at = |s| t0 + Duration::from_secs(s);
     r.apply(scene, session_start(parent, None), at(0), Transport::Hook);
-    act_start(
+    tool_use_start(
         r,
         scene,
         parent,
@@ -434,7 +436,7 @@ fn walked_out_child(r: &mut Reducer, scene: &mut SceneState) -> (AgentId, AgentI
         at(2),
         Transport::Hook,
     );
-    act_end(r, scene, parent, Some("call_1"), at(3), Transport::Hook);
+    tool_use_end(r, scene, parent, Some("call_1"), at(3), Transport::Hook);
     let gone = at(3) + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
     r.tick(scene, at(3) + B1_CASCADE_GRACE);
     r.tick(scene, gone);
@@ -540,7 +542,7 @@ fn an_identity_or_bare_activity_re_admits_an_inferred_child_under_its_parent() {
                 Transport::Hook,
             );
         } else {
-            act_start(
+            tool_use_start(
                 &mut r,
                 &mut scene,
                 child,
@@ -579,7 +581,7 @@ fn a_readmission_under_a_parent_that_would_close_a_cycle_comes_back_parentless()
     );
     assert_eq!(scene.agents[&parent].parent_id, Some(child), "precondition");
     let back = gone + Duration::from_secs(1);
-    act_start(
+    tool_use_start(
         &mut r,
         &mut scene,
         child,
@@ -615,7 +617,7 @@ fn a_readmitted_childs_next_end_gates_from_that_end() {
                 Transport::Hook,
             );
         } else {
-            act_start(
+            tool_use_start(
                 &mut r,
                 &mut scene,
                 child,
@@ -628,7 +630,7 @@ fn a_readmitted_childs_next_end_gates_from_that_end() {
         assert!(scene.agents.contains_key(&child), "re-admitted");
 
         let dispatch = back + CHILD_END_GATE_TTL;
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             parent,
@@ -638,7 +640,7 @@ fn a_readmitted_childs_next_end_gates_from_that_end() {
             Transport::Hook,
         );
         let drain = dispatch + Duration::from_secs(1);
-        act_end(
+        tool_use_end(
             &mut r,
             &mut scene,
             parent,
@@ -702,7 +704,7 @@ fn a_known_childs_own_end_is_reported_without_as_child() {
     r.tick(&mut scene, gone);
     assert!(gone < end + STRAGGLER_TTL);
     let straggle = |r: &mut Reducer, scene: &mut SceneState, at| {
-        act_start(r, scene, child, None, Some("read"), at, Transport::Hook);
+        tool_use_start(r, scene, child, None, Some("read"), at, Transport::Hook);
     };
     straggle(&mut r, &mut scene, gone);
     assert!(
@@ -737,7 +739,7 @@ fn inside_the_end_gate_a_hook_activity_readmits_an_ended_child_only_under_its_pa
                 stop + EXIT_GRACE_WINDOW + Duration::from_secs(1),
             );
         }
-        act_start(
+        tool_use_start(
             &mut r,
             &mut scene,
             child,
