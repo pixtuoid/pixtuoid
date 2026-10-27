@@ -17,7 +17,7 @@ const TUI: tui::Tui = tui::Tui {
     cancel: &[],
     // `src/slash-commands/builtin-lifecycle.ts:835-839`.
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Renders,
 };
 
 pub(crate) const PROFILE: Profile = Profile {

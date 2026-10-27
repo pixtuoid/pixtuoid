@@ -624,10 +624,8 @@ impl Scenario {
     /// Why a leg on `windows` doesn't run it, if it doesn't.
     pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
-            Surface::Tui { row, .. } if windows && !row.renders_under_conpty => {
-                Some("its TUI paints nothing under ConPTY")
-            }
-            _ => None,
+            Surface::Tui { row, .. } if windows => row.conpty.not_run(),
+            Surface::Tui { .. } | Surface::Headless => None,
         }
     }
 }

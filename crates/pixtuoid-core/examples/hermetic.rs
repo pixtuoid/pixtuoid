@@ -2416,7 +2416,8 @@ mod run {
             let r = report(&Versions::Pinned, None, &[], &[], &not_run(&every, true));
             assert!(
                 r.ends_with(
-                    "\nNot run here: grok/permission (its TUI paints nothing under ConPTY) \
+                    "\nNot run here: opencode/cancel (its TUI was never run under ConPTY) \
+                     grok/permission (its TUI paints nothing under ConPTY) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"

@@ -27,7 +27,7 @@ const TUI: tui::Tui = tui::Tui {
     cancel: &[],
     // `/exit` is its alias (`internal/frontend/cli/slash_registry.go:69`).
     quit: &[tui::Key::Text("/quit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Renders,
 };
 
 pub(crate) const PROFILE: Profile = Profile {

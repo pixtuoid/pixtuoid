@@ -33,7 +33,7 @@ const TUI: tui::Tui = tui::Tui {
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     // It clears the alternate screen and paints nothing more (`hermetic.yml`'s
     // Windows leg, run 39177894288's `grok/permission/tui.log`).
-    renders_under_conpty: false,
+    conpty: tui::ConPty::PaintsNothing,
 };
 
 /// The registration a grok envelope's `hookEventName` answers to: the wire

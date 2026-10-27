@@ -30,7 +30,7 @@ const TUI: tui::Tui = tui::Tui {
     // while a turn runs (`tui/src/bottom_pane/mod.rs:1822-1835`).
     cancel: &[tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Renders,
 };
 
 pub(crate) const PROFILE: Profile = Profile {

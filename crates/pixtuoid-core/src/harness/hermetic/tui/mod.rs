@@ -140,7 +140,30 @@ pub struct Tui {
     pub(crate) cancel: &'static [Key],
     /// What ends the session the way a user would, so its end hook fires.
     pub(crate) quit: &'static [Key],
-    pub(crate) renders_under_conpty: bool,
+    pub(crate) conpty: ConPty,
+}
+
+/// What a Windows leg has seen the TUI do under ConPTY.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ConPty {
+    /// It renders, and a Windows leg drives it.
+    Renders,
+    /// It paints nothing, so no Windows leg drives it.
+    PaintsNothing,
+    /// No Windows leg has driven it yet, so none does until one shows that
+    /// it renders.
+    Unverified,
+}
+
+impl ConPty {
+    /// Why a Windows leg doesn't drive it, if it doesn't.
+    pub(crate) const fn not_run(self) -> Option<&'static str> {
+        match self {
+            Self::Renders => None,
+            Self::PaintsNothing => Some("its TUI paints nothing under ConPTY"),
+            Self::Unverified => Some("its TUI was never run under ConPTY"),
+        }
+    }
 }
 
 impl Tui {

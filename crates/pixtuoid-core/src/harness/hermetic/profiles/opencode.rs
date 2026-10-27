@@ -29,7 +29,7 @@ const TUI: tui::Tui = tui::Tui {
     // (`packages/tui/src/component/prompt/index.tsx:516-527`).
     cancel: &[tui::Key::Esc, tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Unverified,
 };
 
 pub(crate) const PROFILE: Profile = Profile {

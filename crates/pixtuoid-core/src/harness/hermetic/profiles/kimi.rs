@@ -24,7 +24,7 @@ const TUI: tui::Tui = tui::Tui {
     }],
     cancel: &[],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Renders,
 };
 
 pub(crate) const PROFILE: Profile = Profile {

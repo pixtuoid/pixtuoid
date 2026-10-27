@@ -30,7 +30,7 @@ const TUI: tui::Tui = tui::Tui {
     // A graceful shutdown, which fires `session_end` (`docs/HOOKS.md:236`,
     // `crates/tui/src/commands/groups/core/exit.rs:9-14`).
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
-    renders_under_conpty: true,
+    conpty: tui::ConPty::Renders,
 };
 
 pub(crate) const PROFILE: Profile = Profile {
