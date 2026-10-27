@@ -47,8 +47,8 @@ pub struct Merged {
     pub steps: Vec<Step>,
 }
 
-/// A line that decoded to events, and when its CLI wrote it: in
-/// `at..=at + within`.
+/// A line that decoded to events, and when its CLI wrote it: exactly `at` when
+/// `within` is zero, else in `at..at + within`.
 #[derive(Debug)]
 struct Written {
     line: usize,
@@ -163,9 +163,10 @@ fn bounds(hooks: &[Written], transcript: &[Written]) -> Vec<(usize, usize)> {
         .iter()
         .map(|t| {
             let latest = t.at + t.within + DEFAULT_POLL_INTERVAL;
+            let reachable = |h: &&Written| h.at < latest || (t.within.is_zero() && h.at == latest);
             (
                 hooks.iter().filter(|h| h.at < t.at).count(),
-                hooks.iter().filter(|h| h.at <= latest).count(),
+                hooks.iter().filter(reachable).count(),
             )
         })
         .collect();
@@ -387,6 +388,27 @@ mod tests {
             ],
             "the interval's last instant is in it"
         );
+    }
+
+    #[test]
+    fn only_an_exact_stamps_deadline_admits_a_hook() {
+        let written = |at: SystemTime, within| Written {
+            line: 0,
+            at,
+            within,
+            events: Vec::new(),
+        };
+        let tick = Duration::from_nanos(1);
+        for (within, last_in) in [
+            (Duration::ZERO, Duration::ZERO),
+            (Duration::from_secs(1), tick),
+        ] {
+            let line = written(SystemTime::UNIX_EPOCH + Duration::from_secs(1), within);
+            let deadline = line.at + within + DEFAULT_POLL_INTERVAL;
+            let hooks = [deadline - last_in, deadline - last_in + tick]
+                .map(|at| written(at, Duration::ZERO));
+            assert_eq!(bounds(&hooks, &[line]), [(0, 1)], "{within:?}");
+        }
     }
 
     #[test]

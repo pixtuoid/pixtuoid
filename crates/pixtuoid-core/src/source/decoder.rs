@@ -797,7 +797,7 @@ mod tests {
     }
 
     #[test]
-    fn rfc3339_shape_gate_rejects_each_separator_independently() {
+    fn rfc3339_rejects_each_wrong_separator() {
         for bad in [
             "2026x07-16T12:00:05Z",
             "2026-07x16T12:00:05Z",
