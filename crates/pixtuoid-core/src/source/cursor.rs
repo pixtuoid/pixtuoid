@@ -21,11 +21,12 @@
 //!   of the session. A post's id is kept: it equals its start's, and an id-less
 //!   start's item matches any keyed end. Pinned by
 //!   `only_a_post_keeps_its_tool_use_id`.
-//! - **cursor runs its hook command 4-6x per event, and only ONE keeps the
-//!   `PIXTUOID_SOURCE=` env prefix** its install writes. Unstamped copies fall to
-//!   the claude-code default and bail on these camelCase values, so `decoder`'s
-//!   cross-fire guard drops them on `cursor_version`. Lossless — the one stamped
-//!   copy carries the whole arc (`cursor/tool-failure` pins it byte for byte).
+//! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
+//!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
+//!   user who connected both CLIs gets each cursor event again through CC's shim,
+//!   stamped `claude-code`, or unstamped by an install without the env prefix.
+//!   `decoder`'s cross-fire guard drops every one on `cursor_version`. Lossless —
+//!   the `cursor`-stamped copy carries the whole arc.
 //! - **Subagents render FLAT: the parent-link is genuinely absent.** Each child
 //!   is an INDEPENDENT session, `subagentStart`/`subagentStop` never fire
 //!   (capture-verified: 0), the `Task` dispatch carries only the PARENT's id, and

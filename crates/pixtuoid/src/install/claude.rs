@@ -194,8 +194,7 @@ pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
         // CC's Unix entry carries no `args` key, so it runs through a SHELL and
         // the env prefix every other source uses works here too. It was bare for
         // years, which made "no `_pixtuoid_source`" mean "probably CC" — the
-        // guess `decoder` still has to make for installs written before this, and
-        // the reason an unstamped cursor invocation landed on CC's arms at all.
+        // guess `decoder` still has to make for installs written before this.
         let p = if explicit {
             merge::hook_path_str(resolved)?
         } else {

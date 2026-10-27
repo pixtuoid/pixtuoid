@@ -283,9 +283,9 @@ fn decodes_to_nothing(
         tracing::trace!(source, "dropping grok cross-fired hook envelope");
         return true;
     }
-    // cursor's own unstamped duplicates, counted in `source/cursor.rs`'s module doc.
-    if cc && obj.contains_key("cursor_version") && !obj.contains_key("_pixtuoid_source") {
-        tracing::trace!("dropping an unstamped cursor hook invocation");
+    // cursor's duplicates through Claude Code's hooks, `source/cursor.rs`'s module doc.
+    if cc && obj.contains_key("cursor_version") {
+        tracing::trace!("dropping a cursor hook envelope on the claude-code channel");
         return true;
     }
     false
@@ -1903,23 +1903,31 @@ mod tests {
         );
     }
 
-    /// cursor's UNSTAMPED invocations, which used to reach CC's arms and bail.
+    /// cursor's envelopes on the claude-code channel, which used to reach CC's
+    /// arms and bail.
     #[test]
-    fn an_unstamped_cursor_invocation_is_dropped_quietly() {
+    fn a_cursor_envelope_on_the_claude_code_channel_is_dropped_quietly() {
         let unstamped = json!({
             "hook_event_name": "preToolUse",
             "session_id": "s1",
-            "cursor_version": "2026.08.11-e8db854",
+            "cursor_version": "2026.10.22-27dcf5f",
             "workspace_roots": ["/w"],
             "tool_name": "Read",
             "tool_use_id": "t1",
         });
-        assert!(
-            decode_hook_payload(unstamped.clone())
-                .expect("must not error")
-                .is_empty(),
-            "an unstamped cursor envelope is a duplicate of the stamped one"
-        );
+        let mut cc_stamped = unstamped.clone();
+        cc_stamped["_pixtuoid_source"] = json!(crate::source::claude_code::SOURCE_NAME);
+        for (copy, envelope) in [
+            ("unstamped", &unstamped),
+            ("claude-code-stamped", &cc_stamped),
+        ] {
+            assert!(
+                decode_hook_payload(envelope.clone())
+                    .expect("must not error")
+                    .is_empty(),
+                "a {copy} cursor envelope is a duplicate of the cursor-stamped one"
+            );
+        }
 
         // The STAMPED copy is the one that must survive — dropping both would
         // erase cursor from the office entirely.
