@@ -21,9 +21,10 @@ use tokio::sync::{Notify, mpsc, watch};
 
 use crate::graphics::Plan;
 
-/// The reducer publishes a fresh `Arc<SceneState>` on every mutation through this watch
-/// channel. Consumers (renderer, headless summary loop) hold a `Receiver`, call
-/// `borrow()` for an O(1) pointer read, and never block the writer.
+/// A painter's (TUI, floating) scene feed: [`SceneSink::Latest`](pipeline::SceneSink)
+/// publishes a fresh `Arc<SceneState>` after each change; the painter holds a
+/// `Receiver`, calls `borrow()` for an O(1) pointer read, and never blocks the
+/// writer.
 pub(crate) type SceneRx = watch::Receiver<Arc<SceneState>>;
 
 /// Fallback desk capacity when the terminal cannot be queried (e.g. headless mode).

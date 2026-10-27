@@ -109,7 +109,6 @@ fn full_scene_serialization_is_stable() {
         at(5),
         Transport::Hook,
     );
-    // Its SessionEnd populates `exiting_at`, the scene's Option<SystemTime>.
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -143,6 +142,7 @@ fn full_scene_serialization_is_stable() {
         at(7),
         Transport::Hook,
     );
+    // Populates `exiting_at`: the snapshot's one non-null Option<SystemTime>.
     r.apply(
         &mut scene,
         AgentEvent::SessionEnd {

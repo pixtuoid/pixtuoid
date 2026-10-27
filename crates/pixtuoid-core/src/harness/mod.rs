@@ -175,13 +175,13 @@ impl Driven {
 /// is about to assert on.
 const DEFAULT_NOW_EPOCH_SECS: u64 = 1_800_000_000;
 
-/// How far past `now` the settle tick runs: past a deferred b1 cascade's
+/// How far past `now` the cascade tick runs: past a deferred b1 cascade's
 /// grace, so it fires, and inside the exit grace, so a wire carrying its own
 /// `SessionEnd` still leaves the slot to observe.
-const SETTLE: Duration = Duration::from_secs(3);
+const CASCADE_TICK: Duration = Duration::from_secs(3);
 const _: () = assert!(
-    crate::state::reducer::B1_CASCADE_GRACE.as_nanos() < SETTLE.as_nanos()
-        && SETTLE.as_nanos() < crate::state::reducer::EXIT_GRACE_WINDOW.as_nanos()
+    crate::state::reducer::B1_CASCADE_GRACE.as_nanos() < CASCADE_TICK.as_nanos()
+        && CASCADE_TICK.as_nanos() < crate::state::reducer::EXIT_GRACE_WINDOW.as_nanos()
 );
 
 /// PER-FLOOR desk capacity for the driven scene. Registration past the TOTAL is
@@ -394,14 +394,14 @@ impl Drive {
         self.fold(d);
     }
 
-    /// Each event is observed BEFORE and AFTER a settle tick, so a transient
+    /// Each event is observed BEFORE and AFTER a cascade tick, so a transient
     /// class a later event resolves still counts as reached.
     fn fold(&self, d: &mut Driven) {
         let mut reducer = Reducer::new();
         for ev in &d.events {
             reducer.apply(&mut d.scene, ev.clone(), self.now, self.transport);
             note_reached(&d.scene, &mut d.reaches);
-            reducer.tick(&mut d.scene, self.now + SETTLE);
+            reducer.tick(&mut d.scene, self.now + CASCADE_TICK);
             note_reached(&d.scene, &mut d.reaches);
         }
     }

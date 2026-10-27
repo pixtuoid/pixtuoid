@@ -3,9 +3,8 @@
 //! `parent_id` lives in [`super::scope`].
 //!
 //! **Scope:** these fns mutate ONE `AgentSlot` only. The cross-slot correlation
-//! state — `tasks_in_flight` (Tasks in flight), the action requests (permission),
-//! the hook-wins dedup — stays in the reducer: it spans slots and is not the
-//! FSM. The reducer decides *whether* and *which* transition fires; these fns
+//! state — `tasks_in_flight`, the action requests (permission), the hook-wins
+//! dedup — stays in the reducer: it spans slots and is not the FSM. The reducer decides *whether* and *which* transition fires; these fns
 //! decide *how* the slot changes.
 
 use std::sync::Arc;

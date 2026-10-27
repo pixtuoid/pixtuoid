@@ -11,8 +11,6 @@
 //! - **socket resolution + `ConnectedSources`**: both values outlive the boot (the
 //!   Sources panel displays the path and mutates the live set), so the callers own
 //!   them and hand in a clone.
-//! - **the [`SceneSink`]**: a painter's latest-value watch, or headless's
-//!   transition log.
 //!
 //! Requires an ambient tokio runtime context — `run_async` executes inside
 //! `block_on`, floating holds an `rt.enter()` guard — so the `tokio::spawn`s here

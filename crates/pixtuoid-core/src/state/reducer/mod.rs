@@ -524,7 +524,7 @@ impl Reducer {
     /// The `ActivityStart` arm, for a Start the pre-pass tracker left to it.
     /// A start the agent's action request holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a Waiting slot has no item to set, and the hook resume
+    /// only counts: a Waiting slot shows no call, and the hook resume
     /// re-labels from the wire's `toolName` (a label-only cost, pinned by
     /// `the_approval_resume_labels_from_the_wire_tool_name`).
     fn apply_activity_start(
@@ -596,8 +596,8 @@ impl Reducer {
 
     /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it, and
     /// the `TurnEnd` arm. It settles the slot when it answers its request, or
-    /// ends the item it runs: the call it names, or any when either side names
-    /// none.
+    /// ends the call the slot shows: the one it names, or any when either side
+    /// names none.
     fn apply_end(
         &mut self,
         scene: &mut SceneState,
@@ -623,17 +623,17 @@ impl Reducer {
             if untracked_task && child_end_inference(slot).dispatch_end_ends_child(false) {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
-            let ends_item = match (&slot.state, ended) {
+            let ends_shown_call = match (&slot.state, ended) {
                 (
                     ActivityState::Active {
-                        tool_use_id: Some(item),
+                        tool_use_id: Some(shown),
                         ..
                     },
                     Ended::Call(call),
-                ) => **item == *call,
+                ) => **shown == *call,
                 (state, _) => matches!(state, ActivityState::Active { .. }),
             };
-            if resolved || ends_item {
+            if resolved || ends_shown_call {
                 fsm::settle(slot, SettleCtx { task_in_flight }, now);
             }
             slot.last_event_at = now;
