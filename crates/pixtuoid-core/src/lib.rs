@@ -76,7 +76,7 @@ pub use sprite::{Frame, Palette, Pixel, Rgb, RgbBuffer, Sprite, WriteEpoch};
 pub use state::reducer::Reducer;
 pub use state::{
     ActivityState, AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState, SlotLabel,
-    ToolKind, TurnItem,
+    ToolKind, ToolUse,
 };
 pub use walkable::{OccupancyOverlay, WalkableMask};
 

@@ -367,7 +367,7 @@ pub(crate) fn work_glow_tint(
 mod tests {
     use super::*;
     use crate::character::test_support::{color_of, make_slot, make_slot_cwd, override_of};
-    use pixtuoid_core::state::{ActivityState, ToolKind, TurnItem};
+    use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
     use std::sync::Arc;
 
     #[test]
@@ -429,7 +429,7 @@ mod tests {
             make_slot(
                 id,
                 ActivityState::Running {
-                    item: Some(TurnItem::ToolUse {
+                    item: Some(ToolUse {
                         tool_use_id: None,
                         detail: detail.map(|d| Arc::from(d.display())),
                         kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
@@ -476,7 +476,7 @@ mod tests {
         let edit = make_slot(
             id,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: None,
                     detail: None,
                     kind: ToolKind::Edit,

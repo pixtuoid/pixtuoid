@@ -2644,6 +2644,70 @@ async fn oversized_attach_re_emits_the_last_turn_bracket() {
     }
 }
 
+/// The skip's start goes ahead of its turn's in-flight dispatch, so the
+/// dispatch registers in that turn and the turn's keyed end retires it.
+#[tokio::test]
+async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
+    let started = serde_json::json!({"type": "event_msg",
+        "payload": {"type": "task_started", "turn_id": "t2"}});
+    let spawn = serde_json::json!({"type": "response_item", "payload": {
+        "type": "function_call", "name": "spawn_agent", "arguments": "", "call_id": "call_s"}});
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rollout-big.jsonl");
+    let tail = [started.to_string() + "\n", spawn.to_string() + "\n"];
+    tokio::fs::write(&path, oversized_body(&tail))
+        .await
+        .unwrap();
+    let (cursors, seen) = Default::default();
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::codex::decode_codex_line,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let at = |is: &dyn Fn(&AgentEvent) -> bool| events.iter().position(|(_, e)| is(e));
+    let start = at(&|e| matches!(e, AgentEvent::TurnStart { .. })).expect("t2's start");
+    let dispatch = at(
+        &|e| matches!(e, AgentEvent::ToolUseStart { tool_use_id: Some(c), .. } if c == "call_s"),
+    )
+    .expect("the in-flight dispatch");
+    assert!(start < dispatch, "{events:?}");
+
+    let (mut r, mut scene) = (crate::Reducer::new(), crate::SceneState::uniform(4));
+    let t0 = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = events[start].1.agent_id();
+    // The walk's own registration is under its `test` source and deriver; the
+    // reducer opens a turn only for a codex slot.
+    let codex = AgentEvent::SessionStart {
+        agent_id: id,
+        source: crate::source::codex::SOURCE_NAME.into(),
+        session_id: "s".into(),
+        cwd: "/repo".into(),
+        parent_id: None,
+    };
+    r.apply(&mut scene, codex, t0, Transport::Jsonl);
+    for (from, ev) in events {
+        r.apply(&mut scene, ev, t0, from);
+    }
+    assert!(
+        r.newest_in_flight(&id).is_some(),
+        "the dispatch is in flight"
+    );
+    let end = AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: Some(crate::state::TurnKey::Id("t2".into())),
+    };
+    r.apply(&mut scene, end, t0, Transport::Jsonl);
+    assert_eq!(
+        r.newest_in_flight(&id),
+        None,
+        "t2's end retires its dispatch"
+    );
+}
+
 #[tokio::test]
 async fn oversized_attach_matched_task_is_not_seeded() {
     let dir = tempfile::tempdir().unwrap();

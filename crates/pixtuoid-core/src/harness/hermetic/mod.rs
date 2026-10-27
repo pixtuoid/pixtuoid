@@ -1472,10 +1472,7 @@ mod tests {
         crate::harness::jsonl_files_under(dir)
             .iter()
             .flat_map(|file| {
-                let text = std::fs::read_to_string(file).expect("a committed capture reads");
-                text.lines()
-                    .filter_map(|l| serde_json::from_str(l).ok())
-                    .collect::<Vec<_>>()
+                crate::harness::captures::json_lines(file).expect("a committed capture reads")
             })
             .collect()
     }

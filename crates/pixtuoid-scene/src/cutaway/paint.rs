@@ -5514,7 +5514,7 @@ mod tests {
                 &|c, a| {
                     c.glow = crate::sim::CharacterGlow::Work;
                     a.state = pixtuoid_core::state::ActivityState::Running {
-                        item: Some(pixtuoid_core::state::TurnItem::ToolUse {
+                        item: Some(pixtuoid_core::state::ToolUse {
                             tool_use_id: None,
                             detail: None,
                             kind: pixtuoid_core::state::ToolKind::Read,

@@ -10,7 +10,7 @@ use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, el
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
-use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnItem, TurnKey, fsm, scope};
+use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, ToolUse, TurnKey, fsm, scope};
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
@@ -82,13 +82,13 @@ fn stale_threshold_with_caps(
         // a Generic tool spelling "Delegating" is not a delegation.
         ActivityState::Running {
             item:
-                Some(TurnItem::ToolUse {
+                Some(ToolUse {
                     kind: ToolKind::Task,
                     ..
                 }),
         } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_BLOCKED_TIMEOUT,
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { .. }),
+            item: Some(ToolUse { .. }),
         } => STALE_TOOL_TIMEOUT,
         // The model's silence mid-turn may last as long as a tool's, and a
         // turn whose end was lost may hide a human on a break.
@@ -596,7 +596,7 @@ impl Reducer {
     ) {
         // Derive the category from the typed detail BEFORE it is erased to
         // the HUD display string.
-        let item = TurnItem::ToolUse {
+        let item = ToolUse {
             tool_use_id: tool_use_id.as_deref().map(Arc::from),
             detail: detail.as_ref().map(|d| Arc::<str>::from(d.display())),
             kind: detail
@@ -661,7 +661,7 @@ impl Reducer {
         tool_name: Option<&str>,
         turn: Option<TurnKey>,
         on: Transport,
-        item: Option<TurnItem>,
+        item: Option<ToolUse>,
     ) {
         let turn = turn.or_else(|| self.corr.turns.open(&agent_id).cloned());
         self.corr.action_requests.register(
@@ -702,7 +702,7 @@ impl Reducer {
                     (
                         ActivityState::Running {
                             item:
-                                Some(TurnItem::ToolUse {
+                                Some(ToolUse {
                                     tool_use_id: Some(shown),
                                     ..
                                 }),
@@ -712,7 +712,7 @@ impl Reducer {
                     (
                         ActivityState::Running {
                             item:
-                                Some(TurnItem::ToolUse {
+                                Some(ToolUse {
                                     tool_use_id: Some(_),
                                     ..
                                 }),
@@ -818,7 +818,7 @@ impl Reducer {
             let untracked_task = matches!(
                 slot.state,
                 ActivityState::Running {
-                    item: Some(TurnItem::ToolUse {
+                    item: Some(ToolUse {
                         kind: ToolKind::Task,
                         tool_use_id: None,
                         ..
@@ -846,6 +846,12 @@ impl Reducer {
             task_in_flight: self.corr.any_task_in_flight(id),
             turn_open: self.corr.turns.open(id).is_some(),
         }
+    }
+
+    /// The item of `id`'s newest call still in flight.
+    #[cfg(test)]
+    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<ToolUse> {
+        self.corr.action_requests.newest_in_flight(id)
     }
 
     fn apply_user_action_request(
@@ -1478,13 +1484,13 @@ impl Reducer {
                         let shown_drained = matches!(
                             &slot.state,
                             ActivityState::Running {
-                                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. }),
+                                item: Some(ToolUse { tool_use_id: Some(t), .. }),
                             } if **t == **tuid
                         );
                         if matches!(
                             slot.state,
                             ActivityState::Running {
-                                item: Some(TurnItem::ToolUse {
+                                item: Some(ToolUse {
                                     kind: ToolKind::Task,
                                     ..
                                 })

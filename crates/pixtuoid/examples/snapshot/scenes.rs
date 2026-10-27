@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use pixtuoid_core::source::AgentEvent;
-use pixtuoid_core::state::{ActivityState, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, Reducer, SceneState, Transport};
 use tokio::sync::{RwLock, mpsc};
 
@@ -194,7 +194,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "running",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_a".into()),
                     detail: Some("Write: src/foo.rs".into()),
                     kind: ToolKind::Edit,
@@ -224,7 +224,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "couch-act",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_c".into()),
                     detail: Some("Read: README.md".into()),
                     kind: ToolKind::Read,
@@ -244,7 +244,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "floor-act",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_d".into()),
                     detail: Some("Bash: cargo test".into()),
                     kind: ToolKind::Bash,
@@ -262,7 +262,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "floor-act2",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_e".into()),
                     detail: Some("Grep: TODO".into()),
                     kind: ToolKind::Search,
@@ -525,7 +525,7 @@ pub(crate) fn meeting_scene(
 
 pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
     use pixtuoid_core::source::{claude_code, codex, reasonix};
-    use pixtuoid_core::state::{ActivityState, ToolKind, TurnItem};
+    use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
     use std::time::Duration as D;
 
     // Named to satisfy clippy::type_complexity (a 6-field tuple trips the lint):
@@ -548,7 +548,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
             "cc·pixtuoid",
             "/demo/dash_cc_root.jsonl",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu0".into()),
                     detail: Some("Edit: reducer.rs".into()),
                     kind: ToolKind::Edit,
@@ -562,7 +562,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
             "code-explorer",
             "/demo/dash_cc_sub1.jsonl",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu1".into()),
                     detail: Some("Grep: TODO".into()),
                     kind: ToolKind::Search,

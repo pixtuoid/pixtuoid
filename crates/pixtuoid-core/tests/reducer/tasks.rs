@@ -5,7 +5,7 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::source::decoder::decode_hook_payload;
 use pixtuoid_core::source::{AgentEvent, ToolDetail, Transport};
 use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, HOOK_WINS_WINDOW, Reducer};
-use pixtuoid_core::state::{ActivityState, SceneState, TurnItem};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolUse};
 use serde_json::json;
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
 fn assert_delegating(scene: &SceneState, id: AgentId, msg: &str) {
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(detail.as_deref(), Some("Delegating"), "{msg}");
         }
@@ -58,7 +58,7 @@ fn hook_activity_during_a_task_in_flight_is_suppressed() {
     let slot = scene.agents.get(&parent).unwrap();
     match &slot.state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(detail.as_deref(), Some("Delegating"));
         }
@@ -177,7 +177,7 @@ fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
 
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(
                 detail.as_deref(),
@@ -220,7 +220,7 @@ fn jsonl_event_after_dedup_window_is_applied() {
     let slot = scene.agents.get(&id).unwrap();
     match &slot.state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => assert_eq!(
             detail.as_deref(),
             Some("jsonl-side"),
@@ -267,7 +267,7 @@ fn hook_wins_dedup_drops_jsonl_duplicate_within_window() {
     );
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(detail.as_deref(), Some("Edit: hook.rs"));
         }
@@ -580,7 +580,7 @@ fn a_task_end_decoded_before_its_start_does_not_reopen_the_call() {
         tool_use_end(&mut r, &mut scene, id, None, own_end, Transport::Hook);
         let shown = match &scene.agents[&id].state {
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { detail, .. }),
+                item: Some(ToolUse { detail, .. }),
             } => detail.as_deref(),
             ActivityState::Idle => None,
             other => panic!("expected Running or Idle, got {other:?}"),
@@ -1143,7 +1143,7 @@ fn a_task_drain_leaves_the_parents_own_call_shown() {
     r.tick(&mut scene, drained + Duration::from_secs(2));
     match &scene.agents[&parent].state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
         other => panic!("expected the parent's own call, got {other:?}"),
     }
@@ -1197,7 +1197,7 @@ fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
     let slot = &scene.agents[&parent];
     match &slot.state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { tool_use_id, .. }),
+            item: Some(ToolUse { tool_use_id, .. }),
         } => {
             assert_eq!(tool_use_id.as_deref(), Some("task-a"));
         }
@@ -1651,7 +1651,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
     );
     match &scene.agents.get(&parent).unwrap().state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(
                 detail.as_deref(),
@@ -2059,7 +2059,7 @@ fn a_named_childs_parent_shows_its_own_tool_during_a_task() {
     );
     match &scene.agents[&parent].state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => assert_eq!(detail.as_deref(), Some("Bash: ls")),
         other => panic!("expected the parent's own tool, got {other:?}"),
     }

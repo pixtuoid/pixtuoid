@@ -7,7 +7,7 @@ use crate::audio::{AudioHandle, drain_frames};
 fn running_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
     let mut s = slot(AgentId::from_transcript_path(path), floor_idx, desk, t0());
     s.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: Some(Arc::from("t")),
             detail: Some(Arc::from("Edit")),
             kind: ToolKind::from_display("Edit"),

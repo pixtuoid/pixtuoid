@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, TurnItem};
+use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolUse};
 use pixtuoid_core::{AgentSlot, ToolKind};
 
 use crate::atmosphere::SkyTones;
@@ -463,7 +463,7 @@ pub(crate) enum ScreenWork {
 pub(crate) fn screen_work(agent: &AgentSlot) -> Option<ScreenWork> {
     match &agent.state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { kind, .. }),
+            item: Some(ToolUse { kind, .. }),
         } => Some(ScreenWork::ToolUse(*kind)),
         ActivityState::Running { item: None } => Some(ScreenWork::Turn),
         ActivityState::Idle | ActivityState::RequiresAction { .. } => None,

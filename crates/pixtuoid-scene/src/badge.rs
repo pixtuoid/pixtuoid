@@ -191,7 +191,7 @@ mod tests {
     use super::{BadgeTone, Namesakes, badge_hue, disambig_suffix, tone_of, truncate_label};
     use pixtuoid_core::AgentId;
     use pixtuoid_core::state::{
-        ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, TurnItem,
+        ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
     };
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -229,7 +229,7 @@ mod tests {
 
     fn running() -> ActivityState {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: Some(Arc::from("t")),
                 detail: Some(Arc::from("Edit")),
                 kind: ToolKind::Edit,

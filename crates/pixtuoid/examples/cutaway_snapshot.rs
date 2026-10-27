@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
-use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::floor::{FloorMeta, FloorSession};
 use pixtuoid_scene::layout::Size;
@@ -39,7 +39,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
         let id = AgentId::from_transcript_path(&format!("/cutaway/a{i}.jsonl"));
         let state = match i % 4 {
             0 => ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some(format!("tu_{i}").into()),
                     detail: Some("Edit: src/lib.rs".into()),
                     kind: ToolKind::Edit,

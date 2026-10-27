@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
-use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
@@ -32,7 +32,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         (
             "claude-code",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_a".into()),
                     detail: Some("Write: src/foo.rs".into()),
                     kind: ToolKind::Edit,
@@ -49,7 +49,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         (
             "cc",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_d".into()),
                     detail: Some("Bash: cargo test".into()),
                     kind: ToolKind::Bash,
@@ -60,7 +60,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         (
             "opencode",
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some("tu_e".into()),
                     detail: Some("Grep: TODO".into()),
                     kind: ToolKind::Search,

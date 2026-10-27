@@ -4,7 +4,7 @@ use super::*;
 use crate::panels::ui_state::RenderFrames;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::state::{
-    ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, TurnItem,
+    ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
 };
 use pixtuoid_scene::anim::PAINT_FRAME_MS;
 use pixtuoid_scene::display::PetHover;
@@ -110,7 +110,7 @@ pub(super) fn idle(id: &str, desk: usize, started: SystemTime) -> AgentSlot {
 pub(super) fn running(id: &str, desk: usize, detail: &str, started: SystemTime) -> AgentSlot {
     let mut s = idle(id, desk, started);
     s.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: Some(Arc::from("t")),
             detail: Some(Arc::from(detail)),
             kind: ToolKind::from_display(detail),

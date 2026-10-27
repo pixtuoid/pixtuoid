@@ -300,7 +300,7 @@ pub(crate) fn sit_down_as(
     id: pixtuoid_core::AgentId,
 ) -> (SceneLayout, OfficeArt, Vec<SimFrame>, crate::layout::Point) {
     use crate::floor::{FloorMeta, FloorSession};
-    use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolKind, TurnItem};
+    use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, ToolKind, ToolUse};
     use std::time::{Duration, SystemTime};
     const LOGICAL: (u16, u16) = (160, 96);
     let meta = FloorMeta::ground();
@@ -324,7 +324,7 @@ pub(crate) fn sit_down_as(
             ..make_slot(
                 id,
                 ActivityState::Running {
-                    item: Some(TurnItem::ToolUse {
+                    item: Some(ToolUse {
                         tool_use_id: None,
                         detail: None,
                         kind: ToolKind::Edit,

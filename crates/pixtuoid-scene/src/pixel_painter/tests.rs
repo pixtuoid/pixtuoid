@@ -22,7 +22,7 @@ use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_st
 use pixtuoid_core::sprite::Frame;
 use pixtuoid_core::sprite::format::Piece;
 use pixtuoid_core::state::{
-    ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, TurnItem,
+    ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, ToolUse,
 };
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -929,7 +929,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
     slot.desk_index = GlobalDeskIndex(north);
     slot.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: None,
             detail: None,
             kind: ToolKind::Edit,
@@ -1079,7 +1079,7 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     let editing = make_slot(
         id,
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: None,
                 detail: None,
                 kind: ToolKind::Edit,
@@ -4525,7 +4525,7 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
     );
 
     scene.agents.get_mut(&id).expect("slot").state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: None,
             detail: None,
             kind: ToolKind::Other,
@@ -5699,7 +5699,7 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
     let typing = make_slot(
         id,
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: None,
                 detail: Some(Arc::from("Edit src/main.rs")),
                 kind: ToolKind::Edit,

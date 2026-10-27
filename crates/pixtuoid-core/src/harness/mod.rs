@@ -25,7 +25,7 @@ use serde_json::Value;
 
 use crate::source::decoder::{LineDecoder, decode_hook_payload, display_safe};
 use crate::source::registry;
-use crate::state::{ActivityState, SceneState, ToolKind, TurnItem};
+use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
 
 mod captures;
@@ -493,13 +493,13 @@ fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
         let r = match &slot.state {
             ActivityState::Running {
                 item:
-                    Some(TurnItem::ToolUse {
+                    Some(ToolUse {
                         kind: ToolKind::Task,
                         ..
                     }),
             } => Reach::Delegating,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { .. }),
+                item: Some(ToolUse { .. }),
             } => Reach::Running,
             ActivityState::Running { item: None } => Reach::RunningNoItem,
             ActivityState::RequiresAction { .. } => Reach::RequiresAction,

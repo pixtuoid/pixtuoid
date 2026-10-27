@@ -626,7 +626,7 @@ fn dashboard_renders_requires_action_reason_and_running_without_detail() {
     let mut a = idle("/h/a.jsonl", 1, t0());
     a.label = "cc\u{b7}act".into();
     a.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: Some(Arc::from("t")),
             detail: None,
             kind: ToolKind::Other,

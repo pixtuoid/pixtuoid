@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::AgentId;
 use crate::source::{Resolution, Transport};
-use crate::state::{TurnItem, TurnKey};
+use crate::state::{ToolUse, TurnKey};
 
 /// What an end names.
 #[derive(Clone, Copy, Debug)]
@@ -62,7 +62,7 @@ pub(crate) struct PendingStart {
     pub(crate) turn: Option<TurnKey>,
     pub(crate) on: Transport,
     /// The item its start shows; `None` for a pre-use, which starts nothing.
-    pub(crate) item: Option<TurnItem>,
+    pub(crate) item: Option<ToolUse>,
 }
 
 /// A pending call, once per id however many of its starts arrive: a pre-use
@@ -74,7 +74,7 @@ struct Pending {
     turn: Option<TurnKey>,
     seen_on: Vec<Transport>,
     /// What its start showed, once it started: the call is in flight.
-    item: Option<TurnItem>,
+    item: Option<ToolUse>,
 }
 
 #[derive(Debug)]
@@ -340,7 +340,7 @@ impl ActionRequests {
     }
 
     /// The item of `id`'s newest call that started and has not ended.
-    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<TurnItem> {
+    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<ToolUse> {
         self.pending
             .get(id)?
             .iter()
@@ -470,7 +470,7 @@ mod tests {
 
     fn started(call: &str) -> PendingStart {
         PendingStart {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: Some(call.into()),
                 detail: None,
                 kind: crate::state::ToolKind::Other,
@@ -480,9 +480,7 @@ mod tests {
     }
 
     fn in_flight(reqs: &ActionRequests) -> Option<String> {
-        match reqs.newest_in_flight(&id())? {
-            TurnItem::ToolUse { tool_use_id, .. } => tool_use_id.map(|c| c.to_string()),
-        }
+        Some(reqs.newest_in_flight(&id())?.tool_use_id?.to_string())
     }
 
     #[test]

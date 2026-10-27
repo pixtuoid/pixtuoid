@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::source::ToolDetail;
-use crate::state::{ActivityState, AgentSlot, ToolKind, TurnItem};
+use crate::state::{ActivityState, AgentSlot, ToolKind, ToolUse};
 
 /// Fold the time the slot has spent Running into `running_ms`, after which it is
 /// safe to overwrite `state`/`state_started_at`.
@@ -27,7 +27,7 @@ fn accumulate_running_ms(slot: &mut AgentSlot, now: SystemTime) {
 
 /// Enter `Running` with a concrete item — the general `ToolUseStart` path.
 /// Stamps `last_event_at` (this is the actor's own event).
-pub(crate) fn enter_running(slot: &mut AgentSlot, item: TurnItem, now: SystemTime) {
+pub(crate) fn enter_running(slot: &mut AgentSlot, item: ToolUse, now: SystemTime) {
     accumulate_running_ms(slot, now);
     slot.state = ActivityState::Running { item: Some(item) };
     slot.state_started_at = now;
@@ -35,8 +35,8 @@ pub(crate) fn enter_running(slot: &mut AgentSlot, item: TurnItem, now: SystemTim
 }
 
 /// The `Running("Delegating")` item of the Task `tool_use_id`.
-pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> TurnItem {
-    TurnItem::ToolUse {
+pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> ToolUse {
+    ToolUse {
         tool_use_id,
         // HUD text only — semantics ride on `kind`, never on this string.
         detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
@@ -74,7 +74,7 @@ pub(crate) fn enter_requires_action(
 /// What a [`settle`] lands on besides the slot's own state.
 pub(crate) struct SettleCtx {
     /// The item of the slot's newest call that started and has not ended.
-    pub(crate) in_flight: Option<TurnItem>,
+    pub(crate) in_flight: Option<ToolUse>,
     /// A Task the slot dispatched that still runs.
     pub(crate) task_in_flight: Option<Arc<str>>,
     /// The slot's turn is still open.
@@ -116,18 +116,18 @@ pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
 
 /// Show `item` on the slot. One Task over another, or the item it shows, is
 /// the same state, so it keeps its clock.
-fn show(slot: &mut AgentSlot, item: TurnItem, now: SystemTime) {
+fn show(slot: &mut AgentSlot, item: ToolUse, now: SystemTime) {
     match (&mut slot.state, item) {
         (
             ActivityState::Running {
                 item:
-                    Some(TurnItem::ToolUse {
+                    Some(ToolUse {
                         kind: ToolKind::Task,
                         tool_use_id: shown,
                         ..
                     }),
             },
-            TurnItem::ToolUse {
+            ToolUse {
                 kind: ToolKind::Task,
                 tool_use_id,
                 ..
@@ -210,8 +210,8 @@ mod tests {
         }
     }
 
-    fn call(id: &str) -> TurnItem {
-        TurnItem::ToolUse {
+    fn call(id: &str) -> ToolUse {
+        ToolUse {
             tool_use_id: Some(Arc::from(id)),
             detail: Some(Arc::from("Read: a.rs")),
             kind: ToolKind::Read,
@@ -263,7 +263,7 @@ mod tests {
             matches!(
                 s.state,
                 ActivityState::Running {
-                    item: Some(TurnItem::ToolUse {
+                    item: Some(ToolUse {
                         kind: ToolKind::Task,
                         ..
                     })
@@ -294,7 +294,7 @@ mod tests {
     fn running(started: SystemTime) -> AgentSlot {
         slot_at(
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: None,
                     detail: None,
                     kind: ToolKind::Other,
@@ -331,7 +331,7 @@ mod tests {
         );
         match &s.state {
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { detail, kind, .. }),
+                item: Some(ToolUse { detail, kind, .. }),
             } => {
                 assert_eq!(detail.as_deref(), Some("Delegating"));
                 assert_eq!(*kind, ToolKind::Task, "delegation is typed, not spelled");
@@ -387,10 +387,9 @@ mod tests {
         settle(&mut s, ctx(Some("task-1"), false), now);
         match &s.state {
             ActivityState::Running {
-                item:
-                    Some(TurnItem::ToolUse {
-                        tool_use_id, kind, ..
-                    }),
+                item: Some(ToolUse {
+                    tool_use_id, kind, ..
+                }),
             } => {
                 assert_eq!(tool_use_id.as_deref(), Some("task-1"));
                 assert_eq!(*kind, ToolKind::Task);
@@ -416,7 +415,7 @@ mod tests {
         settle(&mut s, ctx(Some("task-2"), false), now);
         match &s.state {
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { tool_use_id, .. }),
+                item: Some(ToolUse { tool_use_id, .. }),
             } => {
                 assert_eq!(
                     tool_use_id.as_deref(),

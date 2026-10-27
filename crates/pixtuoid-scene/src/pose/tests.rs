@@ -3,7 +3,7 @@ use crate::anim::PAINT_FRAME_MS;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
 use pixtuoid_core::walkable::WalkableMask;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -141,7 +141,7 @@ fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSl
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some(Arc::from("t")),
                     detail: Some(Arc::from("Edit")),
                     kind: ToolKind::Edit,
@@ -1352,7 +1352,7 @@ fn wander_interrupted_by_running_does_not_teleport() {
 
     let running = AgentSlot {
         state: ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: Some(Arc::from("t")),
                 detail: Some(Arc::from("Edit")),
                 kind: ToolKind::Edit,

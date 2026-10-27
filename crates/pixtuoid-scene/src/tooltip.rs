@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use pixtuoid_core::source::registry::descriptor_for;
 use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::state::{ActivityState, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, SceneState};
 
 use crate::display::cells::{CellGrid, CellRect};
@@ -263,7 +263,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
     if kind != RungKind::Exiting {
         if let ActivityState::Running {
             item:
-                Some(TurnItem::ToolUse {
+                Some(ToolUse {
                     detail: Some(d),
                     kind: tool_kind,
                     ..

@@ -74,7 +74,7 @@ pub(crate) fn build_status_summary(inputs: &FooterInputs<'_>, term_width: u16) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::state::{ActivityState, TurnItem};
+    use pixtuoid_core::state::{ActivityState, ToolUse};
     use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
     use pixtuoid_scene::footer::{FooterTone, RungKind};
     use std::path::PathBuf;
@@ -91,7 +91,7 @@ mod tests {
             cwd: Arc::from(PathBuf::from("/p").as_path()),
             label: "a".into(),
             state: ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: Some(Arc::from("t")),
                     detail: Some(Arc::from("Bash ls")),
                     kind: pixtuoid_core::state::ToolKind::Bash,

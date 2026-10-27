@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::state::{ActivityState, SceneState, TurnItem};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolUse};
 
 use crate::{
     HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, start, start_as, tool_use_end, tool_use_start,
@@ -71,7 +71,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
     );
     match &scene.agents[&id].state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { tool_use_id, .. }),
+            item: Some(ToolUse { tool_use_id, .. }),
         } => assert_eq!(tool_use_id.as_deref(), Some("b")),
         other => panic!("expected b still running, got {other:?}"),
     }
@@ -140,7 +140,7 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
         matches!(
             &scene.agents[&id].state,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
             } if &**t == "t2"
         ),
         "t2 still runs: {:?}",
@@ -787,7 +787,7 @@ fn an_answered_omp_ask_shows_the_sibling_call_still_running() {
         matches!(
             &scene.agents[&id].state,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
             } if &**t == "t7"
         ),
         "the answered ask shows the sibling call still running: {:?}",
@@ -843,7 +843,7 @@ fn an_answered_cc_prompt_shows_the_parallel_call_still_running() {
         matches!(
             &scene.agents[&id].state,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
             } if &**t == "tB"
         ),
         "the answered prompt shows the parallel Read still running: {:?}",
@@ -1616,7 +1616,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
     );
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {
-            item: Some(TurnItem::ToolUse { detail, .. }),
+            item: Some(ToolUse { detail, .. }),
         } => {
             assert_eq!(detail.as_deref(), Some("bash"));
         }
@@ -2238,7 +2238,7 @@ fn a_cc_pre_use_delivered_after_its_prompt_joins_it() {
         matches!(
             &scene.agents[&id].state,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
             } if &**t == "r1"
         ),
         "the Read still runs: {:?}",

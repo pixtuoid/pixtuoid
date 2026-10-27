@@ -2,7 +2,7 @@ use super::*;
 use crate::anim::Motion;
 use crate::character::test_support::make_slot;
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::state::{ActivityState, TurnItem};
+use pixtuoid_core::state::{ActivityState, ToolUse};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1497,7 +1497,7 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
     use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
     use pixtuoid_core::state::{DaemonInstanceId, EffortObservation, ToolKind};
     let typing = || ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: None,
             detail: None,
             kind: ToolKind::Edit,
@@ -1664,7 +1664,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     let mut typing = lived_in.clone();
     for slot in typing.agents.values_mut() {
         slot.state = ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: None,
                 detail: None,
                 kind: pixtuoid_core::state::ToolKind::Edit,
@@ -2437,7 +2437,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     // At work, so it stays in its chair.
     for slot in scene.agents.values_mut() {
         slot.state = ActivityState::Running {
-            item: Some(TurnItem::ToolUse {
+            item: Some(ToolUse {
                 tool_use_id: None,
                 detail: None,
                 kind: pixtuoid_core::state::ToolKind::Edit,

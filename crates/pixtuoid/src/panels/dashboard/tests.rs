@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, TurnItem};
+use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
 
 /// Build a slot with the fields the dashboard reads; the rest are inert.
 fn mk_slot(
@@ -308,7 +308,7 @@ fn build_rows_carries_requires_action_and_running_state() {
             0,
             None,
             ActivityState::Running {
-                item: Some(TurnItem::ToolUse {
+                item: Some(ToolUse {
                     tool_use_id: None,
                     detail: Some(Arc::from("Edit x")),
                     kind: ToolKind::Edit,

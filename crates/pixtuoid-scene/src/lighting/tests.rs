@@ -200,7 +200,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     let id = |p: &str| pixtuoid_core::AgentId::from_transcript_path(p);
     // No tool detail: a screen lights for any tool call.
     let running = pixtuoid_core::state::ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
+        item: Some(ToolUse {
             tool_use_id: None,
             detail: None,
             kind: pixtuoid_core::state::ToolKind::Edit,

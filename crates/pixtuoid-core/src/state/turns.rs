@@ -58,7 +58,10 @@ impl TurnLedger {
         if self.is_closed(id, &key, now) {
             return Start::Stale;
         }
-        if self.is_older_than_newest(id, &key) {
+        // An in-order stream never starts its newest position again, so only
+        // the open turn's start repeats.
+        let restarted = self.newest.get(&id) == Some(&key) && self.open.get(&id) != Some(&key);
+        if restarted || self.is_older_than_newest(id, &key) {
             self.closed.insert((id, key), now);
             return Start::Stale;
         }
@@ -336,6 +339,26 @@ mod tests {
             Start::Stale,
             "its replay is refused past the slot's newest position"
         );
+    }
+
+    #[test]
+    fn an_ended_seq_turn_never_restarts_past_the_replay_ttl() {
+        let past = t0() + CLOSED_TURN_TTL;
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        turns.gc(past);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(5), past),
+            Start::Opened { superseded: None },
+            "a repeated start of the open turn changes nothing"
+        );
+        turns.end(id(), Some(&TurnKey::Seq(5)), past);
+        turns.gc(past + CLOSED_TURN_TTL);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(5), past + CLOSED_TURN_TTL),
+            Start::Stale
+        );
+        assert_eq!(turns.open(&id()), None);
     }
 
     #[test]
