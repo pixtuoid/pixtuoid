@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::install::io;
+use crate::install::merge::SentinelPlugin;
 use crate::install::target::MergeOutcome;
 
 /// Marks the plugin as ours — absent from the removed-stub, so an uninstall of
@@ -36,6 +37,14 @@ pub(crate) fn plugin_events() -> Vec<&'static str> {
 
 /// A no-op plugin WITHOUT the sentinel, so a re-uninstall is a no-op.
 pub(crate) const REMOVED_STUB: &str = "// pixtuoid opencode plugin removed by disconnecting opencode in pixtuoid's Sources panel (press s).\nexport default { id: \"pixtuoid-removed\", setup() {} }\n";
+
+const PLUGIN: SentinelPlugin = SentinelPlugin {
+    sentinel: SENTINEL,
+    placeholder: HOOK_PLACEHOLDER,
+    removed_stub: REMOVED_STUB,
+    what: "the opencode plugin",
+    cli: "opencode",
+};
 
 /// What pixtuoid's disconnect wrote before it supported opencode 2, which
 /// opencode 2 cannot load.
@@ -86,42 +95,13 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     crate::install::merge::hook_path_str(resolved).map(str::to_string)
 }
 
-/// `changed` only when the content is actually ours (carries the sentinel) — a
-/// foreign file, an already-removed stub, or empty content is left untouched.
 pub(crate) fn uninstall(content: &str) -> Result<MergeOutcome> {
-    let ours = content.contains(SENTINEL);
-    Ok(MergeOutcome {
-        changed: ours,
-        content: if ours {
-            REMOVED_STUB.to_string()
-        } else {
-            content.to_string()
-        },
-    })
+    Ok(PLUGIN.uninstall(content))
 }
 
-/// The managed plugin is a CODE artifact, so there is no per-event config to
-/// check — only that the sentinel is present, the shim-path placeholder was
-/// substituted, and the baked `HOOK_PATH` is readable for the on-disk stat.
 pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaParse {
-    use crate::install::verify::{SchemaParse, ShimRef};
-    if !content.contains(SENTINEL) {
-        return SchemaParse::broken(
-            "the opencode plugin is missing or replaced (sentinel absent) — reconnect opencode",
-        );
-    }
-    if content.contains(HOOK_PLACEHOLDER) {
-        return SchemaParse::broken(
-            "the opencode plugin's shim-path placeholder was never substituted",
-        );
-    }
-    let Some(p) = crate::install::verify::baked_hook_path(content) else {
-        return SchemaParse::broken("could not read HOOK_PATH from the opencode plugin");
-    };
-    SchemaParse {
-        shim: ShimRef::Absolute(p),
-        ..Default::default()
-    }
+    use crate::install::verify::{baked_shim, sentinel_plugin_schema};
+    sentinel_plugin_schema(&PLUGIN, content, baked_shim(content))
 }
 
 pub(crate) fn render_plugin(hook_path: &str) -> Result<String> {

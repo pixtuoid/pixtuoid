@@ -33,6 +33,29 @@ pub(crate) fn bake_hook_path(
     Ok(template.replace(placeholder, &json))
 }
 
+/// A code artifact pixtuoid renders whole, which [`Self::sentinel`] marks as ours.
+pub(crate) struct SentinelPlugin {
+    pub(crate) sentinel: &'static str,
+    pub(crate) placeholder: &'static str,
+    /// What an uninstall leaves: loadable, inert, and no longer ours.
+    pub(crate) removed_stub: &'static str,
+    /// How an issue names it ("the omp extension"), and the CLI a reconnect names.
+    pub(crate) what: &'static str,
+    pub(crate) cli: &'static str,
+}
+
+impl SentinelPlugin {
+    /// `changed` only when the content is ours (carries the sentinel) — a foreign
+    /// file, the removed stub, or empty content is left untouched.
+    pub(crate) fn uninstall(&self, content: &str) -> MergeOutcome {
+        let ours = content.contains(self.sentinel);
+        MergeOutcome {
+            changed: ours,
+            content: if ours { self.removed_stub } else { content }.to_string(),
+        }
+    }
+}
+
 /// The shim path as `&str`. A non-UTF-8 path is rejected rather than
 /// `to_string_lossy`'d into a silently-dead hook.
 pub(crate) fn hook_path_str(p: &std::path::Path) -> anyhow::Result<&str> {

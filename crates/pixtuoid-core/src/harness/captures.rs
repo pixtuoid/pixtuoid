@@ -240,6 +240,7 @@ pub struct ServerStop {
 
 /// The pids the hook `payloads` stamped that still run once `grace` ran out,
 /// waiting no longer than the last of them takes to exit.
+#[cfg(feature = "native")]
 pub fn outlived(payloads: &[String], grace: Duration) -> Vec<i32> {
     use crate::source::decoder::{PID_STAMP, checked_pid};
     let pids: std::collections::BTreeSet<i32> = payloads
@@ -739,6 +740,7 @@ mod tests {
     use super::*;
 
     /// `sort` reads its stdin to the end before it writes, on every host.
+    #[cfg(feature = "native")]
     #[test]
     fn only_a_stamped_process_still_running_outlives_its_grace() {
         let mut child = std::process::Command::new("sort")

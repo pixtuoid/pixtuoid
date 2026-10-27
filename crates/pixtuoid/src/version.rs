@@ -48,10 +48,14 @@ struct Notice {
 }
 
 /// Every notice, in the order the popup lists them: an action before a tip.
-const NOTICES: [Notice; 2] = [
+const NOTICES: [Notice; 3] = [
     Notice {
         last_without: Version::new(0, 19, 0),
-        says: reconnect,
+        says: |facts| reconnect(&REPLUGGED, facts),
+    },
+    Notice {
+        last_without: Version::new(0, 20, 0),
+        says: |facts| reconnect(&[&target::HERMES], facts),
     },
     Notice {
         last_without: Version::new(0, 20, 0),
@@ -62,10 +66,10 @@ const NOTICES: [Notice; 2] = [
 /// The hosts #1586 moved to a plugin.
 const REPLUGGED: [&Target; 3] = [&target::CLAUDE, &target::CODEX, &target::REASONIX];
 
-/// The hooks an older pixtuoid merged no longer count as a connection, so each
-/// installed host that reads disconnected is named.
-fn reconnect(facts: &Facts<'_>) -> Option<String> {
-    let names: Vec<&str> = REPLUGGED
+/// The hooks an older pixtuoid merged for `hosts` no longer count as a
+/// connection, so each installed one that reads disconnected is named.
+fn reconnect(hosts: &[&Target], facts: &Facts<'_>) -> Option<String> {
+    let names: Vec<&str> = hosts
         .iter()
         .filter(|t| {
             facts.installed.contains(&t.core_source) && !facts.connected.contains(t.core_source)
@@ -265,7 +269,7 @@ mod tests {
         ids.iter().map(|s| s.to_string()).collect()
     }
 
-    const EVERY_HOST: [&str; 3] = ["claude-code", "codex", "reasonix"];
+    const EVERY_HOST: [&str; 4] = ["claude-code", "codex", "reasonix", "hermes"];
 
     fn versions(previous: &str, current: &str) -> Versions {
         Versions {
@@ -353,7 +357,8 @@ mod tests {
         assert_eq!(
             due(Some(&across_every_notice()), &all_hold()),
             [
-                reconnect(&all_hold()).expect("holds"),
+                reconnect(&REPLUGGED, &all_hold()).expect("holds"),
+                reconnect(&[&target::HERMES], &all_hold()).expect("holds"),
                 cutaway_default(&all_hold()).expect("holds"),
             ]
         );
@@ -364,11 +369,14 @@ mod tests {
     #[test]
     fn reconnect_names_each_installed_host_that_reads_disconnected() {
         let says = |installed: &[&'static str], connected: &[&str]| {
-            reconnect(&Facts {
-                installed,
-                connected: &set(connected),
-                ..all_hold()
-            })
+            reconnect(
+                &REPLUGGED,
+                &Facts {
+                    installed,
+                    connected: &set(connected),
+                    ..all_hold()
+                },
+            )
         };
         assert_eq!(
             says(&EVERY_HOST, &[]).as_deref(),
@@ -395,6 +403,29 @@ mod tests {
                 "pixtuoid now connects to Codex as a plugin: reconnect it in Sources (s) if you use it."
             )
         );
+    }
+
+    /// 0.20.0 merged Hermes's hooks into its own config.yaml, which the plugin
+    /// that replaced them never reads.
+    #[test]
+    fn a_hermes_upgrader_is_told_to_reconnect_it() {
+        let due_with = |connected: &[&str]| {
+            due(
+                Some(&versions("0.20.0", "0.21.0")),
+                &Facts {
+                    installed: &["hermes"],
+                    connected: &set(connected),
+                    terminal_cutaway: false,
+                },
+            )
+        };
+        assert_eq!(
+            due_with(&[]),
+            [
+                "pixtuoid now connects to Hermes Agent as a plugin: reconnect it in Sources (s) if you use it."
+            ]
+        );
+        assert!(due_with(&["hermes"]).is_empty());
     }
 
     #[test]

@@ -133,7 +133,7 @@ pub(crate) fn verify_target(
     }
     if let Some(host) = t.host {
         match (host.is_registered)() {
-            Ok(true) => match host.copy.as_ref().map(|c| (c.stale)(&path)) {
+            Ok(true) => match host.copy().map(|c| (c.stale)(&path)) {
                 Some(Ok(true)) => issues.push(format!(
                     "{} runs an older copy of the plugin (a launch re-copies it; the log \
                      names a re-copy that failed)",

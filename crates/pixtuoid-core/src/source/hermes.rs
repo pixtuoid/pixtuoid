@@ -218,7 +218,7 @@ const ON_SESSION_END: &str = "on_session_end";
 const ON_SESSION_FINALIZE: &str = "on_session_finalize";
 
 /// The events this decoder turns into events. Pinned to its arms by
-/// `the_decoded_event_set_is_exactly_what_the_arms_match`, and to the plugin's
+/// `every_exported_set_is_exactly_its_dispatch_arms`, and to the plugin's
 /// `FORWARD` by `the_plugin_forwards_exactly_what_the_decoder_reads`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
@@ -541,11 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn the_decoded_event_set_is_exactly_what_the_arms_match() {
-        for ev in DECODED_EVENTS {
-            let got = decode_all(json!({"hook_event_name": ev, "session_id": "s"}));
-            assert!(!got.is_empty(), "{ev} must reach a real arm");
-        }
+    fn an_event_the_plugin_never_forwards_bails() {
         for ev in ["subagent_stop", "pre_message", "on_session_reset", "Bogus"] {
             assert!(
                 decode_hermes_hook_payload(test_obj(

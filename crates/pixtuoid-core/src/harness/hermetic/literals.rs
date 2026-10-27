@@ -1197,6 +1197,12 @@ mod tests {
                 "ty",
                 "DECODED_HOOK_EVENTS",
             ),
+            (
+                "hermes.rs",
+                "decode_hermes_hook_payload",
+                "event",
+                "DECODED_EVENTS",
+            ),
         ] {
             let src = std::fs::read_to_string(source_root().join(module)).expect("readable");
             let file = syn::parse_file(&src).expect("parses");

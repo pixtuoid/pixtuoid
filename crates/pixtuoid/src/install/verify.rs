@@ -40,6 +40,34 @@ pub(crate) fn baked_shim(content: &str) -> ShimRef {
     baked_hook_path(content).map_or(ShimRef::Unknown, ShimRef::Absolute)
 }
 
+/// All there is to check of a code artifact: its sentinel, a substituted
+/// placeholder, and the `shim` read back from its baked `HOOK_PATH`.
+pub(crate) fn sentinel_plugin_schema(
+    plugin: &crate::install::merge::SentinelPlugin,
+    content: &str,
+    shim: ShimRef,
+) -> SchemaParse {
+    let what = plugin.what;
+    if !content.contains(plugin.sentinel) {
+        return SchemaParse::broken(format!(
+            "{what} is missing or replaced (sentinel absent) — reconnect {}",
+            plugin.cli
+        ));
+    }
+    if content.contains(plugin.placeholder) {
+        return SchemaParse::broken(format!(
+            "{what}'s shim-path placeholder was never substituted"
+        ));
+    }
+    match shim {
+        ShimRef::Unknown => SchemaParse::broken(format!("could not read HOOK_PATH from {what}")),
+        shim => SchemaParse {
+            shim,
+            ..Default::default()
+        },
+    }
+}
+
 /// Marks a rendered artifact that BAKES the shim path. Matched against the
 /// INTENDED content the installer renders, never the file on disk.
 pub(crate) const BAKED_HOOK_MARKER: &str = "const HOOK_PATH";

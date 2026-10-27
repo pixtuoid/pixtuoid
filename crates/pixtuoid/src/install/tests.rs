@@ -1860,7 +1860,7 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
         let hooks = plugin_hooks_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
         install_target_from(&CODEX, Some(hooks.clone()), hook).unwrap();
-        let copy = CODEX.host.and_then(|h| h.copy.as_ref()).unwrap();
+        let copy = CODEX.host.and_then(target::HostRegistration::copy).unwrap();
         assert!(!(copy.stale)(&hooks).unwrap(), "connect copies the plugin");
 
         let cached =

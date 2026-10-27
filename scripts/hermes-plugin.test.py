@@ -129,7 +129,7 @@ class PluginTest(unittest.TestCase):
         self.assertNotIn("SECRET", self.out.read_text())
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
-    def test_a_finalize_outside_any_turn_asks_and_sends_no_cwd(self):
+    def test_a_finalize_outside_any_turn_neither_asks_for_nor_sends_a_cwd(self):
         # Asking raises here, as a context outside any session's turn has no cwd.
         _, ctx = self.plugin(self.recorder(), FakeCtx(cwd=RuntimeError("outside a turn")))
         ctx.hooks["on_session_finalize"](session_id="s1")
@@ -186,7 +186,7 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["creationflags"], sentinel)
 
     @unittest.skipUnless(POSIX, "Windows defines the console flag")
-    def test_a_platform_without_a_console_flag_passes_none(self):
+    def test_a_platform_without_a_console_flag_passes_no_flag(self):
         _, ctx = self.plugin(self.dir / "absent")
         with mock.patch.object(subprocess, "run") as run:
             ctx.hooks["on_session_start"](session_id="s1")

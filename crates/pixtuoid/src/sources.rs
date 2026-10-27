@@ -13,7 +13,7 @@ use pixtuoid_core::source::registry;
 use crate::config;
 use crate::install::{
     self, InstallReport, UninstallReport,
-    target::{HostRegistration, PluginCopy, Target, by_source},
+    target::{HostRegistration, Pickup, PluginCopy, Target, by_source},
 };
 
 /// The wire-facing outcome token — a CLOSED set, published in the JSON schema
@@ -217,10 +217,11 @@ fn is_on(app: &config::AppConfig, sid: &str, hooked: impl Fn(&str) -> Option<boo
 
 /// Rewrite every target's [`RetiredStub`](install::target::RetiredStub), connected
 /// or not, then bring every connected source's owned plugin files to this build
-/// ([`install::converge`]), and the copy a CLI runs to those files, and return the
-/// targets whose CLI now has a newer plugin to load at its next start. A failure
-/// leaves the install for the boot warning and doctor to report, and the next
-/// launch retries it.
+/// ([`install::converge`]), the copy a CLI runs to those files, and a CLI that can
+/// be told to reload them, and return the targets whose CLI still has a newer
+/// plugin to load: at its next start, or, where a reload failed, by a reconnect.
+/// A failure leaves the install for the boot warning and doctor to report, and the
+/// next launch retries it.
 pub(crate) fn converge_owned(connected: &HashSet<String>) -> Vec<&'static Target> {
     converge_owned_with(
         install::TARGETS,
@@ -262,14 +263,15 @@ fn converge_owned_with(
         for (path, error) in &done.failed {
             tracing::warn!(cli = t.name, path = ?path, error = ?error, "could not refresh a plugin file to this build");
         }
-        let loads_new = match t.host.and_then(|h| h.copy.as_ref().map(|c| (h, c))) {
-            Some((host, copy)) => recopy(host, copy, t).unwrap_or_else(|e| {
+        let loads_new = match t.host.and_then(|h| h.pickup.as_ref().map(|p| (h, p))) {
+            Some((host, Pickup::Recopy(copy))) => recopy(host, copy, t).unwrap_or_else(|e| {
                 tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
                 false
             }),
-            None => {
-                !done.rewritten.is_empty() && !t.primary.reloads_on_change() && still_runs_old(t)
+            Some((host, Pickup::Reload(reload))) => {
+                !done.rewritten.is_empty() && reload_failed(host, *reload, t)
             }
+            None => !done.rewritten.is_empty() && !t.primary.reloads_on_change(),
         };
         if loads_new {
             refreshed.push(t);
@@ -288,13 +290,10 @@ fn recopy(host: &HostRegistration, copy: &PluginCopy, t: &Target) -> Result<bool
     Ok(true)
 }
 
-/// Whether `t`'s CLI still runs the plugin a launch rewrote: one it loads at its
-/// next start, or one [`HostRegistration::reload`] could not load now. A disabled
-/// plugin stays as the user left it.
-fn still_runs_old(t: &Target) -> bool {
-    let Some((host, reload)) = t.host.and_then(|h| h.reload.map(|r| (h, r))) else {
-        return true;
-    };
+/// Run `reload` to load `t`'s rewritten plugin into its running CLI, and say
+/// whether that failed, leaving the CLI on the old one. A disabled plugin stays as
+/// the user left it.
+fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target) -> bool {
     let reloaded = (host.is_registered)().and_then(|on| if on { reload() } else { Ok(()) });
     if let Err(e) = &reloaded {
         tracing::warn!(cli = t.name, error = ?e, "could not reload the plugin into its CLI");
@@ -305,11 +304,11 @@ fn still_runs_old(t: &Target) -> bool {
 /// The line a launch prints for a target [`converge_owned`] returned: its CLI now
 /// has a newer plugin to load.
 pub(crate) fn refreshed_notice(t: &Target) -> String {
-    let step = match (t.post_install_hint, t.host.and_then(|h| h.reload)) {
+    let step = match (t.post_install_hint, t.host.and_then(|h| h.pickup.as_ref())) {
         (Some(hint), _) => hint.to_string(),
         // A connect runs the reload.
-        (None, Some(_)) => format!("reconnect {} to load it", t.display_name),
-        (None, None) => format!("restart {} to load it", t.display_name),
+        (None, Some(Pickup::Reload(_))) => format!("reconnect {} to load it", t.display_name),
+        (None, _) => format!("restart {} to load it", t.display_name),
     };
     format!(
         "pixtuoid: refreshed the {} plugin to this build — {step}",
@@ -746,7 +745,7 @@ mod tests {
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        copy: Some(PluginCopy {
+        pickup: Some(Pickup::Recopy(PluginCopy {
             stale: |_| {
                 use std::sync::atomic::Ordering::SeqCst;
                 if STALE_ERRS.load(SeqCst) {
@@ -758,8 +757,7 @@ mod tests {
                 REFRESHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             },
-        }),
-        reload: None,
+        })),
         legacy: None,
     };
 
@@ -772,7 +770,7 @@ mod tests {
             host: Some(&COPYING_HOST),
             ..crate::install::target::CLAUDE
         };
-        let copy = COPYING_HOST.copy.as_ref().unwrap();
+        let copy = COPYING_HOST.copy().unwrap();
         REFRESHES.store(0, SeqCst);
         for (enabled, stale, recopied) in [
             (false, true, false),
@@ -836,15 +834,14 @@ mod tests {
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        copy: None,
-        reload: Some(|| {
+        pickup: Some(Pickup::Reload(|| {
             use std::sync::atomic::Ordering::SeqCst;
             if RELOAD_FAILS.load(SeqCst) {
                 anyhow::bail!("no gateway answered");
             }
             RELOADS.fetch_add(1, SeqCst);
             Ok(())
-        }),
+        })),
         legacy: None,
     };
 

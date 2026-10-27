@@ -20,8 +20,8 @@ use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, Yam
 use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
-use crate::install::merge;
-use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Unregistered};
+use crate::install::merge::{self, SentinelPlugin};
+use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Pickup, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 pub(crate) const HOST: HostRegistration = HostRegistration {
@@ -29,8 +29,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: None,
-    reload: Some(reload),
+    pickup: Some(Pickup::Reload(reload)),
     legacy: Some(LegacyConfig {
         path: config_path,
         strip: strip_shell_hooks,
@@ -66,6 +65,14 @@ const ENABLED: &str = "enabled";
 /// A plugin that registers nothing and carries no sentinel: what a disconnect
 /// leaves should hermes stay unreachable, and a re-uninstall no-ops on it.
 pub(crate) const REMOVED_STUB: &str = "# pixtuoid hermes plugin removed by disconnecting Hermes Agent in pixtuoid's Sources panel (press s).\n\n\ndef register(ctx):\n    pass\n";
+
+const PLUGIN: SentinelPlugin = SentinelPlugin {
+    sentinel: SENTINEL,
+    placeholder: HOOK_PLACEHOLDER,
+    removed_stub: REMOVED_STUB,
+    what: "the Hermes plugin",
+    cli: "Hermes Agent",
+};
 
 /// The events the plugin forwards: its `FORWARD` tuple.
 #[cfg(test)]
@@ -115,40 +122,12 @@ pub(crate) fn installed_shim(content: &str) -> ShimRef {
         .map_or(ShimRef::Unknown, ShimRef::Absolute)
 }
 
-/// `changed` only when the content is ours (carries the sentinel) — a foreign
-/// file, the removed-stub, or empty content is left untouched.
 pub(crate) fn uninstall(content: &str) -> Result<MergeOutcome> {
-    let ours = content.contains(SENTINEL);
-    Ok(MergeOutcome {
-        changed: ours,
-        content: if ours {
-            REMOVED_STUB.to_string()
-        } else {
-            content.to_string()
-        },
-    })
+    Ok(PLUGIN.uninstall(content))
 }
 
-/// The plugin is a CODE artifact: the sentinel, a substituted placeholder and a
-/// readable baked `HOOK_PATH` are all there is to check.
 pub(crate) fn verify_schema(content: &str) -> SchemaParse {
-    if !content.contains(SENTINEL) {
-        return SchemaParse::broken(
-            "the Hermes plugin is missing or replaced (sentinel absent) — reconnect Hermes Agent",
-        );
-    }
-    if content.contains(HOOK_PLACEHOLDER) {
-        return SchemaParse::broken(
-            "the Hermes plugin's shim-path placeholder was never substituted",
-        );
-    }
-    match installed_shim(content) {
-        ShimRef::Unknown => SchemaParse::broken("could not read HOOK_PATH from the Hermes plugin"),
-        shim => SchemaParse {
-            shim,
-            ..Default::default()
-        },
-    }
+    crate::install::verify::sentinel_plugin_schema(&PLUGIN, content, installed_shim(content))
 }
 
 /// The plugin dir that holds `config`.

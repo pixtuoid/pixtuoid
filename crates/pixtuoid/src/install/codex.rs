@@ -7,7 +7,7 @@ use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::target::{
-    HostRegistration, LegacyConfig, MergeOutcome, PluginCopy, Unregistered,
+    HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
 };
 use crate::install::verify::{SchemaParse, ShimRef};
 
@@ -51,11 +51,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: Some(PluginCopy {
+    pickup: Some(Pickup::Recopy(PluginCopy {
         stale: copy_is_stale,
         refresh: add_plugin,
-    }),
-    reload: None,
+    })),
     legacy: Some(LegacyConfig {
         path: config_toml,
         strip: merge_uninstall,

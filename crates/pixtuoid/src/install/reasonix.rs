@@ -61,8 +61,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: None,
-    reload: None,
+    pickup: None,
     legacy: Some(LegacyConfig {
         path: settings_path,
         strip: merge::flat_json_uninstall,

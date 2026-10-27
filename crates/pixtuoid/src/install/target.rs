@@ -99,8 +99,8 @@ pub struct Target {
     /// whose hooks take effect on the CLI's next run.
     pub post_install_hint: Option<&'static str>,
     /// Set when the CLI loads our hooks through its own plugin system: the owned
-    /// primary is then the plugin file that carries them (a hooks file, or a
-    /// manifest with the hooks inside), which this registers with the CLI.
+    /// primary is then the plugin file that carries them (a hooks file, a manifest
+    /// with the hooks inside, or code that registers them), which this registers.
     pub host: Option<&'static HostRegistration>,
     /// The hook names the installed artifact subscribes to: a profiled CLI's
     /// hermetic scenarios fire or owe each it forwards
@@ -214,15 +214,31 @@ pub struct HostRegistration {
     pub unregister: fn(config: &Path) -> Result<Unregistered>,
     /// Whether the CLI reports the plugin installed and enabled.
     pub is_registered: fn() -> Result<bool>,
-    /// `None` when the CLI loads the plugin's files in place.
-    pub copy: Option<PluginCopy>,
-    /// Load rewritten files into a CLI that loads them in place but keeps what it
-    /// loaded until told: `None` when a rewrite reaches the CLI's next start. It
-    /// may re-enable a plugin the user disabled, so it runs only while
-    /// [`Self::is_registered`].
-    pub reload: Option<fn() -> Result<()>>,
+    /// How a rewrite of the plugin's files reaches the CLI: `None` when it loads
+    /// them in place at its next start.
+    pub pickup: Option<Pickup>,
     /// `None` when no released pixtuoid ever merged hooks into the CLI's own config.
     pub legacy: Option<LegacyConfig>,
+}
+
+impl HostRegistration {
+    pub(crate) fn copy(&self) -> Option<&PluginCopy> {
+        match &self.pickup {
+            Some(Pickup::Recopy(copy)) => Some(copy),
+            _ => None,
+        }
+    }
+}
+
+/// How a CLI that won't load a rewrite of the plugin's files at its next start
+/// is brought to it.
+#[derive(Debug)]
+pub enum Pickup {
+    Recopy(PluginCopy),
+    /// The CLI loads the files in place but keeps what it loaded until told. The
+    /// reload may re-enable a plugin the user disabled, so it runs only while
+    /// [`HostRegistration::is_registered`].
+    Reload(fn() -> Result<()>),
 }
 
 /// A CLI that runs its own copy of the plugin, so a rewrite of the files reaches it
