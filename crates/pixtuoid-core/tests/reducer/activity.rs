@@ -1641,9 +1641,77 @@ fn a_keyed_turn_end_settles_its_turn_once() {
 }
 
 #[test]
+fn a_bracketed_turn_runs_between_its_items_and_settles_at_its_end() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let no_item = ActivityState::Running { item: None };
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].state, no_item);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c1"),
+        Some("exec_command"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(matches!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: Some(_) }
+    ));
+    tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
+    assert_eq!(scene.agents[&id].state, no_item, "between its items");
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+#[test]
+fn a_turn_start_leaves_a_standing_request_to_its_answer() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        AgentEvent::user_action_request(id, None, RequestKeys::default()),
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(requires_action(&scene, id));
+}
+
+#[test]
 fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for next in [turn_start, keyed_turn_end] {
+    let next_turn_open = ActivityState::Running { item: None };
+    for (next, then) in [
+        (
+            turn_start as fn(AgentId, &str) -> AgentEvent,
+            next_turn_open,
+        ),
+        (keyed_turn_end, ActivityState::Idle),
+    ] {
         let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
         let id = codex(&mut r, &mut scene);
         apply(
@@ -1663,7 +1731,7 @@ fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
             Transport::Jsonl,
         );
         apply(&mut r, &mut scene, next(id, "t2"), t0, Transport::Jsonl);
-        assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+        assert_eq!(scene.agents[&id].state, then);
     }
 }
 
@@ -1717,7 +1785,11 @@ fn a_codex_request_binds_its_tools_pending_call_and_resolves_on_its_output() {
         "the rollout's pulse and another call's output answer nothing"
     );
     tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "answered, inside its open turn"
+    );
 }
 
 #[test]
@@ -1807,7 +1879,10 @@ fn a_pre_use_delivered_after_its_request_joins_it() {
     );
     assert!(requires_action(&scene, id), "a pre-use is no item");
     tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None }
+    );
 }
 
 /// #951 extended: the other transport's start lands while the human decides.
@@ -2049,8 +2124,8 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
     tool_use_end(&mut r, &mut scene, id, Some("xm"), t2, Transport::Jsonl);
     assert_eq!(
         scene.agents[&id].state,
-        ActivityState::Idle,
-        "m's own call answers it"
+        ActivityState::Running { item: None },
+        "m's own call answers it, inside m"
     );
 }
 

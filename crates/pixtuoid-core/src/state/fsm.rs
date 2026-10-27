@@ -78,11 +78,29 @@ pub(crate) fn enter_requires_action(
     slot.last_event_at = now;
 }
 
-/// The slot's work or wait ended: land on Delegating while `task_in_flight`,
-/// a Task the slot dispatched, still runs, else Idle. Landing on the state the
-/// slot is already in keeps its clock. The caller owns `last_event_at`.
-pub(crate) fn settle(slot: &mut AgentSlot, task_in_flight: Option<Arc<str>>, now: SystemTime) {
-    match (task_in_flight, &mut slot.state) {
+/// What a [`settle`] lands on besides the slot's own state.
+pub(crate) struct SettleCtx {
+    /// A Task the slot dispatched that still runs.
+    pub(crate) task_in_flight: Option<Arc<str>>,
+    /// The slot's turn is still open.
+    pub(crate) turn_open: bool,
+}
+
+/// A turn opened on an Idle slot: it works, showing no item yet. The caller's
+/// lineage refresh stamps `last_event_at`.
+pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
+    if slot.state == ActivityState::Idle {
+        slot.state = ActivityState::Running { item: None };
+        slot.state_started_at = now;
+    }
+}
+
+/// The slot's item or wait ended: land on Delegating while a Task it
+/// dispatched still runs, else on Running with no item while its turn is
+/// open, else on Idle. Landing on the state the slot is already in keeps its
+/// clock. The caller owns `last_event_at`.
+pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
+    match (ctx.task_in_flight, &mut slot.state) {
         (
             Some(task),
             ActivityState::Running {
@@ -95,10 +113,15 @@ pub(crate) fn settle(slot: &mut AgentSlot, task_in_flight: Option<Arc<str>>, now
             },
         ) => *tool_use_id = Some(task),
         (Some(task), _) => enter_delegating(slot, Some(task), now),
-        (None, ActivityState::Idle) => {}
+        (None, ActivityState::Running { item: None }) if ctx.turn_open => {}
+        (None, ActivityState::Idle) if !ctx.turn_open => {}
         (None, _) => {
             accumulate_running_ms(slot, now);
-            slot.state = ActivityState::Idle;
+            slot.state = if ctx.turn_open {
+                ActivityState::Running { item: None }
+            } else {
+                ActivityState::Idle
+            };
             slot.state_started_at = now;
         }
     }
@@ -162,6 +185,60 @@ mod tests {
             tokens_used: 0,
             last_usage: None,
         }
+    }
+
+    fn ctx(task_in_flight: Option<&str>, turn_open: bool) -> SettleCtx {
+        SettleCtx {
+            task_in_flight: task_in_flight.map(Arc::from),
+            turn_open,
+        }
+    }
+
+    #[test]
+    fn a_settle_inside_an_open_turn_lands_running_with_no_item_and_then_keeps_its_clock() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let mut s = running(t0);
+        settle(&mut s, ctx(None, true), now);
+        assert_eq!(s.state, ActivityState::Running { item: None });
+        assert_eq!(s.running_ms, 1000, "the item's span folds in");
+        assert_eq!(s.state_started_at, now);
+        settle(&mut s, ctx(None, true), now + Duration::from_secs(1));
+        assert_eq!(
+            s.state_started_at, now,
+            "Running with no item isn't re-stamped"
+        );
+        settle(&mut s, ctx(Some("task-1"), true), now);
+        assert!(
+            matches!(
+                s.state,
+                ActivityState::Running {
+                    item: Some(TurnItem::ToolUse {
+                        kind: ToolKind::Task,
+                        ..
+                    })
+                }
+            ),
+            "a Task in flight still shows Delegating: {:?}",
+            s.state
+        );
+    }
+
+    #[test]
+    fn a_turn_shows_only_an_idle_slot_running() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let mut s = slot_at(ActivityState::Idle, t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, ActivityState::Running { item: None });
+        assert_eq!(s.state_started_at, now);
+        let mut s = running(t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, running(t0).state, "the item it shows stays");
+        let asking = ActivityState::RequiresAction { reason: None };
+        let mut s = slot_at(asking.clone(), t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, asking);
     }
 
     fn running(started: SystemTime) -> AgentSlot {
@@ -233,7 +310,7 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(1);
         let mut s = running(t0);
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.running_ms, 1000);
         assert_eq!(s.state_started_at, now);
@@ -249,7 +326,7 @@ mod tests {
             },
             t0,
         );
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(
             s.running_ms, 0,
@@ -263,7 +340,7 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(2);
         let mut s = running(t0);
-        settle(&mut s, Some(Arc::from("task-1")), now);
+        settle(&mut s, ctx(Some("task-1"), false), now);
         match &s.state {
             ActivityState::Running {
                 item:
@@ -285,14 +362,14 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(5);
         let mut s = slot_at(ActivityState::Idle, t0);
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.state_started_at, t0, "Idle isn't re-stamped");
 
         let mut s = running(t0);
         enter_delegating(&mut s, Some(Arc::from("task-1")), t0);
         let folded = s.running_ms;
-        settle(&mut s, Some(Arc::from("task-2")), now);
+        settle(&mut s, ctx(Some("task-2"), false), now);
         match &s.state {
             ActivityState::Running {
                 item: Some(TurnItem::ToolUse { tool_use_id, .. }),

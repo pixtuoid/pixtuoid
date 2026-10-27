@@ -9,6 +9,7 @@ use crate::source::{AgentEvent, Resolution, Transport};
 use crate::state::correlation::{
     Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
 };
+use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
 use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnItem, TurnKey, fsm, scope};
@@ -88,12 +89,22 @@ fn stale_threshold_with_caps(
                     ..
                 }),
         } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_BLOCKED_TIMEOUT,
-        ActivityState::Running { .. } => STALE_TOOL_TIMEOUT,
-        ActivityState::Idle if caps.is_some_and(|c| c.short_idle_reap()) => {
-            STALE_SHORT_IDLE_TIMEOUT
-        }
-        ActivityState::Idle => STALE_IDLE_TIMEOUT,
+        ActivityState::Running {
+            item: Some(TurnItem::ToolUse { .. }),
+        } => STALE_TOOL_TIMEOUT,
+        // An open turn is reaped no sooner than a running tool or an idle
+        // slot would be.
+        ActivityState::Running { item: None } => STALE_TOOL_TIMEOUT.max(idle_threshold(caps)),
+        ActivityState::Idle => idle_threshold(caps),
         ActivityState::RequiresAction { .. } => STALE_BLOCKED_TIMEOUT,
+    }
+}
+
+fn idle_threshold(caps: Option<crate::source::registry::SourceCaps>) -> Duration {
+    if caps.is_some_and(|c| c.short_idle_reap()) {
+        STALE_SHORT_IDLE_TIMEOUT
+    } else {
+        STALE_IDLE_TIMEOUT
     }
 }
 
@@ -708,8 +719,8 @@ impl Reducer {
         self.end_item(scene, agent_id, resolved, ends_item, now);
     }
 
-    /// The `TurnStart` arm. A thread runs one turn at a time, so a start of
-    /// another turn ends the open one.
+    /// The `TurnStart` arm: an Idle agent works. A thread runs one turn at a
+    /// time, so a start of another turn ends the open one.
     fn apply_turn_start(
         &mut self,
         scene: &mut SceneState,
@@ -721,10 +732,10 @@ impl Reducer {
         if !scene.agents.contains_key(&agent_id) {
             return;
         }
-        if let Start::Opened {
-            superseded: Some(open),
-        } = self.corr.turns.start(agent_id, turn, now)
-        {
+        let Start::Opened { superseded } = self.corr.turns.start(agent_id, turn, now) else {
+            return;
+        };
+        if let Some(open) = superseded {
             let ended = Ended::Turn {
                 turn: Some(&open),
                 implied: None,
@@ -736,6 +747,9 @@ impl Reducer {
                 is_requires_action(scene, agent_id),
             );
             self.end_item(scene, agent_id, resolved, true, now);
+        }
+        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            fsm::enter_turn(slot, now);
         }
     }
 
@@ -784,7 +798,7 @@ impl Reducer {
         ends_item: bool,
         now: SystemTime,
     ) {
-        let task_in_flight = self.corr.any_task_in_flight(&agent_id);
+        let settle_ctx = self.settle_ctx(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let ends_item = ends_item && matches!(slot.state, ActivityState::Running { .. });
             let untracked_task = matches!(
@@ -804,9 +818,18 @@ impl Reducer {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
             if resolved || ends_item {
-                fsm::settle(slot, task_in_flight, now);
+                fsm::settle(slot, settle_ctx, now);
             }
             slot.last_event_at = now;
+        }
+    }
+
+    /// What `id`'s settle lands on: a Task of its still in flight, or its
+    /// open turn.
+    fn settle_ctx(&self, id: &AgentId) -> SettleCtx {
+        SettleCtx {
+            task_in_flight: self.corr.any_task_in_flight(id),
+            turn_open: self.corr.turns.open(id).is_some(),
         }
     }
 
@@ -1343,7 +1366,11 @@ impl Reducer {
                 matches!(slot.state, ActivityState::RequiresAction { .. }),
             )
         {
-            fsm::settle(slot, any_task(tasks), now);
+            let ctx = SettleCtx {
+                task_in_flight: any_task(tasks),
+                turn_open: self.corr.turns.open(&id).is_some(),
+            };
+            fsm::settle(slot, ctx, now);
         }
         suppress
     }
@@ -1436,8 +1463,11 @@ impl Reducer {
                             }
                         ) && (set.is_empty() || shown_drained)
                         {
-                            let task_in_flight = any_task(set);
-                            fsm::settle(slot, task_in_flight, now);
+                            let ctx = SettleCtx {
+                                task_in_flight: any_task(set),
+                                turn_open: self.corr.turns.open(agent_id).is_some(),
+                            };
+                            fsm::settle(slot, ctx, now);
                         }
                     }
                 }
