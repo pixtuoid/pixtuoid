@@ -3,9 +3,9 @@
 //! that pools them rather than in the music synth: they change when the office
 //! does. Pure buffer generators (mono f32 at [`SAMPLE_RATE`]), run once at
 //! startup; every constant is an auditioned, ratified value. Tuned with
-//! [procedural-lofi's analyzers](https://github.com/pixtuoid/lofi/tree/main/.claude/skills/procedural-lofi/scripts).
+//! [procedural-lofi's analyzers](https://github.com/pixtuoid/lofi/tree/363576492e238a3a2df41af352e170475928457d/.claude/skills/procedural-lofi/scripts).
 
-use pixtuoid_lofi::dsp::{NoiseStream, bandpass, lowpass, shaped_noise_loop};
+use pixtuoid_lofi::dsp::{Band, NoiseStream, bandpass, lowpass, shaped_noise_loop};
 
 use super::SAMPLE_RATE;
 
@@ -196,18 +196,18 @@ pub(crate) fn vending_drop(rng: &mut NoiseStream) -> Vec<f32> {
     out
 }
 
-/// The gentle-rain octave-band envelope `(lo_hz, hi_hz, energy %)`, measured
-/// from the owner's chosen reference recording.
-const GENTLE_RAIN_BANDS: [(f32, f32, f32); 9] = [
-    (20.0, 60.0, 1.5),
-    (60.0, 125.0, 3.5),
-    (125.0, 250.0, 6.9),
-    (250.0, 500.0, 14.3),
-    (500.0, 1000.0, 24.4),
-    (1000.0, 2000.0, 25.3),
-    (2000.0, 4000.0, 10.2),
-    (4000.0, 8000.0, 8.9),
-    (8000.0, 16000.0, 4.0),
+/// The gentle-rain octave-band envelope, measured from the owner's chosen
+/// reference recording.
+const GENTLE_RAIN_BANDS: [Band; 9] = [
+    Band::new(20.0, 60.0, 0.015),
+    Band::new(60.0, 125.0, 0.035),
+    Band::new(125.0, 250.0, 0.069),
+    Band::new(250.0, 500.0, 0.143),
+    Band::new(500.0, 1000.0, 0.244),
+    Band::new(1000.0, 2000.0, 0.253),
+    Band::new(2000.0, 4000.0, 0.102),
+    Band::new(4000.0, 8000.0, 0.089),
+    Band::new(8000.0, 16000.0, 0.040),
 ];
 
 /// The rain WASH only — audible foreground drops are scattered at runtime from
@@ -274,11 +274,13 @@ mod tests {
     fn rain_bed_matches_the_gentle_reference_envelope() {
         let mut rng = NoiseStream::new(3);
         let bed = rain_bed(&mut rng);
-        for &(lo, hi, pct) in &GENTLE_RAIN_BANDS {
-            let share = band_energy_share(&bed, lo, hi) * 100.0;
+        for band in GENTLE_RAIN_BANDS {
+            let (lo, hi) = (band.lo_hz(), band.hi_hz());
+            let share = band_energy_share(&bed, lo, hi);
             assert!(
-                (share - pct).abs() < 4.0,
-                "band {lo}-{hi}: {share:.1}% vs target {pct}%"
+                (share - band.share()).abs() < 0.04,
+                "band {lo}-{hi}: {share:.3} vs target {:.3}",
+                band.share()
             );
         }
     }
