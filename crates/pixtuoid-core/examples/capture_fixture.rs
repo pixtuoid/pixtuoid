@@ -26,11 +26,13 @@ mod recorder {
         Deidentified, Dropped, NonEmpty, Provenance, Recorded,
     };
     use pixtuoid_core::harness::reads;
+    use pixtuoid_core::source::decoder::SOURCE_STAMP;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
-    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
+    use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, Step, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
+        RELEASE_PATIENCE, SANDBOX_HOMES, create_private_dir, hold_lock, owned_by_us,
+        remove_once_released,
     };
     use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
@@ -303,8 +305,92 @@ mod recorder {
                 }
             },
             Invocation::Plan(file) => run(&CapturePlan::read(&file)?),
-            Invocation::Capture(plan) => run(&plan),
+            Invocation::Capture(plan) => isolated(&plan),
         }
+    }
+
+    /// An operator's capture, run as a hermetic one is: every home points into
+    /// a throwaway directory holding only pixtuoid's own hook for the source,
+    /// so no hook the operator installed reaches the tap. Cursor also runs
+    /// Claude Code's user hooks (cursor.com/docs/reference/third-party-hooks).
+    /// The CLI authenticates from the environment it inherits, cursor-agent
+    /// from `CURSOR_API_KEY` (`cursor-agent --help`): a keychain login keys on
+    /// the operator's home.
+    fn isolated(plan: &CapturePlan) -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let homes = isolated_homes(dir.path())?;
+        connect(&plan.source, &homes)?;
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args(Invocation::plan_args(&plan.write_to(dir.path())?))
+            .envs(homes)
+            .status()?;
+        drop(dir);
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    /// Each of [`SANDBOX_HOMES`] as a directory under `dir`.
+    fn isolated_homes(dir: &Path) -> std::io::Result<Vec<(String, PathBuf)>> {
+        SANDBOX_HOMES
+            .iter()
+            .map(|(var, rel)| {
+                let at = dir.join(rel);
+                std::fs::create_dir_all(&at)?;
+                Ok(((*var).to_owned(), at))
+            })
+            .collect()
+    }
+
+    /// `source`'s hook installed into `homes` by the pixtuoid built beside
+    /// this recorder, with only its directory on PATH, so the shim it installs
+    /// is the built one: one off the operator's PATH would pass with none of
+    /// the change under test in it.
+    fn connect(source: &str, homes: &[(String, PathBuf)]) -> std::io::Result<()> {
+        let built = std::env::current_exe()?
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| std::io::Error::other("an example sits two below its target dir"))?
+            .to_path_buf();
+        let pixtuoid = built.join(format!("pixtuoid{}", std::env::consts::EXE_SUFFIX));
+        let out = std::process::Command::new(&pixtuoid)
+            .args([Step::Connect.command(), source, "--json"])
+            .envs(homes.iter().map(|(k, v)| (k, v)))
+            .env("PATH", &built)
+            .output()
+            .map_err(|e| {
+                std::io::Error::other(format!(
+                    "{}: {e} — `just capture-fixture` builds it",
+                    pixtuoid.display()
+                ))
+            })?;
+        let rows: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap_or_default();
+        if rows.iter().any(|r| r["outcome"] == Step::Connect.outcome()) {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!(
+                "pixtuoid connect {source} did not connect: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )))
+        }
+    }
+
+    /// Why `payloads` are not all `source`'s own, if they are not: a hook outside
+    /// pixtuoid's install for it ran the shim, so its bytes are another wire. A
+    /// line that is not JSON is the strip's to name, not this.
+    fn foreign_hooks(source: &str, payloads: &[String]) -> Option<String> {
+        let foreign: BTreeSet<String> = payloads
+            .iter()
+            .filter_map(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+            .filter_map(|v| {
+                let tag = v.get(SOURCE_STAMP).and_then(|s| s.as_str());
+                (tag != Some(source)).then(|| tag.unwrap_or("untagged").to_owned())
+            })
+            .collect();
+        (!foreign.is_empty()).then(|| {
+            format!(
+                "the tap heard hooks tagged {foreign:?} beside {source}'s: a hook outside \
+                 pixtuoid's own install ran the shim, so nothing is recorded"
+            )
+        })
     }
 
     /// One capture, as `plan` spells it.
@@ -434,7 +520,10 @@ mod recorder {
             Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
             None => identity(&cmd, probe_version),
         };
-        if let (Sink::Committed { .. }, Err(e)) = (&plan.sink, versioned(&cli, &version)) {
+        let refused = versioned(&cli, &version)
+            .err()
+            .or_else(|| foreign_hooks(&source, &payloads).map(std::io::Error::other));
+        if let (Sink::Committed { .. }, Some(e)) = (&plan.sink, refused) {
             keep_scratch(
                 sandbox,
                 run_copy.as_deref(),
@@ -600,6 +689,18 @@ mod recorder {
         let scenario = hermetic::profile(&manifest.source)
             .and_then(|p| p.scenario(&manifest.scenario))
             .ok_or_else(|| std::io::Error::other(format!("{named}: no profiled scenario")))?;
+        let payloads: Vec<String> = match std::fs::read_to_string(run.join(HOOK_PAYLOADS)) {
+            Ok(text) => text
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(str::to_owned)
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e),
+        };
+        if let Some(why) = foreign_hooks(&manifest.source, &payloads) {
+            return Err(std::io::Error::other(format!("{named}: {why}")));
+        }
         let dest = root.join(scenario.fixture);
         let committed = Provenance::read_if_any(&dest.join(PROVENANCE))?;
         let exempt = committed.as_ref().and_then(|p| p.exemption().cloned());
@@ -3293,6 +3394,43 @@ mod recorder {
                 });
             assert!(!needles.contains(home), "{needles:?}");
             assert!(needles.contains("ada"), "{needles:?}");
+        }
+
+        #[test]
+        fn a_tap_line_tagged_for_another_source_or_none_refuses_the_capture() {
+            let tagged = |source: &str| format!(r#"{{"{SOURCE_STAMP}":"{source}"}}"#);
+            assert_eq!(
+                foreign_hooks("cursor", &[tagged("cursor"), tagged("cursor")]),
+                None
+            );
+            let why = foreign_hooks(
+                "cursor",
+                &[
+                    tagged("cursor"),
+                    tagged("claude-code"),
+                    r#"{"x":1}"#.to_owned(),
+                    "not json".to_owned(),
+                ],
+            )
+            .expect("refused");
+            assert!(
+                why.contains("claude-code") && why.contains("untagged"),
+                "{why}"
+            );
+        }
+
+        #[test]
+        fn an_isolated_capture_sets_every_home_inside_its_own_dir() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let homes = isolated_homes(d.path()).expect("homes");
+            for (var, _) in SANDBOX_HOMES {
+                let (_, at) = homes.iter().find(|(v, _)| v == var).expect("set");
+                assert!(
+                    at.starts_with(d.path()) && at.is_dir(),
+                    "{var}: {}",
+                    at.display()
+                );
+            }
         }
 
         #[test]

@@ -539,15 +539,16 @@ mutants *args:
     fi
     TZ={{ TEST_TZ }} cargo mutants --in-diff target/mutants.diff "$@"
 
-# Record a conformance fixture from bytes a real CLI actually sent. Hook-only
-# sources have no persistent corpus — hook events are transient — so their
-# fixtures are the ONLY wire evidence they have, and the ones this tree has not
-# re-recorded yet were composed by hand. One BILLED model turn per run.
-# `{prompt}` expands to the shared scenario prompt; a custom one is a quoted arg.
+# Record a conformance fixture from bytes a real CLI actually sent, the CLI run
+# under a throwaway home holding only the built pixtuoid's hook for it, so it
+# authenticates from the environment (cursor-agent: CURSOR_API_KEY). One BILLED
+# model turn per run. `{prompt}` expands to the shared scenario prompt; a
+# custom one is a quoted arg.
 #   just capture-fixture cursor tool-run cursor-agent -p --trust '{prompt}'
 [doc('Record a conformance fixture from a real CLI run (BILLED — one model turn)')]
 [group('rust')]
 capture-fixture source scenario *cmd:
+    cargo build --release -q -p pixtuoid -p pixtuoid-hook
     cargo run --release -q -p pixtuoid-core --example capture_fixture -- "$@"
 
 [doc('Strip every committed fixture of what no decoder reads, in place (local, unbilled)')]

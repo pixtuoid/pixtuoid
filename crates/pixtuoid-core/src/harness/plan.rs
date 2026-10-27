@@ -864,13 +864,14 @@ mod tests {
     #[test]
     fn the_recorder_reads_no_env_but_the_scrub_and_the_operators_identity() {
         use syn::visit::Visit;
-        const NO_VARIABLE: [&str; 6] = [
+        const NO_VARIABLE: [&str; 7] = [
             "args",
             "args_os",
             "current_dir",
             "current_exe",
             "join_paths",
             "split_paths",
+            "EXE_SUFFIX",
         ];
         const EXEMPT: [(&str, &str); 2] = [("wired", "vars_os"), ("identity_needles", "text_env")];
         /// The names a `use` brings in from `std::env` or `platform`, which a bare

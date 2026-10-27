@@ -47,7 +47,9 @@ mod run {
         MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, SHARDS,
         STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
-    use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
+    use pixtuoid_core::harness::host::{
+        RELEASE_PATIENCE, SANDBOX_HOMES, hold_lock, remove_once_released,
+    };
     use pixtuoid_core::harness::plan::{
         AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
     };
@@ -1552,23 +1554,6 @@ mod run {
         /// Where the headless pixtuoid listens and the recorder tees to.
         scene: Endpoint,
     }
-
-    /// Every home a CLI or pixtuoid may resolve, each a directory of the
-    /// sandbox. All are set on every platform: a variable no reader there reads
-    /// is inert.
-    const SANDBOX_HOMES: &[(&str, &str)] = &[
-        ("HOME", "home"),
-        ("USERPROFILE", "home"),
-        ("APPDATA", "home/AppData/Roaming"),
-        ("LOCALAPPDATA", "home/AppData/Local"),
-        // Each at its default under the home: reasonix refuses to link a
-        // plugin from outside it
-        // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
-        ("XDG_CONFIG_HOME", "home/.config"),
-        ("XDG_DATA_HOME", "home/.local/share"),
-        ("XDG_STATE_HOME", "home/.local/state"),
-        ("XDG_CACHE_HOME", "home/.cache"),
-    ];
 
     impl Sandbox {
         fn new(

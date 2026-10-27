@@ -55,10 +55,10 @@ Rust example" below.
 which is the seam that does not care how the payload reached the shim: codewhale
 passes identity in its hook env vars and the shim never reads stdin for it, so
 recording the INPUT would have captured a file of empty payloads. Two consequences
-for the bytes: a capture carries production's own `_shim_ts_ms` / `_pid` stamps
-(fixtures older than this seam do not), and the CLI's installed config is never
-touched — the hook it already has is the one that runs, so a DISCONNECTED source
-is refused before the turn is spent rather than after.
+for the bytes: a capture carries production's own `_shim_ts_ms` / `_pid` stamps,
+and every one must name the scenario's source: the CLI runs under a throwaway
+home holding only the built pixtuoid's hook for it, and a payload any other
+hook sent refuses the capture.
 
 **A gate needs its own sandbox and its own prompt.** `CAPTURE_SEED=<dir>` is
 copied into the sandbox workspace before the run — the place a per-CLI ask rule

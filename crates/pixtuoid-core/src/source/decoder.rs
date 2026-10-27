@@ -243,13 +243,16 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     ))
 }
 
+/// The key the shim stamps with the CLI whose hook ran it.
+pub const SOURCE_STAMP: &str = "_pixtuoid_source";
+
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
-/// `_pixtuoid_source`. CC's public `source` field carries the SessionStart REASON
+/// [`SOURCE_STAMP`]. CC's public `source` field carries the SessionStart REASON
 /// (startup/resume/clear/compact), so reading it would namespace the agent under
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
 pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
-    obj.get("_pixtuoid_source")
+    obj.get(SOURCE_STAMP)
         .and_then(|s| s.as_str())
         .unwrap_or(crate::source::claude_code::SOURCE_NAME)
 }

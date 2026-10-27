@@ -39,6 +39,22 @@ impl KnownFolder {
     }
 }
 
+/// Every home a CLI or pixtuoid may resolve, each a directory of a sandbox. All
+/// are set on every platform: a variable no reader there reads is inert.
+pub const SANDBOX_HOMES: &[(&str, &str)] = &[
+    ("HOME", "home"),
+    ("USERPROFILE", "home"),
+    ("APPDATA", "home/AppData/Roaming"),
+    ("LOCALAPPDATA", "home/AppData/Local"),
+    // Each at its default under the home: reasonix refuses to link a
+    // plugin from outside it
+    // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
+    ("XDG_CONFIG_HOME", "home/.config"),
+    ("XDG_DATA_HOME", "home/.local/share"),
+    ("XDG_STATE_HOME", "home/.local/state"),
+    ("XDG_CACHE_HOME", "home/.cache"),
+];
+
 /// `folder`'s path, which "does not include a trailing backslash"
 /// (learn.microsoft.com, SHGetKnownFolderPath).
 ///
