@@ -1202,8 +1202,8 @@ fn an_open_turn_showing_no_item_keeps_the_longer_of_the_tool_and_idle_windows() 
     );
 }
 
-/// The turn-axis property (spec "Representation → Property") over one
-/// agent's `Seq` stream, as `step` checks it after each event.
+/// The turn axis over one agent's `Seq` stream, as `step` checks it after
+/// each event.
 mod turn_property {
     use std::time::{Duration, SystemTime};
 

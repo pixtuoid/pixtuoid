@@ -1480,7 +1480,7 @@ mod tests {
             .collect()
     }
 
-    /// The spec's `brackets_turns` conformance: a source brackets its turns
+    /// `SourceCaps::brackets_turns`' conformance: a source brackets its turns
     /// exactly where its profile names a recording of every exit a turn takes,
     /// each recording closing every turn it opens through its own exit alone,
     /// and no capture of any other source decodes a turn's start.

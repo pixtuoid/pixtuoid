@@ -157,9 +157,8 @@ impl TurnLedger {
     }
 }
 
-/// The turn-axis property's oracle over one `Seq` stream (spec
-/// "Representation → Property"): its open turn is its newest start, unless
-/// that or a newer turn has ended.
+/// The turn-axis oracle over one `Seq` stream: its open turn is its newest
+/// start, unless that or a newer turn has ended.
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct SeqOracle {

@@ -714,10 +714,12 @@ const DSH: SourceDescriptor = SourceDescriptor {
             // at `dsh-v0.2.1-rc.2`; the delegation capture).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
-            // A Ctrl-C'd turn's `turn/end` is appended once the agents unload
-            // (`packages/core/agent-loop/src/index.ts:544-580`), after our
-            // plugin, which injects them: only an injected provider outlives
-            // its consumers (`session-persistence-jsonl/src/index.ts:1814-1817`).
+            // A Ctrl-C'd turn's `turn/end` is written only as the `agents`
+            // service unloads (`packages/core/agent-loop/src/index.ts:544-580`
+            // at `dsh-v0.2.1-rc.2`). Our plugin consumes that service, and a
+            // consumer unloads before its provider
+            // (`packages/session/session-persistence-jsonl/src/index.ts:1814-1817`,
+            // same tag), so the plugin never sees that end.
             brackets_turns: false,
         },
         // The plugin runs in-process (a cordis plugin in the launcher's one
