@@ -11,6 +11,8 @@
 // delete — disconnecting opencode in pixtuoid's Sources panel replaces this
 // with a removed-marker stub.
 import { spawn } from "node:child_process"
+import type { Plugin } from "@opencode/plugin"
+import type { Fields } from "./plugin-types.js"
 
 const HOOK_PATH: string = "{{HOOK_PATH_JSON}}"
 
@@ -24,9 +26,15 @@ const DRAIN_MS = 2000
 // published reaches the loop well within it.
 const QUIET_MS = 50
 
+type Event = Plugin.Context["event"]["subscribe"] extends (
+  ...args: never[]
+) => AsyncIterable<infer E>
+  ? E
+  : never
+
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
-const FORWARD = new Set<string>([
+const FORWARDED = [
   "session.created",
   "session.deleted",
   "session.execution.started",
@@ -37,10 +45,15 @@ const FORWARD = new Set<string>([
   "session.tool.success",
   "session.tool.failed",
   "permission.asked",
-])
+] as const satisfies readonly Event["type"][]
+const FORWARD = new Set<string>(FORWARDED)
+
+type SessionRecord = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
+// A forwarded event's data, or the record a turn's start merges in.
+type Data = Fields<Extract<Event, { type: (typeof FORWARDED)[number] }>["data"] | SessionRecord>
 
 // Copied field by field, so no prompt, tool input or output leaves opencode.
-const allowlisted = (data: any) => ({
+const allowlisted = (data: Data | undefined) => ({
   sessionID: data?.sessionID,
   parentID: data?.parentID,
   location: data?.location && { directory: data.location.directory },
@@ -77,7 +90,7 @@ const send = (payload: string) =>
 // fork's row keeps its source in `fork_session_id` with `parent_id` null
 // (`packages/core/src/session/projector.ts:160-161`), read back as `fork`, not
 // `parentID` (`packages/core/src/session/info.ts:21-28`), so a fork stays a root.
-const record = async (ctx: any, sessionID: unknown) => {
+const record = async (ctx: Plugin.Context, sessionID: SessionRecord["id"]): Promise<Partial<SessionRecord>> => {
   try {
     return (await ctx.session.get({ sessionID })) ?? {}
   } catch {
@@ -87,7 +100,7 @@ const record = async (ctx: any, sessionID: unknown) => {
 
 export default {
   id: "pixtuoid",
-  setup(ctx: any) {
+  setup(ctx) {
     const controller = new AbortController()
     let inFlight = 0
     let lastActivity = 0
@@ -96,14 +109,14 @@ export default {
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          if (!FORWARD.has(event?.type)) continue
+          if (!FORWARD.has(event.type)) continue
           inFlight++
           try {
             // A turn's start carries only `sessionID`; the session's record adds
             // what `session.created` did, for a session swept since.
-            const data =
+            const data: Data =
               event.type === "session.execution.started"
-                ? { ...(await record(ctx, event.data?.sessionID)), ...event.data }
+                ? { ...(await record(ctx, event.data.sessionID)), ...event.data }
                 : event.data
             await send(
               JSON.stringify({
@@ -135,4 +148,4 @@ export default {
       controller.abort()
     }
   },
-}
+} satisfies Plugin.Plugin

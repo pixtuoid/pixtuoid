@@ -15,8 +15,9 @@ use crate::state::ActivityState;
 use crate::{AgentEvent, Reducer, Transport};
 
 /// What the shim stamps on every envelope: when it forwarded it, in
-/// milliseconds since the epoch (`pixtuoid-hook`'s `main.rs`).
-const SHIM_STAMP: &str = "_shim_ts_ms";
+/// milliseconds since the epoch. Pinned by
+/// `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+pub const SHIM_STAMP: &str = "_shim_ts_ms";
 
 /// One event a merge applied.
 #[derive(Debug, Clone)]

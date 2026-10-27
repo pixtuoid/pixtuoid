@@ -51,7 +51,7 @@ const DISPATCH_TOOL: &str = "subagent";
 
 /// The event types this decoder turns into events. Pinned to the arms below
 /// by `every_exported_set_is_exactly_its_dispatch_arms`, and to the plugin's
-/// `FORWARD` set by `the_plugin_forwards_exactly_what_the_decoder_reads`.
+/// forwarding by its selftest, through `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_EVENTS: &[&str] = &[
@@ -70,7 +70,7 @@ pub const DECODED_EVENTS: &[&str] = &[
 /// Every `data` path `field` reads, dotted, pinned by
 /// `every_decoded_data_field_is_read`. The plugin's `allowlisted` copies these
 /// and nothing more, pinned by
-/// `the_plugin_copies_exactly_the_fields_the_decoder_reads`.
+/// its selftest, through `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_DATA_FIELDS: &[&str] = &[

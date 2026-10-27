@@ -22,6 +22,8 @@ exclude                = [
     # `cargo test` is red regardless (`tests/watcher/sources.rs`, `tests/render/format.rs`).
     "tests/sources",
     "tests/pinned_by_claims.rs",
+    "tests/lang_gates.rs",
+    "tests/shim_stamp_parity.rs",
     "tests/socket_path_parity.rs",
     "tests/supported_sources_manifest.rs",
     "tests/proof_fixture_disjointness.rs",

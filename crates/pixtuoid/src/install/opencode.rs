@@ -16,23 +16,14 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::install::io;
+use crate::install::merge::HOOK_PLACEHOLDER;
 use crate::install::target::MergeOutcome;
 
 /// Marks the plugin as ours — absent from the removed-stub, so an uninstall of
 /// a foreign/removed file is a clean no-op.
 const SENTINEL: &str = "@pixtuoid-opencode-plugin";
 
-const HOOK_PLACEHOLDER: &str = "\"{{HOOK_PATH_JSON}}\"";
-
 const PLUGIN_TEMPLATE: &str = include_str!("opencode_plugin.ts");
-
-/// The events the plugin forwards: its `FORWARD` set.
-#[cfg(test)]
-pub(crate) fn plugin_events() -> Vec<&'static str> {
-    crate::install::forward_set(PLUGIN_TEMPLATE)
-        .into_iter()
-        .collect()
-}
 
 /// A no-op plugin WITHOUT the sentinel, so a re-uninstall is a no-op.
 pub(crate) const REMOVED_STUB: &str = "// pixtuoid opencode plugin removed by disconnecting opencode in pixtuoid's Sources panel (press s).\nexport default { id: \"pixtuoid-removed\", setup() {} }\n";
@@ -125,7 +116,7 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
 }
 
 pub(crate) fn render_plugin(hook_path: &str) -> Result<String> {
-    crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, HOOK_PLACEHOLDER, hook_path, "opencode")
+    crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "opencode")
 }
 
 #[cfg(test)]
@@ -136,7 +127,7 @@ mod tests {
     /// compares an event, must be one it forwards: the loop drops every other.
     #[test]
     fn every_event_the_plugin_names_is_one_it_forwards() {
-        let forwarded = crate::install::forward_set(PLUGIN_TEMPLATE);
+        let forwarded = pixtuoid_core::source::opencode::DECODED_EVENTS;
         for lit in PLUGIN_TEMPLATE.split('"').skip(1).step_by(2) {
             let event_shaped = lit.contains('.')
                 && lit.split('.').all(|w| {
@@ -146,79 +137,11 @@ mod tests {
                 });
             if event_shaped {
                 assert!(
-                    forwarded.contains(lit),
+                    forwarded.contains(&lit),
                     "the plugin names `{lit}` but never forwards it"
                 );
             }
         }
-    }
-
-    /// The plugin forwards EXACTLY what the decoder reads. These are two lists in
-    /// two languages — a TS `FORWARD` set here, `match event` arms in
-    /// `pixtuoid-core` — and no compiler can see across that gap, so they are
-    /// bound through core's `DECODED_EVENTS` instead. Forward one the decoder
-    /// ignores and we spawn a shim per event for nothing; miss one it reads and
-    /// that signal never arrives.
-    #[test]
-    fn the_plugin_forwards_exactly_what_the_decoder_reads() {
-        let forwarded: std::collections::BTreeSet<&str> = plugin_events().into_iter().collect();
-        let decoded: std::collections::BTreeSet<&str> =
-            pixtuoid_core::source::opencode::DECODED_EVENTS
-                .iter()
-                .copied()
-                .collect();
-
-        assert_eq!(forwarded, decoded);
-    }
-
-    /// The `data` paths `allowlisted` copies, dotted, read out of the template.
-    /// A line in any form but the two below panics, so a field cannot ride a
-    /// line in unseen or copy something other than its own name.
-    fn allowlisted_fields() -> std::collections::BTreeSet<String> {
-        let block = PLUGIN_TEMPLATE
-            .split_once("const allowlisted = (data: any) => ({")
-            .and_then(|(_, rest)| rest.split_once("})"))
-            .map(|(inner, _)| inner)
-            .expect("the template defines allowlisted");
-        block
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(|line| {
-                let (key, _) = line.split_once(':').unwrap_or(("", ""));
-                if line == format!("{key}: data?.{key},") {
-                    return key.to_owned();
-                }
-                let sub = line
-                    .split_once("&& { ")
-                    .and_then(|(_, inner)| inner.split_once(':'))
-                    .map_or("", |(sub, _)| sub);
-                assert_eq!(
-                    line,
-                    format!("{key}: data?.{key} && {{ {sub}: data.{key}.{sub} }},"),
-                    "an allowlisted line copies something other than its own path"
-                );
-                format!("{key}.{sub}")
-            })
-            .collect()
-    }
-
-    /// The plugin strips every field it does not copy, and the decoder's own
-    /// tests build their payloads inline, so the two field lists are pinned
-    /// here, as the event lists are above.
-    #[test]
-    fn the_plugin_copies_exactly_the_fields_the_decoder_reads() {
-        let decoded: std::collections::BTreeSet<String> =
-            pixtuoid_core::source::opencode::DECODED_DATA_FIELDS
-                .iter()
-                .map(ToString::to_string)
-                .collect();
-        assert_eq!(allowlisted_fields(), decoded);
-        assert!(
-            PLUGIN_TEMPLATE
-                .contains("location: event.location && { directory: event.location.directory }"),
-            "the decoder reads the envelope's location.directory as an event's cwd"
-        );
     }
 
     #[test]
@@ -415,40 +338,18 @@ mod tests {
         assert!(hook_command(bad, false).is_err());
     }
 
-    /// The binding test above catches a one-sided drop; this pin is what stops
-    /// a SYMMETRIC one — plugin and decoder deleted together — from shipping
-    /// silently.
-    #[test]
-    fn opencode_plugin_forward_set_is_pinned() {
-        assert_eq!(
-            plugin_events(),
-            [
-                "permission.asked",
-                "session.created",
-                "session.deleted",
-                "session.execution.failed",
-                "session.execution.interrupted",
-                "session.execution.started",
-                "session.execution.succeeded",
-                "session.tool.failed",
-                "session.tool.input.started",
-                "session.tool.success",
-            ],
-            "opencode_plugin.ts's forwarded events changed — update the decoder and this pin together"
-        );
-    }
-
-    /// Every event the PLUGIN forwards must decode — driven off the template's own
-    /// set, so a new `FORWARD` entry with no decoder arm fails here rather than
-    /// silently arriving as an unmapped event.
+    /// Every event the plugin forwards decodes: its selftest holds it to
+    /// exactly `DECODED_EVENTS` (`plugin-contract.json`).
     #[test]
     fn every_forwarded_opencode_event_decodes() {
         use pixtuoid_core::source::decoder::decode_hook_payload;
-        let payloads = plugin_events().into_iter().map(|ty| {
-            serde_json::json!({"type": ty, "_pixtuoid_source": "opencode",
+        let payloads = pixtuoid_core::source::opencode::DECODED_EVENTS
+            .iter()
+            .map(|ty| {
+                serde_json::json!({"type": ty, "_pixtuoid_source": "opencode",
                 "data": {"sessionID": "ses_1", "location": {"directory": "/r"},
                     "id": "c", "name": "bash", "action": "bash"}})
-        });
+            });
         for p in payloads {
             let ty = p["type"].clone();
             assert!(

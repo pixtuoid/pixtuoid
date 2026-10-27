@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
 const SCOPE = "@pixtuoid";
 const BINS = ["pixtuoid", "pixtuoid-hook"];
@@ -39,14 +40,15 @@ const TARGETS = [
   { rust: "aarch64-pc-windows-msvc", pkg: "win32-arm64", os: "win32", cpu: "arm64" },
 ];
 
-function arg(name, def) {
-  const i = process.argv.indexOf("--" + name);
-  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : def;
-}
-
-const version = arg("version");
-const artifacts = arg("artifacts");
-const NPM_DIR = arg("npm-dir", dirname(fileURLToPath(import.meta.url)));
+const {
+  values: { version, artifacts, "npm-dir": NPM_DIR },
+} = parseArgs({
+  options: {
+    version: { type: "string" },
+    artifacts: { type: "string" },
+    "npm-dir": { type: "string", default: dirname(fileURLToPath(import.meta.url)) },
+  },
+});
 if (!version || !artifacts) {
   console.error("usage: node npm/generate.mjs --version X.Y.Z --artifacts <dir>");
   process.exit(1);
@@ -57,6 +59,10 @@ if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
 }
 
 // Copy `NOTICES` from a target's extracted archive into `pkgDir`.
+/**
+ * @param {string} from
+ * @param {string} pkgDir
+ */
 function copyNotices(from, pkgDir) {
   for (const notice of NOTICES) {
     const src = join(from, notice);

@@ -3,6 +3,8 @@
 //!
 //! - `plan <taken.json> <drift.json>`: the proposals, as JSON, given the titles
 //!   `gh pr list --json title` names and the drift job's outputs.
+//! - `plugin-types <source>`: the npm packages `source`'s plugin is
+//!   type-checked against, one per line, for the bump to pin with it.
 //! - `patch <source> <out>`: the tree's bump of `source` as a patch at `out`;
 //!   nothing is written when the tree is unchanged.
 //! - `check <proposals.json> <patches>`: each proposal's patch in `patches`,
@@ -22,6 +24,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 const USAGE: &str = "usage: bump plan <taken.json> <drift.json>\n       \
+                     bump plugin-types <source>\n       \
                      bump patch <source> <out>\n       \
                      bump check <proposals.json> <patches>";
 
@@ -29,6 +32,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let done = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["plan", taken, drift] => plan(Path::new(taken), Path::new(drift)),
+        ["plugin-types", source] => profile(source).map(|p| {
+            for package in p.plugin_types {
+                println!("{package}");
+            }
+        }),
         ["patch", source, out] => patch(source, Path::new(out)),
         ["check", proposals, patches] => check(Path::new(proposals), Path::new(patches)),
         _ => {

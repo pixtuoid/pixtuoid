@@ -32,6 +32,7 @@ const TUI: tui::Tui = tui::Tui {
 pub(crate) const PROFILE: Profile = Profile {
     source: "claude-code",
     package: Package::Npm("@anthropic-ai/claude-code"),
+    plugin_types: &[],
     invocation: &["claude", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [value]`: "Resume a conversation by session ID"
     // (`claude --help` at 2.1.302).

@@ -10,6 +10,7 @@ Cargo.lock.bak
 .claude/scheduled_tasks.lock
 /*.png
 .venv
+node_modules/
 .superpowers/
 docs/superpowers/
 .claude/worktrees/

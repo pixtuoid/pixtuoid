@@ -1,0 +1,78 @@
+{
+  "pid_key": "_pid",
+  "source_flag": "--source",
+  "hook_placeholder": "\"{{HOOK_PATH_JSON}}\"",
+  "plugins": [
+    {
+      "source": "dsh",
+      "file": "dsh_plugin.mjs",
+      "registers": [
+        "agent/created",
+        "agent/disposed",
+        "approval/asked",
+        "approval/decided",
+        "assistant/message",
+        "request/header",
+        "tool/call",
+        "tool/result"
+      ],
+      "consumes": []
+    },
+    {
+      "source": "omp",
+      "file": "omp_extension.ts",
+      "registers": [
+        "session_start",
+        "session_switch",
+        "session_branch",
+        "session_shutdown",
+        "tool_approval_requested",
+        "tool_approval_resolved"
+      ],
+      "consumes": []
+    },
+    {
+      "source": "openclaw",
+      "file": "openclaw_plugin.js",
+      "registers": [
+        "gateway_start",
+        "gateway_stop",
+        "session_start",
+        "session_end",
+        "before_agent_run",
+        "agent_end",
+        "model_call_ended"
+      ],
+      "consumes": [
+        "model_call_ended"
+      ]
+    },
+    {
+      "source": "opencode",
+      "file": "opencode_plugin.ts",
+      "registers": [
+        "session.created",
+        "session.deleted",
+        "session.execution.started",
+        "session.execution.succeeded",
+        "session.execution.failed",
+        "session.execution.interrupted",
+        "session.tool.input.started",
+        "session.tool.success",
+        "session.tool.failed",
+        "permission.asked"
+      ],
+      "consumes": [],
+      "data_fields": [
+        "sessionID",
+        "parentID",
+        "location.directory",
+        "model.id",
+        "id",
+        "name",
+        "action",
+        "source.id"
+      ]
+    }
+  ]
+}

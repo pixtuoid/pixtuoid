@@ -19,40 +19,51 @@
 // to delete — disconnecting omp in pixtuoid's Sources panel replaces this
 // with a removed-marker stub. Already-running omp sessions load extensions at
 // startup, so they must restart to pick this up.
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionFactory,
+  SessionBranchEvent,
+  SessionShutdownEvent,
+  SessionStartEvent,
+  SessionSwitchEvent,
+  ToolApprovalRequestedEvent,
+  ToolApprovalResolvedEvent,
+} from "@oh-my-pi/pi-coding-agent"
+import type { Fields } from "./plugin-types.js"
+
 const HOOK_PATH: string = "{{HOOK_PATH_JSON}}"
 
-// Observe-only lifecycle + approval events; the decoder
-// (`pixtuoid-core/src/source/omp.rs`) claims exactly this set.
-const FORWARD = new Set<string>([
-  "session_start",
-  "session_switch",
-  "session_branch",
-  "session_shutdown",
-  "tool_approval_requested",
-  "tool_approval_resolved",
-])
+type Observed = Fields<
+  | SessionStartEvent
+  | SessionSwitchEvent
+  | SessionBranchEvent
+  | SessionShutdownEvent
+  | ToolApprovalRequestedEvent
+  | ToolApprovalResolvedEvent
+>
 
-export default function (pi: any) {
-  const forward = async (name: string, ev: any, ctx: any) => {
+export default ((pi: ExtensionAPI) => {
+  const forward = async (type: string, ev: Observed, ctx: ExtensionContext) => {
     try {
-      const payload: Record<string, unknown> = { type: name }
+      const payload: Record<string, unknown> = { type }
       // The CONTEXT's session, not the events' own copy: ctx names the FILE
       // both transports key on, and the two agreed in every recorded round.
       try {
-        payload.sessionFile = ctx?.sessionManager?.getSessionFile?.()
+        payload.sessionFile = ctx.sessionManager.getSessionFile()
       } catch {}
       try {
-        payload.sessionId = ctx?.sessionManager?.getSessionId?.()
+        payload.sessionId = ctx.sessionManager.getSessionId()
       } catch {}
-      if (typeof ctx?.cwd === "string") payload.cwd = ctx.cwd
-      if (typeof ev?.previousSessionFile === "string") payload.previousSessionFile = ev.previousSessionFile
-      if (typeof ev?.toolCallId === "string") payload.toolCallId = ev.toolCallId
-      if (typeof ev?.toolName === "string") payload.toolName = ev.toolName
-      if (typeof ev?.reason === "string") payload.reason = ev.reason
-      if (typeof ev?.approved === "boolean") payload.approved = ev.approved
+      if (typeof ctx.cwd === "string") payload.cwd = ctx.cwd
+      if (typeof ev.previousSessionFile === "string") payload.previousSessionFile = ev.previousSessionFile
+      if (typeof ev.toolCallId === "string") payload.toolCallId = ev.toolCallId
+      if (typeof ev.toolName === "string") payload.toolName = ev.toolName
+      if (typeof ev.reason === "string") payload.reason = ev.reason
+      if (typeof ev.approved === "boolean") payload.approved = ev.approved
       // The omp process pid (extensions run in-process) — the PluginStamp
       // channel: focus and the abrupt-exit watch ride it.
-      payload._pid = typeof process !== "undefined" ? process.pid : undefined
+      payload._pid = process.pid
       // Buffer stdin: no writable stream, no EPIPE window.
       const proc = Bun.spawn([HOOK_PATH, "--source", "omp"], {
         stdin: new TextEncoder().encode(JSON.stringify(payload)),
@@ -64,11 +75,19 @@ export default function (pi: any) {
       // Best-effort: a broken shim must never surface in omp.
     }
   }
-  for (const name of FORWARD) {
-    // Per-event registration is try/catch'd so one unknown event name on an
-    // older omp cannot take the whole bridge down.
+  // Observe-only lifecycle and approval events; the decoder
+  // (`pixtuoid-core/src/source/omp.rs`) claims exactly this set. Each
+  // registration is try/catch'd so one unknown event name cannot take the
+  // whole bridge down.
+  const observe = (register: () => void) => {
     try {
-      pi.on(name, (ev: any, ctx: any) => forward(name, ev, ctx))
+      register()
     } catch {}
   }
-}
+  observe(() => pi.on("session_start", (ev, ctx) => forward("session_start", ev, ctx)))
+  observe(() => pi.on("session_switch", (ev, ctx) => forward("session_switch", ev, ctx)))
+  observe(() => pi.on("session_branch", (ev, ctx) => forward("session_branch", ev, ctx)))
+  observe(() => pi.on("session_shutdown", (ev, ctx) => forward("session_shutdown", ev, ctx)))
+  observe(() => pi.on("tool_approval_requested", (ev, ctx) => forward("tool_approval_requested", ev, ctx)))
+  observe(() => pi.on("tool_approval_resolved", (ev, ctx) => forward("tool_approval_resolved", ev, ctx)))
+}) satisfies ExtensionFactory

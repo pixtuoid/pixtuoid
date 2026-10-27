@@ -21,8 +21,8 @@
   },
   "license": "(MIT AND OFL-1.1)",
   "bin": {
-    "pixtuoid": "bin/pixtuoid",
-    "pixtuoid-hook": "bin/pixtuoid-hook"
+    "pixtuoid": "bin/pixtuoid.js",
+    "pixtuoid-hook": "bin/pixtuoid-hook.js"
   },
   "files": [
     "bin/",

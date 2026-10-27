@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "The type checkers `just lint` runs over the repo's JavaScript and Python.",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "pyright": "^1.1.414",
+    "typescript": "^7.0.2"
+  }
+}

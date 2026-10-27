@@ -22,9 +22,9 @@ Each platform package is a **pure payload** (both native binaries, no `bin`).
 The launcher exposes the two commands; its shims resolve the installed platform
 package via `require.resolve` and exec the native binary:
 
-- **`bin/pixtuoid`** — the TUI launcher. May print an error + exit non-zero if no
+- **`bin/pixtuoid.js`** — the TUI launcher. May print an error + exit non-zero if no
   prebuilt binary matches the host.
-- **`bin/pixtuoid-hook`** — the hook shim. **ALWAYS exits 0, never writes stderr,
+- **`bin/pixtuoid-hook.js`** — the hook shim. **ALWAYS exits 0, never writes stderr,
   never throws** (invariant #5: never block the agent). A Node hop adds ~tens of
   ms; the zero-hop optimization (the Sources panel targeting the sibling
   native binary directly) is a tracked follow-up.
@@ -58,7 +58,7 @@ mkdir -p /tmp/a/aarch64-apple-darwin
 cp target/release/pixtuoid target/release/pixtuoid-hook /tmp/a/aarch64-apple-darwin/
 node npm/generate.mjs --version 0.6.0 --artifacts /tmp/a   # (needs all 6 targets present; fake the others to test)
 # exercise the shim against a real binary without publishing:
-PIXTUOID_BINARY="$PWD/target/release" node npm/pixtuoid/bin/pixtuoid --version
+PIXTUOID_BINARY="$PWD/target/release" node npm/pixtuoid/bin/pixtuoid.js --version
 ```
 
 For a full registry round-trip, publish the generated packages to a local

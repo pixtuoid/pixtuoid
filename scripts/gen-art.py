@@ -92,6 +92,13 @@ def require(holds, why):
         raise ValueError(why)
 
 
+def doc(draw) -> str:
+    """`draw`'s docstring, the header its sprite carries, which `-OO` strips."""
+    if draw.__doc__ is None:
+        raise ValueError(f"{draw.__name__} has no docstring: run without -OO")
+    return draw.__doc__
+
+
 class Draws:
     """A seeded stream of draws built on `random()` alone: the one sequence
     the `random` docs keep across Python versions ("Notes on
@@ -5626,7 +5633,7 @@ def selftest(sprites):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument(
         "pack",
         nargs="?",
@@ -5644,69 +5651,69 @@ def main():
     if not args.selftest and args.pack is None:
         parser.error("a pack directory is required")
     pieces = {
-        "plant": (plant_bush.__doc__, [plant_bush()]),
-        "plant_tall": (plant_tall.__doc__, [plant_tall()]),
-        "plant_flower": (plant_flower.__doc__, [plant_flower()]),
-        "plant_succulent": (plant_succulent.__doc__, [plant_succulent()]),
-        "floor_lamp": (floor_lamp.__doc__, [floor_lamp()]),
-        "filing_cabinet": (filing_cabinet.__doc__, [filing_cabinet()]),
-        "bulletin_board": (bulletin_board.__doc__, [bulletin_board()]),
-        "exit_sign": (exit_sign.__doc__, [exit_sign()]),
-        "whiteboard": (whiteboard.__doc__, [whiteboard()]),
-        "bookshelf": (bookshelf.__doc__, [bookshelf()]),
-        "meeting_screen": (meeting_screen.__doc__, [meeting_screen()]),
-        "pantry": (pantry.__doc__, [pantry()]),
-        "pantry_small": (pantry_small.__doc__, [pantry_small()]),
-        "snack_shelf": (snack_shelf.__doc__, [snack_shelf()]),
-        "tv_stand": (tv_stand.__doc__, [tv_stand()]),
-        "phone_booth": (phone_booth.__doc__, [phone_booth()]),
-        "standing_desk": (standing_desk.__doc__, [standing_desk()]),
-        "desk_chair": (desk_chair.__doc__, [desk_chair()]),
-        "desk_cup": (desk_cup.__doc__, [desk_cup()]),
-        "token_tower": (token_tower.__doc__, token_tower()),
-        "token_sheet": (token_sheet.__doc__, [token_sheet()]),
-        "desk": (desk_south.__doc__, [desk_south()]),
-        "desk_north": (desk_north.__doc__, [desk_north()]),
-        "meeting_sofa": (meeting_sofa.__doc__, [meeting_sofa()]),
-        "meeting_sofa_north": (meeting_sofa_north.__doc__, [meeting_sofa_north()]),
-        "vending_machine": (vending_machine.__doc__, vending_machine()),
-        "printer": (printer.__doc__, printer()),
-        "meeting_table": (meeting_table.__doc__, [meeting_table()]),
-        "kitchen_island": (kitchen_island.__doc__, [kitchen_island()]),
-        "side_table": (side_table.__doc__, [side_table()]),
-        "water_cooler": (water_cooler.__doc__, water_cooler()),
-        "pantry_bin": (trash_bin.__doc__, [trash_bin()]),
-        "fish_tank": (fish_tank.__doc__, fish_tank()),
-        "coat_rack": (coat_rack.__doc__, [coat_rack()]),
-        "notice_board": (notice_board.__doc__, [notice_board()]),
-        "wall_clock": (wall_clock.__doc__, [wall_clock()]),
-        "meeting_chair": (meeting_chair.__doc__, [meeting_chair()]),
-        "door": (elevator_door.__doc__, elevator_door()),
+        "plant": (doc(plant_bush), [plant_bush()]),
+        "plant_tall": (doc(plant_tall), [plant_tall()]),
+        "plant_flower": (doc(plant_flower), [plant_flower()]),
+        "plant_succulent": (doc(plant_succulent), [plant_succulent()]),
+        "floor_lamp": (doc(floor_lamp), [floor_lamp()]),
+        "filing_cabinet": (doc(filing_cabinet), [filing_cabinet()]),
+        "bulletin_board": (doc(bulletin_board), [bulletin_board()]),
+        "exit_sign": (doc(exit_sign), [exit_sign()]),
+        "whiteboard": (doc(whiteboard), [whiteboard()]),
+        "bookshelf": (doc(bookshelf), [bookshelf()]),
+        "meeting_screen": (doc(meeting_screen), [meeting_screen()]),
+        "pantry": (doc(pantry), [pantry()]),
+        "pantry_small": (doc(pantry_small), [pantry_small()]),
+        "snack_shelf": (doc(snack_shelf), [snack_shelf()]),
+        "tv_stand": (doc(tv_stand), [tv_stand()]),
+        "phone_booth": (doc(phone_booth), [phone_booth()]),
+        "standing_desk": (doc(standing_desk), [standing_desk()]),
+        "desk_chair": (doc(desk_chair), [desk_chair()]),
+        "desk_cup": (doc(desk_cup), [desk_cup()]),
+        "token_tower": (doc(token_tower), token_tower()),
+        "token_sheet": (doc(token_sheet), [token_sheet()]),
+        "desk": (doc(desk_south), [desk_south()]),
+        "desk_north": (doc(desk_north), [desk_north()]),
+        "meeting_sofa": (doc(meeting_sofa), [meeting_sofa()]),
+        "meeting_sofa_north": (doc(meeting_sofa_north), [meeting_sofa_north()]),
+        "vending_machine": (doc(vending_machine), vending_machine()),
+        "printer": (doc(printer), printer()),
+        "meeting_table": (doc(meeting_table), [meeting_table()]),
+        "kitchen_island": (doc(kitchen_island), [kitchen_island()]),
+        "side_table": (doc(side_table), [side_table()]),
+        "water_cooler": (doc(water_cooler), water_cooler()),
+        "pantry_bin": (doc(trash_bin), [trash_bin()]),
+        "fish_tank": (doc(fish_tank), fish_tank()),
+        "coat_rack": (doc(coat_rack), [coat_rack()]),
+        "notice_board": (doc(notice_board), [notice_board()]),
+        "wall_clock": (doc(wall_clock), [wall_clock()]),
+        "meeting_chair": (doc(meeting_chair), [meeting_chair()]),
+        "door": (doc(elevator_door), elevator_door()),
     }
     classic = {
         "meeting_sofa_north": (
-            meeting_sofa_north_1x.__doc__,
+            doc(meeting_sofa_north_1x),
             [meeting_sofa_north_1x()],
         ),
-        "desk": (desk_south_1x.__doc__, [desk_south_1x()]),
-        "desk_north": (desk_north_1x.__doc__, [desk_north_1x()]),
-        "desk_cup": (desk_cup_1x.__doc__, [desk_cup_1x()]),
-        "token_tower": (token_tower_1x.__doc__, token_tower_1x()),
-        "token_sheet": (token_sheet_1x.__doc__, [token_sheet_1x()]),
-        "vending_machine": (vending_machine_1x.__doc__, vending_machine_1x()),
-        "floor_lamp": (floor_lamp_1x.__doc__, [floor_lamp_1x()]),
-        "phone_booth": (phone_booth_1x.__doc__, [phone_booth_1x()]),
-        "printer": (printer_1x.__doc__, printer_1x()),
-        "meeting_table": (meeting_table_1x.__doc__, [meeting_table_1x()]),
-        "kitchen_island": (kitchen_island_1x.__doc__, [kitchen_island_1x()]),
-        "side_table": (side_table_1x.__doc__, [side_table_1x()]),
-        "water_cooler": (water_cooler_1x.__doc__, water_cooler_1x()),
-        "pantry_bin": (trash_bin_1x.__doc__, [trash_bin_1x()]),
-        "fish_tank": (fish_tank_1x.__doc__, fish_tank_1x()),
-        "coat_rack": (coat_rack_1x.__doc__, [coat_rack_1x()]),
-        "notice_board": (notice_board_1x.__doc__, [notice_board_1x()]),
-        "wall_clock": (wall_clock_1x.__doc__, [wall_clock_1x()]),
-        "meeting_chair": (meeting_chair_1x.__doc__, [meeting_chair_1x()]),
+        "desk": (doc(desk_south_1x), [desk_south_1x()]),
+        "desk_north": (doc(desk_north_1x), [desk_north_1x()]),
+        "desk_cup": (doc(desk_cup_1x), [desk_cup_1x()]),
+        "token_tower": (doc(token_tower_1x), token_tower_1x()),
+        "token_sheet": (doc(token_sheet_1x), [token_sheet_1x()]),
+        "vending_machine": (doc(vending_machine_1x), vending_machine_1x()),
+        "floor_lamp": (doc(floor_lamp_1x), [floor_lamp_1x()]),
+        "phone_booth": (doc(phone_booth_1x), [phone_booth_1x()]),
+        "printer": (doc(printer_1x), printer_1x()),
+        "meeting_table": (doc(meeting_table_1x), [meeting_table_1x()]),
+        "kitchen_island": (doc(kitchen_island_1x), [kitchen_island_1x()]),
+        "side_table": (doc(side_table_1x), [side_table_1x()]),
+        "water_cooler": (doc(water_cooler_1x), water_cooler_1x()),
+        "pantry_bin": (doc(trash_bin_1x), [trash_bin_1x()]),
+        "fish_tank": (doc(fish_tank_1x), fish_tank_1x()),
+        "coat_rack": (doc(coat_rack_1x), [coat_rack_1x()]),
+        "notice_board": (doc(notice_board_1x), [notice_board_1x()]),
+        "wall_clock": (doc(wall_clock_1x), [wall_clock_1x()]),
+        "meeting_chair": (doc(meeting_chair_1x), [meeting_chair_1x()]),
     }
     sprites = {
         f"{base}@{S}x.sprite": render_sprite(
@@ -5729,7 +5736,7 @@ def main():
                         [(view, HEAD_MARK[0], HEAD_MARK[1] + LIFT)],
                     )
     check_walks()
-    sprites["standing.sprite"] = render_sprite(figure_1x.__doc__, [figure_1x()])
+    sprites["standing.sprite"] = render_sprite(doc(figure_1x), [figure_1x()])
     for name, (view, mug, title) in WALKS.items():
         for i, step in enumerate(WALK_CYCLE):
             sprites[f"{name}_{i}.sprite"] = render_sprite(
@@ -5755,7 +5762,7 @@ def main():
     ):
         art = desk()
         require(grounded([art]) == [art], f"desk{suffix} moves when grounded")
-        sprites[f"desk_front{suffix}.sprite"] = render_sprite(front.__doc__, [front()])
+        sprites[f"desk_front{suffix}.sprite"] = render_sprite(doc(front), [front()])
     for anim, (header, texts) in CREATURES.items():
         for i, g in enumerate(grounded([master(t) for t in texts])):
             sprites[f"{anim}_{i}@{S}x.sprite"] = render_sprite(header, [g])
@@ -5765,9 +5772,9 @@ def main():
             )
     for name, draw in BUILDINGS.items():
         art = draw()
-        sprites[f"building_{name}@{S}x.sprite"] = render_sprite(draw.__doc__, [art])
+        sprites[f"building_{name}@{S}x.sprite"] = render_sprite(doc(draw), [art])
         sprites[f"building_{name}.sprite"] = render_sprite(
-            draw.__doc__ + "\n\nIts base: the drawing read at 1x.", [city_base(art)]
+            doc(draw) + "\n\nIts base: the drawing read at 1x.", [city_base(art)]
         )
     if args.selftest:
         selftest(sprites)

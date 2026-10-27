@@ -39,6 +39,7 @@ pub(crate) const PROFILE: Profile = Profile {
     // (`packages/core/src/session.ts:378-388` at v2.1.0): a delete through
     // a private server of its own forwards none. Only an explicit `--model`
     // reaches the session's events (`packages/cli/src/run/run.ts:91`).
+    plugin_types: &["@opencode/plugin"],
     invocation: &[
         "opencode",
         "run",

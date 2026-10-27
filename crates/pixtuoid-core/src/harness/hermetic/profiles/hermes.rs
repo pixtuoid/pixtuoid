@@ -36,6 +36,7 @@ pub(crate) const PROFILE: Profile = Profile {
     package: Package::UvLocked("NousResearch/hermes-agent"),
     // `-z` is one turn that approves every tool (`hermes_cli/oneshot.py:275-277`),
     // and a hook runs only once accepted.
+    plugin_types: &[],
     invocation: &[
         "hermes",
         "--accept-hooks",

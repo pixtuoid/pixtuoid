@@ -149,6 +149,16 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
     i32::try_from(raw).ok().filter(|&p| p > 0)
 }
 
+/// Where a plugin, or else the shim, stamps the CLI's pid. Pinned by
+/// `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+#[doc(hidden)]
+pub const PID_STAMP: &str = "_pid";
+
+/// Where the shim stamps the CLI an envelope came from. Pinned by
+/// `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+#[doc(hidden)]
+pub const SOURCE_STAMP: &str = "_pixtuoid_source";
+
 pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
     v.get("cwd").and_then(Value::as_str).map(PathBuf::from)
 }
@@ -290,7 +300,7 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
 pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
-    obj.get("_pixtuoid_source")
+    obj.get(SOURCE_STAMP)
         .and_then(|s| s.as_str())
         .unwrap_or(crate::source::claude_code::SOURCE_NAME)
 }
@@ -322,7 +332,7 @@ fn decodes_to_nothing(
         return true;
     }
     // cursor's own unstamped duplicates, counted in `source/cursor.rs`'s module doc.
-    if cc && obj.contains_key("cursor_version") && !obj.contains_key("_pixtuoid_source") {
+    if cc && obj.contains_key("cursor_version") && !obj.contains_key(SOURCE_STAMP) {
         tracing::trace!("dropping an unstamped cursor hook invocation");
         return true;
     }

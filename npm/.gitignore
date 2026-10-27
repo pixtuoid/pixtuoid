@@ -1,6 +1,5 @@
 dist/
 @pixtuoid/
-pixtuoid/node_modules/
 *.tgz
 pixtuoid/LICENSE
 pixtuoid/licenses/

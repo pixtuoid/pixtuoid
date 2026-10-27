@@ -219,7 +219,7 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
         .iter()
         .map(|line| {
             let obj = line.as_object()?;
-            let src = obj.get("_pixtuoid_source")?.as_str()?;
+            let src = obj.get(crate::source::decoder::SOURCE_STAMP)?.as_str()?;
             registry::presence_decoder_for(src)?(obj).ok()
         })
         .collect();

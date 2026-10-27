@@ -90,6 +90,10 @@ jobs:
       - uses: ./.github/actions/setup-tools
         with:
           tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv ruff
+      # pyright and tsc.
+      - uses: ./.github/actions/setup-npm
+        with:
+          directory: .
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
@@ -102,6 +106,8 @@ jobs:
       - run: just json-schemas
       - run: just links
       - run: just ruff
+      - run: just pyright
+      - run: just tsc
       - run: just hook-scrub-selftest
       - run: just star-history-selftest
       - run: just bmc-button-selftest
@@ -110,6 +116,23 @@ jobs:
       # `test` job instead of this job's one, and no toolchain in a lint job.
       - run: just fixture-pii
       - run: just fixture-pii-selftest
+
+  plugin-types:
+    name: plugin host types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-npm
+        with:
+          directory: .
+      - uses: ./.github/actions/setup-npm
+        with:
+          directory: crates/pixtuoid/src/install
+      - uses: ./.github/actions/setup-tools
+      - run: just plugin-types
 
   npm-gen:
     name: npm package generator

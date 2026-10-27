@@ -45,7 +45,7 @@ tests/
 ├── transport/main.rs    #[cfg(unix)] socket / #[cfg(windows)] pipe
 ├── render/main.rs       blit + format (+ sprite fixtures)
 └── socket_path_parity.rs · supported_sources_manifest.rs ·
-    proof_fixture_disjointness.rs · pinned_by_claims.rs
+    proof_fixture_disjointness.rs · pinned_by_claims.rs · lang_gates.rs · shim_stamp_parity.rs
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 

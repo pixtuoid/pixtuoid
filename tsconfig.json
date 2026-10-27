@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "module": "nodenext",
+    "resolveJsonModule": true,
+    "target": "esnext",
+    "types": ["node"]
+  },
+  "include": ["scripts", "npm", "crates/pixtuoid-core/tests/sources/hermetic/codex/*/.codex/*.js"]
+}

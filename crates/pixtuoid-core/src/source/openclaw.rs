@@ -89,7 +89,7 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "type"))?;
     let instance = gateway_instance(obj, event)?;
     let pid = obj
-        .get("_pid")
+        .get(crate::source::decoder::PID_STAMP)
         .and_then(|p| p.as_i64())
         .and_then(crate::source::decoder::checked_pid);
     // Presence is ANNOUNCE-only: upstream fires `gateway_start` once per gateway

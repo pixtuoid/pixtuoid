@@ -755,21 +755,7 @@ pub(crate) fn assert_event_roster<T: Ord + std::fmt::Debug + Copy>(
     );
 }
 
-/// The events a bridge template's `FORWARD` set names, read out of it rather
-/// than hand-copied beside it.
 #[cfg(test)]
-pub(crate) fn forward_set(template: &'static str) -> std::collections::BTreeSet<&'static str> {
-    let block = template
-        .split_once("const FORWARD = new Set<string>([")
-        .and_then(|(_, rest)| rest.split_once("])"))
-        .map(|(inner, _)| inner)
-        .expect("the template defines a FORWARD set");
-    block
-        .split(',')
-        .map(|s| s.trim().trim_matches('"'))
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
+mod contract;
 #[cfg(test)]
 pub(crate) mod tests;

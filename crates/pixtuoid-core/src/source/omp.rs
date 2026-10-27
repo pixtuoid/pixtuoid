@@ -806,7 +806,7 @@ const HOOK_APPROVAL_RESOLVED: &str = "tool_approval_resolved";
 
 /// The hook event types this decoder turns into events, pinned to the dispatch arms by
 /// `every_exported_set_is_exactly_its_dispatch_arms` and to the TS
-/// extension's registration list by the install-side two-language pin.
+/// extension's registrations by its selftest, through `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_HOOK_EVENTS: &[&str] = &[

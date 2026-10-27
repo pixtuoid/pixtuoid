@@ -31,6 +31,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         member: "antigravity",
     },
+    plugin_types: &[],
     invocation: &["agy", "-p", Placeholder::Prompt.as_str()],
     second_turn: None,
     // The Gemini API route at a custom endpoint, and Go's proxy variables

@@ -62,7 +62,8 @@ def main():
     for name, (x0, y0, x1, y1) in quads.items():
         crop = img.crop((int(w * x0), int(h * y0), int(w * x1), int(h * y1)))
         crop = crop.resize(
-            (crop.width * args.scale, crop.height * args.scale), Image.NEAREST
+            (crop.width * args.scale, crop.height * args.scale),
+            Image.Resampling.NEAREST,
         )
         out = out_dir / f"{stem}_{name}.png"
         crop.save(out)

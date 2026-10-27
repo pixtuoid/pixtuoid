@@ -43,25 +43,18 @@ def compare_images(ref_path, cand_path, diff_path):
         print(f"SUCCESS: {cand_path.name} is pixel-identical to {ref_path.name}.")
         return 0
 
-    diff_data = diff.load()
-    cand_data = cand.load()
+    # A pixel differs when any band does, so the bands' maximum is its mask.
+    r, g, b = diff.split()
+    differs = ImageChops.lighter(ImageChops.lighter(r, g), b).point(
+        lambda v: 255 if v else 0
+    )
+    mismatched = differs.histogram()[255]
+
+    # Dim the background so the red overlay pops.
+    out = Image.eval(cand, lambda v: v // 2)
+    out.paste((255, 0, 0), mask=differs)
 
     w, h = ref.size
-    mismatched = 0
-
-    out = Image.new("RGB", (w, h))
-    out_data = out.load()
-
-    for y in range(h):
-        for x in range(w):
-            if diff_data[x, y] != (0, 0, 0):
-                mismatched += 1
-                out_data[x, y] = (255, 0, 0)
-            else:
-                # Dim the background so the red overlay pops.
-                c_pix = cand_data[x, y]
-                out_data[x, y] = (c_pix[0] // 2, c_pix[1] // 2, c_pix[2] // 2)
-
     total_pixels = w * h
     percent = (mismatched / total_pixels) * 100.0
     print(f"MISMATCH: {mismatched} / {total_pixels} pixels differ ({percent:.4f}%)")
@@ -107,13 +100,17 @@ class SelfTest(unittest.TestCase):
         bigger = self.write("bigger.png", "RGB", BLACK, size=(16, 16))
         self.assertEqual(compare_images(a, bigger, self.diff_out), 2)
 
-    def test_a_single_differing_pixel_fails(self):
-        spotted = Image.new("RGB", (10, 10), BLACK)
+    def test_a_single_differing_pixel_fails_and_is_marked_red(self):
+        grey = (200, 100, 50)
+        spotted = Image.new("RGB", (10, 10), grey)
         spotted.putpixel((0, 0), WHITE)
         spot = self.dir / "spot.png"
         spotted.save(spot)
-        flat = self.write("flat.png", "RGB", BLACK, size=(10, 10))
+        flat = self.write("flat.png", "RGB", grey, size=(10, 10))
         self.assertEqual(compare_images(flat, spot, self.diff_out), 1)
+        with Image.open(self.diff_out) as overlay:
+            self.assertEqual(overlay.getpixel((0, 0)), (255, 0, 0))
+            self.assertEqual(overlay.getpixel((1, 1)), (100, 50, 25), "dimmed")
 
     def test_the_cli_maps_argv_to_exit_codes(self):
         # The consumers subprocess this module rather than importing it, so argv

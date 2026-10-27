@@ -14,6 +14,7 @@ const path = require("path");
 // a glibc build and declares `libc:["glibc"]`, so npm skips it on musl/Alpine
 // rather than installing a binary that would crash. The os/cpu/libc filtering
 // happens at npm INSTALL time; here we just map.
+/** @type {Record<string, string>} */
 const PACKAGE = {
   "darwin arm64": "@pixtuoid/cli-darwin-arm64",
   "darwin x64": "@pixtuoid/cli-darwin-x64",
@@ -23,12 +24,17 @@ const PACKAGE = {
   "win32 arm64": "@pixtuoid/cli-win32-arm64",
 };
 
+/** @param {string} bin */
 function exeName(bin) {
   return bin + (process.platform === "win32" ? ".exe" : "");
 }
 
 // Returns null if this platform isn't shipped — callers decide how to handle
 // that (the TUI errors; the hook stays silent).
+/**
+ * @param {string} bin
+ * @returns {string | null}
+ */
 function binaryPath(bin) {
   // Dev / CI override: PIXTUOID_BINARY points at a directory holding the
   // binaries, or at the pixtuoid binary itself.

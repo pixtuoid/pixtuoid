@@ -31,27 +31,40 @@
 // Deliberately NO `import { resolveGatewayPort } from "openclaw/plugin-sdk/core"`:
 // this file is dropped into OpenClaw's state dir, whose path chain contains no
 // `node_modules/openclaw` for a globally installed CLI, so a bare-specifier
-// import would fail module resolution and take the WHOLE plugin down.
+// import would fail module resolution and take the WHOLE plugin down; its
+// `@import`s are comments only tsc reads.
+
+/** @import { OpenClawPluginApi, OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry" */
+/** @import { Fields } from "./plugin-types.js" */
 
 import { spawn } from "node:child_process";
 
 const HOOK_PATH = "{{HOOK_PATH_JSON}}";
 
+/** @typedef {Parameters<OpenClawPluginApi["on"]>[1]} Handler */
+/** @typedef {Fields<Parameters<Handler>[0]>} HookEvent */
+/** @typedef {Fields<Parameters<Handler>[1]>} HookContext */
+
 // The ONLY fields forwarded: the run pairing key and ids the decoder reads, never
 // content (`messages`, `prompt`, `error`). `success` stays behind too: the verdict
 // below is the run's outcome, so nothing downstream can read the ambiguous one.
-const ALLOW = ["runId", "sessionId"];
+const ALLOW = /** @type {const} */ (["runId", "sessionId"]);
 
 // OpenClaw's own `DEFAULT_GATEWAY_PORT` (`src/config/paths.ts`), un-importable
 // from here (see the module note).
 const DEFAULT_GATEWAY_PORT = 18789;
+const MAX_TCP_PORT = 65535;
 
 // The gateway's resolved port — the mascot's identity. Seeded at registration,
 // then UPGRADED in place the first time a hook hands us the real bound port.
 let gatewayPort = DEFAULT_GATEWAY_PORT;
 
+/**
+ * @param {unknown} n
+ * @returns {n is number}
+ */
 function validPort(n) {
-  return Number.isInteger(n) && n > 0 && n <= 65535;
+  return Number.isInteger(n) && /** @type {number} */ (n) > 0 && /** @type {number} */ (n) <= MAX_TCP_PORT;
 }
 
 // Mirrors upstream's `parseGatewayPortEnvValue` form-for-form: bare digits,
@@ -59,6 +72,7 @@ function validPort(n) {
 // `Number.parseInt` is NOT a valid shortcut — it stops at the first non-digit, so
 // `OPENCLAW_GATEWAY_PORT=127.0.0.1:18902` parsed to `127`, silently keying the
 // mascot to a gateway that does not exist.
+/** @param {string | undefined} raw */
 function portFromEnvValue(raw) {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return null;
@@ -75,6 +89,7 @@ function portFromEnvValue(raw) {
   return validPort(Number(suffix)) ? Number(suffix) : null;
 }
 
+/** @param {OpenClawPluginApi["config"] | undefined} config */
 function resolvePort(config) {
   const fromEnv = portFromEnvValue(process.env.OPENCLAW_GATEWAY_PORT);
   if (fromEnv !== null) return fromEnv;
@@ -85,6 +100,10 @@ function resolvePort(config) {
 
 // Within one process the bound port never changes, so this only ever corrects
 // the registration-time fallback.
+/**
+ * @param {HookEvent | undefined} ev
+ * @param {HookContext | undefined} ctx
+ */
 function notePort(ev, ctx) {
   const observed = [ev && ev.port, ctx && ctx.port];
   for (const p of observed) {
@@ -95,12 +114,14 @@ function notePort(ev, ctx) {
 // The runs whose LATEST model call failed — on the embedded runner the only place a
 // provider failure shows (openclaw src/agents/embedded-agent-runner/run/
 // attempt.model-diagnostic-lifecycle.ts).
+/** @type {Set<string>} */
 const failedRuns = new Set();
 
 // A run upstream ends without `agent_end` never clears its entry, so past this
 // many the ledger drops its oldest failure.
 export const MAX_TRACKED_RUNS = 64;
 
+/** @param {HookEvent | undefined} ev */
 function noteModelCall(ev) {
   try {
     if (!ev || typeof ev.runId !== "string") return;
@@ -109,7 +130,8 @@ function noteModelCall(ev) {
     if (ev.outcome === "error" && ev.failureKind !== "aborted") {
       failedRuns.add(ev.runId);
       if (failedRuns.size > MAX_TRACKED_RUNS) {
-        failedRuns.delete(failedRuns.values().next().value);
+        const oldest = failedRuns.values().next().value;
+        if (oldest !== undefined) failedRuns.delete(oldest);
       }
     }
   } catch (_) {
@@ -117,9 +139,15 @@ function noteModelCall(ev) {
   }
 }
 
+/**
+ * @param {string} type
+ * @param {HookEvent | undefined} ev
+ * @param {HookContext | undefined} ctx
+ */
 function forward(type, ev, ctx) {
   try {
     notePort(ev, ctx);
+    /** @type {Record<string, unknown>} */
     const payload = { type };
     for (const k of ALLOW) {
       // Pull from ctx first (where ids live), else the event — but NEVER spread
@@ -142,9 +170,10 @@ function forward(type, ev, ctx) {
     // `agent_end` carries no `error` and reads like a clean end; the run's last
     // model call adds it.
     if (type === "agent_end") {
+      const runId = typeof payload.runId === "string" ? payload.runId : "";
       const promptError = !!ev && ev.success === false && ev.error !== undefined;
-      payload.errored = promptError || failedRuns.has(payload.runId);
-      failedRuns.delete(payload.runId);
+      payload.errored = promptError || failedRuns.has(runId);
+      failedRuns.delete(runId);
     }
 
     const proc = spawn(HOOK_PATH, ["--source", "openclaw"], {
@@ -161,22 +190,6 @@ function forward(type, ev, ctx) {
   }
 }
 
-const HOOKS = [
-  "gateway_start",
-  "gateway_stop",
-  "session_start",
-  "session_end",
-  "before_agent_run",
-  "agent_end",
-];
-
-// Registered but never forwarded, each with the one handler its event fits: they
-// only feed the verdict `agent_end` carries.
-const VERDICT_HOOKS = { model_call_ended: noteModelCall };
-
-// The ONE awaited DECISION hook among them (see the never-block note above).
-const DECISION_HOOK = "before_agent_run";
-
 // A FRESH object per decision, never one shared module-level literal: any key the
 // gateway stamps onto it would otherwise persist into every LATER turn, and an
 // extra key is rejected as malformed — fail-closed forever after one mutation.
@@ -184,33 +197,40 @@ const DECISION_HOOK = "before_agent_run";
 // therefore strict-mode, so a consumer's stamp would THROW inside UPSTREAM's code,
 // outside the try/catch that wraps only our own handler.
 function pass() {
-  return { outcome: "pass" };
+  return { outcome: /** @type {const} */ ("pass") };
 }
 
+// An unknown hook name on this OpenClaw version is skipped, never thrown.
+/** @param {() => void} register */
+function observe(register) {
+  try {
+    register();
+  } catch (_) {
+    /* skip */
+  }
+}
+
+/** @satisfies {OpenClawPluginDefinition} */
 export default {
   id: "pixtuoid",
   name: "Pixtuoid",
+  /** @param {OpenClawPluginApi} api */
   register(api) {
     gatewayPort = resolvePort(api && api.config);
-    for (const h of HOOKS) {
-      try {
-        api.on(h, (ev, ctx) => {
-          forward(h, ev, ctx);
-          // NEVER derived from the detached spawn.
-          return h === DECISION_HOOK ? pass() : undefined;
-        });
-      } catch (_) {
-        /* unknown hook name on this OpenClaw version — skip, never throw */
-      }
-    }
-    for (const [h, note] of Object.entries(VERDICT_HOOKS)) {
-      try {
-        api.on(h, (ev) => {
-          note(ev);
-        });
-      } catch (_) {
-        /* unknown hook name on this OpenClaw version — skip, never throw */
-      }
-    }
+    observe(() => api.on("gateway_start", (ev, ctx) => forward("gateway_start", ev, ctx)));
+    observe(() => api.on("gateway_stop", (ev, ctx) => forward("gateway_stop", ev, ctx)));
+    observe(() => api.on("session_start", (ev, ctx) => forward("session_start", ev, ctx)));
+    observe(() => api.on("session_end", (ev, ctx) => forward("session_end", ev, ctx)));
+    // The ONE awaited DECISION hook: its verdict is NEVER derived from the
+    // detached spawn (see the never-block note above).
+    observe(() =>
+      api.on("before_agent_run", (ev, ctx) => {
+        forward("before_agent_run", ev, ctx);
+        return pass();
+      }),
+    );
+    observe(() => api.on("agent_end", (ev, ctx) => forward("agent_end", ev, ctx)));
+    // Registered but never forwarded: it only feeds the verdict `agent_end` carries.
+    observe(() => api.on("model_call_ended", (ev) => noteModelCall(ev)));
   },
 };

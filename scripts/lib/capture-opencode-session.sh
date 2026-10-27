@@ -49,8 +49,9 @@ mkdir -p "$OPENCODE_CONFIG_DIR/plugins"
 python3 - "$repo" "$OPENCODE_CONFIG_DIR/plugins/pixtuoid.ts" "$shim" <<'PY'
 import json, pathlib, sys
 repo = pathlib.Path(sys.argv[1])
-template = (repo / "crates/pixtuoid/src/install/opencode_plugin.ts").read_text()
-marker = '"{{HOOK_PATH_JSON}}"'
+install = repo / "crates/pixtuoid/src/install"
+template = (install / "opencode_plugin.ts").read_text()
+marker = json.loads((install / "plugin-contract.json").read_text())["hook_placeholder"]
 if marker not in template:
     sys.exit("opencode_plugin.ts lost the HOOK_PATH placeholder")
 pathlib.Path(sys.argv[2]).write_text(template.replace(marker, json.dumps(sys.argv[3])))

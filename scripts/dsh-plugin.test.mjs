@@ -1,119 +1,102 @@
-// Contract test for `crates/pixtuoid/src/install/dsh_plugin.mjs`. The Rust side
-// can only grep the template as a STRING; this drives the RENDERED module the way
-// dsh's cordis loader does, against a REAL recorder executable, so the order the
-// shims reach the socket in is exercised, not stubbed.
+// Contract test for `crates/pixtuoid/src/install/dsh_plugin.mjs`: drives the
+// rendered module the way dsh's cordis loader does, so the order the shims
+// reach the socket in is exercised, not stubbed.
 
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { POSIX, assertRegisters, assertShimContract, poll, render, row } from "./lib/plugin-harness.mjs";
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const PLUGIN_SOURCE = join(REPO_ROOT, "crates", "pixtuoid", "src", "install", "dsh_plugin.mjs");
-// Must match `HOOK_PLACEHOLDER` in `crates/pixtuoid/src/install/dsh.rs`.
-const HOOK_PLACEHOLDER = '"{{HOOK_PATH_JSON}}"';
-
-const POSIX = process.platform !== "win32";
-const POLL_DEADLINE_MS = 10_000;
-const POLL_TICK_MS = 25;
-
-async function renderPlugin(t) {
-  const root = await mkdtemp(join(tmpdir(), "pixtuoid-dsh-plugin-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const source = await readFile(PLUGIN_SOURCE, "utf8");
-  assert.equal(source.split(HOOK_PLACEHOLDER).length, 2, "one hook placeholder");
-
-  const outFile = join(root, "payloads.ndjson");
-  const traceFile = join(root, "trace.txt");
-  const hookPath = join(root, "recorder-hook");
-  // Holds each call open, so two shims spawned together overlap in the trace.
-  await writeFile(
-    hookPath,
-    `#!/bin/sh\necho begin >> ${JSON.stringify(traceFile)}\nsleep 0.1\n` +
-      `cat >> ${JSON.stringify(outFile)}\necho end >> ${JSON.stringify(traceFile)}\n`,
-  );
-  await chmod(hookPath, 0o755);
-
-  const entry = join(root, "pixtuoid-dsh.mjs");
-  await writeFile(entry, source.replace(HOOK_PLACEHOLDER, JSON.stringify(hookPath)));
-  const module = await import(pathToFileURL(entry).href);
-  return { module, outFile, traceFile };
-}
+const SOURCE = "dsh";
+// Long enough that two shims spawned together would overlap in the trace.
+const HOLD_MS = 100;
 
 const header = { id: "s1", cwd: "/w" };
 const session = { header };
 
-// The cordis surface the plugin touches: `on`, `effect`, and the injected agents.
+/**
+ * The cordis surface the plugin touches: `on`, `effect`, and the injected agents.
+ * @param {any} module
+ */
 function apply(module) {
+  /** @type {Map<string, Function>} */
   const handlers = new Map();
   module.apply({
+    /** @param {string} name @param {Function} handler */
     on(name, handler) {
       handlers.set(name, handler);
     },
     effect() {},
     agents: { list: () => [] },
   });
-  const event = (type, data) => handlers.get("session/event")(session, { type, data });
+  /** @param {string} type @param {unknown} data */
+  const event = (type, data) => handlers.get("session/event")?.(session, { type, data });
   return { handlers, event };
 }
 
-// `file`'s non-empty lines once `done` holds of them: the shims write after the
-// listeners return.
-async function poll(file, done) {
-  const deadline = Date.now() + POLL_DEADLINE_MS;
-  for (;;) {
-    const text = await readFile(file, "utf8").catch(() => "");
-    const got = text.split("\n").filter((l) => l.trim().length > 0);
-    if (done(got)) return got;
-    if (Date.now() > deadline) {
-      throw new Error(`timed out polling ${file}; got ${got.length} line(s)`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_TICK_MS));
-  }
-}
-
-const lines = async (file, n) => (await poll(file, (got) => got.length >= n)).slice(0, n);
-
-// Every payload once `agent/disposed`'s session_end, sent last, has landed: the
-// queue is first in, first out, so nothing sent before it can still be missing.
-const payloadsThroughEnd = async (file) =>
-  (await poll(file, (got) => got.some((l) => JSON.parse(l).type === "session_end"))).map((l) =>
+/**
+ * Every payload once `agent/disposed`'s session_end, sent last, has landed: the
+ * queue is first in, first out, so nothing sent before it can still be missing.
+ * @param {string} outFile
+ * @returns {Promise<Record<string, unknown>[]>}
+ */
+const payloadsThroughEnd = async (outFile) =>
+  (await poll(outFile, (lines) => lines.some((l) => JSON.parse(l).type === "session_end"))).map((l) =>
     JSON.parse(l),
   );
 
+// A session event of each type the plugin forwards, carrying what it reads.
+/** @type {Record<string, unknown>} */
+const FULL = {
+  "tool/call": { callId: "c1", name: "bash" },
+  "tool/result": { message: { toolCallId: "c1" } },
+  "approval/asked": { id: "a1", callId: "c1", toolName: "bash", reason: "wider" },
+  "approval/decided": { id: "a1", outcome: "unavailable" },
+  "assistant/message": { usage: { inputTokens: 1, outputTokens: 2 } },
+  "request/header": { header: { config: { model: "m" } } },
+};
+
+test("forwards each event of the contract once, and no other", { skip: !POSIX }, async (t) => {
+  const { argvFile, module, outFile } = await render(t, SOURCE);
+  const { handlers, event } = apply(module);
+  const subscribed = [...handlers.keys()].filter((name) => name !== "session/event");
+  const cases = row(SOURCE).registers.filter((name) => !subscribed.includes(name));
+  assertRegisters(SOURCE, [...subscribed, ...cases]);
+
+  handlers.get("agent/created")?.({ agent: { session } });
+  event("user/message", { content: "SECRET_PROMPT" });
+  for (const type of cases) event(type, FULL[type]);
+  handlers.get("agent/disposed")?.({ agent: { session } });
+
+  const payloads = await payloadsThroughEnd(outFile);
+  assert.equal(payloads.length, cases.length + 2, `one payload per case, the session's ends: ${JSON.stringify(payloads)}`);
+  await assertShimContract(SOURCE, argvFile, payloads);
+});
+
 test("agent/created returns nothing, and events reach the shim in order, one at a time", { skip: !POSIX }, async (t) => {
-  const { module, outFile, traceFile } = await renderPlugin(t);
+  const { module, outFile, traceFile } = await render(t, SOURCE, { holdMs: HOLD_MS });
   const { handlers, event } = apply(module);
 
   assert.equal(
-    handlers.get("agent/created")({ agent: { session } }),
+    handlers.get("agent/created")?.({ agent: { session } }),
     undefined,
     "agent/created's listener must return nothing",
   );
   event("approval/asked", { id: "a1", callId: "c1", toolName: "bash", reason: "wider" });
   event("approval/decided", { id: "a1", outcome: "unavailable" });
   event("tool/result", { message: { toolCallId: "c1" } });
-  handlers.get("agent/disposed")({ agent: { session } });
+  handlers.get("agent/disposed")?.({ agent: { session } });
 
   const types = (await payloadsThroughEnd(outFile)).map((p) => p.type);
-  assert.deepEqual(types, [
-    "session_start",
-    "approval_asked",
-    "approval_decided",
-    "tool_result",
-    "session_end",
-  ]);
-  const trace = await lines(traceFile, 2 * types.length);
-  assert.deepEqual(trace, types.flatMap(() => ["begin", "end"]));
+  assert.deepEqual(types, ["session_start", "approval_asked", "approval_decided", "tool_result", "session_end"]);
+  const trace = await poll(traceFile, (lines) => lines.length >= 2 * types.length);
+  assert.deepEqual(trace.slice(0, 2 * types.length), types.flatMap(() => ["begin", "end"]));
 });
 
 test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) => {
-  const { module, outFile } = await renderPlugin(t);
+  const { module, outFile } = await render(t, SOURCE);
   const { handlers, event } = apply(module);
 
-  handlers.get("agent/created")({
+  handlers.get("agent/created")?.({
     agent: { session: { header: { ...header, title: "SECRET_TITLE", prompt: "SECRET_PROMPT" } } },
   });
   event("tool/call", { callId: "c1", name: "bash", input: { command: "SECRET_ARGUMENT" } });
@@ -134,7 +117,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     header: { config: { model: "m", system: "SECRET_SYSTEM" } },
     messages: ["SECRET_MESSAGE"],
   });
-  handlers.get("agent/disposed")({ agent: { session } });
+  handlers.get("agent/disposed")?.({ agent: { session } });
 
   // Exact payloads: a key nobody planted fails too, and so does a payload.
   const at = { sessionId: "s1", cwd: "/w", _pid: process.pid };
@@ -149,3 +132,4 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     { type: "session_end", ...at },
   ]);
 });
+

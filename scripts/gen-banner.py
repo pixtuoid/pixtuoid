@@ -299,9 +299,10 @@ class SelfTest(unittest.TestCase):
 
         for theme in THEMES:
             svg = render_svg(theme)
-            w, h = (
-                int(v) for v in re.search(r'viewBox="0 0 (\d+) (\d+)"', svg).groups()
-            )
+            box = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg)
+            if box is None:
+                self.fail(f"{theme}: the SVG declares no viewBox")
+            w, h = (int(v) for v in box.groups())
             runs = [
                 tuple(map(int, r))
                 for r in re.findall(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z", svg)

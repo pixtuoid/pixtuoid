@@ -49,6 +49,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         sums: "codewhale-artifacts-sha256.txt",
     },
+    plugin_types: &[],
     invocation: &["codewhale"],
     second_turn: None,
     // `docs/CONFIGURATION.md:923`, `:1465`.

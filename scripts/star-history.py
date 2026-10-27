@@ -34,6 +34,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
 from typing import NamedTuple
+from unittest import mock
 from urllib import request
 
 from readme_pixels import (
@@ -120,7 +121,7 @@ CAT, CAT_PX = "cat_sit", 4
 class Bucket(NamedTuple):
     label: str
     end: dt.date
-    count: int
+    stars: int
 
 
 def cumulative_by_day(dates: Iterable[dt.date]) -> list[Point]:
@@ -291,7 +292,7 @@ def _mix(a: str, b: str, t: float) -> str:
 def render_svg(repo: str, series: list[Point], theme: str, today: dt.date) -> str:
     pal = THEMES[theme]
     buckets = month_buckets(series, today)
-    top = buckets[-1].count
+    top = buckets[-1].stars
     per_floor = stars_per_floor(top)
     gain = gain_since(series, today - dt.timedelta(days=7))
     win_x, win_bottom = MARGIN_LEFT, MARGIN_TOP + PLOT_ROWS * PX
@@ -343,7 +344,7 @@ def render_svg(repo: str, series: list[Point], theme: str, today: dt.date) -> st
     roofs = [0] * PLOT_COLS
     for i, bucket in enumerate(buckets):
         c0, width = tower_cols(i, len(buckets))
-        floors = bucket.count // per_floor
+        floors = bucket.stars // per_floor
         rows = floors * FLOOR_ROWS
         if rows:
             bodies.setdefault(shades[i % 2], []).append(
@@ -363,7 +364,7 @@ def render_svg(repo: str, series: list[Point], theme: str, today: dt.date) -> st
                 windows.setdefault(key, []).append(_run(col_x(c), row_y(r), PX, PX))
         roofs[c0 : c0 + width] = [rows] * width
         if i == len(buckets) - 1:
-            sw = scaffold_cols(bucket.count, per_floor, width)
+            sw = scaffold_cols(bucket.stars, per_floor, width)
             if sw:
                 scaffold.append(
                     _run(col_x(c0), row_y(rows + FLOOR_ROWS - 1), sw * PX, PX // 2)
@@ -680,8 +681,8 @@ class SelfTest(unittest.TestCase):
             f"window runs Sep 2025 to today: {got[0]}, {got[-1]}",
         )
         self.assertTrue(
-            [b.count for b in got] == [5] * 4 + [8] * 7 + [9],
-            f"each month carries the cumulative count at its end: {[b.count for b in got]}",
+            [b.stars for b in got] == [5] * 4 + [8] * 7 + [9],
+            f"each month carries the cumulative count at its end: {[b.stars for b in got]}",
         )
         self.assertTrue(
             got[4].label == "2026" and got[3].label == "Dec",
@@ -694,7 +695,7 @@ class SelfTest(unittest.TestCase):
         )
         empty = month_buckets([], _d("2026-08-23"))
         self.assertTrue(
-            len(empty) == 1 and empty[0].count == 0,
+            len(empty) == 1 and empty[0].stars == 0,
             f"no stars still draws this month's empty lot: {empty}",
         )
 
@@ -1001,6 +1002,12 @@ class SelfTest(unittest.TestCase):
                 "every chart must be written non-empty",
             )
 
+    def test_main_needs_a_token(self) -> None:
+        with mock.patch.dict(os.environ, clear=True):
+            self.assertEqual(
+                main(["o/r", "out"]), 2, "no token must exit 2, before any request"
+            )
+
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 # One `_run` rectangle; every path here is built from them.
@@ -1015,6 +1022,9 @@ def main(argv: list[str]) -> int:
         return 2
     repo, out_dir = argv
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("star-history: GH_TOKEN (or GITHUB_TOKEN) is unset", file=sys.stderr)
+        return 2
     dates = fetch_star_dates(repo, token)
     series = cumulative_by_day(dates)
     today = dt.datetime.now(dt.UTC).date()

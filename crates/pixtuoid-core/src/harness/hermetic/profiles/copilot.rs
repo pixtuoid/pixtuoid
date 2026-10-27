@@ -11,6 +11,7 @@ use crate::harness::plan::Placeholder;
 pub(crate) const PROFILE: Profile = Profile {
     source: "copilot",
     package: Package::Npm("@github/copilot"),
+    plugin_types: &[],
     invocation: &["copilot", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [<value>]`: "optionally specify existing session ID"
     // (`copilot --help` at 1.0.98).

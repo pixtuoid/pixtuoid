@@ -17,20 +17,22 @@ pub(crate) fn parse_json_or_empty(content: &str) -> anyhow::Result<Value> {
     serde_json::from_str(content).context("not valid JSON — refusing to overwrite")
 }
 
-/// Bake `hook_path` (JSON-escaped) into a plugin `template` at `placeholder` —
-/// the shared renderer for the code-artifact targets (opencode `.ts`, openclaw
-/// `.js`). A JSON string is a JS string literal since ES2019's
+/// Where a plugin template holds the shim's path until [`bake_hook_path`] bakes
+/// it in: quoted, so the template stays valid source before rendering.
+pub(crate) const HOOK_PLACEHOLDER: &str = "\"{{HOOK_PATH_JSON}}\"";
+
+/// Bake `hook_path` (JSON-escaped) into a plugin `template` at
+/// [`HOOK_PLACEHOLDER`]. A JSON string is a JS string literal since ES2019's
 /// [JSON superset](https://github.com/tc39/proposal-json-superset).
 pub(crate) fn bake_hook_path(
     template: &str,
-    placeholder: &str,
     hook_path: &str,
     what: &str,
 ) -> anyhow::Result<String> {
     use anyhow::Context;
     let json = serde_json::to_string(hook_path)
         .with_context(|| format!("serializing the hook path into the {what} plugin"))?;
-    Ok(template.replace(placeholder, &json))
+    Ok(template.replace(HOOK_PLACEHOLDER, &json))
 }
 
 /// The shim path as `&str`. A non-UTF-8 path is rejected rather than

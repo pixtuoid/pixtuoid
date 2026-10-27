@@ -25,7 +25,7 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 /// exact same bytes and a rename can't produce a compiler-invisible write↔read
 /// desync (a path with the un-stripped tail baked in reads as "shim missing").
 /// The pixtuoid-hook crate parses the BARE argv tokens, a copy
-/// `the_shim_spells_every_flag_and_stamp_as_its_writers_do` pins.
+/// `the_shim_parses_every_flag_its_writers_spell` pins.
 pub(crate) const SOURCE_FLAG: &str = " --source ";
 pub(crate) const EVENT_FLAG: &str = " --event ";
 pub(crate) const HOOK_EVENT_FLAG: &str = " --hook-event ";
@@ -129,14 +129,13 @@ mod parity {
         }
     }
 
+    /// Its stamps are pinned by `the_shim_stamps_each_key_the_daemon_reads`.
     #[test]
-    fn the_shim_spells_every_flag_and_stamp_as_its_writers_do() {
+    fn the_shim_parses_every_flag_its_writers_spell() {
         let shim = include_str!("../../../../pixtuoid-hook/src/main.rs");
         for flag in [SOURCE_FLAG, EVENT_FLAG, HOOK_EVENT_FLAG] {
             let bare = format!("\"{}\"", flag.trim());
             assert!(shim.contains(&bare), "the shim parses no {bare}");
         }
-        let stamp = format!("\"{}\"", pixtuoid_core::source::decoder::EVENT_STAMP);
-        assert!(shim.contains(&stamp), "the shim stamps no {stamp}");
     }
 }

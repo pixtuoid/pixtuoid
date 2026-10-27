@@ -33,6 +33,10 @@ const TARGETS = [
 // A release archive's notices as `just stage-notices` lays them out.
 const NOTICE_FILES = ["LICENSE", join("licenses", "pixtuoid", "fonts", "OFL-Font.txt")];
 
+/**
+ * @param {import("node:test").TestContext} t
+ * @param {{ skip?: string, skipNotices?: string }} [omit]
+ */
 function scaffold(t, { skip, skipNotices } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pixtuoid-gen-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -72,6 +76,11 @@ function scaffold(t, { skip, skipNotices } = {}) {
   return { dir, npmDir, artifacts };
 }
 
+/**
+ * @param {string} npmDir
+ * @param {string} artifacts
+ * @param {string} version
+ */
 function run(npmDir, artifacts, version) {
   return spawnSync(
     process.execPath,

@@ -106,6 +106,28 @@ updates:
       default-days: 7
 
   - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      checkers:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+
+  # Each host's types move with its hermetic pin (`just hermetic-bump`), so
+  # only the runtimes' move here.
+  - package-ecosystem: npm
+    directory: /crates/pixtuoid/src/install
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "@types/*"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: npm
     directory: /site
     schedule:
       interval: weekly

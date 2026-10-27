@@ -9,6 +9,7 @@ use crate::harness::plan::Placeholder;
 pub(crate) const PROFILE: Profile = Profile {
     source: "openclaw",
     package: Package::Npm("openclaw"),
+    plugin_types: &["openclaw"],
     invocation: &[
         "openclaw",
         "agent",

@@ -10,6 +10,9 @@ authors.workspace      = true
 homepage.workspace     = true
 keywords.workspace     = true
 categories.workspace   = true
+# The plugins' type check and selftest contract: dev tooling beside the
+# templates `include_str!` bakes, which no build reads.
+exclude                = ["src/install/*.json", "src/install/.npmrc", "src/install/*.d.ts"]
 
 [lints]
 workspace = true

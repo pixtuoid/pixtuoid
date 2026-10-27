@@ -139,7 +139,9 @@ def run_render(job, out_dirs, work, intermediates):
         if scale:
             with Image.open(raw) as im:
                 img = im.convert("RGB")
-            img.resize((img.width * scale, img.height * scale), Image.NEAREST).save(dst)
+            img.resize(
+                (img.width * scale, img.height * scale), Image.Resampling.NEAREST
+            ).save(dst)
         else:
             shutil.copyfile(raw, dst)
 
@@ -165,7 +167,9 @@ def run_crop(job, out_dirs, work, intermediates):
         scale = job.get("scale", 1)
         for name, (x0, y0, x1, y1) in job["quadrants"].items():
             crop = img.crop((int(w * x0), int(h * y0), int(w * x1), int(h * y1)))
-            out = crop.resize((crop.width * scale, crop.height * scale), Image.NEAREST)
+            out = crop.resize(
+                (crop.width * scale, crop.height * scale), Image.Resampling.NEAREST
+            )
             for d in out_dirs:
                 out.save(d / f"{job['id']}-{name}.png")
     else:

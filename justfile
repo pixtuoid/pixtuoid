@@ -3,7 +3,7 @@
 # `workspace-version` names the one exception.
 #
 # Recipes are grouped by intent (see `just --list`):
-#   rust     — build, test and lint the repo (Rust, shell, workflows, Python), plus the
+#   rust     — build, test and lint the repo (Rust, shell, workflows, Python, JS), plus the
 #              on-demand e2e / capture / fixture recipes
 #   site     — the Astro landing page under site/ (npm + the wasm build)
 #   gen      — regenerate + check committed artifacts
@@ -219,6 +219,31 @@ ruff:
     ruff check
     ruff format --check
 
+# Pyright takes its interpreter, and with it the scripts' imports, from the env
+# uv builds out of requirements-dev.txt: the Python the scripts run on.
+[doc('Type-check the Python (pyright, as pyproject.toml configures it)')]
+[group('rust')]
+pyright: (_npm ".")
+    uv run --no-project --with-requirements requirements-dev.txt -- node_modules/.bin/pyright
+
+[doc('Type-check the JavaScript (tsc --checkJs, as tsconfig.json configures it)')]
+[group('rust')]
+tsc: (_npm ".")
+    node_modules/.bin/tsc -p tsconfig.json
+
+# Each host's own published types, pinned with its hermetic pin: an install too
+# heavy for `lint`, so CI's plugin-types job runs it, and a plugin's change does.
+[doc("Type-check each shipped plugin against its host's own published API")]
+[group('rust')]
+plugin-types: (_npm ".") (_npm "crates/pixtuoid/src/install")
+    node_modules/.bin/tsc -p crates/pixtuoid/src/install
+
+# An install older than its lockfile is redone; `dir`'s .npmrc keeps every
+# package's install scripts from running.
+[private]
+_npm dir:
+    @[ "$1/node_modules/.package-lock.json" -nt "$1/package-lock.json" ] || npm ci --prefix "$1" --no-audit --no-fund
+
 # Clippy across the workspace, warnings denied.
 [group('rust')]
 clippy:
@@ -265,7 +290,7 @@ arch:
 
 # Fast, independent lint checks in parallel.
 [group('rust')]
-lint:
+lint: (_npm ".")
     #!/usr/bin/env bash
     set -euo pipefail
     # Per-check logs; dump only the failures so a green run stays quiet.
@@ -288,6 +313,8 @@ lint:
     run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
+    run pyright just pyright             & pids+=($!)
+    run tsc     just tsc                 & pids+=($!)
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
@@ -624,7 +651,15 @@ hermetic *args: hermetic-build
 [doc('Re-record a source at a release, moving its pin, and write the bump as a patch')]
 [group('rust')]
 hermetic-bump source release out: (hermetic "--cli" release "--record" source)
+    #!/usr/bin/env bash
+    set -euo pipefail
     TZ={{ TEST_TZ }} INSTA_UPDATE=always INSTA_FORCE_PASS=1 cargo test -q -p pixtuoid-core --test sources
+    # The plugin's host types move with the pin, so the bump's own PR checks it
+    # against the release's API; checking here would open no PR to red.
+    listed=$(cargo run --release -q -p pixtuoid-core --example bump -- plugin-types "$1")
+    packages=()
+    for package in $listed; do packages+=("$package@$2"); done
+    ((${#packages[@]} == 0)) || npm install --prefix crates/pixtuoid/src/install --save-exact --no-audit --no-fund "${packages[@]}"
     cargo run --release -q -p pixtuoid-core --example bump -- patch "$1" "$3"
 
 # Compile the workspace; extra args are forwarded:
@@ -929,20 +964,13 @@ deb target:
     cargo deb -p pixtuoid --no-build --no-strip --target "$1"
     cargo deb -p pixtuoid-hook --no-build --no-strip --target "$1"
 
-# The repo's NODE-side gate (no cargo): the npm package generator AND the bundled
-# OpenClaw plugin contract.
-#   - npm/generate.test.mjs — the ONLY validation of npm/generate.mjs, run in CI
-#     so a generator regression is caught at review time, not at the tag-push.
-#   - scripts/{openclaw,dsh}-plugin.test.mjs — drive each RENDERED plugin the way
-#     its CLI's loader does. The Rust side can only grep a template as a string, so
-#     this is the only place a plugin's runtime contract (never block its host /
-#     never forward content / openclaw's gateway identity, dsh's emit order) is
-#     actually EXECUTED.
-# NOT in preflight: a Rust pre-push shouldn't require a Node toolchain. Needs Node ≥ 22.
-[doc('Node gates: the npm package generator + the OpenClaw and dsh plugin contracts (CI; not in preflight)')]
+# The npm package generator's tests, its only run before a tag-push, and every
+# plugin's selftest, which executes it against `plugin-contract.json`; a
+# selftest is found by its name, the one the census pairs with its plugin.
+[doc('Node tests: the npm package generator and every plugin selftest (CI)')]
 [group('release')]
 npm-check:
-    node --test npm/generate.test.mjs scripts/openclaw-plugin.test.mjs scripts/dsh-plugin.test.mjs
+    node --test 'npm/*.test.mjs' 'scripts/*.test.mjs'
 
 # ── meta ──────────────────────────────────────────────────────────
 

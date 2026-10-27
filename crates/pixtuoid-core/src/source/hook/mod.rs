@@ -5,7 +5,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{checked_pid, decode_hook_object, hook_object, hook_source};
+use crate::source::decoder::{
+    PID_STAMP, SOURCE_STAMP, checked_pid, decode_hook_object, hook_object, hook_source,
+};
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -279,9 +281,7 @@ pub(crate) async fn handle_conn(
                 // source, and a daemon's payloads decode to presence deltas on
                 // the sibling channel instead of `AgentEvent`s.
                 if let Some(ptx) = presence_tx.as_ref()
-                    && let Some(src) = obj
-                        .get("_pixtuoid_source")
-                        .and_then(serde_json::Value::as_str)
+                    && let Some(src) = obj.get(SOURCE_STAMP).and_then(serde_json::Value::as_str)
                     && let Some(decode) = crate::source::registry::presence_decoder_for(src)
                 {
                     match decode(obj) {
@@ -307,7 +307,7 @@ pub(crate) async fn handle_conn(
                 // init, must not take the focus-jump pid cache down with it —
                 // only the BIND below needs the watch.
                 let pid = obj
-                    .get("_pid")
+                    .get(PID_STAMP)
                     .and_then(serde_json::Value::as_i64)
                     .and_then(checked_pid);
                 match decode_hook_object(obj) {

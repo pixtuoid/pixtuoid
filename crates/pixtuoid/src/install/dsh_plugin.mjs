@@ -2,7 +2,7 @@
 // Written by `pixtuoid connect dsh`; edits are overwritten on reconnect.
 // Zero @deepseek-ai imports ON PURPOSE: everything arrives through `ctx`, so
 // this single file mounts from any absolute path with no package install and
-// no second cordis instance.
+// no second cordis instance; its `@import`s are comments only tsc reads.
 //
 // Privacy allowlist: event type, session id, parent link (subagent only),
 // cwd, tool name, tool call id, approval outcome/reason, token counts,
@@ -12,30 +12,37 @@ const HOOK_PATH = "{{HOOK_PATH_JSON}}"
 
 import { spawn } from "node:child_process"
 
+/** @import { Agent, AgentSetup } from "@deepseek-ai/dsh-agent" */
+/** @import { SessionHeader } from "@deepseek-ai/dsh-session" */
+/** @import {} from "@deepseek-ai/dsh-user-approval" */
+// cordis's Context as dsh-agent itself is typed against: no second pin of cordis.
+/** @typedef {Parameters<AgentSetup>[0]} Context */
+
 export const name = "pixtuoid"
 export const inject = ["agents"]
 
 // Every listener is synchronous, returns nothing and never throws, and every
 // channel but `agent/created` (below) is an emit, so this plugin cannot stall a
 // tool call, a prompt, or shutdown.
+/** @param {Context} ctx */
 export function apply(ctx) {
   // One shim at a time, in emit order: shims spawned together race to the
   // socket, and a decision that lands before its ask strands the slot requiring action.
   // The shim's own write watchdog bounds each turn of the queue.
   let queue = Promise.resolve()
-  const send = (payload) => {
+  const send = (/** @type {Record<string, unknown>} */ payload) => {
     try {
       payload._pid = typeof process !== "undefined" ? process.pid : undefined
       const line = JSON.stringify(payload) + "\n"
       queue = queue.then(
         () =>
-          new Promise((settled) => {
+          new Promise((/** @type {(value?: undefined) => void} */ settled) => {
             try {
               const proc = spawn(HOOK_PATH, ["--source", "dsh"], {
                 stdio: ["pipe", "ignore", "ignore"],
               })
-              proc.on("error", settled)
-              proc.on("close", settled)
+              proc.on("error", () => settled())
+              proc.on("close", () => settled())
               proc.stdin.on("error", () => {})
               proc.stdin.end(line)
             } catch {
@@ -52,7 +59,7 @@ export function apply(ctx) {
   // user branch (`ctx.sessions.fork()`) stamps it too; only `origin:
   // "subagent"` marks real delegation (SessionHeader, subagent.md
   // listChildren), so a branched conversation must not render as a child.
-  const base = (header) => ({
+  const base = (/** @type {SessionHeader} */ header) => ({
     sessionId: String(header.id),
     ...(header.cwd ? { cwd: header.cwd } : {}),
     ...(header.origin === "subagent" && header.parentSession
@@ -60,10 +67,11 @@ export function apply(ctx) {
       : {}),
   })
 
+  /** @type {Set<string>} */
   const started = new Set()
-  const sendStart = (agent) => {
+  const sendStart = (/** @type {Agent | undefined} */ agent) => {
     try {
-      const header = agent.session.header
+      const header = /** @type {Agent} */ (agent).session.header
       if (started.has(String(header.id))) return
       started.add(String(header.id))
       send({
@@ -72,7 +80,7 @@ export function apply(ctx) {
       })
     } catch {}
   }
-  const sendEnd = (agent) => {
+  const sendEnd = (/** @type {Agent} */ agent) => {
     try {
       const header = agent.session.header
       if (!started.delete(String(header.id))) return
@@ -83,20 +91,20 @@ export function apply(ctx) {
   // `agent/created` is @mode serial: dsh holds creation until it returns, and a throw fails the
   // agent's creation, so the listener only reads its payload inside sendStart's
   // try and returns nothing.
-  ctx.on("agent/created", (payload) => sendStart(payload?.agent))
+  ctx.on("agent/created", (payload) => {
+    sendStart(payload?.agent)
+  })
   ctx.on("agent/disposed", ({ agent }) => sendEnd(agent))
 
   // approval/decided carries only {id, outcome}; the asked side owns
   // callId/toolName, so remember the pair until it resolves.
+  /** @type {Map<string, { callId?: string, toolName?: string }>} */
   const asked = new Map()
-  // Named, not a literal: this channel only carries the events its cases
-  // forward, and `plugin_events` (install/dsh.rs) lists events, not carriers.
-  const SESSION_EVENT = "session/event"
-  ctx.on(SESSION_EVENT, (session, event) => {
+  ctx.on("session/event", (session, event) => {
     try {
       const header = session.header
-      const d = event.data
-      switch (event.type) {
+      const { type, data: d } = event
+      switch (type) {
         case "tool/call":
           send({
             type: "tool_call",

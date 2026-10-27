@@ -86,6 +86,7 @@ pub(crate) const PROFILE: Profile = Profile {
     // that seeding would have to re-implement; this flag is upstream's path
     // for "automation that already vets hook sources"
     // (`codex-rs/utils/cli/src/shared_options.rs:62-64`).
+    plugin_types: &[],
     invocation: &[
         "codex",
         "exec",

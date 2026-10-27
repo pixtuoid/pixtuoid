@@ -21,28 +21,22 @@ use crate::install::verify::{SchemaParse, ShimRef};
 /// The mount entry's `id` — uninstall and the one-entry verify key on it.
 const PLUGIN_ID: &str = "pixtuoid";
 
-const HOOK_PLACEHOLDER: &str = "\"{{HOOK_PATH_JSON}}\"";
-
 pub(crate) const PLUGIN_TEMPLATE: &str = include_str!("dsh_plugin.mjs");
 
-/// The upstream events the plugin forwards: its literal `ctx.on("…")`
-/// subscriptions and the `case "…"` labels of its session-event switch,
-/// scanned from the template so a hand-kept list can't claim coverage the code
-/// doesn't have.
+/// The upstream events the plugin forwards: its agent subscriptions and the
+/// cases of its session-event switch, which its selftest executes it against
+/// (`plugin-contract.json`).
 #[cfg(test)]
-pub(crate) fn plugin_events() -> Vec<&'static str> {
-    let mut names = Vec::new();
-    for marker in [r#"ctx.on(""#, r#"case ""#] {
-        for (i, m) in PLUGIN_TEMPLATE.match_indices(marker) {
-            if let Some((name, _)) = PLUGIN_TEMPLATE[i + m.len()..].split_once('"') {
-                names.push(name);
-            }
-        }
-    }
-    names.sort_unstable();
-    names.dedup();
-    names
-}
+pub(crate) const DSH_EVENTS: &[&str] = &[
+    "agent/created",
+    "agent/disposed",
+    "approval/asked",
+    "approval/decided",
+    "assistant/message",
+    "request/header",
+    "tool/call",
+    "tool/result",
+];
 
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
 /// (`packages/util/home-paths/src/index.ts`, fetched 2026-09-01) resolves
@@ -91,8 +85,7 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 }
 
 pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>> {
-    let rendered =
-        crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, HOOK_PLACEHOLDER, hook_path, "dsh")?;
+    let rendered = crate::install::merge::bake_hook_path(PLUGIN_TEMPLATE, hook_path, "dsh")?;
     Ok(vec![(plugin_path()?, rendered)])
 }
 
@@ -716,7 +709,7 @@ mod tests {
             assert!(path.starts_with(home.path()));
             assert!(content.contains(SENTINEL));
             assert!(content.contains("\"/opt/bin/pixtuoid-hook\""));
-            assert!(!content.contains(HOOK_PLACEHOLDER));
+            assert!(!content.contains(crate::install::merge::HOOK_PLACEHOLDER));
         });
     }
 

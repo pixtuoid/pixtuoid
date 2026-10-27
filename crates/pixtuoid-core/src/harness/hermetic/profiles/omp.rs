@@ -38,6 +38,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ],
         sums: "SHA256SUMS.txt",
     },
+    plugin_types: &["@oh-my-pi/pi-coding-agent"],
     invocation: &[
         "omp",
         "-p",

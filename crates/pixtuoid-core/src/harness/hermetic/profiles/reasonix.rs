@@ -35,6 +35,7 @@ pub(crate) const PROFILE: Profile = Profile {
     package: Package::Npm("reasonix"),
     // A non-read-only tool is denied headless; this allows the ones the
     // spawns need (`docs/CLI.md:502-503`, `:517-519`).
+    plugin_types: &[],
     invocation: &[
         "reasonix",
         "--allowed-tools",

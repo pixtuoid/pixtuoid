@@ -137,17 +137,20 @@ fn registry_relative() -> PathBuf {
 }
 
 /// Whether a bump of `p` may change `path`, relative to the repository: the
-/// registry, its manifest lock, a file under one of its scenarios' fixtures,
-/// or one of their conformance snapshots, named as insta derives it
-/// (`conformance.rs`).
+/// registry, its manifest lock, its plugin types' npm manifest and lockfile, a
+/// file under one of its scenarios' fixtures, or one of their conformance
+/// snapshots, named as insta derives it (`conformance.rs`).
 pub fn admits(p: &Profile, path: &Path) -> bool {
     if !path.components().all(|c| matches!(c, Component::Normal(_))) {
         return false;
     }
     let sources = relative(&sources_root());
+    let plugin_types = relative(&super::plugin_types_manifest());
     path == registry_relative()
         || p.manifest_lock()
             .is_some_and(|lock| path == relative(&lock))
+        || (!p.plugin_types.is_empty()
+            && (path == plugin_types || path == plugin_types.with_file_name("package-lock.json")))
         || p.scenarios.iter().any(|s| {
             let fixture = sources.join(s.fixture);
             let snapshot = fixture.file_name().map(|scenario| {
@@ -400,6 +403,20 @@ mod tests {
         assert!(admits(ag, &lock));
         assert!(!admits(codex(), &lock), "a profile without one");
         assert!(!admits(ag, &lock.with_file_name("tool-run.json")));
+    }
+
+    #[test]
+    fn a_bump_of_a_plugin_host_admits_its_types_manifest_and_lock_alone() {
+        let manifest = relative(&super::super::plugin_types_manifest());
+        let oc = profile("opencode").expect("opencode's profile");
+        for path in [&manifest, &manifest.with_file_name("package-lock.json")] {
+            assert!(admits(oc, path), "{path:?}");
+            assert!(
+                !admits(codex(), path),
+                "a profile with no plugin types: {path:?}"
+            );
+        }
+        assert!(!admits(oc, &manifest.with_file_name("tsconfig.json")));
     }
 
     #[test]

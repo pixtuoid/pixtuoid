@@ -22,6 +22,7 @@ use serde_json::Value;
 mod cli_pid;
 use cli_pid::cli_pid;
 
+mod keys;
 mod paths;
 use paths::default_socket_path;
 
@@ -190,23 +191,23 @@ fn enrich_payload(
     ts_ms: u64,
     resolve_pid: impl FnOnce() -> Option<u32>,
 ) {
-    map.remove("_pixtuoid_source");
-    map.remove("_pixtuoid_event");
-    map.insert("_shim_ts_ms".into(), Value::from(ts_ms));
+    map.remove(keys::SOURCE_STAMP);
+    map.remove(keys::EVENT_STAMP);
+    map.insert(keys::SHIM_STAMP.into(), Value::from(ts_ms));
     if let Some(src) = source
         && !src.is_empty()
     {
-        map.insert("_pixtuoid_source".into(), Value::from(src));
+        map.insert(keys::SOURCE_STAMP.into(), Value::from(src));
     }
     if let Some(event) = hook_event {
-        map.insert("_pixtuoid_event".into(), Value::from(event));
+        map.insert(keys::EVENT_STAMP.into(), Value::from(event));
     }
     // The opencode/OpenClaw plugins stamp `process.pid` from inside the CLI —
     // keep theirs, and stay LAZY so they never pay for the Windows snapshot.
-    if !map.contains_key("_pid")
+    if !map.contains_key(keys::PID_STAMP)
         && let Some(pid) = resolve_pid()
     {
-        map.insert("_pid".into(), Value::from(pid));
+        map.insert(keys::PID_STAMP.into(), Value::from(pid));
     }
 }
 
