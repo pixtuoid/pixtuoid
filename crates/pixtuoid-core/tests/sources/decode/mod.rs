@@ -1057,8 +1057,8 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
         ),
         (
             "copilot",
-            fixtures.join("copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl"),
-            Some(r"d:\contentforge-fullstack (1)"),
+            transcript_of("copilot", "copilot/tool-run-hermetic"),
+            Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         ("antigravity", agy, None),
     ];

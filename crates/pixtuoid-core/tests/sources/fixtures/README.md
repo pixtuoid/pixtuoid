@@ -87,9 +87,7 @@ bytes: it writes `<name>.new` beside them to diff, not trust; only `*.jsonl` and
 
 **A capture is recorded only on Unix.** The corpus pins Unix realpaths and cwds,
 so on Windows the recorder writes only a raw `--out` capture and
-refuses to record or promote. Windows wire evidence therefore cannot be
-re-recorded on demand — which is why `copilot/tool-run`, the one fixture
-carrying a real Windows `cwd`, stays `unknown` rather than being replaced.
+refuses to record or promote.
 
 Only ONE edit is allowed after the recorder's own strip: redact PII the strip
 left behind. Anything else and the capture stops being evidence. PII has
@@ -187,7 +185,7 @@ Each scenario declares itself in its `provenance.json` `note`, the single
 place, beside the bytes it describes: a catalogue of directories here would rot
 the moment one is re-recorded under a better name.
 
-Two scenarios carry a fact BEYOND their own decode, so they are named here where
+One scenario carries a fact BEYOND its own decode, so it is named here where
 someone changing the tree will see it:
 
 - **`claude-code/proof-session/`** is read at RENDER time by the `snapshot
@@ -195,11 +193,6 @@ someone changing the tree will see it:
   timestamps ARE the clip's beat timings, so retiming this fixture re-times the
   committed `proof.webm`. Its visible strings are pinned disjoint from the
   statusline ticker's own FALLBACK corpus by `tests/proof_fixture_disjointness.rs`.
-- **`copilot/tool-run/`** is the only fixture carrying a real Windows `cwd` (a
-  path with a space and parens), which makes it the Windows arm of
-  `registry_cwd_extractor_matches_each_sources_real_head_shape`. A macOS capture
-  cannot reproduce it, which is why it stays `unknown` rather than being
-  re-recorded.
 
 ## Why the recorder is a Rust example
 

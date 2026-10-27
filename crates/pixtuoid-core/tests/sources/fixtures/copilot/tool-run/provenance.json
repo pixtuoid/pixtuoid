@@ -1,4 +1,0 @@
-{
-  "origin": "unknown",
-  "note": "kept for its cwd: a real Windows path with a space and parens (d:\\contentforge-fullstack (1)) that a macOS capture cannot produce — it is the Windows arm of registry_cwd_extractor_matches_each_sources_real_head_shape"
-}

@@ -260,14 +260,10 @@ fn every_captures_layout_names_a_registered_source() {
 // ── The rules: each an assertion over `every_capture()`, never a subset. ─────
 
 /// `unknown` scenarios that stay unknown, with the reason. It only SHRINKS.
-const UNVERIFIED_PROVENANCE: &[&str] = &[
-    // Not re-recordable: its cwd is a real Windows path with a space and parens,
-    // which is what makes it the Windows arm of the cwd-extractor test.
-    "fixtures/copilot/tool-run",
-];
+const UNVERIFIED_PROVENANCE: &[&str] = &[];
 
 /// Sources whose `unknown` scenarios now sit BESIDE a recorded one.
-const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &["copilot"];
+const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &[];
 
 /// Hook-only sources with no recorded scenario. The list only SHRINKS — a hook
 /// event is transient, so for these the fixture is the only wire evidence there
@@ -523,8 +519,6 @@ fn a_recorded_capture_that_was_edited_says_so() {
 const OWED_CURRENT: &[&str] = &[
     // cursor has no hermetic profile (`hermetic::NOT_HERMETIC`): a billed capture.
     "cursor/fixtures/delegation",
-    // The corpus's one Windows cwd, which no recorder writes.
-    "fixtures/copilot/tool-run",
     // The site's proof clip, which a recording of its own retimes.
     "fixtures/claude-code/proof-session",
 ];
