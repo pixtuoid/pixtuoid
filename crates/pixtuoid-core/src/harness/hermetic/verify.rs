@@ -690,12 +690,15 @@ fn judge(
     // A server the turns left up ends their sessions only when it dies, outside
     // the run.
     if let Some(words) = p.server_stop
-        && manifest.capture.server_stop != Some(ProcessExit::Exited(0))
+        && let Some(how) = match &manifest.capture.server_stop {
+            None => Some("never ran".to_owned()),
+            Some(stop) if stop.exit != ProcessExit::Exited(0) => Some(stop.exit.to_string()),
+            Some(stop) if !stop.outlived.is_empty() => {
+                Some(format!("left pid {:?} running", stop.outlived))
+            }
+            Some(_) => None,
+        }
     {
-        let how = manifest
-            .capture
-            .server_stop
-            .map_or_else(|| "never ran".to_owned(), |e| e.to_string());
         findings.push((
             Label::Fail,
             format!(
@@ -1344,7 +1347,7 @@ fn canonical(p: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::{CaptureRecord, ProcessExit};
+    use crate::harness::{CaptureRecord, ProcessExit, ServerStop};
 
     const RECORDED_WORKSPACE: &str = "/private/tmp/pixtuoid-capture/proj";
 
@@ -1411,7 +1414,10 @@ mod tests {
                 second_turn: None,
                 server_stop: profile(source)
                     .and_then(|p| p.server_stop)
-                    .map(|_| ProcessExit::Exited(0)),
+                    .map(|_| ServerStop {
+                        exit: ProcessExit::Exited(0),
+                        outlived: Vec::new(),
+                    }),
                 note_survived: true,
             },
             aimock: "test".into(),
@@ -2966,8 +2972,15 @@ mod tests {
             )
         };
         assert!(!outlived(d.path()));
-        for server_stop in [None, Some(ProcessExit::Exited(1))] {
-            write_manifest(d.path(), "hermes", |m| m.capture.server_stop = server_stop);
+        let stop = |exit, outlived| Some(ServerStop { exit, outlived });
+        for server_stop in [
+            None,
+            stop(ProcessExit::Exited(1), Vec::new()),
+            stop(ProcessExit::Exited(0), vec![4242]),
+        ] {
+            write_manifest(d.path(), "hermes", |m| {
+                m.capture.server_stop = server_stop.clone();
+            });
             assert!(outlived(d.path()), "{server_stop:?}");
         }
     }

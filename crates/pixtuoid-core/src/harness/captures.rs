@@ -226,6 +226,40 @@ impl std::fmt::Display for ProcessExit {
     }
 }
 
+/// How the step that stops a CLI's server ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerStop {
+    /// How the stop exited.
+    pub exit: ProcessExit,
+    /// The pids the run's payloads stamped that still ran once the stop's grace
+    /// ran out: a stop can exit 0 with its server up
+    /// (`hermes_cli/gateway.py:2025-2040` at hermes v0.22.5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outlived: Vec<i32>,
+}
+
+/// The pids the hook `payloads` stamped that still run once `grace` ran out,
+/// waiting no longer than the last of them takes to exit.
+pub fn outlived(payloads: &[String], grace: Duration) -> Vec<i32> {
+    use crate::source::decoder::{PID_STAMP, checked_pid};
+    let pids: std::collections::BTreeSet<i32> = payloads
+        .iter()
+        .filter_map(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+        .filter_map(|v| v.get(PID_STAMP)?.as_i64().and_then(checked_pid))
+        .collect();
+    let running = || {
+        pids.iter()
+            .copied()
+            .filter(|&p| crate::source::cc_probe::pid_alive(p))
+            .collect::<Vec<_>>()
+    };
+    // Its one error is the grace running out, which `running` then reports.
+    let _ = wait_until("the stamped processes' exit", grace, || {
+        Ok(running().is_empty())
+    });
+    running()
+}
+
 /// What only the recorder knows about a raw (`--out`) capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureRecord {
@@ -246,9 +280,9 @@ pub struct CaptureRecord {
     /// Its second turn, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_turn: Option<SecondTurn>,
-    /// How the step that stops the CLI's server exited, for a run that had one.
+    /// How the step that stops the CLI's server ended, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server_stop: Option<ProcessExit>,
+    pub server_stop: Option<ServerStop>,
     /// Whether the note the recorder planted was still there, unchanged, once
     /// every turn exited: a refused call that deletes it did not stay refused.
     #[serde(default)]
@@ -703,6 +737,32 @@ pub fn captures(root: &Path) -> Vec<Capture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `sort` reads its stdin to the end before it writes, on every host.
+    #[test]
+    fn only_a_stamped_process_still_running_outlives_its_grace() {
+        let mut child = std::process::Command::new("sort")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("sort runs");
+        let pid = child.id();
+        let payloads = [
+            format!(r#"{{"hook_event_name":"a","_pid":{pid}}}"#),
+            format!(r#"{{"hook_event_name":"b","_pid":{pid}}}"#),
+            r#"{"hook_event_name":"c","_pid":0}"#.to_owned(),
+            r#"{"hook_event_name":"d"}"#.to_owned(),
+            "not json".to_owned(),
+        ];
+        let pid = i32::try_from(pid).expect("a pid");
+        assert_eq!(outlived(&payloads, Duration::ZERO), [pid]);
+        drop(child.stdin.take());
+        child.wait().expect("sort exits");
+        assert_eq!(
+            outlived(&payloads, Duration::from_secs(5)),
+            Vec::<i32>::new()
+        );
+    }
 
     /// A capture of `files`, each `(path, text)`, read canonical.
     fn canonical(files: &[(&str, &str)]) -> Option<Vec<(String, String)>> {

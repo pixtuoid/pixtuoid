@@ -3,6 +3,8 @@ can only grep the template as a string; this loads the RENDERED plugin the way
 hermes's loader does (`register(ctx)`) and drives its callbacks against fake shims,
 so what keeps hermes's `pre_tool_call` from failing closed is executed, not read."""
 
+from __future__ import annotations
+
 import importlib.util
 import json
 import os

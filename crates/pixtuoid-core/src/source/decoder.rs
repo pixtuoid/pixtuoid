@@ -149,6 +149,9 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
     i32::try_from(raw).ok().filter(|&p| p > 0)
 }
 
+/// The hook-envelope key the shim, or a plugin, stamps its process's pid under.
+pub(crate) const PID_STAMP: &str = "_pid";
+
 pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
     v.get("cwd").and_then(Value::as_str).map(PathBuf::from)
 }
