@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "Say done"},
+      "response": {"content": "done"},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Reading the note", "path": "NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "pong"},
+      "latency": 300
+    }
+  ]
+}

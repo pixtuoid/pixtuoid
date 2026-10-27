@@ -1364,7 +1364,7 @@ mod tests {
         // note in the gated call's result, which no refused call returns. A
         // question's gate calls nothing that could, so those rows are held to
         // the note alone.
-        const QUESTIONS: &[&str] = &["ask-user", "ask-question"];
+        const QUESTIONS: &[&str] = &["ask-user", "ask-question", "ask"];
         for p in PROFILES {
             for s in p
                 .scenarios

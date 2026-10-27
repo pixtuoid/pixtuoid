@@ -180,6 +180,14 @@ fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
     );
 }
 
+/// A source whose coalescing its own test pins, on rounds that can't live
+/// here: omp's hook keys fold per platform, while these goldens can't
+/// (`omp/mod.rs`'s module doc).
+const COALESCED_ELSEWHERE: &[(&str, fn())] = &[(
+    pixtuoid_core::source::omp::SOURCE_NAME,
+    super::omp::each_bridge_round_coalesces_both_transports_onto_one_id,
+)];
+
 /// Without this, `all_source_fixtures_decode_and_coalesce` only covers sources
 /// that happen to have a dir — a contributor could register a new CLI and ship a
 /// broken decoder while the harness stays green. Registration is not coverage.
@@ -188,6 +196,13 @@ fn every_registered_source_has_a_coalescing_fixture() {
     let root = fixtures_root();
     for src in registry::registered_source_names() {
         let dir = root.join(src);
+        if COALESCED_ELSEWHERE.iter().any(|(s, _)| *s == src) {
+            assert!(
+                !dir.is_dir() || sorted_dirs(&dir).is_empty(),
+                "{src}: a fixture here makes its COALESCED_ELSEWHERE row stale"
+            );
+            continue;
+        }
         let shape = if is_hook_only(src) {
             "hook-payloads.jsonl ONLY (hook-only row)"
         } else {

@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You name coding-agent sessions"},
+      "response": {"content": "<title>Hermetic</title>"}
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Reading the note", "command": "cat NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "approved"},
+      "latency": 300
+    }
+  ]
+}

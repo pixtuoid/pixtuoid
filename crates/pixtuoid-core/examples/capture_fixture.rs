@@ -42,14 +42,6 @@ mod recorder {
         wait_until,
     };
 
-    /// Where a driver names the CLI it drives, a command or the path to its
-    /// binary, for the recorder to ask its `--version`.
-    const CLI_ENV: &str = "PIXTUOID_CAPTURE_CLI";
-
-    /// Where the recorder names the source's registry `verified_version`, for a
-    /// driver that installs its CLI: a capture must anchor that version.
-    const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
-
     /// The driver's own part of the recorder's scratch, apart from everything the
     /// recorder and its listener create there: what it names at [`DRIVER_DIR_ENV`].
     fn driver_dir(scratch: &Path) -> PathBuf {
@@ -375,7 +367,6 @@ mod recorder {
             *DAEMON_BOOT.here(),
             &workspace,
             &wiring,
-            descriptor.verified_version,
             &env,
         ) {
             Ok(daemon) => daemon,
@@ -390,10 +381,7 @@ mod recorder {
             }
         };
         let budget = turn_budget(plan);
-        let end = run_turn(
-            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
-            budget,
-        )?;
+        let end = run_turn(wired(&cmd, &workspace, &wiring, &env)?, budget)?;
         let give_up_reason = give_up_reason(sandbox.path());
         let second_outcome = match plan.second_turn() {
             Some(_) if end == ProcessExit::OutOfTime => {
@@ -409,13 +397,7 @@ mod recorder {
                     Some(session) => {
                         let turn: Vec<String> =
                             words.words().iter().map(|w| w.filled(&session)).collect();
-                        let second = wired(
-                            &turn,
-                            &workspace,
-                            &wiring,
-                            descriptor.verified_version,
-                            &env,
-                        )?;
+                        let second = wired(&turn, &workspace, &wiring, &env)?;
                         Some(SecondTurn {
                             end: run_turn(second, budget)?,
                         })
@@ -450,10 +432,7 @@ mod recorder {
         };
         let (cli, version) = match &plan.cli_version {
             Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
-            None => {
-                let named = std::fs::read_to_string(named_cli(sandbox.path())).ok();
-                identity(&cmd, named.as_deref(), probe_version)
-            }
+            None => identity(&cmd, probe_version),
         };
         if let (Sink::Committed { .. }, Err(e)) = (&plan.sink, versioned(&cli, &version)) {
             keep_scratch(
@@ -978,13 +957,12 @@ mod recorder {
         scratch: &'a Path,
     }
 
-    /// `cmd` with the CLI's wiring: the tap's endpoint, the driver's dir and
-    /// the CLI it names, the pin, the agent-env scrub, then `env`.
+    /// `cmd` with the CLI's wiring: the tap's endpoint, the driver's dir, the
+    /// agent-env scrub, then `env`.
     fn wired(
         cmd: &[String],
         ws: &Path,
         wiring: &CliWiring<'_>,
-        verified: &str,
         env: &[(String, String)],
     ) -> std::io::Result<std::process::Command> {
         let mut c = std::process::Command::new(&cmd[0]);
@@ -994,8 +972,6 @@ mod recorder {
         let own = driver_dir(wiring.scratch);
         std::fs::create_dir_all(&own)?;
         c.env(DRIVER_DIR_ENV, own);
-        c.env(CLI_ENV, named_cli(wiring.scratch))
-            .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
             c.env_remove(k);
         }
@@ -1060,7 +1036,6 @@ mod recorder {
             boot: Duration,
             ws: &Path,
             wiring: &CliWiring<'_>,
-            verified: &str,
             env: &[(String, String)],
         ) -> std::io::Result<Option<Self>> {
             let Some(daemon) = daemon else {
@@ -1071,7 +1046,7 @@ mod recorder {
             let log_path = own.join(DAEMON_LOG);
             let log = std::fs::File::create(&log_path)?;
             let (start, ready) = (daemon.start.strings(), daemon.ready.strings());
-            let mut child = wired(&start, ws, wiring, verified, env)?
+            let mut child = wired(&start, ws, wiring, env)?
                 .envs(daemon.env.iter())
                 .stdin(std::process::Stdio::piped())
                 .stdout(log.try_clone()?)
@@ -1087,7 +1062,7 @@ mod recorder {
             let mut probes = std::fs::File::create(&probe_log)?;
             let deadline = std::time::Instant::now() + boot;
             wait_until("the daemon", boot, || {
-                let mut probe = wired(&ready, ws, wiring, verified, env)?;
+                let mut probe = wired(&ready, ws, wiring, env)?;
                 probe
                     .stdout(probes.try_clone()?)
                     .stderr(probes.try_clone()?);
@@ -1173,11 +1148,6 @@ mod recorder {
         Ok(out)
     }
 
-    /// In this run's private scratch.
-    fn named_cli(scratch: &Path) -> PathBuf {
-        scratch.join("cli")
-    }
-
     /// The CLI's own name, as its registry row asks it its version.
     fn registered_cli(descriptor: &registry::SourceDescriptor) -> std::io::Result<String> {
         required_version_probe(descriptor)?
@@ -1190,31 +1160,18 @@ mod recorder {
 
     /// The CLI a capture ran, and its version, asked of that CLI alone: a
     /// command named by a path is a driver, which `--version` would run whole,
-    /// billed and outside the sandbox, so only the CLI it names is asked: at
-    /// [`CLI_ENV`], or after `--` in its own command line (`tui_drive`'s).
-    fn identity(
-        cmd: &[String],
-        named: Option<&str>,
-        probe: impl FnOnce(&str) -> Option<String>,
-    ) -> (String, String) {
+    /// billed and outside the sandbox, so only the CLI it names after `--` in
+    /// its own command line (`tui_drive`'s) is asked.
+    fn identity(cmd: &[String], probe: impl FnOnce(&str) -> Option<String>) -> (String, String) {
         let cmd0 = cmd.first().map_or("", String::as_str);
-        let driven = || {
+        let cli = if cmd0.contains('/') {
             cmd.iter()
                 .position(|w| w == "--")
                 .and_then(|at| cmd.get(at + 1))
                 .map(String::as_str)
+        } else {
+            Some(cmd0)
         };
-        let cli = named
-            .and_then(|n| n.lines().next())
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-            .or_else(|| {
-                if cmd0.contains('/') {
-                    driven()
-                } else {
-                    Some(cmd0)
-                }
-            });
         let name = Path::new(cli.unwrap_or(cmd0))
             .file_name()
             .and_then(|s| s.to_str())
@@ -1266,8 +1223,8 @@ mod recorder {
     fn versioned(cli: &str, version: &str) -> std::io::Result<()> {
         if version == "unknown" {
             return Err(std::io::Error::other(format!(
-                "`{cli} --version` did not answer, or a driver named no CLI (after `--` \
-                 in its command line, or at ${CLI_ENV}), so nothing is recorded"
+                "`{cli} --version` did not answer, or a driver named no CLI after `--` \
+                 in its command line, so nothing is recorded"
             )));
         }
         Ok(())
@@ -2451,17 +2408,8 @@ mod recorder {
                 Some(format!("{c} 1.0"))
             };
             let argv = |words: &[&str]| words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
-            let driver = argv(&["scripts/lib/capture-x.sh"]);
             assert_eq!(
-                identity(&driver, Some("dsh\n"), probe),
-                ("dsh".into(), "dsh 1.0".into())
-            );
-            assert_eq!(
-                identity(&driver, Some("/tmp/oc/package/bin/opencode\n"), probe),
-                ("opencode".into(), "/tmp/oc/package/bin/opencode 1.0".into())
-            );
-            assert_eq!(
-                identity(&driver, None, probe),
+                identity(&argv(&["scripts/capture-x.sh"]), probe),
                 ("capture-x.sh".into(), "unknown".into())
             );
             let tui = argv(&[
@@ -2476,32 +2424,23 @@ mod recorder {
                 "manual",
             ]);
             assert_eq!(
-                identity(&tui, None, probe),
+                identity(&tui, probe),
                 ("claude".into(), "claude 1.0".into())
             );
             assert_eq!(
-                identity(&argv(&["claude"]), None, probe),
+                identity(&argv(&["claude"]), probe),
                 ("claude".into(), "claude 1.0".into())
             );
             assert_eq!(
-                identity(&argv(&["codex", "exec", "--", "{prompt}"]), None, probe),
+                identity(&argv(&["codex", "exec", "--", "{prompt}"]), probe),
                 ("codex".into(), "codex 1.0".into()),
                 "a CLI's own `--` names no other CLI"
             );
             assert_eq!(
-                identity(&argv(&["grok"]), None, |_| None),
+                identity(&argv(&["grok"]), |_| None),
                 ("grok".into(), "unknown".into())
             );
-            assert_eq!(
-                *asked.borrow(),
-                [
-                    "dsh",
-                    "/tmp/oc/package/bin/opencode",
-                    "claude",
-                    "claude",
-                    "codex"
-                ]
-            );
+            assert_eq!(*asked.borrow(), ["claude", "claude", "codex"]);
             assert!(versioned("grok", "unknown").is_err());
             assert!(versioned("grok", "grok 1.0.70").is_ok());
         }
@@ -2509,16 +2448,15 @@ mod recorder {
         /// A driver is a Unix shell script.
         #[cfg(unix)]
         #[test]
-        fn a_driver_gets_the_verified_version_and_its_callers_env_and_names_its_cli() {
+        fn a_driver_gets_its_dir_and_its_callers_env() {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
             let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
             // An inherited agent var is scrubbed; a caller's `CLAUDE_CODE_*`
             // opt-out outlives the scrub.
             let script = format!(
-                r#"test "${VERSION_ENV}" = 1.0.0 && test -z "$CLAUDE_CODE_CHILD_SESSION" \
-                   && test "$CLAUDE_CODE_PROBE" = 1 && test "${DRIVER_DIR_ENV}" = "{}" \
-                   && test -d "${DRIVER_DIR_ENV}" && echo dsh >"${CLI_ENV}""#,
+                r#"test -z "$CLAUDE_CODE_CHILD_SESSION" && test "$CLAUDE_CODE_PROBE" = 1 \
+                   && test "${DRIVER_DIR_ENV}" = "{}" && test -d "${DRIVER_DIR_ENV}""#,
                 driver_dir(sandbox.path()).display()
             );
             let cmd = ["sh", "-c", &script].map(String::from);
@@ -2534,18 +2472,12 @@ mod recorder {
                         endpoint: &endpoint,
                         scratch: sandbox.path(),
                     };
-                    wired(&cmd, ws.path(), &wiring, "1.0.0", &env)
+                    wired(&cmd, ws.path(), &wiring, &env)
                         .and_then(|mut c| c.status())
                         .expect("runs")
                 },
             );
             assert!(ran.success());
-            assert_eq!(
-                std::fs::read_to_string(named_cli(sandbox.path()))
-                    .ok()
-                    .as_deref(),
-                Some("dsh\n")
-            );
         }
 
         #[cfg(unix)]
@@ -2566,16 +2498,10 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let running = RunningDaemon::start(
-                Some(&daemon),
-                *DAEMON_BOOT.here(),
-                ws.path(),
-                &wiring,
-                "1.0.0",
-                &[],
-            )
-            .expect("starts")
-            .expect("a daemon");
+            let running =
+                RunningDaemon::start(Some(&daemon), *DAEMON_BOOT.here(), ws.path(), &wiring, &[])
+                    .expect("starts")
+                    .expect("a daemon");
             assert!(ready.exists(), "returned before it served");
             running.stop(*DAEMON_STOP_GRACE.here()).expect("it stops");
         }
@@ -2647,7 +2573,7 @@ mod recorder {
                 scratch: dir,
             };
             let env = [(FAKE_DAEMON.to_owned(), dir.display().to_string())];
-            RunningDaemon::start(Some(&fake_daemon(test)), boot, dir, &wiring, "1.0.0", &env)
+            RunningDaemon::start(Some(&fake_daemon(test)), boot, dir, &wiring, &env)
                 .map(|d| d.expect("a daemon"))
         }
 
@@ -2714,7 +2640,6 @@ mod recorder {
                 *DAEMON_BOOT.here(),
                 dir.path(),
                 &wiring,
-                "1.0.0",
                 &env,
             )
             .expect("it serves")
@@ -2813,16 +2738,10 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let why = RunningDaemon::start(
-                Some(&daemon),
-                *DAEMON_BOOT.here(),
-                ws.path(),
-                &wiring,
-                "1.0.0",
-                &[],
-            )
-            .map(|_| ())
-            .expect_err("its probe answered for someone else");
+            let why =
+                RunningDaemon::start(Some(&daemon), *DAEMON_BOOT.here(), ws.path(), &wiring, &[])
+                    .map(|_| ())
+                    .expect_err("its probe answered for someone else");
             assert!(why.to_string().contains("exited"), "{why}");
             assert!(why.to_string().contains("out of disk"), "its log: {why}");
         }
@@ -2991,7 +2910,7 @@ mod recorder {
             };
             let script = format!("printf '{WHY}\\n' >\"${DRIVER_DIR_ENV}/{GAVE_UP_NOTE}\"; exit 3");
             let cmd = ["sh", "-c", &script].map(String::from);
-            let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
+            let turn = wired(&cmd, ws.path(), &wiring, &[]).expect("wired");
             assert_eq!(
                 run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran"),
                 ProcessExit::Exited(3)
@@ -3074,7 +2993,6 @@ mod recorder {
         #[test]
         fn a_failed_capture_keeps_only_a_scratch_a_driver_wrote_in() {
             let top_level = |scratch: &Path| {
-                std::fs::write(named_cli(scratch), "openclaw\n").expect("cli");
                 std::fs::write(scratch.join("capture.sock.lock"), "").expect("lock");
                 std::fs::create_dir_all(driver_dir(scratch)).expect("driver dir");
             };
@@ -3406,36 +3324,6 @@ mod recorder {
                 });
             assert!(!needles.contains(home), "{needles:?}");
             assert!(needles.contains("ada"), "{needles:?}");
-        }
-
-        #[test]
-        fn every_driver_reads_only_env_the_recorder_sets() {
-            let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/lib");
-            let mut drivers = 0;
-            for entry in std::fs::read_dir(&lib).expect("scripts/lib") {
-                let path = entry.expect("an entry").path();
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or_default();
-                if name.starts_with("capture-") {
-                    drivers += 1;
-                    let text = std::fs::read_to_string(&path).expect("a driver");
-                    assert!(text.contains(CLI_ENV), "{name} names no CLI at ${CLI_ENV}");
-                    for named in text.split("PIXTUOID_CAPTURE_").skip(1) {
-                        let tail: String = named
-                            .chars()
-                            .take_while(|c| c.is_ascii_uppercase() || *c == '_')
-                            .collect();
-                        let var = format!("PIXTUOID_CAPTURE_{tail}");
-                        assert!(
-                            [CLI_ENV, VERSION_ENV, DRIVER_DIR_ENV].contains(&var.as_str()),
-                            "{name} reads ${var}, which the recorder never sets"
-                        );
-                    }
-                }
-            }
-            assert!(drivers > 0, "scripts/lib holds the drivers");
         }
 
         #[test]

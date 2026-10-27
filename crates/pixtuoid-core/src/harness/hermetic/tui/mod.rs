@@ -1044,7 +1044,7 @@ mod tests {
         const GROK_TURN_ONE: &str = include_str!("screens/grok-turn-one.txt");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
-        let recorded: [(&str, &str, &str, &[&str]); 19] = [
+        let recorded: [(&str, &str, &str, &[&str]); 21] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
@@ -1104,6 +1104,18 @@ mod tests {
                 "permission",
                 include_str!("screens/reasonix-boot.txt"),
                 &[include_str!("screens/reasonix-gate.txt")],
+            ),
+            (
+                "omp",
+                "approve",
+                OMP_BOOT,
+                &[include_str!("screens/omp-approve-gate.txt")],
+            ),
+            (
+                "omp",
+                "ask",
+                OMP_BOOT,
+                &[include_str!("screens/omp-ask-gate.txt")],
             ),
             ("omp", "new-session", OMP_BOOT, &[OMP_NEW]),
             (

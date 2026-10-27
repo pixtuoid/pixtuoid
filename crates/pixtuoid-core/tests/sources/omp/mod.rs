@@ -98,19 +98,24 @@ fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
     );
 }
 
-/// `omp -c` in a fresh process fires `session_start` on the SAME
+/// `omp --resume` in a fresh process fires `session_start` on the SAME
 /// stem-keyed id the earlier life used — the ended session walks back in
 /// through ordinary parentless re-registration (registry row doc).
 #[test]
 fn a_resumed_session_re_registers_after_its_earlier_end() {
-    let evs = events("resume-recorded");
+    let evs = events("resume-hermetic");
     let id = evs[0].agent_id();
+    let resumed = evs
+        .iter()
+        .rposition(|e| matches!(e, AgentEvent::SessionStart { .. }))
+        .filter(|&at| at > 0)
+        .expect("the resume fires its own session_start");
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    // First life: the recorded round is start → shutdown; let the slot leave.
-    for (i, ev) in events("resume-recorded").into_iter().enumerate() {
+    // First life: the recorded round up to the resume; let the slot leave.
+    for (i, ev) in evs[..resumed].iter().cloned().enumerate() {
         r.apply(
             &mut scene,
             ev,
@@ -120,13 +125,18 @@ fn a_resumed_session_re_registers_after_its_earlier_end() {
     }
     r.tick(
         &mut scene,
-        t0 + Duration::from_secs(2) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+        t0 + Duration::from_secs(resumed as u64) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
     );
     assert!(!scene.agents.contains_key(&id), "first life left");
 
-    // Second life: the SAME recorded start must register again.
+    // Second life: the resume's start must register the SAME id again.
+    assert_eq!(
+        evs[resumed].agent_id(),
+        id,
+        "the resume keys on the same file"
+    );
     let t1 = t0 + Duration::from_secs(600);
-    r.apply(&mut scene, evs[0].clone(), t1, Transport::Hook);
+    r.apply(&mut scene, evs[resumed].clone(), t1, Transport::Hook);
     assert!(
         scene.agents.contains_key(&id),
         "a resume's session_start re-registers the ended id"
@@ -226,9 +236,9 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
 /// Start twins — separated by human latency — count ONE call through a real
 /// `Reducer`.
 #[test]
-fn each_bridge_round_coalesces_both_transports_onto_one_id() {
+pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
     for scenario in [
-        "approval-recorded",
+        "approve-hermetic",
         "permission-hermetic",
         "tool-run-hermetic",
     ] {
