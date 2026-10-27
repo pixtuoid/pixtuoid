@@ -300,10 +300,10 @@ fn a_delivered_open_turn_is_never_idle(run: &Run) {
                     open.insert(*agent_id, turn.clone());
                     opened = true;
                 }
-                AgentEvent::TurnEnd { agent_id, turn } => {
-                    if turn.is_none() || open.get(agent_id) == turn.as_ref() {
-                        open.remove(agent_id);
-                    }
+                AgentEvent::TurnEnd { agent_id, turn }
+                    if turn.is_none() || open.get(agent_id) == turn.as_ref() =>
+                {
+                    open.remove(agent_id);
                 }
                 _ => {}
             }
