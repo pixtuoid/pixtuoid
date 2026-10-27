@@ -227,67 +227,20 @@ pub enum TailActivity {
     Unknown,
 }
 
-/// Minimal [RFC 3339 §5.6](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) → epoch
-/// seconds. Core deliberately carries no date dependency for the handful of
-/// wire timestamps it reads; every caller treats `None` as "no information".
+/// An [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) stamp →
+/// epoch seconds; every caller treats `None` as "no information".
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
 
-/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond.
+/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
+/// [`DateTime::parse_from_rfc3339`](chrono::DateTime::parse_from_rfc3339).
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
-    let b = s.as_bytes();
-    if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' && b[10] != b't' {
-        return None;
-    }
-    // Every field is all `DIGIT`s, never the sign `parse` would take.
-    let num = |r: std::ops::Range<usize>| {
-        s.get(r)
-            .filter(|f| f.bytes().all(|c| c.is_ascii_digit()))?
-            .parse::<i64>()
-            .ok()
-    };
-    let hour = |at: usize| num(at..at + 2).filter(|h| *h <= 23);
-    let minute = |at: usize| num(at..at + 2).filter(|m| *m <= 59);
-    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
-    let (h, mi, sec) = (hour(11)?, minute(14)?, num(17..19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || sec > 60 {
-        return None;
-    }
-    let mut i = 19;
-    let mut nanos = 0;
-    if b.get(i) == Some(&b'.') {
-        i += 1;
-        // The first digit is tenths of a second; one past nanoseconds is cut.
-        let mut place = std::time::Duration::from_millis(100).subsec_nanos();
-        while let Some(digit) = b.get(i).filter(|c| c.is_ascii_digit()) {
-            nanos += u32::from(digit - b'0') * place;
-            place /= 10;
-            i += 1;
-        }
-    }
-    let offset_secs: i64 = match b.get(i) {
-        Some(b'Z') | Some(b'z') if i + 1 == b.len() => 0,
-        Some(sign @ (b'+' | b'-')) if i + 6 == b.len() && b.get(i + 3) == Some(&b':') => {
-            let mag = hour(i + 1)? * 3600 + minute(i + 4)? * 60;
-            if *sign == b'+' { mag } else { -mag }
-        }
-        _ => return None,
-    };
-    // Howard Hinnant's `days_from_civil`:
-    // https://howardhinnant.github.io/date_algorithms.html#days_from_civil
-    let (y_adj, era_m) = if mo <= 2 {
-        (y - 1, mo + 9)
-    } else {
-        (y, mo - 3)
-    };
-    let era = y_adj.div_euclid(400);
-    let yoe = y_adj - era * 400;
-    let doy = (153 * era_m + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let secs = days * 86_400 + h * 3600 + mi * 60 + sec - offset_secs;
-    Some(std::time::Duration::new(u64::try_from(secs).ok()?, nanos))
+    let t = chrono::DateTime::parse_from_rfc3339(s).ok()?;
+    Some(std::time::Duration::new(
+        u64::try_from(t.timestamp()).ok()?,
+        t.timestamp_subsec_nanos(),
+    ))
 }
 
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
@@ -848,11 +801,11 @@ mod tests {
         for bad in [
             "2026x07-16T12:00:05Z",
             "2026-07x16T12:00:05Z",
-            "2026-07-16 12:00:05Z",
+            "2026-07-16x12:00:05Z",
         ] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }
-        // A lower-case `t` is the OTHER accepted separator, and grok's
+        // A lower-case `t` is accepted too, and grok's
         // `normalize_path_key`'d stamps arrive lowercased.
         assert_eq!(
             rfc3339_to_epoch_secs("2026-07-16t12:00:05Z"),
@@ -876,6 +829,8 @@ mod tests {
         }
         for bad in [
             "2026-07-00T12:00:05Z",
+            "2026-02-31T12:00:05Z",
+            "2026-07-16T12:00:05.Z",
             "2026-07-16T-1:00:05Z",
             "2026-07-16T+1:00:05Z",
             "2026-07-16T12:00:05+-1:00",
