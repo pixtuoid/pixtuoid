@@ -448,6 +448,22 @@ mod recorder {
             }
             kept => kept,
         };
+        let (cli, version) = match &plan.cli_version {
+            Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
+            None => {
+                let named = std::fs::read_to_string(named_cli(sandbox.path())).ok();
+                identity(&cmd, named.as_deref(), probe_version)
+            }
+        };
+        if let (Sink::Committed { .. }, Err(e)) = (&plan.sink, versioned(&cli, &version)) {
+            keep_scratch(
+                sandbox,
+                run_copy.as_deref(),
+                operator_identity,
+                &mut std::io::stderr(),
+            );
+            return Err(e);
+        }
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
 
@@ -462,13 +478,6 @@ mod recorder {
             wrote.push(write_payloads(&payloads, &dest)?);
         }
 
-        let (cli, version) = match &plan.cli_version {
-            Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
-            None => {
-                let named = std::fs::read_to_string(named_cli(sandbox.path())).ok();
-                identity(&cmd[0], named.as_deref(), probe_version)
-            }
-        };
         let Sink::Committed { command, prompt } = &plan.sink else {
             // An empty raw capture is still recorded: a hook that never fired
             // is evidence about the run, which a missing record would hide.
@@ -1173,18 +1182,31 @@ mod recorder {
 
     /// The CLI a capture ran, and its version, asked of that CLI alone: a
     /// command named by a path is a driver, which `--version` would run whole,
-    /// billed and outside the sandbox, so only the CLI it names at [`CLI_ENV`]
-    /// is asked.
+    /// billed and outside the sandbox, so only the CLI it names is asked: at
+    /// [`CLI_ENV`], or after `--` in its own command line (`tui_drive`'s).
     fn identity(
-        cmd0: &str,
+        cmd: &[String],
         named: Option<&str>,
         probe: impl FnOnce(&str) -> Option<String>,
     ) -> (String, String) {
+        let cmd0 = cmd.first().map_or("", String::as_str);
+        let driven = || {
+            cmd.iter()
+                .position(|w| w == "--")
+                .and_then(|at| cmd.get(at + 1))
+                .map(String::as_str)
+        };
         let cli = named
             .and_then(|n| n.lines().next())
             .map(str::trim)
             .filter(|n| !n.is_empty())
-            .or_else(|| (!cmd0.contains('/')).then_some(cmd0));
+            .or_else(|| {
+                if cmd0.contains('/') {
+                    driven()
+                } else {
+                    Some(cmd0)
+                }
+            });
         let name = Path::new(cli.unwrap_or(cmd0))
             .file_name()
             .and_then(|s| s.to_str())
@@ -1231,21 +1253,20 @@ mod recorder {
         NonEmpty::try_from(value).map_err(|e| std::io::Error::other(format!("{key}: {e}")))
     }
 
-    fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
-        let out = no_clobber(dest.join(PROVENANCE));
-        let unknown = record.version.as_str() == "unknown";
-        let cli = record.cli.clone();
-        Provenance::Recorded(Box::new(record)).write_to(&out)?;
-        // Loud, because the record just written is unusable.
-        if unknown {
-            eprintln!(
-                "WARNING: {} records version \"unknown\" — `{cli} --version` did not \
-                 answer, or a driver named no CLI at ${CLI_ENV}. Fix `cli` and `version` \
-                 by hand before committing, or the anchor gate skips this source.",
-                out.display()
-            );
+    /// Refuses a committed capture whose CLI told no version: a record of one
+    /// cannot sit at its source's pin, and nothing else can tell it.
+    fn versioned(cli: &str, version: &str) -> std::io::Result<()> {
+        if version == "unknown" {
+            return Err(std::io::Error::other(format!(
+                "`{cli} --version` did not answer, or a driver named no CLI (after `--` \
+                 in its command line, or at ${CLI_ENV}), so nothing is recorded"
+            )));
         }
         Ok(())
+    }
+
+    fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
+        Provenance::Recorded(Box::new(record)).write_to(&no_clobber(dest.join(PROVENANCE)))
     }
 
     fn today() -> String {
@@ -2421,31 +2442,60 @@ mod recorder {
                 asked.borrow_mut().push(c.to_owned());
                 Some(format!("{c} 1.0"))
             };
-            let driver = "scripts/lib/capture-x.sh";
+            let argv = |words: &[&str]| words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+            let driver = argv(&["scripts/lib/capture-x.sh"]);
             assert_eq!(
-                identity(driver, Some("dsh\n"), probe),
+                identity(&driver, Some("dsh\n"), probe),
                 ("dsh".into(), "dsh 1.0".into())
             );
             assert_eq!(
-                identity(driver, Some("/tmp/oc/package/bin/opencode\n"), probe),
+                identity(&driver, Some("/tmp/oc/package/bin/opencode\n"), probe),
                 ("opencode".into(), "/tmp/oc/package/bin/opencode 1.0".into())
             );
             assert_eq!(
-                identity(driver, None, probe),
+                identity(&driver, None, probe),
                 ("capture-x.sh".into(), "unknown".into())
             );
+            let tui = argv(&[
+                "target/release/examples/tui_drive",
+                "claude-code",
+                "permission",
+                "tui.log",
+                "{prompt}",
+                "--",
+                "claude",
+                "--permission-mode",
+                "manual",
+            ]);
             assert_eq!(
-                identity("claude", None, probe),
+                identity(&tui, None, probe),
                 ("claude".into(), "claude 1.0".into())
             );
             assert_eq!(
-                identity("grok", None, |_| None),
+                identity(&argv(&["claude"]), None, probe),
+                ("claude".into(), "claude 1.0".into())
+            );
+            assert_eq!(
+                identity(&argv(&["codex", "exec", "--", "{prompt}"]), None, probe),
+                ("codex".into(), "codex 1.0".into()),
+                "a CLI's own `--` names no other CLI"
+            );
+            assert_eq!(
+                identity(&argv(&["grok"]), None, |_| None),
                 ("grok".into(), "unknown".into())
             );
             assert_eq!(
                 *asked.borrow(),
-                ["dsh", "/tmp/oc/package/bin/opencode", "claude"]
+                [
+                    "dsh",
+                    "/tmp/oc/package/bin/opencode",
+                    "claude",
+                    "claude",
+                    "codex"
+                ]
             );
+            assert!(versioned("grok", "unknown").is_err());
+            assert!(versioned("grok", "grok 1.0.70").is_ok());
         }
 
         /// A driver is a Unix shell script.
