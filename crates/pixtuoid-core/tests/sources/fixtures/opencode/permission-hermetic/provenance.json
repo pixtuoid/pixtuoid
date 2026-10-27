@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "opencode",
-  "version": "opencode v2.1.4",
+  "version": "opencode v2.2.0",
   "captured": "2026-10-27",
   "command": "just hermetic --record opencode",
   "deidentified": {
