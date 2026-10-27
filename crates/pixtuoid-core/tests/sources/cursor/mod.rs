@@ -13,7 +13,7 @@ use pixtuoid_core::source::AgentEvent;
 
 fn lines() -> Vec<String> {
     super::captures::fixture_lines(
-        &super::captures::sources_root().join("cursor/fixtures/hook-payloads.jsonl"),
+        &super::captures::sources_root().join("cursor/fixtures/delegation/hook-payloads.jsonl"),
     )
 }
 

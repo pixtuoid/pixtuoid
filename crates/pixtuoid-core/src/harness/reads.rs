@@ -427,9 +427,19 @@ mod tests {
         );
     }
 
+    /// `PathBuf` equality drops the trailing slash a rendered event keeps, so a
+    /// probe comparing paths would blank `cwd` here, its fallback naming the
+    /// same directory with a slash. No current CLI's wire has the shape (grok's
+    /// before 1.0.70 did), so the line is written here.
     #[test]
     fn a_cwd_whose_fallback_differs_by_a_trailing_slash_survives_the_strip() {
-        let (_d, hooks) = stripped_copy("grok", "gate-both-ways", "hook-payloads.jsonl");
+        let d = tempfile::tempdir().expect("tempdir");
+        let hooks = d.path().join(crate::harness::HOOK_PAYLOADS);
+        std::fs::write(
+            &hooks,
+            r#"{"hookEventName":"session_start","sessionId":"s1","cwd":"/private/tmp/pixtuoid-capture/proj","workspaceRoot":"/private/tmp/pixtuoid-capture/proj/","_pixtuoid_source":"grok"}"#,
+        )
+        .expect("write");
         let rendered = |p: &Path| -> Vec<String> {
             Drive::hooks()
                 .lines(std::fs::read_to_string(p).expect("read").lines())
@@ -473,7 +483,7 @@ mod tests {
 
     #[test]
     fn the_shim_stamps_survive_the_strip() {
-        let (_d, hooks) = stripped_copy("claude-code", "tool-run-recorded", "hook-payloads.jsonl");
+        let (_d, hooks) = stripped_copy("claude-code", "tool-run-hermetic", "hook-payloads.jsonl");
         let stamps = |p: &Path| -> Vec<serde_json::Value> {
             parsed_lines(p)
                 .expect("read")
@@ -612,12 +622,12 @@ mod tests {
         }
         for sentinel in [
             "fixtures/codex/tool-run-recorded",
-            "fixtures/claude-code/tool-run-recorded",
-            "omp/fixtures/bridge-run-recorded",
-            "cursor/fixtures",
+            "fixtures/claude-code/tool-run-hermetic",
+            "omp/fixtures/tool-run-hermetic",
+            "cursor/fixtures/delegation",
             "delegation/fixtures/copilot",
             "fixtures/copilot/tool-run-recorded",
-            "fixtures/grok/tool-run-recorded",
+            "fixtures/grok/tool-run-hermetic",
         ] {
             assert!(
                 walked.contains(sentinel),

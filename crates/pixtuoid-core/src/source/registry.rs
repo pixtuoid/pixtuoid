@@ -26,7 +26,7 @@ pub enum ToolIdKey {
     /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
     /// but Kimi's.
     ToolUse,
-    /// `tool_call_id` — Kimi's (capture-verified: `fixtures/kimi/tool-run` never
+    /// `tool_call_id` — Kimi's (capture-verified: `fixtures/kimi/tool-run-hermetic` never
     /// carries `tool_use_id`).
     ToolCall,
 }
@@ -892,7 +892,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
 /// Grok Build (`grok`, xai-org/grok-build). TRANSCRIPT-BEARING **with** a hook
 /// target. The decoder reads the camelCase envelope (`hookEventName`, `toolUseId`)
 /// — the only spelling pre-1.0 sent, hence the claims-all custom decoder; 1.0.x
-/// mirrors every key in CC's snake_case as well (`grok/tool-run-recorded`).
+/// mirrors every key in CC's snake_case as well (`grok/tool-run-hermetic`).
 /// Coalescing rests on `sessionId == the transcript's parent-dir name` (upstream
 /// joins the id into `session_dir`), mirrored by `grok_id_from_path`. Transcript
 /// = `{grok_home}/sessions/<enc-cwd>/<session-id>/updates.jsonl`, append-only.

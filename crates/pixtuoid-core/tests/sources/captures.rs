@@ -47,6 +47,16 @@ impl Capture {
         p.is_file().then_some(p)
     }
 
+    /// Its directory under `tests/sources`, slash-joined on every platform: the
+    /// spelling the pinned lists below use.
+    pub(crate) fn label(&self) -> String {
+        self.dir
+            .strip_prefix(sources_root())
+            .expect("every capture is under tests/sources")
+            .to_string_lossy()
+            .replace('\\', "/")
+    }
+
     /// Every committed byte of this capture, for the rules that read content
     /// rather than metadata.
     pub(crate) fn wire_files(&self) -> Vec<PathBuf> {
@@ -290,7 +300,7 @@ fn a_recorded_captures_cli_is_its_trees_binary() {
 /// set so an exemption is a reviewed diff here, never a quiet key in a record:
 /// an exempt capture is the one path inventory data the gitleaks backstop
 /// cannot see has back into the tree.
-const EXEMPT_FROM_STRIP: &[&str] = &["cursor/fixtures"];
+const EXEMPT_FROM_STRIP: &[&str] = &["cursor/fixtures/delegation"];
 
 /// Keys whose VALUE is an operator's account rather than the wire's content. Not
 /// a guess at what a vendor might name one — the strip already removes every field
@@ -347,13 +357,7 @@ fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
     );
 
     for c in every_capture() {
-        let label = c
-            .dir
-            .strip_prefix(sources_root())
-            .expect("under root")
-            .to_string_lossy()
-            .replace('\\', "/");
-        if EXEMPT_FROM_STRIP.contains(&label.as_str()) {
+        if EXEMPT_FROM_STRIP.contains(&c.label().as_str()) {
             continue;
         }
         for wire in c.wire_files() {
@@ -407,13 +411,7 @@ fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_e
             prov.display()
         );
         if let Some(Deidentified::Exempt { .. }) = deidentified {
-            exempt.insert(
-                c.dir
-                    .strip_prefix(sources_root())
-                    .expect("under root")
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-            );
+            exempt.insert(c.label());
         }
     }
     let pinned: BTreeSet<String> = EXEMPT_FROM_STRIP.iter().map(|s| s.to_string()).collect();
@@ -508,7 +506,7 @@ fn a_recorded_capture_that_was_edited_says_so() {
                 .unwrap_or(false)
         });
         if edited && !declares {
-            silent.push(c.dir.strip_prefix(sources_root()).unwrap().to_path_buf());
+            silent.push(c.label());
         }
     }
     assert!(
@@ -519,80 +517,87 @@ fn a_recorded_capture_that_was_edited_says_so() {
     );
 }
 
-/// `verified_version` means "the version whose wire we have SEEN". A recorded
-/// scenario IS that sighting, so the two must not disagree — `doctor`'s "newer
-/// than verified" warning is structurally silent at `unknown` and would
-/// otherwise warn a user running the exact version we hold a capture from.
+/// Captures not yet at their source's pin, each group retired by what its
+/// comment names. It only shrinks: a listed capture that is current, or gone,
+/// leaves the list.
+const OWED_CURRENT: &[&str] = &[
+    // The only carriers of a non-zero cache or reasoning token count, which
+    // each profile owes in `not_yet_fields`: aimock 1.45.1 scripts no usage
+    // detail, 1.46.0 Anthropic's cache counts and 1.47.0 any raw frame.
+    "fixtures/claude-code/delegation-recorded",
+    "fixtures/claude-code/permission-recorded",
+    "fixtures/claude-code/subagent-recorded",
+    "fixtures/claude-code/tool-run-recorded",
+    "fixtures/codex/permission-recorded",
+    "fixtures/codex/tool-run-recorded",
+    "fixtures/copilot/permission-recorded",
+    "fixtures/copilot/tool-run-recorded",
+    // omp rounds no hermetic shape drives yet: an approval, a question, a resume.
+    "fixtures/omp/ask-recorded",
+    "omp/fixtures/approval-recorded",
+    "omp/fixtures/resume-recorded",
+    // The hermetic spawn's script names no `subagent_type`, which the transcript
+    // decoder needs to mint a blocking spawn's Task.
+    "grok/fixtures/subagent-recorded",
+    // cursor has no hermetic profile (`hermetic::NOT_HERMETIC`): a billed capture.
+    "cursor/fixtures/delegation",
+    // The corpus's one Windows cwd, which no recorder writes.
+    "fixtures/copilot/tool-run",
+    // The site's proof clip, which a recording of its own retimes.
+    "fixtures/claude-code/proof-session",
+];
+
+/// `verified_version` is the release the hermetic tier installs and the newest
+/// wire we have SEEN (`hermetic::pin`), so a capture of any other release, or of
+/// none, is outdated. The nightly re-records a profiled CLI's scenarios at each
+/// new release and moves its pin, which reds every other capture of that CLI
+/// here until it is re-recorded too; an unprofiled CLI's pin moves by hand,
+/// and the nightly's freshness check says when it must.
 #[test]
-fn a_recorded_capture_anchors_its_sources_verified_version() {
-    let mut by_source: std::collections::BTreeMap<String, Vec<(String, String)>> =
-        std::collections::BTreeMap::new();
-    let mut recorded_at_all: BTreeSet<String> = BTreeSet::new();
-    for (c, r) in recordings(&every_capture()) {
-        recorded_at_all.insert(c.source.clone());
-        let version = r.version.as_str();
-        if version.chars().any(|ch| ch.is_ascii_digit()) {
-            by_source
-                .entry(c.source.clone())
-                .or_default()
-                .push((r.captured.to_string(), version.to_string()));
-        }
-    }
-    for source in recorded_at_all {
-        let Some(d) = registry::descriptor_for(&source) else {
-            continue;
-        };
-        let Some(versions) = by_source.get(&source) else {
-            // Skipping a version-less source is how `verified_version:
-            // "0.0.0-A-LIE"` passed for copilot: three scenarios, all `unknown`.
-            assert_eq!(
-                d.verified_version, "unknown",
-                "{source}: every recorded capture here says `version: unknown`, so nothing \
-                 in this tree anchors {:?}. Re-record with a version, or set the field to \
-                 \"unknown\" — a number no capture backs is the state the field was defined \
-                 to avoid.",
-                d.verified_version
-            );
-            continue;
-        };
-        // The HIGHEST version: `any` let hermes' 0.20.0 anchor beside its 0.20.1,
-        // and the newest DATE would move the pin DOWN on a stale machine.
-        let dated: Vec<&(String, String)> = versions
-            .iter()
-            .filter(|(when, _)| is_iso_date(when))
-            .collect();
-        assert!(
-            !dated.is_empty(),
-            "{source}: has recorded versions but none with an ISO `captured`, so nothing \
-             dates the sightings — every version-bearing capture carries one, and a \
-             source that loses it must fail loudly rather than weaken the rule"
-        );
-        // Version first, `captured` only as TIE-BREAK: without it two captures of one
-        // version resolve by dir iteration order.
+fn every_capture_is_recorded_at_its_sources_pin() {
+    let mut outdated: std::collections::BTreeMap<String, String> = Default::default();
+    let mut current: BTreeSet<String> = BTreeSet::new();
+    for c in every_capture() {
+        let d = registry::descriptor_for(&c.source).expect("a registered source");
         let version = |s: &str| registry::parse_version(s, d.version_hyphen);
-        let highest = &dated
-            .iter()
-            .max_by(|a, b| {
-                let precedence = match (version(&a.1), version(&b.1)) {
-                    (Some(a), Some(b)) => a.cmp_precedence(&b),
-                    (a, b) => a.is_some().cmp(&b.is_some()),
-                };
-                precedence.then_with(|| a.0.cmp(&b.0))
-            })
-            .expect("non-empty")
-            .1;
-        let pinned = version(highest);
-        assert!(
-            pinned
-                .as_ref()
-                .zip(version(d.verified_version))
-                .is_some_and(|(p, v)| p.cmp_precedence(&v).is_eq()),
-            "{source}: `verified_version` is {:?}, but the highest recorded capture \
-             ({highest:?}) pins {:?} — the newest wire we hold is the one that counts",
-            d.verified_version,
-            pinned.map_or_else(|| "nothing".to_owned(), |v| v.to_string())
-        );
+        let why = match c.recorded() {
+            None => "not recorded".to_owned(),
+            Some(r) => match version(r.version.as_str()).zip(version(d.verified_version)) {
+                Some((v, pin)) if v.cmp_precedence(&pin).is_eq() => {
+                    current.insert(c.source.clone());
+                    continue;
+                }
+                _ => format!("{} is not the pin {}", r.version, d.verified_version),
+            },
+        };
+        outdated.insert(c.label(), why);
     }
+    let unlisted: Vec<String> = outdated
+        .iter()
+        .filter(|(at, _)| !OWED_CURRENT.contains(&at.as_str()))
+        .map(|(at, why)| format!("{at}: {why}"))
+        .collect();
+    assert!(
+        unlisted.is_empty(),
+        "outdated captures: re-record each at its pin, or delete it once a current \
+         one covers its readers:\n  {}",
+        unlisted.join("\n  ")
+    );
+    let paid: Vec<&&str> = OWED_CURRENT
+        .iter()
+        .filter(|at| !outdated.contains_key(**at))
+        .collect();
+    assert!(
+        paid.is_empty(),
+        "current or gone, so they leave OWED_CURRENT: {paid:?}"
+    );
+    let bare: Vec<&str> = registry::registered_source_names()
+        .filter(|n| !current.contains(*n))
+        .collect();
+    assert!(
+        bare.is_empty(),
+        "no capture at the pin, so nothing we hold shows its wire: {bare:?}"
+    );
 }
 
 /// The three pinned rosters, over the SAME walk the rules use — they used to be
@@ -603,18 +608,10 @@ fn the_pinned_provenance_rosters_hold_both_ways() {
     let recorded: BTreeSet<&str> = recordings(&captures)
         .map(|(c, _)| c.source.as_str())
         .collect();
-    // Keyed off `sources_root()`, not `fixtures_root()`: the `?` on the narrower
-    // prefix silently dropped every single-owner capture from this rule.
     let unknown: BTreeSet<String> = captures
         .iter()
         .filter(|c| matches!(c.provenance, Provenance::Unknown { .. }))
-        .map(|c| {
-            c.dir
-                .strip_prefix(sources_root())
-                .expect("every capture is under tests/sources")
-                .to_string_lossy()
-                .replace('\\', "/")
-        })
+        .map(Capture::label)
         .collect();
     assert_eq!(
         unknown,
