@@ -70,17 +70,11 @@ pub(crate) fn enter_waiting(slot: &mut AgentSlot, reason: Arc<str>, now: SystemT
     slot.last_event_at = now;
 }
 
-/// What a [`settle`] lands on beyond the slot itself.
-pub(crate) struct SettleCtx {
-    /// A Task the slot dispatched that is still in flight.
-    pub(crate) task_in_flight: Option<Arc<str>>,
-}
-
-/// The slot's work or wait ended: land on Delegating while a Task is in
-/// flight, else Idle. Landing on the state the slot is already in keeps its
-/// clock. The caller owns `last_event_at`.
-pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
-    match (ctx.task_in_flight, &mut slot.state) {
+/// The slot's work or wait ended: land on Delegating while `task_in_flight`,
+/// a Task the slot dispatched, still runs, else Idle. Landing on the state the
+/// slot is already in keeps its clock. The caller owns `last_event_at`.
+pub(crate) fn settle(slot: &mut AgentSlot, task_in_flight: Option<Arc<str>>, now: SystemTime) {
+    match (task_in_flight, &mut slot.state) {
         (
             Some(task),
             ActivityState::Active {
@@ -219,24 +213,12 @@ mod tests {
         assert!(matches!(s.state, ActivityState::Waiting { .. }));
     }
 
-    fn no_task() -> SettleCtx {
-        SettleCtx {
-            task_in_flight: None,
-        }
-    }
-
-    fn task(id: &str) -> SettleCtx {
-        SettleCtx {
-            task_in_flight: Some(Arc::from(id)),
-        }
-    }
-
     #[test]
     fn settle_folds_the_active_span_up_to_now_and_lands_idle() {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(1);
         let mut s = active(t0);
-        settle(&mut s, no_task(), now);
+        settle(&mut s, None, now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.active_ms, 1000);
         assert_eq!(s.state_started_at, now);
@@ -252,7 +234,7 @@ mod tests {
             },
             t0,
         );
-        settle(&mut s, no_task(), now);
+        settle(&mut s, None, now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.active_ms, 0, "Waiting time is not folded into active_ms");
         assert_eq!(s.state_started_at, now);
@@ -263,7 +245,7 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(2);
         let mut s = active(t0);
-        settle(&mut s, task("task-1"), now);
+        settle(&mut s, Some(Arc::from("task-1")), now);
         match &s.state {
             ActivityState::Active {
                 tool_use_id, kind, ..
@@ -282,14 +264,14 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(5);
         let mut s = slot_at(ActivityState::Idle, t0);
-        settle(&mut s, no_task(), now);
+        settle(&mut s, None, now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.state_started_at, t0, "Idle isn't re-stamped");
 
         let mut s = active(t0);
         enter_delegating(&mut s, Some(Arc::from("task-1")), t0);
         let folded = s.active_ms;
-        settle(&mut s, task("task-2"), now);
+        settle(&mut s, Some(Arc::from("task-2")), now);
         match &s.state {
             ActivityState::Active { tool_use_id, .. } => {
                 assert_eq!(

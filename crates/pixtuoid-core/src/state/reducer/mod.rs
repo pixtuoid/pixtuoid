@@ -9,7 +9,6 @@ use crate::source::{AgentEvent, Transport};
 use crate::state::correlation::{
     Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
 };
-use crate::state::fsm::SettleCtx;
 use crate::state::requests::Ended;
 use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, fsm, scope};
 
@@ -634,7 +633,7 @@ impl Reducer {
                 (state, _) => matches!(state, ActivityState::Active { .. }),
             };
             if resolved || ends_shown_call {
-                fsm::settle(slot, SettleCtx { task_in_flight }, now);
+                fsm::settle(slot, task_in_flight, now);
             }
             slot.last_event_at = now;
         }
@@ -1155,13 +1154,7 @@ impl Reducer {
                 matches!(slot.state, ActivityState::Waiting { .. }),
             )
         {
-            fsm::settle(
-                slot,
-                SettleCtx {
-                    task_in_flight: any_task(tasks),
-                },
-                now,
-            );
+            fsm::settle(slot, any_task(tasks), now);
         }
         suppress
     }
@@ -1247,7 +1240,7 @@ impl Reducer {
                         ) && (set.is_empty() || shown_drained)
                         {
                             let task_in_flight = any_task(set);
-                            fsm::settle(slot, SettleCtx { task_in_flight }, now);
+                            fsm::settle(slot, task_in_flight, now);
                         }
                     }
                 }
