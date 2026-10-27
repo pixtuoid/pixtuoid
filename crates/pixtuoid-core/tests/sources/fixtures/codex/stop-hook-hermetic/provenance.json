@@ -9,7 +9,7 @@
     "blanked": 118
   },
   "seed": "tests/sources/hermetic/codex/stop-hook",
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/codex/stop-hook.json",
   "dropped": {
     "os": "macos",

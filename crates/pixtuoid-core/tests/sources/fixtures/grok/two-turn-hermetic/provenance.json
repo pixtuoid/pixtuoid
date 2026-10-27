@@ -6,9 +6,9 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 183
+    "blanked": 185
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/grok/two-turn.json",
   "dropped": {
     "os": "macos",

@@ -8,7 +8,7 @@
     "method": "decoder-allowlist",
     "blanked": 100
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/codex/tool-run.json",
   "dropped": {
     "os": "macos",

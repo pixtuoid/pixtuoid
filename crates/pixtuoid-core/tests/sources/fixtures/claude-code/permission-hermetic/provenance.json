@@ -8,7 +8,7 @@
     "method": "decoder-allowlist",
     "blanked": 250
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/claude-code/permission.json",
   "dropped": {
     "os": "macos",

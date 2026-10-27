@@ -3,30 +3,30 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
     model: grok-4.6
     effort: ~
 - TurnEnd:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
 - SessionEnd:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
     as_child: false
 - SessionStart:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
     source: grok
-    session_id: 01a17c1a-d9da-7200-9809-ebb7b48e61b7
+    session_id: 01a17eaf-f9b2-7cc0-8e26-6e3f6d65d872
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
     source: grok
-    session_id: 01a17c1a-d9da-7200-9809-ebb7b48e61b7
+    session_id: 01a17eaf-f9b2-7cc0-8e26-6e3f6d65d872
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - TurnEnd:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
 - SessionEnd:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384
     as_child: false
 - TurnEnd:
-    agent_id: 7566100711353187322
+    agent_id: 6818688284962607384

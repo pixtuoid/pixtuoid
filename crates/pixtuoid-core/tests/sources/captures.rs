@@ -528,8 +528,6 @@ const OWED_CURRENT: &[&str] = &[
     "fixtures/claude-code/permission-recorded",
     "fixtures/claude-code/subagent-recorded",
     "fixtures/claude-code/tool-run-recorded",
-    "fixtures/codex/permission-recorded",
-    "fixtures/codex/tool-run-recorded",
     // omp rounds no hermetic shape drives yet: an approval, a question, a resume.
     "fixtures/omp/ask-recorded",
     "omp/fixtures/approval-recorded",

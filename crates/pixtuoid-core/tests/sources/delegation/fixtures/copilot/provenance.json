@@ -6,9 +6,9 @@
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 102
+    "blanked": 116
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/copilot/subagent.json",
   "dropped": {
     "os": "macos",

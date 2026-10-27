@@ -9,7 +9,7 @@
     "blanked": 97
   },
   "seed": "tests/sources/hermetic/codex/policy-deny",
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/codex/policy-deny.json",
   "dropped": {
     "os": "macos",

@@ -6,9 +6,9 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 227
+    "blanked": 229
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/grok/subagent.json",
   "dropped": {
     "os": "macos",

@@ -8,7 +8,7 @@
     "method": "decoder-allowlist",
     "blanked": 13
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/omp/new-session.json",
   "dropped": {
     "os": "macos",
