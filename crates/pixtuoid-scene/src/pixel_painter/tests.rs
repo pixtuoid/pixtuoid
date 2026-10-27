@@ -3,7 +3,7 @@ use super::drawable::paint_character_at;
 use super::*;
 use crate::anim::{Motion, epoch_ms};
 use crate::character::test_support::{color_of, make_slot, make_slot_cwd};
-use crate::character::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY, tool_glow_tint};
+use crate::character::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY, work_glow_tint};
 use crate::cutaway::wall::paint_wall;
 #[cfg(feature = "cutaway-assets")]
 use crate::display::pen::test_density;
@@ -21,7 +21,9 @@ use crate::sim::seat::{Seat, settle_seat};
 use crate::sim::{CharacterGlow, CharacterPlacement, SimInputs, SimStores, sim_step};
 use pixtuoid_core::sprite::Frame;
 use pixtuoid_core::sprite::format::Piece;
-use pixtuoid_core::state::{ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{
+    ActivityState, FloorLocalDeskIndex, GlobalDeskIndex, ToolKind, ToolUse,
+};
 use std::sync::Arc;
 use std::time::SystemTime;
 use strum::VariantArray as _;
@@ -927,9 +929,11 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
     slot.desk_index = GlobalDeskIndex(north);
     slot.state = ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Edit,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Edit,
+        }),
     };
     let coffee = HashMap::new();
     let mut owned = OwnedSimStores::new();
@@ -1075,14 +1079,16 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     let editing = make_slot(
         id,
         ActivityState::Running {
-            tool_use_id: None,
-            detail: None,
-            kind: ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: None,
+                kind: ToolKind::Edit,
+            }),
         },
     );
     let idle = make_slot(id, ActivityState::Idle);
     let theme = &crate::theme::NORMAL;
-    let tool = tool_glow_tint(&editing, &theme.tool_glow);
+    let tool = work_glow_tint(&editing, &theme.tool_glow);
     assert!(tool.is_some(), "the fixture's occupant is using a tool");
     let glow = |occupant, facing, seated| {
         crate::lighting::desk_screen_glow(occupant, facing, seated, theme)
@@ -1100,6 +1106,12 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     );
     assert_eq!(glow(Some(&idle), Facing::North, true), None, "no tool");
     assert_eq!(glow(None, Facing::North, true), None, "nobody");
+    let between_items = make_slot(id, ActivityState::Running { item: None });
+    assert_eq!(
+        glow(Some(&between_items), Facing::North, true),
+        Some(theme.tool_glow.default),
+        "an open turn works its screen, untinted"
+    );
 }
 
 fn drawable(sort_row: u16) -> Drawable<'static> {
@@ -2274,7 +2286,7 @@ fn a_top_burning_placement_carries_its_crown_on_its_top_left() {
     slot.model = Some("claude-fable-5".into());
     let crowns = |scene: &SceneState| {
         let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
-        let poses = HashMap::from([(id, Some(Pose::SeatedThinking))]);
+        let poses = HashMap::from([(id, Some(Pose::SeatedTyping))]);
         let (placements, ..) = crate::sim::resolve_characters(
             &agents,
             &poses,
@@ -2755,7 +2767,7 @@ fn seat_desk_is_set_exactly_when_the_sim_seats_someone_at_a_desk() {
                     "a WALKING agent is not seated at a desk (t={ms}ms)"
                 );
             }
-            Some(Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)) => {
+            Some(Some(Pose::SeatedIdle | Pose::SeatedTyping)) => {
                 seated_seen = true;
                 let desk = c.seat_desk.expect("a seated agent carries its desk");
                 assert!(
@@ -4432,7 +4444,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
         for c in &frame.characters {
             let id = frame.agents[c.agent_idx].agent_id;
             let sits = match frame.poses.get(&id) {
-                Some(Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)) => true,
+                Some(Some(Pose::SeatedIdle | Pose::SeatedTyping)) => true,
                 Some(Some(Pose::AtWaypoint { kind, .. })) => matches!(
                     kind,
                     WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair
@@ -4513,9 +4525,11 @@ fn a_running_agent_releases_the_seat_it_snapped_back_from() {
     );
 
     scene.agents.get_mut(&id).expect("slot").state = ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Other,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Other,
+        }),
     };
     scene.agents.get_mut(&id).expect("slot").state_started_at = now;
     let mut stores = owned.stores();
@@ -5296,7 +5310,7 @@ fn only_a_placement_that_breathes_takes_the_breath() {
         .straight(),
     );
     let idler = place(Pose::AimlessAt { dest: mid });
-    let sitter = place(Pose::SeatedThinking);
+    let sitter = place(Pose::SeatedTyping);
     assert!(!walker.breathes && idler.breathes && sitter.breathes);
     // Neither stands at a desk, so the badge row IS the fitted top.
     assert_eq!(
@@ -5685,9 +5699,11 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
     let typing = make_slot(
         id,
         ActivityState::Running {
-            tool_use_id: None,
-            detail: Some(Arc::from("Edit src/main.rs")),
-            kind: ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: Some(Arc::from("Edit src/main.rs")),
+                kind: ToolKind::Edit,
+            }),
         },
     );
     let placement = |glow| CharacterPlacement {
@@ -5704,15 +5720,16 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
         seat_desk: None,
         seated: true,
     };
-    let pose = crate::character::SpritePose::of(&placement(CharacterGlow::Tool), &typing, theme);
+    let pose = crate::character::SpritePose::of(&placement(CharacterGlow::Work), &typing, theme);
     assert_eq!(
         (pose.anim_name, pose.frame_idx, pose.flip_x),
         (Piece::Typing, 3, true)
     );
-    assert_eq!(pose.glow_tint, tool_glow_tint(&typing, &theme.tool_glow));
-    let thinking =
-        crate::character::SpritePose::of(&placement(CharacterGlow::Thinking), &typing, theme);
-    assert_eq!(thinking.glow_tint, Some(theme.tool_glow.default));
+    assert_eq!(pose.glow_tint, work_glow_tint(&typing, &theme.tool_glow));
+    let between_items = make_slot(id, ActivityState::Running { item: None });
+    let turn =
+        crate::character::SpritePose::of(&placement(CharacterGlow::Work), &between_items, theme);
+    assert_eq!(turn.glow_tint, Some(theme.tool_glow.default));
     let unlit = crate::character::SpritePose::of(&placement(CharacterGlow::None), &typing, theme);
     assert_eq!(unlit.glow_tint, None);
 }

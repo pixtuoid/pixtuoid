@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use pixtuoid_core::source::registry::descriptor_for;
 use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::state::{ActivityState, ToolKind};
+use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, SceneState};
 
 use crate::display::cells::{CellGrid, CellRect};
@@ -262,9 +262,12 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
     let mut detail: Option<String> = None;
     if kind != RungKind::Exiting {
         if let ActivityState::Running {
-            detail: Some(d),
-            kind: tool_kind,
-            ..
+            item:
+                Some(ToolUse {
+                    detail: Some(d),
+                    kind: tool_kind,
+                    ..
+                }),
         } = &agent.state
             && !d.is_empty()
         {

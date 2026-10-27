@@ -1,7 +1,8 @@
 //! The agents' turns from their bracket stream: the one turn each has open and
 //! the recently closed, and the rules a [`AgentEvent::TurnStart`] or
 //! [`AgentEvent::TurnEnd`] follows. A thread runs one turn at a time and its
-//! stream is in order, so a bracket of another turn proves the open one ended.
+//! stream is in order, so a bracket of another turn proves the open one ended,
+//! unless the stream's positions show that turn is the older.
 //!
 //! [`AgentEvent::TurnStart`]: crate::AgentEvent::TurnStart
 //! [`AgentEvent::TurnEnd`]: crate::AgentEvent::TurnEnd
@@ -33,7 +34,11 @@ pub(crate) enum End {
     /// The agent's work ends; `implied` is the open turn this end proves
     /// ended, when it is not the turn named.
     Applied { implied: Option<TurnKey> },
-    /// The turn already closed: a replay that ends nothing.
+    /// The agent's work ends, and the turn's start went unseen (an oversized
+    /// skip, a late attach): the one ordered stream proves it was the current
+    /// turn, so what no turn scoped was its.
+    StartUnseen,
+    /// The turn is over, a replay or an older turn's end: it ends nothing.
     Stale,
 }
 
@@ -42,6 +47,9 @@ pub(crate) enum End {
 pub(crate) struct TurnLedger {
     open: HashMap<AgentId, TurnKey>,
     closed: HashMap<(AgentId, TurnKey), SystemTime>,
+    /// The newest position each agent's ordered stream has named, start or
+    /// end: what is older belongs to a turn already over.
+    newest: HashMap<AgentId, TurnKey>,
 }
 
 impl TurnLedger {
@@ -50,6 +58,14 @@ impl TurnLedger {
         if self.is_closed(id, &key, now) {
             return Start::Stale;
         }
+        // A start of the newest position replays an ended turn unless that
+        // turn is still open: an in-order stream never restarts a position.
+        let restarted = self.newest.get(&id) == Some(&key) && self.open.get(&id) != Some(&key);
+        if restarted || self.is_older_than_newest(id, &key) {
+            self.closed.insert((id, key), now);
+            return Start::Stale;
+        }
+        self.note_newest(id, &key);
         let superseded = self
             .open
             .insert(id, key.clone())
@@ -74,8 +90,15 @@ impl TurnLedger {
             return End::Stale;
         }
         self.closed.insert((id, key.clone()), now);
+        let older = self.is_older_than_newest(id, key);
+        self.note_newest(id, key);
         match self.open.remove(&id) {
             Some(open) if open == *key => End::Applied { implied: None },
+            // A position before the open turn's is a turn already over.
+            Some(open) if key.newer_than(&open) == Some(false) => {
+                self.open.insert(id, open);
+                End::Stale
+            }
             // The stream is in order, so another turn's end proves the open
             // one ended.
             Some(open) => {
@@ -84,9 +107,8 @@ impl TurnLedger {
                     implied: Some(open),
                 }
             }
-            // Its start went unseen (an oversized skip, a late attach), and
-            // the one ordered stream proves it was the current turn.
-            None => End::Applied { implied: None },
+            None if older => End::Stale,
+            None => End::StartUnseen,
         }
     }
 
@@ -96,15 +118,16 @@ impl TurnLedger {
     }
 
     /// The slot went, or revived: its open turn goes with its life. A closed
-    /// turn ages out on its own clock, so a revived slot still refuses its
-    /// replays.
+    /// turn ages out on its own clock, and a revived session's stream goes on
+    /// from its newest position, so a revived slot still refuses its replays.
     pub(crate) fn forget(&mut self, id: &AgentId) {
         self.open.remove(id);
     }
 
-    /// Keep the open turns of the agents `keep` names.
+    /// Keep the turns of the agents `keep` names.
     pub(crate) fn retain(&mut self, mut keep: impl FnMut(&AgentId) -> bool) {
         self.open.retain(|id, _| keep(id));
+        self.newest.retain(|id, _| keep(id));
     }
 
     /// Age out the closed turns past [`CLOSED_TURN_TTL`].
@@ -117,6 +140,60 @@ impl TurnLedger {
         self.closed
             .get(&(id, key.clone()))
             .is_some_and(|at| is_fresh(now, *at, CLOSED_TURN_TTL))
+    }
+
+    fn is_older_than_newest(&self, id: AgentId, key: &TurnKey) -> bool {
+        self.newest
+            .get(&id)
+            .is_some_and(|newest| newest.newer_than(key) == Some(true))
+    }
+
+    /// Only an ordered position is kept: an opaque id names no newest.
+    fn note_newest(&mut self, id: AgentId, key: &TurnKey) {
+        let newer = self
+            .newest
+            .get(&id)
+            .is_none_or(|newest| key.newer_than(newest) == Some(true));
+        if matches!(key, TurnKey::Seq(_)) && newer {
+            self.newest.insert(id, key.clone());
+        }
+    }
+}
+
+/// The turn-axis oracle over one `Seq` stream: its open turn is its newest
+/// start, unless that or a newer turn has ended.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct SeqOracle {
+    newest_start: Option<u64>,
+    newest_end: Option<u64>,
+    newest_ended: bool,
+}
+
+#[cfg(test)]
+impl SeqOracle {
+    pub(crate) fn start(&mut self, k: u64) {
+        if self.newest_start.is_none_or(|m| k > m) {
+            self.newest_start = Some(k);
+            self.newest_ended = self.newest_end.is_some_and(|e| e >= k);
+        }
+    }
+
+    /// `None` is an end naming no turn.
+    pub(crate) fn end(&mut self, k: Option<u64>) {
+        match k {
+            Some(k) => {
+                self.newest_end = self.newest_end.max(Some(k));
+                self.newest_ended |= self.newest_start.is_some_and(|m| k >= m);
+            }
+            None => self.newest_ended = true,
+        }
+    }
+
+    pub(crate) fn open(&self) -> Option<TurnKey> {
+        self.newest_start
+            .filter(|_| !self.newest_ended)
+            .map(TurnKey::Seq)
     }
 }
 
@@ -193,8 +270,8 @@ mod tests {
         let mut turns = TurnLedger::default();
         assert_eq!(
             turns.end(id(), Some(&key("a")), t0()),
-            End::Applied { implied: None },
-            "the stream's current turn, its start unseen"
+            End::StartUnseen,
+            "the stream's current turn"
         );
         assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::Stale);
         assert_eq!(turns.start(id(), key("a"), t0()), Start::Stale);
@@ -250,6 +327,93 @@ mod tests {
         assert_eq!(turns.start(id(), key("a"), t0()), Start::Stale);
     }
 
+    #[test]
+    fn a_seq_start_older_than_the_newest_is_stale_and_closes() {
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        assert_eq!(turns.start(id(), TurnKey::Seq(3), t0()), Start::Stale);
+        assert_eq!(turns.open(&id()), Some(&TurnKey::Seq(5)));
+        turns.retain(|_| false);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(3), t0()),
+            Start::Stale,
+            "its replay is refused past the slot's newest position"
+        );
+    }
+
+    #[test]
+    fn an_ended_seq_turn_never_restarts_past_the_replay_ttl() {
+        let past = t0() + CLOSED_TURN_TTL;
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        turns.gc(past);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(5), past),
+            Start::Opened { superseded: None },
+            "a repeated start of the open turn changes nothing"
+        );
+        turns.end(id(), Some(&TurnKey::Seq(5)), past);
+        turns.gc(past + CLOSED_TURN_TTL);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(5), past + CLOSED_TURN_TTL),
+            Start::Stale
+        );
+        assert_eq!(turns.open(&id()), None);
+    }
+
+    #[test]
+    fn a_seq_end_older_than_the_open_turn_is_closed_only() {
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        assert_eq!(turns.end(id(), Some(&TurnKey::Seq(3)), t0()), End::Stale);
+        assert_eq!(turns.open(&id()), Some(&TurnKey::Seq(5)));
+        assert_eq!(turns.start(id(), TurnKey::Seq(3), t0()), Start::Stale);
+    }
+
+    #[test]
+    fn a_seq_end_newer_than_the_open_turn_ends_it_and_every_older_start() {
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        assert_eq!(
+            turns.end(id(), Some(&TurnKey::Seq(7)), t0()),
+            End::Applied {
+                implied: Some(TurnKey::Seq(5))
+            }
+        );
+        assert_eq!(turns.start(id(), TurnKey::Seq(6), t0()), Start::Stale);
+        assert_eq!(turns.open(&id()), None);
+    }
+
+    #[test]
+    fn a_seq_end_older_than_the_newest_with_no_turn_open_is_closed_only() {
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        turns.end(id(), Some(&TurnKey::Seq(5)), t0());
+        assert_eq!(turns.end(id(), Some(&TurnKey::Seq(3)), t0()), End::Stale);
+        assert_eq!(
+            turns.end(id(), Some(&TurnKey::Seq(9)), t0()),
+            End::StartUnseen,
+            "a newer turn"
+        );
+    }
+
+    #[test]
+    fn the_newest_position_outlives_a_revive_and_goes_with_the_slot() {
+        let mut turns = TurnLedger::default();
+        turns.start(id(), TurnKey::Seq(5), t0());
+        turns.forget(&id());
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(3), t0()),
+            Start::Stale,
+            "a revived session's stream goes on where it was"
+        );
+        turns.retain(|_| false);
+        assert_eq!(
+            turns.start(id(), TurnKey::Seq(4), t0()),
+            Start::Opened { superseded: None }
+        );
+    }
+
     #[derive(Clone, Debug)]
     enum Op {
         Start(u8),
@@ -281,7 +445,7 @@ mod tests {
                     }
                     Op::End(k) => {
                         let k = k.map(|k| key(&k.to_string()));
-                        if let End::Applied { .. } = turns.end(id(), k.as_ref(), t0()) {
+                        if turns.end(id(), k.as_ref(), t0()) != End::Stale {
                             prop_assert_eq!(turns.open(&id()), None);
                         }
                     }
@@ -294,6 +458,27 @@ mod tests {
                 {
                     prop_assert!(turns.is_closed(id(), &prev, t0()));
                 }
+            }
+        }
+
+        #[test]
+        fn a_seq_streams_open_turn_is_its_newest_unended_start(ops in proptest::collection::vec(op(), 0..32)) {
+            let mut turns = TurnLedger::default();
+            let mut oracle = SeqOracle::default();
+            for op in ops {
+                match op {
+                    Op::Start(k) => {
+                        let k = u64::from(k);
+                        turns.start(id(), TurnKey::Seq(k), t0());
+                        oracle.start(k);
+                    }
+                    Op::End(k) => {
+                        let k = k.map(u64::from);
+                        turns.end(id(), k.map(TurnKey::Seq).as_ref(), t0());
+                        oracle.end(k);
+                    }
+                }
+                prop_assert_eq!(turns.open(&id()).cloned(), oracle.open());
             }
         }
     }

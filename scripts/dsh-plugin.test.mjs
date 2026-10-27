@@ -6,18 +6,13 @@
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+import { HOOK_PLACEHOLDER, POSIX, REPO_ROOT, poll } from "./lib/plugin-harness.mjs";
+
 const PLUGIN_SOURCE = join(REPO_ROOT, "crates", "pixtuoid", "src", "install", "dsh_plugin.mjs");
-// Must match `HOOK_PLACEHOLDER` in `crates/pixtuoid/src/install/dsh.rs`.
-const HOOK_PLACEHOLDER = '"{{HOOK_PATH_JSON}}"';
-
-const POSIX = process.platform !== "win32";
-const POLL_DEADLINE_MS = 10_000;
-const POLL_TICK_MS = 25;
 
 async function renderPlugin(t) {
   const root = await mkdtemp(join(tmpdir(), "pixtuoid-dsh-plugin-"));
@@ -57,21 +52,6 @@ function apply(module) {
   });
   const event = (type, data) => handlers.get("session/event")(session, { type, data });
   return { handlers, event };
-}
-
-// `file`'s non-empty lines once `done` holds of them: the shims write after the
-// listeners return.
-async function poll(file, done) {
-  const deadline = Date.now() + POLL_DEADLINE_MS;
-  for (;;) {
-    const text = await readFile(file, "utf8").catch(() => "");
-    const got = text.split("\n").filter((l) => l.trim().length > 0);
-    if (done(got)) return got;
-    if (Date.now() > deadline) {
-      throw new Error(`timed out polling ${file}; got ${got.length} line(s)`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_TICK_MS));
-  }
 }
 
 const lines = async (file, n) => (await poll(file, (got) => got.length >= n)).slice(0, n);
@@ -134,6 +114,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     header: { config: { model: "m", system: "SECRET_SYSTEM" } },
     messages: ["SECRET_MESSAGE"],
   });
+  event("turn/end", { turn: 1, reason: { kind: "error", error: { message: "SECRET_ERROR" } } });
   handlers.get("agent/disposed")({ agent: { session } });
 
   // Exact payloads: a key nobody planted fails too, and so does a payload.
@@ -146,6 +127,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     { type: "tool_result", ...at, callId: "c1" },
     { type: "usage", ...at, inputTokens: 1, outputTokens: 2 },
     { type: "model", ...at, model: "m" },
+    { type: "turn_end", ...at },
     { type: "session_end", ...at },
   ]);
 });

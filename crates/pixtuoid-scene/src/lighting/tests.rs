@@ -200,9 +200,11 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     let id = |p: &str| pixtuoid_core::AgentId::from_transcript_path(p);
     // No tool detail: a screen lights for any tool call.
     let running = pixtuoid_core::state::ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: pixtuoid_core::state::ToolKind::Edit,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: pixtuoid_core::state::ToolKind::Edit,
+        }),
     };
     let at_desk = |path: &str, desk: usize, state: pixtuoid_core::state::ActivityState| {
         let mut a = crate::character::test_support::make_slot(id(path), state);
@@ -242,9 +244,9 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     let kinds: Vec<_> = lights.monitor_halos.iter().map(|h| h.kind).collect();
     assert_eq!(
         kinds,
-        [EmitterKind::MonitorHalo(
+        [EmitterKind::MonitorHalo(ScreenWork::ToolUse(
             pixtuoid_core::state::ToolKind::Edit
-        )],
+        ))],
         "only the seated, mid-call agent at a screen facing us"
     );
     let desk = layout.home_desks[lit].at;
@@ -337,7 +339,7 @@ fn every_shape() -> [Emitter; 4] {
             },
         ),
         lit(
-            EmitterKind::MonitorHalo(ToolKind::Read),
+            EmitterKind::MonitorHalo(ScreenWork::ToolUse(ToolKind::Read)),
             Light::Patch {
                 centre: Point { x: 30, y: 20 },
             },

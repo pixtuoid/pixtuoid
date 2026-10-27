@@ -97,6 +97,9 @@ export function apply(ctx) {
       const header = session.header
       const d = event.data
       switch (event.type) {
+        case "turn/end":
+          send({ type: "turn_end", ...base(header) })
+          break
         case "tool/call":
           send({
             type: "tool_call",

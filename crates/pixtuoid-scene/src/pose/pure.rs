@@ -16,11 +16,6 @@ use pixtuoid_core::AgentId;
 use pixtuoid_core::sprite::Sprite;
 use pixtuoid_core::state::{ActivityState, AgentSlot};
 
-/// How long after the last event an Idle agent stays in the "thinking" pose
-/// (seated, awake, no z's) before entering the wander/sleep cycle — sized to
-/// cover typical CC thinking pauses between tool bursts.
-pub(crate) const THINKING_WINDOW_SECS: u64 = 20;
-
 /// Base of the stale-resume / off-screen-gap sentinel in
 /// `walk::advance_wander` — above on-screen frame cadence, below a
 /// floor-switch-away gap. NOT the wander dwell; see `dwell_ms` for that.
@@ -155,9 +150,6 @@ pub fn waypoint_index_for_cycle(agent_id: AgentId, cycle_n: u64, num_waypoints: 
 pub(crate) enum Pose {
     /// Seated at the desk, idle.
     SeatedIdle,
-    /// Seated at desk, awake but not typing — the agent recently finished a
-    /// tool call and the LLM is likely thinking.
-    SeatedThinking,
     /// Seated at the desk, typing; the sim steps its frame on the floor's
     /// beat.
     SeatedTyping,
@@ -267,7 +259,7 @@ fn linear_walk_pose(since_ms: u64, from: Point, to: Point) -> Pose {
 
 /// The state→pose tail shared by `derive` and `derive_state_only`, applied
 /// AFTER each caller's own override guards — one place, so the two entry points
-/// can't drift on the thinking window.
+/// can't drift.
 fn state_driven_pose(
     slot: &AgentSlot,
     desk: HomeDesk,
@@ -282,13 +274,7 @@ fn state_driven_pose(
     match &slot.state {
         ActivityState::Running { .. } => Some(Pose::SeatedTyping),
         ActivityState::RequiresAction { .. } => Some(Pose::SeatedIdle),
-        ActivityState::Idle => {
-            if in_thinking_window(slot, now) {
-                Some(Pose::SeatedThinking)
-            } else {
-                Some(idle_pose(slot, desk, layout, elapsed))
-            }
-        }
+        ActivityState::Idle => Some(idle_pose(slot, desk, layout, elapsed)),
     }
 }
 
@@ -391,33 +377,6 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Home
     desk_walk_anchor_facing(home_desk.at, home_desk.facing)
 }
 
-/// Whether an Idle agent holds `Pose::SeatedThinking`: it recently finished
-/// running work (`last_event_at > created_at` — excludes freshly spawned agents)
-/// and is still within `THINKING_WINDOW_SECS` of that last event. The ONE owner
-/// of the gate — the stateless overlay and the routed render both call it, so a
-/// bool the compiler can't catch can't drift between them.
-pub(crate) fn in_thinking_window(slot: &AgentSlot, now: SystemTime) -> bool {
-    let was_running = slot.last_event_at > slot.created_at;
-    let since_last_event = now
-        .duration_since(slot.last_event_at)
-        .unwrap_or(Duration::ZERO)
-        .as_secs();
-    was_running && since_last_event < THINKING_WINDOW_SECS
-}
-
-/// Milliseconds of the current Idle period during which the SeatedThinking gate
-/// held the agent at its desk. 0 when the agent was never running or when the
-/// window expired before this Idle period began.
-fn thinking_hold_ms(slot: &AgentSlot) -> u64 {
-    if slot.last_event_at <= slot.created_at {
-        return 0;
-    }
-    slot.last_event_at
-        .checked_add(Duration::from_secs(THINKING_WINDOW_SECS))
-        .and_then(|release| release.duration_since(slot.state_started_at).ok())
-        .map_or(0, |d| d.as_millis() as u64)
-}
-
 /// The EXCLUSIVE-spot waypoints already spoken for. An exclusive spot holds
 /// exactly one occupant and is its OWN waypoint, so two agents at the same one
 /// has no valid rendering — the painter's de-collision can only slide the second
@@ -518,17 +477,6 @@ fn idle_pose(slot: &AgentSlot, desk: HomeDesk, layout: &SceneLayout, elapsed_ms:
     let seated_end = seated_dwell_ms(slot.agent_id);
     let walk_out_end = seated_end + WANDER_WALK_EST_MS;
     let at_wp_end = walk_out_end + WANDER_DWELL_EST_MS;
-
-    // Thinking-gate continuity: if the SeatedThinking release lands PAST this
-    // cycle's seated phase, the first pose emitted after it is mid-Walking — a
-    // desk→corridor pop in every stateless consumer. Sit out the RELEASE cycle
-    // instead. Deliberately phase-only: shifting `cycle_n` would desync
-    // destination selection from `walk::advance_wander`'s bootstrap, which
-    // must stay in lockstep with this function.
-    let hold = thinking_hold_ms(slot);
-    if cycle_n == hold / cycle_ms && hold % cycle_ms > seated_end {
-        return Pose::SeatedIdle;
-    }
 
     // Seat claims are EMPTY here: this half has no occupancy knowledge (see
     // `resolve_wander_target`), and its job is a cache-stable overlay estimate,

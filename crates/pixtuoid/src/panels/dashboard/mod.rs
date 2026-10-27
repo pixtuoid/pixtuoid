@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState};
+use pixtuoid_core::state::{ActivityState, AgentSlot, SceneState, ToolUse};
 
 /// Roots with more than this many direct subagents render collapsed by default,
 /// so a large workflow doesn't flood the board.
@@ -152,7 +152,10 @@ fn row_for(
 
 fn row_state(state: &ActivityState) -> RowState {
     match state {
-        ActivityState::Running { detail, .. } => RowState::Running(detail.clone()),
+        ActivityState::Running {
+            item: Some(ToolUse { detail, .. }),
+        } => RowState::Running(detail.clone()),
+        ActivityState::Running { item: None } => RowState::Running(None),
         ActivityState::RequiresAction { reason } => RowState::RequiresAction(reason.clone()),
         ActivityState::Idle => RowState::Idle,
     }

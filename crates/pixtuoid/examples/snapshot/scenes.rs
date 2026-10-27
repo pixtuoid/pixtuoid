@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use pixtuoid_core::source::AgentEvent;
-use pixtuoid_core::state::{ActivityState, ToolKind};
+use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, Reducer, SceneState, Transport};
 use tokio::sync::{RwLock, mpsc};
 
@@ -171,14 +171,15 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         "gallery exemplars must span all four tiers"
     );
     use std::time::Duration as D;
-    // (label, state, since_event, since_entry) — the two must DIFFER, or
-    // `in_thinking_window` and `ENTRY_ANIMATION_MS` between them bar both seated poses.
+    // (label, state, since_event, since_entry): a seated pose needs
+    // `since_entry` past `ENTRY_ANIMATION_MS`.
     let agents: [(&str, ActivityState, D, D); 12] = [
-        // Desk 0 is a FAR-seated desk, so this one also demonstrates the
-        // screen staying dark behind a monitor the room only sees the back of.
+        // An open turn between its items. Desk 0 is a FAR-seated desk, so this
+        // one also demonstrates the screen staying dark behind a monitor the
+        // room only sees the back of.
         (
-            "thinking",
-            ActivityState::Idle,
+            "turn",
+            ActivityState::Running { item: None },
             D::from_secs(5),
             D::from_secs(90),
         ),
@@ -193,9 +194,11 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "running",
             ActivityState::Running {
-                tool_use_id: Some("tu_a".into()),
-                detail: Some("Write: src/foo.rs".into()),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_a".into()),
+                    detail: Some("Write: src/foo.rs".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
             D::from_millis(0),
             D::from_secs(6),
@@ -221,9 +224,11 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "couch-act",
             ActivityState::Running {
-                tool_use_id: Some("tu_c".into()),
-                detail: Some("Read: README.md".into()),
-                kind: ToolKind::Read,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_c".into()),
+                    detail: Some("Read: README.md".into()),
+                    kind: ToolKind::Read,
+                }),
             },
             D::from_millis(140),
             D::from_millis(140),
@@ -239,9 +244,11 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "floor-act",
             ActivityState::Running {
-                tool_use_id: Some("tu_d".into()),
-                detail: Some("Bash: cargo test".into()),
-                kind: ToolKind::Bash,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_d".into()),
+                    detail: Some("Bash: cargo test".into()),
+                    kind: ToolKind::Bash,
+                }),
             },
             D::from_millis(140),
             D::from_millis(140),
@@ -255,9 +262,11 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         (
             "floor-act2",
             ActivityState::Running {
-                tool_use_id: Some("tu_e".into()),
-                detail: Some("Grep: TODO".into()),
-                kind: ToolKind::Search,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_e".into()),
+                    detail: Some("Grep: TODO".into()),
+                    kind: ToolKind::Search,
+                }),
             },
             D::from_millis(280),
             D::from_millis(280),
@@ -516,7 +525,7 @@ pub(crate) fn meeting_scene(
 
 pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
     use pixtuoid_core::source::{claude_code, codex, reasonix};
-    use pixtuoid_core::state::{ActivityState, ToolKind};
+    use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
     use std::time::Duration as D;
 
     // Named to satisfy clippy::type_complexity (a 6-field tuple trips the lint):
@@ -539,9 +548,11 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
             "cc·pixtuoid",
             "/demo/dash_cc_root.jsonl",
             ActivityState::Running {
-                tool_use_id: Some("tu0".into()),
-                detail: Some("Edit: reducer.rs".into()),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu0".into()),
+                    detail: Some("Edit: reducer.rs".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
             None,
             0,
@@ -551,9 +562,11 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
             "code-explorer",
             "/demo/dash_cc_sub1.jsonl",
             ActivityState::Running {
-                tool_use_id: Some("tu1".into()),
-                detail: Some("Grep: TODO".into()),
-                kind: ToolKind::Search,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu1".into()),
+                    detail: Some("Grep: TODO".into()),
+                    kind: ToolKind::Search,
+                }),
             },
             Some(cc_root_id),
             1,
@@ -833,7 +846,7 @@ mod tests {
                 .as_millis() as u64;
             // Mirror `advance_wander`'s bootstrap fast-forward exactly.
             let cycle_n = elapsed_ms / est_wander_cycle_ms(id);
-            assert!(cycle_n >= 1, "cycle 0 back-dates under the thinking window");
+            assert!(cycle_n >= 1, "cycle 0 back-dates inside the entry walk");
             assert!(takes_trip(id, cycle_n), "staged cycle must be a trip");
             assert!(!is_aimless_cycle(id, cycle_n), "trip must be directed");
             let wp_idx = waypoint_index_for_cycle(id, cycle_n, layout.waypoints.len());

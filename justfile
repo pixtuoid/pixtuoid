@@ -927,16 +927,17 @@ deb target:
 # OpenClaw plugin contract.
 #   - npm/generate.test.mjs — the ONLY validation of npm/generate.mjs, run in CI
 #     so a generator regression is caught at review time, not at the tag-push.
-#   - scripts/{openclaw,dsh}-plugin.test.mjs — drive each RENDERED plugin the way
-#     its CLI's loader does. The Rust side can only grep a template as a string, so
-#     this is where those two plugins' runtime contracts (never block the host /
-#     never forward content / openclaw's gateway identity, dsh's emit order) are
-#     EXECUTED.
-# NOT in preflight: a Rust pre-push shouldn't require a Node toolchain. Needs Node ≥ 22.
-[doc('Node gates: the npm package generator + the OpenClaw and dsh plugin contracts (CI; not in preflight)')]
+#   - scripts/{openclaw,dsh,opencode}-plugin.test.mjs — drive each RENDERED plugin
+#     the way its CLI's loader does. The Rust side can only grep a template as a
+#     string, so this is where those plugins' runtime contracts (never block the
+#     host / never forward content / openclaw's gateway identity, dsh's emit
+#     order, opencode's turns) are EXECUTED.
+# NOT in preflight: a Rust pre-push shouldn't require a Node toolchain. Needs a
+# Node that imports TypeScript unflagged: opencode's plugin is one.
+[doc('Node gates: the npm package generator + the OpenClaw, dsh and opencode plugin contracts (CI; not in preflight)')]
 [group('release')]
 npm-check:
-    node --test npm/generate.test.mjs scripts/openclaw-plugin.test.mjs scripts/dsh-plugin.test.mjs
+    node --test npm/generate.test.mjs scripts/openclaw-plugin.test.mjs scripts/dsh-plugin.test.mjs scripts/opencode-plugin.test.mjs
 
 # ── meta ──────────────────────────────────────────────────────────
 

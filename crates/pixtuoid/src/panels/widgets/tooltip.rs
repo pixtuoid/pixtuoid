@@ -925,7 +925,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::{Duration, SystemTime};
 
-        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind};
+        use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
         use pixtuoid_core::{AgentId, SceneState};
 
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_716_286_800);
@@ -982,9 +982,11 @@ mod tests {
         let overruns: String = payload.chars().take(budget + 1).collect();
 
         let running = render(ActivityState::Running {
-            detail: Some(Arc::from(format!("Read {payload}").as_str())),
-            kind: ToolKind::Read,
-            tool_use_id: None,
+            item: Some(ToolUse {
+                detail: Some(Arc::from(format!("Read {payload}").as_str())),
+                kind: ToolKind::Read,
+                tool_use_id: None,
+            }),
         });
         assert!(
             running.contains(&fits) && !running.contains(&overruns),

@@ -290,11 +290,7 @@ async fn codex_rollout_yields_uuid_keyed_session_start() {
         "payload": { "id": uuid, "cwd": "/Users/me/dotfiles" }
     });
     f.write_all(format!("{meta}\n").as_bytes()).await.unwrap();
-    let task_started = serde_json::json!({
-        "type": "event_msg",
-        "payload": { "type": "task_started", "turn_id": "t" }
-    });
-    f.write_all(format!("{task_started}\n").as_bytes())
+    f.write_all(format!("{}\n", codex_work_line()).as_bytes())
         .await
         .unwrap();
     f.flush().await.unwrap();

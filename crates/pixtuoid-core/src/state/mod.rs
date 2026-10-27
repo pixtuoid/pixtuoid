@@ -148,18 +148,12 @@ impl ToolKind {
 /// What an agent slot is doing right now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActivityState {
-    /// No tool running.
+    /// Nothing the wire shows in flight.
     Idle,
-    /// A tool call is in flight.
+    /// Working: a turn is open, or an item runs.
     Running {
-        /// The in-flight tool call's id (pairs Start↔End).
-        #[serde(with = "opt_arc_str_serde")]
-        tool_use_id: Option<Arc<str>>,
-        /// The tool's display detail, when known.
-        #[serde(with = "opt_arc_str_serde")]
-        detail: Option<Arc<str>>,
-        /// The bucketed tool kind (drives the per-tool glow/tally).
-        kind: ToolKind,
+        /// The work in flight; `None` while an open turn shows none.
+        item: Option<ToolUse>,
     },
     /// Blocked on a permission/input prompt.
     RequiresAction {
@@ -167,6 +161,19 @@ pub enum ActivityState {
         #[serde(with = "opt_arc_str_serde")]
         reason: Option<Arc<str>>,
     },
+}
+
+/// A tool call inside a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolUse {
+    /// The call's id (pairs Start↔End).
+    #[serde(with = "opt_arc_str_serde")]
+    pub tool_use_id: Option<Arc<str>>,
+    /// The tool's display detail, when known.
+    #[serde(with = "opt_arc_str_serde")]
+    pub detail: Option<Arc<str>>,
+    /// The bucketed tool kind (drives the per-tool glow/tally).
+    pub kind: ToolKind,
 }
 
 /// How an [`AgentSlot`]'s display label came to be — recorded at mint time so
@@ -824,9 +831,11 @@ mod tests {
         let a = AgentId::from_transcript_path("/p/a.jsonl");
         let mut slot_a = make_slot(a, 0);
         slot_a.state = ActivityState::Running {
-            tool_use_id: Some(Arc::from("tuid-1")),
-            detail: Some(Arc::from("Read · src/main.rs")),
-            kind: ToolKind::Read,
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("tuid-1")),
+                detail: Some(Arc::from("Read · src/main.rs")),
+                kind: ToolKind::Read,
+            }),
         };
         s.agents.insert(a, slot_a);
 

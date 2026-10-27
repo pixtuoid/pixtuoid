@@ -13,9 +13,10 @@ agents:
       provenance: CwdDerived
     state:
       Running:
-        tool_use_id: task-1
-        detail: Delegating
-        kind: Task
+        item:
+          tool_use_id: task-1
+          detail: Delegating
+          kind: Task
     state_started_at:
       secs_since_epoch: 1
       nanos_since_epoch: 0
@@ -121,9 +122,10 @@ agents:
       provenance: CwdDerived
     state:
       Running:
-        tool_use_id: tool-9
-        detail: Read · src/main.rs
-        kind: Read
+        item:
+          tool_use_id: tool-9
+          detail: Read · src/main.rs
+          kind: Read
     state_started_at:
       secs_since_epoch: 2
       nanos_since_epoch: 0

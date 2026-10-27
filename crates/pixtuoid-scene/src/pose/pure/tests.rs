@@ -2,7 +2,7 @@ use super::*;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, Segment};
 use pixtuoid_core::sprite::format::{Piece, Walk};
-use pixtuoid_core::state::{GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{GlobalDeskIndex, ToolKind, ToolUse};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,9 +40,11 @@ fn layout() -> SceneLayout {
 
 fn typing() -> ActivityState {
     ActivityState::Running {
-        tool_use_id: Some("t".into()),
-        detail: Some("Edit".into()),
-        kind: ToolKind::Edit,
+        item: Some(ToolUse {
+            tool_use_id: Some("t".into()),
+            detail: Some("Edit".into()),
+            kind: ToolKind::Edit,
+        }),
     }
 }
 
@@ -440,40 +442,19 @@ fn waypoint_choice_changes_across_cycles_for_same_agent() {
     );
 }
 
+/// An Idle agent's pose reads its state's clock alone: however recently it
+/// worked, nothing holds it at the desk (owner: only real signals).
 #[test]
-fn idle_within_thinking_window_returns_seated_thinking() {
-    let (mut s, now) = slot(ActivityState::Idle, 5_000);
-    s.last_event_at = now - Duration::from_secs(5);
+fn an_idle_agents_pose_ignores_how_recently_it_worked() {
     let l = layout();
-    let p = derive(&s, now, &l).unwrap();
-    assert_eq!(p, Pose::SeatedThinking);
-}
-
-#[test]
-fn idle_past_thinking_window_returns_idle_pose() {
-    let (mut s, now) = slot(ActivityState::Idle, 25_000);
-    s.last_event_at = now - Duration::from_secs(25);
-    let l = layout();
-    let p = derive(&s, now, &l).unwrap();
-    assert_ne!(p, Pose::SeatedThinking);
-}
-
-// `in_thinking_window` is the ONE gate both `state_driven_pose` and
-// `derive_with_routing` consult, so pin it directly at the interface.
-#[test]
-fn in_thinking_window_gates_on_recency_and_prior_activity() {
-    let (mut s, now) = slot(ActivityState::Idle, 5_000);
-
-    s.created_at = now - Duration::from_secs(THINKING_WINDOW_SECS - 1);
-    s.last_event_at = s.created_at;
-    assert!(!in_thinking_window(&s, now));
-
-    s.created_at = now - Duration::from_secs(THINKING_WINDOW_SECS * 3);
-    s.last_event_at = now - Duration::from_secs(THINKING_WINDOW_SECS - 1);
-    assert!(in_thinking_window(&s, now));
-
-    s.last_event_at = now - Duration::from_secs(THINKING_WINDOW_SECS + 1);
-    assert!(!in_thinking_window(&s, now));
+    for age_ms in [5_000, 60_000, 600_000] {
+        let (mut s, now) = slot(ActivityState::Idle, age_ms);
+        s.created_at = now - Duration::from_secs(3_600);
+        s.last_event_at = now - Duration::from_secs(1);
+        let recent = derive(&s, now, &l);
+        s.last_event_at = s.created_at;
+        assert_eq!(recent, derive(&s, now, &l), "{age_ms} ms into Idle");
+    }
 }
 
 fn first_trip_cycle_to_kind(
@@ -581,9 +562,11 @@ fn derive_state_only_skips_entry_override() {
         ..make_slot(
             id,
             ActivityState::Running {
-                tool_use_id: Some("t".into()),
-                detail: Some("Edit".into()),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some("t".into()),
+                    detail: Some("Edit".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
         )
     };
@@ -600,92 +583,6 @@ fn derive_state_only_skips_entry_override() {
         other => panic!(
             "derive_state_only should return SeatedTyping for Running slot in entry window, got {other:?}"
         ),
-    }
-}
-
-/// Personality/dwell are id-hashed, so a test needing a specific combination
-/// has to scan the id space for one.
-fn agent_matching(pred: impl Fn(AgentId) -> bool) -> AgentId {
-    (0..100_000u64)
-        .map(|i| AgentId::from_transcript_path(&format!("/think/{i}.jsonl")))
-        .find(|id| pred(*id))
-        .expect("id space should contain a matching agent")
-}
-
-/// How long before its Idle period an agent's last event landed.
-const SETTLE_LAG_MS: u64 = 2_000;
-/// How far into the Idle period [`thinking_slot`]'s SeatedThinking gate releases.
-const RELEASE_MS: u64 = THINKING_WINDOW_SECS * 1000 - SETTLE_LAG_MS;
-
-/// Build an Idle slot whose SeatedThinking gate releases [`RELEASE_MS`] into
-/// the Idle period.
-fn thinking_slot(id: AgentId) -> AgentSlot {
-    let (mut s, _) = slot(ActivityState::Idle, 0);
-    s.agent_id = id;
-    s.last_event_at = s.state_started_at - Duration::from_millis(SETTLE_LAG_MS);
-    s
-}
-
-#[test]
-fn thinking_gate_release_is_continuous_with_seated_thinking() {
-    // The wander clock runs from `state_started_at` throughout, so a release
-    // landing PAST the cycle's seated phase would pop the agent straight from
-    // SeatedThinking at the desk to mid-Walking in the corridor.
-    let l = layout();
-    let id = agent_matching(|id| takes_trip(id, 0) && seated_dwell_ms(id) + 500 < RELEASE_MS);
-    let s = thinking_slot(id);
-
-    let before = s.state_started_at + Duration::from_millis(RELEASE_MS - 100);
-    assert_eq!(derive(&s, before, &l), Some(Pose::SeatedThinking));
-
-    let after = s.state_started_at + Duration::from_millis(RELEASE_MS + 200);
-    assert_eq!(
-        derive(&s, after, &l),
-        Some(Pose::SeatedIdle),
-        "gate release must land on a desk-seated pose, not mid-wander"
-    );
-}
-
-#[test]
-fn walk_out_intact_when_gate_releases_during_the_seated_phase() {
-    // A release inside the seated phase masked nothing, so the continuity guard
-    // must not suppress this cycle's walk-out.
-    let l = layout();
-    let id = agent_matching(|id| takes_trip(id, 0) && seated_dwell_ms(id) > RELEASE_MS + 1_000);
-    let s = thinking_slot(id);
-    let desk = l.home_desks[0].at;
-
-    let mid_walk_out = seated_dwell_ms(id) + WANDER_WALK_EST_MS / 2;
-    let now = s.state_started_at + Duration::from_millis(mid_walk_out);
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            let from = segment.from();
-            assert_eq!(from, desk, "cycle-0 walk-out starts from the desk");
-            assert!(within_fifths(segment, 2, 3), "{segment:?}");
-        }
-        other => panic!("expected the cycle-0 walk-out, got {other:?}"),
-    }
-}
-
-#[test]
-fn cycle_after_a_suppressed_release_walks_out_from_its_beginning() {
-    let l = layout();
-    let id = agent_matching(|id| {
-        takes_trip(id, 0) && takes_trip(id, 1) && seated_dwell_ms(id) + 500 < RELEASE_MS
-    });
-    let s = thinking_slot(id);
-    let desk = l.home_desks[0].at;
-
-    let cycle = est_wander_cycle_ms(id);
-    let mid_walk_out = cycle + seated_dwell_ms(id) + WANDER_WALK_EST_MS / 2;
-    let now = s.state_started_at + Duration::from_millis(mid_walk_out);
-    match derive(&s, now, &l).expect("pose") {
-        Pose::Walking { segment, .. } => {
-            let from = segment.from();
-            assert_eq!(from, desk, "cycle-1 walk-out starts from the desk");
-            assert!(within_fifths(segment, 2, 3), "{segment:?}");
-        }
-        other => panic!("expected the cycle-1 walk-out, got {other:?}"),
     }
 }
 

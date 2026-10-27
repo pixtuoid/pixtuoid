@@ -1,0 +1,3 @@
+{"session_id":"01a17fb6-8537-7b90-ae7d-31db1a940a73","transcript_path":"","cwd":"/private/tmp/pixtuoid-capture/proj","hook_event_name":"SessionStart","model":"gpt-5.5","permission_mode":"","source":"","_shim_ts_ms":1793144030632,"_pixtuoid_source":"codex","_pid":20179}
+{"session_id":"01a17fb6-8537-7b90-ae7d-31db1a940a73","turn_id":"","transcript_path":"","cwd":"/private/tmp/pixtuoid-capture/proj","hook_event_name":"UserPromptSubmit","model":"","permission_mode":"","prompt":"","_shim_ts_ms":1793144030639,"_pixtuoid_source":"codex","_pid":20179}
+{"session_id":"01a17fb6-8537-7b90-ae7d-31db1a940a73","transcript_path":"","cwd":"","hook_event_name":"SessionEnd","reason":"","_shim_ts_ms":1793144030665,"_pixtuoid_source":"codex","_pid":20179}

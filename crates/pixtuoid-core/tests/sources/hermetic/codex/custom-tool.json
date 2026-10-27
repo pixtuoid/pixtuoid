@@ -2,23 +2,11 @@
   "fixtures": [
     {
       "match": { "toolResultContains": "patch rejected" },
-      "response": { "raw": { "wire": "openai-responses", "events": [
-        {"type": "response.created", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "in_progress", "output": []}},
-        {"type": "response.in_progress", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "in_progress", "output": []}},
-        {"type": "response.output_item.added", "output_index": 0, "item": {"type": "web_search_call", "id": "ws-hermetic", "status": "in_progress", "action": {"type": "search", "query": "pixtuoid"}}},
-        {"type": "response.output_item.done", "output_index": 0, "item": {"type": "web_search_call", "id": "ws-hermetic", "status": "completed", "action": {"type": "search", "query": "pixtuoid"}}},
-        {"type": "response.output_item.added", "output_index": 1, "item": {"type": "tool_search_call", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "arguments": {"query": "pixtuoid"}}},
-        {"type": "response.output_item.done", "output_index": 1, "item": {"type": "tool_search_call", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "arguments": {"query": "pixtuoid"}}},
-        {"type": "response.output_item.added", "output_index": 2, "item": {"type": "tool_search_output", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "tools": []}},
-        {"type": "response.output_item.done", "output_index": 2, "item": {"type": "tool_search_output", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "tools": []}},
-        {"type": "response.output_item.added", "output_index": 3, "item": {"type": "message", "id": "msg-hermetic", "status": "in_progress", "role": "assistant", "content": []}},
-        {"type": "response.content_part.added", "item_id": "msg-hermetic", "output_index": 3, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}},
-        {"type": "response.output_text.delta", "item_id": "msg-hermetic", "output_index": 3, "content_index": 0, "delta": "pong"},
-        {"type": "response.output_text.done", "item_id": "msg-hermetic", "output_index": 3, "content_index": 0, "text": "pong"},
-        {"type": "response.content_part.done", "item_id": "msg-hermetic", "output_index": 3, "content_index": 0, "part": {"type": "output_text", "text": "pong", "annotations": []}},
-        {"type": "response.output_item.done", "output_index": 3, "item": {"type": "message", "id": "msg-hermetic", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "pong", "annotations": []}]}},
-        {"type": "response.completed", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "completed", "output": [{"type": "web_search_call", "id": "ws-hermetic", "status": "completed", "action": {"type": "search", "query": "pixtuoid"}}, {"type": "tool_search_call", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "arguments": {"query": "pixtuoid"}}, {"type": "tool_search_output", "call_id": "ts-hermetic", "status": "completed", "execution": "server", "tools": []}, {"type": "message", "id": "msg-hermetic", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "pong", "annotations": []}]}], "usage": {"input_tokens": 12, "output_tokens": 7, "total_tokens": 19}}}
-      ] } }
+      "response": {
+        "content": "pong",
+        "webSearches": ["pixtuoid"],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
     },
     {
       "match": { "hasToolResult": false },

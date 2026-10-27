@@ -22,7 +22,7 @@ macro_rules! make_draw_ctx {
 }
 
 pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneState {
-    use pixtuoid_core::state::{ActivityState, ToolKind};
+    use pixtuoid_core::state::{ActivityState, ToolKind, ToolUse};
     use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
     use std::sync::Arc;
 
@@ -32,9 +32,11 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
         (
             "agent-a",
             ActivityState::Running {
-                tool_use_id: Some("tu_a".into()),
-                detail: Some("Write".into()),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_a".into()),
+                    detail: Some("Write".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
         ),
         ("agent-b", ActivityState::Idle),

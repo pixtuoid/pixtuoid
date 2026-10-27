@@ -119,11 +119,11 @@ fn codex_meta_line(uuid: &str, cwd: &str) -> serde_json::Value {
     })
 }
 
-/// Decodes to an id-less `ToolUseStart`.
+/// Decodes to a call's `ToolUseStart`.
 fn codex_work_line() -> serde_json::Value {
     serde_json::json!({
-        "type": "event_msg",
-        "payload": { "type": "task_started", "turn_id": "t" }
+        "type": "response_item",
+        "payload": { "type": "function_call", "name": "exec_command", "call_id": "c1" }
     })
 }
 

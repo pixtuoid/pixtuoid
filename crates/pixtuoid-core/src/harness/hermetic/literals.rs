@@ -804,9 +804,6 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
-    const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
-         which only a thread store without paginated lists gets, as `EM_RESUME` cites; \
-         the tier's rollouts are Paginated";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -909,8 +906,6 @@ mod tests {
         sibling("reasonix.rs", "review", "explore"),
         sibling("reasonix.rs", "security_review", "explore"),
         sibling("antigravity.rs", "ask_permission", "ask_question"),
-        literal("codex.rs", "patch_apply_end", LOSS_LEGACY),
-        literal("codex.rs", "web_search_end", LOSS_LEGACY),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];

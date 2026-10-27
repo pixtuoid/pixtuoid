@@ -206,18 +206,14 @@ pub(super) fn elapsed_past(now: SystemTime, ts: SystemTime, ttl: Duration) -> bo
     now.duration_since(ts).is_ok_and(|d| d > ttl)
 }
 
-/// An arbitrary Task of `set`, as the `Arc<str>` the FSM takes. The CHOICE
-/// among several is deliberately unspecified — a Delegating slot only needs
-/// proof that *some* delegation is live, and the set is a `HashSet` with no
-/// ordering to promise.
-pub(super) fn any_task(set: &HashSet<String>) -> Option<Arc<str>> {
-    set.iter().next().map(|t| Arc::<str>::from(t.as_str()))
-}
-
 impl Correlation {
-    /// [`any_task`] of `id`'s Tasks in flight.
+    /// An arbitrary Task of `id`'s in flight. The CHOICE among several is
+    /// deliberately unspecified — a Delegating slot only needs proof that
+    /// *some* delegation is live, and the set is a `HashSet` with no ordering
+    /// to promise.
     pub(super) fn any_task_in_flight(&self, id: &AgentId) -> Option<Arc<str>> {
-        self.tasks_in_flight.get(id).and_then(any_task)
+        let tasks = self.tasks_in_flight.get(id)?;
+        tasks.iter().next().map(|t| Arc::<str>::from(t.as_str()))
     }
 
     /// Whether a child end of `id` landed after `since`, however old.
