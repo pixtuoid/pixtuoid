@@ -28,7 +28,7 @@ JITTER_S = 1.5
 class FakeCtx:
     """The plugin context surface the plugin touches."""
 
-    def __init__(self, cwd="/w"):
+    def __init__(self, cwd: str | BaseException = "/w"):
         self.hooks = {}
         self.cwd = cwd
 
@@ -54,7 +54,7 @@ class PluginTest(unittest.TestCase):
         path.chmod(0o755)
         return path
 
-    def recorder(self, hold_s=0):
+    def recorder(self, hold_s: float = 0):
         """A shim that records its argv, its stdin and its own span."""
         return self.hook(
             f'echo begin >> "{self.trace}"\n'
@@ -69,6 +69,8 @@ class PluginTest(unittest.TestCase):
         rendered = self.dir / "pixtuoid_hermes.py"
         rendered.write_text(source.replace(HOOK_PLACEHOLDER, json.dumps(str(hook_path))))
         spec = importlib.util.spec_from_file_location(f"pixtuoid_hermes_{id(self)}", rendered)
+        if spec is None or spec.loader is None:
+            self.fail(f"{rendered} does not load as a module")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         ctx = ctx or FakeCtx()
