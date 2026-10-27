@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn every_literal_a_decoder_reads_is_recorded_owed_or_exempt() {
-        let absent = NOT_HERMETIC.iter().map(|(s, _)| *s).collect();
+        let absent = NOT_HERMETIC.iter().map(|u| u.source).collect();
         let owing: Vec<Owing<'_>> = PROFILES.iter().map(Owing::of).collect();
         let found = problems(
             &population().expect("the decoders parse"),

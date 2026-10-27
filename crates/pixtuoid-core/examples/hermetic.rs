@@ -9,6 +9,8 @@
 //! installs that release, a bump's planned one. `--record` writes a source's
 //! fixtures, and off the pin moves its pin up to the release recorded.
 //! `--shard <n>` runs the `n`th of `SHARDS`' sources, one CI leg's.
+//! `--freshness` alone runs nothing: it prints each unprofiled source's latest
+//! release (`NOT_HERMETIC`'s feeds) as `issues plan` reads it.
 //!
 //! Exits 0 when every run passed, New findings included (`VERDICTS` labels them),
 //! 1 on any other verdict (a recording refused after its runs included), and
@@ -36,14 +38,14 @@ mod run {
     use pixtuoid_core::harness::hermetic::bump::{self, Moved};
     use pixtuoid_core::harness::hermetic::digest;
     use pixtuoid_core::harness::hermetic::dropped::Unjudged;
-    use pixtuoid_core::harness::hermetic::issues::{self, RunVerdict, Verdicts};
+    use pixtuoid_core::harness::hermetic::issues::{self, Freshness, RunVerdict, Verdicts};
     use pixtuoid_core::harness::hermetic::pin;
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV, Live,
+        self, DUMMY_KEY, Feed, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV, Live,
         MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, SHARDS,
-        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
+        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
     use pixtuoid_core::harness::host::{RELEASE_PATIENCE, hold_lock, remove_once_released};
     use pixtuoid_core::harness::plan::{
@@ -204,8 +206,8 @@ mod run {
             let Some(source) = self.source.as_deref() else {
                 return Ok(());
             };
-            if let Some((_, why)) = NOT_HERMETIC.iter().find(|(s, _)| *s == source) {
-                return Err(format!("{source} has no hermetic profile: {why:?}"));
+            if let Some(u) = NOT_HERMETIC.iter().find(|u| u.source == source) {
+                return Err(format!("{source} has no hermetic profile: {:?}", u.absence));
             }
             let p = hermetic::profile(source)
                 .ok_or_else(|| format!("{source} is not a registered source"))?;
@@ -292,13 +294,21 @@ mod run {
         }
     }
 
+    /// The flag that asks for [`freshness`] alone, on stdout.
+    const FRESHNESS: &str = "--freshness";
+
     /// Whether every selected run passed.
     pub(crate) fn main() -> std::io::Result<bool> {
-        let args = match parse(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        let argv: Vec<String> = std::env::args().skip(1).collect();
+        if argv == [FRESHNESS] {
+            println!("{}", serde_json::to_string(&freshness())?);
+            return Ok(true);
+        }
+        let args = match parse(&argv) {
             Ok(a) => a,
             Err(e) => {
                 eprintln!(
-                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [--shard <n>] [<source> [<scenario>]]"
+                    "{e}\nusage: hermetic [--cli pinned|latest|<release>] [--record] [--shard <n>] [<source> [<scenario>]]\n       hermetic {FRESHNESS}"
                 );
                 std::process::exit(2);
             }
@@ -818,8 +828,8 @@ mod run {
             }
         }
         out += "\nNot covered:";
-        for (source, absence) in NOT_HERMETIC {
-            out += &format!(" {source} ({absence:?})");
+        for u in NOT_HERMETIC {
+            out += &format!(" {} ({:?})", u.source, u.absence);
         }
         if !not_run.is_empty() {
             out += &format!("\nNot run here: {}", not_run.join(" "));
@@ -1043,10 +1053,19 @@ mod run {
 
     /// The release `versions` names for `p`.
     fn resolve(p: &Profile, versions: &Versions) -> Result<Version, String> {
-        match (versions, p.package) {
-            (Versions::Pinned, _) => pin::pinned(p.descriptor()),
-            (Versions::Exact(release), _) => Ok(release.clone()),
-            (Versions::Latest, Package::Npm(package)) => {
+        match versions {
+            Versions::Pinned => pin::pinned(p.descriptor()),
+            Versions::Exact(release) => Ok(release.clone()),
+            Versions::Latest => latest(p.package.feed()).and_then(|release| {
+                Version::parse(&release).map_err(|_| format!("{release:?} is not a release"))
+            }),
+        }
+    }
+
+    /// The release `feed` names as its latest, as the feed spells it.
+    fn latest(feed: Feed) -> Result<String, String> {
+        match feed {
+            Feed::Npm(package) => {
                 // A bare name reads npm's `tag` config, which an operator's
                 // `.npmrc` can point at another dist-tag
                 // (https://github.com/npm/cli/blob/83ea1a1c19648a6b4f5e52a498d8a6aaaf60e52b/lib/commands/view.js#L141-L145).
@@ -1055,30 +1074,45 @@ mod run {
                     .args(["view", &spec, "version"])
                     .output()
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
-                npm_release(&spec, out.status, &out.stdout, &out.stderr)
+                npm_release(&spec, out.status, &out.stdout, &out.stderr).map(|v| v.to_string())
             }
-            (Versions::Latest, Package::GithubRelease { repo, .. } | Package::UvLocked(repo)) => {
+            Feed::GithubLatest(repo) => {
                 // It redirects to the latest release
                 // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
                 let url = format!("https://github.com/{repo}/releases/latest");
                 let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
                 latest_tag(&String::from_utf8_lossy(&headers))
+                    .map(|v| v.to_string())
                     .ok_or_else(|| format!("{url} redirected to no release tag"))
             }
-            (
-                Versions::Latest,
-                Package::UpdaterManifest {
-                    manifest,
-                    platforms,
-                    ..
-                },
-            ) => {
+            Feed::UpdaterManifest {
+                manifest,
+                platforms,
+            } => {
                 let here = asset_here(platforms).map_err(|e| e.to_string())?;
                 let current = fetch_manifest(manifest, here).map_err(|e| e.to_string())?;
                 Version::parse(&current.version)
+                    .map(|v| v.to_string())
                     .map_err(|_| format!("{here}'s manifest names {:?}", current.version))
             }
+            Feed::Installer { script, build_at } => {
+                let body = curl_get(script, Curl::Body).map_err(|e| e.to_string())?;
+                installer_build(&String::from_utf8_lossy(&body), build_at)
+                    .map(str::to_owned)
+                    .map_err(|why| format!("{script}: {why}"))
+            }
         }
+    }
+
+    /// Each unprofiled source's latest release, for `issues plan`.
+    fn freshness() -> Vec<Freshness> {
+        NOT_HERMETIC
+            .iter()
+            .map(|u| Freshness {
+                source: u.source.to_owned(),
+                latest: latest(u.feed),
+            })
+            .collect()
     }
 
     /// One platform's build, as an updater manifest and a manifest lock name it.
@@ -3460,7 +3494,7 @@ mod run {
             assert!(check(&["codex", "tool-run"]).is_ok());
             assert!(check(&["codex", "no-such-scenario"]).is_err());
             assert!(check(&["no-such-source"]).is_err());
-            let (absent, _) = NOT_HERMETIC[0];
+            let absent = NOT_HERMETIC[0].source;
             assert!(check(&[absent]).is_err(), "an unprofiled source says why");
             let on = |windows| {
                 parse(&args(&["grok", "permission"]))
