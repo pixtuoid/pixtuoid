@@ -6,6 +6,7 @@ so what keeps hermes's `pre_tool_call` from failing closed is executed, not read
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,10 +20,20 @@ PLUGIN_SOURCE = REPO_ROOT / "crates" / "pixtuoid" / "src" / "install" / "hermes_
 # Must match `HOOK_PLACEHOLDER` in `crates/pixtuoid/src/install/hermes.rs`.
 HOOK_PLACEHOLDER = '"{{HOOK_PATH_JSON}}"'
 POSIX = os.name == "posix"
-# The real shim's own bound is its watchdog's, pinned in `pixtuoid-hook/tests/shim.rs`;
-# a fake stands in for a shim that spends all of it.
-SHIM_BOUND_S = 0.2
 JITTER_S = 1.5
+
+
+def _shim_bound_s():
+    """The real shim's own bound, read from its authority."""
+    transport = REPO_ROOT / "crates" / "pixtuoid-hook" / "src" / "transport.rs"
+    found = re.search(r"WRITE_TIMEOUT_MS: u64 = (\d+);", transport.read_text(encoding="utf-8"))
+    if found is None:
+        raise AssertionError(f"{transport} declares no WRITE_TIMEOUT_MS")
+    return int(found.group(1)) / 1000
+
+
+# A fake stands in for a shim that spends all of it.
+SHIM_BOUND_S = _shim_bound_s()
 
 
 class FakeCtx:
