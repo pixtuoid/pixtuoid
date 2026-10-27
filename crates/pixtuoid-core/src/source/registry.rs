@@ -951,7 +951,7 @@ const GROK: SourceDescriptor = SourceDescriptor {
 const OMP: SourceDescriptor = SourceDescriptor {
     name: omp::SOURCE_NAME,
     label_prefix: "om",
-    verified_version: "18.12.6",
+    verified_version: "18.13.1",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
