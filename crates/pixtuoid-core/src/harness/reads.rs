@@ -626,7 +626,7 @@ mod tests {
             "omp/fixtures/tool-run-hermetic",
             "cursor/fixtures/delegation",
             "delegation/fixtures/copilot",
-            "fixtures/copilot/tool-run-recorded",
+            "fixtures/copilot/tool-run-hermetic",
             "fixtures/grok/tool-run-hermetic",
         ] {
             assert!(

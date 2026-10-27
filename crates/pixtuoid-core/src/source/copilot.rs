@@ -270,40 +270,11 @@ pub(crate) fn decode_copilot_line(
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
         SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
-        // Copilot's ONLY usage wire is this shutdown summary — one final delta
-        // as the session ends. `tokenDetails.input` already EXCLUDES cache
-        // reads, so fresh = input + cache_write + output. `cache_write` is an
-        // INFERRED snake_case key (from the sibling `cache_read`): no fixture
-        // carries a nonzero bucket, and a differently-spelled key only
-        // UNDERcounts.
-        SESSION_SHUTDOWN => {
-            let mut evs = vec![AgentEvent::SessionEnd {
-                agent_id: root,
-                as_child: false,
-            }];
-            if let Some(details) = data
-                .and_then(|d| d.get("tokenDetails"))
-                .and_then(|t| t.as_object())
-            {
-                let bucket = |k: &str| {
-                    details
-                        .get(k)
-                        .and_then(|b| b.get("tokenCount"))
-                        .and_then(|n| n.as_u64())
-                        .unwrap_or(0)
-                };
-                let fresh = bucket("input")
-                    .saturating_add(bucket("cache_write"))
-                    .saturating_add(bucket("output"));
-                if fresh > 0 {
-                    evs.push(AgentEvent::Usage {
-                        agent_id: root,
-                        fresh_tokens: fresh,
-                    });
-                }
-            }
-            evs
-        }
+        // No usage is read: no recording of the current CLI carries any yet.
+        SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
+            agent_id: root,
+            as_child: false,
+        }],
         _ => vec![],
     }
 }
@@ -392,27 +363,6 @@ mod tests {
         );
     }
     use serde_json::json;
-
-    #[test]
-    fn a_shutdown_with_no_fresh_tokens_emits_no_usage_reading() {
-        // `tokenDetails` present but every FRESH bucket zero (a cache-read-only
-        // turn): a `Usage { fresh_tokens: 0 }` would be a reading of nothing,
-        // pushed into a monotone accumulator.
-        let line = r#"{"type":"session.shutdown","data":{"tokenDetails":{"input":{"tokenCount":0},"cache_read":{"tokenCount":900}}},"id":"e9","timestamp":"ts","parentId":null}"#;
-        let evs = decode_copilot_line(
-            "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
-            "copilot",
-            serde_json::from_str(line).unwrap(),
-        );
-        assert!(
-            !evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })),
-            "zero fresh tokens must not surface a Usage, got {evs:?}"
-        );
-        assert!(
-            evs.iter()
-                .any(|e| matches!(e, AgentEvent::SessionEnd { .. }))
-        );
-    }
 
     const PATH: &str = "/p/session-state/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl";
 
@@ -746,7 +696,6 @@ mod tests {
 
     #[test]
     fn real_session_shutdown_ends_the_root() {
-        // A tokenDetails-less shutdown (older wire / crashy teardown).
         let line = r#"{"type":"session.shutdown","data":{"shutdownType":"routine","totalPremiumRequests":1},"id":"220c4131","timestamp":"2026-05-22T06:17:01.077Z","parentId":"cd21bd01"}"#;
         match &decode(line)[..] {
             [AgentEvent::SessionEnd { agent_id, as_child }] => {
@@ -754,52 +703,6 @@ mod tests {
                 assert!(!*as_child, "a root shutdown is NOT a child end");
             }
             other => panic!("expected root SessionEnd, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn shutdown_usage_sums_a_cache_write_bucket_into_fresh() {
-        // The only fixture with a nonzero `cache_write` bucket — no captured
-        // shutdown carries one (the key is inferred; see the decoder arm).
-        let line = r#"{"type":"session.shutdown","data":{"shutdownType":"routine","tokenDetails":{"input":{"tokenCount":11175},"cache_write":{"tokenCount":500},"cache_read":{"tokenCount":1664},"output":{"tokenCount":212}},"currentModel":"gpt-5-mini"},"id":"56992353","timestamp":"2026-06-14T21:38:47.162Z","parentId":"3079df1f"}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::SessionEnd { .. },
-                AgentEvent::Usage {
-                    agent_id,
-                    fresh_tokens,
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(
-                    *fresh_tokens, 11_887,
-                    "fresh = input 11175 + cache_write 500 + output 212 (cache_read excluded)"
-                );
-            }
-            other => panic!("expected [SessionEnd, Usage], got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn real_session_shutdown_usage_summary_lands_one_final_delta() {
-        let line = r#"{"type":"session.shutdown","data":{"shutdownType":"routine","tokenDetails":{"input":{"tokenCount":11175},"cache_read":{"tokenCount":1664},"output":{"tokenCount":212}},"currentModel":"gpt-5-mini"},"id":"56992353","timestamp":"2026-06-14T21:38:47.162Z","parentId":"3079df1f"}"#;
-        match &decode(line)[..] {
-            [
-                AgentEvent::SessionEnd { agent_id, as_child },
-                AgentEvent::Usage {
-                    agent_id: u_id,
-                    fresh_tokens,
-                },
-            ] => {
-                assert_eq!(*u_id, root());
-                assert_eq!(
-                    *fresh_tokens, 11_387,
-                    "fresh = input 11175 + output 212, cache_read excluded"
-                );
-                assert_eq!(*agent_id, root());
-                assert!(!*as_child);
-            }
-            other => panic!("expected [SessionEnd, Usage], got {other:?}"),
         }
     }
 

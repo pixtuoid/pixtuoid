@@ -126,19 +126,7 @@ pub(crate) const PROFILE: Profile = Profile {
     )],
     not_yet: &[],
     event_name: |_| None,
-    // GitHub's billing response carries them (1.0.98's bundled
-    // `cli-main.js` reads `copilotUsage.tokenDetails`); a BYOK run has none.
-    not_yet_fields: &[
-        (
-            "tx:session.shutdown",
-            "/data/tokenDetails/cache_write/tokenCount",
-        ),
-        ("tx:session.shutdown", "/data/tokenDetails/input/tokenCount"),
-        (
-            "tx:session.shutdown",
-            "/data/tokenDetails/output/tokenCount",
-        ),
-    ],
+    not_yet_fields: &[],
     not_yet_literals: &[],
     // A `subagent.started` child runs in-process, in the parent's transcript,
     // and no event of it names a cwd.
