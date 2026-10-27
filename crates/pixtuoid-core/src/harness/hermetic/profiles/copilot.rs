@@ -9,7 +9,7 @@ use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "copilot",
+    source: crate::source::copilot::SOURCE_NAME,
     package: Package::Npm("@github/copilot"),
     invocation: &["copilot", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [<value>]`: "optionally specify existing session ID"

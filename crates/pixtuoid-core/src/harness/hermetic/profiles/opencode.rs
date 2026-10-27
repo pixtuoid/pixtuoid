@@ -33,7 +33,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "opencode",
+    source: crate::source::opencode::SOURCE_NAME,
     package: Package::Npm("@opencode/cli"),
     // On the daemon, whose plugin forwards its session's delete
     // (`packages/core/src/session.ts:378-388` at v2.1.0): a delete through

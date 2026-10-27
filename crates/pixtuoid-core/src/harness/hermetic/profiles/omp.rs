@@ -21,7 +21,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "omp",
+    source: crate::source::omp::SOURCE_NAME,
     // The release's own binaries: the npm package runs only under Bun (its
     // `engines`), and `scripts/install.sh` fetches from build.stencil.so
     // and runs `omp --version` under the operator's home (`:21`, `:331`).

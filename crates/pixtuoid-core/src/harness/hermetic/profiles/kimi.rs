@@ -28,7 +28,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "kimi",
+    source: crate::source::kimi::SOURCE_NAME,
     package: Package::Npm("@moonshot-ai/kimi-code"),
     invocation: &["kimi", "-p", Placeholder::Prompt.as_str()],
     second_turn: None,

@@ -17,7 +17,7 @@ fn shim_stamped_event(v: &Value) -> Option<Cow<'_, str>> {
 }
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "antigravity",
+    source: crate::source::antigravity::SOURCE_NAME,
     package: Package::UpdaterManifest {
         manifest: "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{platform}.json",
         // The installer's `${os}_${arch}`, glibc's on Linux (`install.sh:69-99`).

@@ -610,7 +610,7 @@ pub const PROFILES: &[Profile] = &[
 
 /// Every registered source without a profile.
 pub const NOT_HERMETIC: &[Unprofiled] = &[Unprofiled {
-    source: "cursor",
+    source: crate::source::cursor::SOURCE_NAME,
     // Owner, 2026-10-13: no custom model endpoint.
     absence: Absence::NoModelEndpoint,
     // `DOWNLOAD_URL="https://downloads.cursor.com/lab/<build>/${OS}/${ARCH}/…"`

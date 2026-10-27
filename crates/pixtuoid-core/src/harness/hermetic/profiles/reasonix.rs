@@ -31,7 +31,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "reasonix",
+    source: crate::source::reasonix::SOURCE_NAME,
     package: Package::Npm("reasonix"),
     // A non-read-only tool is denied headless; this allows the ones the
     // spawns need (`docs/CLI.md:502-503`, `:517-519`).
