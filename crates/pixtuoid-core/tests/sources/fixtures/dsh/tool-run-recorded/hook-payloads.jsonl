@@ -4,4 +4,4 @@
 {"type":"tool_call","sessionId":"session-4dae565e-3d46-48fd-b190-31a5fe060703","cwd":"/private/tmp/pixtuoid-capture/proj","callId":"toolu_D0rRMgLCLpw1J5iZ","toolName":"read","_pid":92382,"_shim_ts_ms":1792980386481,"_pixtuoid_source":"dsh"}
 {"type":"tool_result","sessionId":"session-4dae565e-3d46-48fd-b190-31a5fe060703","cwd":"/private/tmp/pixtuoid-capture/proj","callId":"toolu_D0rRMgLCLpw1J5iZ","_pid":92382,"_shim_ts_ms":1792980386495,"_pixtuoid_source":"dsh"}
 {"type":"usage","sessionId":"session-4dae565e-3d46-48fd-b190-31a5fe060703","cwd":"/private/tmp/pixtuoid-capture/proj","inputTokens":12,"outputTokens":7,"_pid":92382,"_shim_ts_ms":1792980386513,"_pixtuoid_source":"dsh"}
-{"type":"session_end","sessionId":"session-4dae565e-3d46-48fd-b190-31a5fe060703","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":92382,"_shim_ts_ms":1792980386530,"_pixtuoid_source":"dsh"}
+{"type":"session_end","sessionId":"session-4dae565e-3d46-48fd-b190-31a5fe060703","cwd":"","_pid":92382,"_shim_ts_ms":1792980386530,"_pixtuoid_source":"dsh"}

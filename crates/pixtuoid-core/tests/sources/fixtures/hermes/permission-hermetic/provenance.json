@@ -6,7 +6,7 @@
   "command": "just hermetic --record hermes",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 2
+    "blanked": 3
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/hermes/permission.json",

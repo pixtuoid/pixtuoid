@@ -6,6 +6,6 @@
   "command": "claude -p {prompt} --allowedTools Read Bash",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 543
+    "blanked": 544
   }
 }
