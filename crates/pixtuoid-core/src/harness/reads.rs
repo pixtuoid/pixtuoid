@@ -113,9 +113,8 @@ fn sibling_of(file: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Strip every RECORDED capture under `root` in place — local and unbilled — and
-/// record the count in its provenance. A composed capture carries no operator
-/// data by construction, and the README demo reads its bytes past the decoders.
+/// Strip every capture under `root` in place — local and unbilled — and
+/// record the count in its provenance.
 /// `blanked` counts every subtree blanked from the original recording: a pass
 /// adds to the record's count, and one that blanks nothing leaves it alone.
 /// `report` hears each capture as soon as its rewrite lands, so a later failure
@@ -128,9 +127,7 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
     for capture in captures(root) {
         let path = capture.provenance_path();
         let mut record = Provenance::read(&path)?;
-        let Provenance::Recorded(r) = &mut record else {
-            continue;
-        };
+        let Provenance::Recorded(r) = &mut record;
         if !r.strips() {
             continue;
         }
@@ -732,19 +729,6 @@ mod tests {
             .collect();
         out.sort();
         out
-    }
-
-    #[test]
-    fn strip_corpus_leaves_a_composed_capture_alone() {
-        let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/claude-code/proof-session");
-        let before = bytes_of(&scenario);
-        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
-        assert_eq!(
-            bytes_of(&scenario),
-            before,
-            "composed bytes carry no operator data"
-        );
     }
 
     #[test]

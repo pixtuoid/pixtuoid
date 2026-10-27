@@ -19,13 +19,11 @@ own wrong field name back at it.
 
 **Every scenario declares its own provenance**, in `provenance.json` beside the
 payloads, because nothing IN the bytes separates a capture from a composition — a
-redacted cwd and an invented one look alike. `origin` is one of:
+redacted cwd and an invented one look alike. `origin` is `recorded`, and no other parses:
 
 | origin | required | means |
 | --- | --- | --- |
 | `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads unless `deidentified` exempts them; the recorder writes this file itself. |
-| `composed` | `note` | Hand-written, and the note says how you can tell. |
-| `unknown` | `note` | Predates the rule; nobody recorded where it came from. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
 `deidentified` in the provenance says how many subtrees went. A plugin roster, a
@@ -48,10 +46,6 @@ both paths leave it alone; the gate refuses the exemption without its reason.
 The table above is not the schema — [`Provenance`](../../../src/harness/provenance.rs)
 is: a record it does not parse fails every test that walks the captures, and
 `the_fixtures_readme_states_each_origin` pins this table to it.
-
-`captures.rs`'s `NO_WIRE_EVIDENCE_YET` list — the hook-only sources with no
-recorded scenario at all — only shrinks: recording one forces its entry out, and
-a new hook-only CLI cannot join by default.
 
 **The recorder is `pixtuoid-core/examples/capture_fixture.rs`** — Rust rather
 than the shell script it replaces, for the reasons under "Why the recorder is a
@@ -184,15 +178,6 @@ scenario dir's relative path), so a CC hook (which coalesces on
 Each scenario declares itself in its `provenance.json` `note`, the single
 place, beside the bytes it describes: a catalogue of directories here would rot
 the moment one is re-recorded under a better name.
-
-One scenario carries a fact BEYOND its own decode, so it is named here where
-someone changing the tree will see it:
-
-- **`claude-code/proof-session/`** is read at RENDER time by the `snapshot
-  --proof` site-media renderer (`scripts/media.json` job `proof`) — its
-  timestamps ARE the clip's beat timings, so retiming this fixture re-times the
-  committed `proof.webm`. Its visible strings are pinned disjoint from the
-  statusline ticker's own FALLBACK corpus by `tests/proof_fixture_disjointness.rs`.
 
 ## Why the recorder is a Rust example
 

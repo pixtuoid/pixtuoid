@@ -1142,7 +1142,7 @@ mod tests {
                     .join(crate::harness::PROVENANCE);
                 let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
-                    prov.recorded().is_some_and(|r| r.aimock.is_some()),
+                    prov.recorded().aimock.is_some(),
                     "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",
                     p.source,
                     s.fixture

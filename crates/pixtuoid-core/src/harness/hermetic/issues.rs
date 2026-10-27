@@ -436,7 +436,7 @@ fn freshness_note(
                     .unwrap_or_else(|_| c.dir.display().to_string());
                 let command = Provenance::read(&c.provenance_path())
                     .ok()
-                    .and_then(|p| p.recorded().map(|r| r.command.to_string()))
+                    .map(|p| p.recorded().command.to_string())
                     .unwrap_or_else(|| "nothing recorded".to_owned());
                 note += &format!("- `{at}`, recorded by `{command}`\n");
             }

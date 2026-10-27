@@ -23,15 +23,12 @@ pub(crate) struct Capture {
 }
 
 impl Capture {
-    pub(crate) fn recorded(&self) -> Option<&Recorded> {
+    pub(crate) fn recorded(&self) -> &Recorded {
         self.provenance.recorded()
     }
 
     pub(crate) fn note(&self) -> Option<&str> {
-        match &self.provenance {
-            Provenance::Recorded(r) => r.note.as_ref().map(NonEmpty::as_str),
-            Provenance::Composed { note } | Provenance::Unknown { note } => Some(note.as_str()),
-        }
+        self.recorded().note.as_ref().map(NonEmpty::as_str)
     }
 
     /// The scenario's transcripts — every `.jsonl` that is not the hook payload
@@ -162,7 +159,7 @@ pub(crate) fn every_capture() -> Vec<Capture> {
 
 /// Each recording among `captures`, with its record.
 pub(crate) fn recordings(captures: &[Capture]) -> impl Iterator<Item = (&Capture, &Recorded)> {
-    captures.iter().filter_map(|c| Some((c, c.recorded()?)))
+    captures.iter().map(|c| (c, c.recorded()))
 }
 
 /// The completeness pin that makes the single walk load-bearing: a capture the
@@ -258,17 +255,6 @@ fn every_captures_layout_names_a_registered_source() {
 }
 
 // ── The rules: each an assertion over `every_capture()`, never a subset. ─────
-
-/// `unknown` scenarios that stay unknown, with the reason. It only SHRINKS.
-const UNVERIFIED_PROVENANCE: &[&str] = &[];
-
-/// Sources whose `unknown` scenarios now sit BESIDE a recorded one.
-const UNKNOWN_BUT_BACKED_BY_A_CAPTURE: &[&str] = &[];
-
-/// Hook-only sources with no recorded scenario. The list only SHRINKS — a hook
-/// event is transient, so for these the fixture is the only wire evidence there
-/// will ever be, and a new hook-only CLI must not join it by default.
-const NO_WIRE_EVIDENCE_YET: &[&str] = &[];
 
 /// `cli` was the one required field nothing could falsify, so a provenance
 /// naming a DIFFERENT CLI than the tree it sits in passed every gate. The
@@ -395,7 +381,7 @@ fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_e
     let mut exempt = BTreeSet::new();
     for c in every_capture() {
         let prov = &c.provenance_path;
-        let deidentified = c.recorded().and_then(|r| r.deidentified.as_ref());
+        let deidentified = c.recorded().deidentified.as_ref();
         let blanked = match deidentified {
             Some(Deidentified::Stripped { blanked }) => *blanked,
             _ => 0,
@@ -519,8 +505,6 @@ fn a_recorded_capture_that_was_edited_says_so() {
 const OWED_CURRENT: &[&str] = &[
     // cursor has no hermetic profile (`hermetic::NOT_HERMETIC`): a billed capture.
     "cursor/fixtures/delegation",
-    // The site's proof clip, which a recording of its own retimes.
-    "fixtures/claude-code/proof-session",
 ];
 
 /// `verified_version` is the release the hermetic tier installs and the newest
@@ -536,15 +520,13 @@ fn every_capture_is_recorded_at_its_sources_pin() {
     for c in every_capture() {
         let d = registry::descriptor_for(&c.source).expect("a registered source");
         let version = |s: &str| registry::parse_version(s, d.version_hyphen);
-        let why = match c.recorded() {
-            None => "not recorded".to_owned(),
-            Some(r) => match version(r.version.as_str()).zip(version(d.verified_version)) {
-                Some((v, pin)) if v.cmp_precedence(&pin).is_eq() => {
-                    current.insert(c.source.clone());
-                    continue;
-                }
-                _ => format!("{} is not the pin {}", r.version, d.verified_version),
-            },
+        let r = c.recorded();
+        let why = match version(r.version.as_str()).zip(version(d.verified_version)) {
+            Some((v, pin)) if v.cmp_precedence(&pin).is_eq() => {
+                current.insert(c.source.clone());
+                continue;
+            }
+            _ => format!("{} is not the pin {}", r.version, d.verified_version),
         };
         outdated.insert(c.label(), why);
     }
@@ -574,61 +556,6 @@ fn every_capture_is_recorded_at_its_sources_pin() {
         bare.is_empty(),
         "no capture at the pin, so nothing we hold shows its wire: {bare:?}"
     );
-}
-
-/// The three pinned rosters, over the SAME walk the rules use — they used to be
-/// computed inside one rule's own narrower walk.
-#[test]
-fn the_pinned_provenance_rosters_hold_both_ways() {
-    let captures = every_capture();
-    let recorded: BTreeSet<&str> = recordings(&captures)
-        .map(|(c, _)| c.source.as_str())
-        .collect();
-    let unknown: BTreeSet<String> = captures
-        .iter()
-        .filter(|c| matches!(c.provenance, Provenance::Unknown { .. }))
-        .map(Capture::label)
-        .collect();
-    assert_eq!(
-        unknown,
-        UNVERIFIED_PROVENANCE
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect::<BTreeSet<_>>(),
-        "the `unknown` set is pinned — record one and drop its entry, or explain a new \
-         fixture as recorded|composed"
-    );
-    // BOTH directions: the one-way check let two members survive after their
-    // `unknown` scenarios were recorded away.
-    let unknown_sources: BTreeSet<&str> = UNVERIFIED_PROVENANCE
-        .iter()
-        .filter_map(|s| {
-            s.strip_prefix("fixtures/")
-                .and_then(|r| r.split('/').next())
-        })
-        .collect();
-    for src in UNKNOWN_BUT_BACKED_BY_A_CAPTURE {
-        assert!(
-            recorded.contains(src),
-            "{src} is listed as backed by a capture but has no recorded scenario"
-        );
-        assert!(
-            unknown_sources.contains(src),
-            "{src} has no `unknown` scenario left — drop its \
-             UNKNOWN_BUT_BACKED_BY_A_CAPTURE entry"
-        );
-    }
-    for src in registry::registered_source_names()
-        .filter(|s| registry::descriptor_for(s).is_some_and(|d| d.line_decoder().is_none()))
-    {
-        assert_eq!(
-            NO_WIRE_EVIDENCE_YET.contains(&src),
-            !recorded.contains(src),
-            "{src} is hook-only with recorded={}; either record a scenario and drop its \
-             NO_WIRE_EVIDENCE_YET entry, or add one",
-            recorded.contains(src)
-        );
-    }
 }
 
 /// A `recorded` provenance must be FALSIFIABLE by its own bytes; one that is not

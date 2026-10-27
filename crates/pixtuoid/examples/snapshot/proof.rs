@@ -1,5 +1,5 @@
 //! `--proof`: the §3 split-screen causal-proof renderer. ONE committed CC session
-//! fixture drives BOTH sides of every frame: the left panel types the session,
+//! (`proof-session/`) drives BOTH sides of every frame: the left panel types the session,
 //! the right side is the REAL draw_scene pass replaying the SAME decoded
 //! AgentEvent stream through the real Reducer — the two sides structurally cannot
 //! desync. scripts/gen-media.py (kind:"proof") encodes the frames.
@@ -33,7 +33,7 @@ const HEADER_H: u32 = 32;
 const PAD: u32 = 16;
 const LINE_H: u32 = 28;
 const TYPE_CPS: u64 = 30;
-const PREAMBLE_MS: u64 = 6000; // "$ claude" + session start precede the first fixture line
+const PREAMBLE_MS: u64 = 6000; // "$ claude" + session start precede the session's first line
 
 // Every callout holds at most this long from its OWN at_ms, independent of when
 // the next annotated line appears — without a ceiling, the first one held for the
@@ -78,7 +78,7 @@ pub(crate) struct PanelLine {
 pub(crate) struct ProofScript {
     pub(crate) events: Vec<(u64, AgentEvent)>,
     pub(crate) lines: Vec<PanelLine>,
-    /// From the fixture's first timestamp — the panel titles itself as a
+    /// From the session's first timestamp — the panel titles itself as a
     /// past-tense archive, not the live ticker.
     pub(crate) capture_date: String,
 }
@@ -198,20 +198,20 @@ fn ts_ms(v: &serde_json::Value) -> Result<i64> {
     let ts = v
         .get("timestamp")
         .and_then(|s| s.as_str())
-        .ok_or_else(|| anyhow!("fixture line missing timestamp"))?;
+        .ok_or_else(|| anyhow!("session line missing timestamp"))?;
     Ok(chrono::DateTime::parse_from_rfc3339(ts)
-        .with_context(|| format!("bad fixture timestamp {ts:?}"))?
+        .with_context(|| format!("bad session timestamp {ts:?}"))?
         .timestamp_millis())
 }
 
-/// The fixture's capture date (`YYYY-MM-DD`), from its first line's timestamp.
+/// The session's date (`YYYY-MM-DD`), from its first line's timestamp.
 fn capture_date_str(v: &serde_json::Value) -> Result<String> {
     let ts = v
         .get("timestamp")
         .and_then(|s| s.as_str())
-        .ok_or_else(|| anyhow!("fixture line missing timestamp"))?;
+        .ok_or_else(|| anyhow!("session line missing timestamp"))?;
     Ok(chrono::DateTime::parse_from_rfc3339(ts)
-        .with_context(|| format!("bad fixture timestamp {ts:?}"))?
+        .with_context(|| format!("bad session timestamp {ts:?}"))?
         .format("%Y-%m-%d")
         .to_string())
 }
@@ -229,23 +229,23 @@ fn tool_arg(input: Option<&serde_json::Value>) -> String {
     String::new()
 }
 
-pub(crate) fn build_script(fixture: &Path) -> Result<ProofScript> {
-    let raw = fs::read_to_string(fixture)
-        .with_context(|| format!("read proof fixture {}", fixture.display()))?;
-    let stem = cc_id_from_path(fixture);
-    anyhow::ensure!(!stem.is_empty(), "fixture path has no filename stem");
+pub(crate) fn build_script(session: &Path) -> Result<ProofScript> {
+    let raw = fs::read_to_string(session)
+        .with_context(|| format!("read proof session {}", session.display()))?;
+    let stem = cc_id_from_path(session);
+    anyhow::ensure!(!stem.is_empty(), "session path has no filename stem");
     let agent_id = AgentId::from_parts(SOURCE_NAME, &stem);
-    let path_str = fixture.to_string_lossy().into_owned();
+    let path_str = session.to_string_lossy().into_owned();
 
     let parsed: Vec<serde_json::Value> = raw
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(serde_json::from_str)
         .collect::<Result<_, _>>()
-        .context("proof fixture is not valid JSONL")?;
+        .context("proof session is not valid JSONL")?;
     let first = parsed
         .first()
-        .ok_or_else(|| anyhow!("empty proof fixture"))?;
+        .ok_or_else(|| anyhow!("empty proof session"))?;
     let t0 = ts_ms(first)? - PREAMBLE_MS as i64;
     let capture_date = capture_date_str(first)?;
     let cwd = first
@@ -284,7 +284,7 @@ pub(crate) fn build_script(fixture: &Path) -> Result<ProofScript> {
         800,
         AgentEvent::Rename {
             agent_id,
-            label: cc_derive_label(fixture, SOURCE_NAME, Path::new(&cwd)),
+            label: cc_derive_label(session, SOURCE_NAME, Path::new(&cwd)),
         },
     ));
 
@@ -548,7 +548,7 @@ pub(crate) fn compose_frame(
 }
 
 pub(crate) struct ProofJob<'a> {
-    pub(crate) fixture: &'a Path,
+    pub(crate) session: &'a Path,
     pub(crate) frames_dir: &'a Path,
     pub(crate) cols: u16,
     pub(crate) rows: u16,
@@ -560,7 +560,7 @@ pub(crate) struct ProofJob<'a> {
 }
 
 pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
-    let script = build_script(job.fixture)?;
+    let script = build_script(job.session)?;
     let mut pending: VecDeque<(u64, AgentEvent)> = script.events.iter().cloned().collect();
 
     // Anchor the burned callout to home_desks[0] in the SAME layout draw_scene
@@ -605,7 +605,7 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
         }
         // `apply` only runs its expiry pass as a side effect of an incoming
         // event, so without this nothing would sweep or cascade once the
-        // fixture's events are drained.
+        // session's events are drained.
         reducer.tick(&mut scene, now);
         let mut draw_ctx = DrawCtx::offscreen(
             &mut floor,
@@ -636,16 +636,14 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn fixture_path() -> PathBuf {
-        // The example lives in crates/pixtuoid; the fixture is core's — one hop up.
-        Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../pixtuoid-core/tests/sources/fixtures/claude-code/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl",
-        )
+    fn session_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/snapshot/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl")
     }
 
     #[test]
-    fn build_script_pins_the_fixture_beats() {
-        let s = build_script(&fixture_path()).unwrap();
+    fn build_script_pins_the_session_beats() {
+        let s = build_script(&session_path()).unwrap();
         assert_eq!(s.events.len(), 8);
         assert!(matches!(s.events[0].1, AgentEvent::SessionStart { .. }));
         assert!(matches!(s.events[1].1, AgentEvent::Rename { .. }));
@@ -733,7 +731,7 @@ mod tests {
 
     #[test]
     fn compose_frame_matches_canvas_dims() {
-        let s = build_script(&fixture_path()).unwrap();
+        let s = build_script(&session_path()).unwrap();
         let office = RgbaImage::new(960, 832);
         for layout in [ProofLayout::Wide, ProofLayout::Tall] {
             let (w, h) = canvas_dims(&layout, 960, 832);

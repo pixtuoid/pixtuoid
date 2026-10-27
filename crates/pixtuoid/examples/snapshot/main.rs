@@ -271,11 +271,11 @@ struct SnapshotArgs {
     )]
     crop_mascot: bool,
 
-    /// Render the §3 split-screen proof replay from a captured CC session
-    /// fixture: left = typed transcript, right = the real reducer+renderer
+    /// Render the §3 split-screen proof replay from a CC session transcript:
+    /// left = typed transcript, right = the real reducer+renderer
     /// replaying the same decoded events; annotations burned in. Emits PNG
     /// frame sequences to --frames-dir/{wide,tall}/.
-    #[arg(long, value_name = "FIXTURE", value_hint = clap::ValueHint::FilePath,
+    #[arg(long, value_name = "SESSION", value_hint = clap::ValueHint::FilePath,
           conflicts_with_all = ["gif", "anim", "meeting", "pets", "navigate_at",
           "dashboard", "connection", "onboarding", "empty", "live",
           "crop_agent", "crop_furniture", "crop_mascot", "debug_walkable"])]
@@ -455,13 +455,13 @@ fn main() -> Result<()> {
         )
     })?;
 
-    if let Some(fixture) = args.proof.as_deref() {
+    if let Some(session) = args.proof.as_deref() {
         let frames_dir = args
             .frames_dir
             .as_deref()
             .context("--proof requires --frames-dir")?;
         proof::render_proof(&proof::ProofJob {
-            fixture,
+            session,
             frames_dir,
             cols,
             rows,

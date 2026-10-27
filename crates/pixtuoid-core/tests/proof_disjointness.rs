@@ -13,14 +13,17 @@ const STATUSLINE_PATH: &str = concat!(
     "/../../site/src/components/Statusline.astro"
 );
 
-fn proof_session_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures/claude-code/proof-session")
+/// The session the proof clip types, beside its renderer.
+fn proof_session() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../pixtuoid/examples/snapshot/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl",
+    )
 }
 
 /// The same content a viewer reads off the proof panel; JSON syntax and ids
 /// aren't "visible" in that sense and are deliberately excluded.
-fn fixture_visible_strings() -> Vec<String> {
-    let path = proof_session_dir().join("01000000-0000-7000-8000-0000000000f4.jsonl");
+fn session_visible_strings() -> Vec<String> {
+    let path = proof_session();
     let transcript =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
 
@@ -79,12 +82,12 @@ fn ticker_task_phrases() -> Vec<String> {
 
 #[test]
 fn proof_session_story_is_disjoint_from_the_statusline_ticker_corpus() {
-    let fixture_strings = fixture_visible_strings();
+    let session_strings = session_visible_strings();
     assert!(
-        fixture_strings.len() >= 4,
-        "expected the task prompt + 3 tool args, got {}: {fixture_strings:?} — \
-         the proof-session fixture's shape changed",
-        fixture_strings.len()
+        session_strings.len() >= 4,
+        "expected the task prompt + 3 tool args, got {}: {session_strings:?} — \
+         the proof session's shape changed",
+        session_strings.len()
     );
 
     let ticker_phrases = ticker_task_phrases();
@@ -95,13 +98,13 @@ fn proof_session_story_is_disjoint_from_the_statusline_ticker_corpus() {
         ticker_phrases.len()
     );
 
-    for fixture_str in &fixture_strings {
+    for session_str in &session_strings {
         for phrase in &ticker_phrases {
             assert!(
-                !fixture_str.contains(phrase.as_str()) && !phrase.contains(fixture_str.as_str()),
-                "proof-session fixture string {fixture_str:?} collides with the statusline \
+                !session_str.contains(phrase.as_str()) && !phrase.contains(session_str.as_str()),
+                "proof session string {session_str:?} collides with the statusline \
                  ticker's FALLBACK phrase {phrase:?} — the two share a viewport at 4F and must \
-                 read as distinct events (STATUSLINE-COLLISION handoff, pick different fixture \
+                 read as distinct events (STATUSLINE-COLLISION handoff, pick different session \
                  content)"
             );
         }

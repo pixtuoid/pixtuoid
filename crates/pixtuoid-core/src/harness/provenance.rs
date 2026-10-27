@@ -16,16 +16,6 @@ pub enum Provenance {
     /// and `script` name it, stripped of every subtree no decoder reads unless
     /// `deidentified` exempts them; the recorder writes this file itself.
     Recorded(Box<Recorded>),
-    /// Hand-written, and the note says how you can tell.
-    Composed {
-        /// How a reader can tell.
-        note: NonEmpty,
-    },
-    /// Predates the rule; nobody recorded where it came from.
-    Unknown {
-        /// What is known of it.
-        note: NonEmpty,
-    },
 }
 
 /// A recording's record, its fields in the order the recorder writes them.
@@ -179,27 +169,25 @@ impl Provenance {
         std::fs::write(path, format!("{}\n", serde_json::to_string_pretty(self)?))
     }
 
-    /// Its recording's record, if it is one.
-    pub fn recorded(&self) -> Option<&Recorded> {
-        match self {
-            Self::Recorded(r) => Some(r.as_ref()),
-            _ => None,
-        }
+    /// Its recording's record.
+    pub fn recorded(&self) -> &Recorded {
+        let Self::Recorded(r) = self;
+        r
     }
 
     /// The baseline its recording wrote, if any.
     pub fn dropped(&self) -> Option<&Dropped> {
-        self.recorded()?.dropped.as_ref()
+        self.recorded().dropped.as_ref()
     }
 
-    /// Whether the strip applies: to a recording, as [`Recorded::strips`].
+    /// Whether the strip applies, as [`Recorded::strips`].
     pub(crate) fn strips(&self) -> bool {
-        self.recorded().is_some_and(Recorded::strips)
+        self.recorded().strips()
     }
 
     /// The exemption it declares, if any.
     pub fn exemption(&self) -> Option<&NonEmpty> {
-        match self.recorded()?.deidentified.as_ref()? {
+        match self.recorded().deidentified.as_ref()? {
             Deidentified::Exempt { why } => Some(why),
             Deidentified::Stripped { .. } => None,
         }
@@ -226,7 +214,6 @@ mod tests {
         assert!(parse(RECORDED).is_ok());
         let stray = RECORDED.replace(r#""command":"x""#, r#""command":"x","droped":{}"#);
         assert!(parse(&stray).is_err(), "a recording's stray key");
-        assert!(parse(r#"{"origin":"composed","note":"n","cli":"c"}"#).is_err());
         let method = RECORDED.replace(
             r#""command":"x""#,
             r#""command":"x","deidentified":{"method":"none","why":"w","blanked":1}"#,
@@ -248,14 +235,15 @@ mod tests {
             let text = serde_json::to_string(&without).expect("json");
             assert!(parse(&text).is_err(), "a recording without {key:?}");
         }
-        assert!(parse(r#"{"origin":"composed"}"#).is_err());
-        assert!(parse(r#"{"origin":"unknown"}"#).is_err());
+        assert!(
+            parse(r#"{"origin":"composed","note":"n"}"#).is_err(),
+            "only a recording is a capture"
+        );
     }
 
     #[test]
     fn a_blank_required_string_fails_to_parse() {
         assert!(parse(&RECORDED.replace(r#""cli":"c""#, r#""cli":" ""#)).is_err());
-        assert!(parse(r#"{"origin":"unknown","note":""}"#).is_err());
         let why = RECORDED.replace(
             r#""command":"x""#,
             r#""command":"x","deidentified":{"method":"none","why":"\n"}"#,
@@ -295,14 +283,12 @@ mod tests {
             format!("{}\n", serde_json::to_string_pretty(&p).expect("json")),
             text
         );
-        for unset in [RECORDED, r#"{"origin":"composed","note":"n"}"#] {
-            let p = parse(unset).expect("parses");
-            assert_eq!(
-                serde_json::to_string(&p).expect("json"),
-                unset,
-                "an unset field writes no key"
-            );
-        }
+        let unset = parse(RECORDED).expect("parses");
+        assert_eq!(
+            serde_json::to_string(&unset).expect("json"),
+            RECORDED,
+            "an unset field writes no key"
+        );
         assert!(p.strips());
         assert_eq!(p.exemption(), None);
     }
@@ -321,11 +307,6 @@ mod tests {
         .expect("parses");
         assert!(!p.strips());
         assert_eq!(p.exemption().map(NonEmpty::as_str), Some("raw bytes"));
-        assert!(
-            !parse(r#"{"origin":"composed","note":"n"}"#)
-                .expect("parses")
-                .strips()
-        );
     }
 
     #[test]

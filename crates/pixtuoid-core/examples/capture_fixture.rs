@@ -651,7 +651,7 @@ mod recorder {
                 deidentified,
             )?
         };
-        if let Some(old) = committed.as_ref().and_then(Provenance::recorded)
+        if let Some(old) = committed.as_ref().map(Provenance::recorded)
             && *old
                 == (Recorded {
                     captured: old.captured.clone(),
@@ -1513,7 +1513,7 @@ mod recorder {
         fn written(dest: &Path) -> (String, Recorded) {
             let bytes = std::fs::read_to_string(dest.join(HOOK_PAYLOADS)).expect("bytes");
             let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
-            (bytes, record.recorded().expect("a recording").clone())
+            (bytes, record.recorded().clone())
         }
 
         #[test]
@@ -1813,8 +1813,8 @@ mod recorder {
             if after != before {
                 let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
                 assert_eq!(
-                    record.recorded().map(|r| r.captured.as_str()),
-                    Some(today().as_str()),
+                    record.recorded().captured.as_str(),
+                    today().as_str(),
                     "a rewrite is the run's own record"
                 );
             }
