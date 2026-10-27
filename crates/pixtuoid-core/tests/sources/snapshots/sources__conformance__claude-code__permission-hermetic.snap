@@ -9,13 +9,13 @@ expression: events
 - Usage:
     agent_id: 10051904835927240821
     fresh_tokens: 19
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10051904835927240821
     tool_use_id: toolu_kcyI4nuzrotG8OFK
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10051904835927240821
     tool_use_id: toolu_kcyI4nuzrotG8OFK
 - SessionStart:
@@ -33,7 +33,7 @@ expression: events
     source: claude-code
     session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10051904835927240821
     tool_use_id: toolu_kcyI4nuzrotG8OFK
     detail:
@@ -48,7 +48,7 @@ expression: events
     source: claude-code
     session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 10051904835927240821
     reason: permission
 - Identity:
@@ -56,7 +56,7 @@ expression: events
     source: claude-code
     session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 10051904835927240821
     reason: Claude needs your permission
 - SessionEnd:

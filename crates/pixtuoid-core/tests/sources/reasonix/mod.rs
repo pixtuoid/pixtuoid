@@ -43,7 +43,7 @@ fn the_runs_one_task_sits_on_the_spawning_calls_id() {
     let tasks: Vec<Option<String>> = events()
         .into_iter()
         .filter_map(|e| match e {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 tool_use_id,
                 detail: Some(ToolDetail::Task),
                 ..
@@ -106,7 +106,7 @@ fn a_skill_calls_return_walks_its_child_out() {
         .rposition(|e| {
             matches!(
                 e,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Task),
                     ..
                 }

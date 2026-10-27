@@ -119,7 +119,7 @@ fn codex_meta_line(uuid: &str, cwd: &str) -> serde_json::Value {
     })
 }
 
-/// Decodes to an id-less `ActivityStart`.
+/// Decodes to an id-less `ToolUseStart`.
 fn codex_work_line() -> serde_json::Value {
     serde_json::json!({
         "type": "event_msg",

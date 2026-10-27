@@ -182,7 +182,10 @@ fn live_for_reports_a_daemons_instances_not_the_agent_slots_it_never_creates() {
                 active_sessions: 0,
                 last_seen: now,
                 entered_at: now,
-                in_flight_runs: runs.iter().map(|r| (r.to_string(), now)).collect(),
+                in_flight_turns: runs
+                    .iter()
+                    .map(|r| (pixtuoid_core::state::TurnKey::Id(r.to_string().into()), now))
+                    .collect(),
                 current_pid: Some(1),
             },
         );

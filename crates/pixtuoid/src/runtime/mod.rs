@@ -709,7 +709,7 @@ mod tests {
         seat(&mut reducer, &mut scene, a);
         reducer.apply(
             &mut scene,
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: a,
                 tool_use_id: Some("t1".into()),
                 detail: Some("Edit: foo.rs".into()),
@@ -722,7 +722,7 @@ mod tests {
         seat(&mut reducer, &mut scene, b);
         reducer.apply(
             &mut scene,
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id: b,
                 reason: "permission".into(),
                 tool_use_id: None,
@@ -777,8 +777,8 @@ mod tests {
         apply_presence(
             &mut scene,
             &gw,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "r".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: pixtuoid_core::state::TurnKey::Id("r".into()),
             },
             now,
         );
@@ -788,12 +788,12 @@ mod tests {
             summarize(&scene)
         );
 
-        // RunFailed drains the in-flight run, so the later GatewayDown still reads down.
+        // TurnFailed drains the in-flight run, so the later GatewayDown still reads down.
         apply_presence(
             &mut scene,
             &gw,
-            DaemonPresenceUpdate::RunFailed {
-                run_key: "r".into(),
+            DaemonPresenceUpdate::TurnFailed {
+                turn: pixtuoid_core::state::TurnKey::Id("r".into()),
             },
             now,
         );
@@ -836,7 +836,7 @@ mod tests {
         );
         reducer.apply(
             &mut scene,
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id: id,
                 reason: "needs \u{1b}[2J approval".to_string(),
                 tool_use_id: None,

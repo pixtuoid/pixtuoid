@@ -23,13 +23,13 @@ expression: events
 - Usage:
     agent_id: 2218045403008670456
     fresh_tokens: 23814
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01Qw1MscwKEFmLgWd9bwvW4x
     detail:
       Generic:
         display: "Bash: cat /private/tmp/pixtuoid-capture/proj/N…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01Qw1MscwKEFmLgWd9bwvW4x
 - ModelInfo:
@@ -39,13 +39,13 @@ expression: events
 - Usage:
     agent_id: 2218045403008670456
     fresh_tokens: 488
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01MtBup9bnruUVnRYDM9DHTJ
     detail:
       Generic:
         display: "Bash: ls -la /private/tmp/pixtuoid-capture/pro…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01MtBup9bnruUVnRYDM9DHTJ
 - ModelInfo:
@@ -55,13 +55,13 @@ expression: events
 - Usage:
     agent_id: 2218045403008670456
     fresh_tokens: 281
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_011U5tMoYhbq8tBTr6tEAMvK
     detail:
       Generic:
         display: "Bash: cat /private/tmp/pixtuoid-capture/proj/N…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_011U5tMoYhbq8tBTr6tEAMvK
 - ModelInfo:
@@ -82,7 +82,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01Qw1MscwKEFmLgWd9bwvW4x
     detail:
@@ -97,7 +97,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01Qw1MscwKEFmLgWd9bwvW4x
 - ModelInfo:
@@ -109,7 +109,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01MtBup9bnruUVnRYDM9DHTJ
     detail:
@@ -124,7 +124,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_01MtBup9bnruUVnRYDM9DHTJ
 - ModelInfo:
@@ -136,7 +136,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2218045403008670456
     tool_use_id: toolu_011U5tMoYhbq8tBTr6tEAMvK
     detail:
@@ -151,7 +151,7 @@ expression: events
     source: claude-code
     session_id: f7beb54a-8115-40cd-8967-fb67ed8c112a
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2218045403008670456
     tool_use_id: toolu_011U5tMoYhbq8tBTr6tEAMvK
 - ModelInfo:

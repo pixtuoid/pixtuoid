@@ -175,14 +175,14 @@ pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::PidExited
 pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::PidExited::pid: i32
 pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::PidSeen
 pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::PidSeen::pid: i32
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunEnded
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunEnded::run_key: alloc::string::String
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunFailed
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunFailed::run_key: alloc::string::String
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunStarted
-pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::RunStarted::run_key: alloc::string::String
 pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::SessionEnded
 pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::SessionStarted
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnEnded
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnEnded::turn: pixtuoid_core::state::TurnKey
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnFailed
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnFailed::turn: pixtuoid_core::state::TurnKey
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnStarted
+pub pixtuoid_core::source::daemon::DaemonPresenceUpdate::TurnStarted::turn: pixtuoid_core::state::TurnKey
 impl pixtuoid_core::source::daemon::DaemonPresenceUpdate
 pub fn pixtuoid_core::source::daemon::DaemonPresenceUpdate::armable_pid(&self) -> core::option::Option<i32>
 impl core::clone::Clone for pixtuoid_core::source::daemon::DaemonPresenceUpdate
@@ -624,13 +624,6 @@ pub const pixtuoid_core::source::opencode::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::reasonix
 pub const pixtuoid_core::source::reasonix::SOURCE_NAME: &str
 #[non_exhaustive] pub enum pixtuoid_core::source::AgentEvent
-pub pixtuoid_core::source::AgentEvent::ActivityEnd
-pub pixtuoid_core::source::AgentEvent::ActivityEnd::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::source::AgentEvent::ActivityEnd::tool_use_id: core::option::Option<alloc::string::String>
-pub pixtuoid_core::source::AgentEvent::ActivityStart
-pub pixtuoid_core::source::AgentEvent::ActivityStart::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::source::AgentEvent::ActivityStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
-pub pixtuoid_core::source::AgentEvent::ActivityStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::Identity
 pub pixtuoid_core::source::AgentEvent::Identity::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Identity::cwd: core::option::Option<std::path::PathBuf>
@@ -655,15 +648,22 @@ pub pixtuoid_core::source::AgentEvent::SessionStart::cwd: std::path::PathBuf
 pub pixtuoid_core::source::AgentEvent::SessionStart::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::source::AgentEvent::SessionStart::session_id: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::SessionStart::source: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::ToolUseEnd
+pub pixtuoid_core::source::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::ToolUseStart
+pub pixtuoid_core::source::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
+pub pixtuoid_core::source::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::TurnEnd
 pub pixtuoid_core::source::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage
 pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
-pub pixtuoid_core::source::AgentEvent::Waiting
-pub pixtuoid_core::source::AgentEvent::Waiting::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::source::AgentEvent::Waiting::reason: alloc::string::String
-pub pixtuoid_core::source::AgentEvent::Waiting::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::UserActionRequest
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::reason: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
@@ -1718,6 +1718,28 @@ impl core::marker::Unpin for pixtuoid_core::state::ToolKind
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::ToolKind
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ToolKind
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ToolKind
+pub enum pixtuoid_core::state::TurnKey
+pub pixtuoid_core::state::TurnKey::Id(alloc::rcs::arc::Arc<str>)
+pub pixtuoid_core::state::TurnKey::Seq(u64)
+impl pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::newer_than(&self, &Self) -> core::option::Option<bool>
+impl core::clone::Clone for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::TurnKey
+impl core::cmp::PartialEq for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for pixtuoid_core::state::TurnKey
+pub fn pixtuoid_core::state::TurnKey::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::TurnKey
+impl core::marker::Freeze for pixtuoid_core::state::TurnKey
+impl core::marker::Send for pixtuoid_core::state::TurnKey
+impl core::marker::Sync for pixtuoid_core::state::TurnKey
+impl core::marker::Unpin for pixtuoid_core::state::TurnKey
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::TurnKey
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::TurnKey
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::TurnKey
 pub struct pixtuoid_core::state::AgentSlot
 pub pixtuoid_core::state::AgentSlot::active_ms: u64
 pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
@@ -1794,7 +1816,7 @@ pub struct pixtuoid_core::state::DaemonPresence
 pub pixtuoid_core::state::DaemonPresence::active_sessions: u32
 pub pixtuoid_core::state::DaemonPresence::current_pid: core::option::Option<i32>
 pub pixtuoid_core::state::DaemonPresence::entered_at: std::time::SystemTime
-pub pixtuoid_core::state::DaemonPresence::in_flight_runs: alloc::collections::btree::map::BTreeMap<alloc::string::String, std::time::SystemTime>
+pub pixtuoid_core::state::DaemonPresence::in_flight_turns: std::collections::hash::map::HashMap<pixtuoid_core::state::TurnKey, std::time::SystemTime>
 pub pixtuoid_core::state::DaemonPresence::last_seen: std::time::SystemTime
 pub pixtuoid_core::state::DaemonPresence::liveness: pixtuoid_core::state::DaemonLiveness
 impl pixtuoid_core::state::DaemonPresence
@@ -2027,13 +2049,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::ActivityState
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ActivityState
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ActivityState
 #[non_exhaustive] pub enum pixtuoid_core::AgentEvent
-pub pixtuoid_core::AgentEvent::ActivityEnd
-pub pixtuoid_core::AgentEvent::ActivityEnd::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::AgentEvent::ActivityEnd::tool_use_id: core::option::Option<alloc::string::String>
-pub pixtuoid_core::AgentEvent::ActivityStart
-pub pixtuoid_core::AgentEvent::ActivityStart::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::AgentEvent::ActivityStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
-pub pixtuoid_core::AgentEvent::ActivityStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::Identity
 pub pixtuoid_core::AgentEvent::Identity::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Identity::cwd: core::option::Option<std::path::PathBuf>
@@ -2058,15 +2073,22 @@ pub pixtuoid_core::AgentEvent::SessionStart::cwd: std::path::PathBuf
 pub pixtuoid_core::AgentEvent::SessionStart::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::AgentEvent::SessionStart::session_id: alloc::string::String
 pub pixtuoid_core::AgentEvent::SessionStart::source: alloc::string::String
+pub pixtuoid_core::AgentEvent::ToolUseEnd
+pub pixtuoid_core::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::ToolUseStart
+pub pixtuoid_core::AgentEvent::ToolUseStart::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::ToolUseStart::detail: core::option::Option<pixtuoid_core::source::ToolDetail>
+pub pixtuoid_core::AgentEvent::ToolUseStart::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::TurnEnd
 pub pixtuoid_core::AgentEvent::TurnEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage
 pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64
-pub pixtuoid_core::AgentEvent::Waiting
-pub pixtuoid_core::AgentEvent::Waiting::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::AgentEvent::Waiting::reason: alloc::string::String
-pub pixtuoid_core::AgentEvent::Waiting::tool_use_id: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::UserActionRequest
+pub pixtuoid_core::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::UserActionRequest::reason: alloc::string::String
+pub pixtuoid_core::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent

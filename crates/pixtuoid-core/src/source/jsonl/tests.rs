@@ -358,7 +358,7 @@ fn t_decode_lifecycle(t: &str, s: &str, v: serde_json::Value) -> Vec<AgentEvent>
     }
     let agent_id = AgentId::from_parts(s, t);
     match v.get("type").and_then(|x| x.as_str()) {
-        Some("tool_use") => vec![AgentEvent::ActivityStart {
+        Some("tool_use") => vec![AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: None,
             detail: None,
@@ -1329,7 +1329,7 @@ async fn session_end_ends_its_claim_so_later_activity_re_registers() {
             [
                 (_, AgentEvent::SessionStart { .. }),
                 ..,
-                (_, AgentEvent::ActivityStart { .. })
+                (_, AgentEvent::ToolUseStart { .. })
             ]
         ),
         "a post-end append that decodes to activity must re-register the agent \
@@ -2541,7 +2541,7 @@ fn task_start_tuids(events: &[(Transport, AgentEvent)]) -> Vec<String> {
     events
         .iter()
         .filter_map(|(t, e)| match e {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 tool_use_id: Some(tuid),
                 detail: Some(d),
                 ..
@@ -2592,7 +2592,7 @@ async fn oversized_attach_seeds_unmatched_task_dispatch() {
     );
     let task_pos = events
         .iter()
-        .position(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. }))
+        .position(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }))
         .expect("checked above");
     assert!(
         start_pos < task_pos,
@@ -2624,7 +2624,7 @@ async fn oversized_attach_matched_task_is_not_seeded() {
     assert!(
         !events
             .iter()
-            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+            .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. })),
         "a matched (returned) dispatch must not be seeded — and no other backlog event may leak from the scan, got {events:?}"
     );
 }
@@ -2663,7 +2663,7 @@ async fn pending_span_of_exactly_max_bytes_replays_instead_of_skipping() {
     assert!(
         events
             .iter()
-            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+            .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. })),
         "an exactly-at-the-cap span must REPLAY (strict >) — the ordinary \
          tool activity must come through, got {events:?}"
     );
@@ -2716,7 +2716,7 @@ async fn oversized_attach_ended_session_skips_task_scan() {
     assert!(
         !events
             .iter()
-            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+            .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. })),
         "an ended span must not seed Task starts, got {events:?}"
     );
     assert!(
@@ -3312,7 +3312,7 @@ async fn walk_jsonl_rereads_from_zero_when_known_file_truncated_below_cursor() {
     assert!(
         events
             .iter()
-            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+            .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. })),
         "the rewritten line must be decoded this pass, got {events:?}"
     );
     assert_eq!(
@@ -3347,7 +3347,7 @@ async fn an_unterminated_last_record_is_held_back_by_the_watcher_and_the_census_
         .events
         .iter()
         .filter_map(|e| match e {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 tool_use_id: Some(t),
                 ..
             } => Some(t.clone()),
@@ -3387,7 +3387,7 @@ async fn a_line_the_walker_skips_costs_only_itself() {
     assert!(
         events
             .iter()
-            .any(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. })),
+            .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. })),
         "the line after the skipped ones still decodes, got {events:?}"
     );
     assert_eq!(

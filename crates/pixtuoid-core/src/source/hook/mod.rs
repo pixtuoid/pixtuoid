@@ -363,7 +363,7 @@ mod tests {
                 cwd: None,
                 pid: None,
             },
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: id,
                 tool_use_id: None,
                 detail: None,
@@ -559,17 +559,17 @@ mod tests {
                 cwd: None,
                 pid: None,
             },
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: id,
                 tool_use_id: None,
                 detail: None,
             },
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id: id,
                 tool_use_id: None,
             },
             AgentEvent::turn_end(id),
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id: id,
                 reason: "x".into(),
                 tool_use_id: None,
@@ -591,7 +591,7 @@ mod tests {
 
     use crate::test_capture::capture_warns;
 
-    // Decodes to TWO events (Identity + ActivityStart) — the shape the
+    // Decodes to TWO events (Identity + ToolUseStart) — the shape the
     // mid-payload loss path needs: more than one event per payload.
     const PRE_TOOL_USE_LINE: &[u8] = b"{\"hook_event_name\":\"PreToolUse\",\
         \"session_id\":\"ses-abc\",\
@@ -1028,8 +1028,8 @@ mod tests {
             matches!(&ev, AgentEvent::Identity { source, pid: None, .. } if source == "claude-code"),
             "CC Identity must stay pid: None through the socket loop, got {ev:?}"
         );
-        let (_, ev) = rx.recv().await.expect("the paired ActivityStart");
-        assert!(matches!(ev, AgentEvent::ActivityStart { .. }), "got {ev:?}");
+        let (_, ev) = rx.recv().await.expect("the paired ToolUseStart");
+        assert!(matches!(ev, AgentEvent::ToolUseStart { .. }), "got {ev:?}");
     }
 
     #[tokio::test]

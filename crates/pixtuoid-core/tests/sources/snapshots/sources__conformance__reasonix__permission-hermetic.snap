@@ -19,7 +19,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150536.766356000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 18041645714302700288
     tool_use_id: ~
     detail:
@@ -30,7 +30,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150536.766356000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 18041645714302700288
     tool_use_id: ~
 - Identity:
@@ -38,7 +38,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150536.766356000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 18041645714302700288
     reason: "approval: bash rm NOTE.txt"
 - Identity:
@@ -46,7 +46,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150536.766356000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 18041645714302700288
     reason: "approval needed: bash rm NOTE.txt"
 - TurnEnd:

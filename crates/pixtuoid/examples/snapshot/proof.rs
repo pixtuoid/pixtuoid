@@ -652,12 +652,12 @@ mod tests {
         let starts = s
             .events
             .iter()
-            .filter(|(_, e)| matches!(e, AgentEvent::ActivityStart { .. }))
+            .filter(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }))
             .count();
         let ends = s
             .events
             .iter()
-            .filter(|(_, e)| matches!(e, AgentEvent::ActivityEnd { .. }))
+            .filter(|(_, e)| matches!(e, AgentEvent::ToolUseEnd { .. }))
             .count();
         assert_eq!((starts, ends), (3, 3));
         assert!(s.events.windows(2).all(|w| w[0].0 <= w[1].0));

@@ -19,7 +19,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 7249668890645938261
     tool_use_id: ~
     detail:
@@ -30,7 +30,7 @@ expression: events
     source: reasonix
     session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 7249668890645938261
     tool_use_id: ~
 - TurnEnd:

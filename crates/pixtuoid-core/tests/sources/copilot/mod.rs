@@ -97,7 +97,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
     let failed =
         at(&|e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == child.0));
     let drained = at(
-        &|e| matches!(e, AgentEvent::ActivityEnd { agent_id, tool_use_id: Some(_) } if *agent_id == child.1),
+        &|e| matches!(e, AgentEvent::ToolUseEnd { agent_id, tool_use_id: Some(_) } if *agent_id == child.1),
     );
     assert!(
         failed.is_some_and(|f| drained.is_none_or(|d| f < d)),

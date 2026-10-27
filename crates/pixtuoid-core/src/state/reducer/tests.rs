@@ -90,7 +90,7 @@ fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: None,
             detail: Some(ToolDetail::Task),
@@ -112,7 +112,7 @@ fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
 
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: None,
             detail: Some(ToolDetail::Generic {
@@ -161,7 +161,7 @@ fn generic_tool_displaying_delegating_keeps_the_active_window() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: None,
             detail: Some(ToolDetail::Generic {
@@ -205,7 +205,7 @@ fn an_action_request_is_evicted_on_apply_path_sweep() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("toolT".into()),
             detail: Some(ToolDetail::from("Bash")),
@@ -215,7 +215,7 @@ fn an_action_request_is_evicted_on_apply_path_sweep() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id: id,
             reason: "perm".into(),
             tool_use_id: None,
@@ -577,7 +577,7 @@ fn a_known_slots_hook_end_refuses_its_stragglers_past_the_sweep() {
         );
         r.apply(
             scene,
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: id,
                 tool_use_id: Some("t".into()),
                 detail: None,
@@ -710,7 +710,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     r.apply(&mut scene, session_start("s"), t0, Transport::Hook);
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("t-gate".into()),
             detail: Some(ToolDetail::from("Bash")),
@@ -720,7 +720,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id: id,
             reason: "perm".into(),
             tool_use_id: None,
@@ -732,7 +732,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     // tasks_in_flight entry behind.
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("task-1".into()),
             detail: Some(ToolDetail::from("Agent")),
@@ -742,7 +742,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityEnd {
+        AgentEvent::ToolUseEnd {
             agent_id: id,
             tool_use_id: Some("task-1".into()),
         },
@@ -948,7 +948,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: a,
                 tool_use_id: Some("task1".into()),
                 detail: Some(ToolDetail::Task),
@@ -958,7 +958,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id: a,
                 tool_use_id: Some("task1".into()),
             },
@@ -967,7 +967,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: a,
                 tool_use_id: Some("gate1".into()),
                 detail: Some(ToolDetail::Generic {
@@ -979,7 +979,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id: a,
                 reason: "perm".into(),
                 tool_use_id: None,
@@ -1016,7 +1016,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         // entry reaped ONLY by tick's slot-removal retain.
         r.apply(
             &mut scene,
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: AgentId::from_parts("claude-code", &format!("o{i}")),
                 tool_use_id: Some("orphan".into()),
                 detail: Some(ToolDetail::Task),

@@ -153,7 +153,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 });
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(hermes_tool_detail(tool, obj.get("tool_input"))),
@@ -162,7 +162,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         }
         "post_tool_call" => Ok(vec![
             identity(),
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: tool_use_id(),
             },
@@ -181,7 +181,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 .unwrap_or_else(|| "permission".to_string());
             Ok(vec![
                 identity(),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason,
                     tool_use_id: tool_use_id(),
@@ -277,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn post_tool_call_is_activity_end() {
+    fn post_tool_call_is_tool_use_end() {
         let ev = decode(json!({
             "hook_event_name": "post_tool_call", "session_id": "s", "cwd": "/repo",
             "tool_name": "terminal",
@@ -285,7 +285,7 @@ mod tests {
         }));
         assert!(matches!(
             &ev,
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 tool_use_id: None,
                 ..
             }

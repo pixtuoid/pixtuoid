@@ -98,7 +98,7 @@ fn act_start(
 ) {
     r.apply(
         scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: tool_use_id.map(Into::into),
             detail: detail.map(Into::into),
@@ -118,7 +118,7 @@ fn act_end(
 ) {
     r.apply(
         scene,
-        AgentEvent::ActivityEnd {
+        AgentEvent::ToolUseEnd {
             agent_id: id,
             tool_use_id: tool_use_id.map(Into::into),
         },
@@ -141,7 +141,7 @@ fn waiting(
 ) {
     r.apply(
         scene,
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id: id,
             reason: reason.into(),
             tool_use_id: None,
@@ -163,7 +163,7 @@ fn waiting_for(
 ) {
     r.apply(
         scene,
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id: id,
             reason: reason.into(),
             tool_use_id: tool_use_id.map(Into::into),

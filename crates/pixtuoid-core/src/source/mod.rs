@@ -32,7 +32,7 @@ pub enum Transport {
 #[non_exhaustive]
 pub enum ToolDetail {
     /// A subagent dispatch: the parent shows Delegating until its
-    /// `ActivityEnd`.
+    /// `ToolUseEnd`.
     Task,
     /// Any other tool.
     Generic {
@@ -92,19 +92,19 @@ pub enum AgentEvent {
         parent_id: Option<AgentId>,
     },
     /// A tool call started — the slot goes Active.
-    ActivityStart {
+    ToolUseStart {
         /// The acting agent.
         agent_id: AgentId,
-        /// The tool call's id, used to pair with its `ActivityEnd` (hook-wins dedup).
+        /// The tool call's id, used to pair with its `ToolUseEnd` (hook-wins dedup).
         tool_use_id: Option<String>,
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
     },
     /// A tool call finished.
-    ActivityEnd {
+    ToolUseEnd {
         /// The acting agent.
         agent_id: AgentId,
-        /// The completing tool call's id (pairs with its `ActivityStart`).
+        /// The completing tool call's id (pairs with its `ToolUseStart`).
         tool_use_id: Option<String>,
     },
     /// The agent's foreground work ended: its turn, or a wait outside one
@@ -114,7 +114,7 @@ pub enum AgentEvent {
         agent_id: AgentId,
     },
     /// The agent is blocked on a permission/input prompt — the slot goes Waiting.
-    Waiting {
+    UserActionRequest {
         /// The waiting agent.
         agent_id: AgentId,
         /// Why it is waiting (the prompt/notification reason).
@@ -268,10 +268,10 @@ impl AgentEvent {
     pub fn agent_id(&self) -> AgentId {
         match self {
             AgentEvent::SessionStart { agent_id, .. } => *agent_id,
-            AgentEvent::ActivityStart { agent_id, .. } => *agent_id,
-            AgentEvent::ActivityEnd { agent_id, .. } => *agent_id,
+            AgentEvent::ToolUseStart { agent_id, .. } => *agent_id,
+            AgentEvent::ToolUseEnd { agent_id, .. } => *agent_id,
             AgentEvent::TurnEnd { agent_id } => *agent_id,
-            AgentEvent::Waiting { agent_id, .. } => *agent_id,
+            AgentEvent::UserActionRequest { agent_id, .. } => *agent_id,
             AgentEvent::Rename { agent_id, .. } => *agent_id,
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id,
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
@@ -288,10 +288,10 @@ impl AgentEvent {
     /// vouches a visible slot past the sweeps and must never create one.
     pub(crate) fn shows_activity(&self) -> bool {
         match self {
-            AgentEvent::ActivityStart { .. }
-            | AgentEvent::ActivityEnd { .. }
+            AgentEvent::ToolUseStart { .. }
+            | AgentEvent::ToolUseEnd { .. }
             | AgentEvent::TurnEnd { .. }
-            | AgentEvent::Waiting { .. } => true,
+            | AgentEvent::UserActionRequest { .. } => true,
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::SessionEnd { .. }
@@ -306,10 +306,10 @@ impl AgentEvent {
     /// its ancestors past the stale sweep.
     pub(crate) fn refreshes_lineage(&self) -> bool {
         match self {
-            AgentEvent::ActivityStart { .. }
-            | AgentEvent::ActivityEnd { .. }
+            AgentEvent::ToolUseStart { .. }
+            | AgentEvent::ToolUseEnd { .. }
             | AgentEvent::TurnEnd { .. }
-            | AgentEvent::Waiting { .. } => true,
+            | AgentEvent::UserActionRequest { .. } => true,
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::SessionEnd { .. }

@@ -8,13 +8,13 @@ expression: events
     session_id: 65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3
     cwd: "d:\\contentforge-fullstack (1)"
     parent_id: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 3248182660035585985
     tool_use_id: tooluse_9CoqZL2lZlJUsz7TjJsSUk
     detail:
       Generic:
         display: report_intent
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 3248182660035585985
     tool_use_id: tooluse_9CoqZL2lZlJUsz7TjJsSUk
 - ModelInfo:

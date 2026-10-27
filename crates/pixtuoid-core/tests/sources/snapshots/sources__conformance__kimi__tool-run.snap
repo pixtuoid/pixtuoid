@@ -17,7 +17,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2255756860839287734
     tool_use_id: call_cdec53610bc745eda763a5d8
     detail:
@@ -28,7 +28,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2255756860839287734
     tool_use_id: call_8f13502552724bd5b8009846
     detail:
@@ -39,7 +39,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2255756860839287734
     tool_use_id: call_cdec53610bc745eda763a5d8
 - Identity:
@@ -47,7 +47,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2255756860839287734
     tool_use_id: call_8f13502552724bd5b8009846
 - Identity:
@@ -55,7 +55,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2255756860839287734
     tool_use_id: call_111fb8702c464cd2adb56bc9
     detail:
@@ -66,7 +66,7 @@ expression: events
     source: kimi
     session_id: session_9d73b6b5-d936-485e-af02-9ed56e2005d9
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2255756860839287734
     tool_use_id: call_111fb8702c464cd2adb56bc9
 - TurnEnd:

@@ -25,7 +25,7 @@ fn accumulate_active_ms(slot: &mut AgentSlot, now: SystemTime) {
     }
 }
 
-/// Enter `Active` with a concrete tool — the general `ActivityStart` path.
+/// Enter `Active` with a concrete tool — the general `ToolUseStart` path.
 /// Stamps `last_event_at` (this is the actor's own event).
 pub(crate) fn enter_active(
     slot: &mut AgentSlot,

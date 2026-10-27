@@ -55,17 +55,14 @@ async fn codex_source_run_emits_events_from_rollout() {
     let mut got_activity = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
         {
             got_activity = true;
             break;
         }
     }
-    assert!(
-        got_activity,
-        "CodexSource::run should surface ActivityStart"
-    );
+    assert!(got_activity, "CodexSource::run should surface ToolUseStart");
     handle.abort();
 }
 
@@ -105,7 +102,7 @@ async fn antigravity_source_run_emits_events_from_transcript() {
     let mut got_activity = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
         {
             got_activity = true;
@@ -114,7 +111,7 @@ async fn antigravity_source_run_emits_events_from_transcript() {
     }
     assert!(
         got_activity,
-        "AntigravitySource::run should surface ActivityStart"
+        "AntigravitySource::run should surface ToolUseStart"
     );
     handle.abort();
 }
@@ -345,7 +342,7 @@ async fn grok_source_run_emits_events_from_updates_jsonl() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::ActivityStart { agent_id, .. }))) => {
+            Ok(Some((_, AgentEvent::ToolUseStart { agent_id, .. }))) => {
                 // grok keys on the transcript's PARENT-DIR name, so the id the
                 // watcher mints must equal the hook leg's for the same session.
                 assert_eq!(agent_id, AgentId::from_parts("grok", session_id));
@@ -358,7 +355,7 @@ async fn grok_source_run_emits_events_from_updates_jsonl() {
     }
     assert!(
         saw_start,
-        "GrokSource::run should surface ActivityStart from updates.jsonl"
+        "GrokSource::run should surface ToolUseStart from updates.jsonl"
     );
     handle.abort();
 }
@@ -719,7 +716,7 @@ async fn omp_oversized_first_sight_uses_the_head_title_through_source_wiring() {
                 }
                 rename_labels.push(label);
             }
-            Ok(Some((_, AgentEvent::ActivityStart { .. }))) => saw_activity = true,
+            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => saw_activity = true,
             Ok(Some(_)) | Ok(None) | Err(_) => {}
         }
         if rename_seen_at.is_some_and(|at| at.elapsed() >= Duration::from_millis(500)) {

@@ -422,7 +422,7 @@ mod tests {
                 active_sessions: 0,
                 last_seen: t0,
                 entered_at: t0,
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );

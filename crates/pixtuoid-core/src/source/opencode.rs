@@ -122,7 +122,7 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         TOOL_STARTED => tool_started(data, at),
         TOOL_SUCCESS | TOOL_FAILED => {
             let tool_use_id = field(data, "id").map(str::to_owned);
-            ended(data, at, event, |agent_id| AgentEvent::ActivityEnd {
+            ended(data, at, event, |agent_id| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
             })
@@ -216,7 +216,7 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
     });
     Ok(vec![
         identity(agent_id, session_id, at),
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: field(data, "id").map(str::to_owned),
             detail: Some(if name == DISPATCH_TOOL {
@@ -238,7 +238,7 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
     );
     Ok(vec![
         identity(agent_id, session_id, at),
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id,
             reason,
             tool_use_id: field(data, "source.id").map(str::to_owned),
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_start_is_activity_start_keyed_on_its_id() {
+    fn a_tool_start_is_tool_use_start_keyed_on_its_id() {
         let evs = decode_all(
             json!({"type": TOOL_STARTED, "location": {"directory": "/repo"},
             "data": {"sessionID": "ses_x", "assistantMessageID": "msg_1", "id": "call_abc", "name": "bash"}}),
@@ -376,7 +376,7 @@ mod tests {
             if session_id == "ses_x" && cwd.as_path() == std::path::Path::new("/repo"))
         );
         match &evs[1] {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id,
                 detail,
@@ -385,7 +385,7 @@ mod tests {
                 assert_eq!(tool_use_id.as_deref(), Some("call_abc"));
                 assert_eq!(detail.as_ref().map(ToolDetail::display), Some("bash"));
             }
-            other => panic!("expected ActivityStart, got {other:?}"),
+            other => panic!("expected ToolUseStart, got {other:?}"),
         }
     }
 
@@ -405,7 +405,7 @@ mod tests {
     fn a_tool_without_a_name_degrades_to_a_question_mark() {
         let ev = decode(json!({"type": TOOL_STARTED, "data": {"sessionID": "ses_x", "id": "c"}}));
         assert!(
-            matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. } if d.display() == "?")
+            matches!(ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if d.display() == "?")
         );
     }
 
@@ -416,7 +416,7 @@ mod tests {
                 "data": {"sessionID": "ses_x", "id": "call_abc"}}));
             assert!(
                 matches!(got.as_slice(), [AgentEvent::Identity { session_id, cwd: Some(_), .. },
-                    AgentEvent::ActivityEnd { tool_use_id: Some(id), .. }]
+                    AgentEvent::ToolUseEnd { tool_use_id: Some(id), .. }]
                 if session_id == "ses_x" && id == "call_abc"),
                 "{ev}: {got:?}"
             );
@@ -467,12 +467,12 @@ mod tests {
             "source": {"type": "tool", "messageID": "msg_1", "id": "call_abc"}}}));
         assert!(matches!(&evs[0], AgentEvent::Identity { .. }));
         assert!(
-            matches!(&evs[1], AgentEvent::Waiting { reason, tool_use_id: Some(id), .. }
+            matches!(&evs[1], AgentEvent::UserActionRequest { reason, tool_use_id: Some(id), .. }
             if reason == "bash" && id == "call_abc")
         );
         let bare = decode(json!({"type": PERMISSION_ASKED, "data": {"sessionID": "ses_x"}}));
         assert!(
-            matches!(bare, AgentEvent::Waiting { reason, tool_use_id: None, .. } if reason == "permission")
+            matches!(bare, AgentEvent::UserActionRequest { reason, tool_use_id: None, .. } if reason == "permission")
         );
     }
 

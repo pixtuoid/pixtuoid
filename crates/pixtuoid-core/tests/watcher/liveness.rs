@@ -360,7 +360,7 @@ async fn probe_failure_changes_nothing() {
     let mut got_activity = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { agent_id, .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { agent_id, .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
             && agent_id == expected
         {

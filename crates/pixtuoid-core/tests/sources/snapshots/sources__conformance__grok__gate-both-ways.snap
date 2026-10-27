@@ -6,7 +6,7 @@ expression: events
     agent_id: 9736723902978984545
     model: grok-4.6
     effort: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 9736723902978984545
     tool_use_id: call-82befd5f-87a8-4a1b-b5d4-9b1938c92ddc-0
     detail:
@@ -14,7 +14,7 @@ expression: events
         display: run_terminal_command
 - TurnEnd:
     agent_id: 9736723902978984545
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 9736723902978984545
     tool_use_id: call-82befd5f-87a8-4a1b-b5d4-9b1938c92ddc-0
 - SessionEnd:
@@ -37,7 +37,7 @@ expression: events
     source: grok
     session_id: 01a0064a-e4c0-7c92-8ac0-b9e363af3aa6
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 9736723902978984545
     tool_use_id: call-82befd5f-87a8-4a1b-b5d4-9b1938c92ddc-0
     detail:
@@ -48,7 +48,7 @@ expression: events
     source: grok
     session_id: 01a0064a-e4c0-7c92-8ac0-b9e363af3aa6
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 9736723902978984545
     tool_use_id: call-82befd5f-87a8-4a1b-b5d4-9b1938c92ddc-0
 - SessionEnd:

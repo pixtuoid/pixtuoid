@@ -17,7 +17,7 @@ expression: events
     source: cursor
     session_id: 033a748e-f18a-4217-a911-69f46ec0c489
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 1262623490786732012
     tool_use_id: ~
     detail:
@@ -32,7 +32,7 @@ expression: events
     source: cursor
     session_id: 033a748e-f18a-4217-a911-69f46ec0c489
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 1262623490786732012
     tool_use_id: ~
 - ModelInfo:

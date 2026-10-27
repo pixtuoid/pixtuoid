@@ -6,13 +6,13 @@ expression: events
     agent_id: 13226873432022978193
     model: grok-4.6
     effort: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 13226873432022978193
     tool_use_id: call_d9xIA_j6IbRORaFo
     detail:
       Generic:
         display: run_terminal_command
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 13226873432022978193
     tool_use_id: call_d9xIA_j6IbRORaFo
 - TurnEnd:
@@ -37,7 +37,7 @@ expression: events
     source: grok
     session_id: 01a17609-7cb5-7a22-9e0d-db51418a413f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 13226873432022978193
     tool_use_id: call_d9xIA_j6IbRORaFo
     detail:
@@ -48,7 +48,7 @@ expression: events
     source: grok
     session_id: 01a17609-7cb5-7a22-9e0d-db51418a413f
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 13226873432022978193
     reason: Tool permission requested
 - Identity:
@@ -56,7 +56,7 @@ expression: events
     source: grok
     session_id: 01a17609-7cb5-7a22-9e0d-db51418a413f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 13226873432022978193
     tool_use_id: call_d9xIA_j6IbRORaFo
 - TurnEnd:

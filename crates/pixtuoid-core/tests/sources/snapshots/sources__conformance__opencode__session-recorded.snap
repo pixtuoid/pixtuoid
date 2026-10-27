@@ -27,7 +27,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14713238338899776042
     tool_use_id: call_00_Mdmqdfw7LbPWBnKopAul5128
     detail:
@@ -38,7 +38,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14713238338899776042
     tool_use_id: call_00_Mdmqdfw7LbPWBnKopAul5128
 - Identity:
@@ -46,7 +46,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14713238338899776042
     tool_use_id: call_00_PbQGvTyVHjiEVFcGIAxT0383
     detail:
@@ -57,7 +57,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14713238338899776042
     tool_use_id: call_00_PbQGvTyVHjiEVFcGIAxT0383
 - Identity:
@@ -65,7 +65,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14713238338899776042
     tool_use_id: call_00_DLuPvdg14pUXhocfirg30399
     detail:
@@ -76,7 +76,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14713238338899776042
     tool_use_id: call_01_n3zyBTBjreJEm7bLIhQt2194
     detail:
@@ -87,7 +87,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14713238338899776042
     tool_use_id: call_00_DLuPvdg14pUXhocfirg30399
 - Identity:
@@ -95,7 +95,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 14713238338899776042
     reason: shell
     tool_use_id: call_01_n3zyBTBjreJEm7bLIhQt2194
@@ -104,7 +104,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14713238338899776042
     tool_use_id: call_01_n3zyBTBjreJEm7bLIhQt2194
 - Identity:
@@ -112,7 +112,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14713238338899776042
     tool_use_id: call_00_CsfLiRTSh5dPH4PAwUsZ5285
     detail:
@@ -123,7 +123,7 @@ expression: events
     source: opencode
     session_id: ses_ecde23022ffe4Ops9GpIoAKA9l
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14713238338899776042
     tool_use_id: call_00_CsfLiRTSh5dPH4PAwUsZ5285
 - Identity:

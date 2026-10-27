@@ -612,7 +612,7 @@ fn codex_subagent_cascades_with_parent_on_session_end() {
 }
 
 #[test]
-fn hook_activity_start_for_unknown_id_synthesizes_slot_and_goes_active() {
+fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_active() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "gated-sess");
@@ -829,7 +829,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         .expect("registered once the desk freed");
     assert!(
         matches!(slot.state, ActivityState::Active { .. }),
-        "the JSONL ActivityStart must not be dedup-eaten by the refused hook's record"
+        "the JSONL ToolUseStart must not be dedup-eaten by the refused hook's record"
     );
 }
 

@@ -143,10 +143,10 @@ pub(crate) fn inject_openclaw_presence(
                 active_sessions,
                 last_seen: now,
                 entered_at,
-                in_flight_runs: runs
+                in_flight_turns: runs
                     .iter()
                     // Fresh leases at `now` so the snapshot renders the BUSY mascot.
-                    .map(|r| (r.clone(), now))
+                    .map(|r| (pixtuoid_core::state::TurnKey::Id(r.as_str().into()), now))
                     .collect(),
                 // Distinct per instance: a shared pid would make one exit receipt
                 // look like every gateway's.

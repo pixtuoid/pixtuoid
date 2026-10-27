@@ -142,13 +142,13 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         "SessionStart" | "UserPromptSubmit" => Ok(vec![start()]),
         "SubagentStart" => Ok(vec![
             register(),
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id: call_id(),
                 detail: Some(ToolDetail::Task),
             },
         ]),
-        "SubagentStop" => Ok(vec![AgentEvent::ActivityEnd {
+        "SubagentStop" => Ok(vec![AgentEvent::ToolUseEnd {
             agent_id,
             tool_use_id: call_id(),
         }]),
@@ -162,7 +162,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 });
             Ok(vec![
                 register(),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
                     detail: Some(rx_tool_detail(tool, obj.get("toolArgs"))),
@@ -180,13 +180,13 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 crate::source::drift::missing_field(SOURCE_NAME, "PostToolUse", "toolName");
             }
             if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
-                events.push(AgentEvent::ActivityStart {
+                events.push(AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
                     detail: Some(ToolDetail::Task),
                 });
             }
-            events.push(AgentEvent::ActivityEnd {
+            events.push(AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: None,
             });
@@ -205,7 +205,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 .unwrap_or("waiting");
             Ok(vec![
                 register(),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: ellipsize(msg, MAX_DECODED_FIELD_CHARS),
                     tool_use_id: None,
@@ -241,7 +241,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             };
             Ok(vec![
                 register(),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: ellipsize(&reason, MAX_DECODED_FIELD_CHARS),
                     tool_use_id: None,
@@ -353,7 +353,7 @@ mod tests {
             "toolName": "bash", "toolArgs": {"command": "go test ./..."}
         }));
         assert!(
-            matches!(bash, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(bash, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "bash: go test ./...")
         );
         let grep = decode(json!({
@@ -361,7 +361,7 @@ mod tests {
             "toolName": "grep", "toolArgs": {"pattern": "TODO", "path": "src"}
         }));
         assert!(
-            matches!(grep, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(grep, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "grep: src")
         );
     }
@@ -382,7 +382,7 @@ mod tests {
                 "toolName": tool, "toolArgs": {"prompt": "do a thing"}
             }));
             assert!(
-                matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if d.is_task()),
+                matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if d.is_task()),
                 "{tool} must map to ToolDetail::Task"
             );
         }
@@ -394,7 +394,7 @@ mod tests {
                 "event": "PreToolUse", "sessionId": "s", "cwd": "/r", "toolName": tool, "toolArgs": args
             }));
             assert!(
-                matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()),
+                matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if !d.is_task()),
                 "{tool} must not map to ToolDetail::Task"
             );
         }
@@ -423,8 +423,8 @@ mod tests {
                 post("explore").as_slice(),
                 [
                     _,
-                    AgentEvent::ActivityStart { tool_use_id: None, detail: Some(d), .. },
-                    AgentEvent::ActivityEnd { tool_use_id: None, .. },
+                    AgentEvent::ToolUseStart { tool_use_id: None, detail: Some(d), .. },
+                    AgentEvent::ToolUseEnd { tool_use_id: None, .. },
                 ] if d.is_task()
             ),
             "{:?}",
@@ -433,7 +433,7 @@ mod tests {
         assert!(
             matches!(
                 post("read_file").as_slice(),
-                [_, AgentEvent::ActivityEnd { .. }]
+                [_, AgentEvent::ToolUseEnd { .. }]
             ),
             "{:?}",
             post("read_file")
@@ -449,7 +449,7 @@ mod tests {
             "subject": "rm -rf ./build",
             "toolArgs": {"command": "rm -rf ./build"}
         }));
-        assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
+        assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
             if reason == "approval: bash rm -rf ./build"));
     }
 
@@ -458,14 +458,14 @@ mod tests {
         let ev = decode(json!({
             "event": "PermissionRequest", "sessionId": "s", "cwd": "/r", "toolName": "write_file"
         }));
-        assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
+        assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
             if reason == "approval: write_file"));
     }
 
     #[test]
     fn permission_request_without_tool_falls_back() {
         let ev = decode(json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/r"}));
-        assert!(matches!(ev, AgentEvent::Waiting { reason, .. }
+        assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
             if reason == "approval required"));
     }
 
@@ -477,7 +477,7 @@ mod tests {
             "toolName": "bash", "subject": long
         }));
         match &ev {
-            AgentEvent::Waiting { reason, .. } => {
+            AgentEvent::UserActionRequest { reason, .. } => {
                 assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
                 assert!(reason.ends_with('…'));
             }
@@ -533,14 +533,14 @@ mod tests {
     #[test]
     fn notification_without_message_falls_back_to_waiting() {
         let ev = decode(json!({"event": "Notification", "sessionId": "s", "cwd": "/r"}));
-        assert!(matches!(ev, AgentEvent::Waiting { reason, .. } if reason == "waiting"));
+        assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. } if reason == "waiting"));
     }
 
     #[test]
     fn pre_tool_use_without_tool_name_displays_question_mark() {
         let ev = decode(json!({"event": "PreToolUse", "sessionId": "s", "cwd": "/r"}));
         assert!(
-            matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(ev, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "?")
         );
     }
@@ -553,7 +553,7 @@ mod tests {
             "toolArgs": {"path": "x.go", "subagent_type": null}
         }));
         assert!(
-            matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()),
+            matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if !d.is_task()),
             "spoofed subagent_type must stay Generic"
         );
     }
@@ -574,7 +574,7 @@ mod tests {
         );
         assert!(
             evs.iter().any(
-                |e| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == child)
+                |e| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == child)
             ),
             "{evs:?}"
         );
@@ -604,7 +604,7 @@ mod tests {
             "toolArgs": {"prompt": "read the note"}
         }));
         assert!(
-            matches!(&start, AgentEvent::ActivityStart { agent_id, tool_use_id, detail: Some(d) }
+            matches!(&start, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail: Some(d) }
                 if *agent_id == parent && *tool_use_id == call && d.is_task()),
             "{start:?}"
         );
@@ -613,7 +613,7 @@ mod tests {
         }));
         assert_eq!(
             stop,
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id: parent,
                 tool_use_id: call
             }

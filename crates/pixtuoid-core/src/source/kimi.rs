@@ -41,8 +41,8 @@ pub const SOURCE_NAME: &str = "kimi";
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
 /// - `PostToolUseFailure` — a FAILED tool fires this beside/instead of
-///   `PostToolUse`; it must close the activity or the tool's `ActivityStart`
-///   lingers Active. Firing BOTH is harmless: the second `ActivityEnd` no-ops
+///   `PostToolUse`; it must close the activity or the tool's `ToolUseStart`
+///   lingers Active. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
 /// - `StopFailure` — a failed turn end; settle to idle like `Stop`.
 ///   Identity-less: an end alone proves too little to label a session, so an
@@ -56,7 +56,7 @@ pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<Age
             let tool_use_id = kimi_tool_call_id(obj);
             Ok(Some(vec![
                 AgentEvent::identity(agent_id, SOURCE_NAME, session_id, cwd),
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,
                 },
@@ -116,7 +116,7 @@ mod tests {
         })))
         .expect("decodes")
         .expect("claims the event");
-        assert_eq!(evs.len(), 2, "Identity + ActivityEnd, got {evs:?}");
+        assert_eq!(evs.len(), 2, "Identity + ToolUseEnd, got {evs:?}");
         match &evs[0] {
             AgentEvent::Identity {
                 agent_id,
@@ -136,14 +136,14 @@ mod tests {
             other => panic!("expected leading Identity, got {other:?}"),
         }
         match &evs[1] {
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
             } => {
                 assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "session_abc"));
                 assert_eq!(tool_use_id.as_deref(), Some("t1"));
             }
-            other => panic!("expected ActivityEnd, got {other:?}"),
+            other => panic!("expected ToolUseEnd, got {other:?}"),
         }
     }
 
@@ -244,7 +244,7 @@ mod tests {
         assert!(
             evs.iter().any(|e| matches!(
                 e,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: None,
                     ..
                 }

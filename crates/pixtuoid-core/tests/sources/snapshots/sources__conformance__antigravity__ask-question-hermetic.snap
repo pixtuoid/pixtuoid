@@ -2,11 +2,11 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
-- Waiting:
+- UserActionRequest:
     agent_id: 8763791353543374442
     reason: asking permission
     tool_use_id: ag-2
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 8763791353543374442
     tool_use_id: ag-2
 - SessionStart:
@@ -25,7 +25,7 @@ expression: events
     source: antigravity
     session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 8763791353543374442
     reason: asking permission
     tool_use_id: ag-2
@@ -34,7 +34,7 @@ expression: events
     source: antigravity
     session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 8763791353543374442
     tool_use_id: ag-2
 - TurnEnd:

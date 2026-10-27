@@ -17,7 +17,7 @@ expression: events
     source: hermes
     session_id: 20261020_005045_5564c8
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14295621919312884870
     tool_use_id: call_eBKq3Wx7va_BnsUw
     detail:
@@ -28,7 +28,7 @@ expression: events
     source: hermes
     session_id: 20261020_005045_5564c8
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14295621919312884870
     tool_use_id: call_eBKq3Wx7va_BnsUw
 - Identity:

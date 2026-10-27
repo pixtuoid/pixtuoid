@@ -8,16 +8,16 @@ expression: events
     session_id: 82c360e3-efb1-4f04-ba4a-1e583feaaba0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 5472028673071249298
     tool_use_id: toolu_016imcdqh2f4TFfEMGKnot31
     detail:
       Generic:
         display: "bash: rm NOTE.txt"
-- Waiting:
+- UserActionRequest:
     agent_id: 5472028673071249298
     reason: "permission: shell"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 5472028673071249298
     tool_use_id: toolu_016imcdqh2f4TFfEMGKnot31
 - ModelInfo:

@@ -72,7 +72,7 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
         Beat {
             at_ms,
             transport: Transport::Hook,
-            event: AgentEvent::ActivityStart {
+            event: AgentEvent::ToolUseStart {
                 agent_id: cast_id(i),
                 tool_use_id: Some(format!("hero-{i}-{tuid}")),
                 detail: Some(ToolDetail::Generic {
@@ -83,7 +83,7 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
         Beat {
             at_ms: at_ms + BURST_MS,
             transport: Transport::Hook,
-            event: AgentEvent::ActivityEnd {
+            event: AgentEvent::ToolUseEnd {
                 agent_id: cast_id(i),
                 tool_use_id: Some(format!("hero-{i}-{tuid}")),
             },
@@ -140,7 +140,7 @@ pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)>
             let tuid = format!("hire-{k}-{b}");
             out.push((
                 at,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id: id,
                     tool_use_id: Some(tuid.clone()),
                     detail: Some(ToolDetail::Generic {
@@ -150,7 +150,7 @@ pub(crate) fn hire_beats(id: AgentId, session: String) -> Vec<(u64, AgentEvent)>
             ));
             out.push((
                 at + BURST_MS,
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id: id,
                     tool_use_id: Some(tuid),
                 },
@@ -199,26 +199,26 @@ pub(crate) fn lobster_beats() -> Vec<PresenceBeat> {
         (25_000, GatewayUp { pid: None }),
         (
             40_000,
-            RunStarted {
-                run_key: "hero-run-1".into(),
+            TurnStarted {
+                turn: pixtuoid_core::state::TurnKey::Id("hero-turn-1".into()),
             },
         ),
         (
             62_000,
-            RunEnded {
-                run_key: "hero-run-1".into(),
+            TurnEnded {
+                turn: pixtuoid_core::state::TurnKey::Id("hero-turn-1".into()),
             },
         ),
         (
             78_000,
-            RunStarted {
-                run_key: "hero-run-2".into(),
+            TurnStarted {
+                turn: pixtuoid_core::state::TurnKey::Id("hero-turn-2".into()),
             },
         ),
         (
             96_000,
-            RunEnded {
-                run_key: "hero-run-2".into(),
+            TurnEnded {
+                turn: pixtuoid_core::state::TurnKey::Id("hero-turn-2".into()),
             },
         ),
         (112_000, GatewayDown),
@@ -358,7 +358,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(Beat {
         at_ms: 58_000,
         transport: Transport::Hook,
-        event: AgentEvent::ActivityStart {
+        event: AgentEvent::ToolUseStart {
             agent_id: cast_id(6),
             tool_use_id: Some("hero-6-gated".to_string()),
             detail: Some(ToolDetail::Generic {
@@ -369,7 +369,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(Beat {
         at_ms: 58_400,
         transport: Transport::Hook,
-        event: AgentEvent::Waiting {
+        event: AgentEvent::UserActionRequest {
             agent_id: cast_id(6),
             reason: "permission".to_string(),
             tool_use_id: None,
@@ -378,7 +378,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(Beat {
         at_ms: 70_500,
         transport: Transport::Hook,
-        event: AgentEvent::ActivityEnd {
+        event: AgentEvent::ToolUseEnd {
             agent_id: cast_id(6),
             tool_use_id: Some("hero-6-gated".to_string()),
         },

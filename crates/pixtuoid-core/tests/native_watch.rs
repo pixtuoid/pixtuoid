@@ -218,7 +218,7 @@ async fn a_relative_root_keys_each_transcript_once() {
     )
     .unwrap();
     let is_activity =
-        |e: &AgentEvent| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == id);
+        |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
     assert!(collect_until(&mut rx, &mut events, is_activity).await);
     // Quiet: a second cursor's replay would land beside the activity.
     while let Ok(Some((_, e))) = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
@@ -365,7 +365,7 @@ mod held_open {
         file.write_all(format!("{}\n", wire.activity).as_bytes())
             .unwrap();
         file.flush().unwrap();
-        let is_activity = |e: &AgentEvent| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == id);
+        let is_activity = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
         assert!(
             within(&mut rx, ATTACH_BOUND, is_activity).await,
             "{}: an append to the still-open transcript waited for close or the poll",

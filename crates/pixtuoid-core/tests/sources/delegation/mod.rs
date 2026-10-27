@@ -78,7 +78,7 @@ fn tasks(evs: &[AgentEvent]) -> usize {
         .filter(|e| {
             matches!(
                 e,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Task),
                     ..
                 }
@@ -190,7 +190,7 @@ fn the_task_detail_lands_on_the_call_actually_named_task() {
         let starts: Vec<(&Option<String>, bool)> = evs
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id,
                     detail,
                     ..

@@ -16,11 +16,11 @@ expression: events
 - Usage:
     agent_id: 18016735573389584401
     fresh_tokens: 26612
-- ActivityStart:
+- ToolUseStart:
     agent_id: 18016735573389584401
     tool_use_id: toolu_01FciawEpZhEAaTmKU2uqhsX
     detail: Task
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 18016735573389584401
     tool_use_id: toolu_01FciawEpZhEAaTmKU2uqhsX
 - ModelInfo:

@@ -676,7 +676,7 @@ fn mascot_placements(
                 on_roster: true,
                 key,
                 stance,
-                runs: presence.in_flight_runs.len() as u32,
+                runs: presence.in_flight_turns.len() as u32,
                 carried: walk.carried(),
             });
         }

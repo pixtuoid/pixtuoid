@@ -170,13 +170,16 @@ fn state_count_maps_each_kind() {
 // set, never stored — without one the fixture is silently Idle.
 fn daemon(state: pixtuoid_core::state::DaemonState) -> pixtuoid_core::state::DaemonPresence {
     use pixtuoid_core::state::{DaemonLiveness, DaemonState};
-    let (liveness, in_flight_runs) = match state {
+    let (liveness, in_flight_turns) = match state {
         DaemonState::Idle => (DaemonLiveness::UP, Default::default()),
         DaemonState::Busy => (
             DaemonLiveness::UP,
-            [("fixture-run".to_string(), SystemTime::UNIX_EPOCH)]
-                .into_iter()
-                .collect::<std::collections::BTreeMap<String, SystemTime>>(),
+            [(
+                pixtuoid_core::state::TurnKey::Id("fixture-run".into()),
+                SystemTime::UNIX_EPOCH,
+            )]
+            .into_iter()
+            .collect::<std::collections::HashMap<pixtuoid_core::state::TurnKey, SystemTime>>(),
         ),
         DaemonState::Degraded => (DaemonLiveness::Up { degraded: true }, Default::default()),
         DaemonState::Down => (DaemonLiveness::Down, Default::default()),
@@ -186,7 +189,7 @@ fn daemon(state: pixtuoid_core::state::DaemonState) -> pixtuoid_core::state::Dae
         active_sessions: 0,
         last_seen: SystemTime::UNIX_EPOCH,
         entered_at: SystemTime::UNIX_EPOCH,
-        in_flight_runs,
+        in_flight_turns,
         current_pid: None,
     }
 }

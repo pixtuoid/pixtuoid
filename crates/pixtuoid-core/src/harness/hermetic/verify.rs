@@ -896,7 +896,7 @@ fn started_in(
 
 fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label, String)>) {
     let named = events.iter().any(|e| {
-        matches!(e, AgentEvent::ActivityStart { detail: Some(d), .. }
+        matches!(e, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if !d.display().trim().is_empty() && d.display() != "?")
     });
     if !named {
@@ -912,7 +912,7 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     if !events.iter().any(|e| {
         matches!(
             e,
-            AgentEvent::ActivityEnd { .. } | AgentEvent::TurnEnd { .. }
+            AgentEvent::ToolUseEnd { .. } | AgentEvent::TurnEnd { .. }
         )
     }) {
         findings.push((Label::Fail, "the tool never ended".into()));
@@ -937,21 +937,21 @@ fn permission(
         events.iter().filter_map(pick).collect()
     };
     let waited = calls(|e| match e {
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             tool_use_id: Some(t),
             ..
         } => Some(t),
         _ => None,
     });
     let ended_calls = calls(|e| match e {
-        AgentEvent::ActivityEnd {
+        AgentEvent::ToolUseEnd {
             tool_use_id: Some(t),
             ..
         } => Some(t),
         _ => None,
     });
     let started = calls(|e| match e {
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             tool_use_id: Some(t),
             ..
         } => Some(t),
@@ -966,8 +966,8 @@ fn permission(
         // `a_permission_script_calls_no_tool_after_its_refusal` forbids a
         // retry, and the note's survival proves the refused call never ran.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
-        let starts = count(|e| matches!(e, AgentEvent::ActivityStart { .. }));
-        let ends = count(|e| matches!(e, AgentEvent::ActivityEnd { .. }));
+        let starts = count(|e| matches!(e, AgentEvent::ToolUseStart { .. }));
+        let ends = count(|e| matches!(e, AgentEvent::ToolUseEnd { .. }));
         let turn_ends = count(|e| matches!(e, AgentEvent::TurnEnd { .. }));
         // An End naming a call no Start opened is not this branch's to count.
         ended_calls.is_empty() && ends == starts && turn_ends == 1
@@ -1022,7 +1022,7 @@ fn delegated(
     let tasks: BTreeSet<(AgentId, &str)> = events
         .iter()
         .filter_map(|e| match e {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id: Some(t),
                 detail: Some(d),
@@ -1043,24 +1043,24 @@ fn delegated(
     let mut untracked_ends = BTreeSet::new();
     for e in events {
         match e {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id: None,
                 detail: Some(d),
             } if d.is_task() => {
                 standing.insert(*agent_id);
             }
-            AgentEvent::ActivityStart { agent_id, .. } => {
+            AgentEvent::ToolUseStart { agent_id, .. } => {
                 standing.remove(agent_id);
             }
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: None,
             }
             | AgentEvent::TurnEnd { agent_id } => {
                 untracked_ends.extend(standing.take(agent_id));
             }
-            AgentEvent::ActivityEnd { agent_id, .. } => {
+            AgentEvent::ToolUseEnd { agent_id, .. } => {
                 standing.remove(agent_id);
             }
             _ => {}
@@ -1071,7 +1071,7 @@ fn delegated(
             || events.iter().any(|e| match e {
                 AgentEvent::SessionEnd { agent_id, .. } => *agent_id == child,
                 // The reducer's b1 cascade walks a drained Task's subtree out.
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id: Some(t),
                 } if inference.dispatch_end_ends_child(true) => {
@@ -1108,7 +1108,7 @@ fn subagent(
         events
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: Some(t),
                     ..
@@ -1128,7 +1128,7 @@ fn subagent(
     }
     let works = |id: AgentId| {
         events.iter().any(|e| {
-            matches!(e, AgentEvent::ActivityStart { agent_id, detail, .. }
+            matches!(e, AgentEvent::ToolUseStart { agent_id, detail, .. }
                 if *agent_id == id && !detail.as_ref().is_some_and(|d| d.is_task()))
         })
     };
@@ -1238,7 +1238,7 @@ fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label,
 pub(super) fn settled(shape: Shape) -> Option<&'static str> {
     match shape {
         Shape::ToolRun => Some("idle"),
-        // `RunFailed` latches it (`crate::source::daemon`).
+        // `TurnFailed` latches it (`crate::source::daemon`).
         Shape::ModelError => Some("degraded"),
         Shape::Permission
         | Shape::Subagent
@@ -1762,19 +1762,19 @@ mod tests {
     #[test]
     fn an_orphaned_id_bearing_end_cannot_mask_an_idless_calls_missing_end() {
         let agent_id = AgentId::from_parts("reasonix", "p");
-        let end = |tool_use_id: Option<&str>| AgentEvent::ActivityEnd {
+        let end = |tool_use_id: Option<&str>| AgentEvent::ToolUseEnd {
             agent_id,
             tool_use_id: tool_use_id.map(Into::into),
         };
         let events = |read_ends_as: Option<&str>| {
             vec![
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
                     detail: None,
                 },
                 end(read_ends_as),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: "approval".into(),
                     tool_use_id: None,
@@ -1804,16 +1804,16 @@ mod tests {
     #[test]
     fn the_turns_end_is_counted_apart_from_the_calls_ends() {
         let agent_id = AgentId::from_parts("reasonix", "p");
-        let start = AgentEvent::ActivityStart {
+        let start = AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: None,
             detail: None,
         };
-        let end = AgentEvent::ActivityEnd {
+        let end = AgentEvent::ToolUseEnd {
             agent_id,
             tool_use_id: None,
         };
-        let wait = AgentEvent::Waiting {
+        let wait = AgentEvent::UserActionRequest {
             agent_id,
             reason: "approval".into(),
             tool_use_id: None,
@@ -2099,12 +2099,12 @@ mod tests {
             cwd: PathBuf::from("/proj"),
             parent_id,
         };
-        let started = |agent_id, detail| AgentEvent::ActivityStart {
+        let started = |agent_id, detail| AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: None,
             detail: Some(detail),
         };
-        let end = |agent_id| AgentEvent::ActivityEnd {
+        let end = |agent_id| AgentEvent::ToolUseEnd {
             agent_id,
             tool_use_id: None,
         };
@@ -2158,7 +2158,7 @@ mod tests {
             cwd: PathBuf::from("/proj"),
             parent_id,
         };
-        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+        let started = |agent_id, id: &str, detail| AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: Some(id.into()),
             detail: Some(detail),
@@ -2174,7 +2174,7 @@ mod tests {
                     display: "view".into(),
                 },
             ),
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
             },
@@ -2205,7 +2205,7 @@ mod tests {
         // turn; copilot's `-p` ends its session instead (`shut_down` below).
         let run = vec![
             session(parent, "root", None),
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
                 detail: Some(ToolDetail::Task),
@@ -2215,7 +2215,7 @@ mod tests {
                 agent_id: child,
                 as_child: true,
             },
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
             },
@@ -2262,7 +2262,7 @@ mod tests {
             AgentId::from_parts("opencode", "ses_parent"),
             AgentId::from_parts("opencode", "ses_child"),
         );
-        let started = |agent_id, id: &str, detail| AgentEvent::ActivityStart {
+        let started = |agent_id, id: &str, detail| AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: Some(id.into()),
             detail: Some(detail),
@@ -2713,7 +2713,7 @@ mod tests {
     #[test]
     fn a_tool_its_turn_ended_has_ended() {
         let agent_id = AgentId::from_parts("kimi", "session");
-        let start = AgentEvent::ActivityStart {
+        let start = AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: Some("call_1".into()),
             detail: Some("Bash: ls".into()),
@@ -3074,7 +3074,7 @@ mod tests {
         assert_eq!(judged(AgentEvent::turn_end(agent_id)), vec![]);
         for tool_use_id in [None, Some("call".to_owned())] {
             assert!(
-                judged(AgentEvent::ActivityEnd {
+                judged(AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id
                 })

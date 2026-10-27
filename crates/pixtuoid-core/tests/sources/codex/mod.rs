@@ -65,7 +65,7 @@ fn a_codex_child_works_under_its_root_and_its_stop_ends_it_alone() {
         d.events
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     detail: Some(d),
                     ..

@@ -24,7 +24,7 @@ use serde_json::Value;
 
 use crate::source::daemon::{DaemonPresenceUpdate, DecodedPresence};
 use crate::source::registry::HookObject;
-use crate::state::DaemonInstanceId;
+use crate::state::{DaemonInstanceId, TurnKey};
 
 /// The OpenClaw daemon source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "openclaw";
@@ -42,13 +42,15 @@ const GATEWAY_PORT_FIELD: &str = "gatewayPort";
 /// short-circuits to `"_"` rather than falling through to `sessionId`. Coarse BY
 /// DESIGN — the last-seen TTL decay is the real backstop, so the key only affects
 /// busy-bubble intensity, never correctness.
-fn run_key(obj: &serde_json::Map<String, Value>) -> String {
-    obj.get("runId")
-        .and_then(|s| s.as_str())
-        .or_else(|| obj.get("sessionId").and_then(|s| s.as_str()))
-        .filter(|s| !s.is_empty())
-        .unwrap_or("_")
-        .to_string()
+fn turn_key(obj: &serde_json::Map<String, Value>) -> TurnKey {
+    TurnKey::Id(
+        obj.get("runId")
+            .and_then(|s| s.as_str())
+            .or_else(|| obj.get("sessionId").and_then(|s| s.as_str()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or("_")
+            .into(),
+    )
 }
 
 /// Narrow the wire `gatewayPort` to this gateway's stable instance id; an envelope
@@ -99,18 +101,18 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
         "gateway_stop" => vec![DaemonPresenceUpdate::GatewayDown],
         "session_start" => vec![DaemonPresenceUpdate::SessionStarted],
         "session_end" => vec![DaemonPresenceUpdate::SessionEnded],
-        "before_agent_run" => vec![DaemonPresenceUpdate::RunStarted {
-            run_key: run_key(obj),
+        "before_agent_run" => vec![DaemonPresenceUpdate::TurnStarted {
+            turn: turn_key(obj),
         }],
         "agent_end" => {
-            // The plugin's `errored` is the run's verdict. Degraded is sticky (no TTL
+            // The plugin's `errored` is the turn's verdict. Degraded is sticky (no TTL
             // heals it), so a missing field is no evidence of an error.
             let failed = obj.get("errored").and_then(Value::as_bool) == Some(true);
-            let run_key = run_key(obj);
+            let turn = turn_key(obj);
             vec![if failed {
-                DaemonPresenceUpdate::RunFailed { run_key }
+                DaemonPresenceUpdate::TurnFailed { turn }
             } else {
-                DaemonPresenceUpdate::RunEnded { run_key }
+                DaemonPresenceUpdate::TurnEnded { turn }
             }]
         }
         // An unmapped forwarded hook is a benign skip, but it breadcrumbs at `warn`:
@@ -224,27 +226,27 @@ mod tests {
     fn before_agent_run_and_agent_end_pair_on_runid() {
         assert_eq!(
             decode(json!({"type": "before_agent_run", "runId": "run_1", "sessionId": "s1"})),
-            vec![DaemonPresenceUpdate::RunStarted {
-                run_key: "run_1".into()
+            vec![DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("run_1".into())
             }]
         );
         assert_eq!(
             decode(json!({"type": "agent_end", "runId": "run_1", "sessionId": "s1"})),
-            vec![DaemonPresenceUpdate::RunEnded {
-                run_key: "run_1".into()
+            vec![DaemonPresenceUpdate::TurnEnded {
+                turn: TurnKey::Id("run_1".into())
             }]
         );
     }
 
     /// `success` says nothing of a provider failure; the plugin's `errored` does.
     #[test]
-    fn errored_alone_decides_a_failed_run() {
+    fn errored_alone_decides_a_failed_turn() {
         for success in [true, false] {
             assert_eq!(
                 decode(json!({"type": "agent_end", "runId": "r", "sessionId": "s",
                               "success": success, "errored": true})),
-                vec![DaemonPresenceUpdate::RunFailed {
-                    run_key: "r".into()
+                vec![DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("r".into())
                 }],
                 "success: {success}"
             );
@@ -252,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_turn_ends_the_run_without_degrading_the_gateway() {
+    fn a_cancelled_turn_ends_without_degrading_the_gateway() {
         for v in [
             json!({"type": "agent_end", "runId": "run_1", "sessionId": "s1",
                       "success": false, "errored": false}),
@@ -260,8 +262,8 @@ mod tests {
         ] {
             assert_eq!(
                 decode(v.clone()),
-                vec![DaemonPresenceUpdate::RunEnded {
-                    run_key: "run_1".into()
+                vec![DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("run_1".into())
                 }],
                 "an abort is an ordinary end, not a degradation: {v}"
             );
@@ -269,15 +271,15 @@ mod tests {
     }
 
     #[test]
-    fn agent_end_success_true_or_absent_decodes_to_run_ended() {
+    fn agent_end_success_true_or_absent_decodes_to_turn_ended() {
         for v in [
             json!({"type": "agent_end", "runId": "r", "sessionId": "s", "success": true}),
             json!({"type": "agent_end", "runId": "r", "sessionId": "s"}),
         ] {
             assert_eq!(
                 decode(v),
-                vec![DaemonPresenceUpdate::RunEnded {
-                    run_key: "r".into()
+                vec![DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("r".into())
                 }],
                 "success:true/absent must never false-degrade a healthy gateway"
             );
@@ -298,8 +300,8 @@ mod tests {
                           "success": false, "errored": true})),
             vec![
                 DaemonPresenceUpdate::PidSeen { pid: 8888 },
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "r".into()
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("r".into())
                 },
             ]
         );
@@ -314,11 +316,11 @@ mod tests {
     }
 
     #[test]
-    fn run_without_runid_falls_back_to_session_key() {
+    fn turn_without_runid_falls_back_to_session_key() {
         assert_eq!(
             decode(json!({"type": "before_agent_run", "sessionId": "s9"})),
-            vec![DaemonPresenceUpdate::RunStarted {
-                run_key: "s9".into()
+            vec![DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("s9".into())
             }]
         );
     }
@@ -340,8 +342,8 @@ mod tests {
         );
         assert_eq!(
             updates,
-            vec![DaemonPresenceUpdate::RunEnded {
-                run_key: "run_1".into()
+            vec![DaemonPresenceUpdate::TurnEnded {
+                turn: TurnKey::Id("run_1".into())
             }]
         );
     }
@@ -453,17 +455,17 @@ mod tests {
     }
 
     #[test]
-    fn run_key_fallbacks_are_coarse_by_design() {
+    fn turn_key_fallbacks_are_coarse_by_design() {
         assert_eq!(
             decode(json!({"type": "before_agent_run"})),
-            vec![DaemonPresenceUpdate::RunStarted {
-                run_key: "_".into()
+            vec![DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("_".into())
             }]
         );
         assert_eq!(
             decode(json!({"type": "before_agent_run", "runId": "", "sessionId": "s5"})),
-            vec![DaemonPresenceUpdate::RunStarted {
-                run_key: "_".into()
+            vec![DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("_".into())
             }],
             "an empty runId short-circuits to \"_\" (filter is after the or)"
         );

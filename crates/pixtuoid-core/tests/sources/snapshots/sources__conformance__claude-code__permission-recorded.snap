@@ -16,13 +16,13 @@ expression: events
 - Usage:
     agent_id: 79741326933634710
     fresh_tokens: 26466
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
     detail:
       Generic:
         display: "Bash: ls -la /private/tmp/pixtuoid-capture/pro…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 79741326933634710
     tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
 - ModelInfo:
@@ -39,13 +39,13 @@ expression: events
 - Usage:
     agent_id: 79741326933634710
     fresh_tokens: 339
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 79741326933634710
     tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
 - ModelInfo:
@@ -55,13 +55,13 @@ expression: events
 - Usage:
     agent_id: 79741326933634710
     fresh_tokens: 343
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01Defyp8XhSn3u9FgmXoBFJi
     detail:
       Generic:
         display: "Bash: rm /private/tmp/pixtuoid-capture/proj/NO…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 79741326933634710
     tool_use_id: toolu_01Defyp8XhSn3u9FgmXoBFJi
 - ModelInfo:
@@ -86,7 +86,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
     detail:
@@ -101,7 +101,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 79741326933634710
     reason: permission
 - Identity:
@@ -109,7 +109,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 79741326933634710
     tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
 - ModelInfo:
@@ -121,7 +121,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
     detail:
@@ -136,7 +136,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 79741326933634710
     tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
 - ModelInfo:
@@ -148,7 +148,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01Defyp8XhSn3u9FgmXoBFJi
     detail:
@@ -163,7 +163,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 79741326933634710
     reason: permission
 - Identity:
@@ -171,7 +171,7 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 79741326933634710
     reason: Claude is waiting for your input
 - SessionEnd:

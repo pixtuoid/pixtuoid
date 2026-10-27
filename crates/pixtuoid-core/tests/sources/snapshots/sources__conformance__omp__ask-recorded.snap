@@ -25,16 +25,16 @@ expression: events
 - Usage:
     agent_id: 4349876156057149153
     fresh_tokens: 594
-- ActivityStart:
+- ToolUseStart:
     agent_id: 4349876156057149153
     tool_use_id: call_00_hiuykNHdR1ojkFiZXHfb4236
     detail:
       Generic:
         display: "ask: Choosing new filename for NOTE.txt"
-- Waiting:
+- UserActionRequest:
     agent_id: 4349876156057149153
     reason: What should NOTE.txt be renamed to?
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 4349876156057149153
     tool_use_id: call_00_hiuykNHdR1ojkFiZXHfb4236
 - SessionEnd:

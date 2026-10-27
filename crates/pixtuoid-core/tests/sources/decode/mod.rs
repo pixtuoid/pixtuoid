@@ -43,7 +43,7 @@ fn load_jsonl(name: &str) -> serde_json::Value {
 fn decode_pre_tool_use_write_maps_to_typing() {
     let ev = decode_activity(load("pre_tool_use_write"));
     match ev {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             assert!(detail.unwrap().display().contains("Write"));
         }
         other => panic!("got {other:?}"),
@@ -396,12 +396,12 @@ fn codex_subagent_hook_coalesces_with_its_windows_rollout_path() {
 }
 
 #[test]
-fn cc_jsonl_assistant_tool_use_is_activity_start() {
+fn cc_jsonl_assistant_tool_use_is_tool_use_start() {
     let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
     let events = decode_cc_line(transcript, "claude-code", load_jsonl("assistant_tool_use"));
     assert_eq!(events.len(), 1);
     match &events[0] {
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             tool_use_id,
             detail,
             ..
@@ -414,12 +414,12 @@ fn cc_jsonl_assistant_tool_use_is_activity_start() {
 }
 
 #[test]
-fn cc_jsonl_tool_result_is_activity_end() {
+fn cc_jsonl_tool_result_is_tool_use_end() {
     let transcript = "/Users/me/.claude/projects/x/ses-abc.jsonl";
     let events = decode_cc_line(transcript, "claude-code", load_jsonl("tool_result"));
     assert_eq!(events.len(), 1);
     match &events[0] {
-        AgentEvent::ActivityEnd { tool_use_id, .. } => {
+        AgentEvent::ToolUseEnd { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("tu_123"));
         }
         other => panic!("got {other:?}"),
@@ -440,11 +440,11 @@ fn decode_hook_payload_with_multibyte_tool_input_does_not_panic() {
     });
     let ev = decode_activity(payload);
     match ev {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             let d = detail.expect("detail set");
             assert!(d.display().contains("Bash"), "got: {}", d.display());
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 
@@ -461,7 +461,7 @@ fn decode_pre_tool_use_carries_tool_use_id_from_payload() {
     });
     let ev = decode_activity(payload);
     match ev {
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             tool_use_id,
             detail,
             ..
@@ -486,7 +486,7 @@ fn decode_pre_tool_use_agent_tool_is_task() {
             "tool_input": { "description": "go", "subagent_type": "Explore" }
         });
         match decode_activity(payload) {
-            AgentEvent::ActivityStart { detail, .. } => assert!(
+            AgentEvent::ToolUseStart { detail, .. } => assert!(
                 detail.expect("detail set").is_task(),
                 "{tool} must be Task-detected"
             ),
@@ -507,7 +507,7 @@ fn subagent_dispatch_detected_by_subagent_type_under_novel_name() {
         "tool_input": { "description": "go", "subagent_type": "Explore" }
     });
     match decode_activity(payload) {
-        AgentEvent::ActivityStart { detail, .. } => assert!(
+        AgentEvent::ToolUseStart { detail, .. } => assert!(
             detail.expect("detail").is_task(),
             "a tool carrying subagent_type is a dispatch regardless of its name"
         ),
@@ -527,7 +527,7 @@ fn non_dispatch_tool_is_not_task() {
         "tool_input": { "file_path": "/x" }
     });
     match decode_activity(payload) {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             assert!(!detail.expect("detail").is_task(), "Read is not a dispatch")
         }
         other => panic!("got {other:?}"),
@@ -545,11 +545,11 @@ fn cc_jsonl_agent_tool_use_is_task() {
     });
     let events = decode_cc_line("/p/parent.jsonl", "claude-code", line);
     let task = events.iter().find_map(|e| match e {
-        AgentEvent::ActivityStart { detail, .. } => detail.as_ref(),
+        AgentEvent::ToolUseStart { detail, .. } => detail.as_ref(),
         _ => None,
     });
     assert!(
-        task.expect("ActivityStart present").is_task(),
+        task.expect("ToolUseStart present").is_task(),
         "the JSONL 'Agent' tool_use must be Task-detected too"
     );
 }
@@ -566,7 +566,7 @@ fn decode_post_tool_use_carries_tool_use_id_from_payload() {
     });
     let ev = decode_activity(payload);
     match ev {
-        AgentEvent::ActivityEnd { tool_use_id, .. } => {
+        AgentEvent::ToolUseEnd { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("toolu_01ABC"));
         }
         other => panic!("got {other:?}"),
@@ -630,13 +630,13 @@ fn ag_planner_response_keys_each_call_on_the_step_it_runs_as() {
     let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 2);
     match &events[0] {
-        AgentEvent::ActivityStart { tool_use_id, .. } => {
+        AgentEvent::ToolUseStart { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("ag-3"));
         }
         other => panic!("got {other:?}"),
     }
     match &events[1] {
-        AgentEvent::ActivityStart { tool_use_id, .. } => {
+        AgentEvent::ToolUseStart { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("ag-4"));
         }
         other => panic!("got {other:?}"),
@@ -644,7 +644,7 @@ fn ag_planner_response_keys_each_call_on_the_step_it_runs_as() {
 }
 
 #[test]
-fn ag_tool_result_emits_activity_end() {
+fn ag_tool_result_emits_tool_use_end() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
     let v = serde_json::json!({
         "step_index": 3,
@@ -654,7 +654,7 @@ fn ag_tool_result_emits_activity_end() {
     let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 1);
     match &events[0] {
-        AgentEvent::ActivityEnd { tool_use_id, .. } => {
+        AgentEvent::ToolUseEnd { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("ag-3"));
         }
         other => panic!("got {other:?}"),
@@ -675,7 +675,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
     let events_perm = antigravity::decode_ag_line(transcript, "antigravity", v_perm);
     assert_eq!(events_perm.len(), 1);
     match &events_perm[0] {
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             reason,
             tool_use_id,
             ..
@@ -696,7 +696,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
     let events_quest = antigravity::decode_ag_line(transcript, "antigravity", v_quest);
     assert_eq!(events_quest.len(), 1);
     match &events_quest[0] {
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             reason,
             tool_use_id,
             ..
@@ -796,8 +796,8 @@ fn decode_cc_hook_keys_on_session_id_ignoring_transcript_path() {
     });
     let ev = decode_activity(payload);
     let agent_id = match ev {
-        pixtuoid_core::source::AgentEvent::ActivityStart { agent_id, .. } => agent_id,
-        other => panic!("expected ActivityStart, got {other:?}"),
+        pixtuoid_core::source::AgentEvent::ToolUseStart { agent_id, .. } => agent_id,
+        other => panic!("expected ToolUseStart, got {other:?}"),
     };
     assert_eq!(
         agent_id,
@@ -821,7 +821,7 @@ fn decode_pre_tool_use_long_command_is_ellipsis_truncated() {
         "tool_input": { "command": long_cmd }
     });
     match decode_activity(payload) {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             let d = detail.expect("detail set");
             assert!(
                 d.display().ends_with('…'),
@@ -829,7 +829,7 @@ fn decode_pre_tool_use_long_command_is_ellipsis_truncated() {
                 d.display()
             );
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 
@@ -844,7 +844,7 @@ fn decode_pre_tool_use_missing_target_field_has_no_suffix() {
         "tool_input": {}
     });
     match decode_activity(payload) {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             let d = detail.expect("detail set");
             assert_eq!(
                 d.display(),
@@ -852,7 +852,7 @@ fn decode_pre_tool_use_missing_target_field_has_no_suffix() {
                 "absent target field must produce no `: <target>` suffix"
             );
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 
@@ -895,10 +895,10 @@ fn ag_skips_non_object_tool_call_and_keys_run_command() {
         "non-object tool_call must be skipped: {events:?}"
     );
     match &events[0] {
-        AgentEvent::ActivityStart { tool_use_id, .. } => {
+        AgentEvent::ToolUseStart { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 
@@ -910,7 +910,7 @@ fn ag_planner_response_without_tool_calls_emits_nothing() {
 }
 
 #[test]
-fn ag_grep_search_decodes_to_activity_start() {
+fn ag_grep_search_decodes_to_tool_use_start() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
     let v = json!({
         "step_index": 4,
@@ -922,10 +922,10 @@ fn ag_grep_search_decodes_to_activity_start() {
     let events = antigravity::decode_ag_line(transcript, "antigravity", v);
     assert_eq!(events.len(), 1);
     match &events[0] {
-        AgentEvent::ActivityStart { tool_use_id, .. } => {
+        AgentEvent::ToolUseStart { tool_use_id, .. } => {
             assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 
@@ -938,14 +938,14 @@ fn decode_hook_payload_missing_tool_name_still_succeeds() {
     });
     let ev = decode_activity(payload);
     match ev {
-        AgentEvent::ActivityStart { detail, .. } => {
+        AgentEvent::ToolUseStart { detail, .. } => {
             let d = detail.expect("detail set");
             assert!(
                 d.display().contains("?"),
                 "missing tool_name should fall back to '?'"
             );
         }
-        other => panic!("expected ActivityStart, got {other:?}"),
+        other => panic!("expected ToolUseStart, got {other:?}"),
     }
 }
 

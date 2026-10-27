@@ -188,7 +188,7 @@ fn waiting_sets_state_with_reason() {
 }
 
 #[test]
-fn tool_call_count_increments_on_activity_start() {
+fn tool_call_count_increments_on_tool_use_start() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/stats.jsonl");
@@ -229,7 +229,7 @@ fn tool_call_count_increments_on_activity_start() {
 }
 
 #[test]
-fn active_ms_does_not_double_count_on_duplicate_activity_end() {
+fn active_ms_does_not_double_count_on_duplicate_tool_use_end() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/dedup.jsonl");
@@ -290,7 +290,7 @@ fn active_ms_preserved_when_task_arrives_during_active_tool() {
     let t1 = t0 + Duration::from_secs(2);
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("task-1".into()),
             detail: Some(ToolDetail::Task),
@@ -338,7 +338,7 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
 
 // CC wire fact (captured live): when a permission Notification fires mid-tool
 // (PreToolUse(t1) → Notification → PostToolUse(t1)), the member call's
-// ActivityEnd carries the same tool_use_id that was Active when Waiting began —
+// ToolUseEnd carries the same tool_use_id that was Active when Waiting began —
 // so PostToolUse(t1) means the permission was granted and the Waiting resolved.
 #[test]
 fn a_member_end_while_waiting_resolves_to_idle() {

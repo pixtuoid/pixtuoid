@@ -27,7 +27,7 @@ expression: events
     source: opencode
     session_id: ses_e97093910ffeOO72auteldqkUl
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 6212484427229100480
     tool_use_id: call_8N9deXiQtja6iPjY
     detail:
@@ -38,7 +38,7 @@ expression: events
     source: opencode
     session_id: ses_e97093910ffeOO72auteldqkUl
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 6212484427229100480
     reason: shell
     tool_use_id: call_8N9deXiQtja6iPjY
@@ -47,7 +47,7 @@ expression: events
     source: opencode
     session_id: ses_e97093910ffeOO72auteldqkUl
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 6212484427229100480
     tool_use_id: call_8N9deXiQtja6iPjY
 - Identity:

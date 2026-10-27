@@ -546,7 +546,7 @@ pub(super) async fn check_session_ended(path: &Path, checker: SessionEndChecker)
 pub(super) const TASK_SCAN_BYTES: u64 = 256 * 1024;
 
 /// #222: tail-scan an oversized skipped span for IN-FLIGHT Task dispatches and
-/// re-emit exactly their `ActivityStart`s. Mid-attach to a delegating session
+/// re-emit exactly their `ToolUseStart`s. Mid-attach to a delegating session
 /// whose backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight
 /// dispatch line, leaving the reducer's `tasks_in_flight` empty: the parent never
 /// shows Delegating and the b1 completion cascade never arms.
@@ -570,7 +570,7 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
     for v in parsed {
         for ev in (decoders.decode_line)(&transcript_path_str, ctx.source, v) {
             match &ev {
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: Some(tuid),
                     detail: Some(d),
                     ..
@@ -579,7 +579,7 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
                         pending.push((tuid.clone(), ev));
                     }
                 }
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     tool_use_id: Some(tuid),
                     ..
                 } => {

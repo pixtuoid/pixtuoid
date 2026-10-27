@@ -22,7 +22,7 @@
 
 use std::time::SystemTime;
 
-use crate::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence, SceneState};
+use crate::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence, SceneState, TurnKey};
 
 #[cfg(feature = "native")]
 mod native;
@@ -48,21 +48,21 @@ pub enum DaemonPresenceUpdate {
     /// `session_end` — a session ended.
     SessionEnded,
     /// `before_agent_run` — a turn entered flight, keyed for self-healing busy.
-    RunStarted {
-        /// Correlates this turn with its later `RunEnded`/`RunFailed`.
-        run_key: String,
+    TurnStarted {
+        /// Correlates this turn with its later `TurnEnded`/`TurnFailed`.
+        turn: TurnKey,
     },
     /// A turn ended without a backend failure — completed, or cancelled by the
     /// user.
-    RunEnded {
-        /// The completed turn's correlation key (matches its `RunStarted`).
-        run_key: String,
+    TurnEnded {
+        /// The completed turn's correlation key (matches its `TurnStarted`).
+        turn: TurnKey,
     },
     /// A turn failed on the daemon's model backend (auth revoked, provider down).
     /// Drives `Degraded`.
-    RunFailed {
-        /// The failed turn's correlation key (matches its `RunStarted`).
-        run_key: String,
+    TurnFailed {
+        /// The failed turn's correlation key (matches its `TurnStarted`).
+        turn: TurnKey,
     },
     /// A live gateway pid OBSERVED on any event carrying `_pid` — adopted into
     /// `current_pid` ONLY when it was `None`, so a MID-ATTACH or a
@@ -176,7 +176,7 @@ impl DaemonPresence {
     /// count, so it does NOT use this.)
     fn clear_concurrency(&mut self) {
         self.active_sessions = 0;
-        self.in_flight_runs.clear();
+        self.in_flight_turns.clear();
     }
 
     /// Transition to `Down` + clear the live-work pair AND the armed pid, so a
@@ -230,7 +230,7 @@ pub fn apply_presence(
                 active_sessions: 0,
                 last_seen: now,
                 entered_at: now,
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: None,
             })
     };
@@ -265,25 +265,25 @@ pub fn apply_presence(
             // Deliberately does NOT resurrect, unlike its sibling arms.
             // Pinned by `session_end_after_a_gateway_stop_leaves_it_down`.
         }
-        RunStarted { run_key } => {
-            // Stamped with THIS observation, so the run ages on its own clock.
-            p.in_flight_runs.insert(run_key, now);
-            // Busy itself is DERIVED from the now-non-empty run set by
+        TurnStarted { turn } => {
+            // Stamped with THIS observation, so the turn ages on its own clock.
+            p.in_flight_turns.insert(turn, now);
+            // Busy itself is DERIVED from the now-non-empty turn set by
             // `display_state()`, never stored.
             p.liveness = DaemonLiveness::UP;
         }
-        RunEnded { run_key } => {
-            p.in_flight_runs.remove(&run_key);
-            if p.in_flight_runs.is_empty() {
-                // A clean run heals a prior Degraded and resurrects a Down daemon.
+        TurnEnded { turn } => {
+            p.in_flight_turns.remove(&turn);
+            if p.in_flight_turns.is_empty() {
+                // A clean turn heals a prior Degraded and resurrects a Down daemon.
                 p.liveness = DaemonLiveness::UP;
             }
         }
         // The gateway is alive but its model backend broke: Degraded persists until
-        // the next RunEnded / RunStarted / GatewayUp.
-        RunFailed { run_key } => {
-            p.in_flight_runs.remove(&run_key);
-            // Degraded regardless of any OTHER run still in flight — the projection
+        // the next TurnEnded / TurnStarted / GatewayUp.
+        TurnFailed { turn } => {
+            p.in_flight_turns.remove(&turn);
+            // Degraded regardless of any OTHER turn still in flight — the projection
             // renders Degraded over Busy (degraded checked first).
             p.liveness = DaemonLiveness::Up { degraded: true };
         }
@@ -312,11 +312,11 @@ pub fn apply_presence(
 /// INSTANCE-LOCALLY: each instance decays on its OWN `last_seen`, so traffic from
 /// gateway A can never renew gateway B. Per instance: each in-flight RUN expires
 /// `ttl.busy_decay_ms` after ITS OWN last observation (so a dropped `agent_end`
-/// self-heals even while the gateway keeps serving other runs — never a latch),
+/// self-heals even while the gateway keeps serving other turns — never a latch),
 /// any live state → DOWN after `ttl.presence_ttl_ms` of total silence (a kill),
-/// and a `Down` entry is REMOVED after `ttl.down_remove_ms`. Expiring a run lease
+/// and a `Down` entry is REMOVED after `ttl.down_remove_ms`. Expiring a turn lease
 /// never clears `degraded` — a separate axis only a real
-/// `RunEnded`/`RunStarted`/`GatewayUp` heals.
+/// `TurnEnded`/`TurnStarted`/`GatewayUp` heals.
 pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl, now: SystemTime) {
     let mut doomed: Vec<DaemonInstanceId> = Vec::new();
     for (instance, p) in scene.daemons.instances_of_mut(source) {
@@ -332,11 +332,11 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
         } else if idle_ms >= ttl.presence_ttl_ms {
             p.enter_down(now);
         } else {
-            p.in_flight_runs.retain(|_, started| {
+            p.in_flight_turns.retain(|_, started| {
                 now.duration_since(*started)
                     .map(|d| (d.as_millis() as u64) < ttl.busy_decay_ms)
                     // A clock regression keeps the lease: a backwards step must not
-                    // expire every run at once.
+                    // expire every turn at once.
                     .unwrap_or(true)
             });
         }
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn gateway_up_resets_sessions_and_in_flight_runs() {
+    fn gateway_up_resets_sessions_and_in_flight_turns() {
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(&mut s, src, DaemonPresenceUpdate::SessionStarted, ms(0));
@@ -444,8 +444,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(2),
             );
@@ -453,7 +453,7 @@ mod tests {
             up(&mut s, src, 1, 3);
             assert_eq!(st(&s, src), DaemonState::Idle);
             assert_eq!(sessions(&s, src), 0);
-            assert!(p(&s, src).in_flight_runs.is_empty());
+            assert!(p(&s, src).in_flight_turns.is_empty());
         }
     }
 
@@ -503,22 +503,22 @@ mod tests {
     }
 
     #[test]
-    fn busy_holds_until_the_last_run_ends() {
+    fn busy_holds_until_the_last_turn_ends() {
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "a".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("a".into()),
                 },
                 ms(0),
             );
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "b".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("b".into()),
                 },
                 ms(1),
             );
@@ -526,8 +526,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunEnded {
-                    run_key: "a".into(),
+                DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("a".into()),
                 },
                 ms(2),
             );
@@ -535,8 +535,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunEnded {
-                    run_key: "b".into(),
+                DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("b".into()),
                 },
                 ms(3),
             );
@@ -545,14 +545,14 @@ mod tests {
     }
 
     #[test]
-    fn failed_run_degrades_the_daemon() {
+    fn failed_turn_degrades_the_daemon() {
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(0),
             );
@@ -560,8 +560,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(1),
             );
@@ -571,21 +571,21 @@ mod tests {
                 "a failed run ⇒ degraded"
             );
             assert!(
-                p(&s, src).in_flight_runs.is_empty(),
+                p(&s, src).in_flight_turns.is_empty(),
                 "the failed run leaves the in-flight set"
             );
         }
     }
 
     #[test]
-    fn a_new_run_clears_degraded_back_to_busy() {
+    fn a_new_turn_clears_degraded_back_to_busy() {
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "a".into(),
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("a".into()),
                 },
                 ms(0),
             );
@@ -593,8 +593,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "b".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("b".into()),
                 },
                 ms(1),
             );
@@ -607,30 +607,30 @@ mod tests {
     }
 
     #[test]
-    fn a_successful_run_heals_degraded_to_idle() {
+    fn a_successful_turn_heals_degraded_to_idle() {
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "a".into(),
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("a".into()),
                 },
                 ms(0),
             );
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "b".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("b".into()),
                 },
                 ms(1),
             );
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunEnded {
-                    run_key: "b".into(),
+                DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("b".into()),
                 },
                 ms(2),
             );
@@ -649,8 +649,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "a".into(),
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("a".into()),
                 },
                 ms(0),
             );
@@ -738,8 +738,8 @@ mod tests {
         assert_eq!(GatewayDown.armable_pid(), None);
         assert_eq!(SessionStarted.armable_pid(), None);
         assert_eq!(
-            RunStarted {
-                run_key: "r".into()
+            TurnStarted {
+                turn: TurnKey::Id("r".into())
             }
             .armable_pid(),
             None
@@ -844,8 +844,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r1".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r1".into()),
                 },
                 ms(1),
             );
@@ -862,16 +862,16 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(2000),
             );
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunEnded {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnEnded {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(3000),
             );
@@ -961,8 +961,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "stranded".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("stranded".into()),
                 },
                 ms(0),
             );
@@ -973,7 +973,7 @@ mod tests {
                 DaemonState::Idle,
                 "stranded busy self-heals to idle"
             );
-            assert!(p(&s, src).in_flight_runs.is_empty());
+            assert!(p(&s, src).in_flight_turns.is_empty());
         }
     }
 
@@ -985,13 +985,13 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(10_000),
             );
             assert_eq!(st(&s, src), DaemonState::Busy);
-            // Sweep with `now` BEFORE the run's own stamp.
+            // Sweep with `now` BEFORE the turn's own stamp.
             sweep_presence_ttl(&mut s, src, ttl, ms(0));
             assert_eq!(
                 st(&s, src),
@@ -1009,8 +1009,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunFailed {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnFailed {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(0),
             );
@@ -1052,8 +1052,8 @@ mod tests {
             apply(
                 &mut s,
                 src,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 ms(0),
             );
@@ -1073,8 +1073,8 @@ mod tests {
         apply(
             &mut s,
             "daemon2",
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "r".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("r".into()),
             },
             ms(1),
         );
@@ -1119,8 +1119,8 @@ mod tests {
             &mut s,
             src,
             A,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "r1".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("r1".into()),
             },
             1,
         );
@@ -1354,8 +1354,8 @@ mod tests {
                 &mut s,
                 src,
                 id,
-                DaemonPresenceUpdate::RunStarted {
-                    run_key: "r".into(),
+                DaemonPresenceUpdate::TurnStarted {
+                    turn: TurnKey::Id("r".into()),
                 },
                 0,
             );
@@ -1366,8 +1366,8 @@ mod tests {
             &mut s,
             src,
             B,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "r2".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("r2".into()),
             },
             t,
         );
@@ -1418,7 +1418,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stranded_run_expires_while_the_gateway_keeps_serving() {
+    fn a_stranded_turn_expires_while_the_gateway_keeps_serving() {
         let src = "openclaw";
         let ttl = PresenceTtl::DEFAULT;
         let mut s = SceneState::default();
@@ -1426,8 +1426,8 @@ mod tests {
             &mut s,
             src,
             A,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "stranded".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("stranded".into()),
             },
             0,
         );
@@ -1448,8 +1448,8 @@ mod tests {
             &mut s,
             src,
             A,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "live".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("live".into()),
             },
             t,
         );
@@ -1458,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn expiring_a_stranded_run_never_heals_a_degraded_gateway() {
+    fn expiring_a_stranded_turn_never_heals_a_degraded_gateway() {
         let src = "openclaw";
         let ttl = PresenceTtl::DEFAULT;
         let mut s = SceneState::default();
@@ -1466,8 +1466,8 @@ mod tests {
             &mut s,
             src,
             A,
-            DaemonPresenceUpdate::RunStarted {
-                run_key: "stranded".into(),
+            DaemonPresenceUpdate::TurnStarted {
+                turn: TurnKey::Id("stranded".into()),
             },
             0,
         );
@@ -1475,8 +1475,8 @@ mod tests {
             &mut s,
             src,
             A,
-            DaemonPresenceUpdate::RunFailed {
-                run_key: "other".into(),
+            DaemonPresenceUpdate::TurnFailed {
+                turn: TurnKey::Id("other".into()),
             },
             1,
         );

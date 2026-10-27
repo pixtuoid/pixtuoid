@@ -8,20 +8,20 @@ expression: events
     session_id: cd84dfad-2cbf-4f45-aa4f-412449db708d
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 12224445402566150535
     tool_use_id: call_PcGghs-2qs1oU76h
     detail:
       Generic:
         display: "bash: rm NOTE.txt"
-- Waiting:
+- UserActionRequest:
     agent_id: 12224445402566150535
     reason: "permission: shell"
     tool_use_id: call_PcGghs-2qs1oU76h
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 12224445402566150535
     tool_use_id: call_PcGghs-2qs1oU76h
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 12224445402566150535
     tool_use_id: call_PcGghs-2qs1oU76h
 - ModelInfo:

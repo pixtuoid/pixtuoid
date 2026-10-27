@@ -157,7 +157,7 @@ async fn watcher_emits_session_start_for_recent_files_on_startup() {
     while tokio::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
             Ok(Some((_, AgentEvent::SessionStart { .. }))) => got_start = true,
-            Ok(Some((_, AgentEvent::ActivityStart { .. }))) => got_activity = true,
+            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => got_activity = true,
             _ => {}
         }
         if got_start && got_activity {
@@ -366,7 +366,7 @@ async fn watcher_skips_oversized_pending_tail() {
                 );
             }
             Ok(Some((_, AgentEvent::Rename { label, .. }))) => got_rename = Some(label),
-            Ok(Some((_, AgentEvent::ActivityStart { .. }))) => activity_before += 1,
+            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => activity_before += 1,
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => {
                 if got_start && got_rename.is_some() {
@@ -386,7 +386,7 @@ async fn watcher_skips_oversized_pending_tail() {
     );
     assert_eq!(
         activity_before, 0,
-        "the oversized backlog must not be replayed (got {activity_before} ActivityStart)"
+        "the oversized backlog must not be replayed (got {activity_before} ToolUseStart)"
     );
 
     let valid = copilot_tool_line("tu_after_junk", "bash");
@@ -404,7 +404,7 @@ async fn watcher_skips_oversized_pending_tail() {
     let mut got_after = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { tool_use_id, .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
             && tool_use_id.as_deref() == Some("tu_after_junk")
         {
@@ -462,7 +462,7 @@ async fn watcher_registers_large_transcript_on_first_sight() {
             Ok(Some((_, AgentEvent::Rename { label: l, .. }))) => {
                 label = Some(l);
             }
-            Ok(Some((_, AgentEvent::ActivityStart { .. }))) => {
+            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => {
                 activity_count += 1;
             }
             Ok(Some(_)) => {}
@@ -473,7 +473,7 @@ async fn watcher_registers_large_transcript_on_first_sight() {
             while let Ok(Some((_, ev))) =
                 tokio::time::timeout(Duration::from_millis(20), rx.recv()).await
             {
-                if matches!(ev, AgentEvent::ActivityStart { .. }) {
+                if matches!(ev, AgentEvent::ToolUseStart { .. }) {
                     activity_count += 1;
                 }
             }
@@ -495,7 +495,7 @@ async fn watcher_registers_large_transcript_on_first_sight() {
     );
     assert!(
         activity_count < 5,
-        "the giant backlog must not be replayed wholesale (got {activity_count} ActivityStart)"
+        "the giant backlog must not be replayed wholesale (got {activity_count} ToolUseStart)"
     );
     handle.abort();
 }

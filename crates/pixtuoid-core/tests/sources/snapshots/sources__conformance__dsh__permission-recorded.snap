@@ -35,7 +35,7 @@ expression: events
     source: dsh
     session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 12573771409002880216
     tool_use_id: toolu_DJ2HvoSyrOn_fiMW
     detail:
@@ -46,7 +46,7 @@ expression: events
     source: dsh
     session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 12573771409002880216
     reason: "bash: escalate sandbox to danger-full-access: The note needs wider access."
     tool_use_id: toolu_DJ2HvoSyrOn_fiMW
@@ -55,7 +55,7 @@ expression: events
     source: dsh
     session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 12573771409002880216
     tool_use_id: toolu_DJ2HvoSyrOn_fiMW
 - Identity:
@@ -63,7 +63,7 @@ expression: events
     source: dsh
     session_id: session-b7256937-c5f1-451e-9730-20c8f3d30870
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 12573771409002880216
     tool_use_id: toolu_DJ2HvoSyrOn_fiMW
 - Identity:

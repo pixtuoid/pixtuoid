@@ -1321,7 +1321,7 @@ fn reasonix_delegating_slot_survives_the_active_timeout() {
     // Reasonix hooks carry no tool id.
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: None,
             detail: Some(ToolDetail::Task),

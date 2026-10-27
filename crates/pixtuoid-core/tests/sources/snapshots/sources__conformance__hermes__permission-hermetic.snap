@@ -17,7 +17,7 @@ expression: events
     source: hermes
     session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10770421639948276803
     tool_use_id: call_swB_RV2PQNAASCQk
     detail:
@@ -28,7 +28,7 @@ expression: events
     source: hermes
     session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 10770421639948276803
     reason: recursive delete
     tool_use_id: call_swB_RV2PQNAASCQk
@@ -37,7 +37,7 @@ expression: events
     source: hermes
     session_id: 20261020_005102_5e501b
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10770421639948276803
     tool_use_id: call_swB_RV2PQNAASCQk
 - Identity:

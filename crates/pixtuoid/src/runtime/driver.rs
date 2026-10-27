@@ -395,12 +395,12 @@ mod tests {
             parent_id: None,
         }];
         for n in 0..calls {
-            events.push(AgentEvent::ActivityStart {
+            events.push(AgentEvent::ToolUseStart {
                 agent_id: id,
                 tool_use_id: Some(format!("t{n}")),
                 detail: Some("Bash".into()),
             });
-            events.push(AgentEvent::ActivityEnd {
+            events.push(AgentEvent::ToolUseEnd {
                 agent_id: id,
                 tool_use_id: Some(format!("t{n}")),
             });

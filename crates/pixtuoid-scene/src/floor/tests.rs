@@ -90,7 +90,7 @@ fn daemons_projects_onto_the_ground_floor_only() {
                 active_sessions: 0,
                 last_seen: SystemTime::UNIX_EPOCH,
                 entered_at: SystemTime::UNIX_EPOCH,
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );
@@ -2448,7 +2448,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
             active_sessions: 0,
             last_seen: SystemTime::UNIX_EPOCH,
             entered_at: SystemTime::UNIX_EPOCH,
-            in_flight_runs: Default::default(),
+            in_flight_turns: Default::default(),
             current_pid: Some(1),
         },
     );
@@ -2549,7 +2549,7 @@ fn a_creature_not_in_hand_sorts_on_its_frames_south_row() {
             active_sessions: 0,
             last_seen: SystemTime::UNIX_EPOCH,
             entered_at: SystemTime::UNIX_EPOCH,
-            in_flight_runs: Default::default(),
+            in_flight_turns: Default::default(),
             current_pid: Some(1),
         },
     );

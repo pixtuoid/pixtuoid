@@ -480,7 +480,7 @@ fn the_wall_board_upstairs_shows_the_breadcrumb_and_the_office_gateway() {
             active_sessions: 0,
             last_seen: t0,
             entered_at: t0,
-            in_flight_runs: Default::default(),
+            in_flight_turns: Default::default(),
             current_pid: Some(1),
         },
     );
@@ -523,7 +523,7 @@ fn every_painter_shows_the_one_board_of_a_floor() {
                 active_sessions: 1,
                 last_seen: now,
                 entered_at: t0(),
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );

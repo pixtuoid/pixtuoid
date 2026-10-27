@@ -22,7 +22,7 @@ use crate::install::target::MergeOutcome;
 /// `every_registered_cursor_event_decodes` below. `subagentStart`/`subagentStop`
 /// are deliberately absent (they don't fire in the CLI). `postToolUseFailure` FIRES
 /// instead of `postToolUse` on a failed tool, so it is registered too — else a
-/// failed tool's ActivityStart never closes under `-p` (where `stop` doesn't fire).
+/// failed tool's ToolUseStart never closes under `-p` (where `stop` doesn't fire).
 pub(crate) const CURSOR_EVENTS: &[&str] = &[
     "sessionStart",
     "preToolUse",

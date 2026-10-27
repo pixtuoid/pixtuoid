@@ -497,7 +497,7 @@ pub(crate) fn shared_hook_arms(
                 .map(String::from);
             let mut evs = vec![
                 hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     detail: Some(make_tool_detail(source, tool_name, obj.get("tool_input"))),
@@ -513,7 +513,7 @@ pub(crate) fn shared_hook_arms(
                 .map(String::from);
             let mut evs = vec![
                 hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,
                 },
@@ -528,7 +528,7 @@ pub(crate) fn shared_hook_arms(
                 .unwrap_or("waiting");
             Ok(vec![
                 hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: ellipsize(msg, MAX_DECODED_FIELD_CHARS),
                     tool_use_id: None,
@@ -538,7 +538,7 @@ pub(crate) fn shared_hook_arms(
         // Codex's permission prompt is the same "waiting on the human" signal.
         "PermissionRequest" => Ok(vec![
             hook_identity(agent_id, source, &session_id, obj),
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id,
                 reason: "permission".into(),
                 tool_use_id: None,
@@ -986,7 +986,7 @@ mod tests {
             }
             other => panic!("expected leading Identity, got {other:?}"),
         }
-        assert!(matches!(evs[1], AgentEvent::Waiting { .. }));
+        assert!(matches!(evs[1], AgentEvent::UserActionRequest { .. }));
     }
 
     #[test]
@@ -1000,7 +1000,7 @@ mod tests {
             "tool_use_id": "t1"
         }))
         .expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + ActivityEnd, got {evs:?}");
+        assert_eq!(evs.len(), 2, "Identity + ToolUseEnd, got {evs:?}");
         match &evs[0] {
             AgentEvent::Identity {
                 source,
@@ -1014,7 +1014,7 @@ mod tests {
             }
             other => panic!("expected leading Identity, got {other:?}"),
         }
-        assert!(matches!(evs[1], AgentEvent::ActivityEnd { .. }));
+        assert!(matches!(evs[1], AgentEvent::ToolUseEnd { .. }));
     }
 
     #[test]
@@ -1484,12 +1484,12 @@ mod tests {
             let display = evs
                 .iter()
                 .find_map(|e| match e {
-                    AgentEvent::ActivityStart {
+                    AgentEvent::ToolUseStart {
                         detail: Some(d), ..
                     } => Some(d.display().to_string()),
                     _ => None,
                 })
-                .unwrap_or_else(|| panic!("{src}: decoder emitted no ActivityStart with a detail"));
+                .unwrap_or_else(|| panic!("{src}: decoder emitted no ToolUseStart with a detail"));
             assert!(
                 display.chars().count() <= bound,
                 "{src}: tool display {} chars > cap bound {bound} — a chokepoint bypass leaks raw content",
@@ -1690,7 +1690,7 @@ mod tests {
         for (src, kind, decode) in &table {
             let evs = decode();
             let reason = evs.iter().find_map(|e| match e {
-                AgentEvent::Waiting { reason, .. } => Some(reason.clone()),
+                AgentEvent::UserActionRequest { reason, .. } => Some(reason.clone()),
                 _ => None,
             });
             match kind {
@@ -1770,7 +1770,7 @@ mod tests {
     #[test]
     fn grok_tagged_grok_envelope_decodes_via_the_custom_decoder() {
         let evs = decode_hook_payload(grok_envelope("grok")).expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + ActivityStart");
+        assert_eq!(evs.len(), 2, "Identity + ToolUseStart");
         assert!(
             evs.iter()
                 .all(|e| e.agent_id() == crate::AgentId::from_parts("grok", "0197fa30-sess"))

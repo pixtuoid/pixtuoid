@@ -573,7 +573,7 @@ const ROLE_TOOL_RESULT: &str = "toolResult";
 /// case: it could never close its Start, leaking Active forever.
 const BLOCK_TOOL_CALL: &str = "toolCall";
 
-/// The tool that BLOCKS on human input: its `ActivityStart` makes the ask's own
+/// The tool that BLOCKS on human input: its `ToolUseStart` makes the ask's own
 /// tool_use_id a member of the reducer's action request, so the answer's
 /// `toolResult` resolves the Wait. The request takes as its member the call
 /// shown when it is raised, so ask pairs are appended LAST: each ask's Waiting
@@ -703,13 +703,13 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         });
                         let is_ask = name == TOOL_ASK;
                         let dst = if is_ask { &mut asks } else { &mut out };
-                        dst.push(AgentEvent::ActivityStart {
+                        dst.push(AgentEvent::ToolUseStart {
                             agent_id: acting,
                             tool_use_id: Some(id.to_string()),
                             detail: Some(omp_tool_detail(name, b.get("arguments"))),
                         });
                         if is_ask {
-                            asks.push(AgentEvent::Waiting {
+                            asks.push(AgentEvent::UserActionRequest {
                                 agent_id: acting,
                                 reason: omp_ask_reason(b.get("arguments")),
                                 tool_use_id: None,
@@ -724,7 +724,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         crate::source::drift::missing_field(source, "toolResult", "toolCallId");
                         return vec![];
                     };
-                    vec![AgentEvent::ActivityEnd {
+                    vec![AgentEvent::ToolUseEnd {
                         agent_id: acting,
                         tool_use_id: Some(tool_call_id.to_string()),
                     }]
@@ -916,7 +916,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             };
             let tool = obj.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
             let event = if ty == HOOK_APPROVAL_REQUESTED {
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: omp_approval_reason(obj, tool),
                     tool_use_id: Some(tool_call_id.to_string()),
@@ -925,7 +925,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
                 // The resume. copilot's approve-emits-nothing shape doesn't fit
                 // omp: the transcript wrote this call BEFORE the request, so
                 // only this Start can lift the wait.
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: Some(tool_call_id.to_string()),
                     detail: Some(omp_tool_detail(tool, None)),
@@ -933,7 +933,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             } else {
                 // Denial: resolves the gated wait now; the transcript's
                 // isError toolResult later is the deduped/no-op backstop.
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id: Some(tool_call_id.to_string()),
                 }
@@ -1317,7 +1317,7 @@ mod tests {
                                                 "name": tool}]}}),
             )
             .iter()
-            .any(|e| matches!(e, AgentEvent::Waiting { .. }))
+            .any(|e| matches!(e, AgentEvent::UserActionRequest { .. }))
         };
         assert!(waits(TOOL_ASK), "an ask call must gate Waiting");
         assert!(
@@ -1375,12 +1375,12 @@ mod tests {
             );
             match &decode(&line)[..] {
                 [
-                    AgentEvent::ActivityStart {
+                    AgentEvent::ToolUseStart {
                         detail: Some(ToolDetail::Generic { display }),
                         ..
                     },
                 ] => display.clone(),
-                other => panic!("expected one ActivityStart, got {other:?}"),
+                other => panic!("expected one ToolUseStart, got {other:?}"),
             }
         };
         assert_eq!(
@@ -1420,12 +1420,12 @@ mod tests {
                     model: Some(model),
                     effort: None,
                 },
-                AgentEvent::ActivityStart { .. },
+                AgentEvent::ToolUseStart { .. },
             ] => {
                 assert_eq!(*agent_id, root());
                 assert_eq!(model.as_str(), "kimi-for-coding");
             }
-            other => panic!("expected ModelInfo then ActivityStart, got {other:?}"),
+            other => panic!("expected ModelInfo then ToolUseStart, got {other:?}"),
         }
         let text_only = r#"{"type":"message","id":"m2","parentId":null,"timestamp":"t","message":{"role":"assistant","provider":"anthropic","model":"claude-fable-5","content":[{"type":"text","text":"done"}],"timestamp":2}}"#;
         match &decode(text_only)[..] {
@@ -1486,11 +1486,11 @@ mod tests {
         let line = r#"{"type":"message","id":"m3","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t3","name":"task","arguments":{"task":"fix the flaky test","id":"Alpha"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(d), ..
                 },
             ] => assert!(d.is_task(), "task tool must be Delegating, got {d:?}"),
-            other => panic!("expected Delegating ActivityStart, got {other:?}"),
+            other => panic!("expected Delegating ToolUseStart, got {other:?}"),
         }
     }
 
@@ -1499,14 +1499,14 @@ mod tests {
         let line = r#"{"type":"message","id":"m4","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t4","name":"read","arguments":{"path":"x.rs","subagent_type":null}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(d), ..
                 },
             ] => assert!(
                 !d.is_task(),
                 "a spoofed subagent_type arg must stay Generic, got {d:?}"
             ),
-            other => panic!("expected Generic ActivityStart, got {other:?}"),
+            other => panic!("expected Generic ToolUseStart, got {other:?}"),
         }
     }
 
@@ -1515,12 +1515,12 @@ mod tests {
         let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","questions":[{"id":"ui_collision","question":"packages/ui already exists. What should happen?","options":[{"label":"Replace"},{"label":"Merge"}]}]}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     ..
                 },
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id: wid,
                     reason,
                     ..
@@ -1534,7 +1534,7 @@ mod tests {
                     "reason carries the question text, got {reason:?}"
                 );
             }
-            other => panic!("expected ActivityStart then Waiting, got {other:?}"),
+            other => panic!("expected ToolUseStart then Waiting, got {other:?}"),
         }
     }
 
@@ -1542,12 +1542,14 @@ mod tests {
     fn ask_reason_falls_back_to_intent_then_bare_name() {
         let intent = r#"{"type":"message","id":"m8","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK2","name":"ask","arguments":{"i":"Confirming scope"}}],"timestamp":1}}"#;
         match &decode(intent)[..] {
-            [_, AgentEvent::Waiting { reason, .. }] => assert_eq!(reason, "Confirming scope"),
+            [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason, "Confirming scope")
+            }
             other => panic!("expected Start+Waiting, got {other:?}"),
         }
         let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
         match &decode(bare)[..] {
-            [_, AgentEvent::Waiting { reason, .. }] => assert_eq!(reason, "ask"),
+            [_, AgentEvent::UserActionRequest { reason, .. }] => assert_eq!(reason, "ask"),
             other => panic!("expected Start+Waiting, got {other:?}"),
         }
     }
@@ -1557,13 +1559,13 @@ mod tests {
         let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: bash, ..
                 },
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: ask, ..
                 },
-                AgentEvent::Waiting { .. },
+                AgentEvent::UserActionRequest { .. },
             ] => {
                 assert_eq!(bash.as_deref(), Some("t7"));
                 assert_eq!(ask.as_deref(), Some("tool_ASK5"));
@@ -1587,7 +1589,7 @@ mod tests {
         let no_name = r#"{"type":"message","id":"m6","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t6","arguments":{}}],"timestamp":1}}"#;
         let out = crate::test_capture::capture_logs(|| match &decode(no_name)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id,
                     detail: Some(d),
                     ..
@@ -1596,7 +1598,7 @@ mod tests {
                 assert_eq!(tool_use_id.as_deref(), Some("t6"));
                 assert!(!d.is_task());
             }
-            other => panic!("expected one ActivityStart, got {other:?}"),
+            other => panic!("expected one ToolUseStart, got {other:?}"),
         });
         for needle in [crate::source::drift::TARGET, "missing_field", "toolCall"] {
             assert!(
@@ -2456,7 +2458,7 @@ mod tests {
         match &evs[..] {
             [
                 AgentEvent::Identity { agent_id: iid, .. },
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason,
                     tool_use_id,
@@ -2476,7 +2478,9 @@ mod tests {
             "toolCallId": "call_1", "toolName": "bash", "reason": "outside workspace",
         }));
         match &evs[..] {
-            [_, AgentEvent::Waiting { reason, .. }] => assert_eq!(reason, "outside workspace"),
+            [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason, "outside workspace")
+            }
             other => panic!("unexpected: {other:?}"),
         }
     }
@@ -2491,7 +2495,7 @@ mod tests {
         match &evs[..] {
             [
                 AgentEvent::Identity { .. },
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     detail,
@@ -2516,7 +2520,7 @@ mod tests {
         match &evs[..] {
             [
                 AgentEvent::Identity { .. },
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,
                 },
@@ -2548,7 +2552,7 @@ mod tests {
             "toolCallId": "call_t", "toolName": "task", "approved": true,
         }));
         match &evs[..] {
-            [_, AgentEvent::ActivityStart { detail, .. }] => {
+            [_, AgentEvent::ToolUseStart { detail, .. }] => {
                 assert!(detail.as_ref().is_some_and(|d| d.is_task()));
             }
             other => panic!("unexpected: {other:?}"),

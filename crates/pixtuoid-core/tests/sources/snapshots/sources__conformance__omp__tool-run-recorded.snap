@@ -19,22 +19,22 @@ expression: events
 - Usage:
     agent_id: 10083271890484720750
     fresh_tokens: 20876
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10083271890484720750
     tool_use_id: call_00_ET_hsUWkzKKzPwMujrMGVSL4042
     detail:
       Generic:
         display: "read: NOTE.txt"
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10083271890484720750
     tool_use_id: call_01_ET_K9SL0j5kdsVu5JJ0U7KA4502
     detail:
       Generic:
         display: "read: ."
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10083271890484720750
     tool_use_id: call_00_ET_hsUWkzKKzPwMujrMGVSL4042
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10083271890484720750
     tool_use_id: call_01_ET_K9SL0j5kdsVu5JJ0U7KA4502
 - ModelInfo:
@@ -44,13 +44,13 @@ expression: events
 - Usage:
     agent_id: 10083271890484720750
     fresh_tokens: 392
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10083271890484720750
     tool_use_id: call_00_FOrYEPfI0kRg5UEDXHpw0891
     detail:
       Generic:
         display: "read: NOTE.txt"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10083271890484720750
     tool_use_id: call_00_FOrYEPfI0kRg5UEDXHpw0891
 - ModelInfo:

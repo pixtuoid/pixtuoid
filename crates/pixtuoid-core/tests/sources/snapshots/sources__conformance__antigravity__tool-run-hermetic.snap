@@ -2,22 +2,22 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10135568591077037284
     tool_use_id: ag-2
     detail:
       Generic:
         display: "view_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10135568591077037284
     tool_use_id: ag-3
     detail:
       Generic:
         display: "view_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10135568591077037284
     tool_use_id: ag-2
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10135568591077037284
     tool_use_id: ag-3
 - SessionStart:
@@ -36,7 +36,7 @@ expression: events
     source: antigravity
     session_id: 7e2476f0-5ca1-4991-906c-40ea977e29c2
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10135568591077037284
     tool_use_id: ag-2
     detail:
@@ -47,7 +47,7 @@ expression: events
     source: antigravity
     session_id: 7e2476f0-5ca1-4991-906c-40ea977e29c2
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10135568591077037284
     tool_use_id: ag-2
 - Identity:
@@ -55,7 +55,7 @@ expression: events
     source: antigravity
     session_id: 7e2476f0-5ca1-4991-906c-40ea977e29c2
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 10135568591077037284
     tool_use_id: ag-3
     detail:
@@ -66,7 +66,7 @@ expression: events
     source: antigravity
     session_id: 7e2476f0-5ca1-4991-906c-40ea977e29c2
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 10135568591077037284
     tool_use_id: ag-3
 - TurnEnd:

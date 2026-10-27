@@ -229,7 +229,7 @@ fn each_bridge_round_coalesces_both_transports_onto_one_id() {
         // FIRST life, making the hook round a resurrect that restarts counting.
         let cut = jsonl
             .iter()
-            .position(|e| matches!(e, AgentEvent::ActivityEnd { .. }))
+            .position(|e| matches!(e, AgentEvent::ToolUseEnd { .. }))
             .unwrap_or(jsonl.len());
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();

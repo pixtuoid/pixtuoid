@@ -6,13 +6,13 @@ expression: events
     agent_id: 7039857825343990583
     model: grok-4.6
     effort: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 7039857825343990583
     tool_use_id: call_XUBJz4JU-OVB0BBN
     detail:
       Generic:
         display: ask_user_question
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 7039857825343990583
     tool_use_id: call_XUBJz4JU-OVB0BBN
 - TurnEnd:
@@ -37,7 +37,7 @@ expression: events
     source: grok
     session_id: 01a17609-c95e-7400-a031-d59c4d6d8246
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 7039857825343990583
     tool_use_id: call_XUBJz4JU-OVB0BBN
     detail:
@@ -48,7 +48,7 @@ expression: events
     source: grok
     session_id: 01a17609-c95e-7400-a031-d59c4d6d8246
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 7039857825343990583
     reason: User question requested
 - Identity:
@@ -56,7 +56,7 @@ expression: events
     source: grok
     session_id: 01a17609-c95e-7400-a031-d59c4d6d8246
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 7039857825343990583
     tool_use_id: call_XUBJz4JU-OVB0BBN
 - TurnEnd:

@@ -2,7 +2,7 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
-- ActivityStart:
+- ToolUseStart:
     agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
@@ -10,23 +10,23 @@ expression: events
     agent_id: 343160842670398086
     model: gpt-5.5
     effort: high
-- ActivityStart:
+- ToolUseStart:
     agent_id: 343160842670398086
     tool_use_id: ~
     detail:
       Generic:
         display: apply_patch
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 343160842670398086
     tool_use_id: call_pD-dgyzqtxsDGzB8
-- ActivityStart:
+- ToolUseStart:
     agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
 - Usage:
     agent_id: 343160842670398086
     fresh_tokens: 19
-- ActivityStart:
+- ToolUseStart:
     agent_id: 343160842670398086
     tool_use_id: ~
     detail: ~
@@ -56,7 +56,7 @@ expression: events
     source: codex
     session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 343160842670398086
     tool_use_id: call_pD-dgyzqtxsDGzB8
     detail:

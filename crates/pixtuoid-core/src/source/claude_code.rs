@@ -290,7 +290,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                         crate::source::drift::missing_field(SOURCE_NAME, "tool_use", "name");
                         "?"
                     });
-                out.push(AgentEvent::ActivityStart {
+                out.push(AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: id,
                     detail: Some(make_tool_detail(SOURCE_NAME, name, bobj.get("input"))),
@@ -310,7 +310,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     .get("tool_use_id")
                     .and_then(|s| s.as_str())
                     .map(String::from);
-                out.push(AgentEvent::ActivityEnd {
+                out.push(AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id: id,
                 });
@@ -1115,15 +1115,15 @@ mod tests {
     }
 
     #[test]
-    fn tool_use_without_name_emits_activity_start_with_question_mark_detail() {
+    fn tool_use_without_name_emits_tool_use_start_with_question_mark_detail() {
         let out = decode_cc_line(
             "/x/.claude/projects/p/s.jsonl",
             "claude-code",
             json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1"}]}}),
         );
-        assert_eq!(out.len(), 1, "one tool_use block → one ActivityStart");
+        assert_eq!(out.len(), 1, "one tool_use block → one ToolUseStart");
         match &out[0] {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 tool_use_id,
                 detail,
                 ..
@@ -1135,7 +1135,7 @@ mod tests {
                     "a name-less tool_use substitutes the \"?\" fallback name"
                 );
             }
-            other => panic!("expected ActivityStart, got {other:?}"),
+            other => panic!("expected ToolUseStart, got {other:?}"),
         }
     }
 
@@ -1156,7 +1156,7 @@ mod tests {
             "only the real tool_use block decodes; the int + text block are skipped: {out:?}"
         );
         match &out[0] {
-            AgentEvent::ActivityStart {
+            AgentEvent::ToolUseStart {
                 tool_use_id,
                 detail,
                 ..
@@ -1172,7 +1172,7 @@ mod tests {
                     "the surviving block is the Read tool_use"
                 );
             }
-            other => panic!("expected ActivityStart, got {other:?}"),
+            other => panic!("expected ToolUseStart, got {other:?}"),
         }
     }
 
@@ -1193,10 +1193,10 @@ mod tests {
             "only the real tool_result block decodes; the string + text block are skipped: {out:?}"
         );
         match &out[0] {
-            AgentEvent::ActivityEnd { tool_use_id, .. } => {
+            AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 assert_eq!(tool_use_id.as_deref(), Some("tu"));
             }
-            other => panic!("expected ActivityEnd, got {other:?}"),
+            other => panic!("expected ToolUseEnd, got {other:?}"),
         }
     }
 }

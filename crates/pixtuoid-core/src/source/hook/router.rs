@@ -146,7 +146,7 @@ mod tests {
         let events: Vec<(Transport, AgentEvent)> = vec![
             (
                 Transport::Hook,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id: root,
                     tool_use_id: Some("tu_1".into()),
                     detail: None,

@@ -142,7 +142,7 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
             },
             Ok(Some((
                 _,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     detail,
@@ -168,7 +168,7 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
     assert_eq!(
         dispatch_is_task,
         Some(true),
-        "the replayed pending Agent dispatch must decode as a Task ActivityStart"
+        "the replayed pending Agent dispatch must decode as a Task ToolUseStart"
     );
     handle.abort();
 }
@@ -203,7 +203,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
             if *agent_id == expected_parent)
     };
     let is_task_start = |e: &AgentEvent| {
-        matches!(e, AgentEvent::ActivityStart { agent_id, tool_use_id, detail }
+        matches!(e, AgentEvent::ToolUseStart { agent_id, tool_use_id, detail }
             if *agent_id == expected_parent
                 && tool_use_id.as_deref() == Some("tu_task")
                 && detail.as_ref().is_some_and(|d| d.is_task()))
@@ -243,7 +243,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
     let backlog_replays = events
         .iter()
         .filter(|(_, e)| {
-            matches!(e, AgentEvent::ActivityStart { tool_use_id, .. }
+            matches!(e, AgentEvent::ToolUseStart { tool_use_id, .. }
                 if tool_use_id.as_deref() == Some("tu_backlog"))
         })
         .count();
@@ -381,7 +381,7 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
         .await
         .unwrap();
     let is_active =
-        |e: &AgentEvent| matches!(e, AgentEvent::ActivityStart { agent_id, .. } if *agent_id == id);
+        |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
     let mut events = Vec::new();
     let deadline = tokio::time::Instant::now() + ATTACH_BOUND;
     while tokio::time::Instant::now() < deadline {

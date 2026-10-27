@@ -58,7 +58,7 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
             .map(|(t, _)| *t)
     };
     let dispatched = at(
-        &|e| matches!(e, AgentEvent::ActivityEnd { agent_id, tool_use_id: Some(_) } if *agent_id == parent),
+        &|e| matches!(e, AgentEvent::ToolUseEnd { agent_id, tool_use_id: Some(_) } if *agent_id == parent),
         SystemTime::UNIX_EPOCH,
     )
     .expect("the dispatch call ends");
@@ -68,7 +68,7 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
     )
     .expect("the child completes");
     let next_task = at(
-        &|e| matches!(e, AgentEvent::ActivityStart { agent_id, detail: Some(d), .. } if *agent_id == parent && d.is_task()),
+        &|e| matches!(e, AgentEvent::ToolUseStart { agent_id, detail: Some(d), .. } if *agent_id == parent && d.is_task()),
         dispatched,
     )
     .unwrap_or(completed);

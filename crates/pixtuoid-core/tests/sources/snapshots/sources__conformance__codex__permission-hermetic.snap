@@ -2,7 +2,7 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
-- ActivityStart:
+- ToolUseStart:
     agent_id: 13515510818775613026
     tool_use_id: ~
     detail: ~
@@ -10,13 +10,13 @@ expression: events
     agent_id: 13515510818775613026
     model: gpt-5.5
     effort: high
-- Waiting:
+- UserActionRequest:
     agent_id: 13515510818775613026
     reason: permission
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 13515510818775613026
     tool_use_id: call_P60_vrQUoD4p4-o-
-- ActivityStart:
+- ToolUseStart:
     agent_id: 13515510818775613026
     tool_use_id: ~
     detail: ~
@@ -46,7 +46,7 @@ expression: events
     source: codex
     session_id: 01a168f5-f727-70e0-8c7b-d379406e6fc4
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 13515510818775613026
     tool_use_id: call_P60_vrQUoD4p4-o-
     detail:
@@ -57,7 +57,7 @@ expression: events
     source: codex
     session_id: 01a168f5-f727-70e0-8c7b-d379406e6fc4
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 13515510818775613026
     reason: permission
 - SessionEnd:

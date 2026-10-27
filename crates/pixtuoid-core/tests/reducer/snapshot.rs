@@ -43,7 +43,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: parent,
             tool_use_id: Some("task-1".into()),
             detail: Some(ToolDetail::Task),
@@ -65,7 +65,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: child,
             tool_use_id: Some("tool-9".into()),
             detail: Some(ToolDetail::Generic {
@@ -89,7 +89,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::Waiting {
+        AgentEvent::UserActionRequest {
             agent_id: solo,
             reason: "permission: Bash".into(),
             tool_use_id: None,
@@ -123,7 +123,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: winding,
             tool_use_id: Some("w-1".into()),
             detail: Some(ToolDetail::Generic {
@@ -135,7 +135,7 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::ActivityEnd {
+        AgentEvent::ToolUseEnd {
             agent_id: winding,
             tool_use_id: Some("w-1".into()),
         },

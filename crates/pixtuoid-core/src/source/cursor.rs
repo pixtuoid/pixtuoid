@@ -115,7 +115,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 });
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
                     detail: Some(cursor_tool_detail(tool, obj.get("tool_input"))),
@@ -123,11 +123,11 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             ])
         }
         // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
-        // Without this arm a failed tool's ActivityStart never ends under `-p`
+        // Without this arm a failed tool's ToolUseStart never ends under `-p`
         // (where `stop` doesn't fire) and the sprite lingers Active.
         "postToolUse" | "postToolUseFailure" => Ok(vec![
             identity(),
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: None,
             },
@@ -241,8 +241,8 @@ mod tests {
                 "tool_use_id": "tool_b3a89c28-dbe4-487e-8c70-ea05a83083a"
             }));
             let tuid = match &ev {
-                AgentEvent::ActivityStart { tool_use_id, .. }
-                | AgentEvent::ActivityEnd { tool_use_id, .. } => tool_use_id.clone(),
+                AgentEvent::ToolUseStart { tool_use_id, .. }
+                | AgentEvent::ToolUseEnd { tool_use_id, .. } => tool_use_id.clone(),
                 other => panic!("{event}: expected an activity event, got {other:?}"),
             };
             assert_eq!(
@@ -263,20 +263,20 @@ mod tests {
             "tool_input": {"subagent_type": "code-explorer", "description": "investigate the build"}
         }));
         assert!(
-            matches!(&ev, AgentEvent::ActivityStart { detail: Some(d), .. } if d.is_task()),
+            matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if d.is_task()),
             "Task + subagent_type must map to ToolDetail::Task, got {ev:?}"
         );
         let read = decode(json!({
             "hook_event_name": "preToolUse", "session_id": "p", "workspace_roots": ["/r"],
             "tool_name": "Read", "tool_input": {"file_path": "/r/x.rs"}
         }));
-        assert!(matches!(&read, AgentEvent::ActivityStart { detail: Some(d), .. } if !d.is_task()));
+        assert!(matches!(&read, AgentEvent::ToolUseStart { detail: Some(d), .. } if !d.is_task()));
         let bare_task = decode(json!({
             "hook_event_name": "preToolUse", "session_id": "p", "workspace_roots": ["/r"],
             "tool_name": "Task"
         }));
         assert!(
-            matches!(&bare_task, AgentEvent::ActivityStart { detail: Some(d), .. } if d.is_task()),
+            matches!(&bare_task, AgentEvent::ToolUseStart { detail: Some(d), .. } if d.is_task()),
             "an input-less Task dispatch must still read as Delegating, got {bare_task:?}"
         );
         let renamed = decode(json!({
@@ -284,7 +284,7 @@ mod tests {
             "tool_name": "Delegate", "tool_input": {"subagent_type": "code-explorer"}
         }));
         assert!(
-            matches!(&renamed, AgentEvent::ActivityStart { detail: Some(d), .. } if d.is_task()),
+            matches!(&renamed, AgentEvent::ToolUseStart { detail: Some(d), .. } if d.is_task()),
             "the semantic field must catch a renamed dispatch, got {renamed:?}"
         );
     }
@@ -296,7 +296,7 @@ mod tests {
             "tool_name": "shell", "tool_input": {"command": "cargo test"}
         }));
         assert!(
-            matches!(shell, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(shell, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "shell: cargo test")
         );
         let edit = decode(json!({
@@ -304,24 +304,24 @@ mod tests {
             "tool_name": "edit", "tool_input": {"file_path": "src/lib.rs"}
         }));
         assert!(
-            matches!(edit, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(edit, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "edit: src/lib.rs")
         );
     }
 
     #[test]
-    fn post_tool_use_is_an_id_less_activity_end_and_stop_a_turn_end() {
+    fn post_tool_use_is_an_id_less_tool_use_end_and_stop_a_turn_end() {
         for event in ["postToolUse", "postToolUseFailure"] {
             let ev = decode(json!({"hook_event_name": event, "session_id": "s", "cwd": "/r"}));
             assert!(
                 matches!(
                     &ev,
-                    AgentEvent::ActivityEnd {
+                    AgentEvent::ToolUseEnd {
                         tool_use_id: None,
                         ..
                     }
                 ),
-                "{event} must decode to ActivityEnd with no tool id"
+                "{event} must decode to ToolUseEnd with no tool id"
             );
         }
         let evs = decode_all(json!({"hook_event_name": "stop", "session_id": "s", "cwd": "/r"}));
@@ -406,7 +406,7 @@ mod tests {
     fn pre_tool_use_without_tool_name_displays_question_mark() {
         let ev = decode(json!({"hook_event_name": "preToolUse", "session_id": "s", "cwd": "/r"}));
         assert!(
-            matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(ev, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "?")
         );
     }

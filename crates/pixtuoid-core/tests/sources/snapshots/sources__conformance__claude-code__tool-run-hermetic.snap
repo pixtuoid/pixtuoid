@@ -9,13 +9,13 @@ expression: events
 - Usage:
     agent_id: 14599533307175292653
     fresh_tokens: 19
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14599533307175292653
     tool_use_id: toolu_k-4tnil51DM2XZjv
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14599533307175292653
     tool_use_id: toolu_k-4tnil51DM2XZjv
 - ModelInfo:
@@ -36,7 +36,7 @@ expression: events
     source: claude-code
     session_id: 400a6c93-2002-4a72-ab14-8714ef4863a4
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 14599533307175292653
     tool_use_id: toolu_k-4tnil51DM2XZjv
     detail:
@@ -51,7 +51,7 @@ expression: events
     source: claude-code
     session_id: 400a6c93-2002-4a72-ab14-8714ef4863a4
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 14599533307175292653
     tool_use_id: toolu_k-4tnil51DM2XZjv
 - ModelInfo:

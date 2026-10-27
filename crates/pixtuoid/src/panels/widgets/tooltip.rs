@@ -1053,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn mascot_tooltip_verb_keys_on_run_state_not_session_count() {
+    fn mascot_tooltip_verb_keys_on_turn_state_not_session_count() {
         assert_eq!(
             mascot_tooltip_text(&mascot(None, false, false, 0)),
             " OpenClaw gateway · idle "

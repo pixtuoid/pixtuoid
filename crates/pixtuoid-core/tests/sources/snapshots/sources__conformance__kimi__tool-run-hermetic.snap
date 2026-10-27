@@ -17,7 +17,7 @@ expression: events
     source: kimi
     session_id: session_f66394bf-b613-47fb-b1b4-394e2756f2e5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2084700759427014666
     tool_use_id: call_fOCLg9woHMIi0Vqa
     detail:
@@ -28,7 +28,7 @@ expression: events
     source: kimi
     session_id: session_f66394bf-b613-47fb-b1b4-394e2756f2e5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2084700759427014666
     tool_use_id: call_fOCLg9woHMIi0Vqa
 - TurnEnd:

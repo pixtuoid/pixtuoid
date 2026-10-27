@@ -17,7 +17,7 @@ expression: events
     source: kimi
     session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 7779058935064654820
     tool_use_id: call_FPU3PAD0BBfBWolT
     detail:
@@ -28,7 +28,7 @@ expression: events
     source: kimi
     session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
-- Waiting:
+- UserActionRequest:
     agent_id: 7779058935064654820
     reason: permission
 - Identity:
@@ -36,7 +36,7 @@ expression: events
     source: kimi
     session_id: session_f4bd12b0-3166-4d13-8d93-2c2069524218
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 7779058935064654820
     tool_use_id: call_FPU3PAD0BBfBWolT
 - TurnEnd:

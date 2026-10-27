@@ -52,7 +52,7 @@ fn a_blocking_spawn_is_a_task_and_the_parent_goes_delegating() {
     // name promises — that the PARENT delegated.
     let parent = AgentId::from_parts("grok", PARENT);
     let delegator = transcript().events.into_iter().find_map(|e| match e {
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id,
             detail: Some(ToolDetail::Task),
             ..
@@ -89,7 +89,7 @@ fn only_the_blocking_spawn_carries_the_task_detail() {
         .filter(|e| {
             matches!(
                 e,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Task),
                     ..
                 }

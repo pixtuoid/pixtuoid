@@ -136,7 +136,7 @@ pub fn decode_dsh_payload(
             }
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: call_id(),
                     detail: Some(tool_detail()),
@@ -149,7 +149,7 @@ pub fn decode_dsh_payload(
             }
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id: call_id(),
                 },
@@ -164,7 +164,7 @@ pub fn decode_dsh_payload(
             };
             Ok(vec![
                 identity(),
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason: ellipsize(&reason, MAX_DECODED_FIELD_CHARS),
                     tool_use_id: call_id(),
@@ -188,7 +188,7 @@ pub fn decode_dsh_payload(
                 // a known tuid is treated as a replay — `handled_by_task_start`
                 // skips the Waiting→Active resume arm and the slot would
                 // strand in Waiting for the whole delegation.
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: call_id(),
                     detail: Some(ToolDetail::Generic {
@@ -197,7 +197,7 @@ pub fn decode_dsh_payload(
                 }
             } else {
                 // rejected | cancelled | unavailable: the call never runs.
-                AgentEvent::ActivityEnd {
+                AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id: call_id(),
                 }
@@ -320,7 +320,7 @@ mod tests {
         match &evs[..] {
             [
                 AgentEvent::Identity { .. },
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: Some(t),
                     detail: Some(ToolDetail::Generic { display }),
                     ..
@@ -336,7 +336,7 @@ mod tests {
         }));
         assert!(matches!(
             &evs[..],
-            [AgentEvent::Identity { .. }, AgentEvent::ActivityEnd { tool_use_id: Some(t), .. }]
+            [AgentEvent::Identity { .. }, AgentEvent::ToolUseEnd { tool_use_id: Some(t), .. }]
                 if t == "call_1"
         ));
     }
@@ -351,7 +351,7 @@ mod tests {
         match &evs[..] {
             [
                 AgentEvent::Identity { .. },
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     reason,
                     tool_use_id: Some(t),
                     ..
@@ -369,7 +369,7 @@ mod tests {
         }));
         assert!(matches!(
             &evs[..],
-            [AgentEvent::Identity { .. }, AgentEvent::ActivityStart { tool_use_id: Some(t), .. }]
+            [AgentEvent::Identity { .. }, AgentEvent::ToolUseStart { tool_use_id: Some(t), .. }]
                 if t == "call_9"
         ));
         // A GATED dispatch resumes GENERIC on purpose: the Task pre-pass
@@ -385,7 +385,7 @@ mod tests {
             &evs[..],
             [
                 _,
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Generic { .. }),
                     ..
                 }
@@ -403,7 +403,7 @@ mod tests {
             assert!(
                 matches!(
                     &evs[..],
-                    [AgentEvent::Identity { .. }, AgentEvent::ActivityEnd { tool_use_id: Some(t), .. }]
+                    [AgentEvent::Identity { .. }, AgentEvent::ToolUseEnd { tool_use_id: Some(t), .. }]
                         if t == "call_9"
                 ),
                 "{outcome}: {evs:?}"
@@ -453,7 +453,7 @@ mod tests {
                 &evs[..],
                 [
                     _,
-                    AgentEvent::ActivityStart {
+                    AgentEvent::ToolUseStart {
                         detail: Some(ToolDetail::Task),
                         ..
                     }
@@ -470,7 +470,7 @@ mod tests {
                 &evs[..],
                 [
                     _,
-                    AgentEvent::ActivityStart {
+                    AgentEvent::ToolUseStart {
                         detail: Some(ToolDetail::Task),
                         ..
                     }
@@ -487,7 +487,7 @@ mod tests {
                 &evs[..],
                 [
                     _,
-                    AgentEvent::ActivityStart {
+                    AgentEvent::ToolUseStart {
                         detail: Some(ToolDetail::Generic { .. }),
                         ..
                     }

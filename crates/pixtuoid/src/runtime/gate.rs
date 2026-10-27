@@ -214,7 +214,7 @@ mod tests {
         };
         assert_eq!(event_source(&scene, &idy), Some("codex"));
 
-        let act = AgentEvent::ActivityStart {
+        let act = AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: None,
             detail: None,

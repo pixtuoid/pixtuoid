@@ -2,31 +2,31 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000001
     detail:
       Generic:
         display: "Read: site/src/components/ElevatorShaft.astro"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000001
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000002
     detail:
       Generic:
         display: "Edit: site/src/components/ElevatorShaft.astro"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000002
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000003
     detail:
       Generic:
         display: "Bash: just site-check"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000003
 - SessionStart:
@@ -40,7 +40,7 @@ expression: events
     source: claude-code
     session_id: 01000000-0000-7000-8000-0000000000f4
     cwd: /home/user/pixtuoid
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000001
     detail:
@@ -51,6 +51,6 @@ expression: events
     source: claude-code
     session_id: 01000000-0000-7000-8000-0000000000f4
     cwd: ~
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000001

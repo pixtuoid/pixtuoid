@@ -115,7 +115,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
             crate::source::drift::unknown_event(SOURCE_NAME, step_type);
         }
         if step_type != "USER_INPUT" && step_type != "CONVERSATION_HISTORY" && step_index > 0 {
-            out.push(AgentEvent::ActivityEnd {
+            out.push(AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(step_tool_id(step_index)),
             });
@@ -126,7 +126,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 }
 
 /// Decode one tool call, from either transport: a permission/question prompt
-/// becomes `Waiting`, anything else an `ActivityStart`, each keyed `tool_use_id`.
+/// becomes `Waiting`, anything else an `ToolUseStart`, each keyed `tool_use_id`.
 fn decode_ag_tool_call(
     agent_id: AgentId,
     name: &str,
@@ -135,14 +135,14 @@ fn decode_ag_tool_call(
 ) -> AgentEvent {
     // The tools that wait on the human (hooks.md, "Supported tools").
     if name == "ask_permission" || name == "ask_question" {
-        return AgentEvent::Waiting {
+        return AgentEvent::UserActionRequest {
             agent_id,
             reason: "asking permission".to_string(),
             tool_use_id,
         };
     }
     let target = ag_tool_target(args);
-    AgentEvent::ActivityStart {
+    AgentEvent::ToolUseStart {
         agent_id,
         tool_use_id,
         detail: Some(generic_tool_display(name, target.as_deref())),
@@ -239,7 +239,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         }
         "PostToolUse" => Ok(vec![
             identity(),
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: call().0,
             },
@@ -318,10 +318,10 @@ mod tests {
         let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
         assert_eq!(out.len(), 1);
         match &out[0] {
-            AgentEvent::ActivityEnd { tool_use_id, .. } => {
+            AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 assert_eq!(tool_use_id.as_deref(), Some("ag-2"));
             }
-            other => panic!("expected ActivityEnd, got {other:?}"),
+            other => panic!("expected ToolUseEnd, got {other:?}"),
         }
     }
 
@@ -338,8 +338,8 @@ mod tests {
         let ids: Vec<_> = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v)
             .into_iter()
             .map(|e| match e {
-                AgentEvent::ActivityStart { tool_use_id, .. } => tool_use_id,
-                other => panic!("expected ActivityStart, got {other:?}"),
+                AgentEvent::ToolUseStart { tool_use_id, .. } => tool_use_id,
+                other => panic!("expected ToolUseStart, got {other:?}"),
             })
             .collect();
         assert_eq!(ids, [Some("ag-2".to_string()), Some("ag-3".to_string())]);
@@ -356,10 +356,10 @@ mod tests {
             let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, renamed);
             assert_eq!(out.len(), 1, "renamed step must mint no start: {out:?}");
             match &out[0] {
-                AgentEvent::ActivityEnd { tool_use_id, .. } => {
+                AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                     assert_eq!(tool_use_id.as_deref(), Some("ag-2"));
                 }
-                other => panic!("expected ActivityEnd only, got {other:?}"),
+                other => panic!("expected ToolUseEnd only, got {other:?}"),
             }
         });
         assert!(
@@ -393,11 +393,11 @@ mod tests {
         let displays: Vec<&str> = out
             .iter()
             .map(|e| match e {
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Generic { display }),
                     ..
                 } => display.as_str(),
-                other => panic!("expected Generic ActivityStart, got {other:?}"),
+                other => panic!("expected Generic ToolUseStart, got {other:?}"),
             })
             .collect();
         assert_eq!(
@@ -459,14 +459,14 @@ mod tests {
         let start = decode_ag_hook_payload(test_obj(&hook("PreToolUse", call.clone()))).unwrap();
         assert!(
             start.iter().any(|e| matches!(e,
-                AgentEvent::ActivityStart { tool_use_id: Some(t), detail: Some(d), .. }
+                AgentEvent::ToolUseStart { tool_use_id: Some(t), detail: Some(d), .. }
                     if t == "ag-2" && d.display() == "view_file: /repo/NOTE.txt")),
             "{start:?}"
         );
         let end = decode_ag_hook_payload(test_obj(&hook("PostToolUse", call))).unwrap();
         assert!(
             end.iter().any(|e| matches!(e,
-                AgentEvent::ActivityEnd { tool_use_id: Some(t), .. } if t == "ag-2")),
+                AgentEvent::ToolUseEnd { tool_use_id: Some(t), .. } if t == "ag-2")),
             "{end:?}"
         );
         let stop = decode_ag_hook_payload(test_obj(&hook("Stop", serde_json::json!({})))).unwrap();
@@ -485,7 +485,7 @@ mod tests {
         let out = decode_ag_hook_payload(test_obj(&hook("PreToolUse", ask))).unwrap();
         assert!(
             out.iter().any(|e| matches!(e,
-                AgentEvent::Waiting { tool_use_id: Some(t), .. } if t == "ag-4")),
+                AgentEvent::UserActionRequest { tool_use_id: Some(t), .. } if t == "ag-4")),
             "{out:?}"
         );
     }

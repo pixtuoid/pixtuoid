@@ -19,7 +19,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 9303204154111306338
     tool_use_id: ~
     detail:
@@ -30,7 +30,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 9303204154111306338
     tool_use_id: ~
 - Identity:
@@ -38,7 +38,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 9303204154111306338
     tool_use_id: ~
     detail:
@@ -49,7 +49,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 9303204154111306338
     tool_use_id: ~
 - Identity:
@@ -57,7 +57,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 9303204154111306338
     tool_use_id: ~
     detail:
@@ -68,7 +68,7 @@ expression: events
     source: reasonix
     session_id: 20260919-181359.833852000-deepseek-v4-flash
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 9303204154111306338
     tool_use_id: ~
 - TurnEnd:

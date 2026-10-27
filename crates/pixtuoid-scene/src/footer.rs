@@ -750,7 +750,7 @@ mod tests {
                 active_sessions: 0,
                 last_seen: SystemTime::UNIX_EPOCH,
                 entered_at: SystemTime::UNIX_EPOCH,
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: None,
             },
         );

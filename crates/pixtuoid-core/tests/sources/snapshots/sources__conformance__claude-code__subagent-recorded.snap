@@ -22,13 +22,13 @@ expression: events
 - Usage:
     agent_id: 17095449237909422160
     fresh_tokens: 25314
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17095449237909422160
     tool_use_id: toolu_019Yii2kV7isWYZpsWgDpQZa
     detail:
       Generic:
         display: "Bash: ls -la /private/tmp/pixtuoid-capture/pro…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17095449237909422160
     tool_use_id: toolu_019Yii2kV7isWYZpsWgDpQZa
 - Rename:
@@ -41,13 +41,13 @@ expression: events
 - Usage:
     agent_id: 17095449237909422160
     fresh_tokens: 4813
-- ActivityStart:
+- ToolUseStart:
     agent_id: 17095449237909422160
     tool_use_id: toolu_018gPghEXbQURWT1LCz6k52B
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 17095449237909422160
     tool_use_id: toolu_018gPghEXbQURWT1LCz6k52B
 - Rename:

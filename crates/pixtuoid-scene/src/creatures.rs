@@ -1024,7 +1024,7 @@ mod tests {
                 active_sessions: 0,
                 last_seen: at(seen_ms),
                 entered_at: at(entered_ms),
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );
@@ -1529,8 +1529,13 @@ mod tests {
     #[test]
     fn a_gateways_state_reaches_its_card() {
         let key = openclaw_key("18789");
-        let running = || std::collections::BTreeMap::from([("run".to_string(), at(0))]);
-        for (liveness, in_flight_runs, busy, degraded) in [
+        let running = || {
+            std::collections::HashMap::from([(
+                pixtuoid_core::state::TurnKey::Id("run".into()),
+                at(0),
+            )])
+        };
+        for (liveness, in_flight_turns, busy, degraded) in [
             (DaemonLiveness::UP, Default::default(), false, false),
             (DaemonLiveness::UP, running(), true, false),
             (
@@ -1550,7 +1555,7 @@ mod tests {
                     active_sessions: 0,
                     last_seen: at(0),
                     entered_at: at(0),
-                    in_flight_runs,
+                    in_flight_turns,
                     current_pid: Some(1),
                 },
             );

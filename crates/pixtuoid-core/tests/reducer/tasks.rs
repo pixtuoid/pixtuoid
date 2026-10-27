@@ -139,7 +139,7 @@ fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
 
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("task-X".into()),
             detail: Some(ToolDetail::Task),
@@ -1845,7 +1845,7 @@ fn task_drain_while_parent_waiting_keeps_waiting() {
 
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: id,
             tool_use_id: Some("task-T".into()),
             detail: Some(ToolDetail::Task),
@@ -1893,7 +1893,7 @@ fn desk_exhausted_task_dispatch_leaves_no_ghost_slot() {
     let orphan = AgentId::from_transcript_path("/proj/orphan.jsonl");
     r.apply(
         &mut scene,
-        AgentEvent::ActivityStart {
+        AgentEvent::ToolUseStart {
             agent_id: orphan,
             tool_use_id: Some("t1".into()),
             detail: Some(ToolDetail::Task),

@@ -263,7 +263,7 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
             active_sessions: 1,
             last_seen: now,
             entered_at: t0(),
-            in_flight_runs: Default::default(),
+            in_flight_turns: Default::default(),
             current_pid: Some(1),
         },
     );
@@ -496,7 +496,7 @@ pub(super) fn the_tooltip_names_what_a_click_acts_on<B>(
                 active_sessions: 1,
                 last_seen: now,
                 entered_at: t0(),
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );

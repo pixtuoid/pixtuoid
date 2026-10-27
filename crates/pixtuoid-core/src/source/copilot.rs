@@ -161,7 +161,7 @@ pub(crate) fn decode_copilot_line(
                 ""
             });
             let detail = copilot_tool_detail(tool_name, d.get("arguments"));
-            vec![AgentEvent::ActivityStart {
+            vec![AgentEvent::ToolUseStart {
                 agent_id: acting,
                 tool_use_id: Some(tool_call_id.to_string()),
                 detail: Some(detail),
@@ -180,7 +180,7 @@ pub(crate) fn decode_copilot_line(
                 );
                 return vec![];
             };
-            let mut out = vec![AgentEvent::ActivityEnd {
+            let mut out = vec![AgentEvent::ToolUseEnd {
                 agent_id: acting,
                 tool_use_id: Some(tool_call_id.to_string()),
             }];
@@ -204,7 +204,7 @@ pub(crate) fn decode_copilot_line(
                 // persists in the slot + egresses on the headless summary.
                 .map(|k| ellipsize(&format!("permission: {k}"), MAX_DECODED_FIELD_CHARS))
                 .unwrap_or_else(|| "permission".to_string());
-            vec![AgentEvent::Waiting {
+            vec![AgentEvent::UserActionRequest {
                 agent_id: acting,
                 reason,
                 // The gated call (#951), so its own end resolves the wait.
@@ -223,7 +223,7 @@ pub(crate) fn decode_copilot_line(
                 .and_then(|r| str_at(r, "kind"))
                 .is_some_and(|k| k.starts_with("approved"));
             match data.and_then(|d| str_at(d, "toolCallId")) {
-                Some(id) if !approved && !id.is_empty() => vec![AgentEvent::ActivityEnd {
+                Some(id) if !approved && !id.is_empty() => vec![AgentEvent::ToolUseEnd {
                     agent_id: acting,
                     tool_use_id: Some(id.to_owned()),
                 }],
@@ -435,10 +435,10 @@ mod tests {
     fn empty_agent_id_attributes_to_the_root() {
         let line = r#"{"type":"tool.execution_start","agentId":"","data":{"toolCallId":"call_1","toolName":"bash","arguments":{"command":"ls"}}}"#;
         match &decode(line)[..] {
-            [AgentEvent::ActivityStart { agent_id, .. }] => {
+            [AgentEvent::ToolUseStart { agent_id, .. }] => {
                 assert_eq!(*agent_id, root(), "empty agentId must key to the root");
             }
-            other => panic!("expected one ActivityStart, got {other:?}"),
+            other => panic!("expected one ToolUseStart, got {other:?}"),
         }
     }
 
@@ -507,11 +507,11 @@ mod tests {
         let line = r#"{"type":"tool.execution_start","data":{"toolCallId":"call_SGMJ1yjMtpgFUbZct2fEo2Hk","toolName":"task","arguments":{"description":"Incident command response","agent_type":"sisko","name":"sisko-incident-command","mode":"sync"},"turnId":"0"},"id":"a","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(d), ..
                 },
             ] => assert!(d.is_task(), "task tool must be Delegating, got {d:?}"),
-            other => panic!("expected Delegating ActivityStart, got {other:?}"),
+            other => panic!("expected Delegating ToolUseStart, got {other:?}"),
         }
     }
 
@@ -520,14 +520,14 @@ mod tests {
         let line = r#"{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"view","arguments":{"path":"x.rs","subagent_type":null}},"id":"a","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(d), ..
                 },
             ] => assert!(
                 !d.is_task(),
                 "a spoofed subagent_type arg must stay Generic, got {d:?}"
             ),
-            other => panic!("expected Generic ActivityStart, got {other:?}"),
+            other => panic!("expected Generic ToolUseStart, got {other:?}"),
         }
     }
 
@@ -536,7 +536,7 @@ mod tests {
         let line = r#"{"type":"tool.execution_start","data":{"toolCallId":"c2","toolName":"bash","arguments":{"command":"cargo test"}},"id":"a","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     detail: Some(ToolDetail::Generic { display }),
                     ..
                 },
@@ -544,7 +544,7 @@ mod tests {
                 display.contains("cargo test"),
                 "bash tool should show its command target, got {display:?}"
             ),
-            other => panic!("expected Generic ActivityStart with target, got {other:?}"),
+            other => panic!("expected Generic ToolUseStart with target, got {other:?}"),
         }
     }
 
@@ -683,12 +683,12 @@ mod tests {
         })
         .to_string();
         match &decode(&line)[..] {
-            [AgentEvent::ActivityStart { agent_id, .. }] => assert_eq!(
+            [AgentEvent::ToolUseStart { agent_id, .. }] => assert_eq!(
                 *agent_id,
                 AgentId::from_parts(SOURCE_NAME, "call_SGMJ1yjMtpgFUbZct2fEo2Hk"),
                 "a line with envelope agentId must attribute to the CHILD, not root"
             ),
-            other => panic!("expected child ActivityStart, got {other:?}"),
+            other => panic!("expected child ToolUseStart, got {other:?}"),
         }
     }
 
@@ -697,7 +697,7 @@ mod tests {
         let req = r#"{"type":"permission.requested","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","permissionRequest":{"kind":"shell","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","fullCommandText":"cat /etc/hostname","intention":"Print /etc/hostname contents","commands":[{"identifier":"cat","readOnly":true}],"possiblePaths":["/etc/hostname"],"possibleUrls":[],"hasWriteFileRedirection":false,"canOfferSessionApproval":true},"promptRequest":{"kind":"path","accessKind":"shell","paths":["/etc/hostname"],"toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2"}},"id":"1f975691-a108-4d6f-924b-d48263d46274","timestamp":"2026-06-14T21:35:55.637Z","parentId":"e0a534c6-d548-4def-b0bd-316c83efe5fd"}"#;
         match &decode(req)[..] {
             [
-                AgentEvent::Waiting {
+                AgentEvent::UserActionRequest {
                     agent_id,
                     reason,
                     tool_use_id,
@@ -736,7 +736,7 @@ mod tests {
             ),
         ] {
             match &decode(refused)[..] {
-                [AgentEvent::ActivityEnd { tool_use_id, .. }] => {
+                [AgentEvent::ToolUseEnd { tool_use_id, .. }] => {
                     assert_eq!(tool_use_id.as_deref(), Some(call), "{refused}");
                 }
                 other => panic!("a refusal must end the gated call, got {other:?}"),
@@ -871,7 +871,7 @@ mod tests {
         let line = r#"{"type":"tool.execution_start","data":{"toolName":"view"},"id":"x","timestamp":"t","parentId":null}"#;
         assert!(
             decode(line).is_empty(),
-            "no toolCallId → no ActivityStart (can't key the tool)"
+            "no toolCallId → no ToolUseStart (can't key the tool)"
         );
     }
 
@@ -880,16 +880,16 @@ mod tests {
         let line = r#"{"type":"tool.execution_complete","data":{"success":true},"id":"x","timestamp":"t","parentId":null}"#;
         assert!(
             decode(line).is_empty(),
-            "no toolCallId → no ActivityEnd (can't key the tool)"
+            "no toolCallId → no ToolUseEnd (can't key the tool)"
         );
     }
 
     #[test]
-    fn tool_execution_start_without_tool_name_still_emits_activity_start_keyed_on_call_id() {
+    fn tool_execution_start_without_tool_name_still_emits_tool_use_start_keyed_on_call_id() {
         let line = r#"{"type":"tool.execution_start","data":{"toolCallId":"tc1","arguments":{}},"id":"x","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     detail: Some(d),
@@ -899,7 +899,7 @@ mod tests {
                 assert_eq!(tool_use_id.as_deref(), Some("tc1"));
                 assert!(!d.is_task(), "an empty tool name is NOT the task dispatch");
             }
-            other => panic!("expected one ActivityStart, got {other:?}"),
+            other => panic!("expected one ToolUseStart, got {other:?}"),
         }
     }
 

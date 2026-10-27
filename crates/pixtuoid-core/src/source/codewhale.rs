@@ -120,7 +120,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             });
             Ok(vec![
                 identity(),
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(cw_tool_detail(tool, obj.get("tool_args"))),
@@ -129,7 +129,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         }
         "tool_call_after" => Ok(vec![
             identity(),
-            AgentEvent::ActivityEnd {
+            AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: tool_use_id(),
             },
@@ -140,7 +140,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // this after its exit; the next tool start, `session_idle` or end clears that Waiting.
         "waiting_for_user" => Ok(vec![
             identity(),
-            AgentEvent::Waiting {
+            AgentEvent::UserActionRequest {
                 agent_id,
                 reason: "waiting for the user".into(),
                 tool_use_id: None,
@@ -237,7 +237,7 @@ mod tests {
                     "event": "tool_call_before", "session_id": "s", "cwd": "/r",
                     "tool": tool, "tool_args": args.to_string()
                 })),
-                AgentEvent::ActivityStart { detail: Some(d), .. } if d.is_task()
+                AgentEvent::ToolUseStart { detail: Some(d), .. } if d.is_task()
             )
         };
         for args in [
@@ -358,7 +358,7 @@ mod tests {
     fn tool_call_before_without_tool_displays_question_mark() {
         let ev = decode(json!({"event": "tool_call_before", "session_id": "s", "cwd": "/r"}));
         assert!(
-            matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(ev, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "?")
         );
     }
@@ -370,7 +370,7 @@ mod tests {
             "tool": "exec_shell", "tool_args": "not json {"
         }));
         assert!(
-            matches!(ev, AgentEvent::ActivityStart { detail: Some(d), .. }
+            matches!(ev, AgentEvent::ToolUseStart { detail: Some(d), .. }
             if d.display() == "exec_shell")
         );
     }

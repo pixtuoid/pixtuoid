@@ -27,7 +27,7 @@ expression: events
     source: opencode
     session_id: ses_e9709e554ffeVqe11rb8FNCWjU
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 5679415051535113916
     tool_use_id: call_poc6hZC2t09t5HDB
     detail:
@@ -38,7 +38,7 @@ expression: events
     source: opencode
     session_id: ses_e9709e554ffeVqe11rb8FNCWjU
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 5679415051535113916
     tool_use_id: call_poc6hZC2t09t5HDB
 - Identity:

@@ -45,7 +45,7 @@ async fn watcher_emits_session_start_then_activity_for_tool_use() {
             Ok(Some((t, AgentEvent::SessionStart { agent_id, .. }))) => {
                 starts.push((t, agent_id));
             }
-            Ok(Some((t, AgentEvent::ActivityStart { agent_id, .. }))) => {
+            Ok(Some((t, AgentEvent::ToolUseStart { agent_id, .. }))) => {
                 activity = Some((t, agent_id));
                 break;
             }
@@ -53,7 +53,7 @@ async fn watcher_emits_session_start_then_activity_for_tool_use() {
             Ok(None) | Err(_) => {}
         }
     }
-    let activity = activity.expect("expected ActivityStart from JSONL watcher");
+    let activity = activity.expect("expected ToolUseStart from JSONL watcher");
     assert!(
         !starts.is_empty(),
         "expected SessionStart from JSONL watcher"
@@ -100,7 +100,7 @@ async fn watcher_does_not_consume_partial_trailing_line() {
     let mut seen_tool_use_ids: Vec<String> = Vec::new();
     while let Ok(Some((_t, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
     {
-        if let AgentEvent::ActivityStart {
+        if let AgentEvent::ToolUseStart {
             tool_use_id: Some(id),
             ..
         } = ev
@@ -131,7 +131,7 @@ async fn watcher_does_not_consume_partial_trailing_line() {
     let mut got_tu_2 = false;
     while let Ok(Some((_t, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
     {
-        if let AgentEvent::ActivityStart { tool_use_id, .. } = ev
+        if let AgentEvent::ToolUseStart { tool_use_id, .. } = ev
             && tool_use_id.as_deref() == Some("tu_2")
         {
             got_tu_2 = true;
@@ -167,7 +167,7 @@ async fn watcher_resets_cursor_on_truncation_below_cursor() {
     let mut saw_long = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { tool_use_id, .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
             && tool_use_id.as_deref() == Some("tu_long")
         {
@@ -185,7 +185,7 @@ async fn watcher_resets_cursor_on_truncation_below_cursor() {
     let mut saw_fresh = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { tool_use_id, .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
             && tool_use_id.as_deref() == Some("tu_fresh")
         {
@@ -228,7 +228,7 @@ async fn watcher_skips_non_utf8_line_and_keeps_going() {
     let mut got_valid = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ActivityStart { tool_use_id, .. }))) =
+        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
             tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
             && tool_use_id.as_deref() == Some("tu_valid")
         {

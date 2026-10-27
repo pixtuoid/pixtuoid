@@ -1414,7 +1414,7 @@ mod tests {
         assert_eq!(
             o.scene
                 .daemon(gw.source(), gw.instance())
-                .map(|p| p.in_flight_runs.len()),
+                .map(|p| p.in_flight_turns.len()),
             Some(1)
         );
         o.step(T0_MS + 100_000.0, 160, 96);

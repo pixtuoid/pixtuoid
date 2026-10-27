@@ -35,7 +35,7 @@ expression: events
     source: dsh
     session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 3714680499546126493
     tool_use_id: toolu_D0rRMgLCLpw1J5iZ
     detail:
@@ -46,7 +46,7 @@ expression: events
     source: dsh
     session_id: session-4dae565e-3d46-48fd-b190-31a5fe060703
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 3714680499546126493
     tool_use_id: toolu_D0rRMgLCLpw1J5iZ
 - Identity:

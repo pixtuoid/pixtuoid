@@ -354,7 +354,7 @@ fn a_recorded_background_childs_tools_land_on_the_child() {
         d.events
             .iter()
             .filter(|e| {
-                matches!(e, AgentEvent::ActivityStart { agent_id, detail, .. }
+                matches!(e, AgentEvent::ToolUseStart { agent_id, detail, .. }
                 if *agent_id == id && !detail.as_ref().is_some_and(|t| t.is_task()))
             })
             .count()

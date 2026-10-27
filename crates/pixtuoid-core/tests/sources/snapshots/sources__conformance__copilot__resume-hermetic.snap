@@ -8,13 +8,13 @@ expression: events
     session_id: a63abfb4-8f70-4870-ad7c-be5ec698cca0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 3741234295314445536
     tool_use_id: call_DAeUIk1HfWTBdjM8
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 3741234295314445536
     tool_use_id: call_DAeUIk1HfWTBdjM8
 - ModelInfo:

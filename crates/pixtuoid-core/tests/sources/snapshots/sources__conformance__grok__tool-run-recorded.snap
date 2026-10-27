@@ -6,31 +6,31 @@ expression: events
     agent_id: 2367239286820090108
     model: grok-4.6
     effort: ~
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-0
     detail:
       Generic:
         display: read_file
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-1
     detail:
       Generic:
         display: list_dir
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-0
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-1
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-847b07e0-fcdb-445b-9cf9-87dc53de5f64-2
     detail:
       Generic:
         display: read_file
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-847b07e0-fcdb-445b-9cf9-87dc53de5f64-2
 - TurnEnd:
@@ -55,7 +55,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-0
     detail:
@@ -66,7 +66,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-1
     detail:
@@ -77,7 +77,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-0
 - Identity:
@@ -85,7 +85,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-4b53c4ac-01c8-4dd2-aa66-524267c6c701-1
 - Identity:
@@ -93,7 +93,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 2367239286820090108
     tool_use_id: call-847b07e0-fcdb-445b-9cf9-87dc53de5f64-2
     detail:
@@ -104,7 +104,7 @@ expression: events
     source: grok
     session_id: 01a08c62-ddfb-7f90-9607-b73abc75a0af
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 2367239286820090108
     tool_use_id: call-847b07e0-fcdb-445b-9cf9-87dc53de5f64-2
 - TurnEnd:

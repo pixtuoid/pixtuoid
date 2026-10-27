@@ -17,7 +17,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 11573522595795026150
     tool_use_id: ~
     detail:
@@ -32,7 +32,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 11573522595795026150
     tool_use_id: ~
     detail:
@@ -47,7 +47,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 11573522595795026150
     tool_use_id: ~
 - ModelInfo:
@@ -59,7 +59,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 11573522595795026150
     tool_use_id: ~
 - ModelInfo:
@@ -71,7 +71,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 11573522595795026150
     tool_use_id: ~
     detail:
@@ -86,7 +86,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityStart:
+- ToolUseStart:
     agent_id: 11573522595795026150
     tool_use_id: ~
     detail:
@@ -101,7 +101,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 11573522595795026150
     tool_use_id: ~
 - ModelInfo:
@@ -113,7 +113,7 @@ expression: events
     source: cursor
     session_id: b2d7667c-e54f-4e3b-a889-141a04a470c5
     cwd: /private/tmp/pixtuoid-capture/proj
-- ActivityEnd:
+- ToolUseEnd:
     agent_id: 11573522595795026150
     tool_use_id: ~
 - ModelInfo:

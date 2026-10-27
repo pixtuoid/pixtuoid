@@ -30,11 +30,16 @@ fn gateway_scene_runs(
             active_sessions: sessions,
             last_seen,
             entered_at,
-            in_flight_runs: runs
+            in_flight_turns: runs
                 .iter()
                 // Stamped at the scene's own clock so the run lease is fresh —
                 // these fixtures assert the BUSY render, not the decay.
-                .map(|r| (r.to_string(), last_seen))
+                .map(|r| {
+                    (
+                        pixtuoid_core::state::TurnKey::Id(r.to_string().into()),
+                        last_seen,
+                    )
+                })
                 .collect(),
             current_pid: Some(1),
         },
@@ -57,7 +62,7 @@ fn gateway_scene_at(ports: &[&str], entered_at: SystemTime, last_seen: SystemTim
                 active_sessions: 0,
                 last_seen,
                 entered_at,
-                in_flight_runs: Default::default(),
+                in_flight_turns: Default::default(),
                 current_pid: Some(1),
             },
         );
@@ -236,7 +241,7 @@ fn the_port_suffix_names_a_gateway_only_when_it_has_a_sibling() {
             active_sessions: 0,
             last_seen: seen,
             entered_at: entered,
-            in_flight_runs: Default::default(),
+            in_flight_turns: Default::default(),
             current_pid: Some(1),
         },
     );
@@ -349,7 +354,7 @@ fn gateway_mascot_present_when_up() {
 }
 
 #[test]
-fn gateway_mascot_busy_bubbles_track_runs_not_sessions() {
+fn gateway_mascot_busy_bubbles_track_turns_not_sessions() {
     let entered = t0() - Duration::from_secs(20);
 
     // sessions=1 with NO runs; then the same session WITH two in-flight runs.

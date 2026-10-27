@@ -40,7 +40,7 @@ pub(crate) fn decode_session_update(
     let tool_call_id = || str_field("toolCallId").map(String::from);
 
     match str_field("sessionUpdate").unwrap_or("") {
-        TOOL_CALL => vec![AgentEvent::ActivityStart {
+        TOOL_CALL => vec![AgentEvent::ToolUseStart {
             agent_id,
             tool_use_id: tool_call_id(),
             detail: Some(tool_detail(
@@ -49,7 +49,7 @@ pub(crate) fn decode_session_update(
             )),
         }],
         TOOL_CALL_UPDATE => match str_field("status") {
-            Some(STATUS_COMPLETED) | Some(STATUS_FAILED) => vec![AgentEvent::ActivityEnd {
+            Some(STATUS_COMPLETED) | Some(STATUS_FAILED) => vec![AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: tool_call_id(),
             }],
@@ -83,7 +83,7 @@ mod tests {
             .as_slice()
         {
             [
-                AgentEvent::ActivityStart {
+                AgentEvent::ToolUseStart {
                     tool_use_id: Some(id),
                     detail: Some(ToolDetail::Generic { display }),
                     ..
@@ -92,7 +92,7 @@ mod tests {
                 assert_eq!(id, "c1");
                 assert_eq!(display, "grep");
             }
-            other => panic!("expected one ActivityStart, got {other:?}"),
+            other => panic!("expected one ToolUseStart, got {other:?}"),
         }
         for status in [STATUS_COMPLETED, STATUS_FAILED] {
             match decode(
@@ -101,12 +101,12 @@ mod tests {
             .as_slice()
             {
                 [
-                    AgentEvent::ActivityEnd {
+                    AgentEvent::ToolUseEnd {
                         tool_use_id: Some(id),
                         ..
                     },
                 ] => assert_eq!(id, "c1"),
-                other => panic!("expected one ActivityEnd for {status}, got {other:?}"),
+                other => panic!("expected one ToolUseEnd for {status}, got {other:?}"),
             }
         }
         for status in ["in_progress", "pending"] {
