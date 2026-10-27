@@ -419,8 +419,8 @@ fn pet_tooltip_falls_back_to_default_name_when_not_configured() {
 
 #[test]
 fn hovered_running_agent_tooltip_shows_state_and_detail() {
-    // running() sets last_event_at = started; created >5s ago so running_str is
-    // a numeric percent (not "--%"), and running_ms>0 forces a non-zero %.
+    // running() sets last_event_at = started; created >5s ago, past the tooltip's
+    // freshness floor, so the running-% meter shows; running_ms>0 makes it non-zero.
     let mut a = running(
         "/ttA/0.jsonl",
         0,

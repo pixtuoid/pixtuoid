@@ -114,7 +114,7 @@ fn stale_running_agent_uses_shorter_timeout_than_idle() {
     use pixtuoid_core::state::reducer::{STALE_IDLE_TIMEOUT, STALE_TOOL_TIMEOUT};
     assert!(
         STALE_TOOL_TIMEOUT < STALE_IDLE_TIMEOUT,
-        "running timeout should be shorter than idle"
+        "`STALE_TOOL_TIMEOUT` should be shorter than `STALE_IDLE_TIMEOUT`"
     );
 
     let mut scene = SceneState::uniform(4);
@@ -1162,7 +1162,7 @@ fn stale_sweep_spares_subagent_blocked_under_a_requires_action_parent() {
     );
     assert!(
         scene.agents.get(&child).unwrap().exiting_at.is_none(),
-        "a subagent blocked under a RequiresAction parent must NOT be reaped on the Running timer"
+        "a subagent blocked under a RequiresAction parent must NOT be reaped on the tool timeout"
     );
 }
 
@@ -1239,7 +1239,7 @@ fn stale_sweep_spares_grandchild_under_a_requires_action_ancestor() {
 
     assert!(
         scene.agents.get(&child).unwrap().exiting_at.is_none(),
-        "a grandchild under a RequiresAction ancestor must NOT be reaped on the Running timer"
+        "a grandchild under a RequiresAction ancestor must NOT be reaped on the tool timeout"
     );
     assert!(
         scene.agents.get(&parent).unwrap().exiting_at.is_none(),
@@ -1292,7 +1292,7 @@ fn running_subagent_keeps_parent_alive_via_jsonl_events() {
 }
 
 #[test]
-fn reasonix_delegating_slot_survives_the_running_timeout() {
+fn reasonix_delegating_slot_survives_the_tool_timeout() {
     use pixtuoid_core::source::ToolDetail;
     use pixtuoid_core::state::reducer::{STALE_BLOCKED_TIMEOUT, STALE_TOOL_TIMEOUT};
     let mut scene = SceneState::uniform(4);
@@ -1333,7 +1333,7 @@ fn reasonix_delegating_slot_survives_the_running_timeout() {
             .agents
             .get(&id)
             .is_some_and(|s| s.exiting_at.is_none()),
-        "a hook-silent Delegating rx slot must not be swept on the 10-min Running timer"
+        "a hook-silent Delegating rx slot must not be swept on the 10-min tool timeout"
     );
     r.tick(
         &mut scene,

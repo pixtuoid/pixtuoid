@@ -60,7 +60,7 @@ fn stale_timeout_constants_have_their_intended_durations() {
 // Synthetic caps on an unregistered source, so the POLICY half stays covered
 // for caps combinations the registered rows don't happen to spell.
 #[test]
-fn delegating_slot_with_hook_silent_caps_gets_requires_action_window() {
+fn delegating_slot_with_hook_silent_caps_gets_the_blocked_window() {
     use super::{STALE_BLOCKED_TIMEOUT, STALE_TOOL_TIMEOUT, stale_threshold_with_caps};
     use crate::source::registry::SourceCaps;
     use crate::source::{AgentEvent, ToolDetail, Transport};
@@ -102,12 +102,12 @@ fn delegating_slot_with_hook_silent_caps_gets_requires_action_window() {
     assert_eq!(
         stale_threshold_with_caps(slot, Some(caps)),
         STALE_BLOCKED_TIMEOUT,
-        "hook-silent Delegating slot must get the RequiresAction-class window"
+        "hook-silent Delegating slot must get the blocked window"
     );
     assert_eq!(
         stale_threshold_with_caps(slot, None),
         STALE_TOOL_TIMEOUT,
-        "without the cap, Delegating reaps on the normal Running timer"
+        "without the cap, Delegating reaps on the tool timeout"
     );
 
     r.apply(
@@ -126,7 +126,7 @@ fn delegating_slot_with_hook_silent_caps_gets_requires_action_window() {
     assert_eq!(
         stale_threshold_with_caps(slot, Some(caps)),
         STALE_TOOL_TIMEOUT,
-        "caps-on but non-Task detail must keep the Running timer"
+        "caps-on but non-Task detail must keep the tool timeout"
     );
 }
 
