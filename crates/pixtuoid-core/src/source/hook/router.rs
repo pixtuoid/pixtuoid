@@ -219,7 +219,7 @@ mod tests {
         let res = Box::new(HookRouter::new(bad)).run(tx).await;
         assert!(
             res.is_err(),
-            "a non-Busy bind failure must be Err (SourceDeath fuel), got {res:?}"
+            "a non-Running bind failure must be Err (SourceDeath fuel), got {res:?}"
         );
     }
 }

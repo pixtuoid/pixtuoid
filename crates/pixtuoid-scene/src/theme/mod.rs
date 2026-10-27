@@ -188,7 +188,7 @@ pub(crate) struct FurnitureColors {
 /// Transient effect cues (glow, sleep z, steam, dust, bubble).
 #[derive(Debug, Clone)]
 pub(crate) struct EffectColors {
-    /// Lit monitor bezel on an active screen.
+    /// Lit monitor bezel on a running agent's screen.
     pub(crate) monitor_frame_lit: Rgb,
     /// A powered-but-quiet screen's glass — a back-turned desk shows it after dark whether or not anyone is at it.
     pub(crate) monitor_idle: Rgb,
@@ -198,8 +198,8 @@ pub(crate) struct EffectColors {
     pub(crate) coffee_steam: Rgb,
     /// Dust puff kicked up while walking.
     pub(crate) walking_dust: Rgb,
-    /// Overhead bubble on a waiting agent.
-    pub(crate) waiting_bubble: Rgb,
+    /// Overhead bubble on a requires-action agent.
+    pub(crate) requires_action_bubble: Rgb,
 }
 
 /// Per-tool monitor-glow hues (the screen glow while a tool runs).
@@ -238,10 +238,12 @@ impl ToolGlowColors {
 /// Name-badge, tooltip, and neon-brand UI colors.
 #[derive(Debug, Clone)]
 pub struct UiColors {
-    /// Name-badge tone for an active agent.
-    pub label_active: Rgb,
-    /// Name-badge tone for a waiting agent.
-    pub label_waiting: Rgb,
+    /// Name-badge tone for a running agent.
+    pub label_running: Rgb,
+    /// Connection-panel tone for a connected CLI: the \"ok\" hue, not a slot state.
+    pub label_ok: Rgb,
+    /// Name-badge tone for a requires-action agent.
+    pub label_requires_action: Rgb,
     /// Name-badge tone for an idle agent.
     pub label_idle: Rgb,
     /// Name-badge tone for an exiting agent.
@@ -262,7 +264,7 @@ pub struct UiColors {
     /// The neon sign's hue while an agent waits on the user. The hue change IS the
     /// signal, so it must read as a different light from [`Self::neon_brand`]
     /// (`the_neon_alert_hue_is_a_different_light_in_every_theme`) — which a
-    /// theme's `label_waiting` is not always.
+    /// theme's `label_requires_action` is not always.
     pub(crate) neon_alert: Rgb,
 }
 

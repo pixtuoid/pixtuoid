@@ -206,7 +206,7 @@ pub(crate) fn decode_copilot_line(
                 .unwrap_or_else(|| "permission".to_string());
             vec![AgentEvent::UserActionRequest {
                 agent_id: acting,
-                reason,
+                reason: Some(reason),
                 // The gated call (#951), so its own end resolves the wait.
                 tool_use_id: request
                     .and_then(|p| str_at(p, "toolCallId"))
@@ -699,7 +699,7 @@ mod tests {
             [
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason,
+                    reason: Some(reason),
                     tool_use_id,
                 },
             ] => {

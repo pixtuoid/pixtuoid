@@ -26,8 +26,8 @@ pub struct DashboardFrame {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowState {
-    Active(Option<Arc<str>>),
-    Waiting(Arc<str>),
+    Running(Option<Arc<str>>),
+    RequiresAction(Option<Arc<str>>),
     Idle,
 }
 
@@ -152,8 +152,8 @@ fn row_for(
 
 fn row_state(state: &ActivityState) -> RowState {
     match state {
-        ActivityState::Active { detail, .. } => RowState::Active(detail.clone()),
-        ActivityState::Waiting { reason } => RowState::Waiting(reason.clone()),
+        ActivityState::Running { detail, .. } => RowState::Running(detail.clone()),
+        ActivityState::RequiresAction { reason } => RowState::RequiresAction(reason.clone()),
         ActivityState::Idle => RowState::Idle,
     }
 }

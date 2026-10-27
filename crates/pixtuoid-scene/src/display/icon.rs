@@ -10,14 +10,14 @@ pub const BADGE_MARKER: char = '\u{25cf}';
 /// A symbol in a line of text, named by what it means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_map::Enum, strum::VariantArray)]
 pub enum Icon {
-    /// Agents waiting on you: the board's amber lamp, the footer's alarm.
+    /// Agents requiring action: the board's amber lamp, the footer's alarm.
     Alert,
     /// Agents at work.
-    Active,
+    Running,
     /// Agents idle.
     Idle,
-    /// An agent waiting: the footer's and the dashboard's rung.
-    Waiting,
+    /// An agent requiring action: the footer's and the dashboard's rung.
+    RequiresAction,
     /// Agents leaving.
     Exiting,
     /// The board's star, a link to the repo; a model's name.
@@ -73,9 +73,9 @@ impl Icon {
     pub(crate) fn art(self) -> &'static str {
         match self {
             Self::Alert => "alert",
-            Self::Active => "active",
+            Self::Running => "running",
             Self::Idle => "idle",
-            Self::Waiting => "waiting",
+            Self::RequiresAction => "requires_action",
             Self::Exiting => "exiting",
             Self::Star => "star",
             Self::Gateway => "gateway",
@@ -105,7 +105,7 @@ impl Icon {
     /// Whether it is one of the board's status lamps, which a page draws as a
     /// lamp rather than its glyph.
     pub fn is_lamp(self) -> bool {
-        matches!(self, Self::Alert | Self::Active | Self::Idle)
+        matches!(self, Self::Alert | Self::Running | Self::Idle)
     }
 
     /// What a terminal writes for it: an arrow with no floor its way is
@@ -113,9 +113,9 @@ impl Icon {
     pub(crate) fn terminal(self) -> &'static str {
         match self {
             Self::Alert | Self::Up => "\u{25b2}",
-            Self::Active => "\u{25cf}",
+            Self::Running => "\u{25cf}",
             Self::Idle => "\u{25cb}",
-            Self::Waiting => "\u{25d0}",
+            Self::RequiresAction => "\u{25d0}",
             Self::Exiting => "\u{25cc}",
             Self::Star => "\u{2605}",
             Self::Gateway => "\u{2b22}",

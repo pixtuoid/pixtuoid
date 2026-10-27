@@ -788,8 +788,8 @@ fn judge(
         Shape::Succession => succession(&events, findings),
     }
     let shown = match scenario.shape {
-        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "active",
-        Shape::Permission => "waiting",
+        Shape::ToolRun | Shape::Subagent | Shape::ChildError => "running",
+        Shape::Permission => "requires_action",
         Shape::ModelError | Shape::Succession | Shape::Cancel => "idle",
     };
     judge_scene(p, scene, shown, findings);
@@ -905,8 +905,8 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
             "no tool start decoded with a detail naming the tool".into(),
         ));
     }
-    if !reached.contains(&Reach::Active) {
-        findings.push((Label::Fail, "the slot never went Active".into()));
+    if !reached.contains(&Reach::Running) {
+        findings.push((Label::Fail, "the slot never went Running".into()));
     }
     // A turn's end settles a call whose own end never comes.
     if !events.iter().any(|e| {
@@ -928,8 +928,8 @@ fn permission(
     if !note_survived {
         findings.push((Label::Fail, "the note is gone".into()));
     }
-    if !reached.contains(&Reach::Waiting) {
-        findings.push((Label::Fail, "the slot never went Waiting".into()));
+    if !reached.contains(&Reach::RequiresAction) {
+        findings.push((Label::Fail, "the slot never went RequiresAction".into()));
     }
     // In any order: a hook payload's arrival order is its shim process's, not
     // the CLI's, so the wait, the decision and the result can land in any order.
@@ -1138,12 +1138,12 @@ fn subagent(
             "a child's tool never landed on the child".into(),
         ));
     }
-    // Per slot: a parent's own tool going Active proves nothing of its child.
+    // Per slot: a parent's own tool going Running proves nothing of its child.
     if !children
         .iter()
-        .all(|&(child, _)| reaches.contains(&(child, Reach::Active)))
+        .all(|&(child, _)| reaches.contains(&(child, Reach::Running)))
     {
-        findings.push((Label::Fail, "the child's tool never went Active".into()));
+        findings.push((Label::Fail, "the child's tool never went Running".into()));
     }
 }
 
@@ -1248,15 +1248,15 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
     }
 }
 
-/// A daemon's turn on the scene: its mascot busy, then `settled` once the turn
+/// A daemon's turn on the scene: its mascot running, then `settled` once the turn
 /// ended, and down or gone once the daemon stopped.
 fn judge_presence(p: &Profile, scene: &str, settled: &str, findings: &mut Vec<(Label, String)>) {
     let mascot = format!("{}@", p.source);
     let frames = rosters(scene, "daemons");
-    match frames.iter().position(|f| holds(f, &mascot, "busy")) {
+    match frames.iter().position(|f| holds(f, &mascot, "running")) {
         None => findings.push((
             Label::Fail,
-            format!("the scene never showed a {mascot} daemon busy"),
+            format!("the scene never showed a {mascot} daemon running"),
         )),
         Some(at) if !frames[at..].iter().any(|f| holds(f, &mascot, settled)) => findings.push((
             Label::Fail,
@@ -1570,42 +1570,44 @@ mod tests {
             .any(|f| f.0 == label && f.1.contains(text))
     }
 
-    const CX_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Bash: cat NOTE.txt)]\n\
+    const CX_SCENE: &str = "agents=[cx\u{b7}proj@0:running(Bash: cat NOTE.txt)]\n\
                             agents=[cx\u{b7}proj@0:idle]\nagents=[] daemons=[]\n";
-    const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:active(Delegating), \
-                                     cx\u{b7}proj@1:active(Bash: cat NOTE.txt)]\n\
+    const CX_DELEGATE_SCENE: &str = "agents=[cx\u{b7}proj@0:running(Delegating), \
+                                     cx\u{b7}proj@1:running(Bash: cat NOTE.txt)]\n\
                                      agents=[] daemons=[]\n";
-    const OC_DELEGATE_SCENE: &str = "agents=[oc\u{b7}proj@0:active(Delegating), \
-                                     oc\u{b7}proj@1:active(read)]\n\
+    const OC_DELEGATE_SCENE: &str = "agents=[oc\u{b7}proj@0:running(Delegating), \
+                                     oc\u{b7}proj@1:running(read)]\n\
                                      agents=[] daemons=[]\n";
-    const CC_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
-    const CC_WAIT_SCENE: &str =
-        "agents=[cc\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
-    const CX_WAIT_SCENE: &str =
-        "agents=[cx\u{b7}proj@0:waiting(permission)]\nagents=[] daemons=[]\n";
-    const RX_WAIT_SCENE: &str = "agents=[rx\u{b7}proj@0:waiting(approval needed: bash rm NOTE.txt)]\n\
+    const CC_SCENE: &str =
+        "agents=[cc\u{b7}proj@0:running(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CC_REQUIRES_ACTION_SCENE: &str =
+        "agents=[cc\u{b7}proj@0:requires_action(permission)]\nagents=[] daemons=[]\n";
+    const CX_REQUIRES_ACTION_SCENE: &str =
+        "agents=[cx\u{b7}proj@0:requires_action(permission)]\nagents=[] daemons=[]\n";
+    const RX_REQUIRES_ACTION_SCENE: &str = "agents=[rx\u{b7}proj@0:requires_action(approval needed: bash rm NOTE.txt)]\n\
                                  agents=[] daemons=[]\n";
 
-    const DS_WAIT_SCENE: &str =
-        "agents=[ds\u{b7}proj@0:waiting(bash: escalate)]\nagents=[] daemons=[]\n";
-    const DS_DELEGATE_SCENE: &str = "agents=[ds\u{b7}proj@0:active(Delegating), \
-                                     ds\u{b7}proj@1:active(read)]\nagents=[] daemons=[]\n";
-    const CP_SCENE: &str = "agents=[cp\u{b7}proj@0:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const DS_REQUIRES_ACTION_SCENE: &str =
+        "agents=[ds\u{b7}proj@0:requires_action(bash: escalate)]\nagents=[] daemons=[]\n";
+    const DS_DELEGATE_SCENE: &str = "agents=[ds\u{b7}proj@0:running(Delegating), \
+                                     ds\u{b7}proj@1:running(read)]\nagents=[] daemons=[]\n";
+    const CP_SCENE: &str =
+        "agents=[cp\u{b7}proj@0:running(view: NOTE.txt)]\nagents=[] daemons=[]\n";
     const CP_AUTOPILOT_SCENE: &str =
-        "agents=[cp\u{b7}proj@0:active(task_complete)]\nagents=[] daemons=[]\n";
-    const CP_WAIT_SCENE: &str =
-        "agents=[cp\u{b7}proj@0:waiting(permission: shell)]\nagents=[] daemons=[]\n";
-    const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
-                                     reader@1:active(view: NOTE.txt)]\nagents=[] daemons=[]\n";
-    const CP_CHILD_ERROR_SCENE: &str = "agents=[cp\u{b7}proj@0:active(Delegating), \
+        "agents=[cp\u{b7}proj@0:running(task_complete)]\nagents=[] daemons=[]\n";
+    const CP_REQUIRES_ACTION_SCENE: &str =
+        "agents=[cp\u{b7}proj@0:requires_action(permission: shell)]\nagents=[] daemons=[]\n";
+    const CP_DELEGATE_SCENE: &str = "agents=[cp\u{b7}proj@0:running(Delegating), \
+                                     reader@1:running(view: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CP_CHILD_ERROR_SCENE: &str = "agents=[cp\u{b7}proj@0:running(Delegating), \
                                         reader@1:idle]\nagents=[] daemons=[]\n";
-    const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:active(read_file)]\nagents=[] daemons=[]\n";
+    const GK_SCENE: &str = "agents=[gk\u{b7}proj@0:running(read_file)]\nagents=[] daemons=[]\n";
     const AG_SCENE: &str =
-        "agents=[ag\u{b7}proj@0:active(view_file: NOTE.txt)]\nagents=[] daemons=[]\n";
-    const GK_DELEGATE_SCENE: &str = "agents=[gk\u{b7}proj@0:active(Delegating), \
-                                     Read the note@1:active(read_file)]\nagents=[] daemons=[]\n";
-    const RX_DELEGATE_SCENE: &str = "agents=[rx\u{b7}proj@0:active(Delegating), \
-                                     rx\u{b7}proj@1:active(read_file)]\nagents=[] daemons=[]\n";
+        "agents=[ag\u{b7}proj@0:running(view_file: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const GK_DELEGATE_SCENE: &str = "agents=[gk\u{b7}proj@0:running(Delegating), \
+                                     Read the note@1:running(read_file)]\nagents=[] daemons=[]\n";
+    const RX_DELEGATE_SCENE: &str = "agents=[rx\u{b7}proj@0:running(Delegating), \
+                                     rx\u{b7}proj@1:running(read_file)]\nagents=[] daemons=[]\n";
     const OM_NEW_SCENE: &str = "agents=[om\u{b7}proj@0:idle]\n\
                                 agents=[om\u{b7}proj@0:idle, om\u{b7}proj@1:idle]\n\
                                 agents=[om\u{b7}proj@1:idle]\nagents=[] daemons=[]\n";
@@ -1679,18 +1681,18 @@ mod tests {
 
     #[test]
     fn a_recorded_dsh_permission_run_passes() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_permission_run_that_never_waits_fails() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         edit_hooks(d.path(), |v| (v["type"] != "approval_asked").then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(
-            has(&v, Label::Fail, "never went Waiting"),
+            has(&v, Label::Fail, "never went RequiresAction"),
             "{:?}",
             v.findings()
         );
@@ -1701,28 +1703,32 @@ mod tests {
         let d = recorded(
             "dsh",
             "permission",
-            "agents=[ds\u{b7}proj@0:active(bash)]\n",
+            "agents=[ds\u{b7}proj@0:running(bash)]\n",
         );
         let v = verify(d.path()).expect("verify");
-        assert!(has(&v, Label::Fail, "agent waiting"), "{:?}", v.findings());
+        assert!(
+            has(&v, Label::Fail, "agent requires_action"),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]
     fn a_recorded_codex_tui_permission_run_passes() {
-        let d = recorded("codex", "permission", CX_WAIT_SCENE);
+        let d = recorded("codex", "permission", CX_REQUIRES_ACTION_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_refused_call_that_never_started_ends_with_its_turn() {
-        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_REQUIRES_ACTION_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         edit_hooks(d.path(), |v| (v["event"] != "Stop").then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "never ended"), "{:?}", v.findings());
-        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_REQUIRES_ACTION_SCENE);
         reorder_hooks(d.path(), |lines| {
             let at = lines
                 .iter()
@@ -1742,7 +1748,7 @@ mod tests {
 
     #[test]
     fn a_guardian_that_reads_before_the_wait_passes_while_the_read_ends() {
-        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_REQUIRES_ACTION_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
         edit_hooks(d.path(), |v| {
@@ -1776,7 +1782,7 @@ mod tests {
                 end(read_ends_as),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: "approval".into(),
+                    reason: Some("approval".into()),
                     tool_use_id: None,
                 },
                 AgentEvent::turn_end(agent_id),
@@ -1786,7 +1792,7 @@ mod tests {
             let mut findings = Vec::new();
             permission(
                 &events(read_ends_as),
-                &[Reach::Waiting],
+                &[Reach::RequiresAction],
                 true,
                 &mut findings,
             );
@@ -1815,13 +1821,13 @@ mod tests {
         };
         let wait = AgentEvent::UserActionRequest {
             agent_id,
-            reason: "approval".into(),
+            reason: Some("approval".into()),
             tool_use_id: None,
         };
         let turn = AgentEvent::turn_end(agent_id);
         let judged = |events: Vec<AgentEvent>| {
             let mut findings = Vec::new();
-            permission(&events, &[Reach::Waiting], true, &mut findings);
+            permission(&events, &[Reach::RequiresAction], true, &mut findings);
             findings
         };
         let lost_turn = vec![start.clone(), end.clone(), end.clone(), wait.clone()];
@@ -1842,7 +1848,7 @@ mod tests {
 
     #[test]
     fn an_end_no_call_owns_fails() {
-        let d = recorded("reasonix", "permission", RX_WAIT_SCENE);
+        let d = recorded("reasonix", "permission", RX_REQUIRES_ACTION_SCENE);
         reorder_hooks(d.path(), |lines| {
             let end = lines
                 .iter()
@@ -1861,7 +1867,7 @@ mod tests {
 
     #[test]
     fn a_refused_call_that_took_the_note_with_it_fails() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         write_manifest(d.path(), "dsh", |m| {
             m.scenario = "permission".into();
             m.capture.note_survived = false;
@@ -1876,14 +1882,14 @@ mod tests {
 
     #[test]
     fn a_recorded_claude_code_tui_permission_run_passes() {
-        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_REQUIRES_ACTION_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
 
     #[test]
     fn a_wait_naming_no_call_fails_when_a_started_tool_never_ends() {
-        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_REQUIRES_ACTION_SCENE);
         edit_transcripts(d.path(), |line| !line.contains("tool_result"));
         let v = verify(d.path()).expect("verify");
         assert!(
@@ -1895,7 +1901,7 @@ mod tests {
 
     #[test]
     fn a_wait_naming_no_call_fails_when_no_tool_started() {
-        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_REQUIRES_ACTION_SCENE);
         edit_hooks(d.path(), |v| {
             (v["hook_event_name"] != "PreToolUse").then_some(v)
         });
@@ -1910,7 +1916,7 @@ mod tests {
 
     #[test]
     fn a_wait_whose_tool_never_ends_fails() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         edit_hooks(d.path(), |v| {
             (v["type"] != "tool_result" && v["type"] != "approval_decided").then_some(v)
         });
@@ -1924,7 +1930,7 @@ mod tests {
 
     #[test]
     fn a_wait_that_lands_after_every_end_of_its_tool_still_passes() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         reorder_hooks(d.path(), |lines| {
             let asked = lines
                 .iter()
@@ -1943,7 +1949,7 @@ mod tests {
 
     #[test]
     fn a_wait_ended_only_by_another_tool_fails() {
-        let d = recorded("dsh", "permission", DS_WAIT_SCENE);
+        let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         edit_hooks(d.path(), |mut v| {
             if v["type"] == "tool_result" {
                 v["callId"] = "another-call".into();
@@ -1958,8 +1964,8 @@ mod tests {
         );
     }
 
-    const CC_DELEGATE_SCENE: &str = "agents=[cc\u{b7}proj@0:active(Delegating), \
-        general-purpose@1:active(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
+    const CC_DELEGATE_SCENE: &str = "agents=[cc\u{b7}proj@0:running(Delegating), \
+        general-purpose@1:running(Read: NOTE.txt)]\nagents=[] daemons=[]\n";
 
     /// The recorded CC delegation keys the child's tool hooks by `agent_id`;
     /// without it they land on the root while the child's transcript shows
@@ -2025,7 +2031,7 @@ mod tests {
         });
         let v = verify(d.path()).expect("verify");
         assert!(
-            has(&v, Label::Fail, "child's tool never went Active"),
+            has(&v, Label::Fail, "child's tool never went Running"),
             "{:?}",
             v.findings()
         );
@@ -2056,7 +2062,7 @@ mod tests {
         );
     }
 
-    /// `events` judged with each child reaching Active and each parent
+    /// `events` judged with each child reaching Running and each parent
     /// Delegating.
     fn subagent_findings(
         events: &[AgentEvent],
@@ -2069,7 +2075,7 @@ mod tests {
                     agent_id,
                     parent_id: Some(parent),
                     ..
-                } => Some([(*agent_id, Reach::Active), (*parent, Reach::Delegating)]),
+                } => Some([(*agent_id, Reach::Running), (*parent, Reach::Delegating)]),
                 _ => None,
             })
             .flatten()
@@ -2291,11 +2297,11 @@ mod tests {
         assert_eq!(subagent_findings(&run, ChildEndInference::Durable), vec![]);
         for (reaches, missing) in [
             (
-                [(parent, Reach::Active), (parent, Reach::Delegating)],
-                "the child's tool never went Active",
+                [(parent, Reach::Running), (parent, Reach::Delegating)],
+                "the child's tool never went Running",
             ),
             (
-                [(child, Reach::Active), (child, Reach::Delegating)],
+                [(child, Reach::Running), (child, Reach::Delegating)],
                 "the parent never went Delegating",
             ),
         ] {
@@ -2380,8 +2386,8 @@ mod tests {
     #[test]
     fn a_child_still_in_the_scene_after_the_cli_exited_fails() {
         // A child renamed after its task carries no source prefix (grok's).
-        let scene = "agents=[ds\u{b7}proj@0:active(Delegating), \
-                     Read the note@1:active(read)]\n\
+        let scene = "agents=[ds\u{b7}proj@0:running(Delegating), \
+                     Read the note@1:running(read)]\n\
                      agents=[Read the note@1:idle] daemons=[]\n";
         let d = recorded("dsh", "subagent", scene);
         let v = verify(d.path()).expect("verify");
@@ -2428,7 +2434,7 @@ mod tests {
             ("tool-run", CP_SCENE),
             ("resume", CP_SCENE),
             ("autopilot", CP_AUTOPILOT_SCENE),
-            ("permission", CP_WAIT_SCENE),
+            ("permission", CP_REQUIRES_ACTION_SCENE),
             ("subagent", CP_DELEGATE_SCENE),
             ("child-error", CP_CHILD_ERROR_SCENE),
         ] {
@@ -2720,7 +2726,7 @@ mod tests {
         };
         let judged = |events: &[AgentEvent]| {
             let mut findings = Vec::new();
-            tool_run(events, &[Reach::Active], &mut findings);
+            tool_run(events, &[Reach::Running], &mut findings);
             findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
         };
         assert_eq!(
@@ -2731,7 +2737,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_start_with_no_name_fails_and_a_slot_with_no_tool_never_goes_active() {
+    fn a_tool_start_with_no_name_fails_and_a_slot_with_no_tool_never_goes_running() {
         let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
         // Both transports name the tool, so both lose it.
         edit_hooks(d.path(), |mut v| {
@@ -2753,7 +2759,7 @@ mod tests {
         });
         let v = verify(d.path()).expect("verify");
         assert!(
-            has(&v, Label::Fail, "never went Active"),
+            has(&v, Label::Fail, "never went Running"),
             "{:?}",
             v.findings()
         );
@@ -2788,7 +2794,7 @@ mod tests {
 
     #[test]
     fn a_tui_turn_that_raised_no_gate_to_refuse_fails() {
-        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_REQUIRES_ACTION_SCENE);
         let unrefused = |requests, unmatched| {
             write_manifest(d.path(), "claude-code", |m| {
                 m.scenario = "permission".into();
@@ -2931,7 +2937,7 @@ mod tests {
     #[test]
     fn a_tui_turn_its_driver_gave_up_on_is_blocked_for_the_drivers_reason() {
         const WHY: &str = "the screen stood still with the turn unfinished";
-        let d = recorded("claude-code", "permission", CC_WAIT_SCENE);
+        let d = recorded("claude-code", "permission", CC_REQUIRES_ACTION_SCENE);
         write_manifest(d.path(), "claude-code", |m| {
             m.scenario = "permission".into();
             m.capture.end = ProcessExit::Exited(tui::GAVE_UP);
@@ -2947,31 +2953,37 @@ mod tests {
     }
 
     #[test]
-    fn a_daemon_s_turn_shows_busy_then_idle_then_gone() {
+    fn a_daemon_s_turn_shows_running_then_idle_then_gone() {
         let judged = |scene: &str| {
             let d = recorded("openclaw", "tool-run", scene);
             verify(d.path()).expect("verify").findings().to_vec()
         };
         let frame = |state: &str| format!("agents=[] daemons=[openclaw@59871:{state}]\n");
         let gone = "agents=[] daemons=[]\n";
-        let ran = [frame("idle"), frame("busy"), frame("idle"), frame("down")].concat();
+        let ran = [
+            frame("idle"),
+            frame("running"),
+            frame("idle"),
+            frame("down"),
+        ]
+        .concat();
         assert_eq!(judged(&(ran.clone() + gone)), vec![]);
         assert_eq!(
             judged(&ran),
             vec![],
             "down is stopped, before its linger ends"
         );
-        let never_busy = [frame("idle"), frame("down")].concat() + gone;
+        let never_running = [frame("idle"), frame("down")].concat() + gone;
         assert!(
-            judged(&never_busy)[0].1.contains("busy"),
+            judged(&never_running)[0].1.contains("running"),
             "{:?}",
-            judged(&never_busy)
+            judged(&never_running)
         );
-        let never_settled = [frame("busy"), frame("down")].concat() + gone;
+        let never_settled = [frame("running"), frame("down")].concat() + gone;
         assert!(judged(&never_settled)[0].1.contains("idle"));
-        let idle_only_before = [frame("idle"), frame("busy"), frame("down")].concat() + gone;
+        let idle_only_before = [frame("idle"), frame("running"), frame("down")].concat() + gone;
         assert!(judged(&idle_only_before)[0].1.contains("idle"));
-        let lingering = [frame("busy"), frame("idle")].concat();
+        let lingering = [frame("running"), frame("idle")].concat();
         assert!(judged(&lingering)[0].1.contains("still up"));
     }
 
@@ -2989,13 +3001,13 @@ mod tests {
         let gone = "agents=[] daemons=[]\n";
         let failed = [
             frame("idle"),
-            frame("busy"),
+            frame("running"),
             frame("degraded"),
             frame("down"),
         ]
         .concat();
         assert_eq!(judged(&(failed + gone)), vec![]);
-        let sound = [frame("busy"), frame("idle"), frame("down")].concat() + gone;
+        let sound = [frame("running"), frame("idle"), frame("down")].concat() + gone;
         assert!(
             judged(&sound)[0].1.contains("degraded"),
             "{:?}",
@@ -3005,7 +3017,7 @@ mod tests {
 
     #[test]
     fn only_a_turn_scripted_to_fail_may_exit_non_zero() {
-        let scene = "agents=[] daemons=[openclaw@55306:busy]\n\
+        let scene = "agents=[] daemons=[openclaw@55306:running]\n\
                      agents=[] daemons=[openclaw@55306:degraded]\n\
                      agents=[] daemons=[openclaw@55306:down]\nagents=[] daemons=[]\n";
         let judged = |scenario: &str, end, requests| {
@@ -3125,7 +3137,7 @@ mod tests {
     }
 
     #[test]
-    fn a_scene_that_never_shows_the_agent_active_fails() {
+    fn a_scene_that_never_shows_the_agent_running_fails() {
         let d = run_from(
             "codex",
             "tool-run-recorded",
@@ -3138,7 +3150,7 @@ mod tests {
     #[test]
     fn an_agent_still_in_the_scene_after_the_cli_exited_fails() {
         let scene =
-            "agents=[cx\u{b7}proj@0:active(Bash: cat NOTE.txt)]\nagents=[cx\u{b7}proj@0:idle]\n";
+            "agents=[cx\u{b7}proj@0:running(Bash: cat NOTE.txt)]\nagents=[cx\u{b7}proj@0:idle]\n";
         let d = run_from("codex", "tool-run-recorded", scene);
         let v = verify(d.path()).expect("verify");
         assert!(

@@ -64,7 +64,7 @@ pub(crate) fn paint_welcome(
             // `[x]`/`[ ]` (not a check glyph) so the checkbox reads in any font.
             let check = if row.checked { "[x]" } else { "[ ]" };
             let mut name_style = if row.checked {
-                Style::default().fg(to_color(theme.ui.label_active))
+                Style::default().fg(to_color(theme.ui.label_running))
             } else {
                 dim
             };

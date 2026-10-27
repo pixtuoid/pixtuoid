@@ -303,14 +303,14 @@ mod tests {
     /// A lone `OpenClaw` mascot; only the tooltip-bearing fields vary.
     fn mascot(
         instance: Option<&str>,
-        busy: bool,
+        running: bool,
         degraded: bool,
         active_sessions: u32,
     ) -> GatewayCard {
         GatewayCard {
             name: "OpenClaw",
             instance: instance.map(str::to_string),
-            busy,
+            running,
             degraded,
             active_sessions,
         }
@@ -340,8 +340,8 @@ mod tests {
         use pixtuoid_core::state::DaemonState;
         use pixtuoid_scene::layout::{NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y};
         let counts = pixtuoid_scene::tally::StateCounts {
-            active: 2,
-            waiting: 1,
+            running: 2,
+            requires_action: 1,
             idle: 1,
             exiting: 0,
             total: 4,
@@ -378,8 +378,8 @@ mod tests {
         );
         assert!(l1.ends_with("\u{2605} Star"), "star flush right: {l1:?}");
         assert!(
-            l2.contains("\u{25b2}1 wait")
-                && l2.contains("\u{25cf}2 work")
+            l2.contains("\u{25b2}1 req")
+                && l2.contains("\u{25cf}2 run")
                 && l2.contains("\u{25cb}1 idle"),
             "mood pulse (UNIX_EPOCH opens on the tally): {l2:?}"
         );
@@ -397,8 +397,8 @@ mod tests {
         use pixtuoid_scene::layout::Point;
         let model = pixtuoid_scene::neon_sign::build_board(
             pixtuoid_scene::tally::StateCounts {
-                active: 2,
-                waiting: 1,
+                running: 2,
+                requires_action: 1,
                 idle: 1,
                 exiting: 0,
                 total: 4,
@@ -652,8 +652,8 @@ mod tests {
         let text = "cc\u{b7}repo";
         for theme in pixtuoid_scene::theme::ALL_THEMES {
             for tone in [
-                BadgeTone::Active,
-                BadgeTone::Waiting,
+                BadgeTone::Running,
+                BadgeTone::RequiresAction,
                 BadgeTone::Idle,
                 BadgeTone::Exiting,
             ] {
@@ -759,14 +759,14 @@ mod tests {
             )
         })
         .unwrap();
-        let busy = buffer_text(&term);
+        let running = buffer_text(&term);
         assert!(
-            busy.contains("OpenClaw gateway"),
-            "busy paint should render the gateway name+verb, got: {busy:?}"
+            running.contains("OpenClaw gateway"),
+            "running paint should render the gateway name+verb, got: {running:?}"
         );
         assert!(
-            busy.contains("working"),
-            "busy=true should render the 'working' verb, got: {busy:?}"
+            running.contains("running"),
+            "running=true should render the 'running' verb, got: {running:?}"
         );
 
         let mut term2 = Terminal::new(TestBackend::new(60, 8)).unwrap();
@@ -790,8 +790,8 @@ mod tests {
             "degraded should render 'model error', got: {degraded:?}"
         );
         assert!(
-            !degraded.contains("working"),
-            "degraded must override busy → no 'working' verb, got: {degraded:?}"
+            !degraded.contains("running"),
+            "degraded must override running → no 'running' verb, got: {degraded:?}"
         );
     }
 
@@ -858,7 +858,7 @@ mod tests {
             desk_index: GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,
@@ -901,7 +901,7 @@ mod tests {
         let text = buffer_text(&term);
         assert!(
             !text.contains('%'),
-            "an idle agent's dossier carries no active-% meter, got: {text:?}"
+            "an idle agent's dossier carries no running-% meter, got: {text:?}"
         );
         assert!(text.contains("Idle"), "idle state word, got: {text:?}");
         // A bright equal-channel office cell can only turn into a DIMMER
@@ -947,7 +947,7 @@ mod tests {
                 desk_index: GlobalDeskIndex(0),
                 floor_idx: 0,
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,
@@ -981,22 +981,22 @@ mod tests {
         let fits: String = payload.chars().take(budget).collect();
         let overruns: String = payload.chars().take(budget + 1).collect();
 
-        let active = render(ActivityState::Active {
+        let running = render(ActivityState::Running {
             detail: Some(Arc::from(format!("Read {payload}").as_str())),
             kind: ToolKind::Read,
             tool_use_id: None,
         });
         assert!(
-            active.contains(&fits) && !active.contains(&overruns),
-            "the Active tool-detail row must clip at exactly {budget} chars, got: {active:?}"
+            running.contains(&fits) && !running.contains(&overruns),
+            "the Running tool-detail row must clip at exactly {budget} chars, got: {running:?}"
         );
 
-        let waiting = render(ActivityState::Waiting {
-            reason: Arc::from(payload.as_str()),
+        let requires_action = render(ActivityState::RequiresAction {
+            reason: Some(Arc::from(payload.as_str())),
         });
         assert!(
-            waiting.contains(&fits) && !waiting.contains(&overruns),
-            "the Waiting reason row must clip at the SAME {budget} chars, got: {waiting:?}"
+            requires_action.contains(&fits) && !requires_action.contains(&overruns),
+            "the RequiresAction reason row must clip at the SAME {budget} chars, got: {requires_action:?}"
         );
     }
 
@@ -1064,11 +1064,11 @@ mod tests {
         );
         assert_eq!(
             mascot_tooltip_text(&mascot(None, true, false, 1)),
-            " OpenClaw gateway · working "
+            " OpenClaw gateway · running "
         );
         assert_eq!(
             mascot_tooltip_text(&mascot(None, true, false, 3)),
-            " OpenClaw gateway · working · 3 sessions "
+            " OpenClaw gateway · running · 3 sessions "
         );
     }
 
@@ -1076,7 +1076,7 @@ mod tests {
     fn mascot_tooltip_names_the_instance_only_when_there_is_a_sibling() {
         assert_eq!(
             mascot_tooltip_text(&mascot(Some("19789"), true, false, 0)),
-            " OpenClaw:19789 gateway · working "
+            " OpenClaw:19789 gateway · running "
         );
         assert_eq!(
             mascot_tooltip_text(&mascot(Some("18789"), false, true, 2)),
@@ -1090,7 +1090,7 @@ mod tests {
     }
 
     #[test]
-    fn mascot_tooltip_degraded_overrides_busy_and_idle() {
+    fn mascot_tooltip_degraded_overrides_running_and_idle() {
         assert_eq!(
             mascot_tooltip_text(&mascot(None, false, true, 0)),
             " OpenClaw gateway · model error "

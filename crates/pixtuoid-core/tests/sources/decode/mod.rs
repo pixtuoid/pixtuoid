@@ -680,7 +680,7 @@ fn ag_ask_permission_and_question_emits_user_action_request() {
             tool_use_id,
             ..
         } => {
-            assert_eq!(reason, "asking permission");
+            assert_eq!(reason.as_deref(), Some("asking permission"));
             assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
         other => panic!("expected UserActionRequest, got {other:?}"),
@@ -701,7 +701,7 @@ fn ag_ask_permission_and_question_emits_user_action_request() {
             tool_use_id,
             ..
         } => {
-            assert_eq!(reason, "asking permission");
+            assert_eq!(reason.as_deref(), Some("asking permission"));
             assert_eq!(tool_use_id.as_deref(), Some("ag-6"));
         }
         other => panic!("expected UserActionRequest, got {other:?}"),

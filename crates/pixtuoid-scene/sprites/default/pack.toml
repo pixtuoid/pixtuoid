@@ -685,13 +685,13 @@ frame_ms = 600
 # many cells wide as its terminal glyph takes less the last gap, a line tall.
 [icons]
 alert       = "icon_floor_up.sprite"   # floor_up's: both write ▲ (the icon tests)
-active      = "icon_active.sprite"
+running      = "icon_running.sprite"
 idle        = "icon_idle.sprite"
 star        = "icon_star.sprite"
 gateway     = "icon_gateway.sprite"
 floor_up    = "icon_floor_up.sprite"
 floor_down  = "icon_floor_down.sprite"
-waiting     = "icon_waiting.sprite"
+requires_action     = "icon_requires_action.sprite"
 exiting     = "icon_exiting.sprite"
 arrow_left  = "icon_arrow_left.sprite"
 arrow_up    = "icon_arrow_up.sprite"

@@ -131,7 +131,7 @@ fn walk_leg_freezes_path_against_midleg_reroute() {
     );
 }
 
-fn active_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlot {
+fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlot {
     AgentSlot {
         cwd: Arc::from(PathBuf::from("/p").as_path()),
         label: "cc".into(),
@@ -140,7 +140,7 @@ fn active_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlo
         created_at,
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some(Arc::from("t")),
                 detail: Some(Arc::from("Edit")),
                 kind: ToolKind::Edit,
@@ -150,7 +150,7 @@ fn active_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSlo
 }
 
 fn entry_slot(created_at: SystemTime) -> AgentSlot {
-    let mut s = active_slot(created_at, created_at);
+    let mut s = running_slot(created_at, created_at);
     s.state = ActivityState::Idle;
     s
 }
@@ -196,9 +196,9 @@ fn seated_waypoint_snap_back_starts_from_the_seat_not_the_approach_cell() {
         other => panic!("expected AtWaypoint pose, got {other:?}"),
     }
 
-    let active = active_slot(now, now - Duration::from_secs(60));
+    let running = running_slot(now, now - Duration::from_secs(60));
     let then = now + Duration::from_millis(50);
-    match derive_with_routing(&active, then, &l, &mut rig.rctx()) {
+    match derive_with_routing(&running, then, &l, &mut rig.rctx()) {
         Some(Pose::Walking { segment, .. }) => assert_eq!(
             segment.from(),
             seat,
@@ -214,7 +214,7 @@ fn snap_back_origin_is_frozen_across_frames() {
     let l = layout();
     // state_started_at == now0: the leg arms on frame 0 and stays armed (the
     // re-arm guard keys on state_started_at, which is constant here).
-    let slot = active_slot(now0, now0 - Duration::from_secs(60));
+    let slot = running_slot(now0, now0 - Duration::from_secs(60));
     let desk = l.home_desks[0];
     // Far from the desk so the pre-fix integer-pixel drift surfaces inside the
     // 8-frame window; a snap near SNAP_BACK_MIN_DIST could delay the first
@@ -276,7 +276,7 @@ fn snap_back_cornered_leg_freezes_path_no_reroute() {
     });
 
     // State flipped 100ms ago — inside `SNAP_BACK_MS` on both frames.
-    let slot = active_slot(
+    let slot = running_slot(
         now - Duration::from_millis(100),
         now - Duration::from_secs(60),
     );
@@ -324,7 +324,7 @@ fn snap_back_derive_is_idempotent_within_a_frame() {
     // shared history and walks — hence the inner k-loop.
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now0, now0 - Duration::from_secs(60));
+    let slot = running_slot(now0, now0 - Duration::from_secs(60));
     let desk = l.home_desks[0];
     // Far enough from the CHAIR to arm (≥ SNAP_BACK_MIN_DIST); the chair-distance
     // gate then stops it re-arming once the walk reaches the chair, so it settles.
@@ -404,7 +404,7 @@ fn wander_derive_is_idempotent_within_a_frame() {
 fn snap_back_long_distance_renders_past_window_by_physics() {
     let now0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now0, now0 - Duration::from_secs(60));
+    let slot = running_slot(now0, now0 - Duration::from_secs(60));
     let desk = l.home_desks[0];
     // Far prev → SnapBack physics duration well over the `SNAP_BACK_MS` arm window.
     let prev = Point {
@@ -453,7 +453,7 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
     let chair = desk_walk_anchor_facing(desk.at, desk.facing);
     let approach = desk_approach_cell(desk, &l).expect("approach cell");
 
-    let mut slot = active_slot(now, now - Duration::from_secs(60));
+    let mut slot = running_slot(now, now - Duration::from_secs(60));
     slot.desk_index = GlobalDeskIndex(desk_index);
     slot.agent_id = AgentId::from_transcript_path("/snapapproach/slot.jsonl");
     // Far from the chair (≥ SNAP_BACK_MIN_DIST) so the snap-back arms.
@@ -493,7 +493,7 @@ fn snap_back_routes_via_the_approach_cell_then_settles_onto_the_chair() {
 fn snap_back_skipped_when_prev_within_min_distance() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
+    let slot = running_slot(now, now - Duration::from_secs(60));
     let desk = l.home_desks[0];
     // 3 px from the SEAT, not from the desk origin — the threshold is measured
     // against where the agent sits, and the seat carries a per-desk nudge.
@@ -516,7 +516,7 @@ fn snap_back_skipped_when_prev_within_min_distance() {
 fn snap_back_skipped_past_its_window() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(
+    let slot = running_slot(
         now - Duration::from_millis(2 * SNAP_BACK_MS),
         now - Duration::from_secs(60),
     );
@@ -539,7 +539,7 @@ fn snap_back_skipped_past_its_window() {
 fn snap_back_skipped_without_recent_history() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
+    let slot = running_slot(now, now - Duration::from_secs(60));
     let mut rig = RouteRig::new(StubRouter::straight());
     let p = derive_with_routing(&slot, now, &l, &mut rig.rctx());
     assert!(
@@ -605,7 +605,7 @@ fn at_waypoint_pose_records_position_to_history() {
 fn delegates_to_derive_for_oob_desk() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let mut slot = active_slot(now, now - Duration::from_secs(60));
+    let mut slot = running_slot(now, now - Duration::from_secs(60));
     slot.desk_index = GlobalDeskIndex(999);
     let mut rig = RouteRig::new(StubRouter::straight());
     assert!(derive_with_routing(&slot, now, &l, &mut rig.rctx()).is_none());
@@ -638,7 +638,7 @@ fn pose_history_recent_expires() {
 fn snap_back_progress_is_physics_eased_not_linear() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
+    let slot = running_slot(now, now - Duration::from_secs(60));
     let desk = l.home_desks[0];
     // Far from the CHAIR (≥ SNAP_BACK_MIN_DIST) so the snap-back arms.
     let prev = Point {
@@ -669,7 +669,7 @@ fn snap_back_progress_is_physics_eased_not_linear() {
 
     // Record history 50 ms before `quarter_now` so it stays inside the
     // `HISTORY_RECENT_MS` freshness gate.
-    let slot_q = active_slot(now, now - Duration::from_secs(60));
+    let slot_q = running_slot(now, now - Duration::from_secs(60));
     let quarter_now = now + Duration::from_millis(dur_ms / 4);
     rig.history = PoseHistory::new();
     rig.history.record(
@@ -705,7 +705,7 @@ fn snap_back_rearms_on_new_state_transition() {
     let mut rig = RouteRig::new(StubRouter::straight());
 
     let t0 = now;
-    let slot0 = active_slot(t0, now - Duration::from_secs(60));
+    let slot0 = running_slot(t0, now - Duration::from_secs(60));
     let prev0 = Point {
         x: desk.at.x + 50,
         y: desk.at.y + 30,
@@ -721,10 +721,10 @@ fn snap_back_rearms_on_new_state_transition() {
         .expect("snap_back armed at T0");
     assert_eq!(stored0, t0, "first arm should key on T0 state_started_at");
 
-    // A NEW transition inside the window. Same agent_id (active_slot uses a fixed
+    // A NEW transition inside the window. Same agent_id (running_slot uses a fixed
     // transcript path) so its walk state is reused; only state_started_at moved.
     let t1_state = t0 + Duration::from_millis(400);
-    let slot1 = active_slot(t1_state, now - Duration::from_secs(60));
+    let slot1 = running_slot(t1_state, now - Duration::from_secs(60));
     let now1 = t1_state;
     let prev1 = Point {
         x: desk.at.x + 40,
@@ -750,7 +750,7 @@ fn snap_back_rearms_on_new_state_transition() {
 }
 
 fn entry_slot_near(created_at: SystemTime) -> AgentSlot {
-    let mut s = active_slot(created_at, created_at);
+    let mut s = running_slot(created_at, created_at);
     s.state = pixtuoid_core::state::ActivityState::Idle;
     s.desk_index = GlobalDeskIndex(0);
     s
@@ -765,7 +765,7 @@ fn entry_slot_far(created_at: SystemTime, desk_index: usize) -> AgentSlot {
 }
 
 fn exiting_slot(exiting_at: SystemTime, created_at: SystemTime) -> AgentSlot {
-    let mut s = active_slot(exiting_at - Duration::from_secs(30), created_at);
+    let mut s = running_slot(exiting_at - Duration::from_secs(30), created_at);
     s.exiting_at = Some(exiting_at);
     s.agent_id = AgentId::from_transcript_path("/exit/slot.jsonl");
     s
@@ -1296,7 +1296,7 @@ fn wander_coffee_run_coordinates_continuous_under_churn() {
         .find(|id| takes_trip(*id, 0))
         .expect("find a trip agent");
     // Long-idle, past entry, not in the thinking window (last_event_at ≤
-    // created_at ⇒ was_active = false).
+    // created_at ⇒ was_running = false).
     let old = now - Duration::from_secs(120);
     let mut slot = entry_slot(old);
     slot.agent_id = trip_id;
@@ -1313,7 +1313,7 @@ fn wander_coffee_run_coordinates_continuous_under_churn() {
 }
 
 #[test]
-fn wander_interrupted_by_active_does_not_teleport() {
+fn wander_interrupted_by_running_does_not_teleport() {
     use crate::pathfind::AStarRouter;
     use crate::sim::anchors::character_top_left;
 
@@ -1356,8 +1356,8 @@ fn wander_interrupted_by_active_does_not_teleport() {
     }
     let flip_frame = flip_frame.expect("agent should walk away from its desk within 50 s");
 
-    let active = AgentSlot {
-        state: ActivityState::Active {
+    let running = AgentSlot {
+        state: ActivityState::Running {
             tool_use_id: Some(Arc::from("t")),
             detail: Some(Arc::from("Edit")),
             kind: ToolKind::Edit,
@@ -1369,7 +1369,7 @@ fn wander_interrupted_by_active_does_not_teleport() {
     let mut max_step = 0i32;
     for i in (flip_frame + 1)..(flip_frame + 46) {
         let t = now + Duration::from_millis(i * PAINT_FRAME_MS);
-        if let Some(a) = character_top_left(&active, &l, t, &mut rig.rctx()) {
+        if let Some(a) = character_top_left(&running, &l, t, &mut rig.rctx()) {
             let step = (i32::from(a.x) - i32::from(prev.x))
                 .abs()
                 .max((i32::from(a.y) - i32::from(prev.y)).abs());
@@ -2095,7 +2095,7 @@ fn multiple_agents_share_overlay_without_teleport() {
 }
 
 fn unit_slot(now: SystemTime) -> AgentSlot {
-    active_slot(now, now - Duration::from_secs(60))
+    running_slot(now, now - Duration::from_secs(60))
 }
 
 #[test]
@@ -2153,7 +2153,7 @@ fn route_walking_pose_straight_leg_records_lerp_and_clears_walk_path() {
 fn snap_back_profile_length_measures_the_routed_polyline() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let l = layout();
-    let slot = active_slot(now, now - Duration::from_secs(60));
+    let slot = running_slot(now, now - Duration::from_secs(60));
     let desk = l.home_desks[0];
     let (snap_target, chair_settle) = crate::pose::desk_leg_endpoint(desk, &l);
     let prev = Point {

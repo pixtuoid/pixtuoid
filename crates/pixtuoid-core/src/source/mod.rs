@@ -91,7 +91,7 @@ pub enum AgentEvent {
         /// The parent agent when this is a subagent, else `None`.
         parent_id: Option<AgentId>,
     },
-    /// A tool call started — the slot goes Active.
+    /// A tool call started — the slot goes Running.
     ToolUseStart {
         /// The acting agent.
         agent_id: AgentId,
@@ -113,12 +113,14 @@ pub enum AgentEvent {
         /// The agent whose work ended.
         agent_id: AgentId,
     },
-    /// The agent is blocked on a permission/input prompt — the slot goes Waiting.
+    /// The agent is blocked on a permission/input prompt — the slot goes RequiresAction.
     UserActionRequest {
-        /// The waiting agent.
+        /// The agent requiring action.
         agent_id: AgentId,
-        /// Why it is waiting (the prompt/notification reason).
-        reason: String,
+        /// Why it requires action (the prompt/notification reason); `None` when
+        /// the wire carries none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
         /// The gated tool call's id, when the wire names one (omp
         /// `tool_approval_requested`). Binds the wait to that call so the
         /// approval resume/denial resolves it regardless of which transport's

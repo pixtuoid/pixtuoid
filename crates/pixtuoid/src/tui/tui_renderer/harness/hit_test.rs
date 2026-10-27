@@ -7,7 +7,7 @@ use pixtuoid_scene::floor::PerFloor;
 
 #[test]
 fn pet_hit_test_resolves_at_pet_position() {
-    let scene = scene_with(vec![active("/ph/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/ph/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(120, 44, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     let PetHover { centre: pos, .. } = r.drawn_pet().expect("pet placed");
@@ -130,7 +130,7 @@ const BREATH_PROBES_MS: [u64; 10] = [
 #[test]
 fn a_breathing_sitter_is_hit_at_its_drawn_cells_not_its_seat_top_left() {
     let (cols, rows) = (140, 48);
-    let mut s = active("/breath/0.jsonl", 0, "Edit", t0() - Duration::from_secs(60));
+    let mut s = running("/breath/0.jsonl", 0, "Edit", t0() - Duration::from_secs(60));
     s.label = "BREATH".into();
     let id = s.agent_id;
     let scene = scene_with(vec![s], 16);
@@ -186,9 +186,9 @@ fn overlapping_agents_hit_the_one_painted_on_top() {
     // Two arrivals of one instant walk out of the elevator on one spot; a
     // second cwd dresses the second in another outfit, so the pixels tell
     // them apart.
-    let mut a = active("/overlap/a.jsonl", 0, "Edit", t0());
+    let mut a = running("/overlap/a.jsonl", 0, "Edit", t0());
     a.label = "ALPHA".into();
-    let mut b = active("/overlap/b.jsonl", 1, "Edit", t0());
+    let mut b = running("/overlap/b.jsonl", 1, "Edit", t0());
     b.label = "BRAVO".into();
     b.cwd = Arc::from(Path::new("/elsewhere"));
     let now = t0() + Duration::from_millis(400);
@@ -251,7 +251,7 @@ fn the_drawn_geometry_answers_every_cell_as_the_half_block_does() {
     let now = t0() + Duration::from_secs(20);
     let mut scene = scene_with(
         (0..6)
-            .map(|i| active(&format!("/geo/{i}.jsonl"), i, "Edit", t0()))
+            .map(|i| running(&format!("/geo/{i}.jsonl"), i, "Edit", t0()))
             .collect(),
         16,
     );
@@ -326,7 +326,7 @@ where
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     let now = t0() + Duration::from_secs(20);
     let id = AgentId::from_transcript_path("/click/0.jsonl");
-    let scene = scene_with(vec![active("/click/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/click/0.jsonl", 0, "Edit", t0())], 16);
     r.render(&scene, now).unwrap();
     let (_tx, scene_rx) = tokio::sync::watch::channel(Arc::new(scene));
     let mut ui = crate::panels::ui_state::UiState::new(
@@ -480,7 +480,7 @@ pub(super) fn the_tooltip_names_what_a_click_acts_on<B>(
     let mut scene = scene_with(
         (0..3)
             .map(|i| {
-                let mut s = active(&format!("/same/{i}.jsonl"), i, "Edit", t0());
+                let mut s = running(&format!("/same/{i}.jsonl"), i, "Edit", t0());
                 s.label = format!("AGENT{i}").into();
                 s
             })

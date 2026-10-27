@@ -13,9 +13,9 @@
 //! Capture-grounded: tools are invisible under the `claude-cli` backend (no
 //! `before_tool_call`), `before_agent_run`/`agent_end` require
 //! `allowConversationAccess`, and `session_end` fires on a clean stop but not on
-//! a kill. Busy is therefore a self-healing decay keyed PER TURN, never a latch —
+//! a kill. Running is therefore a self-healing decay keyed PER TURN, never a latch —
 //! the daemon-wide `last_seen` is refreshed by any event, so keying the decay on it
-//! latched Busy on a gateway that kept serving other traffic.
+//! latched Running on a gateway that kept serving other traffic.
 
 use std::num::NonZeroU16;
 
@@ -37,11 +37,11 @@ pub const SOURCE_NAME: &str = "openclaw";
 /// (many per gateway).
 const GATEWAY_PORT_FIELD: &str = "gatewayPort";
 
-/// The busy pairing key: a non-empty `runId`, else `sessionId`, else `"_"`. The
+/// The running pairing key: a non-empty `runId`, else `sessionId`, else `"_"`. The
 /// `!is_empty` filter sits AFTER the pick, so a present-but-EMPTY `runId`
 /// short-circuits to `"_"` rather than falling through to `sessionId`. Coarse BY
 /// DESIGN — the last-seen TTL decay is the real backstop, so the key only affects
-/// busy-bubble intensity, never correctness.
+/// running-bubble intensity, never correctness.
 fn turn_key(obj: &serde_json::Map<String, Value>) -> TurnKey {
     TurnKey::Id(
         obj.get("runId")

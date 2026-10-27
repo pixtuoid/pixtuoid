@@ -163,7 +163,7 @@ fn office(start: SystemTime) -> SceneState {
         let id = AgentId::from_transcript_path(&format!("/pacing/a{i}.jsonl"));
         let (state, started) = match i % 3 {
             0 => (
-                ActivityState::Active {
+                ActivityState::Running {
                     tool_use_id: Some(format!("tu_{i}").into()),
                     detail: Some("Edit: src/lib.rs".into()),
                     kind: ToolKind::Edit,
@@ -193,7 +193,7 @@ fn office(start: SystemTime) -> SceneState {
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: scene.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 model: None,

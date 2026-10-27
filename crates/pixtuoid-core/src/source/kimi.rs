@@ -42,7 +42,7 @@ pub const SOURCE_NAME: &str = "kimi";
 ///
 /// - `PostToolUseFailure` — a FAILED tool fires this beside/instead of
 ///   `PostToolUse`; it must close the activity or the tool's `ToolUseStart`
-///   lingers Active. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
+///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
 /// - `StopFailure` — a failed turn end; settle to idle like `Stop`.
 ///   Identity-less: an end alone proves too little to label a session, so an

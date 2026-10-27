@@ -43,7 +43,7 @@ fn agent_slot(
         desk_index: desk,
         floor_idx: floor,
         tool_call_count: 0,
-        active_ms: 0,
+        running_ms: 0,
         unknown_cwd: false,
         parent_id: None,
         pid: None,
@@ -67,7 +67,7 @@ fn tui_renderer_render_paints_a_full_frame() {
             "demo",
             GlobalDeskIndex(0),
             0,
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some(std::sync::Arc::from("t1")),
                 detail: Some(std::sync::Arc::from("Write")),
                 kind: pixtuoid_core::state::ToolKind::Edit,

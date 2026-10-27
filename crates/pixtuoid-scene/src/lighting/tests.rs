@@ -77,7 +77,7 @@ fn lights_at(w: u16, h: u16, hour: u32) -> (SceneLayout, Lights) {
             seated: &HashMap::new(),
             floor_idx: 0,
             indoor_scale: 1.0,
-            neon: NeonLevels::BUSY,
+            neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
             bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
         },
@@ -97,9 +97,9 @@ fn neon_breath_advances_at_wall_clock_scale_and_stays_in_band() {
 }
 
 #[test]
-fn neon_halo_drops_to_its_daylight_floor_and_a_calm_sign_glows_less_than_a_busy_one() {
-    let night = neon_at(NeonLevels::BUSY, 1.0);
-    let day = neon_at(NeonLevels::BUSY, 0.0);
+fn neon_halo_drops_to_its_daylight_floor_and_a_calm_sign_glows_less_than_a_running_one() {
+    let night = neon_at(NeonLevels::RUNNING, 1.0);
+    let day = neon_at(NeonLevels::RUNNING, 0.0);
     assert!(
         (day - night * NEON_DAYLIGHT_MIN).abs() < 1e-6,
         "{day} vs {night}"
@@ -199,7 +199,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
     };
     let id = |p: &str| pixtuoid_core::AgentId::from_transcript_path(p);
     // No tool detail: a screen lights for any tool call.
-    let active = pixtuoid_core::state::ActivityState::Active {
+    let running = pixtuoid_core::state::ActivityState::Running {
         tool_use_id: None,
         detail: None,
         kind: pixtuoid_core::state::ToolKind::Edit,
@@ -210,14 +210,14 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
         a
     };
     let agents = [
-        at_desk("/lit.jsonl", lit, active.clone()),
-        at_desk("/walking.jsonl", walking, active.clone()),
+        at_desk("/lit.jsonl", lit, running.clone()),
+        at_desk("/walking.jsonl", walking, running.clone()),
         at_desk(
             "/idle.jsonl",
             idle,
             pixtuoid_core::state::ActivityState::Idle,
         ),
-        at_desk("/back.jsonl", south, active),
+        at_desk("/back.jsonl", south, running),
     ];
     let seated = HashMap::from([
         (FloorLocalDeskIndex(lit), true),
@@ -234,7 +234,7 @@ fn a_monitor_halo_hangs_over_each_lit_screen_only() {
             seated: &seated,
             floor_idx: 0,
             indoor_scale: 1.0,
-            neon: NeonLevels::BUSY,
+            neon: NeonLevels::RUNNING,
             beat: Beat::at_ms(0),
             bulbs: crate::lighting::DeskBulbs::of(&crate::pack::test_office()),
         },

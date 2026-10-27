@@ -12,8 +12,8 @@ fn gateway_scene(
     gateway_scene_turns(liveness, entered_at, last_seen, sessions, &[])
 }
 
-/// As `gateway_scene`, with in-flight TURN keys. Busy is DERIVED: pass
-/// `DaemonLiveness::UP` + ≥1 turn, not a stored Busy state.
+/// As `gateway_scene`, with in-flight TURN keys. Running is DERIVED: pass
+/// `DaemonLiveness::UP` + ≥1 turn, not a stored Running state.
 fn gateway_scene_turns(
     liveness: pixtuoid_core::state::DaemonLiveness,
     entered_at: SystemTime,
@@ -354,12 +354,12 @@ fn gateway_mascot_present_when_up() {
 }
 
 #[test]
-fn gateway_mascot_busy_bubbles_track_turns_not_sessions() {
+fn gateway_mascot_running_bubbles_track_turns_not_sessions() {
     let entered = t0() - Duration::from_secs(20);
 
     // sessions=1 with NO turns; then the same session WITH two in-flight turns.
     let idle = gateway_scene(pixtuoid_core::state::DaemonLiveness::UP, entered, t0(), 1);
-    let busy = gateway_scene_turns(
+    let running = gateway_scene_turns(
         pixtuoid_core::state::DaemonLiveness::UP,
         entered,
         t0(),
@@ -377,7 +377,7 @@ fn gateway_mascot_busy_bubbles_track_turns_not_sessions() {
         // Runs are the ONLY difference between the two scenes, so their diff is
         // the bubbles. The session arm is the negative half: a second session
         // with no turns must move nothing.
-        turns_add = turns_add.max(p.diff(&busy, &idle, now).len());
+        turns_add = turns_add.max(p.diff(&running, &idle, now).len());
         let more_sessions =
             gateway_scene(pixtuoid_core::state::DaemonLiveness::UP, entered, t0(), 3);
         session_adds = session_adds.max(p.diff(&more_sessions, &idle, now).len());

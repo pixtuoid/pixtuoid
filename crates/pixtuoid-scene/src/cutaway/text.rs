@@ -308,23 +308,23 @@ mod tests {
                 ..StateCounts::default()
             },
             StateCounts {
-                active: 1,
+                running: 1,
                 total: 1,
                 ..StateCounts::default()
             },
             StateCounts {
-                active: 3,
+                running: 3,
                 total: 3,
                 ..StateCounts::default()
             },
             StateCounts {
-                waiting: 1,
+                requires_action: 1,
                 total: 1,
                 ..StateCounts::default()
             },
             StateCounts {
-                waiting: 2,
-                active: 3,
+                requires_action: 2,
+                running: 3,
                 idle: 4,
                 total: 9,
                 ..StateCounts::default()
@@ -333,7 +333,7 @@ mod tests {
         let gateways = [
             None,
             Some(DaemonState::Idle),
-            Some(DaemonState::Busy),
+            Some(DaemonState::Running),
             Some(DaemonState::Degraded),
             Some(DaemonState::Down),
         ];

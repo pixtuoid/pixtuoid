@@ -716,7 +716,7 @@ mod tests {
         let pack = crate::test_flash::pack_arc();
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
         let scene = super::super::fixtures::scene_with(
-            vec![super::super::fixtures::active_on("/p/a.jsonl", 0, 0)],
+            vec![super::super::fixtures::running_on("/p/a.jsonl", 0, 0)],
             16,
         );
         for window in [(640u32, 400u32), (1001, 333)] {

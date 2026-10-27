@@ -304,7 +304,7 @@ pub(crate) static CATPPUCCIN: Theme = Theme {
             g: 60,
             b: 80,
         },
-        waiting_bubble: Rgb {
+        requires_action_bubble: Rgb {
             r: 249,
             g: 226,
             b: 175,
@@ -343,12 +343,17 @@ pub(crate) static CATPPUCCIN: Theme = Theme {
         },
     },
     ui: UiColors {
-        label_active: Rgb {
+        label_running: Rgb {
             r: 166,
             g: 227,
             b: 161,
         },
-        label_waiting: Rgb {
+        label_ok: Rgb {
+            r: 166,
+            g: 227,
+            b: 161,
+        },
+        label_requires_action: Rgb {
             r: 249,
             g: 226,
             b: 175,

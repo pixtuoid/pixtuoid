@@ -522,25 +522,22 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         "Notification" => {
-            let msg = obj
-                .get("message")
-                .and_then(|s| s.as_str())
-                .unwrap_or("waiting");
+            let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 hook_identity(agent_id, source, &session_id, obj),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: ellipsize(msg, MAX_DECODED_FIELD_CHARS),
+                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
                 },
             ])
         }
-        // Codex's permission prompt is the same "waiting on the human" signal.
+        // Codex's permission prompt is the same "requires action" signal.
         "PermissionRequest" => Ok(vec![
             hook_identity(agent_id, source, &session_id, obj),
             AgentEvent::UserActionRequest {
                 agent_id,
-                reason: "permission".into(),
+                reason: Some("permission".into()),
                 tool_use_id: None,
             },
         ]),
@@ -1521,7 +1518,7 @@ mod tests {
         /// A fixed `&'static str`: the over-cap wire value must NOT leak in, so
         /// a later switch to a wire field cannot slip past uncapped.
         Fixed,
-        /// No [`AgentEvent::UserActionRequest`] wire today. The row exists so adding one forces a visit.
+        /// No [`AgentEvent::UserActionRequest`] reason on the wire today. The row exists so adding one forces a visit.
         NoUserActionRequest,
     }
 
@@ -1644,7 +1641,7 @@ mod tests {
             ),
             (
                 codewhale::SOURCE_NAME,
-                ReasonKind::Fixed,
+                ReasonKind::NoUserActionRequest,
                 Box::new(|| {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
                         "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw})))
@@ -1690,7 +1687,7 @@ mod tests {
         for (src, kind, decode) in &table {
             let evs = decode();
             let reason = evs.iter().find_map(|e| match e {
-                AgentEvent::UserActionRequest { reason, .. } => Some(reason.clone()),
+                AgentEvent::UserActionRequest { reason, .. } => reason.clone(),
                 _ => None,
             });
             match kind {

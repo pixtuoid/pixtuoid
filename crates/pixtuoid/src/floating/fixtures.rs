@@ -25,9 +25,9 @@ pub(super) fn cutaway(size: Size) -> PixelFit {
     )
 }
 
-/// Local twin of the TUI harness's `active_on` — `tui` and `floating` are sibling
+/// Local twin of the TUI harness's `running_on` — `tui` and `floating` are sibling
 /// painters that don't share code, test helpers included.
-pub(super) fn active_on(
+pub(super) fn running_on(
     path: &str,
     floor_idx: usize,
     desk: usize,
@@ -41,7 +41,7 @@ pub(super) fn active_on(
         session_id: Arc::from("s"),
         cwd: Arc::from(std::path::Path::new("/repo")),
         label: "a".into(),
-        state: ActivityState::Active {
+        state: ActivityState::Running {
             tool_use_id: Some(Arc::from("t")),
             detail: Some(Arc::from("Edit")),
             kind: ToolKind::from_display("Edit"),
@@ -53,7 +53,7 @@ pub(super) fn active_on(
         desk_index: GlobalDeskIndex(desk),
         floor_idx,
         tool_call_count: 0,
-        active_ms: 0,
+        running_ms: 0,
         unknown_cwd: false,
         parent_id: None,
         pid: None,

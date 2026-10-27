@@ -73,7 +73,7 @@ fn hovered_dossier_shows_token_usage_only_when_nonzero() {
 fn footer_shows_agent_count() {
     let scene = scene_with(
         vec![
-            active("/f/0.jsonl", 0, "Edit", t0()),
+            running("/f/0.jsonl", 0, "Edit", t0()),
             idle("/f/1.jsonl", 1, t0()),
             idle("/f/2.jsonl", 2, t0()),
         ],
@@ -83,7 +83,7 @@ fn footer_shows_agent_count() {
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
-        text.contains(" 3 \u{b7} \u{25cf}1 A") && text.contains("\u{25cb}2 I"),
+        text.contains(" 3 \u{b7} \u{25cf}1 R") && text.contains("\u{25cb}2 I"),
         "full-width footer shows the count + state rungs; frame footer area:\n{}",
         text.lines().last().unwrap_or("")
     );
@@ -95,7 +95,7 @@ fn tool_glow_tint_differs_by_tool() {
         // Long-seated (entry walk done) so it's SeatedTyping at the desk and
         // the monitor screen-glow paints.
         let scene = scene_with(
-            vec![active(
+            vec![running(
                 "/tg/0.jsonl",
                 0,
                 detail,

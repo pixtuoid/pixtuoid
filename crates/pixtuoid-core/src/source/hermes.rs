@@ -183,7 +183,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 identity(),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason,
+                    reason: Some(reason),
                     tool_use_id: tool_use_id(),
                 },
             ])

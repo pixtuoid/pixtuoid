@@ -1152,11 +1152,11 @@ mod listen_gate {
             .unwrap();
     }
 
-    /// One audition: an office of `active` agents under `rain`, its sky's
+    /// One audition: an office of `running` agents under `rain`, its sky's
     /// nightfall at each second, its one-shots, and its length.
     struct Row<'a> {
         name: &'a str,
-        active: usize,
+        running: usize,
         rain: f32,
         nightfall: fn(f32) -> f32,
         events_at: &'a [(f32, OneShot)],
@@ -1168,11 +1168,11 @@ mod listen_gate {
 
     fn render(bank: &AssetBank, rain_bed: &Arc<Vec<f32>>, row: &Row) -> Vec<f32> {
         let counts = pixtuoid_scene::tally::StateCounts {
-            active: row.active,
-            waiting: 0,
+            running: row.running,
+            requires_action: 0,
             idle: 0,
             exiting: 0,
-            total: row.active,
+            total: row.running,
         };
         let mut sink = OfflineSink::new(row.secs);
         sink.start_loop(LoopStem::Rain, Arc::clone(rain_bed));
@@ -1240,9 +1240,9 @@ mod listen_gate {
         let night: fn(f32) -> f32 = |_| 1.0;
         // Through the first minute, so the next song is the night family's.
         let dusk: fn(f32) -> f32 = |t| (t / 60.0).min(1.0);
-        let row = |name, active, rain, nightfall, events_at, secs| Row {
+        let row = |name, running, rain, nightfall, events_at, secs| Row {
             name,
-            active,
+            running,
             rain,
             nightfall,
             events_at,

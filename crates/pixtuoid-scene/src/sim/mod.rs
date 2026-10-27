@@ -249,7 +249,7 @@ pub struct SimFrame {
     pub(crate) neon: crate::floor::NeonLevels,
     /// Whether that light is a starved tube's catch.
     pub(crate) neon_stutter: bool,
-    /// Active speech bubbles after this tick's venue update.
+    /// Running speech bubbles after this tick's venue update.
     pub(crate) chitchat_bubbles: Vec<ChitchatBubble>,
     /// Agents observed walking back with coffee this tick — the caller
     /// persists them into its `CoffeeState`.
@@ -754,7 +754,7 @@ fn mascot_placements(
                     key,
                     degraded,
                     on_roster,
-                    // The busy tell keys on in-flight RUNS, not the (persistent,
+                    // The running tell keys on in-flight RUNS, not the (persistent,
                     // single-user) session count, which sticks at 1 at rest.
                     effects: if turns > 0 {
                         effects::mascot_bubbles(pos, size.h, turns, beat).collect()
@@ -814,8 +814,8 @@ pub(crate) fn cup_effects(cup_at: Option<Point>, cup: Option<Cup>, beat: Beat) -
 pub(crate) struct Cues {
     /// Asleep: its z's stagger off this seed.
     pub(crate) sleep_seed: Option<u64>,
-    /// Waiting on the human.
-    pub(crate) waiting: bool,
+    /// RequiresAction on the human.
+    pub(crate) requires_action: bool,
     /// Walking, its weight on this foot ([`effects::planted_foot`]).
     pub(crate) planted_foot: Option<usize>,
 }
@@ -843,8 +843,8 @@ pub(crate) fn character_effects(
         cues.sleep_seed
             .and_then(|seed| effects::sleep_z(top_left, seed, beat)),
     );
-    if cues.waiting {
-        out.push(effects::waiting_mark(top_left));
+    if cues.requires_action {
+        out.push(effects::requires_action_mark(top_left));
     }
     out
 }
@@ -895,7 +895,7 @@ pub(crate) fn resolve_characters(
         let Some(p) = poses.get(&agent.agent_id).copied().flatten() else {
             continue;
         };
-        let is_waiting = matches!(agent.state, ActivityState::Waiting { .. });
+        let is_requires_action = matches!(agent.state, ActivityState::RequiresAction { .. });
         let seated = |base: Piece, glow: CharacterGlow, sleep_seed: Option<u64>| {
             let seat = Seat::at_desk(desk.at, desk.facing);
             let top_left = seat.render_top_left(CHARACTER_SPRITE_W);
@@ -919,14 +919,14 @@ pub(crate) fn resolve_characters(
             };
             let cues = Cues {
                 sleep_seed,
-                waiting: is_waiting,
+                requires_action: is_requires_action,
                 planted_foot: None,
             };
             (placement, cues)
         };
         match p {
-            Pose::SeatedIdle if is_waiting => {
-                // Waiting is the one state that WANTS the human — the `N wait`
+            Pose::SeatedIdle if is_requires_action => {
+                // RequiresAction is the one state that WANTS the human — the `N req`
                 // counter's twin. Asleep-with-zzz reads as the opposite.
                 placements.push(seated(SEATED, CharacterGlow::None, None));
             }

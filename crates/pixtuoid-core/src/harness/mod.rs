@@ -67,15 +67,15 @@ pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> std::io::Result
 /// reached-at-some-point, never as the terminal state.
 ///
 /// A class, not a `ToolKind`: `from_display` is case-sensitive, so a lowercase
-/// wire tool name (`"bash"`) renders `Active(Other)` where `"Bash"` renders
-/// `Active(Bash)` — a cosmetic per-source difference that must not be frozen
+/// wire tool name (`"bash"`) renders `Running(Other)` where `"Bash"` renders
+/// `Running(Bash)` — a cosmetic per-source difference that must not be frozen
 /// into a lifecycle assertion.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Reach {
     /// A tool call is in flight.
-    Active,
+    Running,
     /// Blocked on a permission/input prompt.
-    Waiting,
+    RequiresAction,
     /// A subagent dispatch is in flight.
     Delegating,
 }
@@ -458,12 +458,12 @@ impl tracing::Subscriber for BreadcrumbSink {
 fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
     for (&id, slot) in &scene.agents {
         let r = match &slot.state {
-            ActivityState::Active {
+            ActivityState::Running {
                 kind: ToolKind::Task,
                 ..
             } => Reach::Delegating,
-            ActivityState::Active { .. } => Reach::Active,
-            ActivityState::Waiting { .. } => Reach::Waiting,
+            ActivityState::Running { .. } => Reach::Running,
+            ActivityState::RequiresAction { .. } => Reach::RequiresAction,
             ActivityState::Idle => continue,
         };
         if !reaches.contains(&(id, r)) {
@@ -540,13 +540,13 @@ mod tests {
     }
 
     #[test]
-    fn the_first_sight_seed_registers_and_the_wire_drives_the_slot_active() {
+    fn the_first_sight_seed_registers_and_the_wire_drives_the_slot_running() {
         let d = Drive::transcript(SOURCE, TRANSCRIPT)
             .unwrap()
             .seeded()
             .lines([tool_line()]);
         assert_eq!(d.registered(), 1);
-        assert_eq!(d.reached(), vec![Reach::Active]);
+        assert_eq!(d.reached(), vec![Reach::Running]);
     }
 
     #[test]
@@ -686,7 +686,7 @@ mod tests {
             .seeded()
             .lines([start, end]);
         assert!(
-            d.reached().contains(&Reach::Active),
+            d.reached().contains(&Reach::Running),
             "the resolved tool call must still count as reached, got {:?}",
             d.reaches
         );

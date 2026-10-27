@@ -474,7 +474,7 @@ mod tests {
             [
                 "agents=[] daemons=[]",
                 "agents=[cc\u{b7}proj@0:idle] daemons=[]",
-                "agents=[cc\u{b7}proj@0:active(Bash)] daemons=[]",
+                "agents=[cc\u{b7}proj@0:running(Bash)] daemons=[]",
                 "agents=[cc\u{b7}proj@0:idle] daemons=[]",
             ]
         );

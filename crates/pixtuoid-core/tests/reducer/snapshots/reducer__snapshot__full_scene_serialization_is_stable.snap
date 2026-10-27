@@ -12,7 +12,7 @@ agents:
       text: cc·proj
       provenance: CwdDerived
     state:
-      Active:
+      Running:
         tool_use_id: task-1
         detail: Delegating
         kind: Task
@@ -29,7 +29,7 @@ agents:
     desk_index: 0
     floor_idx: 0
     tool_call_count: 0
-    active_ms: 0
+    running_ms: 0
     unknown_cwd: false
     parent_id: ~
   7439847346463540306:
@@ -56,7 +56,7 @@ agents:
     desk_index: 4
     floor_idx: 0
     tool_call_count: 1
-    active_ms: 1000
+    running_ms: 1000
     unknown_cwd: false
     parent_id: ~
   9732828348925669089:
@@ -68,7 +68,7 @@ agents:
       text: cx·other
       provenance: CwdDerived
     state:
-      Waiting:
+      RequiresAction:
         reason: "permission: Bash"
     state_started_at:
       secs_since_epoch: 4
@@ -83,7 +83,7 @@ agents:
     desk_index: 2
     floor_idx: 0
     tool_call_count: 0
-    active_ms: 0
+    running_ms: 0
     unknown_cwd: false
     parent_id: ~
   16220165775691217798:
@@ -108,7 +108,7 @@ agents:
     desk_index: 3
     floor_idx: 0
     tool_call_count: 0
-    active_ms: 0
+    running_ms: 0
     unknown_cwd: false
     parent_id: ~
   17734653872224286956:
@@ -120,7 +120,7 @@ agents:
       text: cc·proj
       provenance: CwdDerived
     state:
-      Active:
+      Running:
         tool_use_id: tool-9
         detail: Read · src/main.rs
         kind: Read
@@ -137,7 +137,7 @@ agents:
     desk_index: 1
     floor_idx: 0
     tool_call_count: 1
-    active_ms: 0
+    running_ms: 0
     unknown_cwd: false
     parent_id: 4793496948666765799
 floor_capacities:

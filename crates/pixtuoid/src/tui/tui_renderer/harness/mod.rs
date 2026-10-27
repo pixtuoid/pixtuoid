@@ -33,7 +33,7 @@ pub(super) fn slot(
         desk_index: GlobalDeskIndex(desk_index),
         floor_idx,
         tool_call_count: 0,
-        active_ms: 0,
+        running_ms: 0,
         unknown_cwd: false,
         parent_id: None,
         pid: None,
@@ -105,9 +105,9 @@ pub(super) fn build_pets(
 pub(super) fn idle(id: &str, desk: usize, started: SystemTime) -> AgentSlot {
     slot(AgentId::from_transcript_path(id), 0, desk, started)
 }
-pub(super) fn active(id: &str, desk: usize, detail: &str, started: SystemTime) -> AgentSlot {
+pub(super) fn running(id: &str, desk: usize, detail: &str, started: SystemTime) -> AgentSlot {
     let mut s = idle(id, desk, started);
-    s.state = ActivityState::Active {
+    s.state = ActivityState::Running {
         tool_use_id: Some(Arc::from("t")),
         detail: Some(Arc::from(detail)),
         kind: ToolKind::from_display(detail),

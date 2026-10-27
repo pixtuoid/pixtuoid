@@ -364,7 +364,7 @@ pub enum Furniture {
     /// by reachability.
     SnackShelf,
     /// The agent's OWNED home workstation. Not a [`WaypointKind`] (per-agent,
-    /// forced-seat when Active, never a wander destination) but a first-class
+    /// forced-seat when Running, never a wander destination) but a first-class
     /// geometry row, so desk and couch share ONE table and the same
     /// `seated_foot_cell` + approach/settle path. Its footprint is stamped
     /// TOP-LEFT in `mask.rs`, not centered — the full sprite width (the side

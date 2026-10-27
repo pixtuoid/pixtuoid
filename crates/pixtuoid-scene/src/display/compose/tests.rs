@@ -323,7 +323,7 @@ pub(crate) fn sit_down_as(
             desk_index: pixtuoid_core::GlobalDeskIndex(home),
             ..make_slot(
                 id,
-                ActivityState::Active {
+                ActivityState::Running {
                     tool_use_id: None,
                     detail: None,
                     kind: ToolKind::Edit,
@@ -674,8 +674,8 @@ fn the_board_writes_inside_the_signs_interior() {
     let pack = test_office();
     let scale = RenderScale::from(pack.max_density_variant());
     let counts = crate::tally::StateCounts {
-        waiting: 12,
-        active: 34,
+        requires_action: 12,
+        running: 34,
         idle: 56,
         exiting: 0,
         total: 102,

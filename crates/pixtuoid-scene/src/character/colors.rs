@@ -354,15 +354,15 @@ pub(crate) fn agent_overrides(
     ]
 }
 
-/// The monitor glow color for an agent's active tool, or `None` when the agent
-/// is not Active.
+/// The monitor glow color for an agent's running tool, or `None` when the agent
+/// is not Running.
 pub(crate) fn tool_glow_tint(
     agent: &AgentSlot,
     glow: &crate::theme::ToolGlowColors,
 ) -> Option<Rgb> {
     use pixtuoid_core::state::ActivityState;
     match &agent.state {
-        ActivityState::Active { kind, .. } => Some(glow.for_kind(*kind)),
+        ActivityState::Running { kind, .. } => Some(glow.for_kind(*kind)),
         _ => None,
     }
 }
@@ -429,10 +429,10 @@ mod tests {
         use pixtuoid_core::ToolDetail;
         let id = pixtuoid_core::AgentId::from_transcript_path("/g.jsonl");
         let glow = &crate::theme::NORMAL.tool_glow;
-        let active = |detail: Option<&ToolDetail>| {
+        let running = |detail: Option<&ToolDetail>| {
             make_slot(
                 id,
-                ActivityState::Active {
+                ActivityState::Running {
                     tool_use_id: None,
                     detail: detail.map(|d| Arc::from(d.display())),
                     kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
@@ -456,7 +456,7 @@ mod tests {
         ];
         for (detail, expected) in table {
             assert_eq!(
-                tool_glow_tint(&active(detail.as_ref()), glow),
+                tool_glow_tint(&running(detail.as_ref()), glow),
                 Some(*expected),
                 "display {:?} must keep its pre-ToolKind tint",
                 detail.as_ref().map(ToolDetail::display),
@@ -466,18 +466,18 @@ mod tests {
         // impossible from production decoders, which type every dispatch as
         // ToolDetail::Task upstream.
         assert_eq!(
-            tool_glow_tint(&active(Some(&generic("Delegating imposter"))), glow),
+            tool_glow_tint(&running(Some(&generic("Delegating imposter"))), glow),
             Some(glow.default)
         );
     }
 
     #[test]
-    fn tool_glow_tint_is_none_unless_active() {
+    fn tool_glow_tint_is_none_unless_running() {
         let glow = &crate::theme::NORMAL.tool_glow;
         let id = pixtuoid_core::AgentId::from_transcript_path("/g.jsonl");
         let edit = make_slot(
             id,
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: None,
                 detail: None,
                 kind: ToolKind::Edit,

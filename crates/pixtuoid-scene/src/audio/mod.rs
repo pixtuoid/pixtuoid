@@ -54,9 +54,9 @@ pub const LIMITER_ATTACK: std::time::Duration = std::time::Duration::from_millis
 /// ducks the next.
 pub const LIMITER_RELEASE: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// Active-agent count at which the office reads BUSY (full band, dense typing).
-/// 1..BUSY_ACTIVE_MIN is the moderate anchor tier; 0 is empty.
-const BUSY_ACTIVE_MIN: usize = 3;
+/// Running-agent count at which the office reads BUSY (full band, dense typing).
+/// 1..BUSY_TIER_MIN_RUNNING is the moderate anchor tier; 0 is empty.
+const BUSY_TIER_MIN_RUNNING: usize = 3;
 
 /// The rain stem's gain at full precipitation — tuned well under the music,
 /// or the broadband rain masks the mix. The drop one-shots derive from
@@ -184,9 +184,9 @@ impl AudioCueTracker {
 
 /// How busy `counts` make the office.
 fn tier(counts: &StateCounts) -> Tier {
-    if counts.active >= BUSY_ACTIVE_MIN {
+    if counts.running >= BUSY_TIER_MIN_RUNNING {
         Tier::Busy
-    } else if counts.active >= 1 {
+    } else if counts.running >= 1 {
         Tier::Moderate
     } else {
         Tier::Empty
@@ -230,29 +230,29 @@ pub fn music_seed(now: std::time::SystemTime) -> u64 {
 mod tests {
     use super::*;
 
-    fn counts(active: usize) -> StateCounts {
+    fn counts(running: usize) -> StateCounts {
         StateCounts {
-            active,
-            waiting: 0,
+            running,
+            requires_action: 0,
             idle: 0,
             exiting: 0,
-            total: active,
+            total: running,
         }
     }
 
     #[test]
-    fn stem_levels_typing_scales_with_active_agents() {
+    fn stem_levels_typing_scales_with_running_agents() {
         assert_eq!(stem_levels(&counts(0), 0.0).typing, 0.0);
         assert_eq!(
             stem_levels(&counts(1), 0.0).typing,
             Tier::Moderate.typing_level()
         );
         assert_eq!(
-            stem_levels(&counts(BUSY_ACTIVE_MIN - 1), 0.0).typing,
+            stem_levels(&counts(BUSY_TIER_MIN_RUNNING - 1), 0.0).typing,
             Tier::Moderate.typing_level()
         );
         assert_eq!(
-            stem_levels(&counts(BUSY_ACTIVE_MIN), 0.0).typing,
+            stem_levels(&counts(BUSY_TIER_MIN_RUNNING), 0.0).typing,
             Tier::Busy.typing_level()
         );
     }
@@ -338,10 +338,10 @@ mod tests {
     }
 
     #[test]
-    fn waiting_and_idle_agents_do_not_raise_the_tier() {
+    fn requires_action_and_idle_agents_do_not_raise_the_tier() {
         let c = StateCounts {
-            active: 0,
-            waiting: 5,
+            running: 0,
+            requires_action: 5,
             idle: 3,
             exiting: 1,
             total: 9,
@@ -351,16 +351,16 @@ mod tests {
 
     #[test]
     fn each_tier_asks_lofi_for_its_intensity_anchor() {
-        let at = |active| music_controls(&counts(active), 0.0, 0.0).intensity;
+        let at = |running| music_controls(&counts(running), 0.0, 0.0).intensity;
         assert_eq!(at(0), 0.0, "an empty office is lofi's empty room");
         assert_eq!(
             at(1),
             Controls::default().intensity,
             "Moderate is lofi's anchor"
         );
-        assert_eq!(at(BUSY_ACTIVE_MIN - 1), Controls::default().intensity);
+        assert_eq!(at(BUSY_TIER_MIN_RUNNING - 1), Controls::default().intensity);
         assert_eq!(
-            at(BUSY_ACTIVE_MIN),
+            at(BUSY_TIER_MIN_RUNNING),
             1.0,
             "a busy office is lofi's busy room"
         );

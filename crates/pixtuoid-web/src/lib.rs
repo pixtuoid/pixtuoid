@@ -696,7 +696,7 @@ impl Office {
                     .apply(&mut self.scene, beat.event.clone(), at, beat.transport);
                 self.cursor += 1;
             }
-            // Each presence delta lands at its SCHEDULED time, so enter/busy/leave
+            // Each presence delta lands at its SCHEDULED time, so enter/running/leave
             // motion anchors correctly even on a catch-up step.
             while let Some(pb) = self.presence_beats.get(self.presence_cursor) {
                 if pb.at_ms > elapsed {
@@ -1410,7 +1410,7 @@ mod tests {
         o.step(T0_MS + 30_000.0, 160, 96);
         assert_eq!(lobster(&o), Some(DaemonState::Idle));
         o.step(T0_MS + 45_000.0, 160, 96);
-        assert_eq!(lobster(&o), Some(DaemonState::Busy));
+        assert_eq!(lobster(&o), Some(DaemonState::Running));
         assert_eq!(
             o.scene
                 .daemon(gw.source(), gw.instance())

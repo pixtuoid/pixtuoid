@@ -59,11 +59,11 @@
   {
     "icon": "🔎",
     "name": "Hover tooltips",
-    "desc": "Hover an agent for session duration, tool-call count and active-time %; hover any furniture — desks, sofas, plants, vending machine, printer — for its name",
+    "desc": "Hover an agent for session duration, tool-call count and running-time %; hover any furniture — desks, sofas, plants, vending machine, printer — for its name",
     "featured": false,
     "pix": "magnify",
     "card": {
-      "blurb": "hover a coworker for session length, tool-call count and active-time %, or any desk or plant for its name."
+      "blurb": "hover a coworker for session length, tool-call count and running-time %, or any desk or plant for its name."
     }
   },
   {

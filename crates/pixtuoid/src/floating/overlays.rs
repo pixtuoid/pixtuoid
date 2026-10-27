@@ -414,7 +414,7 @@ impl OverlayLayers {
 #[cfg(test)]
 mod tests {
     use super::super::compose::{XrgbSurface, pack_xrgb};
-    use super::super::fixtures::{active_on, density, scene_with};
+    use super::super::fixtures::{density, running_on, scene_with};
     use super::super::geometry::{Zoom, window_geometry};
     use super::*;
     use pixtuoid_scene::cutaway::glyph_cell;
@@ -468,7 +468,7 @@ mod tests {
         );
         // An agent's card opens below the pointer, flips above at the bottom
         // edge, and shifts left at the right one.
-        let agent = active_on("/p/a.jsonl", 0, 0);
+        let agent = running_on("/p/a.jsonl", 0, 0);
         let id = agent.agent_id;
         let scene = scene_with(vec![agent], 16);
         let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
@@ -522,7 +522,7 @@ mod tests {
         use pixtuoid_scene::footer::{FooterTone, RungKind};
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let mut scene = SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]);
-        let slot = active_on("/p/a.jsonl", 0, 0);
+        let slot = running_on("/p/a.jsonl", 0, 0);
         scene.agents.insert(slot.agent_id, slot);
         let inputs = FooterInputs::new(
             &scene,
@@ -557,8 +557,8 @@ mod tests {
             "the band's ground"
         );
         assert!(
-            sb.contains(&pack_xrgb(FooterTone::Rung(RungKind::Active).rgb(theme))),
-            "the ●A rung paints the shared label_active hue"
+            sb.contains(&pack_xrgb(FooterTone::Rung(RungKind::Running).rgb(theme))),
+            "the ●R rung paints the shared label_running hue"
         );
     }
 

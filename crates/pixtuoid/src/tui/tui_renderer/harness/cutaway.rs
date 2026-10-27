@@ -693,13 +693,13 @@ fn a_redraw_re_sends_every_tile() {
 #[test]
 fn an_agent_under_the_cutaway_is_hit_tested_on_the_canvas() {
     let (mut r, _wire) = kitty(120, 40);
-    let scene = scene_with(vec![active("/k/0.jsonl", 0, "Bash", t0())], 16);
+    let scene = scene_with(vec![running("/k/0.jsonl", 0, "Bash", t0())], 16);
     r.render(&scene, t0()).expect("render");
-    assert!(!frame_text(r.frame_buffer()).contains("Active"));
+    assert!(!frame_text(r.frame_buffer()).contains("Running"));
     hover_agent(&mut r, AgentId::from_transcript_path("/k/0.jsonl"));
     r.render(&scene, t0()).expect("render");
     assert!(
-        frame_text(r.frame_buffer()).contains("Active"),
+        frame_text(r.frame_buffer()).contains("Running"),
         "the hovered agent's tooltip"
     );
 }

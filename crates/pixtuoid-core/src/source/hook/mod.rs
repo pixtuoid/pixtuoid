@@ -571,7 +571,7 @@ mod tests {
             AgentEvent::turn_end(id),
             AgentEvent::UserActionRequest {
                 agent_id: id,
-                reason: "x".into(),
+                reason: Some("x".into()),
                 tool_use_id: None,
             },
             AgentEvent::SessionEnd {

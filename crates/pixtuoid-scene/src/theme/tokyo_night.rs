@@ -303,7 +303,7 @@ pub(crate) static TOKYO_NIGHT: Theme = Theme {
             g: 52,
             b: 72,
         },
-        waiting_bubble: Rgb {
+        requires_action_bubble: Rgb {
             r: 224,
             g: 175,
             b: 104,
@@ -343,12 +343,17 @@ pub(crate) static TOKYO_NIGHT: Theme = Theme {
         },
     },
     ui: UiColors {
-        label_active: Rgb {
+        label_running: Rgb {
             r: 158,
             g: 206,
             b: 106,
         },
-        label_waiting: Rgb {
+        label_ok: Rgb {
+            r: 158,
+            g: 206,
+            b: 106,
+        },
+        label_requires_action: Rgb {
             r: 224,
             g: 175,
             b: 104,

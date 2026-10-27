@@ -52,10 +52,10 @@ pub enum BoardTone {
     Brand,
     /// L1 ★ Star CTA — `neon_star`.
     Star,
-    /// A working/active count — `label_active`.
-    Active,
-    /// A waiting "needs-you" count — `label_waiting`.
-    Waiting,
+    /// A running count — `label_running`.
+    Running,
+    /// A waiting "needs-you" count — `label_requires_action`.
+    RequiresAction,
     /// An idle count — `label_idle`.
     Idle,
     /// Muted context/separator text, and a flap mid-roll — `tooltip_dim`.
@@ -69,8 +69,8 @@ impl BoardTone {
         match self {
             BoardTone::Brand => theme.ui.neon_brand,
             BoardTone::Star => theme.ui.neon_star,
-            BoardTone::Active => theme.ui.label_active,
-            BoardTone::Waiting => theme.ui.label_waiting,
+            BoardTone::Running => theme.ui.label_running,
+            BoardTone::RequiresAction => theme.ui.label_requires_action,
             BoardTone::Idle => theme.ui.label_idle,
             BoardTone::Dim => theme.ui.tooltip_dim,
         }
@@ -136,24 +136,24 @@ fn board_star() -> Vec<BoardSegment> {
     ]
 }
 
-/// How long the waiting lamp holds lit, then dark. A whole number of them
+/// How long the requires-action lamp holds lit, then dark. A whole number of them
 /// fits gen-media's hour grid, so a committed frame shows it lit.
 const BLINK_HALF_MS: u64 = 600;
 const _: () = assert!(crate::anim::HOUR_MS.is_multiple_of(2 * BLINK_HALF_MS));
 
-/// Whether the waiting lamp is lit `now_ms` into the beat.
+/// Whether the requires-action lamp is lit `now_ms` into the beat.
 fn lamp_lit(now_ms: u64) -> bool {
     (now_ms / BLINK_HALF_MS).is_multiple_of(2)
 }
 
-/// The lamp for agents in `tone`, the waiting one dark while it blinks off.
+/// The lamp for agents in `tone`, the requires-action one dark while it blinks off.
 fn lamp(tone: BoardTone, lit: bool) -> BoardSegment {
     let icon = match tone {
-        BoardTone::Waiting => Icon::Alert,
-        BoardTone::Active => Icon::Active,
+        BoardTone::RequiresAction => Icon::Alert,
+        BoardTone::Running => Icon::Running,
         _ => Icon::Idle,
     };
-    let tone = if tone == BoardTone::Waiting && !lit {
+    let tone = if tone == BoardTone::RequiresAction && !lit {
         BoardTone::Dim
     } else {
         tone
@@ -165,7 +165,7 @@ fn lamp(tone: BoardTone, lit: bool) -> BoardSegment {
 pub fn gateway_label(state: DaemonState) -> &'static str {
     match state {
         DaemonState::Idle => "ok",
-        DaemonState::Busy => "busy",
+        DaemonState::Running => "run",
         DaemonState::Degraded => "err",
         DaemonState::Down => "down",
     }
@@ -177,8 +177,8 @@ pub fn gateway_label(state: DaemonState) -> &'static str {
 pub fn gateway_tone(state: DaemonState) -> BoardTone {
     match state {
         DaemonState::Idle => BoardTone::Idle,
-        DaemonState::Busy => BoardTone::Active,
-        DaemonState::Degraded | DaemonState::Down => BoardTone::Waiting,
+        DaemonState::Running => BoardTone::Running,
+        DaemonState::Degraded | DaemonState::Down => BoardTone::RequiresAction,
     }
 }
 
@@ -187,15 +187,15 @@ pub fn gateway_tone(state: DaemonState) -> BoardTone {
 /// Exiting agents never count: a walkout isn't the mood.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OfficeMood {
-    /// `waiting` agents are blocked on the user — outranks everything.
+    /// `requires_action` agents are blocked on the user — outranks everything.
     Alert {
         /// How many agents wait.
-        waiting: usize,
+        requires_action: usize,
     },
-    /// Nobody waits and `active` agents work.
-    Busy {
+    /// Nobody waits and `running` agents work.
+    Running {
         /// How many agents work.
-        active: usize,
+        running: usize,
     },
     /// Everyone present is idle.
     Calm,
@@ -206,13 +206,13 @@ pub(crate) enum OfficeMood {
 impl OfficeMood {
     /// Classify `counts`.
     pub(crate) fn of(counts: StateCounts) -> Self {
-        if counts.waiting > 0 {
+        if counts.requires_action > 0 {
             Self::Alert {
-                waiting: counts.waiting,
+                requires_action: counts.requires_action,
             }
-        } else if counts.active > 0 {
-            Self::Busy {
-                active: counts.active,
+        } else if counts.running > 0 {
+            Self::Running {
+                running: counts.running,
             }
         } else if counts.idle > 0 {
             Self::Calm
@@ -223,7 +223,7 @@ impl OfficeMood {
 }
 
 /// The board's "mood pulse" tally — a lamp and a count per non-zero present
-/// state, the waiting lamp dark unless `lit`. Exiting agents are absent by
+/// state, the requires-action lamp dark unless `lit`. Exiting agents are absent by
 /// design: a walkout isn't the mood.
 ///
 /// Its text is ASCII and each lamp one cell, so a roll keeps every column in
@@ -237,8 +237,8 @@ pub(crate) fn board_mood_segments(counts: StateCounts, lit: bool) -> Vec<BoardSe
     }
     let build = |words: [&str; 3]| -> Vec<BoardSegment> {
         let rows = [
-            (counts.waiting, words[0], BoardTone::Waiting),
-            (counts.active, words[1], BoardTone::Active),
+            (counts.requires_action, words[0], BoardTone::RequiresAction),
+            (counts.running, words[1], BoardTone::Running),
             (counts.idle, words[2], BoardTone::Idle),
         ];
         let mut segs: Vec<BoardSegment> = Vec::new();
@@ -254,11 +254,11 @@ pub(crate) fn board_mood_segments(counts: StateCounts, lit: bool) -> Vec<BoardSe
         }
         segs
     };
-    let full = build(["wait", "work", "idle"]);
+    let full = build(["req", "run", "idle"]);
     if segs_cells(&full) <= crate::layout::NEON_PANEL_INNER_W as usize {
         full
     } else {
-        build(["wt", "wk", "id"])
+        build(["rq", "rn", "id"])
     }
 }
 
@@ -276,15 +276,15 @@ const PERSONA_ALERT_ONE: &[Persona] = &[
 ];
 const PERSONA_ALERT_MANY: &[Persona] = &[
     Persona::Counts("agents need you!"),
-    Persona::Counts("waiting on you..."),
+    Persona::Counts("require action..."),
 ];
-const PERSONA_BUSY_ONE: &[Persona] = &[
+const PERSONA_RUNNING_ONE: &[Persona] = &[
     Persona::Says("heads down, shipping"),
     Persona::Says("do not disturb :)"),
 ];
-const PERSONA_BUSY_MANY: &[Persona] = &[
+const PERSONA_RUNNING_MANY: &[Persona] = &[
     Persona::Says("heads down, shipping"),
-    Persona::Counts("brains at work"),
+    Persona::Counts("brains running"),
     Persona::Says("do not disturb :)"),
 ];
 const PERSONA_CALM: &[Persona] = &[
@@ -295,8 +295,8 @@ const PERSONA_CALM: &[Persona] = &[
 const _: () = assert!(
     !PERSONA_ALERT_ONE.is_empty()
         && !PERSONA_ALERT_MANY.is_empty()
-        && !PERSONA_BUSY_ONE.is_empty()
-        && !PERSONA_BUSY_MANY.is_empty()
+        && !PERSONA_RUNNING_ONE.is_empty()
+        && !PERSONA_RUNNING_MANY.is_empty()
         && !PERSONA_CALM.is_empty()
 );
 
@@ -309,10 +309,16 @@ const _: () = assert!(
 /// `floating::cadence`), which would hold a roll mid-scramble on screen.
 fn board_persona_segments(mood: OfficeMood, pick: u64, lit: bool) -> Option<Vec<BoardSegment>> {
     let (pool, n, tone) = match mood {
-        OfficeMood::Alert { waiting: 1 } => (PERSONA_ALERT_ONE, 1, BoardTone::Waiting),
-        OfficeMood::Alert { waiting } => (PERSONA_ALERT_MANY, waiting, BoardTone::Waiting),
-        OfficeMood::Busy { active: 1 } => (PERSONA_BUSY_ONE, 1, BoardTone::Active),
-        OfficeMood::Busy { active } => (PERSONA_BUSY_MANY, active, BoardTone::Active),
+        OfficeMood::Alert { requires_action: 1 } => {
+            (PERSONA_ALERT_ONE, 1, BoardTone::RequiresAction)
+        }
+        OfficeMood::Alert { requires_action } => (
+            PERSONA_ALERT_MANY,
+            requires_action,
+            BoardTone::RequiresAction,
+        ),
+        OfficeMood::Running { running: 1 } => (PERSONA_RUNNING_ONE, 1, BoardTone::Running),
+        OfficeMood::Running { running } => (PERSONA_RUNNING_MANY, running, BoardTone::Running),
         OfficeMood::Calm => (PERSONA_CALM, 0, BoardTone::Idle),
         OfficeMood::Empty => return None,
     };
@@ -578,13 +584,13 @@ mod tests {
         const A_MINUTE_MS: u64 = 60_000;
         const FRAME_MS: usize = crate::anim::PAINT_FRAME_MS as usize;
         let offices = [(0, 0, 0), (0, 0, 3), (4, 0, 6), (4, 2, 6), (1, 1, 0)];
-        for (active, waiting, idle) in offices {
+        for (running, requires_action, idle) in offices {
             let counts = StateCounts {
-                active,
-                waiting,
+                running,
+                requires_action,
                 idle,
                 exiting: 0,
-                total: active + waiting + idle,
+                total: running + requires_action + idle,
             };
             for ms in (0..A_MINUTE_MS).step_by(FRAME_MS) {
                 let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms);
@@ -607,13 +613,13 @@ mod tests {
             .collect()
     }
 
-    fn counts(active: usize, waiting: usize, idle: usize) -> StateCounts {
+    fn counts(running: usize, requires_action: usize, idle: usize) -> StateCounts {
         StateCounts {
-            active,
-            waiting,
+            running,
+            requires_action,
             idle,
             exiting: 0,
-            total: active + waiting + idle,
+            total: running + requires_action + idle,
         }
     }
 
@@ -674,14 +680,14 @@ mod tests {
     }
 
     #[test]
-    fn mood_is_alert_over_busy_over_calm_over_empty() {
+    fn mood_is_alert_over_running_over_calm_over_empty() {
         assert_eq!(
             OfficeMood::of(counts(3, 2, 5)),
-            OfficeMood::Alert { waiting: 2 }
+            OfficeMood::Alert { requires_action: 2 }
         );
         assert_eq!(
             OfficeMood::of(counts(3, 0, 5)),
-            OfficeMood::Busy { active: 3 }
+            OfficeMood::Running { running: 3 }
         );
         assert_eq!(OfficeMood::of(counts(0, 0, 5)), OfficeMood::Calm);
         assert_eq!(OfficeMood::of(counts(0, 0, 0)), OfficeMood::Empty);
@@ -701,7 +707,7 @@ mod tests {
     fn l2_holds_the_tally_then_the_persona_and_rolls_only_between_them() {
         let c = counts(4, 2, 6);
         let mood = OfficeMood::of(c);
-        // Each face as `ms` shows its waiting lamp, which blinks underneath.
+        // Each face as `ms` shows its requires-action lamp, which blinks underneath.
         let tally = |ms| board_mood_segments(c, lamp_lit(ms));
         let persona = |ms| board_persona_segments(mood, 0, lamp_lit(ms)).expect("fits");
         assert_ne!(tally(0), persona(0));
@@ -821,8 +827,8 @@ mod tests {
     fn a_persona_line_fits_the_panel_or_is_withheld() {
         for n in [1usize, 2, 999, usize::MAX] {
             for mood in [
-                OfficeMood::Alert { waiting: n },
-                OfficeMood::Busy { active: n },
+                OfficeMood::Alert { requires_action: n },
+                OfficeMood::Running { running: n },
                 OfficeMood::Calm,
             ] {
                 for pick in 0..8 {
@@ -837,9 +843,9 @@ mod tests {
                 }
             }
         }
-        assert!(board_persona_segments(OfficeMood::Busy { active: 999 }, 1, true).is_some());
+        assert!(board_persona_segments(OfficeMood::Running { running: 999 }, 1, true).is_some());
         let absurd = OfficeMood::Alert {
-            waiting: usize::MAX,
+            requires_action: usize::MAX,
         };
         assert_eq!(
             board_persona_segments(absurd, 0, true),
@@ -851,7 +857,7 @@ mod tests {
     #[test]
     fn an_office_without_a_persona_never_leaves_the_tally() {
         let absurd = StateCounts {
-            waiting: usize::MAX,
+            requires_action: usize::MAX,
             total: usize::MAX,
             ..StateCounts::default()
         };
@@ -865,18 +871,20 @@ mod tests {
 
     #[test]
     fn a_counted_persona_line_reads_glyph_count_text() {
-        let line = board_persona_segments(OfficeMood::Alert { waiting: 3 }, 0, true).expect("fits");
+        let line = board_persona_segments(OfficeMood::Alert { requires_action: 3 }, 0, true)
+            .expect("fits");
         assert_eq!(text_of(&line), "\u{25b2} 3 agents need you!");
-        let line = board_persona_segments(OfficeMood::Busy { active: 12 }, 1, true).expect("fits");
-        assert_eq!(text_of(&line), "\u{25cf} 12 brains at work");
+        let line =
+            board_persona_segments(OfficeMood::Running { running: 12 }, 1, true).expect("fits");
+        assert_eq!(text_of(&line), "\u{25cf} 12 brains running");
     }
 
     #[test]
     fn one_agent_is_never_pluralised() {
         for pick in 0..8 {
             for mood in [
-                OfficeMood::Alert { waiting: 1 },
-                OfficeMood::Busy { active: 1 },
+                OfficeMood::Alert { requires_action: 1 },
+                OfficeMood::Running { running: 1 },
             ] {
                 let line = text_of(&board_persona_segments(mood, pick, true).expect("fits"));
                 assert!(!line.contains("1 "), "{mood:?}/{pick}: {line:?}");
@@ -927,7 +935,7 @@ mod tests {
                 desk_index: GlobalDeskIndex(0),
                 floor_idx: 0,
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,
@@ -947,30 +955,33 @@ mod tests {
     }
 
     #[test]
-    fn mood_echoes_counts_with_waiting_beacon_leading() {
+    fn mood_echoes_counts_with_requires_action_beacon_leading() {
         let c = StateCounts {
-            active: 3,
-            waiting: 2,
+            running: 3,
+            requires_action: 2,
             idle: 5,
             exiting: 1,
             total: 11,
         };
         let segs = board_mood_segments(c, true);
         let text = mood_text(c);
-        assert!(text.contains("\u{25b2}2 wait"), "waiting beacon: {text}");
-        assert!(text.contains("\u{25cf}3 work"), "active: {text}");
+        assert!(
+            text.contains("\u{25b2}2 req"),
+            "requires-action beacon: {text}"
+        );
+        assert!(text.contains("\u{25cf}3 run"), "running: {text}");
         assert!(text.contains("\u{25cb}5 idle"), "idle: {text}");
         assert!(!text.contains("exit"), "no exiting on the mood: {text}");
         let w = text.find('\u{25b2}').unwrap();
         let a = text.find('\u{25cf}').unwrap();
-        assert!(w < a, "waiting leads active: {text}");
+        assert!(w < a, "requires-action leads running: {text}");
         let tone_of = |glyph: char| {
             segs.iter()
                 .find(|s| s.text().starts_with(glyph))
                 .map(|s| s.tone)
         };
-        assert_eq!(tone_of('\u{25b2}'), Some(BoardTone::Waiting));
-        assert_eq!(tone_of('\u{25cf}'), Some(BoardTone::Active));
+        assert_eq!(tone_of('\u{25b2}'), Some(BoardTone::RequiresAction));
+        assert_eq!(tone_of('\u{25cf}'), Some(BoardTone::Running));
         assert_eq!(tone_of('\u{25cb}'), Some(BoardTone::Idle));
     }
 
@@ -979,16 +990,16 @@ mod tests {
     #[test]
     fn a_lamp_blinks_through_a_roll() {
         let rolled = flap_roll(
-            &[(Flap::Icon(Icon::Alert), BoardTone::Waiting)],
+            &[(Flap::Icon(Icon::Alert), BoardTone::RequiresAction)],
             &[(Flap::Icon(Icon::Alert), BoardTone::Dim)],
             0,
         );
         assert_eq!(rolled, [BoardSegment::icon(Icon::Alert, BoardTone::Dim)]);
     }
 
-    /// The waiting lamp blinks, dim while it is off; the others hold.
+    /// The requires-action lamp blinks, dim while it is off; the others hold.
     #[test]
-    fn the_waiting_lamp_blinks() {
+    fn the_requires_action_lamp_blinks() {
         let c = counts(1, 1, 1);
         let lamps = |ms| -> Vec<BoardTone> {
             board_mood_at(c, ms)
@@ -997,17 +1008,17 @@ mod tests {
                 .map(|s| s.tone)
                 .collect()
         };
-        use BoardTone::{Active, Dim, Idle, Waiting};
-        assert_eq!(lamps(0), [Waiting, Active, Idle]);
-        assert_eq!(lamps(BLINK_HALF_MS), [Dim, Active, Idle]);
-        assert_eq!(lamps(2 * BLINK_HALF_MS), [Waiting, Active, Idle]);
+        use BoardTone::{Dim, Idle, RequiresAction, Running};
+        assert_eq!(lamps(0), [RequiresAction, Running, Idle]);
+        assert_eq!(lamps(BLINK_HALF_MS), [Dim, Running, Idle]);
+        assert_eq!(lamps(2 * BLINK_HALF_MS), [RequiresAction, Running, Idle]);
     }
 
     #[test]
     fn mood_calm_office_drops_the_beacon() {
         let c = StateCounts {
-            active: 1,
-            waiting: 0,
+            running: 1,
+            requires_action: 0,
             idle: 2,
             exiting: 0,
             total: 3,
@@ -1017,7 +1028,7 @@ mod tests {
             !text.contains('\u{25b2}'),
             "no beacon when nobody waits: {text}"
         );
-        assert!(text.contains("\u{25cf}1 work") && text.contains("\u{25cb}2 idle"));
+        assert!(text.contains("\u{25cf}1 run") && text.contains("\u{25cb}2 idle"));
     }
 
     #[test]
@@ -1031,8 +1042,8 @@ mod tests {
     #[test]
     fn mood_big_office_abbreviates_to_fit_the_panel_interior() {
         let c = StateCounts {
-            active: 150,
-            waiting: 150,
+            running: 150,
+            requires_action: 150,
             idle: 150,
             exiting: 0,
             total: 450,
@@ -1043,21 +1054,24 @@ mod tests {
             width <= crate::layout::NEON_PANEL_INNER_W as usize,
             "fits the panel interior: {text} = {width}"
         );
-        assert!(text.contains("\u{25b2}150 wt"), "abbreviated big-N: {text}");
+        assert!(text.contains("\u{25b2}150 rq"), "abbreviated big-N: {text}");
     }
 
     #[test]
     fn gateway_tone_mirrors_the_footer_severity_map() {
         assert_eq!(gateway_tone(DaemonState::Idle), BoardTone::Idle);
-        assert_eq!(gateway_tone(DaemonState::Busy), BoardTone::Active);
-        assert_eq!(gateway_tone(DaemonState::Degraded), BoardTone::Waiting);
-        assert_eq!(gateway_tone(DaemonState::Down), BoardTone::Waiting);
+        assert_eq!(gateway_tone(DaemonState::Running), BoardTone::Running);
+        assert_eq!(
+            gateway_tone(DaemonState::Degraded),
+            BoardTone::RequiresAction
+        );
+        assert_eq!(gateway_tone(DaemonState::Down), BoardTone::RequiresAction);
         assert_eq!(gateway_label(DaemonState::Idle), "ok");
         assert_eq!(gateway_label(DaemonState::Down), "down");
         let theme = crate::theme::theme_by_name("normal").expect("normal theme");
         for st in [
             DaemonState::Idle,
-            DaemonState::Busy,
+            DaemonState::Running,
             DaemonState::Degraded,
             DaemonState::Down,
         ] {
@@ -1072,8 +1086,8 @@ mod tests {
     #[test]
     fn build_board_assembles_all_three_rows() {
         let c = StateCounts {
-            active: 2,
-            waiting: 0,
+            running: 2,
+            requires_action: 0,
             idle: 1,
             exiting: 0,
             total: 3,
@@ -1095,13 +1109,13 @@ mod tests {
             c,
             30,
             Some((2, 3)),
-            Some(DaemonState::Busy),
+            Some(DaemonState::Running),
             Motion::Full,
             SystemTime::UNIX_EPOCH,
         );
         let ctx: String = b2.context.iter().map(BoardSegment::text).collect();
-        assert_eq!(ctx, "up <1m  F2/3  \u{2b22}gw busy");
+        assert_eq!(ctx, "up <1m  F2/3  \u{2b22}gw run");
         let chip = b2.context.last().unwrap();
-        assert_eq!(chip.tone, BoardTone::Active, "busy gateway chip tone");
+        assert_eq!(chip.tone, BoardTone::Running, "running gateway chip tone");
     }
 }

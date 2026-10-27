@@ -670,7 +670,7 @@ fn main() -> Result<()> {
                 LiveInfo {
                     facet: LiveFacet::Daemon(Some(DaemonRollup {
                         instances: std::num::NonZeroUsize::new(2).expect("two gateways"),
-                        state: pixtuoid_core::state::DaemonState::Busy,
+                        state: pixtuoid_core::state::DaemonState::Running,
                     })),
                     dead: false,
                 },

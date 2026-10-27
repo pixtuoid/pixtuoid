@@ -570,7 +570,7 @@ const ROLE_TOOL_RESULT: &str = "toolResult";
 /// The assistant-content block a tool call arrives in. Its `id` is a REQUIRED
 /// pairing key on a block we decode, so an absent one is upstream drift rather than
 /// a line we ignore — breadcrumb, then drop. An unkeyable `toolResult` is the same
-/// case: it could never close its Start, leaking Active forever.
+/// case: it could never close its Start, leaking Running forever.
 const BLOCK_TOOL_CALL: &str = "toolCall";
 
 /// The tool that BLOCKS on human input: its `ToolUseStart` makes the ask's own
@@ -711,7 +711,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         if is_ask {
                             asks.push(AgentEvent::UserActionRequest {
                                 agent_id: acting,
-                                reason: omp_ask_reason(b.get("arguments")),
+                                reason: Some(omp_ask_reason(b.get("arguments"))),
                                 tool_use_id: None,
                             });
                         }
@@ -918,7 +918,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             let event = if ty == HOOK_APPROVAL_REQUESTED {
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: omp_approval_reason(obj, tool),
+                    reason: Some(omp_approval_reason(obj, tool)),
                     tool_use_id: Some(tool_call_id.to_string()),
                 }
             } else if obj.get("approved").and_then(|a| a.as_bool()) == Some(true) {
@@ -1279,7 +1279,7 @@ mod tests {
 
     /// Every message-level name reaches a real arm. Each is an equality guard
     /// whose miss is SILENT — a renamed role decodes the turn to nothing, a
-    /// renamed block type finds no tool calls, a renamed `ask` strands the Waiting
+    /// renamed block type finds no tool calls, a renamed `ask` strands the RequiresAction
     /// gate.
     #[test]
     fn each_message_level_name_reaches_an_arm() {
@@ -1530,7 +1530,9 @@ mod tests {
                 assert_eq!(*wid, root());
                 assert_eq!(tool_use_id.as_deref(), Some("tool_ASK1"));
                 assert!(
-                    reason.contains("packages/ui already exists"),
+                    reason
+                        .as_deref()
+                        .is_some_and(|r| r.contains("packages/ui already exists")),
                     "reason carries the question text, got {reason:?}"
                 );
             }
@@ -1543,13 +1545,15 @@ mod tests {
         let intent = r#"{"type":"message","id":"m8","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK2","name":"ask","arguments":{"i":"Confirming scope"}}],"timestamp":1}}"#;
         match &decode(intent)[..] {
             [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason, "Confirming scope")
+                assert_eq!(reason.as_deref(), Some("Confirming scope"))
             }
             other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
         let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
         match &decode(bare)[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => assert_eq!(reason, "ask"),
+            [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason.as_deref(), Some("ask"))
+            }
             other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
     }
@@ -2460,7 +2464,7 @@ mod tests {
                 AgentEvent::Identity { agent_id: iid, .. },
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason,
+                    reason: Some(reason),
                     tool_use_id,
                 },
             ] => {
@@ -2479,7 +2483,7 @@ mod tests {
         }));
         match &evs[..] {
             [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason, "outside workspace")
+                assert_eq!(reason.as_deref(), Some("outside workspace"))
             }
             other => panic!("unexpected: {other:?}"),
         }

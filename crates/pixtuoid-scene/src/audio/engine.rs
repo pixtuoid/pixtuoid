@@ -165,7 +165,7 @@ mod tests {
         }
     }
 
-    fn busy_frame() -> AudioFrame {
+    fn running_frame() -> AudioFrame {
         AudioFrame {
             stems: StemLevels {
                 rain: 0.5,
@@ -178,17 +178,17 @@ mod tests {
 
     fn settle(engine: &mut AudioEngine, ticks: usize) {
         for _ in 0..ticks {
-            engine.tick(0.05, Some(busy_frame()));
+            engine.tick(0.05, Some(running_frame()));
         }
     }
 
     #[test]
-    fn ramps_loop_gains_and_fires_typing_for_a_busy_office() {
+    fn ramps_loop_gains_and_fires_typing_for_a_running_office() {
         let mut e = AudioEngine::new(1.0);
         let mut typed = 0;
         let mut last_rain = 0.0;
         for _ in 0..200 {
-            let cmd = e.tick(0.05, Some(busy_frame()));
+            let cmd = e.tick(0.05, Some(running_frame()));
             last_rain = cmd.gain(LoopStem::Rain);
             typed += cmd
                 .plays
@@ -206,7 +206,7 @@ mod tests {
         settle(&mut e, 200);
         e.set_muted(true);
         settle(&mut e, 200);
-        let cmd = e.tick(0.05, Some(busy_frame()));
+        let cmd = e.tick(0.05, Some(running_frame()));
         assert!(cmd.gains.iter().all(|g| *g == 0.0), "muted loops fall to 0");
         assert_eq!(cmd.music.map(|m| m.gain), Some(0.0), "the music falls to 0");
         assert!(
@@ -219,12 +219,12 @@ mod tests {
     fn master_zero_silences_the_bus_and_raising_it_ramps_back() {
         let mut e = AudioEngine::new(0.0);
         settle(&mut e, 200);
-        let cmd = e.tick(0.05, Some(busy_frame()));
+        let cmd = e.tick(0.05, Some(running_frame()));
         assert!(cmd.gains.iter().all(|g| *g == 0.0), "master 0 = silent");
         e.set_master(1.0);
         let mut rain = 0.0;
         for _ in 0..200 {
-            rain = e.tick(0.05, Some(busy_frame())).gain(LoopStem::Rain);
+            rain = e.tick(0.05, Some(running_frame())).gain(LoopStem::Rain);
         }
         assert!(rain > 0.0, "master up ramps the mix back");
     }
@@ -252,7 +252,7 @@ mod tests {
         let mut e = AudioEngine::new(1.0);
         assert_eq!(e.tick(0.05, None).music, None, "no frame, no song");
         let night = Controls::default().with_daylight(0.0);
-        let mut frame = busy_frame();
+        let mut frame = running_frame();
         frame.music = night;
         let first = e
             .tick(0.05, Some(frame))
@@ -271,7 +271,7 @@ mod tests {
     fn scene_events_become_one_shot_plays() {
         let mut e = AudioEngine::new(1.0);
         settle(&mut e, 20);
-        let mut frame = busy_frame();
+        let mut frame = running_frame();
         frame.events = vec![OneShot::DoorChime, OneShot::VendingDrop];
         let cmd = e.tick(0.05, Some(frame));
         assert!(cmd.plays.iter().any(|p| p.pool == OneShotPool::DoorChime));
@@ -282,13 +282,15 @@ mod tests {
     fn the_dt_clamp_ceiling_stays_a_slew_while_an_unclamped_gap_would_snap() {
         let one_tick = |dt: f32| {
             AudioEngine::new(1.0)
-                .tick(dt, Some(busy_frame()))
+                .tick(dt, Some(running_frame()))
                 .gain(LoopStem::Rain)
         };
         let mut settled = AudioEngine::new(1.0);
         let mut full = 0.0;
         for _ in 0..500 {
-            full = settled.tick(0.05, Some(busy_frame())).gain(LoopStem::Rain);
+            full = settled
+                .tick(0.05, Some(running_frame()))
+                .gain(LoopStem::Rain);
         }
         assert!(
             one_tick(MAX_DT_S) < full * 0.5,

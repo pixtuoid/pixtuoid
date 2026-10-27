@@ -926,7 +926,7 @@ fn a_lit_desk_variant_lands_its_screen_where_the_base_does() {
         .expect("the office has a back-turned desk");
     let slot = scene.agents.get_mut(&id).expect("the rig's agent");
     slot.desk_index = GlobalDeskIndex(north);
-    slot.state = ActivityState::Active {
+    slot.state = ActivityState::Running {
         tool_use_id: None,
         detail: None,
         kind: ToolKind::Edit,
@@ -1074,7 +1074,7 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     let id = pixtuoid_core::AgentId::from_transcript_path("/t.jsonl");
     let editing = make_slot(
         id,
-        ActivityState::Active {
+        ActivityState::Running {
             tool_use_id: None,
             detail: None,
             kind: ToolKind::Edit,
@@ -3197,19 +3197,19 @@ fn sim_step_advances_walks_without_painting() {
     );
 }
 
-/// Waiting has NO pose of its own: the agent stays SEATED and the bubble carries
+/// RequiresAction has NO pose of its own: the agent stays SEATED and the bubble carries
 /// the state. So the cue must ride the agent's STATE, not the pose — and must
-/// read the same on a back-turned desk, which has no waiting art and needs none.
+/// read the same on a back-turned desk, which has no requires-action art and needs none.
 #[test]
-fn a_waiting_agent_stays_seated_and_gets_its_bubble_whichever_way_the_desk_faces() {
+fn a_requires_action_agent_stays_seated_and_gets_its_bubble_whichever_way_the_desk_faces() {
     let (mut scene, layout, id, now0, pack) = sim_rig();
     let coffee = HashMap::new();
     let mut seen = std::collections::BTreeSet::new();
     for (i, &HomeDesk { facing, .. }) in layout.home_desks.iter().enumerate() {
         let slot = scene.agents.get_mut(&id).expect("the rig's agent");
         slot.desk_index = GlobalDeskIndex(i);
-        slot.state = ActivityState::Waiting {
-            reason: "perm".into(),
+        slot.state = ActivityState::RequiresAction {
+            reason: Some("perm".into()),
         };
         // Past the entry walk, or the agent is still coming in the door.
         let now = now0 + std::time::Duration::from_millis(crate::pose::ENTRY_ANIMATION_MS + 5_000);
@@ -3235,18 +3235,18 @@ fn a_waiting_agent_stays_seated_and_gets_its_bubble_whichever_way_the_desk_faces
             .characters
             .iter()
             .find(|p| p.seat_desk.is_some())
-            .expect("a waiting agent is SEATED at its desk");
+            .expect("a requires-action agent is SEATED at its desk");
         let carries = |kind| p.effects.iter().any(|e| e.kind == kind);
         assert!(
-            carries(crate::effects::EffectKind::WaitingMark),
-            "{facing:?} desk {i}: a waiting agent must carry the bubble"
+            carries(crate::effects::EffectKind::RequiresActionMark),
+            "{facing:?} desk {i}: a requires-action agent must carry the bubble"
         );
-        // Waiting rides the SeatedIdle pose, whose default sprite is the
+        // RequiresAction rides the SeatedIdle pose, whose default sprite is the
         // sleeping one — a waiter drawn asleep inverts the state's meaning.
         assert!(
             !carries(crate::effects::EffectKind::SleepZ)
                 && !p.anim_name.name().contains("sleeping"),
-            "{facing:?} desk {i}: a waiting agent must be AWAKE, saw {} with {:?}",
+            "{facing:?} desk {i}: a requires-action agent must be AWAKE, saw {} with {:?}",
             p.anim_name.name(),
             p.effects
         );
@@ -4302,7 +4302,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
         occupied_waypoints: [printer_idx].into(),
         ..empty_frame(&layout)
     };
-    let busy_flag = queued(&layout, &frame)
+    let running_flag = queued(&layout, &frame)
         .sorted
         .iter()
         .find_map(|d| match d.kind {
@@ -4315,7 +4315,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
         })
         .expect("printer drawable enqueued");
     assert!(
-        busy_flag,
+        running_flag,
         "occupied printer waypoint must enqueue busy=true"
     );
 }
@@ -4455,7 +4455,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
 }
 
 #[test]
-fn an_active_agent_releases_the_seat_it_snapped_back_from() {
+fn a_running_agent_releases_the_seat_it_snapped_back_from() {
     use crate::layout::{TEST_DEFAULT_DESKS, furniture_def};
     use crate::pose::Pose;
     use crate::walk::WanderKind;
@@ -4512,7 +4512,7 @@ fn an_active_agent_releases_the_seat_it_snapped_back_from() {
         "the seated agent should hold its seat's claim"
     );
 
-    scene.agents.get_mut(&id).expect("slot").state = ActivityState::Active {
+    scene.agents.get_mut(&id).expect("slot").state = ActivityState::Running {
         tool_use_id: None,
         detail: None,
         kind: ToolKind::Other,
@@ -5142,15 +5142,15 @@ fn assert_badges_top_their_frames(
     }
 }
 
-/// A waiting agent at every desk, both facings, past the entry walk.
+/// A requires-action agent at every desk, both facings, past the entry walk.
 fn seated_at_every_desk() -> (SceneState, SceneLayout, SystemTime, OfficeArt) {
     let (mut scene, layout, _, now0, pack) = sim_rig();
     scene.agents.clear();
     for i in 0..layout.home_desks.len() {
         let mut s = make_slot(
             pixtuoid_core::AgentId::from_transcript_path(&format!("/badge/{i}.jsonl")),
-            ActivityState::Waiting {
-                reason: "perm".into(),
+            ActivityState::RequiresAction {
+                reason: Some("perm".into()),
             },
         );
         s.desk_index = GlobalDeskIndex(i);
@@ -5684,7 +5684,7 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
     let id = pixtuoid_core::AgentId::from_transcript_path("/pose.jsonl");
     let typing = make_slot(
         id,
-        ActivityState::Active {
+        ActivityState::Running {
             tool_use_id: None,
             detail: Some(Arc::from("Edit src/main.rs")),
             kind: ToolKind::Edit,

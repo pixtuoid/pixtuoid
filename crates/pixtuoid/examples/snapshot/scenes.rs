@@ -94,7 +94,7 @@ pub(crate) fn sample_scene(now: SystemTime, max_desks: usize, n_agents: usize) -
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum GatewayState {
     Idle,
-    Busy,
+    Running,
     Degraded,
     Down,
 }
@@ -109,11 +109,11 @@ pub(crate) fn inject_openclaw_presence(
     ports: &[String],
 ) -> Result<()> {
     use pixtuoid_core::state::{DaemonLiveness, DaemonPresence};
-    // Busy is DERIVED from the turn set: "busy" = UP + in-flight turns, never a
+    // Running is DERIVED from the turn set: "busy" = UP + in-flight turns, never a
     // stored state.
     let (liveness, active_sessions, turns) = match state {
         GatewayState::Idle => (DaemonLiveness::UP, 1, Vec::new()),
-        GatewayState::Busy => (
+        GatewayState::Running => (
             DaemonLiveness::UP,
             1,
             vec!["run-a".to_string(), "run-b".to_string()],
@@ -183,16 +183,16 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
             D::from_secs(90),
         ),
         (
-            "waiting",
-            ActivityState::Waiting {
-                reason: "permission?".into(),
+            "requires_action",
+            ActivityState::RequiresAction {
+                reason: Some("permission?".into()),
             },
             D::from_secs(10),
             D::from_secs(30),
         ),
         (
-            "working",
-            ActivityState::Active {
+            "running",
+            ActivityState::Running {
                 tool_use_id: Some("tu_a".into()),
                 detail: Some("Write: src/foo.rs".into()),
                 kind: ToolKind::Edit,
@@ -220,7 +220,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         ),
         (
             "couch-act",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_c".into()),
                 detail: Some("Read: README.md".into()),
                 kind: ToolKind::Read,
@@ -230,15 +230,15 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         ),
         (
             "couch-bk",
-            ActivityState::Waiting {
-                reason: "review".into(),
+            ActivityState::RequiresAction {
+                reason: Some("review".into()),
             },
             D::from_millis(0),
             D::from_millis(0),
         ),
         (
             "floor-act",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_d".into()),
                 detail: Some("Bash: cargo test".into()),
                 kind: ToolKind::Bash,
@@ -254,7 +254,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         ),
         (
             "floor-act2",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_e".into()),
                 detail: Some("Grep: TODO".into()),
                 kind: ToolKind::Search,
@@ -299,7 +299,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 // Hardcoding 0 here would leave overflow agents invisible.
                 floor_idx: s.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,
@@ -495,7 +495,7 @@ pub(crate) fn meeting_scene(
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: s.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,
@@ -538,7 +538,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
         (
             "cc·pixtuoid",
             "/demo/dash_cc_root.jsonl",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu0".into()),
                 detail: Some("Edit: reducer.rs".into()),
                 kind: ToolKind::Edit,
@@ -550,7 +550,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
         (
             "code-explorer",
             "/demo/dash_cc_sub1.jsonl",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu1".into()),
                 detail: Some("Grep: TODO".into()),
                 kind: ToolKind::Search,
@@ -578,8 +578,8 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
         (
             "rx·helper",
             "/demo/dash_rx_root.jsonl",
-            ActivityState::Waiting {
-                reason: "permission?".into(),
+            ActivityState::RequiresAction {
+                reason: Some("permission?".into()),
             },
             None,
             4,
@@ -607,7 +607,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 desk_index: GlobalDeskIndex(*desk_index),
                 floor_idx: s.floor_of(GlobalDeskIndex(*desk_index)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: *parent_id,
                 pid: None,
@@ -782,7 +782,7 @@ pub(crate) fn anim_scene(
             desk_index: GlobalDeskIndex(desk_idx),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,

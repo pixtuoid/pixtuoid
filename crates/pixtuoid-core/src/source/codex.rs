@@ -243,7 +243,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
             if function_call_needs_approval(payload) {
                 vec![AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: "permission".to_string(),
+                    reason: Some("permission".to_string()),
                     tool_use_id: None,
                 }]
             } else {
@@ -272,7 +272,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         }
         (EVENT_MSG, i) if EM_RESUME.contains(&i) => vec![start()],
         // Web/tool search are turn-INTERNAL work pulses that keep the agent
-        // Active; only task_complete / turn_aborted end the turn. Searching is
+        // Running; only task_complete / turn_aborted end the turn. Searching is
         // never permission-prompted — no UserActionRequest branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
@@ -704,7 +704,7 @@ mod tests {
     /// Captured off codex 2026-08: a real rollout serializes its tool calls as
     /// `custom_tool_call`, never the `function_call` the composed fixture used, so
     /// reading only the latter let four tool calls decode to nothing while the
-    /// turn still showed Active from `task_started`.
+    /// turn still showed Running from `task_started`.
     #[test]
     fn a_custom_tool_call_is_a_tool_call() {
         let out = ev(json!({"type":"response_item","payload":{
@@ -793,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn web_and_tool_search_keep_the_agent_active() {
+    fn web_and_tool_search_keep_the_agent_running() {
         for line in [
             json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{}}}),
             json!({"type":"event_msg","payload":{"type":"web_search_end","call_id":"c","query":"q","action":{}}}),
@@ -803,7 +803,7 @@ mod tests {
             let out = ev(line.clone());
             assert!(
                 matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]),
-                "search event {line} must keep the agent Active"
+                "search event {line} must keep the agent Running"
             );
         }
     }

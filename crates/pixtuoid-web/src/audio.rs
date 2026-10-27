@@ -245,13 +245,13 @@ mod tests {
             .expect("every stem is in ALL")
     }
 
-    /// A busy office in the rain: every loop stem and the typing above zero.
-    fn busy_rainy() -> AudioFrame {
+    /// A running office in the rain: every loop stem and the typing above zero.
+    fn running_rainy() -> AudioFrame {
         AudioFrame {
             stems: pixtuoid_scene::audio::stem_levels(
                 &pixtuoid_scene::tally::StateCounts {
-                    active: 3,
-                    waiting: 0,
+                    running: 3,
+                    requires_action: 0,
                     idle: 0,
                     exiting: 0,
                     total: 3,
@@ -384,7 +384,7 @@ mod tests {
         let mut last_rain = 0.0;
         for _ in 0..200 {
             now += 50.0;
-            let cmd = d.tick(now, busy_rainy());
+            let cmd = d.tick(now, running_rainy());
             last_rain = cmd.gains[at(LoopStem::Rain)];
             typed += cmd
                 .plays
@@ -394,13 +394,15 @@ mod tests {
         }
         assert!(last_rain > 0.0, "rain gain ramped up");
         assert_eq!(
-            d.tick(now + 50.0, busy_rainy()).music.map(|m| m.controls),
-            Some(busy_rainy().music),
+            d.tick(now + 50.0, running_rainy())
+                .music
+                .map(|m| m.controls),
+            Some(running_rainy().music),
             "the frame's music goes out with the tick"
         );
         assert!(
             typed > 0,
-            "the typing scheduler fired keystrokes for a busy office"
+            "the typing scheduler fired keystrokes for a running office"
         );
     }
 
@@ -408,8 +410,8 @@ mod tests {
     fn a_big_time_gap_does_not_snap_the_ramp_or_burst_typing() {
         let mut d = WebAudioDriver::new();
         while d.warmup_step() > 0 {}
-        d.tick(0.0, busy_rainy());
-        let cmd = d.tick(30_000.0, busy_rainy());
+        d.tick(0.0, running_rainy());
+        let cmd = d.tick(30_000.0, running_rainy());
         assert!(
             cmd.gains[at(LoopStem::Rain)]
                 <= pixtuoid_scene::audio::mixer::RAMP_PER_S * MAX_DT_S + 1e-4,
@@ -481,7 +483,7 @@ mod tests {
         let mut plays = 0;
         for _ in 0..200 {
             now += 50.0;
-            let cmd = d.tick(now, busy_rainy());
+            let cmd = d.tick(now, running_rainy());
             rain = cmd.gains[at(LoopStem::Rain)];
             for p in &cmd.plays {
                 assert_eq!(

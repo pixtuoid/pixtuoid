@@ -131,7 +131,7 @@ fn turn_end(r: &mut Reducer, scene: &mut SceneState, id: AgentId, at: SystemTime
     r.apply(scene, AgentEvent::TurnEnd { agent_id: id }, at, tp);
 }
 
-fn waiting(
+fn requires_action(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,
@@ -143,7 +143,7 @@ fn waiting(
         scene,
         AgentEvent::UserActionRequest {
             agent_id: id,
-            reason: reason.into(),
+            reason: Some(reason.into()),
             tool_use_id: None,
         },
         at,
@@ -151,8 +151,8 @@ fn waiting(
     );
 }
 
-/// `waiting` with the wire-named gated call id (#951 approval rounds).
-fn waiting_for(
+/// `requires_action` with the wire-named gated call id (#951 approval rounds).
+fn requires_action_for(
     r: &mut Reducer,
     scene: &mut SceneState,
     id: AgentId,
@@ -165,7 +165,7 @@ fn waiting_for(
         scene,
         AgentEvent::UserActionRequest {
             agent_id: id,
-            reason: reason.into(),
+            reason: Some(reason.into()),
             tool_use_id: tool_use_id.map(Into::into),
         },
         at,

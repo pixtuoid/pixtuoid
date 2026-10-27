@@ -4,9 +4,9 @@
 use super::*;
 use crate::audio::{AudioHandle, drain_frames};
 
-fn active_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
+fn running_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
     let mut s = slot(AgentId::from_transcript_path(path), floor_idx, desk, t0());
-    s.state = ActivityState::Active {
+    s.state = ActivityState::Running {
         tool_use_id: Some(Arc::from("t")),
         detail: Some(Arc::from("Edit")),
         kind: ToolKind::from_display("Edit"),
@@ -16,15 +16,15 @@ fn active_on(path: &str, floor_idx: usize, desk: usize) -> AgentSlot {
 
 #[test]
 fn audio_stems_and_music_count_only_the_viewed_floor() {
-    // 1 active on floor 0 vs 3 on floor 1: the tiers differ exactly there, so a
+    // 1 running on floor 0 vs 3 on floor 1: the tiers differ exactly there, so a
     // global count (4) reads BUSY where the viewed floor reads MODERATE.
     let cap = 16;
     let scene = scene_with(
         vec![
-            active_on("/a/f0.jsonl", 0, 0),
-            active_on("/a/f1a.jsonl", 1, cap),
-            active_on("/a/f1b.jsonl", 1, cap + 1),
-            active_on("/a/f1c.jsonl", 1, cap + 2),
+            running_on("/a/f0.jsonl", 0, 0),
+            running_on("/a/f1a.jsonl", 1, cap),
+            running_on("/a/f1b.jsonl", 1, cap + 1),
+            running_on("/a/f1c.jsonl", 1, cap + 2),
         ],
         cap,
     );
@@ -36,8 +36,8 @@ fn audio_stems_and_music_count_only_the_viewed_floor() {
     assert!(!frames.is_empty(), "an enabled handle receives frames");
     let frame = frames.last().unwrap();
     let viewed = pixtuoid_scene::tally::StateCounts {
-        active: 1,
-        waiting: 0,
+        running: 1,
+        requires_action: 0,
         idle: 0,
         exiting: 0,
         total: 1,
@@ -45,19 +45,19 @@ fn audio_stems_and_music_count_only_the_viewed_floor() {
     let moderate = pixtuoid_scene::audio::stem_levels(&viewed, 0.0);
     assert_eq!(
         frame.stems.typing, moderate.typing,
-        "typing level must reflect the VIEWED floor's 1 active, not all 4"
+        "typing level must reflect the VIEWED floor's 1 running, not all 4"
     );
     assert_eq!(
         frame.music.intensity,
         pixtuoid_scene::audio::music_controls(&viewed, 0.0, 0.0).intensity,
-        "the music's intensity must reflect the VIEWED floor's 1 active, not all 4"
+        "the music's intensity must reflect the VIEWED floor's 1 running, not all 4"
     );
 }
 
 #[test]
 fn door_chime_fires_only_for_viewed_floor_arrivals() {
     let cap = 16;
-    let mut agents = vec![active_on("/d/f0.jsonl", 0, 0)];
+    let mut agents = vec![running_on("/d/f0.jsonl", 0, 0)];
     let scene = scene_with(agents.clone(), cap);
     let mut r = build(80, 40, vec![]);
     let (handle, rx) = AudioHandle::test_pair();
@@ -66,7 +66,7 @@ fn door_chime_fires_only_for_viewed_floor_arrivals() {
     r.render(&scene, now).expect("prime render");
     drain_frames(&rx);
 
-    agents.push(active_on("/d/f1-new.jsonl", 1, cap));
+    agents.push(running_on("/d/f1-new.jsonl", 1, cap));
     let scene = scene_with(agents.clone(), cap);
     now += std::time::Duration::from_millis(PAINT_FRAME_MS);
     r.render(&scene, now).expect("render");
@@ -79,7 +79,7 @@ fn door_chime_fires_only_for_viewed_floor_arrivals() {
         "a floor-1 walk-in must not chime while viewing floor 0: {off_floor:?}"
     );
 
-    agents.push(active_on("/d/f0-new.jsonl", 0, 1));
+    agents.push(running_on("/d/f0-new.jsonl", 0, 1));
     let scene = scene_with(agents, cap);
     now += std::time::Duration::from_millis(PAINT_FRAME_MS);
     r.render(&scene, now).expect("render");
@@ -98,9 +98,9 @@ fn floor_switch_reprimes_without_a_chime_volley() {
     let cap = 16;
     let scene = scene_with(
         vec![
-            active_on("/s/f0.jsonl", 0, 0),
-            active_on("/s/f1a.jsonl", 1, cap),
-            active_on("/s/f1b.jsonl", 1, cap + 1),
+            running_on("/s/f0.jsonl", 0, 0),
+            running_on("/s/f1a.jsonl", 1, cap),
+            running_on("/s/f1b.jsonl", 1, cap + 1),
         ],
         cap,
     );
@@ -124,10 +124,10 @@ fn floor_switch_reprimes_without_a_chime_volley() {
 
     let scene = scene_with(
         vec![
-            active_on("/s/f0.jsonl", 0, 0),
-            active_on("/s/f1a.jsonl", 1, cap),
-            active_on("/s/f1b.jsonl", 1, cap + 1),
-            active_on("/s/f1-new.jsonl", 1, cap + 2),
+            running_on("/s/f0.jsonl", 0, 0),
+            running_on("/s/f1a.jsonl", 1, cap),
+            running_on("/s/f1b.jsonl", 1, cap + 1),
+            running_on("/s/f1-new.jsonl", 1, cap + 2),
         ],
         cap,
     );
@@ -150,8 +150,8 @@ fn every_frame_of_a_slide_feeds_the_audio_thread() {
     let cap = 16;
     let scene = scene_with(
         vec![
-            active_on("/l/f0.jsonl", 0, 0),
-            active_on("/l/f1.jsonl", 1, cap),
+            running_on("/l/f0.jsonl", 0, 0),
+            running_on("/l/f1.jsonl", 1, cap),
         ],
         cap,
     );
@@ -174,7 +174,7 @@ fn every_frame_of_a_slide_feeds_the_audio_thread() {
 
 #[test]
 fn footer_note_glyph_tracks_effective_audibility() {
-    let scene = scene_with(vec![active_on("/f/a.jsonl", 0, 0)], 16);
+    let scene = scene_with(vec![running_on("/f/a.jsonl", 0, 0)], 16);
 
     let mut silent = build(80, 40, vec![]);
     silent.render(&scene, t0()).expect("render");
@@ -222,8 +222,8 @@ fn a_forced_weather_reaches_the_frame_both_slide_halves_and_the_rain() {
     let cap = 16;
     let scene = scene_with(
         vec![
-            active_on("/w/f0.jsonl", 0, 0),
-            active_on("/w/f1.jsonl", 1, cap),
+            running_on("/w/f0.jsonl", 0, 0),
+            running_on("/w/f1.jsonl", 1, cap),
         ],
         cap,
     );

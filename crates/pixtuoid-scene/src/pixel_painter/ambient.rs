@@ -1,5 +1,5 @@
 //! Ambient pass — painted between the background and the y-sorted
-//! drawables: ceiling halos above active monitors.
+//! drawables: ceiling halos above running monitors.
 
 use pixtuoid_core::sprite::RgbBuffer;
 

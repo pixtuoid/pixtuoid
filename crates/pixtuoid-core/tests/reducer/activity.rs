@@ -7,8 +7,8 @@ use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
 use crate::{
-    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, start, start_as, turn_end,
-    waiting,
+    HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, act_end, act_start, requires_action, start, start_as,
+    turn_end,
 };
 
 #[test]
@@ -71,7 +71,7 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         Transport::Hook,
     );
     match &scene.agents[&id].state {
-        ActivityState::Active { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
+        ActivityState::Running { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
         other => panic!("expected b still running, got {other:?}"),
     }
     act_end(
@@ -94,7 +94,7 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
     let id = AgentId::from_transcript_path("/p/note.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     act_start(
         &mut r,
         &mut scene,
@@ -106,11 +106,11 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
     );
     assert!(matches!(
         scene.agents[&id].state,
-        ActivityState::Active { .. }
+        ActivityState::Running { .. }
     ));
 
     let t2 = t0 + Duration::from_secs(2);
-    waiting(&mut r, &mut scene, id, "permission", t2, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t2, Transport::Hook);
     act_start(
         &mut r,
         &mut scene,
@@ -122,7 +122,7 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
     );
     let slot = &scene.agents[&id];
     assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
+        matches!(slot.state, ActivityState::RequiresAction { .. }),
         "t1 holds the request, got {:?}",
         slot.state
     );
@@ -148,7 +148,7 @@ fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
         let mut r = Reducer::new();
         let id = AgentId::from_parts("codex", "sess-1");
         start_as(&mut r, &mut scene, id, "codex");
-        waiting(&mut r, &mut scene, id, "permission", t0, raised_on);
+        requires_action(&mut r, &mut scene, id, "permission", t0, raised_on);
         turn_end(
             &mut r,
             &mut scene,
@@ -166,13 +166,37 @@ fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
 }
 
 #[test]
+fn a_user_action_request_without_a_reason_leaves_the_state_bare() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/a.jsonl");
+    start(&mut r, &mut scene, id);
+
+    r.apply(
+        &mut scene,
+        AgentEvent::UserActionRequest {
+            agent_id: id,
+            reason: None,
+            tool_use_id: None,
+        },
+        SystemTime::now(),
+        Transport::Hook,
+    );
+
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::RequiresAction { reason: None }
+    );
+}
+
+#[test]
 fn user_action_request_sets_state_with_reason() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
     start(&mut r, &mut scene, id);
 
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -182,7 +206,9 @@ fn user_action_request_sets_state_with_reason() {
     );
 
     match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Waiting { reason } => assert_eq!(&**reason, "Bash: rm -rf?"),
+        ActivityState::RequiresAction { reason } => {
+            assert_eq!(reason.as_deref(), Some("Bash: rm -rf?"))
+        }
         other => panic!("unexpected state: {other:?}"),
     }
 }
@@ -229,7 +255,7 @@ fn tool_call_count_increments_on_tool_use_start() {
 }
 
 #[test]
-fn active_ms_does_not_double_count_on_duplicate_tool_use_end() {
+fn running_ms_does_not_double_count_on_duplicate_tool_use_end() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/dedup.jsonl");
@@ -262,13 +288,13 @@ fn active_ms_does_not_double_count_on_duplicate_tool_use_end() {
     let slot = scene.agents.get(&id).unwrap();
     // A second folded span would read ~4600.
     assert_eq!(
-        slot.active_ms, 2000,
-        "active_ms should be the single t0→t1 span (2000ms), not double-counted"
+        slot.running_ms, 2000,
+        "running_ms should be the single t0→t1 span (2000ms), not double-counted"
     );
 }
 
 #[test]
-fn active_ms_preserved_when_task_arrives_during_active_tool() {
+fn running_ms_preserved_when_task_arrives_during_running_tool() {
     use pixtuoid_core::source::ToolDetail;
 
     let mut scene = SceneState::uniform(4);
@@ -301,14 +327,14 @@ fn active_ms_preserved_when_task_arrives_during_active_tool() {
 
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        slot.active_ms >= 2000,
-        "expected >= 2000ms active from pre-Task tool span, got {}",
-        slot.active_ms
+        slot.running_ms >= 2000,
+        "expected >= 2000ms running from pre-Task tool span, got {}",
+        slot.running_ms
     );
 }
 
 #[test]
-fn active_ms_preserved_when_waiting_interrupts_active() {
+fn running_ms_preserved_when_requires_action_interrupts_running() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/waiting.jsonl");
@@ -326,22 +352,22 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
     );
 
     let t1 = t0 + Duration::from_secs(3);
-    waiting(&mut r, &mut scene, id, "permission", t1, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t1, Transport::Hook);
 
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        slot.active_ms >= 3000,
-        "expected >= 3000ms active before Waiting, got {}",
-        slot.active_ms
+        slot.running_ms >= 3000,
+        "expected >= 3000ms running before RequiresAction, got {}",
+        slot.running_ms
     );
 }
 
 // CC wire fact (captured live): when a permission Notification fires mid-tool
 // (PreToolUse(t1) → Notification → PostToolUse(t1)), the member call's
-// ToolUseEnd carries the same tool_use_id that was Active when Waiting began —
-// so PostToolUse(t1) means the permission was granted and the Waiting resolved.
+// ToolUseEnd carries the same tool_use_id that was Running when RequiresAction began —
+// so PostToolUse(t1) means the permission was granted and the RequiresAction resolved.
 #[test]
-fn a_member_end_while_waiting_resolves_to_idle() {
+fn a_member_end_while_requires_action_resolves_to_idle() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -357,7 +383,7 @@ fn a_member_end_while_waiting_resolves_to_idle() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -378,7 +404,7 @@ fn a_member_end_while_waiting_resolves_to_idle() {
 /// CC's recorded prompt fires PermissionRequest (no tool_use_id) and then, if the
 /// prompt sits, the idle Notification — both decode to UserActionRequest. The second one
 /// must not erase the tool the first remembered, or the approved tool's
-/// PostToolUse resolves nothing and the slot never leaves Waiting.
+/// PostToolUse resolves nothing and the slot never leaves RequiresAction.
 #[test]
 fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
     let mut scene = SceneState::uniform(4);
@@ -396,7 +422,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -404,7 +430,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
         t0 + Duration::from_millis(500),
         Transport::Hook,
     );
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -423,7 +449,7 @@ fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
 }
 
 #[test]
-fn parallel_tool_end_while_waiting_keeps_waiting() {
+fn parallel_tool_end_while_requires_action_keeps_requires_action() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -439,7 +465,7 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
         t0,
         Transport::Hook,
     );
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -458,24 +484,24 @@ fn parallel_tool_end_while_waiting_keeps_waiting() {
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
-        "parallel tool end must keep Waiting, got {:?}",
+        matches!(slot.state, ActivityState::RequiresAction { .. }),
+        "parallel tool end must keep RequiresAction, got {:?}",
         slot.state
     );
 }
 
 // An approval prompt BLOCKS a Codex/Reasonix turn, so a hook `Stop` arriving
-// while Waiting means the prompt was already resolved upstream — and Reasonix has
+// while RequiresAction means the prompt was already resolved upstream — and Reasonix has
 // no second transport to self-heal a stale one.
 #[test]
-fn turn_end_stop_hook_resolves_stale_waiting() {
+fn turn_end_stop_hook_resolves_stale_requires_action() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "reasonix");
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -485,14 +511,14 @@ fn turn_end_stop_hook_resolves_stale_waiting() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Waiting { .. }
+        ActivityState::RequiresAction { .. }
     ));
 
     let end = t0 + Duration::from_millis(800);
     turn_end(&mut r, &mut scene, id, end, Transport::Hook);
     assert!(
         matches!(scene.agents.get(&id).unwrap().state, ActivityState::Idle),
-        "turn-end Stop must resolve the stale Waiting to Idle, got {:?}",
+        "turn-end Stop must resolve the stale RequiresAction to Idle, got {:?}",
         scene.agents.get(&id).unwrap().state
     );
 }
@@ -506,7 +532,7 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "reasonix");
-    waiting(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "approval", t0, Transport::Hook);
     let end = t0 + Duration::from_millis(800);
     act_end(&mut r, &mut scene, id, None, end, Transport::Hook);
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
@@ -516,7 +542,7 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
 // call may never get its own End; the turn's Stop must still settle the slot.
 #[test]
 fn a_turn_end_settles_a_call_whose_own_end_never_came() {
-    use crate::waiting_for;
+    use crate::requires_action_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for requested in [false, true] {
         let mut scene = SceneState::uniform(4);
@@ -533,7 +559,7 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
             Transport::Hook,
         );
         if requested {
-            waiting_for(
+            requires_action_for(
                 &mut r,
                 &mut scene,
                 id,
@@ -554,16 +580,16 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
 }
 
 // A transcript line can race in just after a fresh hook PermissionRequest, so
-// only a HOOK end naming no call may resolve a Waiting.
+// only a HOOK end naming no call may resolve a RequiresAction.
 #[test]
-fn jsonl_none_id_end_while_waiting_keeps_waiting() {
+fn jsonl_none_id_end_while_requires_action_keeps_requires_action() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "sess-1");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
     start_as(&mut r, &mut scene, id, "claude-code");
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     act_end(
         &mut r,
         &mut scene,
@@ -575,14 +601,14 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     assert!(
         matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
         "a racing transcript tool end naming no call must keep the permission prompt up"
     );
 }
 
 #[test]
-fn codex_permission_then_jsonl_output_resumes_to_active() {
+fn codex_permission_then_jsonl_output_resumes_to_running() {
     // The hook UserActionRequest and the JSONL resume coalesce on the session UUID.
     let mut reducer = Reducer::new();
     let mut scene = SceneState::uniform(4);
@@ -603,7 +629,7 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
         Transport::Hook,
     );
 
-    waiting(
+    requires_action(
         &mut reducer,
         &mut scene,
         id,
@@ -612,8 +638,11 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
         Transport::Hook,
     );
     assert!(
-        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
-        "should be Waiting on permission"
+        matches!(
+            scene.agents[&id].state,
+            ActivityState::RequiresAction { .. }
+        ),
+        "should be RequiresAction on permission"
     );
 
     act_start(
@@ -626,8 +655,8 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
         Transport::Jsonl,
     );
     assert!(
-        matches!(scene.agents[&id].state, ActivityState::Active { .. }),
-        "resume must return to Active"
+        matches!(scene.agents[&id].state, ActivityState::Running { .. }),
+        "resume must return to Running"
     );
 }
 
@@ -636,7 +665,7 @@ fn codex_permission_then_jsonl_output_resumes_to_active() {
 // tool end naming no call answers only a wait that named none either.
 #[test]
 fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
-    use crate::waiting_for;
+    use crate::requires_action_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for turn in [true, false] {
         let mut scene = SceneState::uniform(4);
@@ -644,7 +673,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
         let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "sess-1");
         start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
         if turn {
-            waiting_for(
+            requires_action_for(
                 &mut r,
                 &mut scene,
                 id,
@@ -664,7 +693,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
                 t0 - HOOK_WINS_WINDOW,
                 Transport::Hook,
             );
-            waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+            requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
         }
         let end = t0 + Duration::from_millis(200);
         if turn {
@@ -682,7 +711,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
             Transport::Jsonl,
         );
         assert!(
-            matches!(scene.agents[&id].state, ActivityState::Active { .. }),
+            matches!(scene.agents[&id].state, ActivityState::Running { .. }),
             "turn: {turn}, got {:?}",
             scene.agents[&id].state
         );
@@ -721,9 +750,9 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     assert!(
         matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
-        "the ask toolCall should park the slot Waiting"
+        "the ask toolCall should park the slot RequiresAction"
     );
     // The user answers: the ask's toolResult (same toolCallId) arrives.
     feed(
@@ -735,15 +764,15 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
-        "the answered ask must clear Waiting (else the sprite hangs 60 min)"
+        "the answered ask must clear RequiresAction (else the sprite hangs 60 min)"
     );
 }
 
 // Line shapes follow agy's `ask-question` recording.
 #[test]
-fn an_answered_agy_question_clears_waiting_on_either_transport() {
+fn an_answered_agy_question_clears_requires_action_on_either_transport() {
     use pixtuoid_core::source::antigravity::{SOURCE_NAME, decode_ag_line};
     use pixtuoid_core::source::decoder::decode_hook_payload;
     use serde_json::{Value, json};
@@ -801,13 +830,16 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
         start_as(&mut r, &mut scene, id, SOURCE_NAME);
         feed(&mut r, &mut scene, &asks, t0);
         assert!(
-            matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
-            "{what}: the question parks the slot Waiting"
+            matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ),
+            "{what}: the question parks the slot RequiresAction"
         );
         feed(&mut r, &mut scene, &answers, t1);
         assert!(
             matches!(scene.agents[&id].state, ActivityState::Idle),
-            "{what}: the answer clears Waiting before the turn ends"
+            "{what}: the answer clears RequiresAction before the turn ends"
         );
     }
     // Both sides of the window the hook End is remembered for.
@@ -825,7 +857,10 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
         feed(&mut r, &mut scene, &[hook("PostToolUse")], t0);
         feed(&mut r, &mut scene, &[late], t0 + after);
         assert_eq!(
-            matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+            matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ),
             parks,
             "{what}: a wait {after:?} after its call's hook End parks the slot only past the window"
         );
@@ -838,7 +873,7 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
 // each must bind the wait to the member call id and count it ONCE.
 // ---------------------------------------------------------------------------
 
-use crate::waiting_for;
+use crate::requires_action_for;
 use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 
 /// Past the dedup window: the cross-transport pair separated by a human.
@@ -847,7 +882,7 @@ fn beyond_dedup(t: SystemTime) -> SystemTime {
 }
 
 #[test]
-fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
+fn approval_transcript_start_first_requires_action_then_resumes_running_counting_once() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
@@ -865,7 +900,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     );
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
 
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -876,7 +911,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Waiting { .. }
+        ActivityState::RequiresAction { .. }
     ));
 
     // The approval resume.
@@ -892,8 +927,8 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
-        "approval resume returns the slot to Active"
+        matches!(slot.state, ActivityState::Running { .. }),
+        "approval resume returns the slot to Running"
     );
     assert_eq!(slot.tool_call_count, 1, "the resume must not re-count x1");
 }
@@ -906,7 +941,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -917,7 +952,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Waiting { .. }
+        ActivityState::RequiresAction { .. }
     ));
 
     // The transcript's Start for the SAME member call, while the human decides.
@@ -933,7 +968,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
+        matches!(slot.state, ActivityState::RequiresAction { .. }),
         "a member call's own transcript Start must not fake an approval"
     );
     assert_eq!(slot.tool_call_count, 1);
@@ -949,7 +984,7 @@ fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
         Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
+    assert!(matches!(slot.state, ActivityState::Running { .. }));
     assert_eq!(slot.tool_call_count, 1, "still one logical call");
 }
 
@@ -961,7 +996,7 @@ fn approval_resume_before_the_transcript_start_counts_once() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -998,11 +1033,11 @@ fn approval_resume_before_the_transcript_start_counts_once() {
         slot.tool_call_count, 1,
         "the straggler must not re-count x1"
     );
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
+    assert!(matches!(slot.state, ActivityState::Running { .. }));
 }
 
 #[test]
-fn denied_approval_clears_waiting_via_the_hook_end() {
+fn denied_approval_clears_requires_action_via_the_hook_end() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/d.jsonl");
@@ -1018,7 +1053,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
         t0,
         Transport::Jsonl,
     );
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1033,9 +1068,9 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
-        "a denial must clear the Waiting (else the sprite hangs 60 min)"
+        "a denial must clear the RequiresAction (else the sprite hangs 60 min)"
     );
 
     // The transcript's error toolResult follows; it must not disturb anything.
@@ -1079,7 +1114,7 @@ fn parallel_approvals_resolve_member_by_member() {
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 2);
 
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1088,7 +1123,7 @@ fn parallel_approvals_resolve_member_by_member() {
         t1,
         Transport::Hook,
     );
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1111,12 +1146,12 @@ fn parallel_approvals_resolve_member_by_member() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Active { .. }
+        ActivityState::Running { .. }
     ));
 
     // omp re-raises the still-pending request; its resolve must work identically.
     let t3 = t2 + Duration::from_secs(1);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1127,7 +1162,7 @@ fn parallel_approvals_resolve_member_by_member() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Waiting { .. }
+        ActivityState::RequiresAction { .. }
     ));
     let t4 = beyond_dedup(t3) + Duration::from_secs(2);
     act_start(
@@ -1140,7 +1175,7 @@ fn parallel_approvals_resolve_member_by_member() {
         Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
+    assert!(matches!(slot.state, ActivityState::Running { .. }));
     assert_eq!(
         slot.tool_call_count, 2,
         "two logical calls, each counted once"
@@ -1177,7 +1212,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Jsonl,
     );
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1188,7 +1223,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
-        ActivityState::Waiting { .. }
+        ActivityState::RequiresAction { .. }
     ));
 
     let t2 = beyond_dedup(t1) + Duration::from_secs(5);
@@ -1204,7 +1239,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
         "the approval resume must not be eaten as a subagent leak"
     );
@@ -1222,7 +1257,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Jsonl,
     );
     let t4 = beyond_dedup(t3);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1236,7 +1271,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
         "the denial End must not be eaten as a subagent leak"
     );
@@ -1273,7 +1308,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         Transport::Jsonl,
     );
     let t1 = beyond_dedup(t0);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1282,7 +1317,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         t1,
         Transport::Hook,
     );
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1296,7 +1331,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
     let t2 = beyond_dedup(t1) + Duration::from_secs(3);
     act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
     let t3 = t2 + Duration::from_secs(1);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1317,7 +1352,7 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
+        matches!(slot.state, ActivityState::Running { .. }),
         "x2's resume must still read as its approval round"
     );
     assert_eq!(
@@ -1336,7 +1371,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
 
     // x1's whole round runs hook-first; its transcript Start straggles in
     // AFTER x1 resolved, while x2's approval is still pending.
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1356,7 +1391,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
         Transport::Hook,
     );
     let t2 = t1 + Duration::from_secs(1);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1388,7 +1423,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
         Transport::Hook,
     );
     let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
+    assert!(matches!(slot.state, ActivityState::Running { .. }));
     assert_eq!(
         slot.tool_call_count, 2,
         "x1 once (resume), x2 once (resume) — the straggler added nothing"
@@ -1403,7 +1438,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1425,7 +1460,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
     // x1's denial must still resolve the (re-raised) wait as a member's End.
     let t2 = beyond_dedup(t1);
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1439,7 +1474,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
-            ActivityState::Waiting { .. }
+            ActivityState::RequiresAction { .. }
         ),
         "y's start stripped x1's membership — the denial could no longer resolve it"
     );
@@ -1456,7 +1491,7 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting_for(
+    requires_action_for(
         &mut r,
         &mut scene,
         id,
@@ -1486,10 +1521,10 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Hook,
     );
     match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Active { detail, .. } => {
+        ActivityState::Running { detail, .. } => {
             assert_eq!(detail.as_deref(), Some("bash"));
         }
-        other => panic!("expected Active after the resume, got {other:?}"),
+        other => panic!("expected Running after the resume, got {other:?}"),
     }
 }
 

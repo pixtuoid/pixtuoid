@@ -1095,11 +1095,11 @@ mod tests {
             .filter_map(|&s| on_buffer(s, h.scale, size))
             .collect();
         assert_eq!(dirty, Dirty::within(want));
-        let mut waiting = seated.clone();
-        waiting.agents[0].state = pixtuoid_core::state::ActivityState::Waiting {
-            reason: "permission?".into(),
+        let mut requires_action = seated.clone();
+        requires_action.agents[0].state = pixtuoid_core::state::ActivityState::RequiresAction {
+            reason: Some("permission?".into()),
         };
-        let (was, now) = (plate(seated), plate(&waiting));
+        let (was, now) = (plate(seated), plate(&requires_action));
         assert_eq!(was.0, now.0, "the plate stays put");
         assert_ne!(was.1, now.1, "its tone is in its fingerprint");
     }
@@ -1170,14 +1170,14 @@ mod tests {
         let seated = h.frames.last().expect("a seated frame");
         let quiet = crate::display::compose::tests::showing(clear_ground(), Hovering::now());
         let counts = crate::tally::StateCounts {
-            active: 3,
+            running: 3,
             total: 3,
             ..crate::tally::StateCounts::default()
         };
-        let busy =
+        let running =
             crate::neon_sign::build_board(counts, 60, None, None, Motion::Full, Hovering::now());
-        let busy = Showing {
-            board: &busy,
+        let running = Showing {
+            board: &running,
             ..quiet
         };
         let board = |showing| -> Vec<(Span, u64)> {
@@ -1221,7 +1221,7 @@ mod tests {
                 &stepped,
                 normal(),
                 h.scale,
-                busy,
+                running,
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
@@ -1230,7 +1230,7 @@ mod tests {
             h.scale.to_buffer(h.layout.buf_w),
             h.scale.to_buffer(h.layout.buf_h),
         );
-        let (was, now) = (board(quiet), board(busy));
+        let (was, now) = (board(quiet), board(running));
         let only = |a: &[(Span, u64)], b: &[(Span, u64)]| -> Vec<Span> {
             a.iter()
                 .filter(|line| !b.contains(line))
@@ -1457,7 +1457,7 @@ mod tests {
             )
             .expect("lays out");
         let lively = Arc::new(lively_office());
-        let busy = SimFrame {
+        let running = SimFrame {
             door_frame: 2,
             neon: crate::floor::NeonLevels {
                 alert: 1.0,
@@ -1474,7 +1474,7 @@ mod tests {
                 frames.last().expect("a seated frame"),
             ),
             ("office", &office.layout, &office.frame),
-            ("lively", &lively, &busy),
+            ("lively", &lively, &running),
         ];
         let moments = [
             ("normal", Weather::Clear, 12),

@@ -280,8 +280,8 @@ fn state_driven_pose(
         .as_millis() as u64;
 
     match &slot.state {
-        ActivityState::Active { .. } => Some(Pose::SeatedTyping),
-        ActivityState::Waiting { .. } => Some(Pose::SeatedIdle),
+        ActivityState::Running { .. } => Some(Pose::SeatedTyping),
+        ActivityState::RequiresAction { .. } => Some(Pose::SeatedIdle),
         ActivityState::Idle => {
             if in_thinking_window(slot, now) {
                 Some(Pose::SeatedThinking)
@@ -392,21 +392,21 @@ pub(crate) fn pick_aimless_dest(layout: &SceneLayout, seed: u64, home_desk: Home
 }
 
 /// Whether an Idle agent holds `Pose::SeatedThinking`: it recently finished
-/// active work (`last_event_at > created_at` — excludes freshly spawned agents)
+/// running work (`last_event_at > created_at` — excludes freshly spawned agents)
 /// and is still within `THINKING_WINDOW_SECS` of that last event. The ONE owner
 /// of the gate — the stateless overlay and the routed render both call it, so a
 /// bool the compiler can't catch can't drift between them.
 pub(crate) fn in_thinking_window(slot: &AgentSlot, now: SystemTime) -> bool {
-    let was_active = slot.last_event_at > slot.created_at;
+    let was_running = slot.last_event_at > slot.created_at;
     let since_last_event = now
         .duration_since(slot.last_event_at)
         .unwrap_or(Duration::ZERO)
         .as_secs();
-    was_active && since_last_event < THINKING_WINDOW_SECS
+    was_running && since_last_event < THINKING_WINDOW_SECS
 }
 
 /// Milliseconds of the current Idle period during which the SeatedThinking gate
-/// held the agent at its desk. 0 when the agent was never active or when the
+/// held the agent at its desk. 0 when the agent was never running or when the
 /// window expired before this Idle period began.
 fn thinking_hold_ms(slot: &AgentSlot) -> u64 {
     if slot.last_event_at <= slot.created_at {

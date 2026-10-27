@@ -1077,13 +1077,13 @@ fn the_foreground_layer_is_lit_by_the_clock() {
     );
 }
 
-fn neon_mood(active: usize, waiting: usize, idle: usize) -> crate::neon_sign::OfficeMood {
+fn neon_mood(running: usize, requires_action: usize, idle: usize) -> crate::neon_sign::OfficeMood {
     crate::neon_sign::OfficeMood::of(crate::tally::StateCounts {
-        active,
-        waiting,
+        running,
+        requires_action,
         idle,
         exiting: 0,
-        total: active + waiting + idle,
+        total: running + requires_action + idle,
     })
 }
 
@@ -1096,7 +1096,7 @@ const FRAME: Duration = Duration::from_millis(crate::anim::PAINT_FRAME_MS);
 fn neon_first_tick_snaps_to_the_mood() {
     for (mood, room, want) in [
         (neon_mood(2, 1, 0), ROOM_LIT, NeonLevels::ALERT),
-        (neon_mood(2, 0, 3), ROOM_LIT, NeonLevels::BUSY),
+        (neon_mood(2, 0, 3), ROOM_LIT, NeonLevels::RUNNING),
         (neon_mood(0, 0, 3), ROOM_LIT, NeonLevels::CALM),
         (neon_mood(0, 0, 0), ROOM_DIMMED, NeonLevels::EMPTY),
         (neon_mood(0, 0, 0), ROOM_LIT, NeonLevels::CALM),
@@ -1143,12 +1143,12 @@ fn neon_eases_into_a_new_mood_and_lands_on_it() {
     let first = neon.tick(alert, ROOM_LIT, Motion::Full.timing(changed));
     assert_eq!(
         first,
-        NeonLevels::BUSY,
+        NeonLevels::RUNNING,
         "the change frame still shows the old mood"
     );
     let mid = neon.tick(alert, ROOM_LIT, Motion::Full.timing(changed + fade / 2));
     assert!(
-        mid.alert > NeonLevels::BUSY.alert && mid.alert < NeonLevels::ALERT.alert,
+        mid.alert > NeonLevels::RUNNING.alert && mid.alert < NeonLevels::ALERT.alert,
         "mid-fade alert is between the moods: {mid:?}"
     );
     // Not `fade - 1ms`: an ease-out's last millisecond rounds to the target in f32.
@@ -1169,11 +1169,11 @@ fn neon_eases_into_a_new_mood_and_lands_on_it() {
 #[test]
 fn neon_snaps_when_its_last_light_is_older_than_a_fade() {
     let fade = Duration::from_millis(u64::from(NeonState::FADE_MS));
-    let (calm, busy) = (neon_mood(0, 0, 1), neon_mood(3, 0, 0));
+    let (calm, running) = (neon_mood(0, 0, 1), neon_mood(3, 0, 0));
     let mut fresh = NeonState::new();
     fresh.tick(calm, ROOM_LIT, Motion::Full.timing(t0()));
     assert_eq!(
-        fresh.tick(busy, ROOM_LIT, Motion::Full.timing(t0() + fade)),
+        fresh.tick(running, ROOM_LIT, Motion::Full.timing(t0() + fade)),
         NeonLevels::CALM,
         "fades"
     );
@@ -1181,8 +1181,8 @@ fn neon_snaps_when_its_last_light_is_older_than_a_fade() {
     stale.tick(calm, ROOM_LIT, Motion::Full.timing(t0()));
     let later = t0() + fade + Duration::from_millis(1);
     assert_eq!(
-        stale.tick(busy, ROOM_LIT, Motion::Full.timing(later)),
-        NeonLevels::BUSY,
+        stale.tick(running, ROOM_LIT, Motion::Full.timing(later)),
+        NeonLevels::RUNNING,
         "snaps"
     );
 }
@@ -1239,7 +1239,7 @@ fn neon_holds_on_a_backward_clock() {
     let earlier = t0() + Duration::from_secs(1);
     assert_eq!(
         neon.tick(neon_mood(0, 0, 3), ROOM_LIT, Motion::Full.timing(earlier)),
-        NeonLevels::BUSY
+        NeonLevels::RUNNING
     );
 }
 
@@ -1496,7 +1496,7 @@ fn the_classic_sees_the_skyline_from_its_floors_altitude() {
 fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
     use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
     use pixtuoid_core::state::{DaemonInstanceId, EffortObservation, ToolKind};
-    let typing = || ActivityState::Active {
+    let typing = || ActivityState::Running {
         tool_use_id: None,
         detail: None,
         kind: ToolKind::Edit,
@@ -1510,8 +1510,8 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
         slot.last_event_at = settled;
         slot.state = match i {
             0 | 1 => typing(),
-            2 => ActivityState::Waiting {
-                reason: Arc::from("ok?"),
+            2 => ActivityState::RequiresAction {
+                reason: Some(Arc::from("ok?")),
             },
             _ => ActivityState::Idle,
         };
@@ -1661,7 +1661,7 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     // alert while nobody walks
     let mut typing = lived_in.clone();
     for slot in typing.agents.values_mut() {
-        slot.state = ActivityState::Active {
+        slot.state = ActivityState::Running {
             tool_use_id: None,
             detail: None,
             kind: pixtuoid_core::state::ToolKind::Edit,
@@ -1669,8 +1669,8 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     }
     let mut asking = typing.clone();
     if let Some(slot) = asking.agents.values_mut().next() {
-        slot.state = ActivityState::Waiting {
-            reason: Arc::from("ok?"),
+        slot.state = ActivityState::RequiresAction {
+            reason: Some(Arc::from("ok?")),
         };
         slot.state_started_at = t0 + switch;
         slot.last_event_at = t0 + switch;
@@ -2433,7 +2433,7 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     let id = *scene.agents.keys().next().expect("one agent");
     // At work, so it stays in its chair.
     for slot in scene.agents.values_mut() {
-        slot.state = ActivityState::Active {
+        slot.state = ActivityState::Running {
             tool_use_id: None,
             detail: None,
             kind: pixtuoid_core::state::ToolKind::Edit,

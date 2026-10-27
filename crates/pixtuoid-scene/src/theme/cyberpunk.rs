@@ -286,7 +286,7 @@ pub static CYBERPUNK: Theme = Theme {
             g: 50,
             b: 80,
         },
-        waiting_bubble: Rgb {
+        requires_action_bubble: Rgb {
             r: 255,
             g: 60,
             b: 180,
@@ -325,12 +325,17 @@ pub static CYBERPUNK: Theme = Theme {
         },
     },
     ui: UiColors {
-        label_active: Rgb {
+        label_running: Rgb {
             r: 57,
             g: 255,
             b: 20,
         },
-        label_waiting: Rgb {
+        label_ok: Rgb {
+            r: 57,
+            g: 255,
+            b: 20,
+        },
+        label_requires_action: Rgb {
             r: 255,
             g: 60,
             b: 180,

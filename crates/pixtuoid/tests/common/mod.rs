@@ -31,7 +31,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
     let cases: &[(&str, ActivityState)] = &[
         (
             "agent-a",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_a".into()),
                 detail: Some("Write".into()),
                 kind: ToolKind::Edit,
@@ -40,8 +40,8 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
         ("agent-b", ActivityState::Idle),
         (
             "agent-c",
-            ActivityState::Waiting {
-                reason: "perm?".into(),
+            ActivityState::RequiresAction {
+                reason: Some("perm?".into()),
             },
         ),
         ("agent-d", ActivityState::Idle),
@@ -66,7 +66,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: 0,
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,

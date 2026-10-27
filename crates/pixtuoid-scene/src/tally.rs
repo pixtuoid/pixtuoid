@@ -11,8 +11,8 @@ use pixtuoid_core::{AgentSlot, SceneState};
 /// walkouts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StateCounts {
-    pub active: usize,
-    pub waiting: usize,
+    pub running: usize,
+    pub requires_action: usize,
     pub idle: usize,
     pub exiting: usize,
     pub total: usize,
@@ -27,8 +27,8 @@ fn bucket_slot(c: &mut StateCounts, slot: &AgentSlot) {
         return;
     }
     match slot.state {
-        ActivityState::Active { .. } => c.active += 1,
-        ActivityState::Waiting { .. } => c.waiting += 1,
+        ActivityState::Running { .. } => c.running += 1,
+        ActivityState::RequiresAction { .. } => c.requires_action += 1,
         ActivityState::Idle => c.idle += 1,
     }
 }
@@ -40,7 +40,7 @@ pub fn scene_stats(scene: &SceneState) -> StateCounts {
     for slot in scene.agents.values() {
         bucket_slot(&mut c, slot);
     }
-    debug_assert_eq!(c.active + c.waiting + c.idle + c.exiting, c.total);
+    debug_assert_eq!(c.running + c.requires_action + c.idle + c.exiting, c.total);
     c
 }
 
@@ -65,7 +65,7 @@ pub fn gateway_rollup<'a>(
     fn severity(s: DaemonState) -> u8 {
         match s {
             DaemonState::Idle => 0,
-            DaemonState::Busy => 1,
+            DaemonState::Running => 1,
             DaemonState::Degraded => 2,
             DaemonState::Down => 3,
         }

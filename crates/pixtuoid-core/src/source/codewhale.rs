@@ -137,12 +137,12 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // Its exit hook is submitted at least one loop pass later, and both drain one FIFO across
         // `OBSERVER_DISPATCH_WORKERS` threads (`event_loop.rs:2087`, `observer_hooks.rs:178-196`,
         // `hooks/executor.rs:1189-1250`), so only a cancel pending as the dialog opens can land
-        // this after its exit; the next tool start, `session_idle` or end clears that Waiting.
+        // this after its exit; the next tool start, `session_idle` or end clears that RequiresAction.
         "waiting_for_user" => Ok(vec![
             identity(),
             AgentEvent::UserActionRequest {
                 agent_id,
-                reason: "waiting for the user".into(),
+                reason: None,
                 tool_use_id: None,
             },
         ]),

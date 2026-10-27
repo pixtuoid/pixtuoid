@@ -1437,10 +1437,11 @@ impl core::marker::UnsafeUnpin for pixtuoid_scene::theme::ToolGlowColors
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::theme::ToolGlowColors
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::theme::ToolGlowColors
 pub struct pixtuoid_scene::theme::UiColors
-pub pixtuoid_scene::theme::UiColors::label_active: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::label_exiting: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::label_idle: pixtuoid_core::sprite::Rgb
-pub pixtuoid_scene::theme::UiColors::label_waiting: pixtuoid_core::sprite::Rgb
+pub pixtuoid_scene::theme::UiColors::label_ok: pixtuoid_core::sprite::Rgb
+pub pixtuoid_scene::theme::UiColors::label_requires_action: pixtuoid_core::sprite::Rgb
+pub pixtuoid_scene::theme::UiColors::label_running: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::neon_brand: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_bg: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_dim: pixtuoid_core::sprite::Rgb

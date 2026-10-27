@@ -351,7 +351,7 @@ fn furniture_tooltip_on_hover_over_empty_desk() {
 
 #[test]
 fn pet_tooltip_on_hover() {
-    let scene = scene_with(vec![active("/tt/p.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/tt/p.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(140, 48, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     let PetHover { centre: pos, .. } = r.drawn_pet().expect("cat placed");
@@ -383,7 +383,7 @@ fn until_the_pet_walks(
 
 #[test]
 fn pet_tooltip_shows_custom_name() {
-    let scene = scene_with(vec![active("/tt/cn.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/tt/cn.jsonl", 0, "Edit", t0())], 16);
     let cat = pixtuoid_scene::pet::Pet {
         kind: PetKind::Cat,
         name: "Luna".to_string(),
@@ -405,7 +405,7 @@ fn pet_tooltip_shows_custom_name() {
 
 #[test]
 fn pet_tooltip_falls_back_to_default_name_when_not_configured() {
-    let scene = scene_with(vec![active("/tt/fb.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/tt/fb.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(140, 48, vec![PetKind::Cat]);
     let (PetHover { centre: pos, .. }, now) = until_the_pet_walks(&mut r, &scene);
     r.set_mouse_pos(Some((pos.x, pos.y / 2)));
@@ -418,16 +418,16 @@ fn pet_tooltip_falls_back_to_default_name_when_not_configured() {
 }
 
 #[test]
-fn hovered_active_agent_tooltip_shows_state_and_detail() {
-    // active() sets last_event_at = started; created >5s ago so active_str is
-    // a numeric percent (not "--%"), and active_ms>0 forces a non-zero %.
-    let mut a = active(
+fn hovered_running_agent_tooltip_shows_state_and_detail() {
+    // running() sets last_event_at = started; created >5s ago so running_str is
+    // a numeric percent (not "--%"), and running_ms>0 forces a non-zero %.
+    let mut a = running(
         "/ttA/0.jsonl",
         0,
         "Edit src/lib.rs",
         t0() - Duration::from_secs(600),
     );
-    a.active_ms = 120_000; // 120s active over a 600s session ⇒ 20%
+    a.running_ms = 120_000; // 120s running over a 600s session ⇒ 20%
     let id = a.agent_id;
     let scene = scene_with(vec![a], 16);
     let mut r = build(120, 44, vec![]);
@@ -435,10 +435,10 @@ fn hovered_active_agent_tooltip_shows_state_and_detail() {
     super::hover_agent(&mut r, id);
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
-    assert!(text.contains("Active"), "active state word: {text}");
+    assert!(text.contains("Running"), "running state word: {text}");
     assert!(text.contains("Edit"), "tool name on the state line: {text}");
     assert!(text.contains("src/lib.rs"), "detail line args: {text}");
-    assert!(text.contains("20%"), "exact active percent: {text}");
+    assert!(text.contains("20%"), "exact running percent: {text}");
     assert!(
         text.contains("\u{25ae}\u{25af}\u{25af}\u{25af}\u{25af}"),
         "meter fill (1 filled ▮ + 4 empty ▯): {text}"
@@ -448,7 +448,7 @@ fn hovered_active_agent_tooltip_shows_state_and_detail() {
 #[test]
 fn hovered_burning_agent_tooltip_shows_model_and_fresh_effort() {
     use pixtuoid_core::state::EffortObservation;
-    let mut a = active(
+    let mut a = running(
         "/burn/0.jsonl",
         0,
         "Read src/main.rs",
@@ -458,7 +458,7 @@ fn hovered_burning_agent_tooltip_shows_model_and_fresh_effort() {
     a.model = Some("claude-fable-5".into());
     a.effort = Some(EffortObservation::new("ultra".into(), t0()));
     let id = a.agent_id;
-    let plain = active(
+    let plain = running(
         "/burn/1.jsonl",
         1,
         "Read src/lib.rs",
@@ -490,7 +490,7 @@ fn stale_effort_drops_off_the_dossier() {
     // An hour-old stamp is comfortably past the freshness window
     // (`pixtuoid_scene::burn::EFFORT_TTL_SECS`, crate-private).
     use pixtuoid_core::state::EffortObservation;
-    let mut a = active(
+    let mut a = running(
         "/burn/2.jsonl",
         0,
         "Read src/main.rs",
@@ -523,7 +523,7 @@ fn stale_effort_drops_off_the_dossier() {
 fn the_exit_sentinel_never_renders_in_the_dossier() {
     use pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL;
     use pixtuoid_core::state::EffortObservation;
-    let mut a = active(
+    let mut a = running(
         "/burn/3.jsonl",
         0,
         "Read src/main.rs",
@@ -551,7 +551,7 @@ fn the_exit_sentinel_never_renders_in_the_dossier() {
 
 #[test]
 fn hovered_agent_tooltip_shows_source_badge() {
-    let mut a = active(
+    let mut a = running(
         "/badge/0.jsonl",
         0,
         "Read src/main.rs",
@@ -578,14 +578,14 @@ fn hovered_agent_tooltip_shows_source_badge() {
 
 #[test]
 fn hovered_subagent_tooltip_shows_lineage() {
-    let parent = active(
+    let parent = running(
         "/lin/root.jsonl",
         0,
         "Read a",
         t0() - Duration::from_secs(60),
     );
     let parent_id = parent.agent_id;
-    let mut child = active(
+    let mut child = running(
         "/lin/child.jsonl",
         1,
         "Edit b",
@@ -607,10 +607,10 @@ fn hovered_subagent_tooltip_shows_lineage() {
 }
 
 #[test]
-fn hovered_waiting_agent_tooltip_shows_reason() {
+fn hovered_requires_action_agent_tooltip_shows_reason() {
     let mut a = idle("/ttW/0.jsonl", 0, t0() - Duration::from_secs(60));
-    a.state = ActivityState::Waiting {
-        reason: Arc::from("permission to edit"),
+    a.state = ActivityState::RequiresAction {
+        reason: Some(Arc::from("permission to edit")),
     };
     let id = a.agent_id;
     let scene = scene_with(vec![a], 16);
@@ -619,7 +619,10 @@ fn hovered_waiting_agent_tooltip_shows_reason() {
     super::hover_agent(&mut r, id);
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
-    assert!(text.contains("Waiting"), "waiting state arm: {text}");
+    assert!(
+        text.contains("Requires action"),
+        "requires-action state arm: {text}"
+    );
     assert!(
         text.contains("?permission"),
         "?-flagged reason line: {text}"
@@ -628,15 +631,15 @@ fn hovered_waiting_agent_tooltip_shows_reason() {
 
 #[test]
 fn hovered_exiting_agent_tooltip_suppresses_meter() {
-    // A walking-out agent keeps its retained Active payload (`mark_exiting`
+    // A walking-out agent keeps its retained Running payload (`mark_exiting`
     // doesn't reset `state`), but the dossier reads `◌ Exiting`.
-    let mut a = active(
+    let mut a = running(
         "/exM/0.jsonl",
         0,
         "Edit src/lib.rs",
         t0() - Duration::from_secs(600),
     );
-    a.active_ms = 120_000; // a 20% meter if it were NOT exiting
+    a.running_ms = 120_000; // a 20% meter if it were NOT exiting
     a.exiting_at = Some(t0());
     let id = a.agent_id;
     let scene = scene_with(vec![a], 16);
@@ -648,15 +651,15 @@ fn hovered_exiting_agent_tooltip_suppresses_meter() {
     assert!(text.contains("Exiting"), "exiting state word: {text}");
     assert!(
         !text.contains('%'),
-        "no active-% meter on an exiting card: {text}"
+        "no running-% meter on an exiting card: {text}"
     );
 }
 
 #[test]
-fn hovered_exiting_agent_tooltip_suppresses_waiting_reason() {
+fn hovered_exiting_agent_tooltip_suppresses_requires_action_reason() {
     let mut a = idle("/exW/0.jsonl", 0, t0() - Duration::from_secs(60));
-    a.state = ActivityState::Waiting {
-        reason: Arc::from("permission to edit"),
+    a.state = ActivityState::RequiresAction {
+        reason: Some(Arc::from("permission to edit")),
     };
     a.exiting_at = Some(t0());
     let id = a.agent_id;
@@ -672,8 +675,8 @@ fn hovered_exiting_agent_tooltip_suppresses_waiting_reason() {
         "no ?reason line on an exiting card: {text}"
     );
     assert!(
-        !text.contains("Waiting"),
-        "state word is Exiting, not Waiting: {text}"
+        !text.contains("Requires action"),
+        "state word is Exiting, not RequiresAction: {text}"
     );
 }
 
@@ -707,7 +710,7 @@ fn hovered_then_removed_agent_is_a_safe_noop() {
 #[test]
 fn a_still_floor_holds_its_wall_board_flap() {
     use pixtuoid_scene::anim::{FULL_TICK_MS, Motion};
-    let scene = scene_with(vec![active("/t/0.jsonl", 0, "Edit a.rs", t0())], 16);
+    let scene = scene_with(vec![running("/t/0.jsonl", 0, "Edit a.rs", t0())], 16);
     let (cols, rows) = (
         pixtuoid_scene::layout::NEON_PANEL_W + 2,
         pixtuoid_scene::layout::NEON_PANEL_INNER_Y / 2 + 3,

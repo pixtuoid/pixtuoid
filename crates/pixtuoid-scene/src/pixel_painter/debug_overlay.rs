@@ -280,7 +280,7 @@ mod tests {
             desk_index: GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,

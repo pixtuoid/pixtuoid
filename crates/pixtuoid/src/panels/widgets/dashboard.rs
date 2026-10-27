@@ -31,14 +31,14 @@ pub(crate) fn paint_dashboard(
         scroll,
     } = frame;
     if rows.is_empty() {
-        /// Fits "No active agents".
+        /// Fits "No agents".
         const EMPTY_W: u16 = 24;
         Panel {
             title: Some("Agents"),
             content_w: EMPTY_W,
             above: vec![],
             list: vec![Line::from(Span::styled(
-                "No active agents",
+                "No agents",
                 Style::default().fg(to_color(theme.ui.label_idle)),
             ))],
             below: vec![],
@@ -97,9 +97,18 @@ fn dashboard_line(
     );
 
     let (glyph, text, color) = match &row.state {
-        RowState::Active(Some(detail)) => ('●', detail.to_string(), theme.ui.label_active),
-        RowState::Active(None) => ('●', "active".to_string(), theme.ui.label_active),
-        RowState::Waiting(reason) => ('◐', format!("waiting: {reason}"), theme.ui.label_waiting),
+        RowState::Running(Some(detail)) => ('●', detail.to_string(), theme.ui.label_running),
+        RowState::Running(None) => ('●', "running".to_string(), theme.ui.label_running),
+        RowState::RequiresAction(Some(reason)) => (
+            '◐',
+            format!("requires action: {reason}"),
+            theme.ui.label_requires_action,
+        ),
+        RowState::RequiresAction(None) => (
+            '◐',
+            "requires action".to_string(),
+            theme.ui.label_requires_action,
+        ),
         RowState::Idle => ('○', "idle".to_string(), theme.ui.label_idle),
     };
     let state_cell = format!(
@@ -150,7 +159,7 @@ mod tests {
 
     #[test]
     fn dashboard_line_badge_uses_source_color_and_is_never_reversed() {
-        let row = make_row("codex", RowState::Active(None), "cxagent");
+        let row = make_row("codex", RowState::Running(None), "cxagent");
         let line = dashboard_line(&row, true, SystemTime::UNIX_EPOCH, &NORMAL);
         let badge = &line.spans[0];
         assert_eq!(
@@ -166,20 +175,24 @@ mod tests {
 
     #[test]
     fn dashboard_line_name_tinted_by_state() {
-        let row = make_row("cc", RowState::Active(None), "agent");
+        let row = make_row("cc", RowState::Running(None), "agent");
         let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
         assert_eq!(
             line.spans[2].style.fg,
-            Some(to_color(NORMAL.ui.label_active)),
-            "active: name must be tinted label_active"
+            Some(to_color(NORMAL.ui.label_running)),
+            "running: name must be tinted label_running"
         );
 
-        let row = make_row("cc", RowState::Waiting(Arc::from("permission")), "agent");
+        let row = make_row(
+            "cc",
+            RowState::RequiresAction(Some(Arc::from("permission"))),
+            "agent",
+        );
         let line = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
         assert_eq!(
             line.spans[2].style.fg,
-            Some(to_color(NORMAL.ui.label_waiting)),
-            "waiting: name must be tinted label_waiting"
+            Some(to_color(NORMAL.ui.label_requires_action)),
+            "requires-action: name must be tinted label_requires_action"
         );
 
         let row = make_row("cc", RowState::Idle, "agent");
@@ -193,7 +206,7 @@ mod tests {
 
     #[test]
     fn dashboard_line_selected_reverses_name_and_state_not_badge() {
-        let row = make_row("cc", RowState::Active(None), "agent");
+        let row = make_row("cc", RowState::Running(None), "agent");
         let line = dashboard_line(&row, true, SystemTime::UNIX_EPOCH, &NORMAL);
         assert!(
             !line.spans[0]
@@ -239,7 +252,7 @@ mod tests {
     fn dashboard_line_selected_long_field_scrolls_unselected_truncates() {
         let long = "a-very-long-agent-name-that-far-exceeds-the-label-budget-here";
         let detail = "Edit: some/very/long/path/to/a/file/that/overflows.rs";
-        let row = make_row("cc", RowState::Active(Some(Arc::from(detail))), long);
+        let row = make_row("cc", RowState::Running(Some(Arc::from(detail))), long);
         let unsel = dashboard_line(&row, false, SystemTime::UNIX_EPOCH, &NORMAL);
         let name_unsel = unsel.spans[2].content.to_string();
         assert!(

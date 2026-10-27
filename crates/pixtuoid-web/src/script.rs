@@ -91,7 +91,7 @@ fn tool(i: usize, at_ms: u64, tuid: &str, display: &str) -> [Beat; 2] {
     ]
 }
 
-/// `n` chained bursts — continuously Active, then the agent settles Idle and
+/// `n` chained bursts — continuously Running, then the agent settles Idle and
 /// the engine's wander takes over until the next spell.
 fn spell(beats: &mut Vec<Beat>, i: usize, at_ms: u64, n: u64, tools: &[&str]) {
     for (k, &display) in (0..n).zip(tools.iter().cycle()) {
@@ -371,7 +371,7 @@ pub(crate) fn hero_script() -> Vec<Beat> {
         transport: Transport::Hook,
         event: AgentEvent::UserActionRequest {
             agent_id: cast_id(6),
-            reason: "permission".to_string(),
+            reason: Some("permission".to_string()),
             tool_use_id: None,
         },
     });
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn one_loop_populates_a_working_office() {
+    fn one_loop_populates_a_running_office() {
         let scene = run_script_through_reducer(1);
         assert!(
             scene.agents.len() >= 9,
@@ -520,18 +520,18 @@ mod tests {
             "morning rush: expected >=6 walk-ins by 3s, got {}",
             scene.agents.len()
         );
-        let active = scene
+        let running = scene
             .agents
             .values()
-            .filter(|a| matches!(a.state, pixtuoid_core::state::ActivityState::Active { .. }))
+            .filter(|a| matches!(a.state, pixtuoid_core::state::ActivityState::Running { .. }))
             .count();
-        // The schedule lands `active` at exactly this floor with zero headroom:
+        // The schedule lands `running` at exactly this floor with zero headroom:
         // a spell-offset tweak can drop it to 3 without the morning-rush spec
         // actually regressing, so re-check the rendered office before assuming
         // a real regression.
         assert!(
-            active >= 4,
-            "morning rush: expected >=4 monitors on by 3s, got {active}"
+            running >= 4,
+            "morning rush: expected >=4 monitors on by 3s, got {running}"
         );
     }
 }

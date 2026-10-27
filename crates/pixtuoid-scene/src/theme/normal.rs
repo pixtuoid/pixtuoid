@@ -304,7 +304,7 @@ pub static NORMAL: Theme = Theme {
             g: 120,
             b: 85,
         },
-        waiting_bubble: Rgb {
+        requires_action_bubble: Rgb {
             r: 255,
             g: 215,
             b: 70,
@@ -343,12 +343,17 @@ pub static NORMAL: Theme = Theme {
         },
     },
     ui: UiColors {
-        label_active: Rgb {
+        label_running: Rgb {
             r: 60,
             g: 220,
             b: 60,
         },
-        label_waiting: Rgb {
+        label_ok: Rgb {
+            r: 60,
+            g: 220,
+            b: 60,
+        },
+        label_requires_action: Rgb {
             r: 220,
             g: 200,
             b: 50,

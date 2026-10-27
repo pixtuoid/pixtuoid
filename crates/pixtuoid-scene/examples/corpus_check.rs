@@ -240,7 +240,7 @@ fn main() {
         files.len()
     );
     println!(
-        "  drove the slot    {drove_files}/{registered_files} reached >=1 lifecycle class (Active/Waiting/Delegating)"
+        "  drove the slot    {drove_files}/{registered_files} reached >=1 lifecycle class (Running/RequiresAction/Delegating)"
     );
     println!(
         "  reached the UI    {drawn_files}/{registered_files} registered files would paint a sprite"

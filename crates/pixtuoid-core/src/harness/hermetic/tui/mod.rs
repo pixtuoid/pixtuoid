@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 /// sent again: an Enter during startup is swallowed.
 const ENTER_RETRY: Duration = Duration::from_secs(1);
 /// How long the screen must stay unchanged after the turn before the driver
-/// quits, short of the idle notifiers a CLI fires at a waiting composer.
+/// quits, short of the idle notifiers a CLI fires at a requires-action composer.
 const SETTLE: Duration = Duration::from_secs(3);
 /// How long an unchanged screen may stand before a turn that never finished is
 /// given up: an unrecognised dialog stalls a run, and its key is never guessed.
@@ -868,11 +868,11 @@ mod tests {
     #[test]
     fn a_turn_is_cancelled_once_its_reply_streams_and_quit_once_the_screen_settles() {
         let t0 = Instant::now();
-        let (mut d, tui, waiting) = codex_cancelling(t0);
+        let (mut d, tui, requires_action) = codex_cancelling(t0);
         let t1 = t0 + Duration::from_millis(1);
-        assert_eq!(d.step(&waiting, t1), Action::Wait);
+        assert_eq!(d.step(&requires_action, t1), Action::Wait);
         assert_eq!(
-            d.step(&waiting, t1 + SETTLE),
+            d.step(&requires_action, t1 + SETTLE),
             Action::Wait,
             "a quiet stretch before the reply streams is not the turn's end"
         );
@@ -890,10 +890,10 @@ mod tests {
     #[test]
     fn a_turn_whose_reply_never_streams_gives_up_unanswered() {
         let t0 = Instant::now();
-        let (mut d, _, waiting) = codex_cancelling(t0);
-        d.step(&waiting, t0);
+        let (mut d, _, requires_action) = codex_cancelling(t0);
+        d.step(&requires_action, t0);
         assert_eq!(
-            d.step(&waiting, t0 + STALL),
+            d.step(&requires_action, t0 + STALL),
             Action::Fail("the screen stood still with the turn unfinished")
         );
         assert_eq!(d.gave_up(), UNANSWERED);

@@ -30,14 +30,14 @@ const _: () = assert!(EXIT_GRACE_WINDOW.as_nanos() < STRAGGLER_TTL.as_nanos());
 #[doc(hidden)]
 pub const B1_CASCADE_GRACE: Duration = Duration::from_millis(2500);
 
-/// Stale spread by state: Active silence is death mid-tool; Idle/Waiting must
+/// Stale spread by state: Running silence is death mid-tool; Idle/RequiresAction must
 /// not reap a human on a break or a prompt; unknown-cwd is a seeding ghost.
 #[doc(hidden)]
-pub const STALE_ACTIVE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+pub const STALE_TOOL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 #[doc(hidden)]
 pub const STALE_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 #[doc(hidden)]
-pub const STALE_WAITING_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+pub const STALE_BLOCKED_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 #[doc(hidden)]
 pub const STALE_UNKNOWN_CWD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
@@ -76,19 +76,19 @@ fn stale_threshold_with_caps(
         // A Delegating slot on a source whose delegations are hook-silent
         // (in-process subagents that fire no hooks) emits NOTHING until the
         // dispatch tool's PostToolUse — `last_event_at` freezes for the whole
-        // delegation, so a long run would be swept mid-turn on the Active
+        // delegation, so a long run would be swept mid-turn on the Running
         // timer. Keyed on the typed `ToolKind::Task`, never the display string:
         // a Generic tool spelling "Delegating" is not a delegation.
-        ActivityState::Active {
+        ActivityState::Running {
             kind: ToolKind::Task,
             ..
-        } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_WAITING_TIMEOUT,
-        ActivityState::Active { .. } => STALE_ACTIVE_TIMEOUT,
+        } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_BLOCKED_TIMEOUT,
+        ActivityState::Running { .. } => STALE_TOOL_TIMEOUT,
         ActivityState::Idle if caps.is_some_and(|c| c.short_idle_reap()) => {
             STALE_SHORT_IDLE_TIMEOUT
         }
         ActivityState::Idle => STALE_IDLE_TIMEOUT,
-        ActivityState::Waiting { .. } => STALE_WAITING_TIMEOUT,
+        ActivityState::RequiresAction { .. } => STALE_BLOCKED_TIMEOUT,
     }
 }
 
@@ -369,7 +369,7 @@ impl Reducer {
                 self.apply_user_action_request(
                     scene,
                     agent_id,
-                    &reason,
+                    reason.as_deref(),
                     tool_use_id.as_deref(),
                     from,
                     now,
@@ -429,7 +429,7 @@ impl Reducer {
 
     /// The pre-pass every event runs before dispatch. ORDER IS LOAD-BEARING:
     /// dedup before task tracking (#150), else a duplicate re-fires
-    /// `enter_delegating` onto a Waiting parent; fire b1 cascades AFTER tracking,
+    /// `enter_delegating` onto a RequiresAction parent; fire b1 cascades AFTER tracking,
     /// or a cancelling dispatch at the grace boundary evicts its own live subtree.
     fn preprocess(
         &mut self,
@@ -530,7 +530,7 @@ impl Reducer {
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
     /// A start the agent's action request holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a Waiting slot shows no call, and the hook resume
+    /// only counts: a RequiresAction slot shows no call, and the hook resume
     /// re-labels from the wire's `toolName` (a label-only cost, pinned by
     /// `the_approval_resume_labels_from_the_wire_tool_name`).
     fn apply_tool_use_start(
@@ -549,7 +549,7 @@ impl Reducer {
             agent_id,
             tool_use_id.as_deref(),
             from,
-            is_waiting(scene, agent_id),
+            is_requires_action(scene, agent_id),
             counted,
         );
         self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
@@ -562,7 +562,7 @@ impl Reducer {
             let kind = detail
                 .as_ref()
                 .map_or(ToolKind::Other, ToolKind::from_detail);
-            fsm::enter_active(
+            fsm::enter_running(
                 slot,
                 tool_use_id.map(|s| Arc::<str>::from(s.as_str())),
                 detail.map(|d| Arc::<str>::from(d.display())),
@@ -612,15 +612,17 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let resolved =
-            self.corr
-                .action_requests
-                .end(agent_id, ended, from, is_waiting(scene, agent_id));
+        let resolved = self.corr.action_requests.end(
+            agent_id,
+            ended,
+            from,
+            is_requires_action(scene, agent_id),
+        );
         let task_in_flight = self.corr.any_task_in_flight(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let untracked_task = matches!(
                 slot.state,
-                ActivityState::Active {
+                ActivityState::Running {
                     kind: ToolKind::Task,
                     tool_use_id: None,
                     ..
@@ -631,13 +633,13 @@ impl Reducer {
             }
             let ends_shown_call = match (&slot.state, ended) {
                 (
-                    ActivityState::Active {
+                    ActivityState::Running {
                         tool_use_id: Some(shown),
                         ..
                     },
                     Ended::Call(call),
                 ) => **shown == *call,
-                (state, _) => matches!(state, ActivityState::Active { .. }),
+                (state, _) => matches!(state, ActivityState::Running { .. }),
             };
             if resolved || ends_shown_call {
                 fsm::settle(slot, task_in_flight, now);
@@ -650,24 +652,28 @@ impl Reducer {
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        reason: &str,
+        reason: Option<&str>,
         tool_use_id: Option<&str>,
         from: Transport,
         now: SystemTime,
     ) {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let in_flight = match &slot.state {
-                ActivityState::Active {
+                ActivityState::Running {
                     tool_use_id: Some(t),
                     ..
                 } => Some(t),
                 _ => None,
             };
-            let waiting = matches!(slot.state, ActivityState::Waiting { .. });
-            self.corr
-                .action_requests
-                .raise(agent_id, tool_use_id, in_flight, waiting, from);
-            fsm::enter_waiting(slot, Arc::<str>::from(reason), now);
+            let requires_action = matches!(slot.state, ActivityState::RequiresAction { .. });
+            self.corr.action_requests.raise(
+                agent_id,
+                tool_use_id,
+                in_flight,
+                requires_action,
+                from,
+            );
+            fsm::enter_requires_action(slot, reason.map(Arc::<str>::from), now);
         }
     }
 
@@ -900,8 +906,8 @@ impl Reducer {
             if !link_would_apply {
                 return true;
             }
-            // #238: a 2-cycle of BOTH-Waiting nodes would mutually satisfy
-            // `has_waiting_ancestor` and escape `sweep_stale` forever.
+            // #238: a 2-cycle of BOTH-RequiresAction nodes would mutually satisfy
+            // `has_requires_action_ancestor` and escape `sweep_stale` forever.
             let cycle = scope::would_create_cycle(&scene.agents, agent_id, p);
             if cycle {
                 tracing::warn!(
@@ -958,8 +964,8 @@ impl Reducer {
         }
         slot.last_event_at = now;
         if revive {
-            // Route through fsm so an in-flight Active span folds into
-            // `active_ms` — a direct `state = Idle` here silently dropped it.
+            // Route through fsm so an in-flight Running span folds into
+            // `running_ms` — a direct `state = Idle` here silently dropped it.
             fsm::resurrect_in_place(slot, now);
             // Evict the dead life's correlation as `sweep_exited` would have;
             // `recent_proof_of_life` deliberately SURVIVES a resurrect.
@@ -1105,7 +1111,7 @@ impl Reducer {
                 desk_index,
                 floor_idx,
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 // A PARENTED slot came from an explicit subagent signal (e.g.
                 // Copilot's `subagent.started`, whose payload carries no cwd).
                 unknown_cwd: !has_cwd && parent_id.is_none(),
@@ -1125,7 +1131,7 @@ impl Reducer {
     /// TurnEnd for this AgentId is the child's work, so it is dropped. Two
     /// exemptions: the Task's own PostToolUse (its tool_use_id matches), and a
     /// request member's Start/End — the parent's own approval round (#951),
-    /// which eating would strand in Waiting until the parent's next own event
+    /// which eating would strand in RequiresAction until the parent's next own event
     /// or the stale sweep.
     fn suppress_subagent_leak(
         &mut self,
@@ -1158,7 +1164,7 @@ impl Reducer {
             && self.corr.action_requests.child_resumed(
                 id,
                 tasks,
-                matches!(slot.state, ActivityState::Waiting { .. }),
+                matches!(slot.state, ActivityState::RequiresAction { .. }),
             )
         {
             fsm::settle(slot, any_task(tasks), now);
@@ -1167,7 +1173,7 @@ impl Reducer {
     }
 
     /// Tracks Task tool_use_ids from either transport, marking a parent that
-    /// gains one Active("Delegating") so it doesn't look asleep while subagents
+    /// gains one Running("Delegating") so it doesn't look asleep while subagents
     /// work. b1 subagent-completion inference, where [`ChildEndInference`] says
     /// so: a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before [`STALE_IDLE_TIMEOUT`].
@@ -1189,7 +1195,7 @@ impl Reducer {
             } if d.is_task() => {
                 handled_by_task_start = true;
                 // Delegating only on a FIRST insert of a never-drained tuid: an
-                // out-of-window replay would clobber a since-Waiting parent.
+                // out-of-window replay would clobber a since-RequiresAction parent.
                 if self
                     .corr
                     .tasks_in_flight
@@ -1205,7 +1211,7 @@ impl Reducer {
                         *agent_id,
                         Some(tuid),
                         from,
-                        matches!(slot.state, ActivityState::Waiting { .. }),
+                        matches!(slot.state, ActivityState::RequiresAction { .. }),
                         self.corr.is_counted(agent_id, tuid),
                     )
                 {
@@ -1236,11 +1242,11 @@ impl Reducer {
                         // call's own end.
                         let shown_drained = matches!(
                             &slot.state,
-                            ActivityState::Active { tool_use_id: Some(t), .. } if **t == **tuid
+                            ActivityState::Running { tool_use_id: Some(t), .. } if **t == **tuid
                         );
                         if matches!(
                             slot.state,
-                            ActivityState::Active {
+                            ActivityState::Running {
                                 kind: ToolKind::Task,
                                 ..
                             }
@@ -1294,18 +1300,19 @@ impl Reducer {
     /// liveness signal, NOT `state_started_at`, which only tracks the current
     /// state's age.
     fn sweep_stale(&mut self, scene: &mut SceneState, now: SystemTime) {
-        // A node gated by a `Waiting` relative is blocked with it, not dead: a
-        // subagent under a waiting parent, or a parent over a waiting subagent.
-        // A waiting descendant never exempts a waiting node, so a waiting pair
+        // A node gated by a `RequiresAction` relative is blocked with it, not dead: a
+        // subagent under a requires-action parent, or a parent over a requires-action subagent.
+        // A requires-action descendant never exempts a requires-action node, so a requires-action pair
         // can't exempt each other (#238).
         let agents = &scene.agents;
         let stale: Vec<(AgentId, Duration, Duration)> = agents
             .values()
             .filter(|slot| slot.exiting_at.is_none())
             .filter_map(|slot| {
-                let waiting = matches!(slot.state, ActivityState::Waiting { .. });
-                if scope::has_waiting_ancestor(agents, slot.agent_id)
-                    || (!waiting && scope::has_waiting_descendant(agents, slot.agent_id))
+                let requires_action = matches!(slot.state, ActivityState::RequiresAction { .. });
+                if scope::has_requires_action_ancestor(agents, slot.agent_id)
+                    || (!requires_action
+                        && scope::has_requires_action_descendant(agents, slot.agent_id))
                 {
                     return None;
                 }
@@ -1315,7 +1322,7 @@ impl Reducer {
                     return None;
                 }
                 // A vouched ancestor's DELEGATED subtree inherits it: the probe
-                // never vouches subagent ids, and a parked parent reads Active.
+                // never vouches subagent ids, and a parked parent reads Running.
                 if scope::has_ancestor_where(agents, slot.agent_id, |a| {
                     self.corr.vouch_fresh(&a.agent_id, now)
                         && self
@@ -1393,11 +1400,11 @@ impl Reducer {
     }
 }
 
-fn is_waiting(scene: &SceneState, id: AgentId) -> bool {
+fn is_requires_action(scene: &SceneState, id: AgentId) -> bool {
     scene
         .agents
         .get(&id)
-        .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }))
+        .is_some_and(|s| matches!(s.state, ActivityState::RequiresAction { .. }))
 }
 
 fn event_tool_use_id(ev: &AgentEvent) -> Option<(ToolEventKind, &str)> {

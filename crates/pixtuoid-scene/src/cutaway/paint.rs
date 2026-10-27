@@ -2402,7 +2402,7 @@ mod tests {
         assert!(posts > 0, "this wall has posts");
     }
 
-    /// At the art's density the waiting mark and a z float clear of their
+    /// At the art's density the requires-action mark and a z float clear of their
     /// figure's badge however far the z has risen, the z only climbs and drifts
     /// away, and the dust lies along the stepping foot's row.
     #[test]
@@ -2451,7 +2451,7 @@ mod tests {
         };
         let clear =
             |s: Span| s.x1 < badge.x0 || badge.x1 < s.x0 || s.y1 < badge.y0 || badge.y1 < s.y0;
-        let (_, mark) = rider(K::WaitingMark);
+        let (_, mark) = rider(K::RequiresActionMark);
         assert!(
             clear(mark),
             "at scale {s} the mark {mark:?} lands on the badge {badge:?}"
@@ -4996,7 +4996,7 @@ mod tests {
                     None,
                     Some(K::FlameCrown),
                     Some(K::SleepZ),
-                    Some(K::WaitingMark)
+                    Some(K::RequiresActionMark)
                 ]
             );
         }
@@ -5513,7 +5513,7 @@ mod tests {
                 &|_, _| {},
                 &|c, a| {
                     c.glow = crate::sim::CharacterGlow::Tool;
-                    a.state = pixtuoid_core::state::ActivityState::Active {
+                    a.state = pixtuoid_core::state::ActivityState::Running {
                         tool_use_id: None,
                         detail: None,
                         kind: pixtuoid_core::state::ToolKind::Read,
@@ -5747,7 +5747,7 @@ mod tests {
             crate::effects::flame_crown(top_left, 8, Motion::Full.beat(at(0))),
             crate::effects::sleep_z(top_left, 0, Motion::Full.beat(at(500)))
                 .expect("a z rising at 500 ms"),
-            crate::effects::waiting_mark(top_left),
+            crate::effects::requires_action_mark(top_left),
         ]
     }
 

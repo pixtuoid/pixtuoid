@@ -18,7 +18,7 @@ use crate::hit::SceneHit;
 use crate::pet::PetKind;
 use crate::theme::Theme;
 
-/// The longest tool detail or waiting reason a tooltip shows, in chars.
+/// The longest tool detail or requires-action reason a tooltip shows, in chars.
 pub const DETAIL_CHARS: usize = 34;
 
 /// How a tooltip run draws.
@@ -32,7 +32,7 @@ pub enum TipTone {
     Plain,
     /// An agent's state word.
     Rung(RungKind),
-    /// The tool an active agent runs.
+    /// The tool a running agent runs.
     Tool(ToolKind),
     /// A source's `[xx]` badge, in that source's hue.
     Source(&'static str),
@@ -242,7 +242,7 @@ pub fn for_hit(hit: SceneHit<'_>, world: &FloorInputs<'_>) -> Option<Tooltip> {
 /// An agent's card: its badge, label and session id, then its state and
 /// tool, what it works on, under whom, where, on which model, and its
 /// session's stats. An exiting agent shows none of the live affordances: the
-/// walking-out slot keeps its Active/Waiting payload, so the exiting-first
+/// walking-out slot keeps its Running/RequiresAction payload, so the exiting-first
 /// kind gates them, not the raw state.
 pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip> {
     let agent = scene.agents.get(&id)?;
@@ -250,8 +250,8 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
         RungKind::Exiting
     } else {
         match agent.state {
-            ActivityState::Active { .. } => RungKind::Active,
-            ActivityState::Waiting { .. } => RungKind::Waiting,
+            ActivityState::Running { .. } => RungKind::Running,
+            ActivityState::RequiresAction { .. } => RungKind::RequiresAction,
             ActivityState::Idle => RungKind::Idle,
         }
     };
@@ -261,7 +261,7 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
     )];
     let mut detail: Option<String> = None;
     if kind != RungKind::Exiting {
-        if let ActivityState::Active {
+        if let ActivityState::Running {
             detail: Some(d),
             kind: tool_kind,
             ..
@@ -280,7 +280,10 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
             if !rest.is_empty() {
                 detail = Some(rest.chars().take(DETAIL_CHARS).collect());
             }
-        } else if let ActivityState::Waiting { reason } = &agent.state {
+        } else if let ActivityState::RequiresAction {
+            reason: Some(reason),
+        } = &agent.state
+        {
             detail = Some(format!(
                 "?{}",
                 reason.chars().take(DETAIL_CHARS).collect::<String>()
@@ -345,9 +348,9 @@ pub fn agent(scene: &SceneState, id: AgentId, now: SystemTime) -> Option<Tooltip
             crate::token_meter::compact_tokens(agent.tokens_used)
         ));
     }
-    // Fresh agents show no active-% meter — the % is noise before ~5s of accounting.
-    if kind == RungKind::Active && session_secs >= 5 {
-        let pct = ((agent.active_ms / 1000) * 100 / session_secs).min(100);
+    // Fresh agents show no running-% meter — the % is noise before ~5s of accounting.
+    if kind == RungKind::Running && session_secs >= 5 {
+        let pct = ((agent.running_ms / 1000) * 100 / session_secs).min(100);
         let filled = (pct as usize * 5).div_ceil(100).min(5);
         let meter: String = "\u{25ae}".repeat(filled) + &"\u{25af}".repeat(5 - filled);
         stats.push_str(&format!(" \u{b7} {meter} {pct}%"));
@@ -404,14 +407,14 @@ pub fn pet(
     Tooltip::label(text)
 }
 
-/// The gateway mascot's label. The verb keys on `busy` — see
-/// [`GatewayCard::busy`] for why the turn state, not the session count — and
-/// `degraded` outranks busy/idle.
+/// The gateway mascot's label. The verb keys on `running` — see
+/// [`GatewayCard::running`] for why the turn state, not the session count — and
+/// `degraded` outranks running/idle.
 pub fn mascot_text(card: &GatewayCard) -> String {
     let &GatewayCard {
         name,
         ref instance,
-        busy,
+        running,
         degraded,
         active_sessions,
     } = card;
@@ -423,8 +426,8 @@ pub fn mascot_text(card: &GatewayCard) -> String {
     };
     let verb = if degraded {
         "model error"
-    } else if busy {
-        "working"
+    } else if running {
+        "running"
     } else {
         "idle"
     };

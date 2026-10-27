@@ -267,7 +267,7 @@
   "poster": 3,
   "extra": [
    "--openclaw",
-   "busy",
+   "running",
    "--agents",
    "5"
   ]

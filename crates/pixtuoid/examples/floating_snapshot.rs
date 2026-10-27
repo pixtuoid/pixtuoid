@@ -31,7 +31,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
     let archetypes: [(&str, ActivityState); 6] = [
         (
             "claude-code",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_a".into()),
                 detail: Some("Write: src/foo.rs".into()),
                 kind: ToolKind::Edit,
@@ -40,13 +40,13 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         ("codex", ActivityState::Idle),
         (
             "cc",
-            ActivityState::Waiting {
-                reason: "permission?".into(),
+            ActivityState::RequiresAction {
+                reason: Some("permission?".into()),
             },
         ),
         (
             "cc",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_d".into()),
                 detail: Some("Bash: cargo test".into()),
                 kind: ToolKind::Bash,
@@ -55,7 +55,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         ("reasonix", ActivityState::Idle),
         (
             "opencode",
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("tu_e".into()),
                 detail: Some("Grep: TODO".into()),
                 kind: ToolKind::Search,
@@ -87,7 +87,7 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: scene.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,

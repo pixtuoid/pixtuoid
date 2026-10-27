@@ -45,13 +45,13 @@ fn rename_classification_and_upgradability_cover_each_provenance() {
 #[test]
 fn stale_timeout_constants_have_their_intended_durations() {
     use super::{
-        PROOF_OF_LIFE_TTL, STALE_ACTIVE_TIMEOUT, STALE_IDLE_TIMEOUT, STALE_SHORT_IDLE_TIMEOUT,
-        STALE_UNKNOWN_CWD_TIMEOUT, STALE_WAITING_TIMEOUT,
+        PROOF_OF_LIFE_TTL, STALE_BLOCKED_TIMEOUT, STALE_IDLE_TIMEOUT, STALE_SHORT_IDLE_TIMEOUT,
+        STALE_TOOL_TIMEOUT, STALE_UNKNOWN_CWD_TIMEOUT,
     };
     use std::time::Duration;
-    assert_eq!(STALE_ACTIVE_TIMEOUT, Duration::from_secs(600));
+    assert_eq!(STALE_TOOL_TIMEOUT, Duration::from_secs(600));
     assert_eq!(STALE_IDLE_TIMEOUT, Duration::from_secs(1800));
-    assert_eq!(STALE_WAITING_TIMEOUT, Duration::from_secs(3600));
+    assert_eq!(STALE_BLOCKED_TIMEOUT, Duration::from_secs(3600));
     assert_eq!(STALE_UNKNOWN_CWD_TIMEOUT, Duration::from_secs(180));
     assert_eq!(STALE_SHORT_IDLE_TIMEOUT, Duration::from_secs(300));
     assert_eq!(PROOF_OF_LIFE_TTL, Duration::from_secs(150));
@@ -60,8 +60,8 @@ fn stale_timeout_constants_have_their_intended_durations() {
 // Synthetic caps on an unregistered source, so the POLICY half stays covered
 // for caps combinations the registered rows don't happen to spell.
 #[test]
-fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
-    use super::{STALE_ACTIVE_TIMEOUT, STALE_WAITING_TIMEOUT, stale_threshold_with_caps};
+fn delegating_slot_with_hook_silent_caps_gets_requires_action_window() {
+    use super::{STALE_BLOCKED_TIMEOUT, STALE_TOOL_TIMEOUT, stale_threshold_with_caps};
     use crate::source::registry::SourceCaps;
     use crate::source::{AgentEvent, ToolDetail, Transport};
     use crate::{AgentId, Reducer, SceneState};
@@ -101,13 +101,13 @@ fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
     let slot = scene.agents.get(&id).unwrap();
     assert_eq!(
         stale_threshold_with_caps(slot, Some(caps)),
-        STALE_WAITING_TIMEOUT,
-        "hook-silent Delegating slot must get the Waiting-class window"
+        STALE_BLOCKED_TIMEOUT,
+        "hook-silent Delegating slot must get the RequiresAction-class window"
     );
     assert_eq!(
         stale_threshold_with_caps(slot, None),
-        STALE_ACTIVE_TIMEOUT,
-        "without the cap, Delegating reaps on the normal Active timer"
+        STALE_TOOL_TIMEOUT,
+        "without the cap, Delegating reaps on the normal Running timer"
     );
 
     r.apply(
@@ -125,14 +125,14 @@ fn delegating_slot_with_hook_silent_caps_gets_waiting_window() {
     let slot = scene.agents.get(&id).unwrap();
     assert_eq!(
         stale_threshold_with_caps(slot, Some(caps)),
-        STALE_ACTIVE_TIMEOUT,
-        "caps-on but non-Task detail must keep the Active timer"
+        STALE_TOOL_TIMEOUT,
+        "caps-on but non-Task detail must keep the Running timer"
     );
 }
 
 #[test]
-fn generic_tool_displaying_delegating_keeps_the_active_window() {
-    use super::{STALE_ACTIVE_TIMEOUT, stale_threshold_with_caps};
+fn generic_tool_displaying_delegating_keeps_the_running_window() {
+    use super::{STALE_TOOL_TIMEOUT, stale_threshold_with_caps};
     use crate::source::registry::SourceCaps;
     use crate::source::{AgentEvent, ToolDetail, Transport};
     use crate::{AgentId, Reducer, SceneState};
@@ -174,7 +174,7 @@ fn generic_tool_displaying_delegating_keeps_the_active_window() {
     let slot = scene.agents.get(&id).unwrap();
     assert_eq!(
         stale_threshold_with_caps(slot, Some(caps)),
-        STALE_ACTIVE_TIMEOUT,
+        STALE_TOOL_TIMEOUT,
         "a Generic tool spelling 'Delegating' must not ride the delegation carve-out"
     );
 }
@@ -217,7 +217,7 @@ fn an_action_request_is_evicted_on_apply_path_sweep() {
         &mut scene,
         AgentEvent::UserActionRequest {
             agent_id: id,
-            reason: "perm".into(),
+            reason: Some("perm".into()),
             tool_use_id: None,
         },
         t0,
@@ -225,7 +225,7 @@ fn an_action_request_is_evicted_on_apply_path_sweep() {
     );
     assert!(
         r.corr.action_requests.contains(&id),
-        "request recorded while Waiting mid-tool"
+        "request recorded while RequiresAction mid-tool"
     );
 
     // The UNRELATED event below is what runs sweep_exited on the APPLY path.
@@ -722,7 +722,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
         &mut scene,
         AgentEvent::UserActionRequest {
             agent_id: id,
-            reason: "perm".into(),
+            reason: Some("perm".into()),
             tool_use_id: None,
         },
         t0 + Duration::from_secs(1),
@@ -757,7 +757,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     );
     assert!(
         r.corr.tasks_in_flight.contains_key(&id),
-        "active task populated"
+        "task in flight populated"
     );
     assert!(r.corr.action_requests.contains(&id), "request populated");
     assert!(r.pending_b1_cascades.contains_key(&id), "cascade armed");
@@ -981,7 +981,7 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             &mut scene,
             AgentEvent::UserActionRequest {
                 agent_id: a,
-                reason: "perm".into(),
+                reason: Some("perm".into()),
                 tool_use_id: None,
             },
             now,

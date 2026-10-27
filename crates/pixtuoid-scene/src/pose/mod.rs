@@ -483,7 +483,7 @@ pub(crate) fn derive_with_routing(
         }
     }
 
-    // Went Active/Waiting: drop any exclusive-spot claim, else the frozen
+    // Went Running/RequiresAction: drop any exclusive-spot claim, else the frozen
     // `wander.target` blocks that spot for the whole burst.
     if let Some(walk) = rctx.walks.get_mut(&slot.agent_id) {
         walk.wander.target.kind = WanderKind::Aimless;

@@ -199,22 +199,19 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             // Every producer waits on the user: the approval gate, a question,
             // Auto Guard (`internal/session/control/approval_orchestration.go:311`,
             // `:621`, `recovery.go:341`).
-            let msg = obj
-                .get("message")
-                .and_then(|s| s.as_str())
-                .unwrap_or("waiting");
+            let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 register(),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: ellipsize(msg, MAX_DECODED_FIELD_CHARS),
+                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
                 },
             ])
         }
         // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
         // subject, and ALONGSIDE `Notification` for the same approval — both →
-        // Waiting is idempotent (the gated tool's PostToolUse/Stop resolves it).
+        // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
             let tool = obj
                 .get("toolName")
@@ -243,7 +240,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 register(),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: ellipsize(&reason, MAX_DECODED_FIELD_CHARS),
+                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
                 },
             ])
@@ -450,7 +447,7 @@ mod tests {
             "toolArgs": {"command": "rm -rf ./build"}
         }));
         assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
-            if reason == "approval: bash rm -rf ./build"));
+            if reason.as_deref() == Some("approval: bash rm -rf ./build")));
     }
 
     #[test]
@@ -459,14 +456,14 @@ mod tests {
             "event": "PermissionRequest", "sessionId": "s", "cwd": "/r", "toolName": "write_file"
         }));
         assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
-            if reason == "approval: write_file"));
+            if reason.as_deref() == Some("approval: write_file")));
     }
 
     #[test]
     fn permission_request_without_tool_falls_back() {
         let ev = decode(json!({"event": "PermissionRequest", "sessionId": "s", "cwd": "/r"}));
         assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. }
-            if reason == "approval required"));
+            if reason.as_deref() == Some("approval required")));
     }
 
     #[test]
@@ -478,6 +475,7 @@ mod tests {
         }));
         match &ev {
             AgentEvent::UserActionRequest { reason, .. } => {
+                let reason = reason.as_deref().expect("a reason");
                 assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
                 assert!(reason.ends_with('…'));
             }
@@ -531,9 +529,12 @@ mod tests {
     }
 
     #[test]
-    fn notification_without_message_falls_back_to_user_action_request() {
+    fn notification_without_message_carries_no_reason() {
         let ev = decode(json!({"event": "Notification", "sessionId": "s", "cwd": "/r"}));
-        assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. } if reason == "waiting"));
+        assert!(matches!(
+            ev,
+            AgentEvent::UserActionRequest { reason: None, .. }
+        ));
     }
 
     #[test]

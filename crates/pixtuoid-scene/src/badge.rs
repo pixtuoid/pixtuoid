@@ -23,8 +23,8 @@ const LABEL_SEP: char = '\u{b7}';
 /// Activity-derived label tone — backend-agnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BadgeTone {
-    Active,
-    Waiting,
+    Running,
+    RequiresAction,
     Idle,
     Exiting,
 }
@@ -36,8 +36,8 @@ impl BadgeTone {
     pub(crate) fn rgb(self, theme: &Theme) -> Rgb {
         match self {
             BadgeTone::Exiting => theme.ui.label_exiting,
-            BadgeTone::Active => theme.ui.label_active,
-            BadgeTone::Waiting => theme.ui.label_waiting,
+            BadgeTone::Running => theme.ui.label_running,
+            BadgeTone::RequiresAction => theme.ui.label_requires_action,
             BadgeTone::Idle => theme.ui.label_idle,
         }
     }
@@ -122,8 +122,8 @@ pub(crate) fn tone_of(agent: &AgentSlot) -> BadgeTone {
         return BadgeTone::Exiting;
     }
     match &agent.state {
-        ActivityState::Active { .. } => BadgeTone::Active,
-        ActivityState::Waiting { .. } => BadgeTone::Waiting,
+        ActivityState::Running { .. } => BadgeTone::Running,
+        ActivityState::RequiresAction { .. } => BadgeTone::RequiresAction,
         ActivityState::Idle => BadgeTone::Idle,
     }
 }
@@ -214,7 +214,7 @@ mod tests {
             desk_index: GlobalDeskIndex(desk),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,
@@ -225,8 +225,8 @@ mod tests {
         }
     }
 
-    fn active() -> ActivityState {
-        ActivityState::Active {
+    fn running() -> ActivityState {
+        ActivityState::Running {
             tool_use_id: Some(Arc::from("t")),
             detail: Some(Arc::from("Edit")),
             kind: ToolKind::Edit,
@@ -242,11 +242,11 @@ mod tests {
     }
 
     #[test]
-    fn a_lone_active_agent_reads_its_bare_label_in_the_active_tone() {
-        let a = slot("cc", "sess-abcd", 0, active());
+    fn a_lone_running_agent_reads_its_bare_label_in_the_running_tone() {
+        let a = slot("cc", "sess-abcd", 0, running());
         let s = scene_of(vec![a.clone()]);
         assert_eq!(Namesakes::of(s.agents.values()).text(&a), "cc");
-        assert_eq!(tone_of(&a), BadgeTone::Active);
+        assert_eq!(tone_of(&a), BadgeTone::Running);
     }
 
     #[test]
@@ -268,8 +268,8 @@ mod tests {
 
     #[test]
     fn colliding_labels_get_disambig_suffixes() {
-        let a = slot("cc", "session-aaaa", 0, active());
-        let b = slot("cc", "session-bbbb", 1, active());
+        let a = slot("cc", "session-aaaa", 0, running());
+        let b = slot("cc", "session-bbbb", 1, running());
         let s = scene_of(vec![a.clone(), b.clone()]);
         let namesakes = Namesakes::of(s.agents.values());
         let want_a = format!("cc\u{00b7}{}", disambig_suffix(&a.session_id));
@@ -280,20 +280,20 @@ mod tests {
     }
 
     #[test]
-    fn tone_maps_state_and_exiting_overrides_active() {
-        let waiting = slot(
+    fn tone_maps_state_and_exiting_overrides_running() {
+        let requires_action = slot(
             "wa",
             "sess-w",
             0,
-            ActivityState::Waiting {
-                reason: Arc::from("perm"),
+            ActivityState::RequiresAction {
+                reason: Some(Arc::from("perm")),
             },
         );
         let idle = slot("id", "sess-i", 1, ActivityState::Idle);
-        let mut exiting = slot("ex", "sess-e", 2, active());
+        let mut exiting = slot("ex", "sess-e", 2, running());
         exiting.exiting_at = Some(now());
 
-        assert_eq!(tone_of(&waiting), BadgeTone::Waiting);
+        assert_eq!(tone_of(&requires_action), BadgeTone::RequiresAction);
         assert_eq!(tone_of(&idle), BadgeTone::Idle);
         assert_eq!(tone_of(&exiting), BadgeTone::Exiting);
     }
@@ -366,7 +366,7 @@ mod tests {
             "cc\u{b7}日本語プロジェクト管理ツール",
             "cc\u{b7}a日本語プロジェクト管理",
         ] {
-            let a = slot(label, "sess-abcd", 0, active());
+            let a = slot(label, "sess-abcd", 0, running());
             let s = scene_of(vec![a.clone()]);
             let name = Namesakes::of(s.agents.values()).text(&a);
             let badge = format!("{}{name}", super::BADGE_MARKER);
@@ -449,8 +449,8 @@ mod tests {
         for theme in crate::theme::ALL_THEMES {
             let plate = badge_plate_colour(theme);
             for tone in [
-                BadgeTone::Active,
-                BadgeTone::Waiting,
+                BadgeTone::Running,
+                BadgeTone::RequiresAction,
                 BadgeTone::Idle,
                 BadgeTone::Exiting,
             ] {

@@ -38,14 +38,14 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/cutaway/a{i}.jsonl"));
         let state = match i % 3 {
-            0 => ActivityState::Active {
+            0 => ActivityState::Running {
                 tool_use_id: Some(format!("tu_{i}").into()),
                 detail: Some("Edit: src/lib.rs".into()),
                 kind: ToolKind::Edit,
             },
             1 => ActivityState::Idle,
-            _ => ActivityState::Waiting {
-                reason: "permission?".into(),
+            _ => ActivityState::RequiresAction {
+                reason: Some("permission?".into()),
             },
         };
         scene.agents.insert(
@@ -65,7 +65,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 desk_index: GlobalDeskIndex(i),
                 floor_idx: scene.floor_of(GlobalDeskIndex(i)),
                 tool_call_count: 0,
-                active_ms: 0,
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 model: None,

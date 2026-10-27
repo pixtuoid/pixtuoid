@@ -18,7 +18,7 @@ pub(crate) fn scanline_color(tint: Rgb) -> Rgb {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Inks {
     pub(crate) sleep_z: Rgb,
-    pub(crate) waiting: Rgb,
+    pub(crate) requires_action: Rgb,
     pub(crate) dust: Rgb,
     pub(crate) steam: Rgb,
 }
@@ -29,7 +29,7 @@ impl Inks {
         let e = &theme.effects;
         Self {
             sleep_z: e.sleep_z,
-            waiting: e.waiting_bubble,
+            requires_action: e.requires_action_bubble,
             dust: e.walking_dust,
             steam: e.coffee_steam,
         }
@@ -41,7 +41,7 @@ impl Inks {
 pub(crate) fn plot_effect(e: &Effect, inks: &Inks, plot: &mut impl FnMut(u16, u16, Rgb, f32)) {
     match e.kind {
         EffectKind::SleepZ => plot_sleep_z(plot, e.at, e.phase, inks),
-        EffectKind::WaitingMark => plot_waiting_mark(plot, e.at, inks),
+        EffectKind::RequiresActionMark => plot_requires_action_mark(plot, e.at, inks),
         EffectKind::WalkingDust => plot_walking_dust(plot, e.at, e.phase, inks),
         EffectKind::FlameCrown => plot_flame_crown(plot, e.at, e.phase),
         EffectKind::PetHeart => plot_pet_heart(plot, e.at, e.phase),
@@ -58,8 +58,8 @@ pub(crate) const SLEEP_Z_1X: &[&str] = &[
     "##", //
 ];
 
-/// The waiting mark on the base art, as [`SLEEP_Z_1X`] is.
-pub(crate) const WAITING_MARK_1X: &[&str] = &[
+/// The requires-action mark on the base art, as [`SLEEP_Z_1X`] is.
+pub(crate) const REQUIRES_ACTION_MARK_1X: &[&str] = &[
     "###", //
     "..#", //
     ".#.", //
@@ -163,7 +163,7 @@ fn plot_pet_heart(plot: &mut impl FnMut(u16, u16, Rgb, f32), at: Point, phase_ms
     }
 }
 
-/// One "working" bubble over a busy gateway mascot, `rise` rows up.
+/// One "running" bubble over a running gateway mascot, `rise` rows up.
 fn plot_mascot_bubble(plot: &mut impl FnMut(u16, u16, Rgb, f32), at: Point, rise: u64) {
     let bubble = Rgb {
         r: 0xd6,
@@ -173,10 +173,14 @@ fn plot_mascot_bubble(plot: &mut impl FnMut(u16, u16, Rgb, f32), at: Point, rise
     plot(at.x, at.y.saturating_sub(rise as u16), bubble, 1.0);
 }
 
-fn plot_waiting_mark(plot: &mut impl FnMut(u16, u16, Rgb, f32), top_left: Point, inks: &Inks) {
-    let fg = inks.waiting;
+fn plot_requires_action_mark(
+    plot: &mut impl FnMut(u16, u16, Rgb, f32),
+    top_left: Point,
+    inks: &Inks,
+) {
+    let fg = inks.requires_action;
     let by = top_left.y.saturating_sub(5) & !1u16;
-    for (dx, dy, _) in inked(WAITING_MARK_1X) {
+    for (dx, dy, _) in inked(REQUIRES_ACTION_MARK_1X) {
         plot(top_left.x + 2 + dx, by + dy, fg, 1.0);
     }
 }

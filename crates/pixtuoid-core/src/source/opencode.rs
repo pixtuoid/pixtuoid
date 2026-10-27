@@ -240,7 +240,7 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
         identity(agent_id, session_id, at),
         AgentEvent::UserActionRequest {
             agent_id,
-            reason,
+            reason: Some(reason),
             tool_use_id: field(data, "source.id").map(str::to_owned),
         },
     ])
@@ -468,11 +468,11 @@ mod tests {
         assert!(matches!(&evs[0], AgentEvent::Identity { .. }));
         assert!(
             matches!(&evs[1], AgentEvent::UserActionRequest { reason, tool_use_id: Some(id), .. }
-            if reason == "bash" && id == "call_abc")
+            if reason.as_deref() == Some("bash") && id == "call_abc")
         );
         let bare = decode(json!({"type": PERMISSION_ASKED, "data": {"sessionID": "ses_x"}}));
         assert!(
-            matches!(bare, AgentEvent::UserActionRequest { reason, tool_use_id: None, .. } if reason == "permission")
+            matches!(bare, AgentEvent::UserActionRequest { reason, tool_use_id: None, .. } if reason.as_deref() == Some("permission"))
         );
     }
 

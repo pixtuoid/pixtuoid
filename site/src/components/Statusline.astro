@@ -26,13 +26,13 @@ const { doc } = Astro.props;
 const ghStars: string | null = __GH_STARS__;
 
 const FALLBACK = [
-  { state: 'active', who: 'claude-code', what: 'editing src/reducer.rs' },
-  { state: 'waiting', who: 'codex', what: 'awaiting approval' },
-  { state: 'active', who: 'claude-code', what: 'walking to the pantry ☕' },
-  { state: 'active', who: 'codex', what: 'running cargo test' },
+  { state: 'running', who: 'claude-code', what: 'editing src/reducer.rs' },
+  { state: 'requires-action', who: 'codex', what: 'awaiting approval' },
+  { state: 'running', who: 'claude-code', what: 'walking to the pantry ☕' },
+  { state: 'running', who: 'codex', what: 'running cargo test' },
   { state: 'idle', who: 'cursor', what: 'idle at desk' },
-  { state: 'active', who: 'meeting room', what: '“it’s DNS” · “blame git”' },
-  { state: 'active', who: 'claude-code', what: 'git commit -m "feat: ..."' },
+  { state: 'running', who: 'meeting room', what: '“it’s DNS” · “blame git”' },
+  { state: 'running', who: 'claude-code', what: 'git commit -m "feat: ..."' },
 ];
 
 interface TickerItem {
@@ -72,7 +72,7 @@ if (!doc) {
           return cut.slice(0, Math.max(40, cut.lastIndexOf(' '))) + '…';
         };
         const real: TickerItem[] = merged.map((p, i) => ({
-          state: ['active', 'active', 'idle'][i % 3],
+          state: ['running', 'running', 'idle'][i % 3],
           who: 'cc·pixtuoid',
           what: `merged #${p.number} · ${human(p.title)}`,
         }));
@@ -351,10 +351,10 @@ const FEED_ROTATE_MS = 6000;
     border-radius: 50%;
     flex: none;
   }
-  .sl__dot.active {
+  .sl__dot.running {
     background: var(--led);
   }
-  .sl__dot.waiting {
+  .sl__dot.requires-action {
     background: var(--amber);
   }
   .sl__dot.idle {

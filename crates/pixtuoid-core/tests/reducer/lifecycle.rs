@@ -7,8 +7,8 @@ use pixtuoid_core::state::reducer::{B1_CASCADE_GRACE, Reducer};
 use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, SceneState};
 
 use crate::{
-    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, sess_end, start,
-    waiting,
+    DRAIN_INFERRED, HOOK_AND_TRANSCRIPT, act_end, act_start, delegating_pair, requires_action,
+    sess_end, start,
 };
 
 #[test]
@@ -195,11 +195,11 @@ fn session_start_on_exiting_slot_resurrects_in_place() {
         .agents
         .get(&id)
         .expect("slot survives the grace window");
-    assert!(matches!(slot.state, ActivityState::Active { .. }));
+    assert!(matches!(slot.state, ActivityState::Running { .. }));
 }
 
 #[test]
-fn resurrect_in_place_folds_the_active_span_into_active_ms() {
+fn resurrect_in_place_folds_the_running_span_into_running_ms() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
@@ -209,7 +209,7 @@ fn resurrect_in_place_folds_the_active_span_into_active_ms() {
     act_start(&mut r, &mut scene, id, None, None, t0, Transport::Hook);
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
     assert_eq!(
-        scene.agents.get(&id).unwrap().active_ms,
+        scene.agents.get(&id).unwrap().running_ms,
         0,
         "span not folded yet (mark_exiting doesn't accumulate)"
     );
@@ -230,8 +230,8 @@ fn resurrect_in_place_folds_the_active_span_into_active_ms() {
     let slot = scene.agents.get(&id).unwrap();
     assert!(slot.exiting_at.is_none(), "walkout cancelled");
     assert_eq!(
-        slot.active_ms, 2000,
-        "the 2s Active span must fold into active_ms on resurrect"
+        slot.running_ms, 2000,
+        "the 2s Running span must fold into running_ms on resurrect"
     );
 }
 
@@ -312,7 +312,7 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
     );
     assert!(matches!(
         scene.agents.get(&root).unwrap().state,
-        ActivityState::Active { .. }
+        ActivityState::Running { .. }
     ));
     r.apply(
         &mut scene,
@@ -332,9 +332,9 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
         "the live session was never exiting"
     );
     assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
+        matches!(slot.state, ActivityState::Running { .. }),
         "a duplicate root start on a LIVE session must NOT reset it to Idle: a \
-         resurrect here (the surviving mutant) drops Active + evicts tasks_in_flight"
+         resurrect here (the surviving mutant) drops Running + evicts tasks_in_flight"
     );
 }
 
@@ -612,7 +612,7 @@ fn codex_subagent_cascades_with_parent_on_session_end() {
 }
 
 #[test]
-fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_active() {
+fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_running() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "gated-sess");
@@ -633,7 +633,7 @@ fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_active() {
         .get(&id)
         .expect("hook event must synthesize the slot");
     assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
+        matches!(slot.state, ActivityState::Running { .. }),
         "the synthesizing event itself applies to the fresh slot"
     );
     assert_eq!(&*slot.label, "#1");
@@ -641,21 +641,21 @@ fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_active() {
 }
 
 #[test]
-fn hook_user_action_request_for_unknown_id_synthesizes_slot_in_waiting_state() {
+fn hook_user_action_request_for_unknown_id_synthesizes_slot_in_requires_action_state() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "parked-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
 
     let slot = scene
         .agents
         .get(&id)
         .expect("hook UserActionRequest must synthesize the slot");
     assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
-        "slot enters Waiting so the permission prompt is visible"
+        matches!(slot.state, ActivityState::RequiresAction { .. }),
+        "slot enters RequiresAction so the permission prompt is visible"
     );
 }
 
@@ -675,7 +675,7 @@ fn jsonl_event_for_unknown_id_stays_a_no_op() {
         t0,
         Transport::Jsonl,
     );
-    waiting(&mut r, &mut scene, id, "perm", t0, Transport::Jsonl);
+    requires_action(&mut r, &mut scene, id, "perm", t0, Transport::Jsonl);
 
     assert!(
         scene.agents.is_empty(),
@@ -742,7 +742,7 @@ fn hook_synthesized_slot_is_exempt_from_unknown_cwd_reap() {
     let id = AgentId::from_parts("claude-code", "parked-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     assert!(
         !scene.agents.get(&id).expect("synthesized").unknown_cwd,
         "process-proven slot must not carry the startup-ghost flag"
@@ -755,7 +755,7 @@ fn hook_synthesized_slot_is_exempt_from_unknown_cwd_reap() {
     let slot = scene.agents.get(&id).expect("still present after 4 min");
     assert!(
         slot.exiting_at.is_none(),
-        "a parked-on-permission synthesized slot must ride the Waiting timeout, not the 3-min ghost reap"
+        "a parked-on-permission synthesized slot must ride the RequiresAction timeout, not the 3-min ghost reap"
     );
 }
 
@@ -828,7 +828,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         .get(&id)
         .expect("registered once the desk freed");
     assert!(
-        matches!(slot.state, ActivityState::Active { .. }),
+        matches!(slot.state, ActivityState::Running { .. }),
         "the JSONL ToolUseStart must not be dedup-eaten by the refused hook's record"
     );
 }
@@ -1035,7 +1035,7 @@ fn two_step_backfill_source_first_then_cwd_still_upgrades_the_label() {
     let id = AgentId::from_parts("claude-code", "gated-sess");
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    requires_action(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -1377,7 +1377,7 @@ fn hook_identity_on_existing_unknown_cwd_slot_clears_ghost_reap() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    waiting(
+    requires_action(
         &mut r,
         &mut scene,
         id,
@@ -1399,7 +1399,7 @@ fn hook_identity_on_existing_unknown_cwd_slot_clears_ghost_reap() {
             .agents
             .get(&id)
             .is_some_and(|s| s.exiting_at.is_none()),
-        "a process-proven-alive Waiting session must outlive the 3-min unknown-cwd reap"
+        "a process-proven-alive RequiresAction session must outlive the 3-min unknown-cwd reap"
     );
 }
 

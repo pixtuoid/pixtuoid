@@ -7,8 +7,8 @@
 //!   subtree.
 //! - **liveness flows UP** — [`refresh_lineage`]: a working descendant keeps its
 //!   ancestors alive, so a blocked-but-delegating parent isn't stale-swept.
-//! - **readiness, queried both ways** — [`has_waiting_ancestor`] and
-//!   [`has_waiting_descendant`]: a node gated by a `Waiting` relative is "not ready", not dead.
+//! - **readiness, queried both ways** — [`has_requires_action_ancestor`] and
+//!   [`has_requires_action_descendant`]: a node gated by a `RequiresAction` relative is "not ready", not dead.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::SystemTime;
@@ -70,13 +70,16 @@ fn descendants(agents: &BTreeMap<AgentId, AgentSlot>, root: AgentId) -> Vec<Agen
     out
 }
 
-/// True if any descendant of `id` is in `Waiting` state: a parent whose
+/// True if any descendant of `id` is in `RequiresAction` state: a parent whose
 /// subagent is blocked on a human gate waits with it, not dead.
-pub(crate) fn has_waiting_descendant(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
+pub(crate) fn has_requires_action_descendant(
+    agents: &BTreeMap<AgentId, AgentSlot>,
+    id: AgentId,
+) -> bool {
     descendants(agents, id).into_iter().any(|d| {
         agents
             .get(&d)
-            .is_some_and(|s| matches!(s.state, ActivityState::Waiting { .. }))
+            .is_some_and(|s| matches!(s.state, ActivityState::RequiresAction { .. }))
     })
 }
 
@@ -114,8 +117,8 @@ pub(crate) fn has_ancestor_where(
     pred: impl Fn(&AgentSlot) -> bool,
 ) -> bool {
     // Seeded with the start node: in a parent cycle the walk returns to `id` and
-    // would otherwise run `pred` on it before the guard breaks — a Waiting cycle
-    // member counting as its own Waiting ancestor self-exempts from sweep_stale
+    // would otherwise run `pred` on it before the guard breaks — a RequiresAction cycle
+    // member counting as its own RequiresAction ancestor self-exempts from sweep_stale
     // forever.
     let mut visited: HashSet<AgentId> = HashSet::from([id]);
     let mut cur = agents.get(&id).and_then(|s| s.parent_id);
@@ -135,8 +138,8 @@ pub(crate) fn has_ancestor_where(
 /// True if linking `child.parent_id = proposed_parent` would close a
 /// `parent_id` cycle. The reducer calls this at every seam that sets or enriches
 /// `parent_id` and REFUSES the link (degrading to parentless), so a cycle can
-/// never EXIST: a 2-cycle whose members are BOTH `Waiting` would mutually
-/// satisfy [`has_waiting_ancestor`] and exempt each other from the stale sweep
+/// never EXIST: a 2-cycle whose members are BOTH `RequiresAction` would mutually
+/// satisfy [`has_requires_action_ancestor`] and exempt each other from the stale sweep
 /// forever — an immortal pair (#238).
 pub(crate) fn would_create_cycle(
     agents: &BTreeMap<AgentId, AgentSlot>,
@@ -160,13 +163,16 @@ pub(crate) fn would_create_cycle(
     false
 }
 
-/// True if any ancestor of `id` is in `Waiting` state. A subagent's permission
-/// event that lands on an ancestor leaves the blocked subagent `Active` — paused
+/// True if any ancestor of `id` is in `RequiresAction` state. A subagent's permission
+/// event that lands on an ancestor leaves the blocked subagent `Running` — paused
 /// on a human gate, not dead, so `sweep_stale` exempts it from the aggressive
-/// Active timer.
-pub(crate) fn has_waiting_ancestor(agents: &BTreeMap<AgentId, AgentSlot>, id: AgentId) -> bool {
+/// Running timer.
+pub(crate) fn has_requires_action_ancestor(
+    agents: &BTreeMap<AgentId, AgentSlot>,
+    id: AgentId,
+) -> bool {
     has_ancestor_where(agents, id, |p| {
-        matches!(p.state, ActivityState::Waiting { .. })
+        matches!(p.state, ActivityState::RequiresAction { .. })
     })
 }
 
@@ -192,7 +198,7 @@ mod tests {
             desk_index: crate::state::GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id,
             pid: None,
@@ -203,9 +209,9 @@ mod tests {
         }
     }
 
-    fn waiting() -> ActivityState {
-        ActivityState::Waiting {
-            reason: Arc::from("perm"),
+    fn requires_action() -> ActivityState {
+        ActivityState::RequiresAction {
+            reason: Some(Arc::from("perm")),
         }
     }
 
@@ -229,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn has_waiting_ancestor_false_when_parent_id_dangling() {
+    fn has_requires_action_ancestor_false_when_parent_id_dangling() {
         let child = AgentId::from_transcript_path("/p/child.jsonl");
         let missing = AgentId::from_transcript_path("/p/never-created.jsonl");
         let mut scene = SceneState::uniform(4);
@@ -238,8 +244,8 @@ mod tests {
             .insert(child, slot(child, Some(missing), ActivityState::Idle));
 
         assert!(
-            !has_waiting_ancestor(&scene.agents, child),
-            "a dangling parent_id is not a Waiting ancestor — the walk breaks safely"
+            !has_requires_action_ancestor(&scene.agents, child),
+            "a dangling parent_id is not a RequiresAction ancestor — the walk breaks safely"
         );
     }
 
@@ -271,26 +277,26 @@ mod tests {
     }
 
     #[test]
-    fn has_waiting_ancestor_breaks_on_cycle_with_no_waiting_node() {
+    fn has_requires_action_ancestor_breaks_on_cycle_with_no_requires_action_node() {
         let (scene, a, _b) = cycle_scene(ActivityState::Idle, ActivityState::Idle);
         assert!(
-            !has_waiting_ancestor(&scene.agents, a),
-            "a cycle with no Waiting node must terminate and return false"
+            !has_requires_action_ancestor(&scene.agents, a),
+            "a cycle with no RequiresAction node must terminate and return false"
         );
     }
 
     #[test]
-    fn has_waiting_ancestor_true_via_cyclic_ancestor() {
-        let (scene, a, _b) = cycle_scene(ActivityState::Idle, waiting());
-        assert!(has_waiting_ancestor(&scene.agents, a));
+    fn has_requires_action_ancestor_true_via_cyclic_ancestor() {
+        let (scene, a, _b) = cycle_scene(ActivityState::Idle, requires_action());
+        assert!(has_requires_action_ancestor(&scene.agents, a));
     }
 
     #[test]
-    fn has_waiting_ancestor_excludes_self_reached_via_cycle() {
-        let (scene, _a, b) = cycle_scene(ActivityState::Idle, waiting());
+    fn has_requires_action_ancestor_excludes_self_reached_via_cycle() {
+        let (scene, _a, b) = cycle_scene(ActivityState::Idle, requires_action());
         assert!(
-            !has_waiting_ancestor(&scene.agents, b),
-            "a node must never count as its own Waiting ancestor through a parent cycle"
+            !has_requires_action_ancestor(&scene.agents, b),
+            "a node must never count as its own RequiresAction ancestor through a parent cycle"
         );
     }
 
@@ -387,13 +393,13 @@ mod tests {
     }
 
     #[test]
-    fn has_waiting_ancestor_excludes_self_parented_node() {
+    fn has_requires_action_ancestor_excludes_self_parented_node() {
         let x = AgentId::from_transcript_path("/p/self.jsonl");
         let mut scene = SceneState::uniform(4);
-        scene.agents.insert(x, slot(x, Some(x), waiting()));
+        scene.agents.insert(x, slot(x, Some(x), requires_action()));
         assert!(
-            !has_waiting_ancestor(&scene.agents, x),
-            "a self-parented Waiting node is not its own ancestor"
+            !has_requires_action_ancestor(&scene.agents, x),
+            "a self-parented RequiresAction node is not its own ancestor"
         );
     }
 }

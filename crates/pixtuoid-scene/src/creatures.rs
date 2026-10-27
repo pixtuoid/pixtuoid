@@ -98,7 +98,7 @@ fn rests_at(layout: &SceneLayout, p: Point) -> bool {
 
 /// Full ticks per walk cycle at a pet's cruise.
 const PET_TICKS_PER_STRIDE: u64 = 2;
-/// Full ticks per walk cycle at a busy gateway mascot's cruise; an idle one
+/// Full ticks per walk cycle at a running gateway mascot's cruise; an idle one
 /// takes twice as many, a degraded one three times.
 const MASCOT_TICKS_PER_STRIDE: u64 = 4;
 
@@ -108,7 +108,7 @@ const PET_REST_MS: u64 = 25_000;
 /// roam waits this long.
 pub const PET_LONGEST_REST_MS: u64 = longest_rest(PET_REST_MS);
 /// About how long a gateway mascot rests between walks, in beat ms.
-const MASCOT_BUSY_REST_MS: u64 = 2_500;
+const MASCOT_RUNNING_REST_MS: u64 = 2_500;
 const MASCOT_IDLE_REST_MS: u64 = 5_000;
 const MASCOT_DEGRADED_REST_MS: u64 = 7_700;
 
@@ -152,8 +152,8 @@ impl Roam {
     pub(crate) fn mascot(stride: NonZeroU16, state: DaemonState) -> Self {
         match state {
             // a downed gateway's mascot hurries out
-            DaemonState::Busy | DaemonState::Down => {
-                Self::of(stride, MASCOT_TICKS_PER_STRIDE, MASCOT_BUSY_REST_MS)
+            DaemonState::Running | DaemonState::Down => {
+                Self::of(stride, MASCOT_TICKS_PER_STRIDE, MASCOT_RUNNING_REST_MS)
             }
             DaemonState::Degraded => {
                 Self::of(stride, 3 * MASCOT_TICKS_PER_STRIDE, MASCOT_DEGRADED_REST_MS)
@@ -513,7 +513,7 @@ pub struct GatewayCard {
     pub instance: Option<String>,
     /// An agent turn is in flight. Keyed on the turn state, NOT the session count
     /// — a single-user gateway holds one persistent session even at rest.
-    pub busy: bool,
+    pub running: bool,
     /// Gateway up but its model backend is failing every turn.
     pub degraded: bool,
     /// Number of sessions the gateway currently holds.
@@ -536,7 +536,7 @@ impl GatewayCard {
         Some(Self {
             name: def.display_name,
             instance: (siblings > 1).then(|| key.instance().as_str().to_string()),
-            busy: state == DaemonState::Busy,
+            running: state == DaemonState::Running,
             degraded: state == DaemonState::Degraded,
             active_sessions: presence.active_sessions,
         })
@@ -698,7 +698,7 @@ mod tests {
             .chain(
                 [
                     (DaemonState::Idle, 2 * MASCOT_TICKS_PER_STRIDE),
-                    (DaemonState::Busy, MASCOT_TICKS_PER_STRIDE),
+                    (DaemonState::Running, MASCOT_TICKS_PER_STRIDE),
                     (DaemonState::Degraded, 3 * MASCOT_TICKS_PER_STRIDE),
                     (DaemonState::Down, MASCOT_TICKS_PER_STRIDE),
                 ]
@@ -815,7 +815,7 @@ mod tests {
     fn a_creature_walks_routed_ground_and_rests_on_clear_floor() {
         let pack = test_pack();
         let roams = [
-            Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Busy),
+            Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Running),
             Roam::pet(pack.stride(PetKind::Cat.walk_anim())),
         ];
         let min = crate::layout::min_layout_size();
@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn a_calmer_tier_roams_a_quarter_as_often_and_a_still_one_never() {
         let pack = test_pack();
-        let roam = Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Busy);
+        let roam = Roam::mascot(pack.stride(Walk::LobsterWalk), DaemonState::Running);
         let l = layout(192, 80);
         let starts_at = |motion| {
             (0..4)
@@ -1529,22 +1529,22 @@ mod tests {
     #[test]
     fn a_gateways_state_reaches_its_card() {
         let key = openclaw_key("18789");
-        let running = || {
+        let in_flight = || {
             std::collections::HashMap::from([(
                 pixtuoid_core::state::TurnKey::Id("run".into()),
                 at(0),
             )])
         };
-        for (liveness, in_flight_turns, busy, degraded) in [
+        for (liveness, in_flight_turns, running, degraded) in [
             (DaemonLiveness::UP, Default::default(), false, false),
-            (DaemonLiveness::UP, running(), true, false),
+            (DaemonLiveness::UP, in_flight(), true, false),
             (
                 DaemonLiveness::Up { degraded: true },
-                running(),
+                in_flight(),
                 false,
                 true,
             ),
-            (DaemonLiveness::Down, running(), false, false),
+            (DaemonLiveness::Down, in_flight(), false, false),
         ] {
             let mut scene = SceneState::uniform(16);
             scene.insert_daemon(
@@ -1560,7 +1560,11 @@ mod tests {
                 },
             );
             let card = GatewayCard::of(&scene, &key).expect("a gateway with a mascot");
-            assert_eq!((card.busy, card.degraded), (busy, degraded), "{liveness:?}");
+            assert_eq!(
+                (card.running, card.degraded),
+                (running, degraded),
+                "{liveness:?}"
+            );
         }
     }
 

@@ -6,7 +6,7 @@
 //! policy for its origin (openclaw `docs/cli/plugins/install.md:318-320` @
 //! v2026.10.1), while `plugins install --link` creates a managed install record that
 //! requires capability consent (`docs/plugins/manage-plugins.md:216-218`). The
-//! `allowConversationAccess` grant un-gates `before_agent_run`/`agent_end` (the busy
+//! `allowConversationAccess` grant un-gates `before_agent_run`/`agent_end` (the running
 //! tell) and UNINSTALL REVOKES it; the plugin FILES are left in place (the config
 //! un-merge stops the gateway loading them).
 
@@ -446,7 +446,7 @@ pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaPars
     if entry["hooks"]["allowConversationAccess"] != json!(true) {
         issues.push(
             "openclaw.json `plugins.entries.pixtuoid.hooks.allowConversationAccess` is not true \
-             — the gateway fires no run hooks, so the lobster never shows busy"
+             — the gateway fires no run hooks, so the lobster never shows running"
                 .into(),
         );
     }
@@ -779,7 +779,7 @@ mod tests {
             assert_eq!(
                 entry["hooks"]["allowConversationAccess"],
                 json!(true),
-                "the busy-tell grant"
+                "the running-tell grant"
             );
             let paths = v["plugins"]["load"]["paths"].as_array().unwrap();
             assert!(

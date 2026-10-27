@@ -305,7 +305,7 @@ pub(crate) static GRUVBOX: Theme = Theme {
             g: 73,
             b: 69,
         },
-        waiting_bubble: Rgb {
+        requires_action_bubble: Rgb {
             r: 250,
             g: 189,
             b: 47,
@@ -346,12 +346,17 @@ pub(crate) static GRUVBOX: Theme = Theme {
         },
     },
     ui: UiColors {
-        label_active: Rgb {
+        label_running: Rgb {
             r: 184,
             g: 187,
             b: 38,
         },
-        label_waiting: Rgb {
+        label_ok: Rgb {
+            r: 184,
+            g: 187,
+            b: 38,
+        },
+        label_requires_action: Rgb {
             r: 250,
             g: 189,
             b: 47,

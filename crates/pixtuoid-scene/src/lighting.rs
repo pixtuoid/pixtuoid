@@ -457,7 +457,7 @@ impl DeskLights {
 /// share.
 pub(crate) fn lit_screen(agent: &AgentSlot, facing: Facing, seated: bool) -> Option<ToolKind> {
     match agent.state {
-        ActivityState::Active { kind, .. } if seated && facing == Facing::North => Some(kind),
+        ActivityState::Running { kind, .. } if seated && facing == Facing::North => Some(kind),
         _ => None,
     }
 }

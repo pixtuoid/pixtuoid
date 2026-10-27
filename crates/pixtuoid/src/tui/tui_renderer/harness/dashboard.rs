@@ -6,7 +6,7 @@ use crate::panels::dashboard::{DashboardFolds, DashboardFrame, build_dashboard_r
 #[test]
 fn dashboard_popup_renders_labels_states_and_live_tool() {
     let mut r = build(120, 44, vec![]);
-    let mut a = active("/h/alpha.jsonl", 0, "Edit reducer.rs", t0());
+    let mut a = running("/h/alpha.jsonl", 0, "Edit reducer.rs", t0());
     a.label = "cc\u{b7}alpha".into();
     let mut b = idle("/h/beta.jsonl", 1, t0());
     b.label = "cc\u{b7}beta".into();
@@ -558,16 +558,43 @@ fn dash_popup_reads_the_popup_rect_alone() {
 }
 
 #[test]
-fn dashboard_renders_waiting_reason_and_active_without_detail() {
+fn dashboard_renders_a_reasonless_requires_action_as_the_bare_state_words() {
     let mut r = build(120, 44, vec![]);
     let mut w = idle("/h/w.jsonl", 0, t0());
     w.label = "cc\u{b7}wait".into();
-    w.state = ActivityState::Waiting {
-        reason: Arc::from("permission"),
+    w.state = ActivityState::RequiresAction { reason: None };
+    let scene = scene_with(vec![w], 16);
+
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    r.set_frames(
+        RenderFrames {
+            dashboard: DashboardFrame {
+                open: true,
+                rows,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        t0(),
+    );
+    r.render(&scene, t0()).unwrap();
+
+    let popup = dash_popup(r.frame_buffer());
+    assert!(popup.contains("requires action"), "{popup}");
+    assert!(!popup.contains("requires action:"), "{popup}");
+}
+
+#[test]
+fn dashboard_renders_requires_action_reason_and_running_without_detail() {
+    let mut r = build(120, 44, vec![]);
+    let mut w = idle("/h/w.jsonl", 0, t0());
+    w.label = "cc\u{b7}wait".into();
+    w.state = ActivityState::RequiresAction {
+        reason: Some(Arc::from("permission")),
     };
     let mut a = idle("/h/a.jsonl", 1, t0());
     a.label = "cc\u{b7}act".into();
-    a.state = ActivityState::Active {
+    a.state = ActivityState::Running {
         tool_use_id: Some(Arc::from("t")),
         detail: None,
         kind: ToolKind::Other,
@@ -590,12 +617,12 @@ fn dashboard_renders_waiting_reason_and_active_without_detail() {
 
     let popup = dash_popup(r.frame_buffer());
     assert!(
-        popup.contains("waiting: permission"),
-        "waiting reason missing:\n{popup}"
+        popup.contains("requires action: permission"),
+        "requires-action reason missing:\n{popup}"
     );
     assert!(
-        popup.contains("\u{25cf} active"),
-        "active-without-detail must render the bare state word:\n{popup}"
+        popup.contains("\u{25cf} running"),
+        "running-without-detail must render the bare state word:\n{popup}"
     );
 }
 
@@ -658,7 +685,7 @@ fn dashboard_empty_scene_shows_placeholder() {
     );
     r.render(&scene, t0()).unwrap();
     assert!(
-        frame_text(r.frame_buffer()).contains("No active agents"),
+        frame_text(r.frame_buffer()).contains("No agents"),
         "empty dashboard must show the placeholder"
     );
 }

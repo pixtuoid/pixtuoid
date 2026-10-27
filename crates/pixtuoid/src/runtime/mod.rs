@@ -152,15 +152,18 @@ fn summarize(scene: &SceneState) -> String {
         .map(|a| {
             let state = match &a.state {
                 ActivityState::Idle => "idle".to_string(),
-                ActivityState::Active { detail, .. } => {
+                ActivityState::Running { detail, .. } => {
                     format!(
-                        "active({})",
+                        "running({})",
                         sanitize_line(detail.as_deref().unwrap_or("?"))
                     )
                 }
-                ActivityState::Waiting { reason } => {
-                    format!("waiting({})", sanitize_line(reason))
+                ActivityState::RequiresAction {
+                    reason: Some(reason),
+                } => {
+                    format!("requires_action({})", sanitize_line(reason))
                 }
+                ActivityState::RequiresAction { reason: None } => "requires_action".to_string(),
             };
             format!("{}@{}:{}", sanitize_line(&a.label), a.desk_index.0, state)
         })
@@ -174,7 +177,7 @@ fn summarize(scene: &SceneState) -> String {
         .map(|(source, instance, p)| {
             let state = match p.display_state() {
                 DaemonState::Idle => "idle",
-                DaemonState::Busy => "busy",
+                DaemonState::Running => "running",
                 DaemonState::Degraded => "degraded",
                 DaemonState::Down => "down",
             };
@@ -724,7 +727,7 @@ mod tests {
             &mut scene,
             AgentEvent::UserActionRequest {
                 agent_id: b,
-                reason: "permission".into(),
+                reason: Some("permission".into()),
                 tool_use_id: None,
             },
             now,
@@ -736,8 +739,11 @@ mod tests {
 
         let summary = summarize(&scene);
         assert!(summary.starts_with("agents=["), "got: {summary}");
-        assert!(summary.contains("active(Edit: foo.rs)"), "got: {summary}");
-        assert!(summary.contains("waiting(permission)"), "got: {summary}");
+        assert!(summary.contains("running(Edit: foo.rs)"), "got: {summary}");
+        assert!(
+            summary.contains("requires_action(permission)"),
+            "got: {summary}"
+        );
         assert!(summary.contains(":idle"), "got: {summary}");
         assert!(summary.contains('@'), "got: {summary}");
     }
@@ -783,7 +789,7 @@ mod tests {
             now,
         );
         assert!(
-            summarize(&scene).contains("daemons=[openclaw@18789:busy]"),
+            summarize(&scene).contains("daemons=[openclaw@18789:running]"),
             "got: {}",
             summarize(&scene)
         );
@@ -809,6 +815,36 @@ mod tests {
             "got: {}",
             summarize(&scene)
         );
+    }
+
+    #[test]
+    fn summarize_names_a_reasonless_requires_action_bare() {
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::source::AgentEvent;
+
+        let mut scene = SceneState::new([8; MAX_FLOORS]);
+        let mut reducer = Reducer::new();
+        let now = SystemTime::now();
+        let id = AgentId::from_parts("cc", "bare");
+        for event in [
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/r"),
+                parent_id: None,
+            },
+            AgentEvent::UserActionRequest {
+                agent_id: id,
+                reason: None,
+                tool_use_id: None,
+            },
+        ] {
+            reducer.apply(&mut scene, event, now, Transport::Hook);
+        }
+
+        let out = summarize(&scene);
+        assert!(out.contains(":requires_action]"), "{out}");
     }
 
     #[test]
@@ -838,7 +874,7 @@ mod tests {
             &mut scene,
             AgentEvent::UserActionRequest {
                 agent_id: id,
-                reason: "needs \u{1b}[2J approval".to_string(),
+                reason: Some("needs \u{1b}[2J approval".to_string()),
                 tool_use_id: None,
             },
             now,

@@ -10,8 +10,8 @@ use pixtuoid_core::sprite::format::Density;
 use crate::display::Span;
 use crate::display::pen::Pen;
 use crate::effects::look::{
-    FLAME_CORE, FLAME_DEEP, FLAME_MID, FLAME_TIP, Inks, SLEEP_Z_1X, SLEEP_Z_MAX_RISE,
-    WAITING_MARK_1X, plot_effect, sleep_z_fade, walking_dust_foot,
+    FLAME_CORE, FLAME_DEEP, FLAME_MID, FLAME_TIP, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X,
+    SLEEP_Z_MAX_RISE, plot_effect, sleep_z_fade, walking_dust_foot,
 };
 use crate::effects::{Effect, EffectKind};
 
@@ -95,8 +95,8 @@ const SLEEP_Z: &[&str] = &[
     "######", //
 ];
 
-/// The waiting mark, beside the head.
-const WAITING_MARK: &[&str] = &[
+/// The requires-action mark, beside the head.
+const REQUIRES_ACTION_MARK: &[&str] = &[
     ".####.", //
     "##..##", //
     "##..##", //
@@ -179,11 +179,15 @@ fn base_look(
             }
             true
         }
-        EffectKind::WaitingMark => {
-            let top = head.y + BESIDE_DY_1X - glyph_h(WAITING_MARK_1X);
-            stamp(WAITING_MARK_1X, head.x + BESIDE_DX_1X, top, emit, |_| {
-                Some((inks.waiting, 1.0))
-            });
+        EffectKind::RequiresActionMark => {
+            let top = head.y + BESIDE_DY_1X - glyph_h(REQUIRES_ACTION_MARK_1X);
+            stamp(
+                REQUIRES_ACTION_MARK_1X,
+                head.x + BESIDE_DX_1X,
+                top,
+                emit,
+                |_| Some((inks.requires_action, 1.0)),
+            );
             true
         }
         _ => false,
@@ -210,10 +214,10 @@ fn dense_look(
             let coverage = (alpha / LOOK_SOLID).min(1.0);
             stamp(SLEEP_Z, x, top, emit, |_| Some((inks.sleep_z, coverage)));
         }
-        EffectKind::WaitingMark => {
-            let top = head.y + BESIDE_DY - glyph_h(WAITING_MARK);
-            stamp(WAITING_MARK, head.x + BESIDE_DX, top, emit, |_| {
-                Some((inks.waiting, 1.0))
+        EffectKind::RequiresActionMark => {
+            let top = head.y + BESIDE_DY - glyph_h(REQUIRES_ACTION_MARK);
+            stamp(REQUIRES_ACTION_MARK, head.x + BESIDE_DX, top, emit, |_| {
+                Some((inks.requires_action, 1.0))
             });
         }
         EffectKind::FlameCrown => {
@@ -278,9 +282,9 @@ mod tests {
     fn every_look_is_a_rectangle() {
         for glyph in [
             SLEEP_Z,
-            WAITING_MARK,
+            REQUIRES_ACTION_MARK,
             SLEEP_Z_1X,
-            WAITING_MARK_1X,
+            REQUIRES_ACTION_MARK_1X,
             DUST,
             FLAME_CROWN[0],
             FLAME_CROWN[1],

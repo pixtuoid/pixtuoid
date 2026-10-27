@@ -152,7 +152,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         // `post_tool_use`; a DENIED one fires `permission_denied` and never
         // runs at all. All three close the activity, which also resolves a
         // permission `UserActionRequest` gated on this tool — right for the denied case:
-        // the prompt is answered, so the sprite must not stay Waiting.
+        // the prompt is answered, so the sprite must not stay RequiresAction.
         "post_tool_use" | "post_tool_use_failure" | "permission_denied" => Ok(vec![
             identity(),
             AgentEvent::ToolUseEnd {
@@ -186,13 +186,13 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                         identity(),
                         AgentEvent::UserActionRequest {
                             agent_id,
-                            reason: ellipsize(msg, MAX_DECODED_FIELD_CHARS),
+                            reason: Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
                             tool_use_id: None,
                         },
                     ])
                 }
                 // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
-                // Waiting would misrender every lunch break as a permission
+                // RequiresAction would misrender every lunch break as a permission
                 // prompt. `agent_error` is the retry-exhausted toast, an
                 // errored TURN whose state signal is the `stop_failure` arm.
                 // `task_complete` announces a BACKGROUNDED shell/monitor task
@@ -742,7 +742,7 @@ mod tests {
             assert_eq!(evs.len(), 2, "{kind}: Identity + UserActionRequest");
             assert!(
                 matches!(&evs[1], AgentEvent::UserActionRequest { reason, .. }
-                    if reason == "Tool permission requested"),
+                    if reason.as_deref() == Some("Tool permission requested")),
                 "{kind} must decode to UserActionRequest"
             );
         }
@@ -754,7 +754,7 @@ mod tests {
         v["notificationType"] = json!("permission_prompt");
         assert!(
             matches!(decode(v), AgentEvent::UserActionRequest { reason, .. }
-            if reason == "permission_prompt")
+            if reason.as_deref() == Some("permission_prompt"))
         );
     }
 

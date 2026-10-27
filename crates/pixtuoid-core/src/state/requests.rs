@@ -1,4 +1,4 @@
-//! The agents' open user-action requests (a slot's `Waiting`): each one's
+//! The agents' open user-action requests (a slot's `RequiresAction`): each one's
 //! member calls, the transport that raised it, and `ActionRequests::resolves`,
 //! the one rule deciding which event answers it.
 
@@ -59,13 +59,13 @@ impl ActionRequest {
 
 /// Every agent's open request. An entry lives until a fresh start outside a
 /// wait, an answer naming no call, or the slot's removal; whether it stands is
-/// the slot's `Waiting`.
+/// the slot's `RequiresAction`.
 #[derive(Debug, Default)]
 pub(crate) struct ActionRequests(HashMap<AgentId, ActionRequest>);
 
 impl ActionRequests {
     /// `id` raised a request on `from`. `call` is the call its wire names,
-    /// `in_flight` the call its slot was running, and `waiting` whether one
+    /// `in_flight` the call its slot was running, and `requires_action` whether one
     /// already stands, which a raise naming nothing new re-notifies (CC follows
     /// its tool-less PermissionRequest with a Notification) and which keeps the
     /// transport that raised it.
@@ -74,7 +74,7 @@ impl ActionRequests {
         id: AgentId,
         call: Option<&str>,
         in_flight: Option<&Arc<str>>,
-        waiting: bool,
+        requires_action: bool,
         from: Transport,
     ) {
         let req = match (call, in_flight) {
@@ -86,13 +86,13 @@ impl ActionRequests {
                 self.0.insert(id, req);
                 return;
             }
-            (None, None) if !waiting => {
+            (None, None) if !requires_action => {
                 self.0.insert(id, ActionRequest::new(from));
                 return;
             }
             _ => self.0.entry(id).or_insert_with(|| ActionRequest::new(from)),
         };
-        if !waiting {
+        if !requires_action {
             req.raised_on = from;
         }
         if let Some(c) = call {
@@ -129,7 +129,7 @@ impl ActionRequests {
     }
 
     /// A start of `call` on `from`: whether the slot runs it, else it only
-    /// counts. `waiting` is whether a request stands; `counted`, whether the
+    /// counts. `requires_action` is whether a request stands; `counted`, whether the
     /// call was seen before (a late transcript twin, whose approval round may
     /// have queued siblings).
     pub(crate) fn start(
@@ -137,11 +137,11 @@ impl ActionRequests {
         id: AgentId,
         call: Option<&str>,
         from: Transport,
-        waiting: bool,
+        requires_action: bool,
         counted: bool,
     ) -> bool {
         let member = call.is_some_and(|c| self.is_member(&id, c));
-        let runs = if waiting {
+        let runs = if requires_action {
             self.resolves(&id, Seen::Start(call), from)
         } else {
             // A queued member's transcript start: its approval is still to come.
@@ -150,7 +150,7 @@ impl ActionRequests {
         match call {
             Some(c) if runs && member => self.retire(&id, c),
             // A start outside a wait moots its stale members.
-            _ if runs && !waiting && !counted => self.close(&id),
+            _ if runs && !requires_action && !counted => self.close(&id),
             _ => {}
         }
         runs
@@ -165,9 +165,9 @@ impl ActionRequests {
         id: AgentId,
         ended: Ended<'_>,
         from: Transport,
-        waiting: bool,
+        requires_action: bool,
     ) -> bool {
-        let resolved = waiting && self.resolves(&id, Seen::End(ended), from);
+        let resolved = requires_action && self.resolves(&id, Seen::End(ended), from);
         match ended {
             Ended::Call(c) => self.retire(&id, c),
             _ if resolved => self.close(&id),
@@ -182,9 +182,10 @@ impl ActionRequests {
         &mut self,
         id: AgentId,
         tasks: &HashSet<String>,
-        waiting: bool,
+        requires_action: bool,
     ) -> bool {
-        let resolved = waiting && self.resolves(&id, Seen::ChildResumed(tasks), Transport::Hook);
+        let resolved =
+            requires_action && self.resolves(&id, Seen::ChildResumed(tasks), Transport::Hook);
         if resolved {
             self.close(&id);
         }

@@ -30,7 +30,7 @@ fn theme_switch_recolors_floor() {
 #[test]
 fn theme_switch_paints_as_a_fresh_renderer_would() {
     let started = t0() - Duration::from_secs(300);
-    let scene = scene_with(vec![active("/t/fresh.jsonl", 0, "Edit x", started)], 16);
+    let scene = scene_with(vec![running("/t/fresh.jsonl", 0, "Edit x", started)], 16);
     let now = t0();
     let mut switched = build(100, 40, vec![]);
     switched.render(&scene, now).unwrap();
@@ -51,7 +51,7 @@ fn theme_switch_paints_as_a_fresh_renderer_would() {
 #[test]
 fn occupied_floor_stays_lit() {
     use pixtuoid_scene::floor::VacancyDim;
-    let scene = scene_with(vec![active("/lit/0.jsonl", 0, "Edit x", t0())], 16);
+    let scene = scene_with(vec![running("/lit/0.jsonl", 0, "Edit x", t0())], 16);
     let mut r = build(100, 40, vec![]);
     for now in [
         t0(),

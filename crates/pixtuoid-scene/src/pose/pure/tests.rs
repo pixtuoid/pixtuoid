@@ -39,7 +39,7 @@ fn layout() -> SceneLayout {
 }
 
 fn typing() -> ActivityState {
-    ActivityState::Active {
+    ActivityState::Running {
         tool_use_id: Some("t".into()),
         detail: Some("Edit".into()),
         kind: ToolKind::Edit,
@@ -66,7 +66,7 @@ fn first_trip_cycle(agent_id: AgentId) -> u64 {
 }
 
 #[test]
-fn active_state_is_seated_typing_with_cycling_frame() {
+fn running_state_is_seated_typing_with_cycling_frame() {
     let (s, now) = slot(typing(), 0);
     let l = layout();
     assert_eq!(derive(&s, now, &l), Some(Pose::SeatedTyping));
@@ -83,16 +83,16 @@ fn active_state_is_seated_typing_with_cycling_frame() {
     );
 }
 
-/// Waiting gets NO pose of its own — it rides `SeatedIdle`, so a back-turned
+/// RequiresAction gets NO pose of its own — it rides `SeatedIdle`, so a back-turned
 /// desk needs no extra art and the cue reads identically whichever way the seat
 /// faces. The RENDER side splits it back out (`sim::resolve_characters` forces
 /// the awake `seated` base), because the sleeping sprite reads as the opposite
 /// of "wants you".
 #[test]
-fn waiting_state_stays_seated_and_lets_the_bubble_say_so() {
+fn requires_action_state_stays_seated_and_lets_the_bubble_say_so() {
     let (s, now) = slot(
-        ActivityState::Waiting {
-            reason: "perm".into(),
+        ActivityState::RequiresAction {
+            reason: Some("perm".into()),
         },
         5_000,
     );
@@ -383,8 +383,8 @@ fn entry_window_fall_through_uses_state_driven_pose() {
     // since_spawn >= ENTRY_ANIMATION_MS, so the entry override's `if` is false
     // and derive falls through.
     let (mut s, now) = slot(
-        ActivityState::Waiting {
-            reason: "perm".into(),
+        ActivityState::RequiresAction {
+            reason: Some("perm".into()),
         },
         ENTRY_ANIMATION_MS + 5_000,
     );
@@ -580,7 +580,7 @@ fn derive_state_only_skips_entry_override() {
         last_event_at: now0,
         ..make_slot(
             id,
-            ActivityState::Active {
+            ActivityState::Running {
                 tool_use_id: Some("t".into()),
                 detail: Some("Edit".into()),
                 kind: ToolKind::Edit,
@@ -598,7 +598,7 @@ fn derive_state_only_skips_entry_override() {
     match derive_state_only(&s, probe, &l).expect("derive_state_only pose") {
         Pose::SeatedTyping => {}
         other => panic!(
-            "derive_state_only should return SeatedTyping for Active slot in entry window, got {other:?}"
+            "derive_state_only should return SeatedTyping for Running slot in entry window, got {other:?}"
         ),
     }
 }

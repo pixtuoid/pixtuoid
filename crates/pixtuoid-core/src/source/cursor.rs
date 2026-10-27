@@ -124,7 +124,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         }
         // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
         // Without this arm a failed tool's ToolUseStart never ends under `-p`
-        // (where `stop` doesn't fire) and the sprite lingers Active.
+        // (where `stop` doesn't fire) and the sprite lingers Running.
         "postToolUse" | "postToolUseFailure" => Ok(vec![
             identity(),
             AgentEvent::ToolUseEnd {

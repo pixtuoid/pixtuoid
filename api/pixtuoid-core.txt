@@ -662,7 +662,7 @@ pub pixtuoid_core::source::AgentEvent::Usage::agent_id: pixtuoid_core::id::Agent
 pub pixtuoid_core::source::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::source::AgentEvent::UserActionRequest
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::source::AgentEvent::UserActionRequest::reason: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
@@ -1611,13 +1611,13 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::reducer::
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::reducer::Reducer
 pub const pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW: core::time::Duration
 pub enum pixtuoid_core::state::ActivityState
-pub pixtuoid_core::state::ActivityState::Active
-pub pixtuoid_core::state::ActivityState::Active::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
-pub pixtuoid_core::state::ActivityState::Active::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::state::ActivityState::Active::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::ActivityState::Idle
-pub pixtuoid_core::state::ActivityState::Waiting
-pub pixtuoid_core::state::ActivityState::Waiting::reason: alloc::rcs::arc::Arc<str>
+pub pixtuoid_core::state::ActivityState::RequiresAction
+pub pixtuoid_core::state::ActivityState::RequiresAction::reason: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::state::ActivityState::Running
+pub pixtuoid_core::state::ActivityState::Running::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::state::ActivityState::Running::kind: pixtuoid_core::state::ToolKind
+pub pixtuoid_core::state::ActivityState::Running::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
@@ -1664,10 +1664,10 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::DaemonLiveness
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::DaemonLiveness
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::DaemonLiveness
 pub enum pixtuoid_core::state::DaemonState
-pub pixtuoid_core::state::DaemonState::Busy
 pub pixtuoid_core::state::DaemonState::Degraded
 pub pixtuoid_core::state::DaemonState::Down
 pub pixtuoid_core::state::DaemonState::Idle
+pub pixtuoid_core::state::DaemonState::Running
 impl core::clone::Clone for pixtuoid_core::state::DaemonState
 pub fn pixtuoid_core::state::DaemonState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::DaemonState
@@ -1738,7 +1738,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::TurnKey
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::TurnKey
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::TurnKey
 pub struct pixtuoid_core::state::AgentSlot
-pub pixtuoid_core::state::AgentSlot::active_ms: u64
 pub pixtuoid_core::state::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::state::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
@@ -1752,6 +1751,7 @@ pub pixtuoid_core::state::AgentSlot::last_usage: core::option::Option<pixtuoid_c
 pub pixtuoid_core::state::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::state::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
+pub pixtuoid_core::state::AgentSlot::running_ms: u64
 pub pixtuoid_core::state::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::state::AgentSlot::source: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::state::AgentSlot::state: pixtuoid_core::state::ActivityState
@@ -2019,13 +2019,13 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::walkable::Occupa
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::walkable::OccupancyOverlay
 pub type pixtuoid_core::walkable::WalkableMask = pixtuoid_core::grid::Grid<bool>
 pub enum pixtuoid_core::ActivityState
-pub pixtuoid_core::ActivityState::Active
-pub pixtuoid_core::ActivityState::Active::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
-pub pixtuoid_core::ActivityState::Active::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::ActivityState::Active::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::ActivityState::Idle
-pub pixtuoid_core::ActivityState::Waiting
-pub pixtuoid_core::ActivityState::Waiting::reason: alloc::rcs::arc::Arc<str>
+pub pixtuoid_core::ActivityState::RequiresAction
+pub pixtuoid_core::ActivityState::RequiresAction::reason: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::ActivityState::Running
+pub pixtuoid_core::ActivityState::Running::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::ActivityState::Running::kind: pixtuoid_core::state::ToolKind
+pub pixtuoid_core::ActivityState::Running::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
@@ -2084,7 +2084,7 @@ pub pixtuoid_core::AgentEvent::Usage::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Usage::fresh_tokens: u64
 pub pixtuoid_core::AgentEvent::UserActionRequest
 pub pixtuoid_core::AgentEvent::UserActionRequest::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::AgentEvent::UserActionRequest::reason: alloc::string::String
+pub pixtuoid_core::AgentEvent::UserActionRequest::reason: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::UserActionRequest::tool_use_id: core::option::Option<alloc::string::String>
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
@@ -2217,7 +2217,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::id::AgentId
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::id::AgentId
 pub struct pixtuoid_core::AgentSlot
-pub pixtuoid_core::AgentSlot::active_ms: u64
 pub pixtuoid_core::AgentSlot::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentSlot::created_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::cwd: alloc::rcs::arc::Arc<std::path::Path>
@@ -2231,6 +2230,7 @@ pub pixtuoid_core::AgentSlot::last_usage: core::option::Option<pixtuoid_core::st
 pub pixtuoid_core::AgentSlot::model: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::AgentSlot::parent_id: core::option::Option<pixtuoid_core::id::AgentId>
 pub pixtuoid_core::AgentSlot::pid: core::option::Option<pixtuoid_core::source::PidIdentity>
+pub pixtuoid_core::AgentSlot::running_ms: u64
 pub pixtuoid_core::AgentSlot::session_id: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::AgentSlot::source: alloc::rcs::arc::Arc<str>
 pub pixtuoid_core::AgentSlot::state: pixtuoid_core::state::ActivityState

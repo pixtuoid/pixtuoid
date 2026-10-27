@@ -65,7 +65,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 
     // A present-but-non-integer OR negative `step_index` must skip the line: a
     // negative would mint an id no result step can end, leaving the slot stuck
-    // Active until the reducer's stale-sweep.
+    // Running until the reducer's stale-sweep.
     let Some(step_index) = obj
         .get("step_index")
         .and_then(|v| v.as_i64())
@@ -137,7 +137,7 @@ fn decode_ag_tool_call(
     if name == "ask_permission" || name == "ask_question" {
         return AgentEvent::UserActionRequest {
             agent_id,
-            reason: "asking permission".to_string(),
+            reason: Some("asking permission".to_string()),
             tool_use_id,
         };
     }

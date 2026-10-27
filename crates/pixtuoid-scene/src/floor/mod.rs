@@ -476,7 +476,7 @@ impl AudioObserver {
 pub struct PerOffice {
     /// Every agent's desk cup + fetch time — survives floor navigation.
     pub coffee: CoffeeState,
-    /// Active speech bubbles keyed by venue (the `VenueKey` carries `floor_idx`).
+    /// Running speech bubbles keyed by venue (the `VenueKey` carries `floor_idx`).
     pub(crate) chitchat: HashMap<VenueKey, ActiveChitchat>,
     /// The office-wide [`AudioObserver`] — one cue tracker + reprime latch,
     /// shared across floors.
@@ -794,7 +794,7 @@ impl NeonLevels {
         power: 1.0,
     };
     /// Agents work, nobody waits.
-    pub(crate) const BUSY: Self = Self {
+    pub(crate) const RUNNING: Self = Self {
         alert: 0.0,
         power: 1.0,
     };
@@ -972,7 +972,7 @@ impl NeonState {
         let now = timing.now;
         let to = match mood {
             OfficeMood::Alert { .. } => NeonLevels::ALERT,
-            OfficeMood::Busy { .. } => NeonLevels::BUSY,
+            OfficeMood::Running { .. } => NeonLevels::RUNNING,
             OfficeMood::Empty if room_dimmed => NeonLevels::EMPTY,
             OfficeMood::Calm | OfficeMood::Empty => NeonLevels::CALM,
         };

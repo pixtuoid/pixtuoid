@@ -72,7 +72,7 @@ const CUTAWAY_FRAMES: usize = 60;
 const NOON: u32 = 12;
 const NIGHT: u32 = 23;
 
-fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> SceneState {
+fn office_scene(n: usize, max_desks: usize, base: SystemTime, running: bool) -> SceneState {
     let mut s = SceneState::uniform(max_desks);
     let kinds = [
         ToolKind::Bash,
@@ -86,22 +86,22 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
     // deep-idle poses a real overnight office shows.
     let idle_epoch = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     // At n=12 this is exactly the 6/2/4 split the size cases have measured since #900.
-    let active = n / 2;
-    let waiting = active + n / 6;
+    let n_running = n / 2;
+    let n_requires_action = n_running + n / 6;
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
         let state = match i {
-            _ if !busy || i >= waiting => ActivityState::Idle,
-            _ if i < active => ActivityState::Active {
+            _ if !running || i >= n_requires_action => ActivityState::Idle,
+            _ if i < n_running => ActivityState::Running {
                 tool_use_id: Some(Arc::from(format!("t{i}").as_str())),
                 detail: Some(Arc::from("cargo test")),
                 kind: kinds[i % kinds.len()],
             },
-            _ => ActivityState::Waiting {
-                reason: Arc::from("permission"),
+            _ => ActivityState::RequiresAction {
+                reason: Some(Arc::from("permission")),
             },
         };
-        let stamp = if busy {
+        let stamp = if running {
             base + Duration::from_secs(i as u64)
         } else {
             idle_epoch
@@ -122,8 +122,8 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 exiting_at: None,
                 desk_index: GlobalDeskIndex(i),
                 floor_idx,
-                tool_call_count: if busy { i as u32 * 7 } else { 0 },
-                active_ms: 0,
+                tool_call_count: if running { i as u32 * 7 } else { 0 },
+                running_ms: 0,
                 unknown_cwd: false,
                 parent_id: None,
                 pid: None,
@@ -185,7 +185,7 @@ fn render_frame(c: &mut Criterion) {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack"));
     let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme");
     let base = SystemTime::UNIX_EPOCH + Duration::from_secs(BASE_EPOCH_SECS);
-    let busy = office_scene(12, 16, base, true);
+    let running = office_scene(12, 16, base, true);
     let idle = office_scene(12, 16, base, false);
     let crowds: Vec<(usize, SceneState)> = OCCUPANCY
         .iter()
@@ -205,14 +205,14 @@ fn render_frame(c: &mut Criterion) {
     );
 
     let mut cases: Vec<(String, &SceneState, Size)> = Vec::new();
-    for (label, scene) in [("busy", &busy), ("idle", &idle)] {
+    for (label, scene) in [("running", &running), ("idle", &idle)] {
         for size in [Size { w: 192, h: 160 }, CLASSIC_WIDE] {
             cases.push((format!("{label}12_{}x{}", size.w, size.h), scene, size));
         }
     }
     let Size { w, h } = CLASSIC_WIDE;
     for (n, scene) in &crowds {
-        cases.push((format!("busy{n}_{w}x{h}"), scene, CLASSIC_WIDE));
+        cases.push((format!("running{n}_{w}x{h}"), scene, CLASSIC_WIDE));
     }
     cases.push((format!("idle{biggest}_{w}x{h}"), &idle_crowd, CLASSIC_WIDE));
 
@@ -228,14 +228,14 @@ fn render_floor_scaling(c: &mut Criterion) {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack"));
     let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme");
     let base = SystemTime::UNIX_EPOCH + Duration::from_secs(BASE_EPOCH_SECS);
-    let busy = office_scene(12, 16, base, true);
+    let running = office_scene(12, 16, base, true);
 
     // https://bheisler.github.io/criterion.rs/book/user_guide/benchmarking_with_inputs.html
     let mut group = c.benchmark_group("render_floor_scaling");
     for size in RICH_SIZES {
         let Size { w, h } = size;
         group.throughput(Throughput::Elements(u64::from(w) * u64::from(h)));
-        let mut frame = floor_frames(&pack, theme, &busy, size, base);
+        let mut frame = floor_frames(&pack, theme, &running, size, base);
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("busy12_{w}x{h}")),
             &size,
@@ -267,14 +267,14 @@ fn render_cutaway_frame(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("render_cutaway");
     let Size { w, h } = CUTAWAY_LOGICAL;
-    for (busy, when, hour) in [
+    for (running, when, hour) in [
         (true, "noon", NOON),
         (true, "night", NIGHT),
         (false, "noon", NOON),
         (false, "night", NIGHT),
     ] {
         let base = localclock::at_hour(hour);
-        let scene = office_scene(12, 16, base, busy);
+        let scene = office_scene(12, 16, base, running);
         let mut session = FloorSession::new(Arc::clone(&pack));
         let stepped: Vec<(SystemTime, SteppedFloor, BoardModel)> = (0..CUTAWAY_FRAMES as u64)
             .map(|i| {
@@ -299,7 +299,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
             theme,
             scale,
         };
-        let label = if busy { "busy12" } else { "idle12" };
+        let label = if running { "running12" } else { "idle12" };
         let name = format!("{label}_{w}x{h}_x{}_{when}", scale.get());
         // Outside the bench closure, which criterion calls afresh per sample: a
         // live painter's recolour cache stays warm and its frames keep advancing.
@@ -330,7 +330,7 @@ fn render_cutaway_frame(c: &mut Criterion) {
                 )
             });
         });
-        if busy {
+        if running {
             continue;
         }
         // The same frames through the canvas, which paints only those that

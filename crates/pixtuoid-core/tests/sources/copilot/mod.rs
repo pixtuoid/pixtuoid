@@ -10,7 +10,7 @@ use pixtuoid_core::state::ActivityState;
 fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
     d.assert_clean(what);
     assert!(
-        d.reached().contains(&Reach::Waiting),
+        d.reached().contains(&Reach::RequiresAction),
         "{what}: never waited"
     );
     let slots: Vec<_> = d.scene.agents.values().collect();
@@ -112,7 +112,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
     );
     let parent = d.scene.agents.get(&child.1).expect("the parent's slot");
     assert!(
-        !matches!(&parent.state, ActivityState::Active { detail: Some(d), .. } if &**d == "Delegating"),
+        !matches!(&parent.state, ActivityState::Running { detail: Some(d), .. } if &**d == "Delegating"),
         "the parent still delegates: {:?}",
         parent.state
     );

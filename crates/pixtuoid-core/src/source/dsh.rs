@@ -166,7 +166,7 @@ pub fn decode_dsh_payload(
                 identity(),
                 AgentEvent::UserActionRequest {
                     agent_id,
-                    reason: ellipsize(&reason, MAX_DECODED_FIELD_CHARS),
+                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: call_id(),
                 },
             ])
@@ -186,8 +186,8 @@ pub fn decode_dsh_payload(
                 // pre-pass keyed this tuid at the original `tool_call`
                 // (Delegating already entered), and a second Task Start for
                 // a known tuid is treated as a replay — `handled_by_task_start`
-                // skips the Waiting→Active resume arm and the slot would
-                // strand in Waiting for the whole delegation.
+                // skips the RequiresAction→Running resume arm and the slot would
+                // strand in RequiresAction for the whole delegation.
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: call_id(),
@@ -357,7 +357,7 @@ mod tests {
                     ..
                 },
             ] => {
-                assert_eq!(reason, "bash: rm -rf");
+                assert_eq!(reason.as_deref(), Some("bash: rm -rf"));
                 assert_eq!(t, "call_9");
             }
             other => panic!("unexpected: {other:?}"),
@@ -374,7 +374,7 @@ mod tests {
         ));
         // A GATED dispatch resumes GENERIC on purpose: the Task pre-pass
         // keyed the tuid at the original `tool_call`, so a second Task Start
-        // for it reads as a replay and would strand the slot in Waiting (the
+        // for it reads as a replay and would strand the slot in RequiresAction (the
         // decoder arm's comment owns the mechanism).
         let evs = decode(json!({
             "type": "approval_decided", "sessionId": SID,

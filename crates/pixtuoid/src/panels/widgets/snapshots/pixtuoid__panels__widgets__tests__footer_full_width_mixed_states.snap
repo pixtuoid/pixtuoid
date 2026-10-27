@@ -2,4 +2,4 @@
 source: crates/pixtuoid/src/tui/widgets/mod.rs
 expression: line
 ---
- 8 · ●3 A · ◐2 W · ○3 I · Edit×2 Bash×1                                                  [?]help [p]ause [t]heme [q]uit
+ 8 · ●3 R · ◐2 A · ○3 I · Edit×2 Bash×1                                                  [?]help [p]ause [t]heme [q]uit

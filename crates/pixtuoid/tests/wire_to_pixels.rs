@@ -198,35 +198,35 @@ fn agent_cases() -> Vec<WireCase> {
             source: "claude-code",
             fixture: "fixtures/claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl",
             wire: Wire::Transcript { seeded: true },
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "codex",
             source: "codex",
             fixture: "fixtures/codex/permission-recorded/rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl",
             wire: Wire::Transcript { seeded: true },
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "antigravity",
             source: "antigravity",
             fixture: "fixtures/antigravity/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "copilot",
             source: "copilot",
             fixture: "fixtures/copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl",
             wire: Wire::Transcript { seeded: false },
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "omp",
             source: "omp",
             fixture: "fixtures/omp/tool-run-recorded/2026-09-19T18-16-13-370Z_01a0bae2-133a-769f-851a-927926fbca45.jsonl",
             wire: Wire::Transcript { seeded: false },
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "omp-bridge",
@@ -235,35 +235,35 @@ fn agent_cases() -> Vec<WireCase> {
             // never carry must survive all the way to pixels (#951).
             fixture: "omp/fixtures/approval-recorded/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Waiting, Reach::Active],
+            must_reach: &[Reach::RequiresAction, Reach::Running],
         },
         WireCase {
             name: "grok",
             source: "grok",
             fixture: "fixtures/grok/permission-hermetic",
             wire: Wire::Transcript { seeded: true },
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "reasonix",
             source: "reasonix",
             fixture: "reasonix/fixtures/subagent-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active, Reach::Delegating],
+            must_reach: &[Reach::Running, Reach::Delegating],
         },
         WireCase {
             name: "codewhale",
             source: "codewhale",
             fixture: "fixtures/codewhale/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "opencode",
             source: "opencode",
             fixture: "fixtures/opencode/session-recorded/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active, Reach::Waiting],
+            must_reach: &[Reach::Running, Reach::RequiresAction],
         },
         WireCase {
             name: "cursor",
@@ -273,29 +273,29 @@ fn agent_cases() -> Vec<WireCase> {
             // Two sessions, so it cannot live under `fixtures/`.
             fixture: "cursor/fixtures/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active, Reach::Delegating],
+            must_reach: &[Reach::Running, Reach::Delegating],
         },
         WireCase {
             name: "hermes",
             source: "hermes",
             fixture: "fixtures/hermes/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             name: "hermes_approval",
             source: "hermes",
             fixture: "fixtures/hermes/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Waiting],
+            must_reach: &[Reach::RequiresAction],
         },
         WireCase {
-            // The recorded tool run pins Active on real wire.
+            // The recorded tool run pins Running on real wire.
             name: "dsh",
             source: "dsh",
             fixture: "fixtures/dsh/tool-run-recorded/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active],
+            must_reach: &[Reach::Running],
         },
         WireCase {
             // The delegation capture: two sessions (so it lives outside
@@ -305,14 +305,14 @@ fn agent_cases() -> Vec<WireCase> {
             source: "dsh",
             fixture: "delegation/fixtures/dsh/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active, Reach::Delegating],
+            must_reach: &[Reach::Running, Reach::Delegating],
         },
         WireCase {
             name: "kimi",
             source: "kimi",
             fixture: "fixtures/kimi/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
-            must_reach: &[Reach::Active, Reach::Waiting],
+            must_reach: &[Reach::Running, Reach::RequiresAction],
         },
     ]
 }
@@ -425,7 +425,7 @@ fn a_gateway_we_never_saw_start_still_materializes_from_its_session_wire() {
     use pixtuoid_core::state::DaemonState;
     assert_eq!(
         openclaw_state("mid-attach-recorded", &["agent_end"]),
-        DaemonState::Busy,
+        DaemonState::Running,
         "a mid-attach stream carries no gateway_start, so the session envelopes must \
          materialize the instance themselves and put the turn in flight on it"
     );

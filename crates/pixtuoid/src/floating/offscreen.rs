@@ -439,7 +439,7 @@ pub struct WindowFrame<'a> {
 mod tests {
     use std::time::SystemTime;
 
-    use super::super::fixtures::{active_on, cutaway, density, frame, scene_with};
+    use super::super::fixtures::{cutaway, density, frame, running_on, scene_with};
     use super::super::geometry::{Zoom, window_geometry};
     use super::super::overlays::footer_budget;
     use super::*;
@@ -555,7 +555,7 @@ mod tests {
         fn with_a_floor_above(weather: pixtuoid_scene::sky::WeatherPolicy) -> Self {
             let cap = 8;
             Self {
-                scene: scene_with(vec![active_on("/p/upstairs.jsonl", 1, cap)], cap),
+                scene: scene_with(vec![running_on("/p/upstairs.jsonl", 1, cap)], cap),
                 ..Self::new(weather)
             }
         }
@@ -624,7 +624,7 @@ mod tests {
         let strike = storm_strike();
         let [dark, late, held, _] = held_frames(&strike);
         let mut window = Window::new(strike.weather);
-        let agent = active_on("/p/a.jsonl", 0, 0);
+        let agent = running_on("/p/a.jsonl", 0, 0);
         let id = agent.agent_id;
         window.scene = scene_with(vec![agent], 16);
         window.present(dark);
@@ -1091,10 +1091,10 @@ mod tests {
         let cap = 16;
         let scene = scene_with(
             vec![
-                active_on("/a/f0.jsonl", 0, 0),
-                active_on("/a/f1a.jsonl", 1, cap),
-                active_on("/a/f1b.jsonl", 1, cap + 1),
-                active_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f0.jsonl", 0, 0),
+                running_on("/a/f1a.jsonl", 1, cap),
+                running_on("/a/f1b.jsonl", 1, cap + 1),
+                running_on("/a/f1c.jsonl", 1, cap + 2),
             ],
             cap,
         );
@@ -1132,10 +1132,10 @@ mod tests {
         let cap = 16;
         let scene = scene_with(
             vec![
-                active_on("/a/f0.jsonl", 0, 0),
-                active_on("/a/f1a.jsonl", 1, cap),
-                active_on("/a/f1b.jsonl", 1, cap + 1),
-                active_on("/a/f1c.jsonl", 1, cap + 2),
+                running_on("/a/f0.jsonl", 0, 0),
+                running_on("/a/f1a.jsonl", 1, cap),
+                running_on("/a/f1b.jsonl", 1, cap + 1),
+                running_on("/a/f1c.jsonl", 1, cap + 2),
             ],
             cap,
         );
@@ -1166,8 +1166,8 @@ mod tests {
         let stems = frames.last().unwrap().stems;
         let moderate = pixtuoid_scene::audio::stem_levels(
             &pixtuoid_scene::tally::StateCounts {
-                active: 1,
-                waiting: 0,
+                running: 1,
+                requires_action: 0,
                 idle: 0,
                 exiting: 0,
                 total: 1,
@@ -1176,7 +1176,7 @@ mod tests {
         );
         assert_eq!(
             stems.typing, moderate.typing,
-            "typing level must reflect the RENDERED floor's 1 active, not all 4"
+            "typing level must reflect the RENDERED floor's 1 running, not all 4"
         );
     }
 
@@ -1186,7 +1186,7 @@ mod tests {
     fn the_footer_shows_the_shared_warning_in_place_of_the_stats() {
         let renderer = OfficeRenderer::new(crate::test_flash::pack_arc());
         let mut scene = SceneState::new([8; pixtuoid_core::state::MAX_FLOORS]);
-        let slot = active_on("/p/a.jsonl", 0, 0);
+        let slot = running_on("/p/a.jsonl", 0, 0);
         scene.agents.insert(slot.agent_id, slot);
         let warning = crate::doctor::footer_warning(&[], &["cc"]);
         let budget = footer_budget(960, glyph_cell(2));
@@ -1208,7 +1208,7 @@ mod tests {
         );
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");
         let now0 = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
-        let mut idle = active_on("/w/wanderer.jsonl", 0, 0);
+        let mut idle = running_on("/w/wanderer.jsonl", 0, 0);
         idle.state = pixtuoid_core::state::ActivityState::Idle;
         let scene = scene_with(vec![idle], 16);
         let mut renderer = OfficeRenderer::new(pack);
@@ -1266,7 +1266,7 @@ mod tests {
         let (handle, rx) = crate::audio::AudioHandle::test_pair();
         renderer.set_audio(handle);
 
-        let mut agents = vec![active_on("/d/f0.jsonl", 0, 0)];
+        let mut agents = vec![running_on("/d/f0.jsonl", 0, 0)];
         let scene = scene_with(agents.clone(), cap);
         renderer.render(
             cutaway(Size { w: 160, h: 96 }),
@@ -1284,7 +1284,7 @@ mod tests {
         );
         crate::audio::drain_frames(&rx); // discard the priming frames
 
-        agents.push(active_on("/d/f1-new.jsonl", 1, cap));
+        agents.push(running_on("/d/f1-new.jsonl", 1, cap));
         let scene = scene_with(agents.clone(), cap);
         now += std::time::Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
         renderer.render(
@@ -1310,7 +1310,7 @@ mod tests {
             "a floor-1 walk-in must not chime the ground-floor window: {off_floor:?}"
         );
 
-        agents.push(active_on("/d/f0-new.jsonl", 0, 1));
+        agents.push(running_on("/d/f0-new.jsonl", 0, 1));
         let scene = scene_with(agents, cap);
         now += std::time::Duration::from_millis(pixtuoid_scene::anim::PAINT_FRAME_MS);
         renderer.render(
@@ -1421,7 +1421,7 @@ mod tests {
         let (rendered, at, size, now, _) = one_agent_office();
         let fresh = OfficeRenderer::new(crate::test_flash::pack_arc());
         let mut unpresented = OfficeRenderer::new(crate::test_flash::pack_arc());
-        let scene = scene_with(vec![active_on("/p/a.jsonl", 0, 0)], 16);
+        let scene = scene_with(vec![running_on("/p/a.jsonl", 0, 0)], 16);
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme");
         assert!(unpresented.render_live(at, frame(&scene, theme, now), size));
         let on_agent = agent_point(&rendered, at, now);
@@ -1487,7 +1487,7 @@ mod tests {
         let pack = std::sync::Arc::new(
             pixtuoid_scene::pack::load_bundled_pack().expect("bundled pack loads"),
         );
-        let agent = active_on("/p/a.jsonl", 0, 0);
+        let agent = running_on("/p/a.jsonl", 0, 0);
         let id = agent.agent_id;
         let scene = scene_with(vec![agent], 16);
         let theme = pixtuoid_scene::theme::theme_by_name("normal").expect("normal theme exists");

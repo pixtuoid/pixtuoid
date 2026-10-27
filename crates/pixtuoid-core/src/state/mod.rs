@@ -93,7 +93,7 @@ impl GlobalDeskIndex {
     }
 }
 
-/// Semantic category of the tool an `Active` slot is running, derived ONCE at
+/// Semantic category of the tool an `Running` slot is running, derived ONCE at
 /// slot entry ([`ToolKind::from_detail`]) so downstream deciders — the
 /// reducer's stale-window policy and the painter's monitor-glow tint — match on
 /// a typed kind instead of re-parsing the human-facing `detail` string.
@@ -113,7 +113,7 @@ pub enum ToolKind {
     Bash,
     /// Grep / Glob.
     Search,
-    /// Anything else, including a detail-less Active.
+    /// Anything else, including a detail-less Running.
     Other,
 }
 
@@ -150,7 +150,7 @@ pub enum ActivityState {
     /// No tool running.
     Idle,
     /// A tool call is in flight.
-    Active {
+    Running {
         /// The in-flight tool call's id (pairs Start↔End).
         #[serde(with = "opt_arc_str_serde")]
         tool_use_id: Option<Arc<str>>,
@@ -161,10 +161,10 @@ pub enum ActivityState {
         kind: ToolKind,
     },
     /// Blocked on a permission/input prompt.
-    Waiting {
-        /// Why the agent is waiting (the prompt reason).
-        #[serde(with = "arc_str_serde")]
-        reason: Arc<str>,
+    RequiresAction {
+        /// Why the agent requires action (the prompt reason), when the wire gave one.
+        #[serde(with = "opt_arc_str_serde")]
+        reason: Option<Arc<str>>,
     },
 }
 
@@ -292,7 +292,7 @@ pub struct AgentSlot {
     pub cwd: Arc<Path>,
     /// Display name + how it was derived (see `SlotLabel`).
     pub label: SlotLabel,
-    /// Current activity — Idle, Active (running a tool), or Waiting.
+    /// Current activity — Idle, Running (running a tool), or RequiresAction.
     pub state: ActivityState,
     /// Wall-clock time the current `state` was entered (reset on every state
     /// change).
@@ -314,8 +314,8 @@ pub struct AgentSlot {
     pub floor_idx: usize,
     /// Monotonic count of tool calls this agent has made this session.
     pub tool_call_count: u32,
-    /// Cumulative milliseconds spent in the `Active` state.
-    pub active_ms: u64,
+    /// Cumulative milliseconds spent in the `Running` state.
+    pub running_ms: u64,
     /// Whether `cwd` is a placeholder rather than a real working directory.
     pub unknown_cwd: bool,
     /// The dispatching parent, for a subagent slot (`None` for a top-level session).
@@ -405,7 +405,7 @@ pub enum DaemonState {
     /// Alive with no turn in flight — the mascot ambles.
     Idle,
     /// ≥1 turn in flight (projected from `DaemonPresence::in_flight_turns`).
-    Busy,
+    Running,
     /// Gateway is UP but every turn fails on its model backend (auth revoked /
     /// provider down) — alive-but-broken, NOT idle. Self-heals on the next
     /// successful turn, a new turn start, or a gateway restart.
@@ -415,9 +415,9 @@ pub enum DaemonState {
 }
 
 /// The two ORTHOGONAL liveness axes a daemon mascot actually STORES. The
-/// remaining render distinction — Idle vs Busy — is deliberately NOT a field
+/// remaining render distinction — Idle vs Running — is deliberately NOT a field
 /// here: it is a pure function of [`DaemonPresence::in_flight_turns`], projected
-/// by [`DaemonPresence::display_state`], so "busy" can never drift from the turn
+/// by [`DaemonPresence::display_state`], so "running" can never drift from the turn
 /// set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DaemonLiveness {
@@ -499,22 +499,22 @@ pub struct DaemonPresence {
     pub liveness: DaemonLiveness,
     /// Concurrent sessions the gateway is multiplexing (bubble intensity).
     pub active_sessions: u32,
-    /// Last time ANY presence event arrived — drives the busy→idle decay and
+    /// Last time ANY presence event arrived — drives the running→idle decay and
     /// the presence-TTL stale-down sweep, and anchors the leave animation
     /// (under `Down` this is the moment the gateway died).
     pub last_seen: SystemTime,
     /// When the gateway first appeared (absent/Down → up) — the enter-animation
     /// anchor and the steady wander clock.
     pub entered_at: SystemTime,
-    /// In-flight turns (busy iff non-empty), each keyed by its correlation key
+    /// In-flight turns (running iff non-empty), each keyed by its correlation key
     /// and stamped with its LAST observation. The per-turn stamp is what makes
-    /// the busy-decay honest: the daemon-wide `last_seen` is refreshed by ANY
+    /// the running-decay honest: the daemon-wide `last_seen` is refreshed by ANY
     /// event, so on a gateway still serving other traffic a turn whose
     /// `agent_end` was dropped would never age out and the mascot would latch
-    /// Busy forever.
+    /// Running forever.
     ///
     /// NOT serialized: transient process state a restart resets, so a restored
-    /// dump can't strand a perpetual Busy.
+    /// dump can't strand a perpetual Running.
     #[serde(skip)]
     pub in_flight_turns: HashMap<TurnKey, SystemTime>,
     /// The gateway pid currently armed for `ExitWatch` (None until first seen).
@@ -523,7 +523,7 @@ pub struct DaemonPresence {
 
 impl DaemonPresence {
     /// The 4-way render vocabulary ([`DaemonState`]) projected from the stored
-    /// axes — the SINGLE place the `Degraded > Busy > Idle` priority is encoded.
+    /// axes — the SINGLE place the `Degraded > Running > Idle` priority is encoded.
     /// `degraded` is checked BEFORE the turn set, so a degraded gateway renders
     /// Degraded even with turns still in flight.
     pub fn display_state(&self) -> DaemonState {
@@ -534,16 +534,16 @@ impl DaemonPresence {
                 if self.in_flight_turns.is_empty() {
                     DaemonState::Idle
                 } else {
-                    DaemonState::Busy
+                    DaemonState::Running
                 }
             }
         }
     }
 
-    /// Whether the mascot renders as Busy (alive, not degraded, ≥1 turn in flight).
+    /// Whether the mascot renders as Running (alive, not degraded, ≥1 turn in flight).
     #[cfg(test)]
-    pub(crate) fn is_busy(&self) -> bool {
-        self.display_state() == DaemonState::Busy
+    pub(crate) fn is_running(&self) -> bool {
+        self.display_state() == DaemonState::Running
     }
 }
 
@@ -803,7 +803,7 @@ mod tests {
             desk_index: GlobalDeskIndex(desk_index),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,
@@ -822,7 +822,7 @@ mod tests {
 
         let a = AgentId::from_transcript_path("/p/a.jsonl");
         let mut slot_a = make_slot(a, 0);
-        slot_a.state = ActivityState::Active {
+        slot_a.state = ActivityState::Running {
             tool_use_id: Some(Arc::from("tuid-1")),
             detail: Some(Arc::from("Read · src/main.rs")),
             kind: ToolKind::Read,
@@ -831,8 +831,8 @@ mod tests {
 
         let b = AgentId::from_transcript_path("/p/b.jsonl");
         let mut slot_b = make_slot(b, 1);
-        slot_b.state = ActivityState::Waiting {
-            reason: Arc::from("permission: Bash"),
+        slot_b.state = ActivityState::RequiresAction {
+            reason: Some(Arc::from("permission: Bash")),
         };
         slot_b.parent_id = Some(a);
         s.agents.insert(b, slot_b);
@@ -852,7 +852,7 @@ mod tests {
         assert_eq!(back.agents.len(), 3);
         assert!(matches!(
             back.agents[&a].state,
-            ActivityState::Active { .. }
+            ActivityState::Running { .. }
         ));
         assert_eq!(back.agents[&c].state, ActivityState::Idle);
         assert_eq!(&*back.agents[&a].cwd, Path::new("/repo"));
@@ -874,8 +874,8 @@ mod tests {
         };
         assert_eq!(
             p.display_state(),
-            DaemonState::Busy,
-            "a non-empty turn set reads Busy before serialization"
+            DaemonState::Running,
+            "a non-empty turn set reads Running before serialization"
         );
         let json = serde_json::to_string(&p).expect("serialize");
         assert!(
@@ -887,7 +887,7 @@ mod tests {
         assert_eq!(
             back.display_state(),
             DaemonState::Idle,
-            "skipped turn set restores empty ⇒ Idle, never a stranded Busy"
+            "skipped turn set restores empty ⇒ Idle, never a stranded Running"
         );
         assert_eq!(back.active_sessions, 3);
         assert_eq!(back.current_pid, Some(4242));
@@ -991,25 +991,25 @@ mod tests {
     }
 
     #[test]
-    fn display_state_derives_busy_from_the_turn_set_not_a_stored_flag() {
+    fn display_state_derives_running_from_the_turn_set_not_a_stored_flag() {
         let mut p = presence_at(DaemonLiveness::Up { degraded: false });
         assert_eq!(p.display_state(), DaemonState::Idle);
-        assert!(!p.is_busy());
+        assert!(!p.is_running());
         p.in_flight_turns
             .insert(TurnKey::Id("r".into()), SystemTime::UNIX_EPOCH);
-        assert_eq!(p.display_state(), DaemonState::Busy);
-        assert!(p.is_busy());
+        assert_eq!(p.display_state(), DaemonState::Running);
+        assert!(p.is_running());
         p.in_flight_turns.clear();
         assert_eq!(p.display_state(), DaemonState::Idle, "drained ⇒ Idle");
     }
 
     #[test]
-    fn display_state_degraded_wins_over_busy_with_a_turn_still_in_flight() {
+    fn display_state_degraded_wins_over_running_with_a_turn_still_in_flight() {
         let mut p = presence_at(DaemonLiveness::Up { degraded: true });
         p.in_flight_turns
             .insert(TurnKey::Id("still-running".into()), SystemTime::UNIX_EPOCH);
         assert_eq!(p.display_state(), DaemonState::Degraded);
-        assert!(!p.is_busy(), "a degraded daemon never reads as Busy");
+        assert!(!p.is_running(), "a degraded daemon never reads as Running");
     }
 
     #[test]
@@ -1018,7 +1018,7 @@ mod tests {
         p.in_flight_turns
             .insert(TurnKey::Id("stray".into()), SystemTime::UNIX_EPOCH);
         assert_eq!(p.display_state(), DaemonState::Down);
-        assert!(!p.is_busy());
+        assert!(!p.is_running());
     }
 
     #[test]

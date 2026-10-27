@@ -32,7 +32,6 @@ expression: events
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
     agent_id: 6234576998802458522
-    reason: waiting for the user
 - Identity:
     agent_id: 6234576998802458522
     source: codewhale

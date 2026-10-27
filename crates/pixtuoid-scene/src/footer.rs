@@ -24,8 +24,8 @@ use crate::theme::Theme;
 /// (survives colour removal, colour-blindness, a tofu'd glyph).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RungKind {
-    Active,
-    Waiting,
+    Running,
+    RequiresAction,
     Idle,
     Exiting,
 }
@@ -33,8 +33,8 @@ pub enum RungKind {
 impl RungKind {
     /// Canonical render order (the footer's left-to-right rung order).
     pub const ALL: [RungKind; 4] = [
-        RungKind::Active,
-        RungKind::Waiting,
+        RungKind::Running,
+        RungKind::RequiresAction,
         RungKind::Idle,
         RungKind::Exiting,
     ];
@@ -43,8 +43,8 @@ impl RungKind {
     /// (1 cell in a non-CJK terminal).
     pub fn glyph(self) -> char {
         match self {
-            RungKind::Active => '\u{25cf}',
-            RungKind::Waiting => '\u{25d0}',
+            RungKind::Running => '\u{25cf}',
+            RungKind::RequiresAction => '\u{25d0}',
             RungKind::Idle => '\u{25cb}',
             RungKind::Exiting => '\u{25cc}',
         }
@@ -54,8 +54,8 @@ impl RungKind {
     /// footer's narrow tier where the full word doesn't fit.
     pub fn letter(self) -> char {
         match self {
-            RungKind::Active => 'A',
-            RungKind::Waiting => 'W',
+            RungKind::Running => 'R',
+            RungKind::RequiresAction => 'A',
             RungKind::Idle => 'I',
             RungKind::Exiting => 'x',
         }
@@ -65,8 +65,8 @@ impl RungKind {
     /// `{glyph} {word}`.
     pub fn word(self) -> &'static str {
         match self {
-            RungKind::Active => "Active",
-            RungKind::Waiting => "Waiting",
+            RungKind::Running => "Running",
+            RungKind::RequiresAction => "Requires action",
             RungKind::Idle => "Idle",
             RungKind::Exiting => "Exiting",
         }
@@ -75,8 +75,8 @@ impl RungKind {
     /// The count for this state, so a consumer can just iterate [`RungKind::ALL`].
     pub fn count(self, counts: StateCounts) -> usize {
         match self {
-            RungKind::Active => counts.active,
-            RungKind::Waiting => counts.waiting,
+            RungKind::Running => counts.running,
+            RungKind::RequiresAction => counts.requires_action,
             RungKind::Idle => counts.idle,
             RungKind::Exiting => counts.exiting,
         }
@@ -97,7 +97,7 @@ pub enum FooterTone {
     Tool(ToolKind),
     /// The gateway `⬢gw` chip — hue by daemon liveness.
     Gateway(DaemonState),
-    /// Source-death / decode-drift warning — reuses the Waiting attention color,
+    /// Source-death / decode-drift warning — reuses the RequiresAction attention color,
     /// no dedicated theme key.
     Warning,
 }
@@ -109,17 +109,17 @@ impl FooterTone {
     pub fn rgb(self, theme: &Theme) -> Rgb {
         match self {
             FooterTone::Neutral => theme.ui.label_idle,
-            FooterTone::Rung(RungKind::Active) => theme.ui.label_active,
-            FooterTone::Rung(RungKind::Waiting) => theme.ui.label_waiting,
+            FooterTone::Rung(RungKind::Running) => theme.ui.label_running,
+            FooterTone::Rung(RungKind::RequiresAction) => theme.ui.label_requires_action,
             FooterTone::Rung(RungKind::Idle) => theme.ui.label_idle,
             FooterTone::Rung(RungKind::Exiting) => theme.ui.label_exiting,
             FooterTone::Tool(kind) => theme.tool_glow.for_kind(kind),
             FooterTone::Gateway(DaemonState::Idle) => theme.ui.label_idle,
-            FooterTone::Gateway(DaemonState::Busy) => theme.ui.label_active,
+            FooterTone::Gateway(DaemonState::Running) => theme.ui.label_running,
             FooterTone::Gateway(DaemonState::Degraded | DaemonState::Down) => {
-                theme.ui.label_waiting
+                theme.ui.label_requires_action
             }
-            FooterTone::Warning => theme.ui.label_waiting,
+            FooterTone::Warning => theme.ui.label_requires_action,
         }
     }
 }
@@ -180,7 +180,7 @@ pub struct FooterFloor {
 const TOOL_TALLY_CAP: usize = 4;
 
 /// One aggregate tool-tally entry: the raw display `token` (kept verbatim), the
-/// TYPED [`ToolKind`] for the hue, and how many Active slots show it.
+/// TYPED [`ToolKind`] for the hue, and how many Running slots show it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ToolTally {
     pub token: String,
@@ -188,7 +188,7 @@ pub(crate) struct ToolTally {
     pub count: usize,
 }
 
-/// The aggregate tool tally: group Active slots by their raw display token (the
+/// The aggregate tool tally: group Running slots by their raw display token (the
 /// first alphanumeric run of the detail, kept verbatim) but carry the TYPED
 /// [`ToolKind`] for the hue — a Task slot displays "Delegating" yet tints via
 /// `kind = Task`, never the name. Sorted by count desc then name, capped at
@@ -196,7 +196,7 @@ pub(crate) struct ToolTally {
 pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
     let mut tool_counts: HashMap<String, (ToolKind, usize)> = HashMap::new();
     for slot in scene.agents.values() {
-        if let ActivityState::Active { detail, kind, .. } = &slot.state
+        if let ActivityState::Running { detail, kind, .. } = &slot.state
             && let Some(token) = detail
                 .as_deref()
                 .and_then(|d| d.split(|c: char| !c.is_alphanumeric()).next())
@@ -315,8 +315,8 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         // alternate screen.
         let quit = clip_cols(ctx.keys_alert, w);
         let avail = w.saturating_sub(cols(&quit));
-        let alarm = if counts.waiting > 0 {
-            format!(" · \u{25b2}{} need you", counts.waiting)
+        let alarm = if counts.requires_action > 0 {
+            format!(" · \u{25b2}{} need you", counts.requires_action)
         } else {
             String::new()
         };
@@ -355,11 +355,11 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         None => format!("{}", counts.total),
     };
 
-    // The cross-floor `▲F{n}` cue: any OTHER floor holding a waiting agent.
+    // The cross-floor `▲F{n}` cue: any OTHER floor holding a requires-action agent.
     let cross_floor = ctx.floor.and_then(|fi| {
         let cur = fi.current.saturating_sub(1);
         (0..MAX_FLOORS)
-            .find(|&fl| fl != cur && ctx.per_floor[fl].waiting > 0)
+            .find(|&fl| fl != cur && ctx.per_floor[fl].requires_action > 0)
             .map(|fl| fl + 1)
     });
     let floor_suffix = match ctx.floor {
@@ -441,7 +441,7 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
     // Medium: the exiting rung, the tools and the chip all drop out for width.
     let seg_medium = {
         let mut rungs: Vec<FooterSegment> = Vec::new();
-        for kind in [RungKind::Active, RungKind::Waiting, RungKind::Idle] {
+        for kind in [RungKind::Running, RungKind::RequiresAction, RungKind::Idle] {
             let c = kind.count(counts);
             if c == 0 {
                 continue;
@@ -463,12 +463,12 @@ pub fn build_footer(inputs: &FooterInputs<'_>, budget: u16) -> FooterModel {
         segs
     };
 
-    // Minimal: the waiting alarm LEADS (the last stat to survive), then count.
-    let seg_min = if counts.waiting > 0 {
+    // Minimal: the requires-action alarm LEADS (the last stat to survive), then count.
+    let seg_min = if counts.requires_action > 0 {
         vec![
             FooterSegment::new(
-                format!(" \u{25b2}{}", counts.waiting),
-                FooterTone::Rung(RungKind::Waiting),
+                format!(" \u{25b2}{}", counts.requires_action),
+                FooterTone::Rung(RungKind::RequiresAction),
             ),
             FooterSegment::new(format!(" \u{b7} {count_str} "), FooterTone::Neutral),
         ]
@@ -533,14 +533,14 @@ mod tests {
     const KEYS_STATS: &str = " [?]help [p]ause [t]heme [q]uit ";
     const KEYS_ALERT: &str = " [q]uit ";
 
-    fn active_slot(id: &str, detail: &str, kind: ToolKind) -> AgentSlot {
+    fn running_slot(id: &str, detail: &str, kind: ToolKind) -> AgentSlot {
         AgentSlot {
             agent_id: AgentId::from_transcript_path(id),
             source: Arc::from("cc"),
             session_id: Arc::from("s"),
             cwd: Arc::from(PathBuf::from("/p").as_path()),
             label: "l".into(),
-            state: ActivityState::Active {
+            state: ActivityState::Running {
                 tool_use_id: Some(Arc::from("t")),
                 detail: Some(Arc::from(detail)),
                 kind,
@@ -552,7 +552,7 @@ mod tests {
             desk_index: GlobalDeskIndex(0),
             floor_idx: 0,
             tool_call_count: 0,
-            active_ms: 0,
+            running_ms: 0,
             unknown_cwd: false,
             parent_id: None,
             pid: None,
@@ -563,10 +563,10 @@ mod tests {
         }
     }
 
-    fn waiting_slot(id: &str) -> AgentSlot {
-        let mut s = active_slot(id, "x", ToolKind::Other);
-        s.state = ActivityState::Waiting {
-            reason: Arc::from("permission"),
+    fn requires_action_slot(id: &str) -> AgentSlot {
+        let mut s = running_slot(id, "x", ToolKind::Other);
+        s.state = ActivityState::RequiresAction {
+            reason: Some(Arc::from("permission")),
         };
         s
     }
@@ -598,7 +598,7 @@ mod tests {
     fn tool_tally_skips_empty_leading_token() {
         let mut scene = SceneState::uniform(16);
         // Leading '/' ⇒ first token after split-on-non-alphanumeric is "".
-        let slot = active_slot("/p/lead.jsonl", "/usr/bin/thing", ToolKind::Other);
+        let slot = running_slot("/p/lead.jsonl", "/usr/bin/thing", ToolKind::Other);
         scene.agents.insert(slot.agent_id, slot);
         let tools = footer_tool_tally(&scene);
         assert!(
@@ -608,8 +608,8 @@ mod tests {
         let line = build_footer(&inputs(&scene, &tools, false, None, None), 200).text();
         assert!(!line.contains('\u{00d7}'), "no × tool count: {line}");
         assert!(
-            line.contains("\u{25cf}1 A"),
-            "active rung still shows: {line}"
+            line.contains("\u{25cf}1 R"),
+            "running rung still shows: {line}"
         );
     }
 
@@ -635,7 +635,7 @@ mod tests {
     #[test]
     fn full_tier_fills_the_width_in_columns_with_multibyte_glyphs() {
         let mut scene = SceneState::uniform(16);
-        let slot = active_slot("/p/mb.jsonl", "Bash ls", ToolKind::Bash);
+        let slot = running_slot("/p/mb.jsonl", "Bash ls", ToolKind::Bash);
         scene.agents.insert(slot.agent_id, slot);
         let tools = footer_tool_tally(&scene);
         let width: u16 = 200;
@@ -649,9 +649,9 @@ mod tests {
     }
 
     #[test]
-    fn death_tier_pins_the_waiting_alarm_through_the_narrowest_width() {
+    fn death_tier_pins_the_requires_action_alarm_through_the_narrowest_width() {
         let mut scene = SceneState::uniform(16);
-        let slot = waiting_slot("/p/wait.jsonl");
+        let slot = requires_action_slot("/p/wait.jsonl");
         scene.agents.insert(slot.agent_id, slot);
         let warn = "transport pixtuoid-hook died: connection refused after 3 retries";
         let line = build_footer(&inputs(&scene, &[], false, None, Some(warn)), 40).text();
@@ -678,16 +678,16 @@ mod tests {
 
     #[test]
     fn every_footer_path_is_exactly_budget_wide() {
-        let mut busy = SceneState::uniform(16);
-        let slot = waiting_slot("/p/wait.jsonl");
-        busy.agents.insert(slot.agent_id, slot);
-        let tools = footer_tool_tally(&busy);
+        let mut running = SceneState::uniform(16);
+        let slot = requires_action_slot("/p/wait.jsonl");
+        running.agents.insert(slot.agent_id, slot);
+        let tools = footer_tool_tally(&running);
         let empty = SceneState::uniform(16);
         for w in 0..=64u16 {
             for (label, model) in [
                 (
                     "stats",
-                    build_footer(&inputs(&busy, &tools, false, None, None), w),
+                    build_footer(&inputs(&running, &tools, false, None, None), w),
                 ),
                 (
                     "empty",
@@ -695,7 +695,10 @@ mod tests {
                 ),
                 (
                     "death",
-                    build_footer(&inputs(&busy, &[], false, None, Some("transport died")), w),
+                    build_footer(
+                        &inputs(&running, &[], false, None, Some("transport died")),
+                        w,
+                    ),
                 ),
             ] {
                 let got: usize = model.segments.iter().map(|s| cols(&s.text)).sum();
@@ -712,7 +715,7 @@ mod tests {
     #[test]
     fn the_keys_only_rung_degrades_by_tail_not_by_clipping() {
         let mut scene = SceneState::uniform(16);
-        let slot = active_slot("/p/a.jsonl", "Edit x", ToolKind::Edit);
+        let slot = running_slot("/p/a.jsonl", "Edit x", ToolKind::Edit);
         scene.agents.insert(slot.agent_id, slot);
         // Wide enough for the full hint tail, one column too narrow for the
         // minimal stats tier — so the fallback rung is what renders.
@@ -739,7 +742,7 @@ mod tests {
     fn context_derives_the_office_wide_halves_from_the_full_scene() {
         use pixtuoid_core::state::{DaemonInstanceId, DaemonLiveness, DaemonPresence};
         let mut scene = SceneState::uniform(16);
-        let mut upstairs = waiting_slot("/p/up.jsonl");
+        let mut upstairs = requires_action_slot("/p/up.jsonl");
         upstairs.floor_idx = 1;
         scene.agents.insert(upstairs.agent_id, upstairs);
         scene.insert_daemon(
@@ -755,7 +758,10 @@ mod tests {
             },
         );
         let ctx = FooterContext::new(&scene, None, false, None, None, KEYS_STATS, KEYS_ALERT);
-        assert_eq!(ctx.per_floor[1].waiting, 1, "the upstairs agent counts");
+        assert_eq!(
+            ctx.per_floor[1].requires_action, 1,
+            "the upstairs agent counts"
+        );
         assert_eq!(ctx.gateway, Some(DaemonState::Down));
     }
 }

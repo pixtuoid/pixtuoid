@@ -27,7 +27,7 @@ fn full_scene_serialization_is_stable() {
     let idle = AgentId::from_transcript_path("/idle/sess.jsonl");
     let winding = AgentId::from_transcript_path("/wind/sess.jsonl");
 
-    // The five agents cover all three ActivityState variants (Active in both
+    // The five agents cover all three ActivityState variants (Running in both
     // ToolDetail shapes) plus a populated Option<SystemTime>, across two sources.
     r.apply(
         &mut scene,
@@ -91,7 +91,7 @@ fn full_scene_serialization_is_stable() {
         &mut scene,
         AgentEvent::UserActionRequest {
             agent_id: solo,
-            reason: "permission: Bash".into(),
+            reason: Some("permission: Bash".into()),
             tool_use_id: None,
         },
         at(4),

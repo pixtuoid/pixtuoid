@@ -349,7 +349,7 @@ fn a_too_small_slide_footers_the_destination_floor() {
     let cap = 16;
     let scene = scene_with(
         vec![
-            active("/d/0.jsonl", 0, "Grep x", t0()),
+            running("/d/0.jsonl", 0, "Grep x", t0()),
             slot(AgentId::from_transcript_path("/d/1.jsonl"), 1, cap, t0()),
         ],
         cap,
@@ -402,7 +402,7 @@ fn debug_walkable_getter_reflects_setter() {
 
 #[test]
 fn already_expired_active_pet_clears_on_render() {
-    let scene = scene_with(vec![active("/exp/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/exp/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
     r.set_active_pet(Some(PetState {
         petted_at: t0() - Duration::from_secs(3600), // long expired

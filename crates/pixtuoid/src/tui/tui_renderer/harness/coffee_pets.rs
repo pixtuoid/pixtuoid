@@ -154,7 +154,7 @@ fn injected_coffee_changes_desk_render() {
 
 #[test]
 fn no_pet_when_pets_disabled() {
-    let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![]);
     r.render(&scene, t0()).unwrap();
     assert!(r.drawn_pet().is_none(), "no pet when none enabled");
@@ -162,7 +162,7 @@ fn no_pet_when_pets_disabled() {
 
 #[test]
 fn pet_present_when_enabled() {
-    let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     assert!(r.drawn_pet().is_some(), "a cat should be placed");
@@ -170,7 +170,7 @@ fn pet_present_when_enabled() {
 
 #[test]
 fn pet_position_varies_over_its_roam() {
-    let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
     let mut seen = std::collections::HashSet::new();
     for step in 0..(pixtuoid_scene::PET_LONGEST_REST_MS + 10_000) / 500 {
@@ -192,7 +192,7 @@ fn pet_position_varies_over_its_roam() {
 
 #[test]
 fn petting_freezes_pet_position() {
-    let scene = scene_with(vec![active("/pet/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pet/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(100, 40, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     let PetHover {
@@ -210,7 +210,7 @@ fn petting_freezes_pet_position() {
 
 #[test]
 fn pet_walk_is_frame_stable() {
-    let scene = scene_with(vec![active("/pstab/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pstab/0.jsonl", 0, "Edit", t0())], 16);
     let mut r1 = build(160, 80, vec![PetKind::Cat]);
     let mut r2 = build(160, 80, vec![PetKind::Cat]);
     for step in 0..(pixtuoid_scene::PET_LONGEST_REST_MS + 10_000) / 500 {
@@ -227,7 +227,7 @@ fn pet_walk_is_frame_stable() {
 
 #[test]
 fn pet_walks_routed_ground_and_rests_on_walkable_floor() {
-    let scene = scene_with(vec![active("/pwalk/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pwalk/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(160, 80, vec![PetKind::Cat]);
     r.render(&scene, t0()).unwrap();
     let layout = r.cached_layout().expect("layout after prime").clone();
@@ -273,7 +273,7 @@ fn pet_walks_routed_ground_and_rests_on_walkable_floor() {
 fn pet_leg_boundary_no_pop() {
     // The two timestamps straddle the 40s leg boundary, where the snapped rest anchor
     // is also the next leg's snapped walk-start anchor.
-    let scene = scene_with(vec![active("/pbnd/0.jsonl", 0, "Edit", t0())], 16);
+    let scene = scene_with(vec![running("/pbnd/0.jsonl", 0, "Edit", t0())], 16);
     let mut r = build(160, 80, vec![PetKind::Cat]);
     r.render(&scene, t0() + Duration::from_millis(39_600))
         .unwrap();
@@ -294,7 +294,7 @@ fn pet_leg_boundary_no_pop() {
 #[test]
 fn pet_tooltip_shows_cooldown_reaction_for_cat_and_dog() {
     for (kind, word) in [(PetKind::Cat, "purr"), (PetKind::Dog, "woof")] {
-        let scene = scene_with(vec![active("/ck/0.jsonl", 0, "Edit", t0())], 16);
+        let scene = scene_with(vec![running("/ck/0.jsonl", 0, "Edit", t0())], 16);
         let mut r = build(140, 48, vec![kind]);
         r.render(&scene, t0()).unwrap();
         let PetHover { centre: pos, .. } = r.drawn_pet().expect("pet placed");

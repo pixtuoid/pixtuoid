@@ -832,14 +832,14 @@ fn a_grok_childs_parentless_next_start_is_readmitted_under_its_remembered_parent
 /// in place on its next `user_prompt_submit`, though that names no parent.
 #[test]
 fn a_walking_out_grok_childs_parentless_next_start_revives_it_under_its_parent() {
-    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, STALE_WAITING_TIMEOUT};
+    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, STALE_BLOCKED_TIMEOUT};
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let (parent, child_sess, child, started) = linked_grok_child(&mut r, &mut scene);
-    let sweep = started + STALE_WAITING_TIMEOUT + Duration::from_secs(1);
-    let mut busy = grok_hook("pre_tool_use", "parent-sess");
-    busy["toolName"] = "read_file".into();
-    apply_hook_payload(&mut r, &mut scene, busy, sweep - Duration::from_secs(1));
+    let sweep = started + STALE_BLOCKED_TIMEOUT + Duration::from_secs(1);
+    let mut running = grok_hook("pre_tool_use", "parent-sess");
+    running["toolName"] = "read_file".into();
+    apply_hook_payload(&mut r, &mut scene, running, sweep - Duration::from_secs(1));
     r.tick(&mut scene, sweep);
     assert!(scene.agents[&parent].exiting_at.is_none(), "parent swept");
     assert!(scene.agents[&child].exiting_at.is_some(), "child not swept");
@@ -1467,11 +1467,11 @@ fn a_subagents_start_just_inside_the_walkout_after_its_own_stop_is_refused() {
 }
 
 /// A subagent blocked on its own permission prompt keeps its delegating parent
-/// alive with it: no probe vouches either (Windows), and the parent's own Active
+/// alive with it: no probe vouches either (Windows), and the parent's own Running
 /// window would otherwise sweep both mid-gate.
 #[test]
 fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
-    use pixtuoid_core::state::reducer::STALE_ACTIVE_TIMEOUT;
+    use pixtuoid_core::state::reducer::STALE_TOOL_TIMEOUT;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let cc = CcTurns::new(&mut r, &mut scene);
@@ -1486,11 +1486,11 @@ fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
     cc.hook(&mut r, &mut scene, ask, t1 + Duration::from_secs(1));
     r.tick(
         &mut scene,
-        t1 + Duration::from_secs(1) + STALE_ACTIVE_TIMEOUT + Duration::from_secs(1),
+        t1 + Duration::from_secs(1) + STALE_TOOL_TIMEOUT + Duration::from_secs(1),
     );
-    assert!(cc.live(&scene), "the waiting subagent was swept");
+    assert!(cc.live(&scene), "the requires-action subagent was swept");
     assert!(
         scene.agents[&cc.root].exiting_at.is_none(),
-        "the parent waiting on its subagent's prompt was swept"
+        "the parent requires-action on its subagent's prompt was swept"
     );
 }

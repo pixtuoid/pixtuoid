@@ -55,7 +55,7 @@ pub const CHILD_END_RELINK_TTL: Duration = Duration::from_secs(300);
 /// How long a drained Task `tool_use_id` is remembered so a lagged JSONL
 /// replay of its Start cannot re-fire `enter_delegating`. After the drain the
 /// transcript's batched Start+End pair replays into an EMPTY set, so the
-/// first-insert gate reads it as a fresh dispatch and would clobber a Waiting
+/// first-insert gate reads it as a fresh dispatch and would clobber a RequiresAction
 /// the parent raised in the gap. Sized past the `scan_root` poll backstop
 /// (`DEFAULT_POLL_INTERVAL`);
 /// a `tool_use_id` is never legitimately re-dispatched, so generosity costs
@@ -155,7 +155,7 @@ pub(super) struct Correlation {
     /// [`HOOK_WINS_WINDOW`]'s job: omp's transcript writes the call BEFORE the
     /// approval request goes out, so the two Starts are separated by HUMAN
     /// approval latency and no dedup window can span them. The backstop TTL is
-    /// [`STALE_WAITING_TIMEOUT`](crate::state::reducer::STALE_WAITING_TIMEOUT) because that bounds how long they can straddle; past
+    /// [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT) because that bounds how long they can straddle; past
     /// it the cost is one HUD re-count. Nested (not `(AgentId, String)`-keyed)
     /// so the per-Start membership probe borrows `&str` without allocating and
     /// a life's eviction is one `remove`; swept in [`Self::gc_slow`], never the
@@ -334,7 +334,7 @@ impl Correlation {
     }
 
     /// The sweeps too costly for the per-event [`Self::gc`]: `counted_calls`
-    /// keeps entries for up to [`STALE_WAITING_TIMEOUT`](crate::state::reducer::STALE_WAITING_TIMEOUT), so its retain scans real
+    /// keeps entries for up to [`STALE_BLOCKED_TIMEOUT`](crate::state::reducer::STALE_BLOCKED_TIMEOUT), so its retain scans real
     /// state. Self-amortized to [`COUNTED_SWEEP_INTERVAL`] — callers may run
     /// this as often as they like.
     pub(super) fn gc_slow(&mut self, now: SystemTime) {
@@ -346,7 +346,7 @@ impl Correlation {
         }
         self.counted_swept_at = Some(now);
         self.counted_calls.retain(|_, calls| {
-            calls.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_WAITING_TIMEOUT));
+            calls.retain(|_, ts| is_fresh(now, *ts, super::reducer::STALE_BLOCKED_TIMEOUT));
             !calls.is_empty()
         });
     }
@@ -516,7 +516,7 @@ mod tests {
             .entry(young)
             .or_default()
             .insert("t2".into(), t0() + step);
-        corr.gc_slow(t0() + crate::state::reducer::STALE_WAITING_TIMEOUT);
+        corr.gc_slow(t0() + crate::state::reducer::STALE_BLOCKED_TIMEOUT);
         assert!(
             !corr.counted_calls.contains_key(&old),
             "the swept life's emptied submap is dropped with it"
