@@ -12,7 +12,7 @@ keywords.workspace     = true
 categories.workspace   = true
 # The plugins' type check and selftest contract: dev tooling beside the
 # templates `include_str!` bakes, which no build reads.
-exclude                = ["src/install/*.json", "src/install/.npmrc", "src/install/*.d.ts"]
+exclude                = ["src/install/*.json", "src/install/.npmrc", "src/install/*.d.ts", "src/install/*.pyi"]
 
 [lints]
 workspace = true
@@ -52,7 +52,7 @@ toml               = { workspace = true }
 toml_edit          = { workspace = true }
 # YAML parse+emit for the Hermes install target — the maintained yaml-rust
 # successor, serde_yaml and serde_yml both being abandoned. It data-preserves a
-# user's other config keys on merge but does NOT round-trip comments.
+# user's other config keys on rewrite but does NOT round-trip comments.
 saphyr             = "0.2.1"
 anyhow             = { workspace = true }
 tracing            = { workspace = true }

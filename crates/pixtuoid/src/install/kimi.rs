@@ -14,9 +14,8 @@
 //!   every `[[hooks]]` entry carries the identical command. `matcher` is OMITTED
 //!   (match every tool).
 //! - **Shell execution.** Kimi runs the `command` under a shell, so the OS forms
-//!   mirror Codex/CodeWhale via `hook_cmd::shell_hook_command`. (CAPTURE-GATED,
-//!   like Cursor: if a live run proves Kimi argv-execs the command WITHOUT a
-//!   shell, switch to `exec_hook_command` — the Hermes form.)
+//!   mirror Codex/CodeWhale via `hook_cmd::shell_hook_command` (CAPTURE-GATED,
+//!   like Cursor: no live run has shown Kimi argv-execs it WITHOUT a shell).
 
 use std::path::{Path, PathBuf};
 

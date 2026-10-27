@@ -889,6 +889,9 @@ mod tests {
         literal("grok.rs", "idle_prompt", IGNORE_ARM),
         literal("grok.rs", "task_complete", IGNORE_ARM),
         item("hermes.rs", "KEYS", LABEL_DETAIL),
+        item("hermes.rs", "resolve_hermes_home", PATH_AXIS),
+        item("hermes.rs", "expand_home", PATH_AXIS),
+        item("hermes.rs", "python_home", PATH_AXIS),
         item("omp.rs", "AGENT_SUBDIR", PATH_AXIS),
         item("omp.rs", "EXTENSIONS_SUBDIR", PATH_AXIS),
         item("omp.rs", "PROFILES_SUBDIR", PATH_AXIS),
@@ -1193,6 +1196,12 @@ mod tests {
                 "decode_omp_hook_payload",
                 "ty",
                 "DECODED_HOOK_EVENTS",
+            ),
+            (
+                "hermes.rs",
+                "decode_hermes_hook_payload",
+                "event",
+                "DECODED_EVENTS",
             ),
         ] {
             let src = std::fs::read_to_string(source_root().join(module)).expect("readable");

@@ -6,7 +6,7 @@
   "command": "just hermetic --record kimi",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 6
+    "blanked": 7
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/kimi/model-error.json",

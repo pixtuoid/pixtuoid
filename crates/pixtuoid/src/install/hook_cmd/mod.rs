@@ -1,6 +1,5 @@
 //! Hook-`command` quoting for CLIs whose hook runner SHELLS the command
-//! (`/bin/sh -c` on Unix, `cmd.exe /C` on Windows), plus the argv-exec variant
-//! for runners that word-split and exec directly.
+//! (`/bin/sh -c` on Unix, `cmd.exe /C` on Windows).
 
 use anyhow::Result;
 
@@ -20,7 +19,7 @@ pub(crate) fn windows_short_path(long: &str) -> Option<String> {
 }
 
 /// The shim's source/event flag tokens — the ONE spelling shared by the WRITERS
-/// and the READERS (`verify::shell_shim_ref`, `hermes::exec_shim_ref`). Both
+/// and the READER (`verify::shell_shim_ref`). Both
 /// surrounding spaces are part of the token, so every site splices/splits on the
 /// exact same bytes and a rename can't produce a compiler-invisible write↔read
 /// desync (a path with the un-stripped tail baked in reads as "shim missing").
@@ -54,48 +53,9 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
-/// The OS-correct hook `command` for a CLI that ARGV-EXECs the command
-/// (quote-aware word-split, NO shell). The env-prefix form would be treated as a
-/// program literally named `PIXTUOID_SOURCE=<source>`, so the source rides as the
-/// shim's `--source` FLAG instead.
-///
-/// - **Unix**: `'<path>' --source <source>` — the path single-quoted (Hermes
-///   honors POSIX quotes, so a spaced path stays one token).
-/// - **Windows**: BARE `<path> --source <source>`. Hermes's Windows arg-splitting
-///   is unverified; the bare form is the safest for any splitter and mirrors the
-///   Codex/Reasonix Windows form.
-///
-/// `source` is a registered source name: `every_registered_source_name_is_a_plain_identifier`
-/// pins it shell/cmd-safe, so it splices unquoted.
-pub(crate) fn exec_hook_command(path: &str, source: &str) -> Result<String> {
-    #[cfg(windows)]
-    {
-        windows::windows_bare_hook_command(path, source)
-    }
-    #[cfg(unix)]
-    {
-        Ok(format!(
-            "{}{SOURCE_FLAG}{source}",
-            unix::shell_single_quote(path)
-        ))
-    }
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-
-    #[test]
-    fn exec_form_quotes_path_and_appends_source_flag() {
-        assert_eq!(
-            exec_hook_command("/opt/bin/pixtuoid-hook", "hermes").unwrap(),
-            "'/opt/bin/pixtuoid-hook' --source hermes"
-        );
-        assert_eq!(
-            exec_hook_command("/Users/Jane Doe/bin/pixtuoid-hook", "hermes").unwrap(),
-            "'/Users/Jane Doe/bin/pixtuoid-hook' --source hermes"
-        );
-    }
 
     #[test]
     fn valid_source_keeps_the_env_prefix_form_byte_for_byte() {

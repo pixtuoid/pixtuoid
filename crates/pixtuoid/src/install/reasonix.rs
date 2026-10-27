@@ -61,7 +61,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: None,
+    pickup: None,
     legacy: Some(LegacyConfig {
         path: settings_path,
         strip: merge::flat_json_uninstall,
@@ -310,7 +310,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
             YES.as_ref(),
         ])?;
     }
-    host_plugin::remove_if_ours(root, config)?;
+    host_plugin::remove_if_ours(root, config, host_plugin::names_us)?;
     Ok(if installed {
         Unregistered::Removed
     } else {

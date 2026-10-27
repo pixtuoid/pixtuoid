@@ -19,6 +19,37 @@
       "consumes": []
     },
     {
+      "source": "hermes",
+      "file": "hermes_plugin.py",
+      "registers": [
+        "on_session_start",
+        "pre_tool_call",
+        "pre_approval_request",
+        "post_tool_call",
+        "on_session_end",
+        "on_session_finalize"
+      ],
+      "consumes": [],
+      "fields": [
+        "session_id",
+        "cwd",
+        "tool_name",
+        "tool_call_id",
+        "description",
+        "model"
+      ],
+      "detail_keys": [
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "url"
+      ],
+      "outside_a_turn": [
+        "on_session_finalize"
+      ]
+    },
+    {
       "source": "omp",
       "file": "omp_extension.ts",
       "registers": [

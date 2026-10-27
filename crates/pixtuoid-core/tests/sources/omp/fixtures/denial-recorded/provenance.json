@@ -7,6 +7,6 @@
   "note": "hook sessionFile home path redacted to /Users/dev. interactive TUI driven under a pty; Down+Enter denies the always-ask gate, and the transcript carries the isError toolResult backstop",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 72
+    "blanked": 73
   }
 }

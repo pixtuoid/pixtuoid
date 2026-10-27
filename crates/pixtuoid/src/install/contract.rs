@@ -6,7 +6,7 @@
 
 use serde_json::{Value, json};
 
-use crate::install::target::{DSH, OMP, OPENCLAW, OPENCODE, Target};
+use crate::install::target::{DSH, HERMES, OMP, OPENCLAW, OPENCODE, Target};
 
 /// One plugin's row: its template, the host events it registers, and those it
 /// consumes itself and never forwards.
@@ -23,12 +23,17 @@ fn row(target: &Target, file: &str) -> Value {
 fn the_plugin_contract_is_the_committed_file() {
     let mut opencode = row(&OPENCODE, "opencode_plugin.ts");
     opencode["data_fields"] = json!(pixtuoid_core::source::opencode::DECODED_DATA_FIELDS);
+    let mut hermes = row(&HERMES, "hermes_plugin.py");
+    hermes["fields"] = json!(pixtuoid_core::source::hermes::DECODED_FIELDS);
+    hermes["detail_keys"] = json!(pixtuoid_core::source::hermes::DETAIL_KEYS);
+    hermes["outside_a_turn"] = json!(pixtuoid_core::source::hermes::OUTSIDE_A_TURN);
     let contract = json!({
         "pid_key": pixtuoid_core::source::decoder::PID_STAMP,
         "source_flag": super::hook_cmd::SOURCE_FLAG.trim(),
         "hook_placeholder": super::merge::HOOK_PLACEHOLDER,
         "plugins": [
             row(&DSH, "dsh_plugin.mjs"),
+            hermes,
             row(&OMP, "omp_extension.ts"),
             row(&OPENCLAW, "openclaw_plugin.js"),
             opencode,

@@ -1,2 +1,2 @@
 {"hook_event_name":"SessionStart","session_id":"session_2d6b1d73-ae28-426d-a1ac-bedd5c123a20","cwd":"/private/tmp/pixtuoid-capture/proj","client_type":"","source":"","model":"__kimi_env_model__","profile":"","_shim_ts_ms":1793026981025,"_pixtuoid_source":"kimi","_pid":7091}
-{"hook_event_name":"StopFailure","session_id":"session_2d6b1d73-ae28-426d-a1ac-bedd5c123a20","cwd":"/private/tmp/pixtuoid-capture/proj","client_type":"","error_type":"","error_message":"","_shim_ts_ms":1793026981107,"_pixtuoid_source":"kimi","_pid":7091}
+{"hook_event_name":"StopFailure","session_id":"session_2d6b1d73-ae28-426d-a1ac-bedd5c123a20","cwd":"","client_type":"","error_type":"","error_message":"","_shim_ts_ms":1793026981107,"_pixtuoid_source":"kimi","_pid":7091}
