@@ -847,8 +847,8 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
             // Each `cursor-agent` invocation is a NEW session_id, so a swept
             // session never walks back in.
             resurrects_on_prompt: false,
-            // A `Task` dispatch gets NO `postToolUse`, and its children are separate
-            // unlinkable sessions.
+            // A child's events ride its own session, so the parent's goes quiet
+            // until its `Task` post.
             delegations_are_hook_silent: true,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,

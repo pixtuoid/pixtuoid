@@ -20,11 +20,11 @@
 //!   stamped `claude-code`, or unstamped by an install without the env prefix.
 //!   `decoder`'s cross-fire guard drops every one on `cursor_version`. Lossless —
 //!   the `cursor`-stamped copy carries the whole arc.
-//! - **Subagents render FLAT: the parent-link is genuinely absent.** Each child
-//!   is an INDEPENDENT session, `subagentStart`/`subagentStop` never fire
-//!   (capture-verified: 0), the `Task` dispatch carries only the PARENT's id, and
-//!   child events carry no `parentId`. Getting no `sessionEnd`, children age out
-//!   via the idle stale-sweep.
+//! - **A child is its own session, linked late.** `subagentStart`/`subagentStop`
+//!   and a child `sessionStart` never fire, so the child registers on its first
+//!   tool event; the wire names its parent only in its posts' `transcript_path`,
+//!   nested under the parent's (`nested_parent`). Getting no `sessionEnd`, a
+//!   child ends with its parent's `Task`.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
@@ -35,7 +35,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, SUBAGENTS_DIR, ellipsize, non_empty};
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -120,13 +120,23 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
         // Without this arm a failed tool's ToolUseStart never ends under `-p`
         // (where `stop` doesn't fire) and the sprite lingers Running.
-        "postToolUse" | "postToolUseFailure" => Ok(vec![
-            identity(),
-            AgentEvent::ToolUseEnd {
+        "postToolUse" | "postToolUseFailure" => Ok(nested_parent(obj)
+            .map(|parent| AgentEvent::SessionStart {
                 agent_id,
-                tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
-            },
-        ]),
+                source: SOURCE_NAME.to_string(),
+                session_id: key.to_string(),
+                cwd: cwd.into(),
+                parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
+            })
+            .into_iter()
+            .chain([
+                identity(),
+                AgentEvent::ToolUseEnd {
+                    agent_id,
+                    tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
+                },
+            ])
+            .collect()),
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
         "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
@@ -167,6 +177,17 @@ fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     }
     const KEYS: &[&str] = &["command", "file_path", "path", "pattern", "url"];
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
+}
+
+/// The session a subagent's transcript nests under,
+/// `<parent>/subagents/<child>.jsonl`: the wire names a child's parent nowhere
+/// else, and only on the child's own posts.
+fn nested_parent(obj: &HookObject) -> Option<&str> {
+    let dir = std::path::Path::new(obj.get("transcript_path")?.as_str()?).parent()?;
+    if dir.file_name()? != SUBAGENTS_DIR {
+        return None;
+    }
+    dir.parent()?.file_name()?.to_str()
 }
 
 #[cfg(test)]
@@ -221,6 +242,42 @@ mod tests {
             b.agent_id(),
             "two sessions in one repo must be distinct"
         );
+    }
+
+    /// A child's transcript nests under its parent's, which is the one place
+    /// the wire names the parent: the child's tool events carry the path.
+    #[test]
+    fn a_tool_event_from_a_nested_transcript_links_its_session_to_the_parent() {
+        let child = |path: Value| {
+            decode_all(json!({
+                "hook_event_name": "postToolUse", "session_id": "child",
+                "workspace_roots": ["/repo"], "tool_use_id": "t",
+                "transcript_path": path,
+            }))
+        };
+        let linked = child(json!(
+            "/h/.cursor/projects/p/agent-transcripts/parent/subagents/child.jsonl"
+        ));
+        assert!(
+            matches!(
+                linked.first(),
+                Some(AgentEvent::SessionStart { agent_id, parent_id: Some(p), .. })
+                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "child")
+                        && *p == AgentId::from_parts(SOURCE_NAME, "parent")
+            ),
+            "{linked:?}"
+        );
+        for unnested in [
+            json!("/h/.cursor/projects/p/agent-transcripts/child/child.jsonl"),
+            json!(null),
+        ] {
+            assert!(
+                !child(unnested.clone())
+                    .iter()
+                    .any(|e| matches!(e, AgentEvent::SessionStart { .. })),
+                "{unnested}"
+            );
+        }
     }
 
     /// The wire's `tool_use_id` pairs a start with its post.
