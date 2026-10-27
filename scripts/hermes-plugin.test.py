@@ -18,7 +18,9 @@ from pathlib import Path
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PLUGIN_SOURCE = REPO_ROOT / "crates" / "pixtuoid" / "src" / "install" / "hermes_plugin.py"
+PLUGIN_SOURCE = (
+    REPO_ROOT / "crates" / "pixtuoid" / "src" / "install" / "hermes_plugin.py"
+)
 # Must match `HOOK_PLACEHOLDER` in `crates/pixtuoid/src/install/hermes.rs`.
 HOOK_PLACEHOLDER = '"{{HOOK_PATH_JSON}}"'
 POSIX = os.name == "posix"
@@ -28,7 +30,9 @@ JITTER_S = 1.5
 def _shim_bound_s():
     """The real shim's own bound, read from its authority."""
     transport = REPO_ROOT / "crates" / "pixtuoid-hook" / "src" / "transport.rs"
-    found = re.search(r"WRITE_TIMEOUT_MS: u64 = (\d+);", transport.read_text(encoding="utf-8"))
+    found = re.search(
+        r"WRITE_TIMEOUT_MS: u64 = (\d+);", transport.read_text(encoding="utf-8")
+    )
     if found is None:
         raise AssertionError(f"{transport} declares no WRITE_TIMEOUT_MS")
     return int(found.group(1)) / 1000
@@ -80,8 +84,12 @@ class PluginTest(unittest.TestCase):
         source = PLUGIN_SOURCE.read_text(encoding="utf-8")
         self.assertEqual(source.count(HOOK_PLACEHOLDER), 1, "one hook placeholder")
         rendered = self.dir / "pixtuoid_hermes.py"
-        rendered.write_text(source.replace(HOOK_PLACEHOLDER, json.dumps(str(hook_path))))
-        spec = importlib.util.spec_from_file_location(f"pixtuoid_hermes_{id(self)}", rendered)
+        rendered.write_text(
+            source.replace(HOOK_PLACEHOLDER, json.dumps(str(hook_path)))
+        )
+        spec = importlib.util.spec_from_file_location(
+            f"pixtuoid_hermes_{id(self)}", rendered
+        )
         if spec is None or spec.loader is None:
             self.fail(f"{rendered} does not load as a module")
         module = importlib.util.module_from_spec(spec)
@@ -99,7 +107,9 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(set(ctx.hooks), set(module.FORWARD))
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
-    def test_it_forwards_the_allowlist_and_no_prompt_tool_output_or_other_argument(self):
+    def test_it_forwards_the_allowlist_and_no_prompt_tool_output_or_other_argument(
+        self,
+    ):
         _, ctx = self.plugin(self.recorder())
         returned = ctx.hooks["pre_tool_call"](
             session_id="s1",
@@ -131,7 +141,9 @@ class PluginTest(unittest.TestCase):
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
     def test_a_finalize_outside_any_turn_neither_asks_for_nor_sends_a_cwd(self):
         # Asking raises here, as a context outside any session's turn has no cwd.
-        _, ctx = self.plugin(self.recorder(), FakeCtx(cwd=RuntimeError("outside a turn")))
+        _, ctx = self.plugin(
+            self.recorder(), FakeCtx(cwd=RuntimeError("outside a turn"))
+        )
         ctx.hooks["on_session_finalize"](session_id="s1")
         [(_, payload)] = self.sent()
         self.assertEqual(payload["hook_event_name"], "on_session_finalize")
@@ -140,27 +152,40 @@ class PluginTest(unittest.TestCase):
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
     def test_each_event_reaches_the_shim_before_hermes_can_fire_the_next(self):
         _, ctx = self.plugin(self.recorder(hold_s=0.1))
-        ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal", tool_call_id="c1")
-        ctx.hooks["post_tool_call"](session_id="s1", tool_name="terminal", tool_call_id="c1")
-        self.assertEqual(self.trace.read_text().split(), ["begin", "end", "begin", "end"])
+        ctx.hooks["pre_tool_call"](
+            session_id="s1", tool_name="terminal", tool_call_id="c1"
+        )
+        ctx.hooks["post_tool_call"](
+            session_id="s1", tool_name="terminal", tool_call_id="c1"
+        )
         self.assertEqual(
-            [p["hook_event_name"] for _, p in self.sent()], ["pre_tool_call", "post_tool_call"]
+            self.trace.read_text().split(), ["begin", "end", "begin", "end"]
+        )
+        self.assertEqual(
+            [p["hook_event_name"] for _, p in self.sent()],
+            ["pre_tool_call", "post_tool_call"],
         )
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
-    def test_a_shim_that_spends_its_bound_and_leaves_a_process_behind_blocks_no_longer(self):
+    def test_a_shim_that_spends_its_bound_and_leaves_a_process_behind_blocks_no_longer(
+        self,
+    ):
         # The leftover holds whatever stdio it inherited: a pipe there would make
         # the plugin wait on it, long past the shim's own exit.
         hook = self.hook(f"cat >/dev/null\n(sleep 5 &)\nsleep {SHIM_BOUND_S}\nexit 0\n")
         _, ctx = self.plugin(hook)
         start = time.monotonic()
-        self.assertIsNone(ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal"))
+        self.assertIsNone(
+            ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal")
+        )
         self.assertLess(time.monotonic() - start, SHIM_BOUND_S + JITTER_S)
 
     def test_an_absent_shim_neither_raises_nor_waits(self):
         _, ctx = self.plugin(self.dir / "absent")
         start = time.monotonic()
-        self.assertIsNone(ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal"))
+        self.assertIsNone(
+            ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal")
+        )
         self.assertLess(time.monotonic() - start, JITTER_S)
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
@@ -179,9 +204,10 @@ class PluginTest(unittest.TestCase):
     def test_a_platform_with_a_console_flag_spawns_the_shim_without_a_window(self):
         sentinel = 0x5A5A
         _, ctx = self.plugin(self.dir / "absent")
-        with mock.patch.object(subprocess, "CREATE_NO_WINDOW", sentinel, create=True), mock.patch.object(
-            subprocess, "run"
-        ) as run:
+        with (
+            mock.patch.object(subprocess, "CREATE_NO_WINDOW", sentinel, create=True),
+            mock.patch.object(subprocess, "run") as run,
+        ):
             ctx.hooks["on_session_start"](session_id="s1")
         self.assertEqual(run.call_args.kwargs["creationflags"], sentinel)
 

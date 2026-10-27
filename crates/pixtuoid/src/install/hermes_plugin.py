@@ -10,6 +10,7 @@
 # (`transport::WRITE_TIMEOUT`, invariant #5).
 #
 # HOOK_PATH is baked in at install time (a JSON-encoded absolute path).
+import contextlib
 import json
 import os
 import subprocess
@@ -62,11 +63,9 @@ def _send(payload):
 
 def _forwarder(ctx, event):
     def forward(**kwargs):
-        try:
+        with contextlib.suppress(Exception):
             cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()
             _send(_payload(event, cwd, kwargs))
-        except Exception:
-            pass
 
     return forward
 
