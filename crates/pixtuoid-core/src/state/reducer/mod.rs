@@ -30,8 +30,8 @@ const _: () = assert!(EXIT_GRACE_WINDOW.as_nanos() < STRAGGLER_TTL.as_nanos());
 #[doc(hidden)]
 pub const B1_CASCADE_GRACE: Duration = Duration::from_millis(2500);
 
-/// Stale windows: `STALE_TOOL_TIMEOUT` (silence mid-tool is death), `STALE_IDLE_TIMEOUT`,
-/// `STALE_BLOCKED_TIMEOUT` (a prompt, a hook-silent delegation, a blocked relative);
+/// Stale windows: `STALE_TOOL_TIMEOUT` (silence mid-tool is death), `STALE_IDLE_TIMEOUT` (never
+/// reap a human on a break), `STALE_BLOCKED_TIMEOUT` (a prompt, a hook-silent delegation);
 /// unknown-cwd is a seeding ghost.
 #[doc(hidden)]
 pub const STALE_TOOL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -77,8 +77,8 @@ fn stale_threshold_with_caps(
         // A Delegating slot on a source whose delegations are hook-silent
         // (in-process subagents that fire no hooks) emits NOTHING until the
         // dispatch tool's PostToolUse — `last_event_at` freezes for the whole
-        // delegation, so a long run would be swept mid-turn on the Running
-        // timer. Keyed on the typed `ToolKind::Task`, never the display string:
+        // delegation, so a long run would be swept mid-turn on
+        // `STALE_TOOL_TIMEOUT`. Keyed on the typed `ToolKind::Task`, never the display string:
         // a Generic tool spelling "Delegating" is not a delegation.
         ActivityState::Running {
             kind: ToolKind::Task,

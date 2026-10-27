@@ -238,11 +238,11 @@ impl ToolGlowColors {
 /// Name-badge, tooltip, and neon-brand UI colors.
 #[derive(Debug, Clone)]
 pub struct UiColors {
-    /// Work in flight: an agent mid-turn, or a gateway with a turn in flight.
+    /// Work in flight: an agent's tool call, or a gateway's turn.
     pub label_running: Rgb,
     /// The `ok` tone, not a slot state: a connected CLI, a checked checkbox.
     pub label_ok: Rgb,
-    /// An agent that requires action: its name badge, footer rung, board count and lamp.
+    /// The needs-you tone: an agent that requires action.
     pub label_requires_action: Rgb,
     /// The alarm: a fault or a dead connection.
     pub label_warn: Rgb,

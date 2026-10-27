@@ -114,7 +114,7 @@ fn stale_running_agent_uses_shorter_timeout_than_idle() {
     use pixtuoid_core::state::reducer::{STALE_IDLE_TIMEOUT, STALE_TOOL_TIMEOUT};
     assert!(
         STALE_TOOL_TIMEOUT < STALE_IDLE_TIMEOUT,
-        "running timeout should be shorter than idle"
+        "`STALE_TOOL_TIMEOUT` should be shorter than `STALE_IDLE_TIMEOUT`"
     );
 
     let mut scene = SceneState::uniform(4);
@@ -1292,7 +1292,7 @@ fn running_subagent_keeps_parent_alive_via_jsonl_events() {
 }
 
 #[test]
-fn reasonix_delegating_slot_survives_the_running_timeout() {
+fn reasonix_delegating_slot_survives_the_tool_timeout() {
     use pixtuoid_core::source::ToolDetail;
     use pixtuoid_core::state::reducer::{STALE_BLOCKED_TIMEOUT, STALE_TOOL_TIMEOUT};
     let mut scene = SceneState::uniform(4);

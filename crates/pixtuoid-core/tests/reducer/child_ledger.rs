@@ -1469,7 +1469,7 @@ fn a_subagents_start_just_inside_the_walkout_after_its_own_stop_is_refused() {
 }
 
 /// A subagent blocked on its own permission prompt keeps its delegating parent
-/// alive with it: no probe vouches either (Windows), and the parent's own Running
+/// alive with it: no probe vouches either (Windows), and the parent's own `STALE_TOOL_TIMEOUT`
 /// window would otherwise sweep both mid-gate.
 #[test]
 fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
