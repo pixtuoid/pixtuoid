@@ -23,7 +23,7 @@ redacted cwd and an invented one look alike. `origin` is `recorded`, and no othe
 
 | origin | required | means |
 | --- | --- | --- |
-| `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads unless `deidentified` exempts them; the recorder writes this file itself. |
+| `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
 `deidentified` in the provenance says how many subtrees went. A plugin roster, a
@@ -38,10 +38,7 @@ blank in that fixture: a decoder later extended to read it meets the neutral val
 there and its golden encodes "absent" — re-record the scenario when a decoder
 grows a read. The other direction is cheap: `just restrip-fixtures` runs the same
 strip over the committed corpus, offline and unbilled, so a field a decoder
-STOPPED reading is one pass from gone. A capture that exists to pin a wire
-premise the decoder drops on purpose — a test reads it off the raw bytes, which
-no probe can see — declares `"deidentified": {"method": "none", "why": …}` and
-both paths leave it alone; the gate refuses the exemption without its reason.
+STOPPED reading is one pass from gone.
 
 The table above is not the schema — [`Provenance`](../../../src/harness/provenance.rs)
 is: a record it does not parse fails every test that walks the captures, and
@@ -94,11 +91,10 @@ The recorder's `scan_for_pii` refuses the operator's OWN identity — `$HOME`/
 `$USER`/`$LOGNAME` and the git name, the one set gitleaks cannot know — and
 `just fixture-pii` re-scans the committed tree by value shape; neither reaches a
 value it cannot name, which is why a capture still gets read. One invariant sits
-over both, in `just test`: outside a capture pinned in `EXEMPT_FROM_STRIP`, no
-identity key (`user_email`, `account_id`, `token`, …) may hold a value — the
-strip guarantees it, and this asserts it on the bytes. Editing a fixture to put
-one back reds that test; an exempt capture is where a human read is the only
-check, which is why the exempt set is pinned as an exact list. No size heuristic can stand in for that read either:
+over both, in `just test`: no identity key (`user_email`, `account_id`,
+`token`, …) may hold a value — the strip guarantees it, and this asserts it on
+the bytes. Editing a fixture to put one back reds that test. No size heuristic
+can stand in for a read either:
 legitimate copilot lines run to 39 KB, wider than the `world_state` dump that had
 to go. Redacting a READ field is the expensive case — re-run the golden;
 byte-identical means the redaction cost no evidence.

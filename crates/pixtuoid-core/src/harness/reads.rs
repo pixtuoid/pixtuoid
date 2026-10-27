@@ -22,7 +22,7 @@ pub struct Strip {
     pub blanked: usize,
     /// Files left whole, each with its first parse error: half-rewriting one
     /// would corrupt the bytes. The committed-tree gate refuses to skip such a
-    /// line at all (`no_identity_key_holds_a_value_outside_a_pinned_exemption`).
+    /// line at all (`no_identity_key_holds_a_value`).
     pub not_json: Vec<(PathBuf, String)>,
 }
 
@@ -128,9 +128,6 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
         let path = capture.provenance_path();
         let mut record = Provenance::read(&path)?;
         let Provenance::Recorded(r) = &mut record;
-        if !r.strips() {
-            continue;
-        }
         let files = capture.jsonl_files();
         if files.is_empty() {
             continue;
@@ -720,7 +717,7 @@ mod tests {
             assert_eq!(scenario_events(source, &files), before, "{label}");
             let recorded = Provenance::read_if_any(&capture.provenance_path())
                 .expect("a committed record parses")
-                .is_some_and(|record| record.strips());
+                .is_some();
             assert!(
                 !recorded || strip.blanked == 0,
                 "{label}: {} subtrees no decoder reads any more; `just restrip-fixtures`",
@@ -766,27 +763,6 @@ mod tests {
             .collect();
         out.sort();
         out
-    }
-
-    #[test]
-    fn strip_corpus_honors_an_exemption_the_provenance_declares() {
-        let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
-        let prov = scenario.join("provenance.json");
-        let mut record: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&prov).expect("read")).expect("json");
-        record["deidentified"] = serde_json::json!({
-            "method": "none",
-            "why": "pins a wire premise the decoder drops on purpose"
-        });
-        std::fs::write(&prov, serde_json::to_string_pretty(&record).expect("json")).expect("write");
-        let before = bytes_of(&scenario);
-        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
-        assert_eq!(
-            bytes_of(&scenario),
-            before,
-            "an exempt capture keeps its bytes and its record"
-        );
     }
 
     #[test]

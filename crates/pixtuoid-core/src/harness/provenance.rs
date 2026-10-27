@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "origin", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Provenance {
     /// Real wire bytes, a real CLI's against a scripted model where `aimock`
-    /// and `script` name it, stripped of every subtree no decoder reads unless
-    /// `deidentified` exempts them; the recorder writes this file itself.
+    /// and `script` name it, stripped of every subtree no decoder reads; the
+    /// recorder writes this file itself.
     Recorded(Box<Recorded>),
 }
 
@@ -66,14 +66,6 @@ pub enum Deidentified {
         /// How many, summed over every pass.
         blanked: usize,
     },
-    /// Left as recorded, declared by hand for a capture that pins a wire
-    /// premise the decoder drops on purpose: a test that reads raw bytes is
-    /// invisible to the probe the strip runs.
-    #[serde(rename = "none")]
-    Exempt {
-        /// Why no strip may touch it.
-        why: NonEmpty,
-    },
 }
 
 /// What a recording's decoders dropped, by discriminator; derived and judged
@@ -96,14 +88,6 @@ pub struct Dropped {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(try_from = "String")]
 pub struct NonEmpty(String);
-
-impl Recorded {
-    /// Whether the strip applies: not declared exempt, so its committed bytes
-    /// hold only what a decoder reads.
-    pub(crate) fn strips(&self) -> bool {
-        !matches!(self.deidentified, Some(Deidentified::Exempt { .. }))
-    }
-}
 
 impl NonEmpty {
     /// The string.
@@ -179,19 +163,6 @@ impl Provenance {
     pub fn dropped(&self) -> Option<&Dropped> {
         self.recorded().dropped.as_ref()
     }
-
-    /// Whether the strip applies, as [`Recorded::strips`].
-    pub(crate) fn strips(&self) -> bool {
-        self.recorded().strips()
-    }
-
-    /// The exemption it declares, if any.
-    pub fn exemption(&self) -> Option<&NonEmpty> {
-        match self.recorded().deidentified.as_ref()? {
-            Deidentified::Exempt { why } => Some(why),
-            Deidentified::Stripped { .. } => None,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -216,9 +187,14 @@ mod tests {
         assert!(parse(&stray).is_err(), "a recording's stray key");
         let method = RECORDED.replace(
             r#""command":"x""#,
-            r#""command":"x","deidentified":{"method":"none","why":"w","blanked":1}"#,
+            r#""command":"x","deidentified":{"method":"decoder-allowlist","blanked":1,"why":"w"}"#,
         );
         assert!(parse(&method).is_err(), "a stray key inside `deidentified`");
+        let unstripped = RECORDED.replace(
+            r#""command":"x""#,
+            r#""command":"x","deidentified":{"method":"none","why":"w"}"#,
+        );
+        assert!(parse(&unstripped).is_err(), "every capture is stripped");
     }
 
     /// Without it, a required key made optional passes every test once the
@@ -244,11 +220,6 @@ mod tests {
     #[test]
     fn a_blank_required_string_fails_to_parse() {
         assert!(parse(&RECORDED.replace(r#""cli":"c""#, r#""cli":" ""#)).is_err());
-        let why = RECORDED.replace(
-            r#""command":"x""#,
-            r#""command":"x","deidentified":{"method":"none","why":"\n"}"#,
-        );
-        assert!(parse(&why).is_err(), "an exemption without its reason");
     }
 
     #[test]
@@ -289,24 +260,6 @@ mod tests {
             RECORDED,
             "an unset field writes no key"
         );
-        assert!(p.strips());
-        assert_eq!(p.exemption(), None);
-    }
-
-    #[test]
-    fn a_recording_not_yet_stripped_is_stripped() {
-        assert!(parse(RECORDED).expect("parses").strips());
-    }
-
-    #[test]
-    fn an_exempt_recording_is_not_stripped_and_says_why() {
-        let p = parse(&RECORDED.replace(
-            r#""command":"x""#,
-            r#""command":"x","deidentified":{"method":"none","why":"raw bytes"}"#,
-        ))
-        .expect("parses");
-        assert!(!p.strips());
-        assert_eq!(p.exemption().map(NonEmpty::as_str), Some("raw bytes"));
     }
 
     #[test]

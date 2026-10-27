@@ -443,7 +443,7 @@ mod recorder {
             std::process::exit(2);
         }
         // Before the billed turn: a record that does not parse fails here.
-        let exempt = exemption(&dest)?;
+        Provenance::read_if_any(&dest.join(PROVENANCE))?;
 
         let ws = match &plan.workspace {
             Some(ws) => ws.as_path().to_path_buf(),
@@ -620,7 +620,7 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let (deidentified, not_json) = deidentify(&source, &wrote, exempt)?;
+        let (deidentified, not_json) = deidentify(&source, &wrote)?;
         report_not_json(&not_json);
         write_provenance(
             &dest,
@@ -633,12 +633,8 @@ mod recorder {
         for p in &wrote {
             println!("wrote {} ({} lines)", p.display(), count_lines(p));
         }
-        match &deidentified {
-            Deidentified::Stripped { blanked } => {
-                println!("blanked {blanked} subtrees no decoder reads");
-            }
-            Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
-        }
+        let Deidentified::Stripped { blanked } = &deidentified;
+        println!("blanked {blanked} subtrees no decoder reads");
         let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
         if end != ProcessExit::Exited(0) {
             eprintln!("WARNING: the CLI exited ({end}) — this capture may be truncated");
@@ -658,21 +654,10 @@ mod recorder {
     fn deidentify(
         source: &str,
         files: &[PathBuf],
-        exemption: Option<NonEmpty>,
     ) -> std::io::Result<(Deidentified, Vec<(PathBuf, String)>)> {
-        Ok(match exemption {
-            Some(why) => (Deidentified::Exempt { why }, Vec::new()),
-            None => {
-                let strip = reads::strip_unread(source, files)?;
-                let blanked = strip.blanked;
-                (Deidentified::Stripped { blanked }, strip.not_json)
-            }
-        })
-    }
-
-    /// The exemption the record in `dest` declares, if it holds one.
-    fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
-        Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
+        let strip = reads::strip_unread(source, files)?;
+        let blanked = strip.blanked;
+        Ok((Deidentified::Stripped { blanked }, strip.not_json))
     }
 
     /// [`promote`] on this host: refused where it may not write the corpus.
@@ -729,7 +714,6 @@ mod recorder {
         }
         let dest = root.join(scenario.fixture);
         let committed = Provenance::read_if_any(&dest.join(PROVENANCE))?;
-        let exempt = committed.as_ref().and_then(|p| p.exemption().cloned());
         // Stripped apart from the fixture, which it replaces only if it differs.
         let staged = tempfile::tempdir()?;
         let mut fresh = Vec::new();
@@ -744,11 +728,8 @@ mod recorder {
             fresh.push(to);
         }
         // Before the strip: what the decoders drop is what it blanks.
-        let dropped = match exempt {
-            None => Some(Dropped::of_files(&manifest.source, &fresh)?),
-            Some(_) => None,
-        };
-        let (deidentified, not_json) = deidentify(&manifest.source, &fresh, exempt)?;
+        let dropped = Some(Dropped::of_files(&manifest.source, &fresh)?);
+        let (deidentified, not_json) = deidentify(&manifest.source, &fresh)?;
         // Named where the fixture keeps it: the staged copy is gone by then.
         for (file, error) in &not_json {
             let kept = dest.join(slashed_under(staged.path(), file)?);
@@ -1768,34 +1749,6 @@ mod recorder {
             assert!(
                 promote(&p.run, &p.root, &needles(), &mut std::io::sink()).is_err(),
                 "the operator's name is refused"
-            );
-        }
-
-        #[test]
-        fn a_promoted_run_keeps_its_fixtures_exemption() {
-            let why = "a test reads the raw bytes";
-            let p = promotable(
-                serde_json::json!({
-                    "origin": "recorded",
-                    "deidentified": {"method": "none", "why": why},
-                }),
-                |_| {},
-            );
-            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
-            let (bytes, record) = written(&p.dest);
-            assert!(
-                bytes.contains("unread"),
-                "an exempt capture is not stripped"
-            );
-            assert_eq!(
-                record.deidentified,
-                Some(Deidentified::Exempt {
-                    why: why.try_into().expect("a reason")
-                })
-            );
-            assert_eq!(
-                record.dropped, None,
-                "an unstripped capture drops nothing it could baseline"
             );
         }
 

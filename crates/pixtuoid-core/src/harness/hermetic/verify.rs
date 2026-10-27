@@ -19,7 +19,7 @@ use super::{
     Surface, TURN_BUDGET, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
-use crate::harness::provenance::{Dropped, Provenance};
+use crate::harness::provenance::Dropped;
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
@@ -489,15 +489,11 @@ const HOOK: &str = "hook:";
 /// recording is `reads::strip_unread`'s fixed point, so its non-blank leaves
 /// are the read fields it recorded with a value, the shim's stamps aside; one
 /// read but recorded blank is not seen.
-/// A capture the strip skips proves nothing about reads.
 pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
     let corpus = crate::harness::sources_root();
     let mut reads = Fields::default();
     for capture in captures(&corpus) {
         if capture.source != p.source {
-            continue;
-        }
-        if !Provenance::read(&capture.provenance_path())?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {

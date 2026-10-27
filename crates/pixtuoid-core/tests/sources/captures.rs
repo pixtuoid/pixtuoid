@@ -278,12 +278,6 @@ fn a_recorded_captures_cli_is_its_trees_binary() {
     }
 }
 
-/// Every capture exempt from the strip, by its layout path. Pinned as an exact
-/// set so an exemption is a reviewed diff here, never a quiet key in a record:
-/// an exempt capture is the one path inventory data the gitleaks backstop
-/// cannot see has back into the tree.
-const EXEMPT_FROM_STRIP: &[&str] = &[];
-
 /// Keys whose VALUE is an operator's account rather than the wire's content. Not
 /// a guess at what a vendor might name one — the strip already removes every field
 /// no decoder reads, so this is a tripwire on the names that have actually reached
@@ -321,12 +315,12 @@ fn filled_identity_keys(v: &serde_json::Value, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Outside the pinned exemptions, no identity key holds a value — the invariant
-/// the strip provides, asserted on the bytes rather than trusted. It fires on the
-/// three ways one could come back: an exempt capture nobody reviewed, a hand edit,
-/// and a decoder that starts reading such a field so the strip keeps it.
+/// No identity key holds a value — the invariant the strip provides, asserted
+/// on the bytes rather than trusted. It fires on the two ways one could come
+/// back: a hand edit, and a decoder that starts reading such a field so the
+/// strip keeps it.
 #[test]
-fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
+fn no_identity_key_holds_a_value() {
     let mut probe = BTreeSet::new();
     filled_identity_keys(
         &serde_json::json!({"a": {"user_id": "u_1"}, "b": [{"token": ""}]}),
@@ -339,9 +333,6 @@ fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
     );
 
     for c in every_capture() {
-        if EXEMPT_FROM_STRIP.contains(&c.label().as_str()) {
-            continue;
-        }
         for wire in c.wire_files() {
             let body = std::fs::read_to_string(&wire).expect("read");
             let mut found = BTreeSet::new();
@@ -377,14 +368,12 @@ fn no_identity_key_holds_a_value_outside_a_pinned_exemption() {
 /// The strip is disclosed by `deidentified`, so a note that still calls the
 /// bytes verbatim contradicts it.
 #[test]
-fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_exempt() {
-    let mut exempt = BTreeSet::new();
+fn a_stripped_record_does_not_call_its_bytes_verbatim() {
     for c in every_capture() {
         let prov = &c.provenance_path;
-        let deidentified = c.recorded().deidentified.as_ref();
-        let blanked = match deidentified {
-            Some(Deidentified::Stripped { blanked }) => *blanked,
-            _ => 0,
+        let blanked = match c.recorded().deidentified {
+            Some(Deidentified::Stripped { blanked }) => blanked,
+            None => 0,
         };
         let note = c.note().unwrap_or("");
         assert!(
@@ -392,15 +381,7 @@ fn a_stripped_record_does_not_call_its_bytes_verbatim_and_only_a_pinned_one_is_e
             "{}: {blanked} subtrees were blanked, and the note still says verbatim: {note:?}",
             prov.display()
         );
-        if let Some(Deidentified::Exempt { .. }) = deidentified {
-            exempt.insert(c.label());
-        }
     }
-    let pinned: BTreeSet<String> = EXEMPT_FROM_STRIP.iter().map(|s| s.to_string()).collect();
-    assert_eq!(
-        exempt, pinned,
-        "the exempt set changed — review it here, not only in a record"
-    );
 }
 
 /// A `recorded` fixture whose bytes were EDITED must say so: nothing in them
