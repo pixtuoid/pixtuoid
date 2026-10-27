@@ -66,8 +66,19 @@ def expand_ref(ref):
     return json.loads((SITE_SRC / ref[1:]).read_text(encoding="utf-8"))
 
 
-def snap(out_path, *, cols, rows, hour, day=None, theme=None, weather=None,
-         extra=(), gif=None, frames_dir=None):
+def snap(
+    out_path,
+    *,
+    cols,
+    rows,
+    hour,
+    day=None,
+    theme=None,
+    weather=None,
+    extra=(),
+    gif=None,
+    frames_dir=None,
+):
     cmd = [str(SNAP), "--cols", str(cols), "--rows", str(rows), "--now-hour", str(hour)]
     if day is not None:
         cmd += ["--now-day", str(day)]
@@ -76,9 +87,17 @@ def snap(out_path, *, cols, rows, hour, day=None, theme=None, weather=None,
     if weather is not None:
         cmd += ["--weather", weather]
     if gif is not None:
-        cmd += ["--gif", "--gif-duration", str(gif["duration"]), "--gif-fps", str(gif["fps"])]
+        cmd += [
+            "--gif",
+            "--gif-duration",
+            str(gif["duration"]),
+            "--gif-fps",
+            str(gif["fps"]),
+        ]
     cmd += list(extra)
-    cmd += ["--frames-dir", str(frames_dir)] if frames_dir is not None else [str(out_path)]
+    cmd += (
+        ["--frames-dir", str(frames_dir)] if frames_dir is not None else [str(out_path)]
+    )
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
 
@@ -90,14 +109,28 @@ def run_render(job, out_dirs, work, intermediates):
     if "frames" in job:
         for f in job["frames"]:
             for d in out_dirs:
-                snap(d / f"{f['name']}.png", cols=job["cols"], rows=job["rows"],
-                     hour=f["hour"], day=job.get("day"), theme=f.get("theme"),
-                     weather=f.get("weather"))
+                snap(
+                    d / f"{f['name']}.png",
+                    cols=job["cols"],
+                    rows=job["rows"],
+                    hour=f["hour"],
+                    day=job.get("day"),
+                    theme=f.get("theme"),
+                    weather=f.get("weather"),
+                )
         return
 
     raw = work / f"{job['id']}_raw.png"
-    snap(raw, cols=job["cols"], rows=job["rows"], hour=job["hour"], day=job.get("day"),
-         theme=job.get("theme"), weather=job.get("weather"), extra=job.get("extra", ()))
+    snap(
+        raw,
+        cols=job["cols"],
+        rows=job["rows"],
+        hour=job["hour"],
+        day=job.get("day"),
+        theme=job.get("theme"),
+        weather=job.get("weather"),
+        extra=job.get("extra", ()),
+    )
     intermediates[job["id"]] = raw  # crops read the unscaled render
 
     scale = job.get("scale")
@@ -116,8 +149,10 @@ def crop_box(img, spec, job_id):
     where Pillow would pad it with black."""
     w, h, x, y = map(int, spec.split(":"))
     if x < 0 or y < 0 or x + w > img.width or y + h > img.height:
-        sys.exit(f"gen-media: job '{job_id}' crop {spec} falls outside its "
-                 f"{img.width}x{img.height} source")
+        sys.exit(
+            f"gen-media: job '{job_id}' crop {spec} falls outside its "
+            f"{img.width}x{img.height} source"
+        )
     return img.crop((x, y, x + w, y + h))
 
 
@@ -146,8 +181,14 @@ def run_composite(job, out_dirs, work, intermediates):
     paths = []
     for i, theme in enumerate(themes):
         p = work / f"composite_{i}.png"
-        snap(p, cols=job["cols"], rows=job["rows"], hour=job["hour"], day=job.get("day"),
-             theme=theme)
+        snap(
+            p,
+            cols=job["cols"],
+            rows=job["rows"],
+            hour=job["hour"],
+            day=job.get("day"),
+            theme=theme,
+        )
         paths.append(p)
 
     with Image.open(paths[0]) as im:
@@ -177,11 +218,19 @@ def run_composite(job, out_dirs, work, intermediates):
 def run_gif(job, out_dirs, work, intermediates):
     for d in out_dirs:
         dst = d / f"{job['id']}.gif"
-        snap(dst, cols=job["cols"], rows=job["rows"], hour=job["hour"], day=job.get("day"),
-             theme=job.get("theme"), gif={"duration": job["duration"], "fps": job["fps"]})
+        snap(
+            dst,
+            cols=job["cols"],
+            rows=job["rows"],
+            hour=job["hour"],
+            day=job.get("day"),
+            theme=job.get("theme"),
+            gif={"duration": job["duration"], "fps": job["fps"]},
+        )
         # NOT --lossy: it breaks gifsicle's inter-frame diff and ships a bigger file.
         subprocess.run(
-            ["gifsicle", "-b", "-O3", "--colors", str(job["colors"]), str(dst)], check=True
+            ["gifsicle", "-b", "-O3", "--colors", str(job["colors"]), str(dst)],
+            check=True,
         )
 
 
@@ -191,8 +240,13 @@ def run_matrix(job, out_dirs, work, intermediates):
     for item in items:
         for d in out_dirs:
             kwargs = {"theme": item} if axis == "theme" else {"weather": item}
-            snap(d / f"{axis}_{item}.png", cols=job["cols"], rows=job["rows"],
-                 hour=job["hour"], **kwargs)
+            snap(
+                d / f"{axis}_{item}.png",
+                cols=job["cols"],
+                rows=job["rows"],
+                hour=job["hour"],
+                **kwargs,
+            )
 
 
 # H.264 and VP9 both require even width/height. `neighbor` keeps the art's hard
@@ -212,28 +266,63 @@ BITEXACT = ("-fflags", "+bitexact")
 def encode_mp4_webm(frames_glob, fps, vf, out_stem):
     """Encode a FRAME_PATTERN sequence at `fps`, through the `vf` filter, to
     BOTH `{out_stem}.mp4` and `{out_stem}.webm`."""
-    ffmpeg("-framerate", str(fps), "-i", frames_glob,
-           "-movflags", "+faststart", "-pix_fmt", "yuv420p", *BITEXACT, "-vf", vf,
-           f"{out_stem}.mp4")
-    ffmpeg("-framerate", str(fps), "-i", frames_glob,
-           "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", VP9_CRF, "-row-mt", "1",
-           "-pix_fmt", "yuv420p", *BITEXACT, "-vf", vf,
-           f"{out_stem}.webm")
+    ffmpeg(
+        "-framerate",
+        str(fps),
+        "-i",
+        frames_glob,
+        "-movflags",
+        "+faststart",
+        "-pix_fmt",
+        "yuv420p",
+        *BITEXACT,
+        "-vf",
+        vf,
+        f"{out_stem}.mp4",
+    )
+    ffmpeg(
+        "-framerate",
+        str(fps),
+        "-i",
+        frames_glob,
+        "-c:v",
+        "libvpx-vp9",
+        "-b:v",
+        "0",
+        "-crf",
+        VP9_CRF,
+        "-row-mt",
+        "1",
+        "-pix_fmt",
+        "yuv420p",
+        *BITEXACT,
+        "-vf",
+        vf,
+        f"{out_stem}.webm",
+    )
 
 
 def poster_frame(frames_dir, job):
     """The frame `job["poster"]` seconds in, else the first: a staged clip whose
     opening seconds are pre-action posters on the money shot."""
-    return frames_dir / (FRAME_PATTERN % (int(round(job.get("poster", 0) * job["fps"], 6)) + 1))
+    return frames_dir / (
+        FRAME_PATTERN % (int(round(job.get("poster", 0) * job["fps"], 6)) + 1)
+    )
 
 
 def run_clip(job, out_dirs, work, intermediates):
     fps = job["fps"]
     cid = job["id"]
     frames = work / f"frames-{cid}"
-    snap(None, cols=job["cols"], rows=job["rows"], hour=job["hour"],
-         extra=job.get("extra", ()), gif={"duration": job["duration"], "fps": fps},
-         frames_dir=frames)
+    snap(
+        None,
+        cols=job["cols"],
+        rows=job["rows"],
+        hour=job["hour"],
+        extra=job.get("extra", ()),
+        gif={"duration": job["duration"], "fps": fps},
+        frames_dir=frames,
+    )
     # Optional `crop` ("W:H:X:Y", in the unscaled render's px space) frames
     # a close-up on a fixed region. NB: this singular clip-level `crop` is
     # unrelated to the separate kind:"crop" job (run_crop), which reads a plural
@@ -257,7 +346,15 @@ def run_wasm_still(job, out_dirs, work, intermediates):
     # (t0_ms, advance_ms) under the TZ=UTC pin, so a re-render reproduces it; it is
     # site-only, so no gate compares it.
     subprocess.run(
-        ["cargo", "build", "--release", "-p", "pixtuoid-web", "--example", "hero_still"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "-p",
+            "pixtuoid-web",
+            "--example",
+            "hero_still",
+        ],
         check=True,
         cwd=ROOT,
     )
@@ -276,11 +373,17 @@ def run_wasm_still(job, out_dirs, work, intermediates):
         extra += ["--seed", str(job["seed"])]
     for d in out_dirs:
         subprocess.run(
-            [str(ROOT / "target/release/examples/hero_still"),
-             str(d / f"{job['id']}.png"),
-             "--width", str(job["w"]), "--height", str(job["h"]),
-             "--advance-ms", str(job["advance_ms"]),
-             *extra],
+            [
+                str(ROOT / "target/release/examples/hero_still"),
+                str(d / f"{job['id']}.png"),
+                "--width",
+                str(job["w"]),
+                "--height",
+                str(job["h"]),
+                "--advance-ms",
+                str(job["advance_ms"]),
+                *extra,
+            ],
             check=True,
         )
 
@@ -295,23 +398,45 @@ def run_proof(job, out_dirs, work, intermediates):
     secs = int(job["poster"]) + 2 if CHECK_MODE else job["duration"]
     frames = work / "proof-frames"
     subprocess.run(
-        [str(SNAP), "--proof", str(ROOT / job["fixture"]),
-         "--frames-dir", str(frames),
-         "--proof-fps", str(fps), "--proof-secs", str(secs),
-         "--cols", str(job["cols"]), "--rows", str(job["rows"]),
-         "--now-hour", str(job["hour"]), "--theme", job["theme"], "--weather", "clear",
-         *(["--now-day", str(job["day"])] if "day" in job else [])],
-        check=True, stdout=subprocess.DEVNULL,
+        [
+            str(SNAP),
+            "--proof",
+            str(ROOT / job["fixture"]),
+            "--frames-dir",
+            str(frames),
+            "--proof-fps",
+            str(fps),
+            "--proof-secs",
+            str(secs),
+            "--cols",
+            str(job["cols"]),
+            "--rows",
+            str(job["rows"]),
+            "--now-hour",
+            str(job["hour"]),
+            "--theme",
+            job["theme"],
+            "--weather",
+            "clear",
+            *(["--now-day", str(job["day"])] if "day" in job else []),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
     )
     for layout, suffix in (("wide", ""), ("tall", "-tall")):
         ldir = frames / layout
         for d in out_dirs:
-            shutil.copyfile(poster_frame(ldir, job),
-                            d / f"{job['id']}{suffix}-poster.png")
+            shutil.copyfile(
+                poster_frame(ldir, job), d / f"{job['id']}{suffix}-poster.png"
+            )
             if CHECK_MODE:
                 continue
-            encode_mp4_webm(str(ldir / FRAME_PATTERN), fps, SCALE_EVEN,
-                            str(d / f"{job['id']}{suffix}"))
+            encode_mp4_webm(
+                str(ldir / FRAME_PATTERN),
+                fps,
+                SCALE_EVEN,
+                str(d / f"{job['id']}{suffix}"),
+            )
 
 
 HANDLERS = {
@@ -347,7 +472,9 @@ def _expected_presence_outputs(job):
     if job["kind"] == "clip":
         return [f"{job['id']}.mp4", f"{job['id']}.webm", f"{job['id']}-poster.png"]
     if job["kind"] == "proof":
-        return [f"{job['id']}{s}.{ext}" for s in ("", "-tall") for ext in ("mp4", "webm")]
+        return [
+            f"{job['id']}{s}.{ext}" for s in ("", "-tall") for ext in ("mp4", "webm")
+        ]
     return []
 
 
@@ -363,7 +490,9 @@ def run_check(out_base, work, manifest, only=None):
         produced = {p.name for p in tdir.iterdir() if p.is_file()}
         presence_only = _presence_only_names(manifest, target)
 
-        for c in sorted((p for p in committed_dir.iterdir() if p.is_file()), key=lambda p: p.name):
+        for c in sorted(
+            (p for p in committed_dir.iterdir() if p.is_file()), key=lambda p: p.name
+        ):
             name = c.name
             if name in NOT_GENERATED:
                 continue
@@ -405,9 +534,14 @@ def run_check(out_base, work, manifest, only=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Regenerate office media from scripts/media.json")
-    ap.add_argument("--check", action="store_true",
-                    help="render to a temp dir and diff vs committed; write nothing")
+    ap = argparse.ArgumentParser(
+        description="Regenerate office media from scripts/media.json"
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="render to a temp dir and diff vs committed; write nothing",
+    )
     ap.add_argument("--only", choices=["docs", "site"], help="restrict to one surface")
     ap.add_argument("--jobs", help="comma-separated job ids to run (default: all)")
     args = ap.parse_args()
@@ -455,7 +589,9 @@ def main():
             # Clips/gif are presence-checked from the manifest, so don't waste
             # minutes rendering + vp9-encoding them under --check.
             if args.check and job["kind"] in ("gif", "clip"):
-                print(f"· {job['id']} ({job['kind']}) → presence-only, skipped in --check")
+                print(
+                    f"· {job['id']} ({job['kind']}) → presence-only, skipped in --check"
+                )
                 continue
             out_dirs = [out_base[t] for t in targets]
             print(f"· {job['id']} ({job['kind']}) → {', '.join(targets)}")

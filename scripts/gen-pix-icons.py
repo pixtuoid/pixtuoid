@@ -330,7 +330,9 @@ def render(icon_name, rows, pal):
     assert px is not None
     for y, row in enumerate(rows):
         if len(row) != w:
-            sys.exit(f"gen-pix-icons: {icon_name} row {y} is ragged ({len(row)} != {w})")
+            sys.exit(
+                f"gen-pix-icons: {icon_name} row {y} is ragged ({len(row)} != {w})"
+            )
         for x, key in enumerate(row):
             rgb = pal[key]
             if rgb is not None:
@@ -419,7 +421,9 @@ def generate(site_dir, readme_dir, check, icons=ICONS):
         orphans = sorted(
             p
             for p in out_dir.iterdir()
-            if p.is_file() and not p.name.startswith(".") and (p.stem not in icons or p.suffix != f".{ext}")
+            if p.is_file()
+            and not p.name.startswith(".")
+            and (p.stem not in icons or p.suffix != f".{ext}")
         )
         if check and orphans:
             stale.append(f"{label}: orphaned {', '.join(p.name for p in orphans)}")
@@ -451,14 +455,24 @@ def selftest():
             (d / ".DS_Store").write_bytes(b"")
         expect(stale() == [], "a dotfile is no orphan")
         (readme / f"{name}.png").write_bytes(b"")
-        expect(stale() == [f"readme: orphaned {name}.png"], "an icon in the other format is an orphan")
+        expect(
+            stale() == [f"readme: orphaned {name}.png"],
+            "an icon in the other format is an orphan",
+        )
         (site / "gone.png").write_bytes(b"")
         (readme / "gone.svg").write_bytes(b"")
         readme_orphans = ", ".join(sorted(["gone.svg", f"{name}.png"]))
-        expect(stale() == ["site: orphaned gone.png", f"readme: orphaned {readme_orphans}"], "a removed icon's files are orphans")
+        expect(
+            stale()
+            == ["site: orphaned gone.png", f"readme: orphaned {readme_orphans}"],
+            "a removed icon's files are orphans",
+        )
         generate(site, readme, check=False, icons=one)
         left = {p.name for d in (site, readme) for p in d.iterdir()}
-        expect(left == {f"{name}.png", f"{name}.svg", ".DS_Store"}, "a write deletes the orphans and keeps the dotfiles")
+        expect(
+            left == {f"{name}.png", f"{name}.svg", ".DS_Store"},
+            "a write deletes the orphans and keeps the dotfiles",
+        )
         out = readme / f"{name}.svg"
         out.write_text(out.read_text(encoding="utf-8") + " ", encoding="utf-8")
         expect(stale() == [f"readme/{name} (differs)"], "an edited SVG differs")
@@ -478,7 +492,9 @@ def main():
     if stale:
         sys.exit(f"gen-pix-icons --check: {', '.join(stale)} — run just gen-icons")
     if check:
-        print(f"gen-pix-icons --check: OK ({len(ICONS)} icons match in both output dirs)")
+        print(
+            f"gen-pix-icons --check: OK ({len(ICONS)} icons match in both output dirs)"
+        )
 
 
 if __name__ == "__main__":

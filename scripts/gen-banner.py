@@ -16,9 +16,29 @@ from __future__ import annotations
 import pathlib
 import sys
 
-from readme_pixels import BASELINE, THEMES, Frame, Pack, _run, animation, check, run_selftest, sprite_path, sprite_size, text_path, text_width
+from readme_pixels import (
+    BASELINE,
+    THEMES,
+    Frame,
+    Pack,
+    _run,
+    animation,
+    check,
+    run_selftest,
+    sprite_path,
+    sprite_size,
+    text_path,
+    text_width,
+)
 
-ART_PATH = pathlib.Path(__file__).resolve().parent.parent / "crates" / "pixtuoid-scene" / "src" / "character" / "banner.golden"
+ART_PATH = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "crates"
+    / "pixtuoid-scene"
+    / "src"
+    / "character"
+    / "banner.golden"
+)
 WORD, WORD_PX = "pixtuoid", 6
 # One sign pixel: the sign's frame, its padding and the air round the picture.
 PX = 4
@@ -64,7 +84,16 @@ def glowing(frame: Frame, rings: int, rows: int | None = None) -> Frame:
             out[y + rings][x + rings] = key
     front = [(x, y) for y in range(h) for x in range(w) if out[y][x] != "."]
     for i in range(rings):
-        front = sorted({(x + dx, y + dy) for x, y in front for dx, dy in N4 if 0 <= x + dx < w and 0 <= y + dy < (h if rows is None else rows) and out[y + dy][x + dx] == "."})
+        front = sorted(
+            {
+                (x + dx, y + dy)
+                for x, y in front
+                for dx, dy in N4
+                if 0 <= x + dx < w
+                and 0 <= y + dy < (h if rows is None else rows)
+                and out[y + dy][x + dx] == "."
+            }
+        )
         for x, y in front:
             out[y][x] = f"glow{i}"
     return out
@@ -75,7 +104,13 @@ def render_svg(theme: str) -> str:
     art = read_art(ART_PATH.read_text(encoding="utf-8"))
     glow = GLOW[theme]
     n, pad = len(glow), len(glow) * SPRITE_PX
-    lit = {**art.palette, **{f"glow{i}": f"{pal.neon_brand}{round(a * 255):02x}" for i, a in enumerate(glow)}}
+    lit = {
+        **art.palette,
+        **{
+            f"glow{i}": f"{pal.neon_brand}{round(a * 255):02x}"
+            for i, a in enumerate(glow)
+        },
+    }
     gw, gh = sprite_size(art, "coworker", SPRITE_PX)
     cw, ch = sprite_size(art, "cat", SPRITE_PX)
     board_w = text_width(WORD, WORD_PX) + 2 * SIGN_PAD[0] * PX
@@ -87,11 +122,27 @@ def render_svg(theme: str) -> str:
     floor = height - MARGIN * PX
     bx, by = MARGIN * PX + PX, floor - PX - board_h
     tx, ty = bx + SIGN_PAD[0] * PX, by + SIGN_PAD[1] * PX
-    halo = "".join(text_path(WORD, tx + dx * PX, ty + dy * PX, WORD_PX) for dx, dy in N4)
+    halo = "".join(
+        text_path(WORD, tx + dx * PX, ty + dy * PX, WORD_PX) for dx, dy in N4
+    )
     # The cat's light stops at the sign's frame, which it lies on.
     cat_rows = n + ch // SPRITE_PX - CAT_SINK
-    cats = Pack(lit, {"cat": ([glowing(f, n, cat_rows) for f in art.animations["cat"][0]], art.animations["cat"][1])})
-    cat, cat_css = animation(cats, "cat", bx + board_w - cw - CAT_INSET * PX - pad, by - PX + CAT_SINK * SPRITE_PX + pad, SPRITE_PX)
+    cats = Pack(
+        lit,
+        {
+            "cat": (
+                [glowing(f, n, cat_rows) for f in art.animations["cat"][0]],
+                art.animations["cat"][1],
+            )
+        },
+    )
+    cat, cat_css = animation(
+        cats,
+        "cat",
+        bx + board_w - cw - CAT_INSET * PX - pad,
+        by - PX + CAT_SINK * SPRITE_PX + pad,
+        SPRITE_PX,
+    )
     css = "".join(
         [
             ".neon{animation:fl 6s steps(1,end) infinite}@keyframes fl{0%,89%,93%,100%{opacity:1}90%,92%{opacity:.35}}",
@@ -99,19 +150,28 @@ def render_svg(theme: str) -> str:
             *cat_css,
         ]
     )
-    return "\n".join(
-        [
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" shape-rendering="crispEdges" role="img" aria-labelledby="t">',
-            f'<title id="t">{WORD}: a neon office sign, a cat asleep on it and a coworker holding a coffee</title>',
-            f"<style>{css}</style>",
-            f'<path fill="{pal.trim}" d="{_run(bx - PX, by - PX, board_w + 2 * PX, board_h + 2 * PX)}"/>',
-            f'<path fill="{pal.neon_panel}" d="{_run(bx, by, board_w, board_h)}"/>',
-            f'<g class="neon"><path fill="{pal.neon_brand}" fill-opacity="{HALO_OPACITY}" d="{halo}"/><path fill="{pal.neon_brand}" d="{text_path(WORD, tx, ty, WORD_PX)}"/></g>',
-            cat,
-            sprite_path(glowing(art.animations["coworker"][0][0], n), bx + board_w + PX + GAP * PX - pad, floor - gh - pad, SPRITE_PX, lit),
-            "</svg>",
-        ]
-    ) + "\n"
+    return (
+        "\n".join(
+            [
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" shape-rendering="crispEdges" role="img" aria-labelledby="t">',
+                f'<title id="t">{WORD}: a neon office sign, a cat asleep on it and a coworker holding a coffee</title>',
+                f"<style>{css}</style>",
+                f'<path fill="{pal.trim}" d="{_run(bx - PX, by - PX, board_w + 2 * PX, board_h + 2 * PX)}"/>',
+                f'<path fill="{pal.neon_panel}" d="{_run(bx, by, board_w, board_h)}"/>',
+                f'<g class="neon"><path fill="{pal.neon_brand}" fill-opacity="{HALO_OPACITY}" d="{halo}"/><path fill="{pal.neon_brand}" d="{text_path(WORD, tx, ty, WORD_PX)}"/></g>',
+                cat,
+                sprite_path(
+                    glowing(art.animations["coworker"][0][0], n),
+                    bx + board_w + PX + GAP * PX - pad,
+                    floor - gh - pad,
+                    SPRITE_PX,
+                    lit,
+                ),
+                "</svg>",
+            ]
+        )
+        + "\n"
+    )
 
 
 def write_banners(out_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -126,21 +186,43 @@ def write_banners(out_dir: pathlib.Path) -> list[pathlib.Path]:
 
 def stale(out_dir: pathlib.Path) -> list[str]:
     """The committed banners that differ from a fresh render."""
-    return [f"banner-{t}.svg" for t in THEMES if not (out_dir / f"banner-{t}.svg").is_file() or (out_dir / f"banner-{t}.svg").read_text(encoding="utf-8") != render_svg(t)]
+    return [
+        f"banner-{t}.svg"
+        for t in THEMES
+        if not (out_dir / f"banner-{t}.svg").is_file()
+        or (out_dir / f"banner-{t}.svg").read_text(encoding="utf-8") != render_svg(t)
+    ]
 
 
 def test_read_art_keeps_each_animation_s_frames_in_order() -> None:
-    art = read_art("@palette a=#010203 b=#040506\n@frame cat 750\n. a\n@frame guy 600\nb b\n@frame cat 750\na .\n")
+    art = read_art(
+        "@palette a=#010203 b=#040506\n@frame cat 750\n. a\n@frame guy 600\nb b\n@frame cat 750\na .\n"
+    )
     check(art.palette == {"a": "#010203", "b": "#040506"}, f"palette: {art.palette}")
-    check(art.animations == {"cat": ([[[".", "a"]], [["a", "."]]], 750), "guy": ([[["b", "b"]]], 600)}, f"animations: {art.animations}")
+    check(
+        art.animations
+        == {"cat": ([[[".", "a"]], [["a", "."]]], 750), "guy": ([[["b", "b"]]], 600)},
+        f"animations: {art.animations}",
+    )
 
 
 def test_glowing_rings_the_art_ring_by_ring_above_the_cut() -> None:
     got = glowing([["a"]], 2)
-    check(len(got) == 5 and len(got[0]) == 5 and got[2][2] == "a", f"padded by two rings round the art: {got}")
-    check(got[1][2] == got[2][3] == "glow0" and got[1][1] == got[0][2] == "glow1" and got[0][0] == ".", f"rings by N4 steps: {got}")
+    check(
+        len(got) == 5 and len(got[0]) == 5 and got[2][2] == "a",
+        f"padded by two rings round the art: {got}",
+    )
+    check(
+        got[1][2] == got[2][3] == "glow0"
+        and got[1][1] == got[0][2] == "glow1"
+        and got[0][0] == ".",
+        f"rings by N4 steps: {got}",
+    )
     cut = glowing([["a"]], 2, rows=3)
-    check(cut[3][2] == cut[4][2] == "." and cut[2][1] == "glow0", f"no light past `rows`: {cut}")
+    check(
+        cut[3][2] == cut[4][2] == "." and cut[2][1] == "glow0",
+        f"no light past `rows`: {cut}",
+    )
     check(glowing([["a", "b"]], 0) == [["a", "b"]], "no rings leave the frame as it is")
 
 
@@ -148,9 +230,14 @@ def test_only_the_dark_banner_glows() -> None:
     import re
 
     for theme in THEMES:
-        lit = re.findall(rf'fill="{THEMES[theme].neon_brand}([0-9a-f]{{2}})"', render_svg(theme))
+        lit = re.findall(
+            rf'fill="{THEMES[theme].neon_brand}([0-9a-f]{{2}})"', render_svg(theme)
+        )
         want = [f"{round(a * 255):02x}" for a in GLOW[theme]]
-        check(sorted(set(lit)) == sorted(want), f"{theme}: the figures glow only where GLOW says: {sorted(set(lit))}")
+        check(
+            sorted(set(lit)) == sorted(want),
+            f"{theme}: the figures glow only where GLOW says: {sorted(set(lit))}",
+        )
 
 
 def test_stale_flags_an_edited_or_missing_banner_and_passes_fresh_ones() -> None:
@@ -162,13 +249,19 @@ def test_stale_flags_an_edited_or_missing_banner_and_passes_fresh_ones() -> None
         check(stale(out) == [], f"fresh banners are not stale: {stale(out)}")
         edited.write_text(edited.read_text(encoding="utf-8") + " ", encoding="utf-8")
         missing.unlink()
-        check(stale(out) == [edited.name, missing.name], f"an edited and a missing banner are both stale: {stale(out)}")
+        check(
+            stale(out) == [edited.name, missing.name],
+            f"an edited and a missing banner are both stale: {stale(out)}",
+        )
 
 
 def test_every_banner_pixel_has_a_colour() -> None:
     for theme in THEMES:
         svg = render_svg(theme)
-        check('fill="None"' not in svg and "fill=\"\"" not in svg, f"{theme}: a pixel without a colour")
+        check(
+            'fill="None"' not in svg and 'fill=""' not in svg,
+            f"{theme}: a pixel without a colour",
+        )
 
 
 def test_render_is_well_formed_animated_and_deterministic() -> None:
@@ -178,8 +271,16 @@ def test_render_is_well_formed_animated_and_deterministic() -> None:
         svg = render_svg(theme)
         root = ET.fromstring(svg)
         title = root.find("{http://www.w3.org/2000/svg}title")
-        check(title is not None and "pixtuoid" in (title.text or ""), f"{theme}: the title must name pixtuoid")
-        check('class="neon"' in svg and 'class="cat"' in svg and "prefers-reduced-motion" in svg, f"{theme}: the sign flickers, the cat sleeps and motion can be reduced")
+        check(
+            title is not None and "pixtuoid" in (title.text or ""),
+            f"{theme}: the title must name pixtuoid",
+        )
+        check(
+            'class="neon"' in svg
+            and 'class="cat"' in svg
+            and "prefers-reduced-motion" in svg,
+            f"{theme}: the sign flickers, the cat sleeps and motion can be reduced",
+        )
         check(svg == render_svg(theme), f"{theme}: render must be deterministic")
 
 
@@ -189,9 +290,19 @@ def test_render_paints_inside_the_canvas() -> None:
     for theme in THEMES:
         svg = render_svg(theme)
         w, h = (int(v) for v in re.search(r'viewBox="0 0 (\d+) (\d+)"', svg).groups())
-        runs = [tuple(map(int, r)) for r in re.findall(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z", svg)]
-        outside = [r for r in runs if r[0] < 0 or r[1] < 0 or r[0] + r[2] > w or r[1] + r[3] > h]
-        check(bool(runs) and not outside, f"{theme}: runs leave the {w}x{h} canvas: {outside[:3]}")
+        runs = [
+            tuple(map(int, r))
+            for r in re.findall(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z", svg)
+        ]
+        outside = [
+            r
+            for r in runs
+            if r[0] < 0 or r[1] < 0 or r[0] + r[2] > w or r[1] + r[3] > h
+        ]
+        check(
+            bool(runs) and not outside,
+            f"{theme}: runs leave the {w}x{h} canvas: {outside[:3]}",
+        )
 
 
 def selftest() -> int:
@@ -210,7 +321,10 @@ def main(argv: list[str]) -> int:
     if check_mode:
         bad = stale(out_dir)
         for name in bad:
-            print(f"error: {out_dir / name} is stale; run `just gen-banner`", file=sys.stderr)
+            print(
+                f"error: {out_dir / name} is stale; run `just gen-banner`",
+                file=sys.stderr,
+            )
         return 1 if bad else 0
     for p in write_banners(out_dir):
         print(p)

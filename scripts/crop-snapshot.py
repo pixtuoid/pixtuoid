@@ -22,9 +22,9 @@ from PIL import Image
 
 
 QUADRANTS = {
-    "meeting":  (0.00, 0.00, 0.30, 0.55),
-    "pantry":   (0.00, 0.49, 0.30, 1.00),
-    "cubicle":  (0.30, 0.00, 1.00, 0.55),
+    "meeting": (0.00, 0.00, 0.30, 0.55),
+    "pantry": (0.00, 0.49, 0.30, 1.00),
+    "cubicle": (0.30, 0.00, 1.00, 0.55),
     "corridor": (0.30, 0.70, 1.00, 1.00),
 }
 
@@ -35,10 +35,18 @@ def main():
     )
     parser.add_argument("input", type=Path, help="Snapshot PNG to crop")
     parser.add_argument(
-        "--scale", type=int, default=2, help="Nearest-neighbor upscale factor (default 2)"
+        "--scale",
+        type=int,
+        default=2,
+        help="Nearest-neighbor upscale factor (default 2)",
     )
-    parser.add_argument("--quadrant", "-q", choices=list(QUADRANTS) + ["all"], default="all",
-                        help="Which quadrant to crop (default: all)")
+    parser.add_argument(
+        "--quadrant",
+        "-q",
+        choices=list(QUADRANTS) + ["all"],
+        default="all",
+        help="Which quadrant to crop (default: all)",
+    )
     args = parser.parse_args()
 
     with Image.open(args.input) as img:
@@ -47,10 +55,16 @@ def main():
     stem = args.input.stem
     out_dir = args.input.parent
 
-    quads = QUADRANTS if args.quadrant == "all" else {args.quadrant: QUADRANTS[args.quadrant]}
+    quads = (
+        QUADRANTS
+        if args.quadrant == "all"
+        else {args.quadrant: QUADRANTS[args.quadrant]}
+    )
     for name, (x0, y0, x1, y1) in quads.items():
         crop = img.crop((int(w * x0), int(h * y0), int(w * x1), int(h * y1)))
-        crop = crop.resize((crop.width * args.scale, crop.height * args.scale), Image.NEAREST)
+        crop = crop.resize(
+            (crop.width * args.scale, crop.height * args.scale), Image.NEAREST
+        )
         out = out_dir / f"{stem}_{name}.png"
         crop.save(out)
         print(f"  {out}  ({crop.width}×{crop.height})")

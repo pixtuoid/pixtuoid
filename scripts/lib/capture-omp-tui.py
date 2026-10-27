@@ -13,6 +13,7 @@ latency — an extra Enter (or Down+Enter) on the empty composer is a no-op, so
 only the raised gate consumes one. Composer submits are `\r` (a TUI reads a
 bare `\n` as insert-newline).
 """
+
 import os
 import pty
 import select

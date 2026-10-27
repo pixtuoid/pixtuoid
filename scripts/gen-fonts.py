@@ -50,7 +50,10 @@ FUSION_MEMBERS = (
     "fusion-pixel-8px-monospaced-zh_hans.bdf",
 )
 # The font's license and its sources' licenses, as its release ships them.
-FUSION_LICENSES = {"OFL.txt": "OFL-Fusion-Pixel.txt", "LICENSES/": "LICENSES-Fusion-Pixel/"}
+FUSION_LICENSES = {
+    "OFL.txt": "OFL-Fusion-Pixel.txt",
+    "LICENSES/": "LICENSES-Fusion-Pixel/",
+}
 SITE_URL = FUSION_URL.replace("bdf", "otf.woff2")
 SITE_SHA256 = "5a2e0c345d83124a962772ecc7f04748bea14978f02ac1474d5fd38a00f3de56"
 # Latin, for the half-width `·` a badge's `cc·<id4>` writes.
@@ -125,7 +128,17 @@ def cells(cp):
 
 
 def wanted(cp):
-    if unicodedata.category(chr(cp)) in ("Cc", "Cf", "Cn", "Co", "Cs", "Mn", "Me", "Zl", "Zp"):
+    if unicodedata.category(chr(cp)) in (
+        "Cc",
+        "Cf",
+        "Cn",
+        "Co",
+        "Cs",
+        "Mn",
+        "Me",
+        "Zl",
+        "Zp",
+    ):
         return False
     # KS X 1001's 2,350 syllables: EUC-KR's two-byte set, the repertoire a
     # Korean bitmap font ships; the other 8,822 would quadruple the Hangul.
@@ -167,7 +180,7 @@ def unzip(url, sha256, into):
     for name in z.namelist():
         for prefix, dest in FUSION_LICENSES.items():
             if name.startswith(prefix) and not name.endswith("/"):
-                path = into / (dest + name[len(prefix):])
+                path = into / (dest + name[len(prefix) :])
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(z.read(name))
     return z
@@ -194,10 +207,13 @@ def main():
 
     # The release's own timestamp, so a rerun writes the same bytes.
     face = TTFont(
-        io.BytesIO(unzip(SITE_URL, SITE_SHA256, SITE_FONTS).read(SITE_MEMBER)), recalcTimestamp=False
+        io.BytesIO(unzip(SITE_URL, SITE_SHA256, SITE_FONTS).read(SITE_MEMBER)),
+        recalcTimestamp=False,
     )
     # Every name kept: the copyright and license notice the OFL requires.
-    latin = subset.Subsetter(subset.Options(flavor="woff2", name_IDs=["*"], name_languages=["*"]))
+    latin = subset.Subsetter(
+        subset.Options(flavor="woff2", name_IDs=["*"], name_languages=["*"])
+    )
     latin.populate(unicodes=[cp for lo, hi in SITE_RANGES for cp in range(lo, hi + 1)])
     latin.subset(face)
     face.save(SITE_OUT)

@@ -15,7 +15,13 @@ import tomllib
 import traceback
 from typing import NamedTuple
 
-PACK_DIR = pathlib.Path(__file__).resolve().parent.parent / "crates" / "pixtuoid-scene" / "sprites" / "default"
+PACK_DIR = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "crates"
+    / "pixtuoid-scene"
+    / "sprites"
+    / "default"
+)
 
 
 class Palette(NamedTuple):
@@ -102,17 +108,57 @@ _FORMS: dict[str, tuple[str, ...]] = {
     "d": ("....#", "....#", ".##.#", "#..##", "#...#", "#...#", ".####"),
     "e": (".....", ".....", ".###.", "#...#", "#####", "#....", ".###."),
     "f": ("..##.", ".#..#", ".#...", "###..", ".#...", ".#...", ".#..."),
-    "g": (".....", ".....", ".####", "#...#", "#...#", "#...#", ".####", "....#", ".###."),
+    "g": (
+        ".....",
+        ".....",
+        ".####",
+        "#...#",
+        "#...#",
+        "#...#",
+        ".####",
+        "....#",
+        ".###.",
+    ),
     "h": ("#....", "#....", "#.##.", "##..#", "#...#", "#...#", "#...#"),
     "i": ("..#..", ".....", ".##..", "..#..", "..#..", "..#..", ".###."),
-    "j": ("...#.", ".....", "..##.", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."),
+    "j": (
+        "...#.",
+        ".....",
+        "..##.",
+        "...#.",
+        "...#.",
+        "...#.",
+        "...#.",
+        "#..#.",
+        ".##..",
+    ),
     "k": ("#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#."),
     "l": (".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."),
     "m": (".....", ".....", "##.#.", "#.#.#", "#.#.#", "#...#", "#...#"),
     "n": (".....", ".....", "#.##.", "##..#", "#...#", "#...#", "#...#"),
     "o": (".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###."),
-    "p": (".....", ".....", "####.", "#...#", "#...#", "#...#", "####.", "#....", "#...."),
-    "q": (".....", ".....", ".####", "#...#", "#...#", "#...#", ".####", "....#", "....#"),
+    "p": (
+        ".....",
+        ".....",
+        "####.",
+        "#...#",
+        "#...#",
+        "#...#",
+        "####.",
+        "#....",
+        "#....",
+    ),
+    "q": (
+        ".....",
+        ".....",
+        ".####",
+        "#...#",
+        "#...#",
+        "#...#",
+        ".####",
+        "....#",
+        "....#",
+    ),
     "r": (".....", ".....", "#.##.", "##..#", "#....", "#....", "#...."),
     "s": (".....", ".....", ".####", "#....", ".###.", "....#", "####."),
     "t": (".#...", ".#...", "###..", ".#...", ".#...", ".#..#", "..##."),
@@ -120,7 +166,17 @@ _FORMS: dict[str, tuple[str, ...]] = {
     "v": (".....", ".....", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
     "w": (".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#."),
     "x": (".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#"),
-    "y": (".....", ".....", "#...#", "#...#", "#...#", "#...#", ".####", "....#", ".###."),
+    "y": (
+        ".....",
+        ".....",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#...#",
+        ".####",
+        "....#",
+        ".###.",
+    ),
     "z": (".....", ".....", "#####", "...#.", "..#..", ".#...", "#####"),
     " ": (".....", ".....", ".....", ".....", ".....", ".....", "....."),
     "/": ("....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."),
@@ -129,7 +185,9 @@ _FORMS: dict[str, tuple[str, ...]] = {
     ".": (".....", ".....", ".....", ".....", ".....", ".##..", ".##.."),
     "+": (".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."),
 }
-GLYPHS: dict[str, tuple[str, ...]] = {ch: rows + ("." * GLYPH_W,) * (GLYPH_H - len(rows)) for ch, rows in _FORMS.items()}
+GLYPHS: dict[str, tuple[str, ...]] = {
+    ch: rows + ("." * GLYPH_W,) * (GLYPH_H - len(rows)) for ch, rows in _FORMS.items()
+}
 
 
 def compact(n: int) -> str:
@@ -172,7 +230,11 @@ def text_width(s: str, px: int) -> int:
 
 def mask_path(rows: tuple[str, ...], x: int, y: int, px: int) -> str:
     """Path data lighting every `#` of `rows` top-left at (x, y), `px` real pixels per mask pixel; one run per horizontal stroke."""
-    return "".join(_run(x + m.start() * px, y + r * px, (m.end() - m.start()) * px, px) for r, row in enumerate(rows) for m in re.finditer(r"#+", row))
+    return "".join(
+        _run(x + m.start() * px, y + r * px, (m.end() - m.start()) * px, px)
+        for r, row in enumerate(rows)
+        for m in re.finditer(r"#+", row)
+    )
 
 
 def text_path(s: str, x: int, y: int, px: int) -> str:
@@ -197,7 +259,9 @@ class Pack(NamedTuple):
 def parse_sprite(text: str) -> Frame:
     lines = [ln.strip() for ln in text.splitlines()]
     if sum(ln.startswith("@frame") for ln in lines) > 1:
-        raise ValueError("a multi-frame sprite file; the README art reads one frame per file")
+        raise ValueError(
+            "a multi-frame sprite file; the README art reads one frame per file"
+        )
     return [ln.split() for ln in lines if ln and not ln.startswith(("#", "@"))]
 
 
@@ -206,7 +270,10 @@ def load_pack(pack_dir: pathlib.Path, names: tuple[str, ...]) -> Pack:
     animations = {}
     for name in names:
         a = manifest["animations"][name]
-        frames = [parse_sprite((pack_dir / f).read_text(encoding="utf-8")) for f in a["frames"]]
+        frames = [
+            parse_sprite((pack_dir / f).read_text(encoding="utf-8"))
+            for f in a["frames"]
+        ]
         animations[name] = (frames, a["frame_ms"])
     return Pack(manifest["palette"], animations)
 
@@ -226,12 +293,18 @@ def sprite_path(frame: Frame, x: int, y: int, px: int, palette: dict[str, str]) 
             while end + 1 < len(row) and row[end + 1] == key:
                 end += 1
             if key != ".":
-                runs.setdefault(key, []).append(_run(x + c * px, y + r * px, (end - c + 1) * px, px))
+                runs.setdefault(key, []).append(
+                    _run(x + c * px, y + r * px, (end - c + 1) * px, px)
+                )
             c = end + 1
-    return "".join(f'<path fill="{palette[k]}" d="{"".join(v)}"/>' for k, v in runs.items())
+    return "".join(
+        f'<path fill="{palette[k]}" d="{"".join(v)}"/>' for k, v in runs.items()
+    )
 
 
-def animation(pack: Pack, name: str, x: int, bottom: int, px: int) -> tuple[str, list[str]]:
+def animation(
+    pack: Pack, name: str, x: int, bottom: int, px: int
+) -> tuple[str, list[str]]:
     """Every frame drawn standing on `bottom`, each shown for its `frame_ms` turn by a stepped CSS opacity loop."""
     frames, frame_ms = pack.animations[name]
     n, period = len(frames), frame_ms * len(frames)
@@ -239,7 +312,10 @@ def animation(pack: Pack, name: str, x: int, bottom: int, px: int) -> tuple[str,
     css = [
         f".{name} g{{opacity:0;animation:{name} {period}ms steps(1,end) infinite}}",
         f"@keyframes {name}{{0%{{opacity:1}}{100 / n:g}%{{opacity:0}}100%{{opacity:0}}}}",
-        *(f".{name} g:nth-child({i + 1}){{animation-delay:{(i - n) * frame_ms}ms}}" for i in range(1, n)),
+        *(
+            f".{name} g:nth-child({i + 1}){{animation-delay:{(i - n) * frame_ms}ms}}"
+            for i in range(1, n)
+        ),
         f"@media (prefers-reduced-motion:reduce){{.{name} g{{animation:none}}.{name} g:first-child{{opacity:1}}}}",
     ]
     body = "".join(f"<g>{sprite_path(f, x, y, px, pack.palette)}</g>" for f in frames)

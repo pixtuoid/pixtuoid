@@ -59,7 +59,18 @@ def pacing(*args):
     """What `examples/pacing.rs` prints for `args`: the authority on where a
     run starts and which terminal gives the owner's office."""
     out = subprocess.run(
-        ["cargo", "run", "-q", "--release", "-p", "pixtuoid", "--example", "pacing", "--", *args],
+        [
+            "cargo",
+            "run",
+            "-q",
+            "--release",
+            "-p",
+            "pixtuoid",
+            "--example",
+            "pacing",
+            "--",
+            *args,
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -99,7 +110,11 @@ def run_pty(argv, env, geometry, secs, hover):
         finally:
             # An exec that fails must not go on running this script as a child.
             os._exit(127)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, cols * cell_w, rows * cell_h))
+    fcntl.ioctl(
+        fd,
+        termios.TIOCSWINSZ,
+        struct.pack("HHHH", rows, cols, cols * cell_w, rows * cell_h),
+    )
     os.kill(pid, signal.SIGWINCH)
     # `cat` drains the pty: a reader slower than the binary's writes would
     # block them, and charge this script's speed to its frames.
@@ -171,9 +186,13 @@ def main():
     ap.add_argument("--hover", action="store_true")
     args = ap.parse_args()
     if args.floating:
-        terminal_only = [f"--{k}" for k in ("live", "scale", "protocol", "hover") if getattr(args, k)]
+        terminal_only = [
+            f"--{k}" for k in ("live", "scale", "protocol", "hover") if getattr(args, k)
+        ]
         if terminal_only:
-            sys.exit(f"pace-check: {' '.join(terminal_only)} picks a terminal run, and --floating runs a window")
+            sys.exit(
+                f"pace-check: {' '.join(terminal_only)} picks a terminal run, and --floating runs a window"
+            )
     args.scale = args.scale or "16"
     args.protocol = args.protocol or "kitty"
     if args.hover and args.live:
@@ -190,10 +209,17 @@ def main():
         # `frame slow` is debug: every frame past its interval, with its state.
         RUST_LOG="info,pixtuoid::jank=debug",
     )
-    look = ["--look", "classic"] if args.scale == "classic" else ["--protocol", args.protocol]
+    look = (
+        ["--look", "classic"]
+        if args.scale == "classic"
+        else ["--protocol", args.protocol]
+    )
     argv = [str(BIN), "--log-level", "info", "run", *look]
     if args.floating:
-        run_for(subprocess.Popen([str(BIN), "--log-level", "info", "floating"], env=env), args.secs)
+        run_for(
+            subprocess.Popen([str(BIN), "--log-level", "info", "floating"], env=env),
+            args.secs,
+        )
     elif args.live:
         run_live(argv, env, args.secs)
     else:
@@ -201,7 +227,10 @@ def main():
         # without one, and `--protocol` then picks it.
         env.update(TERM="xterm-256color", TERM_PROGRAM="WezTerm")
         env.pop("TMUX", None)
-        geometry = tuple(int(n) for n in pacing("terminal", "16" if args.scale == "classic" else args.scale))
+        geometry = tuple(
+            int(n)
+            for n in pacing("terminal", "16" if args.scale == "classic" else args.scale)
+        )
         run_pty(argv, env, geometry, args.secs, args.hover)
 
     if not any(events(log, "the clock starts at PIXTUOID_FAKE_NOW")):
@@ -214,9 +243,13 @@ def main():
         if w0.get("look") != "floating":
             sys.exit(f"pace-check: ran {w0.get('look')}, not floating: {log}")
     else:
-        wanted = ("classic", "1") if args.scale == "classic" else (args.protocol, args.scale)
+        wanted = (
+            ("classic", "1") if args.scale == "classic" else (args.protocol, args.scale)
+        )
         if (w0.get("look"), w0.get("scale")) != wanted:
-            sys.exit(f"pace-check: ran {w0.get('look')} x{w0.get('scale')}, not {wanted[0]} x{wanted[1]}: {log}")
+            sys.exit(
+                f"pace-check: ran {w0.get('look')} x{w0.get('scale')}, not {wanted[0]} x{wanted[1]}: {log}"
+            )
     # scheduled, hitch_ms and span_ms are indexed, not .get: a binary that logs
     # none raises instead of passing, and one that schedules no frame must not PASS.
     if not sum(int(w["scheduled"]) for w in windows):

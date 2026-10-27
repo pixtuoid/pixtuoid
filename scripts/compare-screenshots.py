@@ -32,7 +32,9 @@ def compare_images(ref_path, cand_path, diff_path):
         cand = im.convert("RGB")
 
     if ref.size != cand.size:
-        print(f"ERROR: Image sizes differ. Reference: {ref.size}, Candidate: {cand.size}")
+        print(
+            f"ERROR: Image sizes differ. Reference: {ref.size}, Candidate: {cand.size}"
+        )
         return 2
 
     diff = ImageChops.difference(ref, cand)
@@ -96,7 +98,11 @@ def _selftest():
         # RGB conversion this returns 0 and the whole gate is decorative.
         rgba_a = write("rgba_a.png", "RGBA", black + (255,))
         rgba_b = write("rgba_b.png", "RGBA", white + (255,))
-        check("differing RGBA images must FAIL", compare_images(rgba_a, rgba_b, diff_out), 1)
+        check(
+            "differing RGBA images must FAIL",
+            compare_images(rgba_a, rgba_b, diff_out),
+            1,
+        )
 
         rgb_a = write("rgb_a.png", "RGB", black)
         rgb_b = write("rgb_b.png", "RGB", white)
@@ -111,7 +117,11 @@ def _selftest():
         spot = td / "spot.png"
         spotted.save(spot)
         flat = write("flat.png", "RGB", black, size=(10, 10))
-        check("a single differing pixel must FAIL", compare_images(flat, spot, diff_out), 1)
+        check(
+            "a single differing pixel must FAIL",
+            compare_images(flat, spot, diff_out),
+            1,
+        )
 
         # The consumers subprocess this module rather than importing it, so argv
         # handling and the exit-code mapping need their own exercise.
@@ -140,7 +150,10 @@ def _selftest():
             file=sys.stderr,
         )
         return 1
-    print(f"compare-screenshots selftest: all {len(checks)} checks passed", file=sys.stderr)
+    print(
+        f"compare-screenshots selftest: all {len(checks)} checks passed",
+        file=sys.stderr,
+    )
     return 0
 
 

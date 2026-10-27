@@ -68,7 +68,18 @@ ALU, ALU_DK = "Π", "θ"
 FABRIC, FABRIC_HI, FABRIC_SH, FABRIC_SEAM = "C", "G", "Λ", "Ω"
 # fixed hues, named by hue: the 1x art's own keys, lent to the furniture
 INK, CYAN, RED, DARK_RED, VERMILION, BLUE, GOLD, TAN, BROWN, PINK, GREEN = (
-    "q", "c", "r", "N", "o", "b", "y", "x", "z", "^", "λ")
+    "q",
+    "c",
+    "r",
+    "N",
+    "o",
+    "b",
+    "y",
+    "x",
+    "z",
+    "^",
+    "λ",
+)
 PETAL_R, PETAL_Y, PETAL_HI = RED, GOLD, "ζ"
 T = "."
 
@@ -176,7 +187,8 @@ def desk_arrangement(base):
         return DESK_ARRANGEMENT
     bulb = DESK_ART_W - 1 - DESK_ARRANGEMENT["bulb"]
     return {"bulb": bulb} | {
-        prop: DESK_ART_W - DESK_ARRANGEMENT[prop] - w for prop, w in DESK_PROP_W_1X.items()
+        prop: DESK_ART_W - DESK_ARRANGEMENT[prop] - w
+        for prop, w in DESK_PROP_W_1X.items()
     }
 
 
@@ -210,7 +222,10 @@ def desk_1x(lift, base):
     rect(g, 0, top, DESK_ART_W, lip, WOOD)
     rect(g, 0, top, DESK_ART_W, top + 1, WOOD_LT)
     rect(g, 0, lip, DESK_ART_W, legs, WOOD_HI)
-    for x0, inner in ((0, DESK_LEG_W - 1), (DESK_ART_W - DESK_LEG_W, DESK_ART_W - DESK_LEG_W)):
+    for x0, inner in (
+        (0, DESK_LEG_W - 1),
+        (DESK_ART_W - DESK_LEG_W, DESK_ART_W - DESK_LEG_W),
+    ):
         rect(g, x0, legs, x0 + DESK_LEG_W, h, WOOD_SH)
         rect(g, inner, legs, inner + 1, h, WOOD_DK)
     bulb = desk_arrangement(base)["bulb"]
@@ -222,7 +237,9 @@ def desk_1x(lift, base):
 
 def monitor_stand_1x(g):
     """The chin under the monitor, the stand's shadow either side of it."""
-    rect(g, DESK_MONITOR_X0 + 1, DESK_CHIN_Y, DESK_MONITOR_X1 - 1, DESK_CHIN_Y + 1, BEZEL)
+    rect(
+        g, DESK_MONITOR_X0 + 1, DESK_CHIN_Y, DESK_MONITOR_X1 - 1, DESK_CHIN_Y + 1, BEZEL
+    )
     for x in (DESK_MONITOR_X0 + 1, DESK_MONITOR_X1 - 2):
         put(g, x, DESK_CHIN_Y, SHADOW)
 
@@ -251,7 +268,9 @@ def front_layer(art, monitor):
     them on the desk's own canvas (`pack::desk_front`)."""
     m = canvas(len(art[0]), len(art))
     monitor(m)
-    return [[c if k != T else T for c, k in zip(row, mrow)] for row, mrow in zip(art, m)]
+    return [
+        [c if k != T else T for c, k in zip(row, mrow)] for row, mrow in zip(art, m)
+    ]
 
 
 def desk_front_1x():
@@ -295,8 +314,10 @@ TOKEN_W_1X, TOKEN_ROWS_PER_TIER_1X = 3, 2
 
 def desk_marks_1x(base):
     """A 1x desk's prop marks."""
-    return [(prop, desk_prop_mark_col(base, prop, 1), row)
-            for prop, row in DESK_PROP_FOOT_1X[base].items()]
+    return [
+        (prop, desk_prop_mark_col(base, prop, 1), row)
+        for prop, row in DESK_PROP_FOOT_1X[base].items()
+    ]
 
 
 def desk_cup_1x():
@@ -318,7 +339,14 @@ def token_tower_1x():
         g = canvas(TOKEN_W_1X + 1, h)
         for i in range(h):
             dx = 1 if tier == TOKEN_MAX_TIER and i == h - 1 else 0
-            rect(g, dx, h - 1 - i, dx + TOKEN_W_1X, h - i, OFFWHITE_SH if i % 2 else OFFWHITE)
+            rect(
+                g,
+                dx,
+                h - 1 - i,
+                dx + TOKEN_W_1X,
+                h - i,
+                OFFWHITE_SH if i % 2 else OFFWHITE,
+            )
         frames.append(g)
     return frames
 
@@ -365,7 +393,6 @@ def meeting_sofa_north_1x():
     rect(g, 1, 0, SOFA_W - 1, 1, OUTLINE)
     rect(g, 1, SOFA_H - 1, SOFA_W - 1, SOFA_H, OUTLINE)
     return g
-
 
 
 # ---- the characters ----------------------------------------------------------
@@ -453,7 +480,13 @@ def curl(g, cx, cy, r):
             d = math.hypot(dx, dy)
             if d <= r:
                 t = (dx + dy) / r
-                g[y][x] = HAIR_SH if (d > r - 1.1 and t > -0.1) else HAIR_LT if t < -0.5 else HAIR
+                g[y][x] = (
+                    HAIR_SH
+                    if (d > r - 1.1 and t > -0.1)
+                    else HAIR_LT
+                    if t < -0.5
+                    else HAIR
+                )
 
 
 def rim_light(g, strands=(), sparkle=(), lit_top=True):
@@ -523,8 +556,10 @@ def ball(g, cx, cy, r):
     for y in range(len(g)):
         for x in range(1, len(g[0]) - 1):
             d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
-            if r <= d < r + 1.0 and g[y][x] != T and (
-                y + 0.5 > cy + 1 or x + 0.5 > cx + 1 and cy > 8
+            if (
+                r <= d < r + 1.0
+                and g[y][x] != T
+                and (y + 0.5 > cy + 1 or x + 0.5 > cx + 1 and cy > 8)
             ):
                 g[y][x] = SILHOUETTE
     curl(g, cx, cy, r)
@@ -593,9 +628,20 @@ def crown_finish(c, r=CROWN_R):
     return c
 
 
-MOP_PUFFS = [(FIG_CX, 12.0, 10.8), (6.8, 6.0, 3.6), (10.6, 3.8, 3.4), (15.2, 2.9, 3.4),
-             (19.8, 3.4, 3.4), (24.2, 5.8, 3.6), (4.6, 10.6, 3.6), (26.4, 10.6, 3.6),
-             (4.4, 15.0, 3.4), (26.6, 15.0, 3.4), (5.6, 18.6, 2.8), (25.4, 18.6, 2.8)]
+MOP_PUFFS = [
+    (FIG_CX, 12.0, 10.8),
+    (6.8, 6.0, 3.6),
+    (10.6, 3.8, 3.4),
+    (15.2, 2.9, 3.4),
+    (19.8, 3.4, 3.4),
+    (24.2, 5.8, 3.6),
+    (4.6, 10.6, 3.6),
+    (26.4, 10.6, 3.6),
+    (4.4, 15.0, 3.4),
+    (26.6, 15.0, 3.4),
+    (5.6, 18.6, 2.8),
+    (25.4, 18.6, 2.8),
+]
 
 
 def style_mop():
@@ -603,88 +649,226 @@ def style_mop():
     b = layer()
     for px, py, r in MOP_PUFFS:
         disc(b, px, py + LIFT, r)
-    rim_light(b, [(11, 7 + LIFT), (12, 8 + LIFT), (19, 6 + LIFT), (19, 7 + LIFT),
-                  (23, 10 + LIFT), (7, 10 + LIFT)],
-              [(9, 3 + LIFT), (10, 3 + LIFT), (14, 2 + LIFT), (15, 2 + LIFT)])
+    rim_light(
+        b,
+        [
+            (11, 7 + LIFT),
+            (12, 8 + LIFT),
+            (19, 6 + LIFT),
+            (19, 7 + LIFT),
+            (23, 10 + LIFT),
+            (7, 10 + LIFT),
+        ],
+        [(9, 3 + LIFT), (10, 3 + LIFT), (14, 2 + LIFT), (15, 2 + LIFT)],
+    )
     back = layer()
-    for px, py, r in MOP_PUFFS + [(10.5, 21.5, 3.2), (15.5, 22.2, 3.2), (20.5, 21.5, 3.2)]:
+    for px, py, r in MOP_PUFFS + [
+        (10.5, 21.5, 3.2),
+        (15.5, 22.2, 3.2),
+        (20.5, 21.5, 3.2),
+    ]:
         disc(back, px, py + (0.5 if r > 10 else 0) + LIFT, r)
     rim_light(back, [], [(9, 3 + LIFT), (10, 3 + LIFT), (14, 2 + LIFT), (15, 2 + LIFT)])
     terminator(back, FIG_CX, 12.5 + LIFT, 12.5, 8 + LIFT)
     comb(back, [((11, 7), (12, 10)), ((19, 6), (18, 9)), ((15, 11), (16, 14))], LIFT)
     sb = layer()
-    for px, py, r in ((SIDE_CX, SIDE_CY, 11.2), (8, 5, 3.6), (13, 3, 3.6), (18.5, 3.5, 3.4),
-                      (22.5, 6.2, 3.2), (4.5, 11, 3.8), (4.5, 16, 3.6), (6.5, 20, 3.2),
-                      (10, 21.5, 3.0)):
+    for px, py, r in (
+        (SIDE_CX, SIDE_CY, 11.2),
+        (8, 5, 3.6),
+        (13, 3, 3.6),
+        (18.5, 3.5, 3.4),
+        (22.5, 6.2, 3.2),
+        (4.5, 11, 3.8),
+        (4.5, 16, 3.6),
+        (6.5, 20, 3.2),
+        (10, 21.5, 3.0),
+    ):
         disc(sb, px, py + LIFT, r)
-    rim_light(sb, [(10, 8 + LIFT), (16, 7 + LIFT), (8, 14 + LIFT)],
-              [(12, 2 + LIFT), (13, 2 + LIFT)])
+    rim_light(
+        sb,
+        [(10, 8 + LIFT), (16, 7 + LIFT), (8, 14 + LIFT)],
+        [(12, 2 + LIFT), (13, 2 + LIFT)],
+    )
     c = crown_base(1.2)
     for a in range(0, 360, 40):
-        disc(c, CROWN_CX + math.cos(math.radians(a)) * CROWN_R,
-             CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R, 3.2)
-    return {"front": (b, front_fringe({7: 16, 8: 15, 9: 14, 10: 13, 11: 13, 12: 14, 13: 13, 14: 12,
-                                       15: 13, 16: 13, 17: 12, 18: 13, 19: 14, 20: 13, 21: 13,
-                                       22: 14, 23: 15, 24: 16})),
-            "back": back,
-            "side": (sb, side_locks([(19.5, 13, 2.2), (22.5, 12.5, 2.2), (24.5, 11.5, 1.6)])),
-            "crown": crown_finish(c, CROWN_R + 1.2), "ears": False}
+        disc(
+            c,
+            CROWN_CX + math.cos(math.radians(a)) * CROWN_R,
+            CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R,
+            3.2,
+        )
+    return {
+        "front": (
+            b,
+            front_fringe(
+                {
+                    7: 16,
+                    8: 15,
+                    9: 14,
+                    10: 13,
+                    11: 13,
+                    12: 14,
+                    13: 13,
+                    14: 12,
+                    15: 13,
+                    16: 13,
+                    17: 12,
+                    18: 13,
+                    19: 14,
+                    20: 13,
+                    21: 13,
+                    22: 14,
+                    23: 15,
+                    24: 16,
+                }
+            ),
+        ),
+        "back": back,
+        "side": (
+            sb,
+            side_locks([(19.5, 13, 2.2), (22.5, 12.5, 2.2), (24.5, 11.5, 1.6)]),
+        ),
+        "crown": crown_finish(c, CROWN_R + 1.2),
+        "ears": False,
+    }
 
 
-MESSY_TUFTS = ((8.5, 5.0, -125, 3.2, 2.8), (12.0, 2.8, -100, 2.8, 2.6), (16.0, 2.4, -80, 2.8, 2.6),
-               (20.0, 3.2, -60, 3.2, 2.8), (23.5, 6.0, -35, 3.0, 2.6), (6.0, 8.5, -150, 2.6, 2.4),
-               (26.0, 9.8, -8, 2.4, 2.2))
+MESSY_TUFTS = (
+    (8.5, 5.0, -125, 3.2, 2.8),
+    (12.0, 2.8, -100, 2.8, 2.6),
+    (16.0, 2.4, -80, 2.8, 2.6),
+    (20.0, 3.2, -60, 3.2, 2.8),
+    (23.5, 6.0, -35, 3.0, 2.6),
+    (6.0, 8.5, -150, 2.6, 2.4),
+    (26.0, 9.8, -8, 2.4, 2.2),
+)
 
 
 def style_messy():
     """The mop with short tufts breaking its top and sides."""
     b = layer()
-    for px, py, r in ((FIG_CX, 12.5, 10.6), (5.4, 13.0, 3.9), (26.0, 13.0, 3.9), (5.8, 17.4, 3.0),
-                      (25.6, 17.4, 3.0)):
+    for px, py, r in (
+        (FIG_CX, 12.5, 10.6),
+        (5.4, 13.0, 3.9),
+        (26.0, 13.0, 3.9),
+        (5.8, 17.4, 3.0),
+        (25.6, 17.4, 3.0),
+    ):
         disc(b, px, py + LIFT, r)
     for t in MESSY_TUFTS:
         tuft(b, t[0], t[1] + LIFT, *t[2:])
     back = [row[:] for row in b]
-    for t in ((10.0, 21.0, 100, 3.0, 2.2), (14.0, 22.0, 85, 3.4, 2.4), (18.0, 22.0, 95, 3.2, 2.4),
-              (22.0, 21.0, 80, 3.0, 2.2)):
+    for t in (
+        (10.0, 21.0, 100, 3.0, 2.2),
+        (14.0, 22.0, 85, 3.4, 2.4),
+        (18.0, 22.0, 95, 3.2, 2.4),
+        (22.0, 21.0, 80, 3.0, 2.2),
+    ):
         tuft(back, t[0], t[1] + LIFT, *t[2:])
     for px, py, r in ((6.0, 17.6, 3.0), (25.4, 17.6, 3.0)):
         disc(back, px, py + LIFT, r)
-    strands = [(12, 6 + LIFT), (13, 7 + LIFT), (18, 5 + LIFT), (18, 6 + LIFT), (21, 7 + LIFT),
-               (9, 8 + LIFT)]
-    rim_light(b, strands, [(10, 3 + LIFT), (11, 3 + LIFT), (15, 2 + LIFT), (16, 2 + LIFT)])
-    rim_light(back, strands + [(10, 12 + LIFT), (16, 15 + LIFT)],
-              [(10, 3 + LIFT), (11, 3 + LIFT), (15, 2 + LIFT), (16, 2 + LIFT)])
+    strands = [
+        (12, 6 + LIFT),
+        (13, 7 + LIFT),
+        (18, 5 + LIFT),
+        (18, 6 + LIFT),
+        (21, 7 + LIFT),
+        (9, 8 + LIFT),
+    ]
+    rim_light(
+        b, strands, [(10, 3 + LIFT), (11, 3 + LIFT), (15, 2 + LIFT), (16, 2 + LIFT)]
+    )
+    rim_light(
+        back,
+        strands + [(10, 12 + LIFT), (16, 15 + LIFT)],
+        [(10, 3 + LIFT), (11, 3 + LIFT), (15, 2 + LIFT), (16, 2 + LIFT)],
+    )
     sb = layer()
     for px, py, r in ((SIDE_CX, SIDE_CY, 11.0), (4.8, 13, 3.8), (6.2, 18.5, 3.2)):
         disc(sb, px, py + LIFT, r)
-    for t in ((9, 4, -135, 3.4, 2.8), (13.5, 2.4, -105, 3.0, 2.6), (18.5, 2.8, -75, 3.0, 2.6),
-              (22.5, 5.5, -40, 3.0, 2.4), (4.5, 8.5, -165, 3.0, 2.4), (5.5, 19.5, 160, 3.0, 2.2)):
+    for t in (
+        (9, 4, -135, 3.4, 2.8),
+        (13.5, 2.4, -105, 3.0, 2.6),
+        (18.5, 2.8, -75, 3.0, 2.6),
+        (22.5, 5.5, -40, 3.0, 2.4),
+        (4.5, 8.5, -165, 3.0, 2.4),
+        (5.5, 19.5, 160, 3.0, 2.2),
+    ):
         tuft(sb, t[0], t[1] + LIFT, *t[2:])
     rim_light(sb, [(11, 7 + LIFT), (17, 6 + LIFT)], [(12, 2 + LIFT), (13, 2 + LIFT)])
     c = crown_base(1.2)
     for a in range(200, 350, 30):
-        tuft(c, CROWN_CX + math.cos(math.radians(a)) * CROWN_R * 0.9,
-             CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R * 0.9, a, 3.2, 2.6)
-    return {"front": (b, front_fringe({7: 16, 8: 15, 9: 13, 10: 13, 11: 14, 12: 16, 13: 13, 14: 12,
-                                       15: 12, 16: 13, 17: 13, 18: 15, 19: 13, 20: 12, 21: 13,
-                                       22: 14, 23: 15, 24: 16})),
-            "back": back,
-            "side": (sb, side_locks([(19.5, 13.5, 2.2), (22.5, 12, 2.2), (25, 13, 1.6)])),
-            "crown": crown_finish(c, CROWN_R + 1.2), "ears": False}
+        tuft(
+            c,
+            CROWN_CX + math.cos(math.radians(a)) * CROWN_R * 0.9,
+            CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R * 0.9,
+            a,
+            3.2,
+            2.6,
+        )
+    return {
+        "front": (
+            b,
+            front_fringe(
+                {
+                    7: 16,
+                    8: 15,
+                    9: 13,
+                    10: 13,
+                    11: 14,
+                    12: 16,
+                    13: 13,
+                    14: 12,
+                    15: 12,
+                    16: 13,
+                    17: 13,
+                    18: 15,
+                    19: 13,
+                    20: 12,
+                    21: 13,
+                    22: 14,
+                    23: 15,
+                    24: 16,
+                }
+            ),
+        ),
+        "back": back,
+        "side": (sb, side_locks([(19.5, 13.5, 2.2), (22.5, 12, 2.2), (25, 13, 1.6)])),
+        "crown": crown_finish(c, CROWN_R + 1.2),
+        "ears": False,
+    }
 
 
 def style_side_part():
     """Less volume, parted west of centre, the fringe swept east in one sheet."""
     b = layer()
-    for px, py, r in ((FIG_CX, 12.5, 10.2), (6.0, 14.0, 3.6), (25.0, 14.0, 3.8), (6.4, 18.0, 2.6),
-                      (24.8, 18.2, 2.8)):
+    for px, py, r in (
+        (FIG_CX, 12.5, 10.2),
+        (6.0, 14.0, 3.6),
+        (25.0, 14.0, 3.8),
+        (6.4, 18.0, 2.6),
+        (24.8, 18.2, 2.8),
+    ):
         disc(b, px, py + LIFT, r)
-    rim_light(b, [(11, 2 + LIFT), (11, 3 + LIFT), (11, 4 + LIFT), (10, 5 + LIFT), (10, 6 + LIFT)],
-              [(15, 3 + LIFT), (16, 3 + LIFT)])
+    rim_light(
+        b,
+        [
+            (11, 2 + LIFT),
+            (11, 3 + LIFT),
+            (11, 4 + LIFT),
+            (10, 5 + LIFT),
+            (10, 6 + LIFT),
+        ],
+        [(15, 3 + LIFT), (16, 3 + LIFT)],
+    )
     back = layer()
-    for px, py, r in ((FIG_CX, 12.8, 10.4), (6.0, 14.0, 3.6), (25.0, 14.0, 3.8), (7.0, 18.4, 3.0),
-                      (24.2, 18.4, 3.2)):
+    for px, py, r in (
+        (FIG_CX, 12.8, 10.4),
+        (6.0, 14.0, 3.6),
+        (25.0, 14.0, 3.8),
+        (7.0, 18.4, 3.0),
+        (24.2, 18.4, 3.2),
+    ):
         disc(back, px, py + LIFT, r)
     rect(back, 9, 18 + LIFT, 23, 22 + LIFT, HAIR)
     rim_light(back, [], [(15, 3 + LIFT), (16, 3 + LIFT)])
@@ -693,19 +877,53 @@ def style_side_part():
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + LIFT, 10.8)
     ellipse(sb, 7, 17 + LIFT, 4, 5)
-    rim_light(sb, [(10, 5 + LIFT), (8, 9 + LIFT), (7, 13 + LIFT)],
-              [(15, 2 + LIFT), (16, 2 + LIFT)])
+    rim_light(
+        sb,
+        [(10, 5 + LIFT), (8, 9 + LIFT), (7, 13 + LIFT)],
+        [(15, 2 + LIFT), (16, 2 + LIFT)],
+    )
     c = crown_finish(crown_base())
-    for y in range(int(CROWN_CY - CROWN_R) + 1 + LIFT, int(CROWN_CY) + 2 + LIFT):  # the part
+    for y in range(
+        int(CROWN_CY - CROWN_R) + 1 + LIFT, int(CROWN_CY) + 2 + LIFT
+    ):  # the part
         if c[y][int(CROWN_CX) - 2] != T:
             c[y][int(CROWN_CX) - 2] = HAIR_SH
-    return {"front": (b, front_fringe({7: 14, 8: 13, 9: 12, 10: 12, 11: 12, 12: 12, 13: 13, 14: 13,
-                                       15: 13, 16: 14, 17: 14, 18: 14, 19: 15, 20: 15, 21: 15,
-                                       22: 16, 23: 16, 24: 17})),
-            "back": back,
-            "side": (sb, side_locks([(18.5, 11.5, 2.4), (21.5, 12.5, 2.6), (24.5, 13.5, 2.2)],
-                                    top=7)),
-            "crown": c, "ears": False}
+    return {
+        "front": (
+            b,
+            front_fringe(
+                {
+                    7: 14,
+                    8: 13,
+                    9: 12,
+                    10: 12,
+                    11: 12,
+                    12: 12,
+                    13: 13,
+                    14: 13,
+                    15: 13,
+                    16: 14,
+                    17: 14,
+                    18: 14,
+                    19: 15,
+                    20: 15,
+                    21: 15,
+                    22: 16,
+                    23: 16,
+                    24: 17,
+                }
+            ),
+        ),
+        "back": back,
+        "side": (
+            sb,
+            side_locks(
+                [(18.5, 11.5, 2.4), (21.5, 12.5, 2.6), (24.5, 13.5, 2.2)], top=7
+            ),
+        ),
+        "crown": c,
+        "ears": False,
+    }
 
 
 def style_long():
@@ -718,11 +936,28 @@ def style_long():
         rect(b, int(3 - spread * 1.5), y, int(29 + spread * 1.5), y + 1, HAIR)
     for x0 in (1, 5, 9, 22, 26, 30):
         for i in range(3):
-            rect(b, max(1, x0 - 2 + i), 35 + LIFT + i, min(FIG_W - 1, x0 + 2 - i), 36 + LIFT + i,
-                 HAIR)
-    rim_light(b, [(9, 6 + LIFT), (10, 7 + LIFT), (21, 6 + LIFT), (22, 7 + LIFT),
-                  (4, 22 + LIFT), (4, 26 + LIFT), (27, 22 + LIFT), (27, 26 + LIFT)],
-              [(10, 3 + LIFT), (11, 3 + LIFT)])
+            rect(
+                b,
+                max(1, x0 - 2 + i),
+                35 + LIFT + i,
+                min(FIG_W - 1, x0 + 2 - i),
+                36 + LIFT + i,
+                HAIR,
+            )
+    rim_light(
+        b,
+        [
+            (9, 6 + LIFT),
+            (10, 7 + LIFT),
+            (21, 6 + LIFT),
+            (22, 7 + LIFT),
+            (4, 22 + LIFT),
+            (4, 26 + LIFT),
+            (27, 22 + LIFT),
+            (27, 26 + LIFT),
+        ],
+        [(10, 3 + LIFT), (11, 3 + LIFT)],
+    )
     back = layer()
     ellipse(back, FIG_CX, 12.2 + LIFT, 11.2, 11.0)
     # The fall narrows below the head so the shoulders show either side of it:
@@ -733,22 +968,39 @@ def style_long():
         rect(back, int(4 + narrow - spread), y, int(28 - narrow + spread), y + 1, HAIR)
     for x0 in (9, 13, 17, 21, 25):
         for i in range(3):
-            rect(back, max(1, x0 - 2 + i), 37 + LIFT + i, min(FIG_W - 1, x0 + 2 - i),
-                 38 + LIFT + i,
-                 HAIR)
+            rect(
+                back,
+                max(1, x0 - 2 + i),
+                37 + LIFT + i,
+                min(FIG_W - 1, x0 + 2 - i),
+                38 + LIFT + i,
+                HAIR,
+            )
     rim_light(back, [], [(10, 3 + LIFT), (11, 3 + LIFT)])
     terminator(back, FIG_CX, 20.0 + LIFT, 19.0, 20 + LIFT)
     for x in range(7, 25):  # a band of sheen across the crown
         y = 7 + LIFT + abs(x - 15) // 4
         if back[y][x] == HAIR:
             back[y][x] = HAIR_LT
-    comb(back, [((9, 12), (8, 22), (7, 33)), ((15, 14), (15, 24), (14, 35)),
-                ((21, 12), (22, 22), (23, 33)), ((12, 26), (11, 34)), ((19, 26), (20, 34))], LIFT)
+    comb(
+        back,
+        [
+            ((9, 12), (8, 22), (7, 33)),
+            ((15, 14), (15, 24), (14, 35)),
+            ((21, 12), (22, 22), (23, 33)),
+            ((12, 26), (11, 34)),
+            ((19, 26), (20, 34)),
+        ],
+        LIFT,
+    )
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + LIFT, 11.0)
     lock(sb, 8.5, 12 + LIFT, 6.0, 38 + LIFT, 11, 6)  # full enough to meet the neck
-    rim_light(sb, [(9, 18 + LIFT), (8, 24 + LIFT), (7, 30 + LIFT), (11, 7 + LIFT)],
-              [(14, 2 + LIFT), (15, 2 + LIFT)])
+    rim_light(
+        sb,
+        [(9, 18 + LIFT), (8, 24 + LIFT), (7, 30 + LIFT), (11, 7 + LIFT)],
+        [(14, 2 + LIFT), (15, 2 + LIFT)],
+    )
     so = side_locks([(19.5, 13, 2.2), (22.5, 12.5, 2.2), (24.5, 12, 1.6)])
     strand = layer()
     lock(strand, 14.5, 14 + LIFT, 15.0, 24 + LIFT, 3, 2)  # its west edge on the face's
@@ -761,10 +1013,35 @@ def style_long():
         for y in range(int(CROWN_CY + 4) + LIFT, int(CROWN_CY + 16) + LIFT):
             if c[y][x0] in (HAIR, HAIR_LT):
                 c[y][x0] = HAIR_SH
-    return {"front": (b, front_fringe({7: 20, 8: 17, 9: 15, 10: 14, 11: 13, 12: 12, 13: 12, 14: 11,
-                                       17: 11, 18: 12, 19: 12, 20: 13, 21: 14, 22: 15, 23: 17,
-                                       24: 20})),
-            "back": back, "side": (sb, so), "crown": c, "ears": False}
+    return {
+        "front": (
+            b,
+            front_fringe(
+                {
+                    7: 20,
+                    8: 17,
+                    9: 15,
+                    10: 14,
+                    11: 13,
+                    12: 12,
+                    13: 12,
+                    14: 11,
+                    17: 11,
+                    18: 12,
+                    19: 12,
+                    20: 13,
+                    21: 14,
+                    22: 15,
+                    23: 17,
+                    24: 20,
+                }
+            ),
+        ),
+        "back": back,
+        "side": (sb, so),
+        "crown": c,
+        "ears": False,
+    }
 
 
 def style_bun():
@@ -779,8 +1056,15 @@ def style_bun():
     nape_cut(back)
     rim_light(back)
     terminator(back, FIG_CX, 13.0 + LIFT, 11.5, 8 + LIFT)
-    comb(back, [((8, 17), (10, 12), (13, 8)), ((15, 19), (15, 13), (15, 8)),
-                ((23, 17), (21, 12), (18, 8))], LIFT)
+    comb(
+        back,
+        [
+            ((8, 17), (10, 12), (13, 8)),
+            ((15, 19), (15, 13), (15, 8)),
+            ((23, 17), (21, 12), (18, 8)),
+        ],
+        LIFT,
+    )
     ball(back, FIG_CX, 2.6 + LIFT, 4.0)
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + 0.5 + LIFT, 10.2)
@@ -788,11 +1072,37 @@ def style_bun():
     ball(sb, 5.0, 5.5 + LIFT, 4.0)
     c = crown_finish(crown_base())
     curl(c, CROWN_CX, CROWN_CY - CROWN_R + 3.5 + LIFT, 3.8)
-    return {"front": (b, front_fringe({7: 12, 8: 11, 9: 11, 10: 10, 11: 10, 12: 10, 13: 10, 14: 10,
-                                       15: 10, 16: 10, 17: 10, 18: 10, 19: 10, 20: 10, 21: 10,
-                                       22: 11, 23: 11, 24: 12})),
-            "back": back, "side": (sb, side_locks([(20.5, 11, 2.6), (23.5, 11, 2.2)], top=7)),
-            "crown": c, "ears": True}
+    return {
+        "front": (
+            b,
+            front_fringe(
+                {
+                    7: 12,
+                    8: 11,
+                    9: 11,
+                    10: 10,
+                    11: 10,
+                    12: 10,
+                    13: 10,
+                    14: 10,
+                    15: 10,
+                    16: 10,
+                    17: 10,
+                    18: 10,
+                    19: 10,
+                    20: 10,
+                    21: 10,
+                    22: 11,
+                    23: 11,
+                    24: 12,
+                }
+            ),
+        ),
+        "back": back,
+        "side": (sb, side_locks([(20.5, 11, 2.6), (23.5, 11, 2.2)], top=7)),
+        "crown": c,
+        "ears": True,
+    }
 
 
 def style_crop():
@@ -807,8 +1117,11 @@ def style_crop():
         for x in range(1, FIG_W - 1):
             if back[y][x] == HAIR and abs(x + 0.5 - FIG_CX) > 7 - (y - 20 - LIFT):
                 back[y][x] = T
-    rim_light(back, [(12, 7 + LIFT), (19, 7 + LIFT), (15, 12 + LIFT)],
-              [(12, 5 + LIFT), (13, 5 + LIFT)])
+    rim_light(
+        back,
+        [(12, 7 + LIFT), (19, 7 + LIFT), (15, 12 + LIFT)],
+        [(12, 5 + LIFT), (13, 5 + LIFT)],
+    )
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + 0.6 + LIFT, 10.0)
     for y in range(18 + LIFT, 24 + LIFT):
@@ -816,10 +1129,25 @@ def style_crop():
             if sb[y][x] == HAIR and x > 11 - (y - 18 - LIFT):
                 sb[y][x] = T
     rim_light(sb, [(10, 7 + LIFT), (16, 5 + LIFT)], [(13, 3 + LIFT), (14, 3 + LIFT)])
-    return {"front": (b, front_locks([(8.5, 13, 1.8), (11.5, 13.5, 2.0), (14.5, 12.5, 2.0),
-                                      (17.5, 13.5, 2.0), (20.5, 12.5, 2.0), (23.0, 13, 1.6)])),
-            "back": back, "side": (sb, side_locks([(20.5, 11.5, 2.0), (23.5, 11.5, 1.8)])),
-            "crown": crown_finish(crown_base()), "ears": True}
+    return {
+        "front": (
+            b,
+            front_locks(
+                [
+                    (8.5, 13, 1.8),
+                    (11.5, 13.5, 2.0),
+                    (14.5, 12.5, 2.0),
+                    (17.5, 13.5, 2.0),
+                    (20.5, 12.5, 2.0),
+                    (23.0, 13, 1.6),
+                ]
+            ),
+        ),
+        "back": back,
+        "side": (sb, side_locks([(20.5, 11.5, 2.0), (23.5, 11.5, 1.8)])),
+        "crown": crown_finish(crown_base()),
+        "ears": True,
+    }
 
 
 def style_curls():
@@ -827,9 +1155,13 @@ def style_curls():
     b = layer()
     ellipse(b, FIG_CX, 12.5 + LIFT, 10.6, 10.0)
     rim_light(b)
-    for cy, xs in ((2.8, (10.0, 13.5, 17.0, 20.5)), (5.2, (7.2, 10.6, 14.0, 17.4, 20.8, 24.0)),
-                   (8.0, (5.4, 8.6, 12.0, 15.5, 19.0, 22.4, 25.6)), (11.2, (4.6, 26.4)),
-                   (14.4, (4.6, 26.4))):
+    for cy, xs in (
+        (2.8, (10.0, 13.5, 17.0, 20.5)),
+        (5.2, (7.2, 10.6, 14.0, 17.4, 20.8, 24.0)),
+        (8.0, (5.4, 8.6, 12.0, 15.5, 19.0, 22.4, 25.6)),
+        (11.2, (4.6, 26.4)),
+        (14.4, (4.6, 26.4)),
+    ):
         for cx in xs:
             curl(b, cx, cy + LIFT, 2.3)
     f = layer()
@@ -838,20 +1170,29 @@ def style_curls():
     back = layer()
     ellipse(back, FIG_CX, 13.2 + LIFT, 10.4, 9.8)
     rim_light(back)
-    for cy, xs in ((2.8, (10.0, 13.5, 17.0, 20.5)), (5.2, (7.2, 10.6, 14.0, 17.4, 20.8, 24.0)),
-                   (8.0, (5.4, 8.6, 12.0, 15.5, 19.0, 22.4, 25.6)),
-                   (11.2, (4.6, 7.8, 11.2, 14.6, 18.0, 21.4, 24.6)),
-                   (14.4, (4.8, 8.2, 11.6, 15.0, 18.4, 21.8, 25.2)),
-                   (17.6, (6.4, 9.8, 13.2, 16.6, 20.0, 23.6)),
-                   (20.4, (9.6, 13.0, 16.4, 19.8))):
+    for cy, xs in (
+        (2.8, (10.0, 13.5, 17.0, 20.5)),
+        (5.2, (7.2, 10.6, 14.0, 17.4, 20.8, 24.0)),
+        (8.0, (5.4, 8.6, 12.0, 15.5, 19.0, 22.4, 25.6)),
+        (11.2, (4.6, 7.8, 11.2, 14.6, 18.0, 21.4, 24.6)),
+        (14.4, (4.8, 8.2, 11.6, 15.0, 18.4, 21.8, 25.2)),
+        (17.6, (6.4, 9.8, 13.2, 16.6, 20.0, 23.6)),
+        (20.4, (9.6, 13.0, 16.4, 19.8)),
+    ):
         for cx in xs:
             curl(back, cx, cy + LIFT, 2.3)
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + LIFT, 10.8)
     rim_light(sb)
-    for cy, xs in ((3.0, (9.5, 13, 16.5, 20)), (5.8, (6.5, 10, 13.5, 17, 20.5, 23.5)),
-                   (8.8, (4.5, 7.8, 11.2, 14.6, 18, 21.4)), (12, (4, 7.2, 10.6)),
-                   (15.2, (4.2, 7.6, 11)), (18.4, (5.4, 8.8)), (21, (8, 11.2))):
+    for cy, xs in (
+        (3.0, (9.5, 13, 16.5, 20)),
+        (5.8, (6.5, 10, 13.5, 17, 20.5, 23.5)),
+        (8.8, (4.5, 7.8, 11.2, 14.6, 18, 21.4)),
+        (12, (4, 7.2, 10.6)),
+        (15.2, (4.2, 7.6, 11)),
+        (18.4, (5.4, 8.8)),
+        (21, (8, 11.2)),
+    ):
         for cx in xs:
             curl(sb, cx, cy + LIFT, 2.3)
     so = layer()
@@ -861,47 +1202,107 @@ def style_curls():
     for rr, n in ((0, 1), (4.5, 6), (8.2, 10)):
         for i in range(n):
             a = 2 * math.pi * i / n
-            curl(c, CROWN_CX + math.cos(a) * rr, CROWN_CY + LIFT + math.sin(a) * rr, 2.3)
+            curl(
+                c, CROWN_CX + math.cos(a) * rr, CROWN_CY + LIFT + math.sin(a) * rr, 2.3
+            )
     return {"front": (b, f), "back": back, "side": (sb, so), "crown": c, "ears": False}
 
 
 def style_shaggy():
     """A shaggy mop whose fringe falls in locks to the eyes."""
     b = layer()
-    for px, py, r in ((FIG_CX, 12.0, 10.8), (5.2, 14.5, 3.8), (26.2, 14.5, 3.8), (5.6, 19.0, 2.8),
-                      (25.8, 19.0, 2.8)):
+    for px, py, r in (
+        (FIG_CX, 12.0, 10.8),
+        (5.2, 14.5, 3.8),
+        (26.2, 14.5, 3.8),
+        (5.6, 19.0, 2.8),
+        (25.8, 19.0, 2.8),
+    ):
         disc(b, px, py + LIFT, r)
-    for t in ((9, 4.5, -120, 2.6, 2.6), (14.5, 2.4, -95, 2.4, 2.6), (20, 3.2, -65, 2.6, 2.6)):
+    for t in (
+        (9, 4.5, -120, 2.6, 2.6),
+        (14.5, 2.4, -95, 2.4, 2.6),
+        (20, 3.2, -65, 2.6, 2.6),
+    ):
         tuft(b, t[0], t[1] + LIFT, *t[2:])
     back = [row[:] for row in b]
     for px, py, r in ((FIG_CX, 12.4, 10.8), (5.8, 19.0, 3.0), (25.6, 19.0, 3.0)):
         disc(back, px, py + LIFT, r)
-    for t in ((8.0, 20.5, 105, 4.0, 2.4), (12.0, 21.5, 92, 4.4, 2.6), (16.0, 22.0, 88, 4.6, 2.6),
-              (20.0, 21.5, 85, 4.4, 2.6), (24.0, 20.5, 75, 4.0, 2.4)):
+    for t in (
+        (8.0, 20.5, 105, 4.0, 2.4),
+        (12.0, 21.5, 92, 4.4, 2.6),
+        (16.0, 22.0, 88, 4.6, 2.6),
+        (20.0, 21.5, 85, 4.4, 2.6),
+        (24.0, 20.5, 75, 4.0, 2.4),
+    ):
         tuft(back, t[0], t[1] + LIFT, *t[2:])
     rim_light(b, [(12, 5 + LIFT), (18, 5 + LIFT)], [(12, 3 + LIFT), (13, 3 + LIFT)])
-    rim_light(back,
-              [(12, 6 + LIFT), (18, 6 + LIFT), (10, 18 + LIFT), (14, 19 + LIFT), (18, 19 + LIFT),
-                     (22, 18 + LIFT)],
-              [(12, 3 + LIFT), (13, 3 + LIFT)])
+    rim_light(
+        back,
+        [
+            (12, 6 + LIFT),
+            (18, 6 + LIFT),
+            (10, 18 + LIFT),
+            (14, 19 + LIFT),
+            (18, 19 + LIFT),
+            (22, 18 + LIFT),
+        ],
+        [(12, 3 + LIFT), (13, 3 + LIFT)],
+    )
     sb = layer()
-    for px, py, r in ((SIDE_CX, SIDE_CY, 11.0), (4.8, 13.5, 3.8), (6, 19, 3.2), (10, 21.5, 2.8)):
+    for px, py, r in (
+        (SIDE_CX, SIDE_CY, 11.0),
+        (4.8, 13.5, 3.8),
+        (6, 19, 3.2),
+        (10, 21.5, 2.8),
+    ):
         disc(sb, px, py + LIFT, r)
-    for t in ((10, 3.5, -125, 2.8, 2.6), (15, 2.2, -95, 2.6, 2.6), (20, 3.4, -65, 2.6, 2.4)):
+    for t in (
+        (10, 3.5, -125, 2.8, 2.6),
+        (15, 2.2, -95, 2.6, 2.6),
+        (20, 3.4, -65, 2.6, 2.4),
+    ):
         tuft(sb, t[0], t[1] + LIFT, *t[2:])
-    rim_light(sb, [(11, 7 + LIFT), (17, 6 + LIFT), (8, 14 + LIFT)],
-              [(13, 2 + LIFT), (14, 2 + LIFT)])
+    rim_light(
+        sb,
+        [(11, 7 + LIFT), (17, 6 + LIFT), (8, 14 + LIFT)],
+        [(13, 2 + LIFT), (14, 2 + LIFT)],
+    )
     c = crown_base(1.2)
     for a in range(200, 350, 30):
-        tuft(c, CROWN_CX + math.cos(math.radians(a)) * CROWN_R * 0.9,
-             CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R * 0.9, a, 3.2, 2.6)
-    return {"front": (b, front_locks([(7.5, 18, 1.8), (10.0, 16.5, 2.2), (13.0, 17.5, 2.4),
-                                      (16.2, 16.5, 2.4), (19.2, 17.5, 2.4), (22.0, 16.5, 2.2),
-                                      (24.4, 18, 1.8)])),
-            "back": back,
-            "side": (sb, side_locks([(17.5, 16, 2.2), (20.5, 17.5, 2.4), (23.5, 16.5, 2.2),
-                                     (25.5, 15, 1.4)])),
-            "crown": crown_finish(c, CROWN_R + 1.2), "ears": False}
+        tuft(
+            c,
+            CROWN_CX + math.cos(math.radians(a)) * CROWN_R * 0.9,
+            CROWN_CY + LIFT + math.sin(math.radians(a)) * CROWN_R * 0.9,
+            a,
+            3.2,
+            2.6,
+        )
+    return {
+        "front": (
+            b,
+            front_locks(
+                [
+                    (7.5, 18, 1.8),
+                    (10.0, 16.5, 2.2),
+                    (13.0, 17.5, 2.4),
+                    (16.2, 16.5, 2.4),
+                    (19.2, 17.5, 2.4),
+                    (22.0, 16.5, 2.2),
+                    (24.4, 18, 1.8),
+                ]
+            ),
+        ),
+        "back": back,
+        "side": (
+            sb,
+            side_locks(
+                [(17.5, 16, 2.2), (20.5, 17.5, 2.4), (23.5, 16.5, 2.2), (25.5, 15, 1.4)]
+            ),
+        ),
+        "crown": crown_finish(c, CROWN_R + 1.2),
+        "ears": False,
+    }
 
 
 def style_ponytail():
@@ -909,16 +1310,43 @@ def style_ponytail():
     b = layer()
     ellipse(b, FIG_CX, 12.5 + LIFT, 10.6, 10.2)
     rim_light(b, [(12, 5 + LIFT), (13, 6 + LIFT)], [(11, 3 + LIFT), (12, 3 + LIFT)])
-    f = front_fringe({7: 15, 8: 14, 9: 13, 10: 12, 11: 12, 12: 12, 13: 12, 14: 12, 15: 12, 16: 12,
-                      17: 12, 18: 12, 19: 13, 20: 13, 21: 14, 22: 15, 23: 16, 24: 17})
+    f = front_fringe(
+        {
+            7: 15,
+            8: 14,
+            9: 13,
+            10: 12,
+            11: 12,
+            12: 12,
+            13: 12,
+            14: 12,
+            15: 12,
+            16: 12,
+            17: 12,
+            18: 12,
+            19: 13,
+            20: 13,
+            21: 14,
+            22: 15,
+            23: 16,
+            24: 17,
+        }
+    )
     paste(f, tail(25, 17, 27, 33, 18))
     back = layer()
     ellipse(back, FIG_CX, 12.8 + LIFT, 10.6, 10.0)
     nape_cut(back)
     rim_light(back)
     terminator(back, FIG_CX, 12.8 + LIFT, 12.0, 8 + LIFT)
-    comb(back, [((8, 9), (14, 12), (22, 16)), ((10, 16), (16, 17), (22, 17)),
-                ((13, 5), (18, 9), (23, 15))], LIFT)
+    comb(
+        back,
+        [
+            ((8, 9), (14, 12), (22, 16)),
+            ((10, 16), (16, 17), (22, 17)),
+            ((13, 5), (18, 9), (23, 15)),
+        ],
+        LIFT,
+    )
     paste(back, tail(24, 16, 27, 30, 17))
     sb = layer()
     disc(sb, SIDE_CX, SIDE_CY + 0.4 + LIFT, 10.4)
@@ -926,7 +1354,9 @@ def style_ponytail():
     so = side_locks([(20.5, 11.5, 2.4), (23.5, 12, 2.0)])
     paste(so, tail(9, 17, 10, 33, 18))
     c = crown_finish(crown_base())
-    paste(c, tail(CROWN_CX + 8, CROWN_CY + 2, CROWN_CX + 13, CROWN_CY + 12, CROWN_CY + 3))
+    paste(
+        c, tail(CROWN_CX + 8, CROWN_CY + 2, CROWN_CX + 13, CROWN_CY + 12, CROWN_CY + 3)
+    )
     return {"front": (b, f), "back": back, "side": (sb, so), "crown": c, "ears": False}
 
 
@@ -934,8 +1364,13 @@ def tail(x0, y0, x1, y1, tie_y):
     """A ponytail's tail, lit on its own, with its tie."""
     t = layer()
     lock(t, x0, y0 + LIFT, x1, y1 + LIFT, 5, 2)
-    rim_light(t,
-              [(round(x0 + (x1 - x0) * f), round(y0 + (y1 - y0) * f) + LIFT) for f in (0.4, 0.7)])
+    rim_light(
+        t,
+        [
+            (round(x0 + (x1 - x0) * f), round(y0 + (y1 - y0) * f) + LIFT)
+            for f in (0.4, 0.7)
+        ],
+    )
     for x in range(int(min(x0, x1)) - 2, int(max(x0, x1)) + 3):
         if 0 <= x < FIG_W and t[int(tie_y) + LIFT][x] != T:
             t[int(tie_y) + LIFT][x] = HAIR_SH
@@ -944,8 +1379,14 @@ def tail(x0, y0, x1, y1, tie_y):
 
 # Per-agent hairstyles, by the name a pack registers them under.
 HAIRSTYLES = {
-    "mop": style_mop, "messy": style_messy, "side_part": style_side_part, "long": style_long,
-    "bun": style_bun, "crop": style_crop, "curls": style_curls, "shaggy": style_shaggy,
+    "mop": style_mop,
+    "messy": style_messy,
+    "side_part": style_side_part,
+    "long": style_long,
+    "bun": style_bun,
+    "crop": style_crop,
+    "curls": style_curls,
+    "shaggy": style_shaggy,
     "ponytail": style_ponytail,
 }
 
@@ -973,7 +1414,14 @@ def ears_front(g, dy):
 def ears_back(g, dy):
     for x in (5, 25):
         rect(g, x, 17 + dy, x + 2, 21 + dy, SKIN)
-        rect(g, x + (1 if x < 16 else 0), 18 + dy, x + (2 if x < 16 else 1), 20 + dy, SKIN_SH)
+        rect(
+            g,
+            x + (1 if x < 16 else 0),
+            18 + dy,
+            x + (2 if x < 16 else 1),
+            20 + dy,
+            SKIN_SH,
+        )
 
 
 def ear_side(g, dy):
@@ -1006,9 +1454,24 @@ def nape(g, dy):
 def side_face(g, dy):
     """The profile, facing east: brow, a nose bump, the mouth, a chin rounding
     back to the jaw, one eye."""
-    rows = {10: (15, 24), 11: (14, 25), 12: (13, 25), 13: (13, 25), 14: (13, 25), 15: (13, 26),
-            16: (13, 27), 17: (13, 27), 18: (13, 26), 19: (13, 25), 20: (13, 25), 21: (13, 25),
-            22: (14, 25), 23: (15, 24), 24: (16, 23), 25: (17, 21)}
+    rows = {
+        10: (15, 24),
+        11: (14, 25),
+        12: (13, 25),
+        13: (13, 25),
+        14: (13, 25),
+        15: (13, 26),
+        16: (13, 27),
+        17: (13, 27),
+        18: (13, 26),
+        19: (13, 25),
+        20: (13, 25),
+        21: (13, 25),
+        22: (14, 25),
+        23: (15, 24),
+        24: (16, 23),
+        25: (17, 21),
+    }
     for y, (x0, x1) in rows.items():
         for x in range(x0, x1):
             g[y + dy][x] = SKIN_SH if (y >= 24 or x < 15) else SKIN
@@ -1051,11 +1514,13 @@ def hands_level(g, dy):
 def hands_typing(frame):
     """Both hands low on the keys, one pressing lower than the other, swapping
     each frame as the base frames do."""
+
     def draw(g, dy):
         up, down = (4, 24) if frame == 0 else (24, 4)
         rect(g, down, SEAT_Y + dy, down + S, SEAT_Y + 2 + dy, SHIRT_SH)
         mitt(g, up, SEAT_Y + dy)
         mitt(g, down, SEAT_Y + 2 + dy)
+
     return draw
 
 
@@ -1069,9 +1534,12 @@ def elbows_typing(frame):
         hands(g, dy)
         west = frame == 0
         x0 = 2 if west else FIG_W - 5
-        rect(g, x0, SHOULDER_Y + 3 + dy, x0 + 3, CUFF_Y + dy, SHIRT if west else SHIRT_SH)
+        rect(
+            g, x0, SHOULDER_Y + 3 + dy, x0 + 3, CUFF_Y + dy, SHIRT if west else SHIRT_SH
+        )
         if west:
             rect(g, x0, SHOULDER_Y + 3 + dy, x0 + 1, CUFF_Y + dy, SHIRT_LT)
+
     return draw
 
 
@@ -1141,9 +1609,14 @@ def arms_swinging(g, dy, swing, mug_east=False):
         if side > 0 and mug_east:
             continue
         x0 -= side * ((sw > 0) - (sw < 0))
-        rect(g, x0 + (1 if side < 0 else 0), SHOULDER_Y + 2 + dy, x0 + (4 if side < 0 else 3),
-             CUFF_Y + sw + dy,
-             SHIRT if side < 0 else SHIRT_SH)
+        rect(
+            g,
+            x0 + (1 if side < 0 else 0),
+            SHOULDER_Y + 2 + dy,
+            x0 + (4 if side < 0 else 3),
+            CUFF_Y + sw + dy,
+            SHIRT if side < 0 else SHIRT_SH,
+        )
         if side < 0:
             rect(g, x0 + 1, SHOULDER_Y + 2 + dy, x0 + 2, CUFF_Y + sw + dy, SHIRT_LT)
         mitt(g, x0, CUFF_Y + sw + dy)
@@ -1167,7 +1640,9 @@ def mug(g, x, y):
 
 def arms_mug_both(g, dy):
     for x0 in (5, 25):  # upper arms bent in at the elbow
-        rect(g, x0, SHOULDER_Y + 2 + dy, x0 + 3, 32 + dy, SHIRT if x0 < 16 else SHIRT_SH)
+        rect(
+            g, x0, SHOULDER_Y + 2 + dy, x0 + 3, 32 + dy, SHIRT if x0 < 16 else SHIRT_SH
+        )
     rect(g, 7, 31 + dy, 12, 35 + dy, SHIRT)
     rect(g, 20, 31 + dy, 25, 35 + dy, SHIRT_SH)
     mug(g, 13, 29 + dy)
@@ -1224,6 +1699,7 @@ def seated_rear(hands):
 def standing_body(view, step=STAND, arms=None, mug_east=False):
     """On its feet at `step` of the gait, its arms swinging with it unless `arms`
     holds them."""
+
     def draw(g, dy):
         legs(g, dy, step, view)
         shirt(g, dy, BELT_Y, back=view == "back", sleeves=False)
@@ -1231,6 +1707,7 @@ def standing_body(view, step=STAND, arms=None, mug_east=False):
             arms(g, dy)
         else:
             arms_swinging(g, dy, step.swing, mug_east)
+
     return draw
 
 
@@ -1244,30 +1721,78 @@ def couch_back(g, dy):
 
 # name: (height in logical rows, view, body, the sprite's header).
 POSES = {
-    "seated": (SEATED_ROWS, "front", seated_front(hands_level),
-        "Front view at rest, both hands level."),
-    "typing_0": (TYPING_ROWS, "front", seated_front(hands_typing(0)),
-        "Front view, typing, frame 0: the west hand level, the east pressing."),
-    "typing_1": (TYPING_ROWS, "front", seated_front(hands_typing(1)),
-        "Front view, typing, frame 1: the hands swap."),
-    "seated_back": (SEATED_ROWS, "back", seated_rear(hands_level),
-        "Back view at rest, both hands level."),
-    "typing_back_0": (TYPING_ROWS, "back", seated_rear(elbows_typing(0)),
-        "Back view, typing, frame 0."),
-    "typing_back_1": (TYPING_ROWS, "back", seated_rear(elbows_typing(1)),
-        "Back view, typing, frame 1."),
-    "back_couch": (COUCH_ROWS, "back", couch_back,
-        "On the couch, facing the windows: shoulders square over the seat back."),
-    "standing": (STANDING_ROWS, "front", standing_body("front"),
-        "Standing: arms at the sides."),
-    "holding_coffee": (STANDING_ROWS, "front", standing_body("front", arms=arms_mug_both),
-        "Standing with a steaming mug in both hands."),
-    "side_seated": (SEATED_ROWS, "side", lambda g, dy: side_body(g, dy),
-        "Seated in profile, facing east, one arm reaching forward."),
-    "seated_sleeping": (SEATED_ROWS, "crown", lambda g, dy: asleep_body(g, dy, 0),
-        "Asleep face-down on folded arms."),
-    "seated_sleeping_alt": (SEATED_ROWS, "crown", lambda g, dy: asleep_body(g, dy, 3),
-        "Dozed off, slumped east."),
+    "seated": (
+        SEATED_ROWS,
+        "front",
+        seated_front(hands_level),
+        "Front view at rest, both hands level.",
+    ),
+    "typing_0": (
+        TYPING_ROWS,
+        "front",
+        seated_front(hands_typing(0)),
+        "Front view, typing, frame 0: the west hand level, the east pressing.",
+    ),
+    "typing_1": (
+        TYPING_ROWS,
+        "front",
+        seated_front(hands_typing(1)),
+        "Front view, typing, frame 1: the hands swap.",
+    ),
+    "seated_back": (
+        SEATED_ROWS,
+        "back",
+        seated_rear(hands_level),
+        "Back view at rest, both hands level.",
+    ),
+    "typing_back_0": (
+        TYPING_ROWS,
+        "back",
+        seated_rear(elbows_typing(0)),
+        "Back view, typing, frame 0.",
+    ),
+    "typing_back_1": (
+        TYPING_ROWS,
+        "back",
+        seated_rear(elbows_typing(1)),
+        "Back view, typing, frame 1.",
+    ),
+    "back_couch": (
+        COUCH_ROWS,
+        "back",
+        couch_back,
+        "On the couch, facing the windows: shoulders square over the seat back.",
+    ),
+    "standing": (
+        STANDING_ROWS,
+        "front",
+        standing_body("front"),
+        "Standing: arms at the sides.",
+    ),
+    "holding_coffee": (
+        STANDING_ROWS,
+        "front",
+        standing_body("front", arms=arms_mug_both),
+        "Standing with a steaming mug in both hands.",
+    ),
+    "side_seated": (
+        SEATED_ROWS,
+        "side",
+        lambda g, dy: side_body(g, dy),
+        "Seated in profile, facing east, one arm reaching forward.",
+    ),
+    "seated_sleeping": (
+        SEATED_ROWS,
+        "crown",
+        lambda g, dy: asleep_body(g, dy, 0),
+        "Asleep face-down on folded arms.",
+    ),
+    "seated_sleeping_alt": (
+        SEATED_ROWS,
+        "crown",
+        lambda g, dy: asleep_body(g, dy, 3),
+        "Dozed off, slumped east.",
+    ),
 }
 # The walks: name -> (view, holds a mug east, title).
 WALKS = {
@@ -1276,13 +1801,19 @@ WALKS = {
     "walking_coffee": ("front", True, "Walking with a mug"),
 }
 POSES |= {
-    f"{name}_{i}": (STANDING_ROWS, view, standing_body(view, step, mug_east=mug),
-                    f"{title}, frame {i}: {step.phase}.")
+    f"{name}_{i}": (
+        STANDING_ROWS,
+        view,
+        standing_body(view, step, mug_east=mug),
+        f"{title}, frame {i}: {step.phase}.",
+    )
     for name, (view, mug, title) in WALKS.items()
     for i, step in enumerate(WALK_CYCLE)
 }
 # How far each pose's body sinks below its canvas top, its head mark with it.
-POSE_BOB = {f"{name}_{i}": step.bob for name in WALKS for i, step in enumerate(WALK_CYCLE)}
+POSE_BOB = {
+    f"{name}_{i}": step.bob for name in WALKS for i, step in enumerate(WALK_CYCLE)
+}
 
 
 # ---- the base art's person ----------------------------------------------------------
@@ -1349,22 +1880,40 @@ def gait_of(pose):
     """The step `pose`'s 4x frame draws, measured off its pixels against the
     standing frame's: each foot's lift, outward step and toe, and the west
     hand's swing."""
+
     def feet(g):
         found = []
         for half in (range(FIG_W // 2), range(FIG_W // 2, FIG_W)):
-            shoe = [(x, y) for y, row in enumerate(g) for x in half if row[x] in (SHOE, SHOE_HI)]
-            found.append((max(y for _, y in shoe), min(y for _, y in shoe),
-                          min(x for x, _ in shoe), max(x for x, _ in shoe)))
+            shoe = [
+                (x, y)
+                for y, row in enumerate(g)
+                for x in half
+                if row[x] in (SHOE, SHOE_HI)
+            ]
+            found.append(
+                (
+                    max(y for _, y in shoe),
+                    min(y for _, y in shoe),
+                    min(x for x, _ in shoe),
+                    max(x for x, _ in shoe),
+                )
+            )
         return found
 
     def west_hand(g):
-        return max(y for y, row in enumerate(g) for x in range(FIG_W // 4)
-                   if y > SHOULDER_Y and row[x] in (SKIN, SKIN_SH))
+        return max(
+            y
+            for y, row in enumerate(g)
+            for x in range(FIG_W // 4)
+            if y > SHOULDER_Y and row[x] in (SKIN, SKIN_SH)
+        )
 
     rest, _ = body_frame("standing")
     g, _ = body_frame(pose)
     measured = []
-    for side, (low, top, x0, x1), (rlow, rtop, rx0, rx1) in zip((-1, 1), feet(g), feet(rest)):
+    for side, (low, top, x0, x1), (rlow, rtop, rx0, rx1) in zip(
+        (-1, 1), feet(g), feet(rest)
+    ):
         out = (rx0 - x0) if side < 0 else (x1 - rx1)
         measured.append(Foot(rlow - low, out, (low - top) < (rlow - rtop)))
     swing = west_hand(g) - west_hand(rest) - POSE_BOB.get(pose, 0)
@@ -1377,8 +1926,10 @@ def check_walks():
     for name, (view, mug, _) in WALKS.items():
         for i, step in enumerate(WALK_CYCLE):
             drawn = gait_of(f"{name}_{i}")
-            require(walk_1x(view, drawn, mug) == walk_1x(view, step, mug),
-                    f"{name}_{i}: its 4x draws {drawn}, not {step}")
+            require(
+                walk_1x(view, drawn, mug) == walk_1x(view, step, mug),
+                f"{name}_{i}: its 4x draws {drawn}, not {step}",
+            )
 
 
 # Where a face-down head lies, as an offset from the crown's rest.
@@ -1597,8 +2148,10 @@ DESK_PROP_ROWS = {
 def desk_marks(base, lift):
     """An `@Nx` desk's prop marks at its arrangement's columns, `lift` rows
     taller above."""
-    return [(prop, desk_prop_mark_col(base, prop, S), (DESK_BEZEL_RAISE + lift) * S + row)
-            for prop, row in DESK_PROP_ROWS[base].items()]
+    return [
+        (prop, desk_prop_mark_col(base, prop, S), (DESK_BEZEL_RAISE + lift) * S + row)
+        for prop, row in DESK_PROP_ROWS[base].items()
+    ]
 
 
 DESK_MARKS = {
@@ -1634,7 +2187,14 @@ def token_tower():
             top = foot - (TOKEN_REAM_ROWS - (2 if r == 0 else 0))
             x0 = 1 + (TOKEN_TEETER if tier == TOKEN_MAX_TIER and r == tier - 1 else 0)
             for y in range(top, foot):
-                rect(g, x0, y, x0 + TOKEN_W, y + 1, OFFWHITE if (foot - y) % 2 else OFFWHITE_SH)
+                rect(
+                    g,
+                    x0,
+                    y,
+                    x0 + TOKEN_W,
+                    y + 1,
+                    OFFWHITE if (foot - y) % 2 else OFFWHITE_SH,
+                )
             rect(g, x0, top, x0 + TOKEN_W, top + 1, OFFWHITE)
             rect(g, x0, foot - 1, x0 + TOKEN_W, foot, OFFWHITE_SH)
             foot = top
@@ -1777,7 +2337,10 @@ def meeting_sofa_north():
     g = canvas(w, h)
     rect(g, 5, 2, w - 5, seat, FABRIC_SEAM)
     for c in SOFA_SEAT_COLS:
-        x0, x1 = max((c - SOFA_SEAT_HALF) * S + 1, 5), min((c + SOFA_SEAT_HALF) * S - 1, w - 5)
+        x0, x1 = (
+            max((c - SOFA_SEAT_HALF) * S + 1, 5),
+            min((c + SOFA_SEAT_HALF) * S - 1, w - 5),
+        )
         rect(g, x0, 2, x1, seat, FABRIC)
         rect(g, x0 + 1, 3, x1 - 1, 5, FABRIC_HI)
         rect(g, x0, seat - 2, x1, seat, FABRIC_SH)
@@ -1813,7 +2376,7 @@ def blade(g, x0, y0, ang, length, width, lit_side=1, rib=True):
             dx, dy = x + 0.5 - x0, y + 0.5 - y0
             u, v = dx * ca + dy * sa, -dx * sa + dy * ca
             t = u / length  # widest a third of the way out, tapering to a point
-            if 0 <= t <= 1 and abs(v) <= width * 2.2 * t ** 0.6 * (1 - t):
+            if 0 <= t <= 1 and abs(v) <= width * 2.2 * t**0.6 * (1 - t):
                 mask.add((x, y, u, v))
     cells = {(x, y) for x, y, _, _ in mask}
     for x, y, u, v in mask:
@@ -1830,15 +2393,18 @@ def blade(g, x0, y0, ang, length, width, lit_side=1, rib=True):
 def planter(g, cx, top, bot, half_top, half_bot, dark=False):
     """A pot tapering from its rim down: lit west, shaded east, a rim a pixel
     proud of the body with its top edge lit."""
-    body, lit_, shade, rim = ((SHADOW, SLATE, KEY_DK, SLATE) if dark
-                              else (POT, POT_HI, POT_SH, POT_HI))
+    body, lit_, shade, rim = (
+        (SHADOW, SLATE, KEY_DK, SLATE) if dark else (POT, POT_HI, POT_SH, POT_HI)
+    )
     for y in range(top + 2, bot):
         t = (y - top - 2) / max(1, bot - top - 3)
         half = half_top + (half_bot - half_top) * t
         for x in range(len(g[0])):
             d = x + 0.5 - cx
             if abs(d) <= half:
-                g[y][x] = lit_ if d < -half * 0.5 else shade if d > half * 0.45 else body
+                g[y][x] = (
+                    lit_ if d < -half * 0.5 else shade if d > half * 0.45 else body
+                )
     rect(g, int(cx - half_top - 1), top, int(cx + half_top + 1) + 1, top + 2, body)
     rect(g, int(cx - half_top - 1), top, int(cx + half_top + 1) + 1, top + 1, rim)
 
@@ -1847,9 +2413,17 @@ def plant_bush():
     """A leafy bush in terracotta: long pointed leaves fanning up and out from
     the pot, every tip clear of its neighbours."""
     g = canvas(6 * S, 7 * S)
-    for ang, ln, wd, side in ((-2.95, 10.0, 2.4, 1), (-0.2, 10.0, 2.4, -1), (-2.55, 12.0, 2.6, 1),
-                              (-0.6, 12.0, 2.6, -1), (-1.35, 14.5, 2.6, -1), (-1.8, 14.0, 2.6, 1),
-                              (-2.2, 12.0, 2.6, 1), (-0.95, 12.0, 2.6, -1), (-1.57, 10.0, 2.4, 1)):
+    for ang, ln, wd, side in (
+        (-2.95, 10.0, 2.4, 1),
+        (-0.2, 10.0, 2.4, -1),
+        (-2.55, 12.0, 2.6, 1),
+        (-0.6, 12.0, 2.6, -1),
+        (-1.35, 14.5, 2.6, -1),
+        (-1.8, 14.0, 2.6, 1),
+        (-2.2, 12.0, 2.6, 1),
+        (-0.95, 12.0, 2.6, -1),
+        (-1.57, 10.0, 2.4, 1),
+    ):
         blade(g, 12, 18.5, ang, ln, wd, side)
     planter(g, 12, 17, 27, 6.0, 4.5)
     union_outline(g)
@@ -1862,9 +2436,16 @@ def plant_tall():
     g = canvas(6 * S, 10 * S)
     rect(g, 11, 10, 13, 31, BROWN)
     rect(g, 12, 10, 13, 31, WOOD_DK)
-    for ang, ln, side, y in ((-2.5, 10.0, 1, 21), (-0.64, 10.0, -1, 21),
-                             (-2.95, 10.5, 1, 11), (-0.2, 10.5, -1, 11), (-2.45, 11.5, 1, 11),
-                             (-0.7, 11.5, -1, 11), (-1.9, 11.0, 1, 11), (-1.25, 11.0, -1, 11)):
+    for ang, ln, side, y in (
+        (-2.5, 10.0, 1, 21),
+        (-0.64, 10.0, -1, 21),
+        (-2.95, 10.5, 1, 11),
+        (-0.2, 10.5, -1, 11),
+        (-2.45, 11.5, 1, 11),
+        (-0.7, 11.5, -1, 11),
+        (-1.9, 11.0, 1, 11),
+        (-1.25, 11.0, -1, 11),
+    ):
         blade(g, 12, y, ang, ln, 2.4, side, rib=False)
     planter(g, 12, 30, 39, 6.0, 4.8, dark=True)
     union_outline(g)
@@ -1887,8 +2468,14 @@ def stem(g, pts, r, key):
 def plant_flower():
     """Potted flowers: a cluster of red and gold blooms over two leaves."""
     g = canvas(6 * S, 6 * S)
-    blooms = [(8.5, 7.0, PETAL_R), (15.5, 6.0, PETAL_Y), (12, 3.5, PETAL_R), (6.5, 11.0, PETAL_Y),
-              (17.5, 10.5, PETAL_R), (12, 9.5, PETAL_Y)]
+    blooms = [
+        (8.5, 7.0, PETAL_R),
+        (15.5, 6.0, PETAL_Y),
+        (12, 3.5, PETAL_R),
+        (6.5, 11.0, PETAL_Y),
+        (17.5, 10.5, PETAL_R),
+        (12, 9.5, PETAL_Y),
+    ]
     for bx, by, _ in blooms:
         stem(g, [(12, 16), (bx, by + 1)], 0.5, LEAF_DK)
     blade(g, 12, 16, -2.55, 7.5, 2.6, 1, rib=False)
@@ -1990,8 +2577,15 @@ def bulletin_board():
     rect(g, 3, 3, 37, 21, CORK)
     for x, y in ((6, 5), (14, 17), (22, 8), (30, 15), (33, 5), (9, 12), (27, 19)):
         put(g, x, y, CORK_SH)
-    for x0, y0, c in ((5, 5, GOLD), (13, 4, CYAN), (22, 6, PINK), (30, 4, OFFWHITE),
-                      (8, 13, OFFWHITE), (18, 13, GOLD), (27, 13, CYAN)):
+    for x0, y0, c in (
+        (5, 5, GOLD),
+        (13, 4, CYAN),
+        (22, 6, PINK),
+        (30, 4, OFFWHITE),
+        (8, 13, OFFWHITE),
+        (18, 13, GOLD),
+        (27, 13, CYAN),
+    ):
         rect(g, x0, y0, x0 + 6, y0 + 6, c)
         rect(g, x0 + 1, y0 + 2, x0 + 5, y0 + 3, PRINT)
         rect(g, x0 + 1, y0 + 4, x0 + 4, y0 + 5, PRINT)
@@ -2000,8 +2594,12 @@ def bulletin_board():
     return g
 
 
-EXIT_GLYPHS = {"E": ("111", "100", "110", "100", "111"), "X": ("101", "101", "010", "101", "101"),
-               "I": ("1",) * 5, "T": ("111", "010", "010", "010", "010")}
+EXIT_GLYPHS = {
+    "E": ("111", "100", "110", "100", "111"),
+    "X": ("101", "101", "010", "101", "101"),
+    "I": ("1",) * 5,
+    "T": ("111", "010", "010", "010", "010"),
+}
 
 
 def exit_sign():
@@ -2103,8 +2701,14 @@ def slide(g, x0, y0, x1, y1):
     w = x1 - x0
     for i in range(3):
         put(g, x0 + 3, y0 + 7 + i * 3, GREY)
-        rect(g, x0 + 5, y0 + 7 + i * 3, x0 + 5 + w * (3 if i % 2 else 4) // 10, y0 + 8 + i * 3,
-             GREY)
+        rect(
+            g,
+            x0 + 5,
+            y0 + 7 + i * 3,
+            x0 + 5 + w * (3 if i % 2 else 4) // 10,
+            y0 + 8 + i * 3,
+            GREY,
+        )
     bars = (0.4, 0.65, 0.5, 0.85)
     # the chart hangs from the glass's east edge, so a narrow screen keeps it
     bx, base = x1 - 2 - len(bars) * SLIDE_BAR_PITCH, y1 - 3
@@ -2209,8 +2813,14 @@ def pantry_small():
     rect(g, 3, 3, 12, 22, INK)
     for r in range(4):
         for c in range(3):
-            rect(g, 4 + c * 3, 4 + r * 5, 6 + c * 3, 7 + r * 5,
-                 (RED, GOLD, BLUE, LEAF)[(r + c) % 4])
+            rect(
+                g,
+                4 + c * 3,
+                4 + r * 5,
+                6 + c * 3,
+                7 + r * 5,
+                (RED, GOLD, BLUE, LEAF)[(r + c) % 4],
+            )
     rect(g, 13, 6, 14, 10, CYAN)
     rect(g, 3, 24, 12, 27, KEY_DK)
     fridge(g, 18, 9, 14, 22)
@@ -2394,7 +3004,11 @@ def vend_drink(shelf, col):
 
 def vend_pick(drink):
     """The (column, shelf) a vend of `drink` comes from: a different shelf each."""
-    col = next(c for c in range(len(VEND_CAN_COLS)) if vend_drink(drink, c) == VEND_DRINKS[drink])
+    col = next(
+        c
+        for c in range(len(VEND_CAN_COLS))
+        if vend_drink(drink, c) == VEND_DRINKS[drink]
+    )
     return VEND_CAN_COLS[col], VEND_SHELVES[drink]
 
 
@@ -2448,12 +3062,16 @@ def vending_machine():
             g = [row[:] for row in rest]
             if 1 <= step <= 4:  # its slot stands empty
                 rect(g, col, shelf, col + VEND_CAN_W, shelf + VEND_CAN_H, VEND_DARK)
-                rect(g, 2, 2, VEND_EAST - 1, 3, WHITE)  # the panel flashes while it vends
+                rect(
+                    g, 2, 2, VEND_EAST - 1, 3, WHITE
+                )  # the panel flashes while it vends
             if step == 1:  # dropping in front of the bottom shelf
                 vend_can(g, col, VEND_GLASS[3] - VEND_CAN_H, VEND_DRINKS[drink])
             if 2 <= step <= 4:
                 tx0, _, _, ty1 = VEND_TRAY
-                vend_can_lying(g, tx0 + 2 + drink * 2, ty1 - VEND_CAN_W + 1, VEND_DRINKS[drink])
+                vend_can_lying(
+                    g, tx0 + 2 + drink * 2, ty1 - VEND_CAN_W + 1, VEND_DRINKS[drink]
+                )
             frames.append(g)
     return [union_outlined(f) for f in frames]
 
@@ -2488,11 +3106,14 @@ def vending_machine_1x():
         rect(g, VEND_W - 1, 1, VEND_W, VEND_H, VEND_BODY_SH)
         rect(g, 0, VEND_H - 1, VEND_W, VEND_H, VEND_BODY_SH)
         return g
+
     rest = body()
     frames = [rest]
     for drink in range(len(VEND_DRINKS)):
         shelf = drink % len(shelves)
-        col = next(c for c in range(VEND_W - 3) if vend_drink(shelf, c) == VEND_DRINKS[drink])
+        col = next(
+            c for c in range(VEND_W - 3) if vend_drink(shelf, c) == VEND_DRINKS[drink]
+        )
         for step in range(VEND_STEPS):
             g = [row[:] for row in rest]
             if 1 <= step <= 4:
@@ -2542,7 +3163,9 @@ def printer_body(scan=None, led=False, page=0):
         if r % 2:
             rect(g, bx0 + 5, PRN_SLOT_Y + r, bx1 - 7, PRN_SLOT_Y + 1 + r, PRINT)
     for dy in PRN_DRAWERS:
-        rect(g, 2, dy + PRN_DRAWER_H - 1, PRN_EAST, dy + PRN_DRAWER_H, SHADOW)  # its seam
+        rect(
+            g, 2, dy + PRN_DRAWER_H - 1, PRN_EAST, dy + PRN_DRAWER_H, SHADOW
+        )  # its seam
         rect(g, 8, dy + 2, 16, dy + 3, PRN_BODY_SH)  # its pull
         rect(g, 8, dy + 3, 16, dy + 4, SHADOW)
     for cx in (3, w - 7):
@@ -2574,6 +3197,7 @@ def printer_1x():
     strip and status light, the output bay with its stack, the light chassis
     shaded east with a drawer's pull, on a dark plinth; a print sweeps a light
     across the glass as a page feeds out into the bay, printed as it goes."""
+
     def body(scan=None, page=0, led=False):
         g = canvas(PRN_W, PRN_H)
         rect(g, 0, 0, PRN_W, 1, PRN_TOP)
@@ -2594,9 +3218,17 @@ def printer_1x():
         if page >= 2:  # printed as it goes
             put(g, 2, 2, PRINT)
         return g
-    steps = [dict(scan=1, led=True), dict(scan=2, page=1), dict(scan=3, page=2, led=True),
-             dict(scan=4, page=2), dict(page=2, led=True), dict(page=2), dict(page=1, led=True),
-             dict()]
+
+    steps = [
+        dict(scan=1, led=True),
+        dict(scan=2, page=1),
+        dict(scan=3, page=2, led=True),
+        dict(scan=4, page=2),
+        dict(page=2, led=True),
+        dict(page=2),
+        dict(page=1, led=True),
+        dict(),
+    ]
     require(len(steps) == PRINT_STEPS, "the printer's steps fill its PRINT_STEPS")
     return [body()] + [body(**f) for f in steps]
 
@@ -2621,8 +3253,10 @@ def meeting_table():
     rect(g, 1, 1, w - 1, front, WOOD)
     rect(g, 1, 1, w - 1, 2, WOOD_LT)
     rect(g, 1, front // 2, w - 1, front // 2 + 1, WOOD_SH)
-    clear = [(x0 - 1, y0 - 1, x1 + 1, y1 + 1)
-             for x0, y0, x1, y1 in (TABLE_LAPTOP, TABLE_PAD, TABLE_MUG)]
+    clear = [
+        (x0 - 1, y0 - 1, x1 + 1, y1 + 1)
+        for x0, y0, x1, y1 in (TABLE_LAPTOP, TABLE_PAD, TABLE_MUG)
+    ]
     for _ in range(6):
         y = rng.randrange(3, front - 2)
         sx = rng.randrange(4, w - 12)
@@ -2690,8 +3324,12 @@ def kitchen_island():
     top = ISLAND_TOP_ROWS * S
     # the cabinets, a logical column in under the counter's overhang
     rect(g, S + 1, top, w - S - 1, h - 3, WOOD)
-    rect(g, w - S - 4, top, w - S - 1, h - 3, WOOD_SH)  # the east face turned from the light
-    rect(g, S + 1, top, w - S - 1, top + 1, WOOD_DK)  # the counter's shadow on the doors
+    rect(
+        g, w - S - 4, top, w - S - 1, h - 3, WOOD_SH
+    )  # the east face turned from the light
+    rect(
+        g, S + 1, top, w - S - 1, top + 1, WOOD_DK
+    )  # the counter's shadow on the doors
     doors = 4
     span = (w - 2 * S - 2) // doors
     for i in range(doors):
@@ -2700,7 +3338,9 @@ def kitchen_island():
         rect(g, x0 + 3, top + 4, x0 + span - 3, h - 7, WOOD)
         if i:
             rect(g, x0, top + 1, x0 + 1, h - 3, WOOD_DK)  # the seam between doors
-        px = x0 + span - 4 if i % 2 == 0 else x0 + 3  # the pulls face the seam they share
+        px = (
+            x0 + span - 4 if i % 2 == 0 else x0 + 3
+        )  # the pulls face the seam they share
         rect(g, px, top + 6, px + 1, top + 10, LAMP_HI)
     rect(g, S + 1, h - 5, w - S - 1, h - 3, SHADOW)  # the toe-kick
     # the counter: lit top, its far edge catching the light, its lip in shade
@@ -2712,7 +3352,13 @@ def kitchen_island():
         put(g, x, y, T)  # rounded corners
     rect(g, 9, 3, 21, 7, OFFWHITE)
     rect(g, 10, 7, 20, 8, OFFWHITE_SH)
-    for x, y, k in ((10, 2, RED), (13, 2, GREEN), (16, 2, VERMILION), (12, 4, GOLD), (15, 4, RED)):
+    for x, y, k in (
+        (10, 2, RED),
+        (13, 2, GREEN),
+        (16, 2, VERMILION),
+        (12, 4, GOLD),
+        (15, 4, RED),
+    ):
         rect(g, x, y, x + 3, y + 3, k)
         put(g, x, y, WHITE)
     # a mug, east, clear of the bowl
@@ -2794,6 +3440,7 @@ def water_cooler():
     neck in the cabinet's collar; the hot and cold taps over the drip tray in
     the lit cabinet, a vent grille on its door, the east side in shade; a
     bubble glugs up the bottle, then the water stills."""
+
     def body(bubble):
         w, h = COOLER_W * S, COOLER_H * S
         g = canvas(w, h)
@@ -2819,6 +3466,7 @@ def water_cooler():
             rect(g, bx, by, bx + 2, by + 2, TANK_LINE)
         union_outline(g)
         return g
+
     rises = [(7, 11), (7, 4)]
     return [body(rises[i] if i < len(rises) else None) for i in range(GLUG_STEPS)]
 
@@ -2843,6 +3491,7 @@ def water_cooler_1x():
         if bubble_y is not None:
             put(g, 1, bubble_y, TANK_LINE)
         return g
+
     rises = [2, 1]
     return [body(rises[i] if i < len(rises) else None) for i in range(GLUG_STEPS)]
 
@@ -2927,7 +3576,11 @@ def fish_tank():
         rect(g, 4, top, w - 4, bottom - S, TANK_WATER)
         for y in range(top + 2 * S, bottom - S):  # the deep water, dithered in
             for x in range(4, w - 4):
-                deep = y - (top + 2 * S) >= 2 * S or (x + y) % 2 == 0 and y - (top + 2 * S) >= S
+                deep = (
+                    y - (top + 2 * S) >= 2 * S
+                    or (x + y) % 2 == 0
+                    and y - (top + 2 * S) >= S
+                )
                 if deep:
                     put(g, x, y, TANK_WATER_DP)
         for x in range(4, w - 4):  # the surface, rippling
@@ -3023,7 +3676,10 @@ COAT_DROP = 3  # a coat's length at @Nx, in logical rows
 
 def coat_hooks():
     """Each coat's (x0, y0) in logical units: alternating sides down the pole."""
-    return [(0 if i % 2 == 0 else COAT_REACH + COAT_HOOK_DX, 1 + i * 2) for i in range(len(COATS))]
+    return [
+        (0 if i % 2 == 0 else COAT_REACH + COAT_HOOK_DX, 1 + i * 2)
+        for i in range(len(COATS))
+    ]
 
 
 def coat_rack():
@@ -3056,8 +3712,9 @@ def coat_rack():
             put(g, cx + half, y, shade)  # the east side, turned from the light
             if 2 <= t < (hem - top) * 2 // 3:
                 put(g, cx + outer * 2, y, shade)  # the sleeve's seam
-        rect(g, cx - 1, top, cx + 2, top + 1,
-             WHITE if coat != COATS[2] else OFFWHITE_SH)  # the collar
+        rect(
+            g, cx - 1, top, cx + 2, top + 1, WHITE if coat != COATS[2] else OFFWHITE_SH
+        )  # the collar
         for y in range(top + 1, hem - 1):
             put(g, cx, y, shade)  # the front edge
         rect(g, cx - 4, hem - 1, cx + 5, hem, shade)  # the hem
@@ -3148,8 +3805,13 @@ def wall_clock():
     for i in range(12):
         a = i * math.pi / 6
         major = i % 3 == 0
-        for rr in ((r_face - 1.5, r_face - 3.5) if major else (r_face - 1.5,)):
-            put(g, int(c[0] + rr * math.sin(a)), int(c[1] - rr * math.cos(a)), CLOCK_HAND)
+        for rr in (r_face - 1.5, r_face - 3.5) if major else (r_face - 1.5,):
+            put(
+                g,
+                int(c[0] + rr * math.sin(a)),
+                int(c[1] - rr * math.cos(a)),
+                CLOCK_HAND,
+            )
     rect(g, int(c[0]) - 1, int(c[1]) - 1, int(c[0]) + 1, int(c[1]) + 1, CLOCK_HAND)
     union_outline(g)
     return g
@@ -3265,11 +3927,23 @@ def elevator_door():
 # sky, so no drawing here carries a colour of its own. Each is drawn at `S`; its base
 # is that drawing read at 1x, block by block (`city_base`).
 CITY_FACADE, CITY_SHADE, CITY_ROOF, CITY_GLASS, CITY_MULLION, CITY_DETAIL, CITY_SIGN = (
-    "+", "-", "~", "0", "|", "*", "=")
+    "+",
+    "-",
+    "~",
+    "0",
+    "|",
+    "*",
+    "=",
+)
 # pack.toml's `[city]` names these keys; `--check` fails where the two differ.
 CITY = {
-    "facade": CITY_FACADE, "shade": CITY_SHADE, "roof": CITY_ROOF, "glass": CITY_GLASS,
-    "mullion": CITY_MULLION, "detail": CITY_DETAIL, "sign": CITY_SIGN,
+    "facade": CITY_FACADE,
+    "shade": CITY_SHADE,
+    "roof": CITY_ROOF,
+    "glass": CITY_GLASS,
+    "mullion": CITY_MULLION,
+    "detail": CITY_DETAIL,
+    "sign": CITY_SIGN,
 }
 
 
@@ -3350,7 +4024,7 @@ def building_dome():
     rect(g, 0, base, w, base + 2, CITY_ROOF)
     for y in range(2 * S, base):
         for x in range(w):
-            if (x + 0.5 - w / 2) ** 2 + ((y + 0.5 - base) * 1.1) ** 2 <= 9.5 ** 2:
+            if (x + 0.5 - w / 2) ** 2 + ((y + 0.5 - base) * 1.1) ** 2 <= 9.5**2:
                 g[y][x] = CITY_ROOF if y < base - 7 else CITY_FACADE
     rect(g, w // 2 - 1, S + 2, w // 2 + 1, 2 * S + 3, CITY_DETAIL)
     for x in range(3, w - 3, 5):
@@ -3439,7 +4113,9 @@ def block_read(g, pick):
     out = canvas(w, h)
     for by in range(h):
         for bx in range(w):
-            k = pick([g[by * S + y][bx * S + x] for y in range(S) for x in range(S)], bx, by)
+            k = pick(
+                [g[by * S + y][bx * S + x] for y in range(S) for x in range(S)], bx, by
+            )
             if k is not None:
                 out[by][bx] = k
     return out
@@ -3451,7 +4127,9 @@ def city_cell(cells, bx, by):
     sky; one holding glass on an odd row and column is glass, the lit-dot grid a
     1x city is read by (the scene's `skyline::block_window`); any other takes
     whichever of facade and shade it holds more of."""
-    thin = next((k for k in (CITY_SIGN, CITY_DETAIL, CITY_ROOF) if cells.count(k) >= S), None)
+    thin = next(
+        (k for k in (CITY_SIGN, CITY_DETAIL, CITY_ROOF) if cells.count(k) >= S), None
+    )
     if thin:
         return thin
     if (len(cells) - cells.count(T)) * 2 < len(cells):
@@ -4703,7 +5381,9 @@ def creature_cell(cells, _bx, _by):
     inside = [CREATURE_RAMPS.get(k, k) for k in cells if k not in (T, SILHOUETTE)]
     if not inside:
         return None
-    feature = next((k for k, least in CREATURE_FEATURES.items() if cells.count(k) >= least), None)
+    feature = next(
+        (k for k, least in CREATURE_FEATURES.items() if cells.count(k) >= least), None
+    )
     return feature or max(dict.fromkeys(inside), key=inside.count)
 
 
@@ -4741,14 +5421,24 @@ CREATURE_FIXES = {
     # joins into one bar, apart on the contacts and crossed on the passes
     **{
         f"dog_walk_{i}": [(5, 0, TAN), (4, 1, BROWN)] + [(x, 5, T) for x in gap]
-        for i, gap in enumerate((
-            (2, 3, 4), (2, 3, 4), (1, 3, 5), (1, 3, 5), (2, 3, 4), (2, 3), (1, 5), (1, 3, 5),
-        ))
+        for i, gap in enumerate(
+            (
+                (2, 3, 4),
+                (2, 3, 4),
+                (1, 3, 5),
+                (1, 3, 5),
+                (2, 3, 4),
+                (2, 3),
+                (1, 5),
+                (1, 3, 5),
+            )
+        )
     },
     # each claw's pincer gap, too slim to read: whole, a claw is a block
     **{
         f"lobster_{pose}_{i}": [(2, 1, T), (11, 1, T)]
-        for pose in ("rest", "walk") for i in range(4)
+        for pose in ("rest", "walk")
+        for i in range(4)
     },
 }
 
@@ -4786,17 +5476,21 @@ CREATURES = {
     "dog_sit": ("The dog sitting: breathing.", DOG_SIT),
     "dog_sleep": ("The dog asleep, chin on its paws: breathing.", DOG_SLEEP),
     "lobster_rest": (
-        "The OpenClaw lobster at rest, top-down: its claws snapping in turn.", LOBSTER_REST
+        "The OpenClaw lobster at rest, top-down: its claws snapping in turn.",
+        LOBSTER_REST,
     ),
     "lobster_walk": (
-        "The OpenClaw lobster walking, top-down: its legs stepping in turn.", LOBSTER_WALK
+        "The OpenClaw lobster walking, top-down: its legs stepping in turn.",
+        LOBSTER_WALK,
     ),
 }
 
 
 # ---- output -----------------------------------------------------------------
 PROVENANCE = "Generated by scripts/gen-art.py: edit the generator, not this file."
-ENCODING = "utf-8"  # the keys include σ/ψ/Θ, and the locale's encoding need not be the file's
+ENCODING = (
+    "utf-8"  # the keys include σ/ψ/Θ, and the locale's encoding need not be the file's
+)
 
 
 def render_sprite(header, frames, heads=(), marks=()):
@@ -4858,7 +5552,8 @@ def check(pack, sprites):
     stale = sorted(
         name
         for name, text in sprites.items()
-        if not (pack / name).is_file() or (pack / name).read_text(encoding=ENCODING) != text
+        if not (pack / name).is_file()
+        or (pack / name).read_text(encoding=ENCODING) != text
     )
     gone = orphans(pack, sprites)
     if not stale and not gone:
@@ -4868,7 +5563,12 @@ def check(pack, sprites):
         committed = (pack / stale[0]).read_text(encoding=ENCODING).splitlines()
         drawn = sprites[stale[0]].splitlines()
         diff = difflib.unified_diff(
-            committed, drawn, f"committed/{stale[0]}", f"drawn/{stale[0]}", n=0, lineterm=""
+            committed,
+            drawn,
+            f"committed/{stale[0]}",
+            f"drawn/{stale[0]}",
+            n=0,
+            lineterm="",
         )
         lines.extend(list(diff)[:20])
     return "\n".join(lines)
@@ -4902,11 +5602,19 @@ def selftest(sprites):
         (pack / "hand.sprite").write_text(
             f"# copied from {first}: {PROVENANCE}\n@frame 0\n.\n", encoding=ENCODING
         )
-        require(check(pack, sprites) is None, "hand art quoting the provenance is not an orphan")
+        require(
+            check(pack, sprites) is None,
+            "hand art quoting the provenance is not an orphan",
+        )
         city = "[city]\n" + "".join(f'{k} = "{v}"\n' for k, v in CITY.items())
         outline = f'[characters]\noutline = "{SILHOUETTE}"\n'
-        (pack / "pack.toml").write_text(city + '[characters]\noutline = "n"\n', encoding=ENCODING)
-        require(check(pack, sprites) is not None, "an outline the art does not draw must fail")
+        (pack / "pack.toml").write_text(
+            city + '[characters]\noutline = "n"\n', encoding=ENCODING
+        )
+        require(
+            check(pack, sprites) is not None,
+            "an outline the art does not draw must fail",
+        )
         (pack / "pack.toml").write_text(city, encoding=ENCODING)
         require(check(pack, sprites) is not None, "a pack naming no outline must fail")
         (pack / "pack.toml").write_text(outline, encoding=ENCODING)
@@ -4919,11 +5627,18 @@ def selftest(sprites):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
-        "pack", nargs="?", type=pathlib.Path, help="the pack directory to write or check"
+        "pack",
+        nargs="?",
+        type=pathlib.Path,
+        help="the pack directory to write or check",
     )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true", help="fail on drift; write nothing")
-    mode.add_argument("--selftest", action="store_true", help="prove the check can fail")
+    mode.add_argument(
+        "--check", action="store_true", help="fail on drift; write nothing"
+    )
+    mode.add_argument(
+        "--selftest", action="store_true", help="prove the check can fail"
+    )
     args = parser.parse_args()
     if not args.selftest and args.pack is None:
         parser.error("a pack directory is required")
@@ -4968,7 +5683,10 @@ def main():
         "door": (elevator_door.__doc__, elevator_door()),
     }
     classic = {
-        "meeting_sofa_north": (meeting_sofa_north_1x.__doc__, [meeting_sofa_north_1x()]),
+        "meeting_sofa_north": (
+            meeting_sofa_north_1x.__doc__,
+            [meeting_sofa_north_1x()],
+        ),
         "desk": (desk_south_1x.__doc__, [desk_south_1x()]),
         "desk_north": (desk_north_1x.__doc__, [desk_north_1x()]),
         "desk_cup": (desk_cup_1x.__doc__, [desk_cup_1x()]),
@@ -5030,8 +5748,10 @@ def main():
     }
     # A front layer is drawn at its desk's top-left on the desk's own canvas, so
     # it is not grounded on its own rows, and the desk under it must not move.
-    for desk, front, suffix in ((desk_south_1x, desk_front_1x, ""),
-                                (desk_south, desk_front, f"@{S}x")):
+    for desk, front, suffix in (
+        (desk_south_1x, desk_front_1x, ""),
+        (desk_south, desk_front, f"@{S}x"),
+    ):
         art = desk()
         require(grounded([art]) == [art], f"desk{suffix} moves when grounded")
         sprites[f"desk_front{suffix}.sprite"] = render_sprite(front.__doc__, [front()])
@@ -5039,7 +5759,8 @@ def main():
         for i, g in enumerate(grounded([master(t) for t in texts])):
             sprites[f"{anim}_{i}@{S}x.sprite"] = render_sprite(header, [g])
             sprites[f"{anim}_{i}.sprite"] = render_sprite(
-                header + "\n\nIts base: the master read at 1x.", [creature_base(f"{anim}_{i}", g)]
+                header + "\n\nIts base: the master read at 1x.",
+                [creature_base(f"{anim}_{i}", g)],
             )
     for name, draw in BUILDINGS.items():
         art = draw()
