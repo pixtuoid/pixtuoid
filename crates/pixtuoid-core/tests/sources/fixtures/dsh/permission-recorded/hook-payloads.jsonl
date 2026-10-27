@@ -7,4 +7,4 @@
 {"type":"tool_result","sessionId":"session-e92d377c-8d5e-46ee-abea-91d16343757b","cwd":"/private/tmp/pixtuoid-capture/proj","callId":"toolu_Q6TibiydRvep_pD8","_pid":67997,"_shim_ts_ms":1793123605971,"_pixtuoid_source":"dsh"}
 {"type":"usage","sessionId":"session-e92d377c-8d5e-46ee-abea-91d16343757b","cwd":"/private/tmp/pixtuoid-capture/proj","inputTokens":12,"outputTokens":7,"_pid":67997,"_shim_ts_ms":1793123605985,"_pixtuoid_source":"dsh"}
 {"type":"turn_end","sessionId":"session-e92d377c-8d5e-46ee-abea-91d16343757b","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":67997,"_shim_ts_ms":1793123605989,"_pixtuoid_source":"dsh"}
-{"type":"session_end","sessionId":"session-e92d377c-8d5e-46ee-abea-91d16343757b","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":67997,"_shim_ts_ms":1793123606004,"_pixtuoid_source":"dsh"}
+{"type":"session_end","sessionId":"session-e92d377c-8d5e-46ee-abea-91d16343757b","cwd":"","_pid":67997,"_shim_ts_ms":1793123606004,"_pixtuoid_source":"dsh"}

@@ -7,6 +7,6 @@
   "note": "hook sessionFile home path redacted to /Users/dev. omp -c resumes the last persisted session in a fresh process: the bridge fires session_start on the EXISTING transcript (re-registration), no new transcript is written.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 2
+    "blanked": 3
   }
 }

@@ -99,8 +99,8 @@ pub struct Target {
     /// whose hooks take effect on the CLI's next run.
     pub post_install_hint: Option<&'static str>,
     /// Set when the CLI loads our hooks through its own plugin system: the owned
-    /// primary is then the plugin file that carries them (a hooks file, or a
-    /// manifest with the hooks inside), which this registers with the CLI.
+    /// primary is then the plugin file that carries them (a hooks file, a manifest
+    /// with the hooks inside, or code that registers them), which this registers.
     pub host: Option<&'static HostRegistration>,
     /// The hook names the installed artifact subscribes to: a profiled CLI's
     /// hermetic scenarios fire or owe each it forwards
@@ -214,10 +214,29 @@ pub struct HostRegistration {
     pub unregister: fn(config: &Path) -> Result<Unregistered>,
     /// Whether the CLI reports the plugin installed and enabled.
     pub is_registered: fn() -> Result<bool>,
-    /// `None` when the CLI loads the plugin's files in place.
-    pub copy: Option<PluginCopy>,
+    /// What brings a rewrite of the plugin's files to the CLI: `None` when it picks
+    /// one up on its own.
+    pub pickup: Option<Pickup>,
     /// `None` when no released pixtuoid ever merged hooks into the CLI's own config.
     pub legacy: Option<LegacyConfig>,
+}
+
+impl HostRegistration {
+    pub(crate) fn copy(&self) -> Option<&PluginCopy> {
+        match &self.pickup {
+            Some(Pickup::Recopy(copy)) => Some(copy),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Pickup {
+    Recopy(PluginCopy),
+    /// The CLI loads the files in place but keeps what it loaded until told. The
+    /// reload may re-enable a plugin the user disabled, so it runs only while
+    /// [`HostRegistration::is_registered`].
+    Reload(fn() -> Result<()>),
 }
 
 /// A CLI that runs its own copy of the plugin, so a rewrite of the files reaches it
@@ -440,21 +459,25 @@ pub(crate) const HERMES: Target = Target {
     display_name: "Hermes Agent",
     default_config_path: crate::install::hermes::default_config_path,
     hook_command: crate::install::hermes::hook_command,
-    primary: Primary::Config {
-        merge_install: crate::install::hermes::merge_install,
-        merge_uninstall: crate::install::hermes::merge_uninstall,
+    primary: Primary::Owned {
+        render: crate::install::hermes::render_plugin,
+        installed_shim: crate::install::hermes::installed_shim,
+        uninstall: crate::install::hermes::uninstall,
         verify_schema: crate::install::hermes::verify_schema,
-        beside: None,
+        retired: None,
+        // The gateway discovers plugins once, and again only when told to
+        // (`hermes_cli/plugins_activation.py:118-121` at v0.22.5).
+        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
-    // Hermes OWNS config.yaml (model/provider), so probe the home dir instead.
+    // The plugin is ours, so probe Hermes's own home dir instead.
     presence_probe: crate::install::hermes::detect_installed,
     post_install_hint: None,
-    host: None,
+    host: Some(&crate::install::hermes::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
-    registers: || crate::install::hermes::HERMES_EVENTS.to_vec(),
+    registers: crate::install::hermes::plugin_events,
 };
 
 pub(crate) const OPENCLAW: Target = Target {

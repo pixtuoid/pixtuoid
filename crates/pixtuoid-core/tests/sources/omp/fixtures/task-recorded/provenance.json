@@ -7,7 +7,7 @@
   "note": "hook sessionFile home path redacted to /Users/dev. payloads only: the harvested CHILD transcript embedded the recorder machine's whole skill roster via a session_init entry, so it is withheld (tests/sources/delegation/fixtures/omp carries the transcript-side task evidence).",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 4
+    "blanked": 6
   },
   "prompt": "Use your task tool to spawn exactly one subagent named SayHi whose task is to reply with the single word hi. Then reply hi yourself."
 }

@@ -6,7 +6,7 @@
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 61
+    "blanked": 62
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/omp/tool-run.json",

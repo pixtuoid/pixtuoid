@@ -248,6 +248,29 @@ pub(crate) fn pid_alive(pid: i32) -> bool {
     }
 }
 
+/// Liveness by a handle that a zero-timeout wait finds unsignalled; a pid no
+/// handle opens for reads as gone.
+#[cfg(all(windows, feature = "harness"))]
+pub(crate) fn pid_alive(pid: i32) -> bool {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::{FALSE, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+    };
+    let Ok(id) = u32::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: by-value arguments; the null check screens the handle.
+    let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, FALSE, id) };
+    if handle.is_null() {
+        return false;
+    }
+    // SAFETY: a fresh handle nothing else owns.
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    // SAFETY: the handle is open with SYNCHRONIZE, and a zero timeout only polls.
+    unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) == WAIT_TIMEOUT }
+}
+
 /// The sessions registry is a SIBLING of the projects root. Derived only when
 /// the parent layout matches (the root's file_name is literally `projects`) —
 /// a root pointed elsewhere (a test's temp dir) has a parent that could hold an

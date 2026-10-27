@@ -223,6 +223,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ready: &["session", "list", "--server", SERVER],
         env: &[],
     }),
+    server_stop: None,
     // A session's execution settles on every exit as one of three
     // (`packages/core/src/session/execution.ts:116-145` at v2.2.0).
     turn_exits: &[

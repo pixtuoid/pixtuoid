@@ -5,4 +5,4 @@
 {"type":"tool_result","sessionId":"session-42abdba8-5e47-4398-a642-9ce0b28e29c4","cwd":"/private/tmp/pixtuoid-capture/proj","callId":"toolu_YP_N_sf25kZs9iRC","_pid":67710,"_shim_ts_ms":1793123597337,"_pixtuoid_source":"dsh"}
 {"type":"usage","sessionId":"session-42abdba8-5e47-4398-a642-9ce0b28e29c4","cwd":"/private/tmp/pixtuoid-capture/proj","inputTokens":12,"outputTokens":7,"_pid":67710,"_shim_ts_ms":1793123597357,"_pixtuoid_source":"dsh"}
 {"type":"turn_end","sessionId":"session-42abdba8-5e47-4398-a642-9ce0b28e29c4","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":67710,"_shim_ts_ms":1793123597360,"_pixtuoid_source":"dsh"}
-{"type":"session_end","sessionId":"session-42abdba8-5e47-4398-a642-9ce0b28e29c4","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":67710,"_shim_ts_ms":1793123597374,"_pixtuoid_source":"dsh"}
+{"type":"session_end","sessionId":"session-42abdba8-5e47-4398-a642-9ce0b28e29c4","cwd":"","_pid":67710,"_shim_ts_ms":1793123597374,"_pixtuoid_source":"dsh"}

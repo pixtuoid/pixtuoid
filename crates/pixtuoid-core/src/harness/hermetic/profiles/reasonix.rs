@@ -201,5 +201,6 @@ model = "guardian-model"
     result_unseen: false,
     live: None,
     daemon: None,
+    server_stop: None,
     turn_exits: &[],
 };

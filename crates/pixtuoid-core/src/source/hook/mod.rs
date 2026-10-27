@@ -5,7 +5,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{checked_pid, decode_hook_object, hook_object, hook_source};
+use crate::source::decoder::{
+    PID_STAMP, checked_pid, decode_hook_object, hook_object, hook_source,
+};
 use crate::source::registry::SourceDescriptor;
 use crate::source::{AgentEvent, TaggedSender, Transport};
 
@@ -307,7 +309,7 @@ pub(crate) async fn handle_conn(
                 // init, must not take the focus-jump pid cache down with it —
                 // only the BIND below needs the watch.
                 let pid = obj
-                    .get("_pid")
+                    .get(PID_STAMP)
                     .and_then(serde_json::Value::as_i64)
                     .and_then(checked_pid);
                 match decode_hook_object(obj) {
@@ -382,7 +384,7 @@ mod tests {
 
     #[test]
     fn patch_identity_pids_stamps_only_a_focus_target() {
-        for source in ["claude-code", "codex", "copilot", "opencode"] {
+        for source in ["claude-code", "codex", "copilot", "opencode", "hermes"] {
             let mut evs = vec![AgentEvent::Identity {
                 agent_id: AgentId::from_parts(source, "ses_t"),
                 source: source.into(),
@@ -396,14 +398,7 @@ mod tests {
                 "{source} Identity must stay pid: None"
             );
         }
-        for source in [
-            "antigravity",
-            "cursor",
-            "codewhale",
-            "hermes",
-            "reasonix",
-            "omp",
-        ] {
+        for source in ["antigravity", "cursor", "codewhale", "reasonix", "omp"] {
             let mut evs = vec![AgentEvent::Identity {
                 agent_id: AgentId::from_parts(source, "ses_t"),
                 source: source.into(),

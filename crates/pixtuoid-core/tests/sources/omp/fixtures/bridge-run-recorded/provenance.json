@@ -7,6 +7,6 @@
   "note": "hook sessionFile home path redacted to /Users/dev.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 100
+    "blanked": 101
   }
 }

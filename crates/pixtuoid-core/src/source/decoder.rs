@@ -149,6 +149,10 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
     i32::try_from(raw).ok().filter(|&p| p > 0)
 }
 
+/// The hook-envelope key that carries the agent CLI's pid: a plugin stamps it
+/// from inside the CLI, else the shim from its ancestry (`pixtuoid-hook`'s `cli_pid`).
+pub(crate) const PID_STAMP: &str = "_pid";
+
 pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
     v.get("cwd").and_then(Value::as_str).map(PathBuf::from)
 }
@@ -1574,7 +1578,7 @@ mod tests {
                 Box::new(|| {
                     hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_tool_call","session_id":"s","cwd":"/r",
-                        "tool_name":name,"tool_input":{"command":tgt}})))
+                        "tool_name":name,"args":{"command":tgt}})))
                     .expect("hermes decodes")
                 }),
             ),
@@ -1785,14 +1789,14 @@ mod tests {
                 }),
             ),
             (
-                // The recorded gate carries its WHY on `extra.description` ("delete
-                // in root path"), so the reason must route through `ellipsize` too.
+                // The recorded gate carries its WHY on `description` ("recursive
+                // delete"), so the reason must route through `ellipsize` too.
                 hermes::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
                     hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_approval_request","session_id":"s","cwd":"/r",
-                        "extra":{"description":raw}})))
+                        "description":raw})))
                     .expect("hermes decodes")
                 }),
             ),

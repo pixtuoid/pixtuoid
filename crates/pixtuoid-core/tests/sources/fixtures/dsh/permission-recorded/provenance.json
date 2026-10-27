@@ -6,7 +6,7 @@
   "command": "just hermetic --record dsh",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 1
+    "blanked": 2
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/dsh/permission.json",

@@ -400,6 +400,7 @@ trust_level = "trusted"
     result_unseen: false,
     live: None,
     daemon: None,
+    server_stop: None,
     // A finished task writes `task_complete`, its error inside when it
     // failed, and an aborted one `turn_aborted`
     // (`core/src/tasks/mod.rs:645-669`, `:831-870` at rust-v0.164.0).

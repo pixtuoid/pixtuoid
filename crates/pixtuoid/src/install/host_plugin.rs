@@ -79,17 +79,21 @@ pub(crate) fn write_manifests(docs: &[(PathBuf, Value)]) -> Result<()> {
     Ok(())
 }
 
-/// Delete `dir` only when `manifest` names [`NAME`]: a custom config path must not
-/// take a stranger's dir.
-pub(crate) fn remove_if_ours(dir: &Path, manifest: &Path) -> Result<()> {
-    let Ok(text) = std::fs::read_to_string(manifest) else {
+/// Delete `dir` only when `ours` recognizes `file`, one it holds: a custom config
+/// path must not take a stranger's dir.
+pub(crate) fn remove_if_ours(dir: &Path, file: &Path, ours: fn(&str) -> bool) -> Result<()> {
+    let Ok(text) = std::fs::read_to_string(file) else {
         return Ok(());
     };
-    let ours = serde_json::from_str::<Value>(&text).is_ok_and(|m| m["name"].as_str() == Some(NAME));
-    if ours {
+    if ours(&text) {
         std::fs::remove_dir_all(dir).with_context(|| format!("removing {}", dir.display()))?;
     }
     Ok(())
+}
+
+/// A JSON manifest naming [`NAME`].
+pub(crate) fn names_us(manifest: &str) -> bool {
+    serde_json::from_str::<Value>(manifest).is_ok_and(|m| m["name"].as_str() == Some(NAME))
 }
 
 /// `{<event>: [entry]}` for each of `events`.
@@ -221,10 +225,10 @@ mod tests {
         let manifest = tmp.path().join("dir").join("m.json");
         std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
         std::fs::write(&manifest, r#"{"name":"someone-else"}"#).unwrap();
-        remove_if_ours(manifest.parent().unwrap(), &manifest).unwrap();
+        remove_if_ours(manifest.parent().unwrap(), &manifest, names_us).unwrap();
         assert!(manifest.exists());
         std::fs::write(&manifest, r#"{"name":"pixtuoid"}"#).unwrap();
-        remove_if_ours(manifest.parent().unwrap(), &manifest).unwrap();
+        remove_if_ours(manifest.parent().unwrap(), &manifest, names_us).unwrap();
         assert!(!manifest.exists());
     }
 }

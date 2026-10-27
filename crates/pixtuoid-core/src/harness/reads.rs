@@ -77,8 +77,8 @@ pub(crate) fn strip_lines(source: &str, file: &Path, lines: &mut [Value]) -> boo
 
 /// Each line's count of subtrees blanked, `lines` rewritten in place.
 fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> Vec<usize> {
-    let base = events_of(source, drive, lines);
     let stamped = is_hook_envelope(file);
+    let base = events_of(source, drive, lines, !stamped);
     (0..lines.len())
         .map(|i| probe(source, drive, lines, &base, i, "", stamped))
         .collect()
@@ -197,16 +197,17 @@ type Decoded = (
 
 /// Everything the registry reads from a line, not only the line decoder: a
 /// daemon's envelopes decode to no `AgentEvent` by design (presence rides
-/// `presence_decoder`), and the watcher registers a transcript through
+/// `presence_decoder`), and the watcher registers a `transcript` through
 /// `cwd_extractor` and `parent_extractor`, which the harness never calls — it
-/// seeds a fixed cwd and no parent.
+/// seeds a fixed cwd and no parent. A hook envelope never meets them.
 /// Compared as rendered, the way a golden is: `PathBuf` equality drops a
 /// trailing slash, and grok's `workspaceRoot` fallback differs by exactly that.
-fn events_of(source: &str, drive: &Drive, lines: &[Value]) -> Decoded {
+fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> Decoded {
     let d = drive.lines(lines.iter().map(Value::to_string));
     let parent = registry::parent_extractor_for(source);
     let first_sight = lines
         .iter()
+        .filter(|_| transcript)
         .map(|l| {
             format!(
                 "{:?} {:?}",
@@ -336,7 +337,7 @@ fn probe(
         return 0;
     };
     let kept = std::mem::replace(slot, neutral);
-    if events_of(source, drive, lines) == *base {
+    if events_of(source, drive, lines, !stamped) == *base {
         return 1;
     }
     let children: Vec<String> = match &kept {
@@ -382,7 +383,12 @@ mod tests {
             .iter()
             .filter_map(|f| {
                 let (_, lines) = parsed_lines(f).ok()?.ok()?;
-                Some(events_of(source, &drive_for(source, f)?, &lines))
+                Some(events_of(
+                    source,
+                    &drive_for(source, f)?,
+                    &lines,
+                    !is_hook_envelope(f),
+                ))
             })
             .collect()
     }
@@ -498,6 +504,37 @@ mod tests {
         );
         strip_unread("codex", std::slice::from_ref(&rollout)).expect("strip");
         assert_eq!(cwds(&rollout), before);
+    }
+
+    /// First-sight registers a transcript, never a hook envelope, so a hook
+    /// line's cwd survives only where a decoder reads it: hermes's finalize,
+    /// outside any turn, reads none, and its every in-turn event reads its own.
+    #[test]
+    fn a_hook_lines_cwd_is_unread_unless_a_decoder_reads_it() {
+        const CWD: &str = "/planted/proj";
+        let (_d, hooks) = stripped_copy("hermes", "permission-hermetic", "hook-payloads.jsonl");
+        let (_, mut lines) = parsed_lines(&hooks).expect("read").expect("json");
+        for line in &mut lines {
+            line["cwd"] = CWD.into();
+        }
+        let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+        std::fs::write(&hooks, text.join("\n") + "\n").expect("write");
+
+        strip_unread("hermes", std::slice::from_ref(&hooks)).expect("strip");
+
+        let (_, stripped) = parsed_lines(&hooks).expect("read").expect("json");
+        let outside = crate::source::hermes::OUTSIDE_A_TURN;
+        for line in &stripped {
+            let event = line["hook_event_name"].as_str().expect("an event");
+            let want = if outside.contains(&event) { "" } else { CWD };
+            assert_eq!(line["cwd"], want, "{event}");
+        }
+        assert!(
+            stripped
+                .iter()
+                .any(|l| outside.contains(&l["hook_event_name"].as_str().unwrap_or_default())),
+            "the capture holds an event outside a turn"
+        );
     }
 
     #[test]

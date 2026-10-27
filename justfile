@@ -284,6 +284,7 @@ lint:
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
+    run hmplugin just hermes-plugin-selftest & pids+=($!)
     run fixpii  just fixture-pii          & pids+=($!)
     run piiself just fixture-pii-selftest & pids+=($!)
     for p in "${pids[@]}"; do wait "$p" || fail=1; done
@@ -928,9 +929,9 @@ deb target:
 #     so a generator regression is caught at review time, not at the tag-push.
 #   - scripts/{openclaw,dsh,opencode}-plugin.test.mjs — drive each RENDERED plugin
 #     the way its CLI's loader does. The Rust side can only grep a template as a
-#     string, so this is the only place a plugin's runtime contract (never block
-#     its host / never forward content / openclaw's gateway identity, dsh's emit
-#     order, opencode's turns) is actually EXECUTED.
+#     string, so this is where those plugins' runtime contracts (never block the
+#     host / never forward content / openclaw's gateway identity, dsh's emit
+#     order, opencode's turns) are EXECUTED.
 # NOT in preflight: a Rust pre-push shouldn't require a Node toolchain. Needs a
 # Node that imports TypeScript unflagged: opencode's plugin is one.
 [doc('Node gates: the npm package generator + the OpenClaw, dsh and opencode plugin contracts (CI; not in preflight)')]
@@ -1005,6 +1006,13 @@ star-history-selftest:
 [group('meta')]
 bmc-button-selftest:
     python3 scripts/bmc-button.py --selftest
+
+# The bundled Hermes plugin, driven as hermes's loader drives it: the Rust side
+# only greps the template, so this is where its never-block contract runs.
+[doc("Self-test the Hermes plugin's runtime contract")]
+[group('meta')]
+hermes-plugin-selftest:
+    python3 scripts/hermes-plugin.test.py
 
 # The recorder refuses a capture carrying its own identity, but that check runs
 # ONCE, on the capturer's terminal. This re-scans what is actually COMMITTED, so
