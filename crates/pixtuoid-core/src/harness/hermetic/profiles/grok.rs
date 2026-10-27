@@ -24,7 +24,7 @@ const TUI: tui::Tui = tui::Tui {
     },
     gates: &[tui::Gate {
         shows: "No, reject (type to add feedback)",
-        answer: &[tui::Key::Text("4")],
+        keys: &[tui::Key::Text("4")],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],

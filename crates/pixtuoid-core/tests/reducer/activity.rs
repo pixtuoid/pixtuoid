@@ -2204,3 +2204,49 @@ fn an_unnamed_childs_pre_use_stays_out_of_its_parents_request() {
         );
     }
 }
+
+/// After an oversized skip or a late attach no turn is open, so the rollout's
+/// start of a call registers it turnless; the hook's pre-use then names its
+/// turn, which the prompt is scoped to.
+#[test]
+fn a_call_first_seen_turnless_takes_its_pre_uses_turn() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c"),
+        Some("exec_command"),
+        t0,
+        Transport::Jsonl,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        pending(id, "c", "Bash", "t1"),
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        asked(id, "Bash", "t1"),
+        t0,
+        Transport::Hook,
+    );
+    assert!(requires_action(&scene, id));
+    apply(
+        &mut r,
+        &mut scene,
+        resolved(id, Resolution::Call("c".into())),
+        t0,
+        Transport::Hook,
+    );
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "the approved call's run answers the prompt"
+    );
+}

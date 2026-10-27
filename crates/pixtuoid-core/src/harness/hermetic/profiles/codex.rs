@@ -33,7 +33,7 @@ const TUI: tui::Tui = tui::Tui {
 /// (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
 const GATE: tui::Gate = tui::Gate {
     shows: "Would you like to run the following command?",
-    answer: &[tui::Key::Esc],
+    keys: &[tui::Key::Esc],
     // It loses a key sent the moment it shows (measured; the cause in
     // codex is unverified).
     dwell: std::time::Duration::from_millis(500),
@@ -44,7 +44,7 @@ const GATE: tui::Gate = tui::Gate {
 /// `tui/src/keymap.rs:1979-1983`).
 const TUI_APPROVE: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
-        answer: &[tui::Key::Text("y")],
+        keys: &[tui::Key::Text("y")],
         ..GATE
     }],
     ..TUI
@@ -64,13 +64,12 @@ const CODE_MODE: [&str; 2] = ["-c", "features.code_mode=true"];
 
 /// [`TUI`] in code mode.
 const TUI_CODE_MODE: tui::Tui = tui::Tui {
-    args: &[
-        TUI_ARGS[0],
-        TUI_ARGS[1],
-        TUI_ARGS[2],
-        CODE_MODE[0],
-        CODE_MODE[1],
-    ],
+    // Destructured whole, so a flag added to either list fails to compile here.
+    args: &{
+        let [bypass, ask, policy] = TUI_ARGS;
+        let [set, code_mode] = CODE_MODE;
+        [bypass, ask, policy, set, code_mode]
+    },
     ..TUI
 };
 

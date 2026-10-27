@@ -166,7 +166,7 @@ fn user_action_request_for(
     tp: Transport,
 ) {
     let mut keys = RequestKeys::default();
-    keys.call = tool_use_id.map(Into::into);
+    keys.tool_use_id = tool_use_id.map(Into::into);
     r.apply(
         scene,
         AgentEvent::user_action_request(id, Some(reason.into()), keys),

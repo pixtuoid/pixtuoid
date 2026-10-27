@@ -1,6 +1,7 @@
 //! The two-transport merge: each recorded run below, its hook and transcript
 //! lines folded in every order they can reach the reducer in
-//! (`harness::merge`), holds the turn axis's oracles in all of them.
+//! (`harness::merge`), holds in all of them: a RequiresAction stands until its
+//! resolution, and a hook-set item survives a lagging transcript turn end.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

@@ -1261,7 +1261,7 @@ mod turn_property {
                     id(),
                     Some("permission".into()),
                     RequestKeys {
-                        call: c.as_ref().map(call),
+                        tool_use_id: c.as_ref().map(call),
                         turn: turn.map(TurnKey::Seq),
                         ..RequestKeys::default()
                     },

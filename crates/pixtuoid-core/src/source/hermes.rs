@@ -185,7 +185,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     agent_id,
                     Some(reason),
                     RequestKeys {
-                        call: tool_use_id(),
+                        tool_use_id: tool_use_id(),
                         ..RequestKeys::default()
                     },
                 ),

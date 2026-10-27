@@ -21,7 +21,7 @@ const TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         shows: "Permission required",
         // "n/Esc deny" (`internal/base/i18n/messages_en.go:164`).
-        answer: &[tui::Key::Esc],
+        keys: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],

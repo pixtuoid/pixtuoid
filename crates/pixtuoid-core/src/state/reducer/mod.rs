@@ -774,7 +774,7 @@ impl Reducer {
         }
         let (applies, implied) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
             End::Applied { implied } => (true, implied),
-            End::ClosedOnly => (false, None),
+            End::Stale => (false, None),
         };
         let ended = Ended::Turn {
             turn: turn.as_ref(),

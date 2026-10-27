@@ -966,7 +966,7 @@ fn permission(
         // No start carries a call id (reasonix): one End per Start (a
         // guardian's read before the wait) plus the turn's, counted not paired
         // (`internal/ext/hook/runner.go:154`, `:166` at v2.44.0).
-        // `a_permission_script_calls_no_tool_after_its_refusal` forbids a
+        // `a_permission_script_calls_no_tool_after_its_gated_call` forbids a
         // retry, and the note's survival proves the refused call never ran.
         let count = |is: fn(&AgentEvent) -> bool| events.iter().filter(|e| is(e)).count();
         let starts = count(|e| matches!(e, AgentEvent::ToolUseStart { .. }));
@@ -1087,8 +1087,8 @@ fn delegated(
             false
         }
     };
-    // The reducer's untracked site (`apply_end`): an end naming no call while
-    // an id-less Task stands.
+    // The reducer's untracked site (`Reducer::end_item`): an end naming no call
+    // while an id-less Task stands.
     let mut standing = BTreeSet::new();
     let mut untracked_ends = BTreeSet::new();
     for e in events {

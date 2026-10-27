@@ -34,8 +34,8 @@ pub(crate) enum End {
     /// The agent's work ends; `implied` is the open turn this end proves
     /// ended, when it is not the turn named.
     Applied { implied: Option<TurnKey> },
-    /// The turn already closed: a replay that ends nothing.
-    ClosedOnly,
+    /// The turn is over, a replay or an older turn's end: it ends nothing.
+    Stale,
 }
 
 /// Every agent's open turn and recently closed turns.
@@ -80,7 +80,7 @@ impl TurnLedger {
             return End::Applied { implied };
         };
         if self.is_closed(id, key, now) {
-            return End::ClosedOnly;
+            return End::Stale;
         }
         self.closed.insert((id, key.clone()), now);
         let older = self.is_older_than_newest(id, key);
@@ -90,7 +90,7 @@ impl TurnLedger {
             // A position before the open turn's is a turn already over.
             Some(open) if key.newer_than(&open) == Some(false) => {
                 self.open.insert(id, open);
-                End::ClosedOnly
+                End::Stale
             }
             // The stream is in order, so another turn's end proves the open
             // one ended.
@@ -100,7 +100,7 @@ impl TurnLedger {
                     implied: Some(open),
                 }
             }
-            None if older => End::ClosedOnly,
+            None if older => End::Stale,
             // Its start went unseen (an oversized skip, a late attach), and
             // the one ordered stream proves it was the current turn.
             None => End::Applied { implied: None },
@@ -231,7 +231,7 @@ mod tests {
             End::Applied { implied: None },
             "the stream's current turn, its start unseen"
         );
-        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::ClosedOnly);
+        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::Stale);
         assert_eq!(turns.start(id(), key("a"), t0()), Start::Stale);
     }
 
@@ -241,7 +241,7 @@ mod tests {
         turns.start(id(), key("a"), t0());
         turns.end(id(), Some(&key("a")), t0());
         turns.start(id(), key("b"), t0());
-        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::ClosedOnly);
+        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::Stale);
         assert_eq!(turns.open(&id()), Some(&key("b")));
     }
 
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(turns.open(&id()), Some(&TurnKey::Seq(5)));
         assert_eq!(
             turns.end(id(), Some(&TurnKey::Seq(3)), t0()),
-            End::ClosedOnly,
+            End::Stale,
             "the stale start was recorded closed"
         );
     }
@@ -302,10 +302,7 @@ mod tests {
     fn a_seq_end_older_than_the_open_turn_is_closed_only() {
         let mut turns = TurnLedger::default();
         turns.start(id(), TurnKey::Seq(5), t0());
-        assert_eq!(
-            turns.end(id(), Some(&TurnKey::Seq(3)), t0()),
-            End::ClosedOnly
-        );
+        assert_eq!(turns.end(id(), Some(&TurnKey::Seq(3)), t0()), End::Stale);
         assert_eq!(turns.open(&id()), Some(&TurnKey::Seq(5)));
         assert_eq!(turns.start(id(), TurnKey::Seq(3), t0()), Start::Stale);
     }
@@ -329,10 +326,7 @@ mod tests {
         let mut turns = TurnLedger::default();
         turns.start(id(), TurnKey::Seq(5), t0());
         turns.end(id(), Some(&TurnKey::Seq(5)), t0());
-        assert_eq!(
-            turns.end(id(), Some(&TurnKey::Seq(3)), t0()),
-            End::ClosedOnly
-        );
+        assert_eq!(turns.end(id(), Some(&TurnKey::Seq(3)), t0()), End::Stale);
         assert_eq!(
             turns.end(id(), Some(&TurnKey::Seq(9)), t0()),
             End::Applied { implied: None },

@@ -209,7 +209,7 @@ pub(crate) fn decode_copilot_line(
                 Some(reason),
                 RequestKeys {
                     // The gated call (#951), so its own end resolves the wait.
-                    call: request
+                    tool_use_id: request
                         .and_then(|p| str_at(p, "toolCallId"))
                         .filter(|id| !id.is_empty())
                         .map(str::to_owned),

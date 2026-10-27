@@ -710,7 +710,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                                 acting,
                                 Some(omp_ask_reason(b.get("arguments"))),
                                 RequestKeys {
-                                    call: Some(id.to_string()),
+                                    tool_use_id: Some(id.to_string()),
                                     ..RequestKeys::default()
                                 },
                             ));
@@ -919,7 +919,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
                     agent_id,
                     Some(omp_approval_reason(obj, tool)),
                     RequestKeys {
-                        call: Some(tool_call_id.to_string()),
+                        tool_use_id: Some(tool_call_id.to_string()),
                         ..RequestKeys::default()
                     },
                 )

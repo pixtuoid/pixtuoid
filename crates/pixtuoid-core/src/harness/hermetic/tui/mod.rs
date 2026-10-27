@@ -61,7 +61,7 @@ pub(crate) struct Gate {
     pub(crate) shows: &'static str,
     /// The keys the run answers it with: a refusal, unless its row is one
     /// that approves.
-    pub(crate) answer: &'static [Key],
+    pub(crate) keys: &'static [Key],
     /// How long it must stand before it is answered: a key it ignores is lost.
     pub(crate) dwell: Duration,
 }
@@ -69,7 +69,7 @@ pub(crate) struct Gate {
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Answer {
-    /// Answer its dialog with its gate's `answer` keys; the turn is over once
+    /// Answer its dialog with its gate's `keys`; the turn is over once
     /// answered and the screen settles.
     Gate,
     /// Cancel it with its row's `cancel` keys once the screen shows its reply
@@ -133,7 +133,7 @@ pub struct Tui {
     pub(crate) args: &'static [&'static str],
     pub(crate) composer: Composer,
     /// Every dialog the turn may raise; one per turn, since its script calls no
-    /// tool after the refusal (`a_permission_script_calls_no_tool_after_its_refusal`).
+    /// tool after the gate's answer (`a_permission_script_calls_no_tool_after_its_gated_call`).
     /// One the table doesn't name stalls the run.
     pub(crate) gates: &'static [Gate],
     /// What cancels a running turn the way a user would, for a run that
@@ -339,7 +339,7 @@ impl<'a> Driver<'a> {
                 .find(|g| self.screen.contains(g.shows))
                 .map(|g| Cue {
                     shows: g.shows,
-                    keys: g.answer,
+                    keys: g.keys,
                     dwell: g.dwell,
                 }),
             Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
@@ -692,7 +692,7 @@ mod tests {
         assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
         assert_eq!(
             next(include_str!("screens/hermes-gate.txt")),
-            Action::Keys(gate.answer)
+            Action::Keys(gate.keys)
         );
         assert_eq!(
             next(include_str!("screens/hermes-echo.txt")),
@@ -787,7 +787,7 @@ mod tests {
                 "{turn}: inside its dwell"
             );
             t += gate.dwell;
-            assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.answer), "{turn}");
+            assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.keys), "{turn}");
             t += Duration::from_millis(1);
             assert_eq!(
                 d.step(CODEX_BOOT, t),
@@ -1180,7 +1180,7 @@ mod tests {
                         .into_iter()
                         .filter(|a| *a != Action::Wait)
                         .collect();
-                    assert_eq!(answers, [Action::Keys(gate.answer)], "{source}/{name}");
+                    assert_eq!(answers, [Action::Keys(gate.keys)], "{source}/{name}");
                     let mut t = t0 + gate.dwell + SETTLE;
                     assert_eq!(
                         d.step(end, t),
@@ -1203,11 +1203,7 @@ mod tests {
                     t += Duration::from_millis(1);
                     assert_eq!(d.step(again, t), Action::Wait, "{source}/{name}: its dwell");
                     t += gate.dwell;
-                    assert_eq!(
-                        d.step(again, t),
-                        Action::Keys(gate.answer),
-                        "{source}/{name}"
-                    );
+                    assert_eq!(d.step(again, t), Action::Keys(gate.keys), "{source}/{name}");
                     t += Duration::from_millis(1);
                     assert_eq!(d.step(last, t), Action::Wait, "{source}/{name}");
                     assert_eq!(
