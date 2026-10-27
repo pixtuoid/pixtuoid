@@ -2,7 +2,7 @@
 //! Subagent scenario): the root's `spawn_agent` starts a child, the child's own
 //! hooks name it in `agent_id`, and its SubagentStop ends it. Its rollout is
 //! flat, so the hooks and the rollout head's `parent_thread_id` carry the
-//! parent link.
+//! parent link. The hooks carry no item, only the calls each one has pending.
 
 use std::time::SystemTime;
 
@@ -61,21 +61,31 @@ fn a_codex_child_works_under_its_root_and_its_stop_ends_it_alone() {
     // Short of the root's own end, which the capture closes with.
     let d = drive(&lines[..line_of(&lines, "SessionEnd", false)]);
 
-    let tools = |id: AgentId| -> Vec<bool> {
+    let pending = |id: AgentId| -> Vec<&str> {
         d.events
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::ToolUseStart {
+                AgentEvent::ToolUsePending {
                     agent_id,
-                    detail: Some(d),
+                    tool_name,
                     ..
-                } if *agent_id == id => Some(d.is_task()),
+                } if *agent_id == id => tool_name.as_deref(),
                 _ => None,
             })
             .collect()
     };
-    assert_eq!(tools(parent), [true], "the root's one call is its spawn");
-    assert_eq!(tools(child), [false], "the child's shell call is its own");
+    assert_eq!(
+        pending(parent),
+        ["spawn_agent"],
+        "the root's one call is its spawn"
+    );
+    assert_eq!(pending(child).len(), 1, "the child's shell call is its own");
+    assert!(
+        !d.events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ToolUseStart { .. })),
+        "the rollout owns the items"
+    );
     assert!(
         d.events
             .iter()

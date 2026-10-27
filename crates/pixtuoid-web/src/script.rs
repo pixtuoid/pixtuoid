@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 use pixtuoid_core::source::daemon::DaemonPresenceUpdate;
 use pixtuoid_core::source::{
-    antigravity, claude_code, codewhale, codex, copilot, cursor, grok, hermes, omp, opencode,
-    reasonix,
+    RequestKeys, antigravity, claude_code, codewhale, codex, copilot, cursor, grok, hermes, omp,
+    opencode, reasonix,
 };
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
 
@@ -369,11 +369,11 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(Beat {
         at_ms: 58_400,
         transport: Transport::Hook,
-        event: AgentEvent::UserActionRequest {
-            agent_id: cast_id(6),
-            reason: Some("permission".to_string()),
-            tool_use_id: None,
-        },
+        event: AgentEvent::user_action_request(
+            cast_id(6),
+            Some("permission".to_string()),
+            RequestKeys::default(),
+        ),
     });
     b.push(Beat {
         at_ms: 70_500,

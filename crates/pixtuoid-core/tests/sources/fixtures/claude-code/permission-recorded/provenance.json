@@ -1,12 +1,13 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.233 (Claude Code)",
-  "captured": "2026-08-15",
-  "command": "claude --permission-mode manual (interactive TUI, driven under a pty), with a project-local .claude/settings.json registering PermissionRequest",
-  "note": "The gate is `PermissionRequest`, NOT `Notification`: the only Notification this run fired was the idle `Claude is waiting for your input`. The composed fixture's belief that a permission arrives as Notification is what let install/claude.rs ship without registering PermissionRequest at all — the decoder has always handled it, the bytes just never arrived. The recorder's own roster and instruction attachments rode fields no decoder reads and are stripped (see `deidentified`).",
+  "version": "2.1.310 (Claude Code)",
+  "captured": "2026-10-27",
+  "command": "tui_drive claude-code permission tui.log {prompt} -- claude --permission-mode manual",
+  "note": "Claude Code's TUI, driven by `tui_drive` with the hermetic claude-code permission row, which refuses the gate with Esc. Filtered to claude-code's own `_pixtuoid_source` stamp, as fixtures/README.md requires: the operator's settings also ran an unstamped shim. `cli` and `version` set by hand to `claude --version`, as the recorder asks when a driver leads the command.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 415
-  }
+    "blanked": 367
+  },
+  "prompt": "Run exactly this shell command with your Bash tool, and nothing else: rm NOTE.txt"
 }

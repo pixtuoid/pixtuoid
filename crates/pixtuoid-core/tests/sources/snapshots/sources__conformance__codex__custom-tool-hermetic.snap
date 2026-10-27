@@ -2,68 +2,77 @@
 source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
+- TurnStart:
+    agent_id: 2184175000670184628
+    turn:
+      Id: 01a17c17-3e3d-70a2-85d3-0e61d30fecdb
 - ToolUseStart:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     tool_use_id: ~
     detail: ~
 - ModelInfo:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     model: gpt-5.5
     effort: high
 - ToolUseStart:
-    agent_id: 343160842670398086
-    tool_use_id: ~
+    agent_id: 2184175000670184628
+    tool_use_id: call_GSSatZ52uIGyl0Up
     detail:
       Generic:
         display: apply_patch
 - ToolUseEnd:
-    agent_id: 343160842670398086
-    tool_use_id: call_pD-dgyzqtxsDGzB8
+    agent_id: 2184175000670184628
+    tool_use_id: call_GSSatZ52uIGyl0Up
 - ToolUseStart:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     fresh_tokens: 19
 - ToolUseStart:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     tool_use_id: ~
     detail: ~
 - Usage:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     fresh_tokens: 19
 - TurnEnd:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
+    turn:
+      Id: 01a17c17-3e3d-70a2-85d3-0e61d30fecdb
 - SessionStart:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     source: codex
-    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
+    session_id: 01a17c17-3e07-77f3-b143-eaa031e4cbf7
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     source: codex
-    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
+    session_id: 01a17c17-3e07-77f3-b143-eaa031e4cbf7
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     source: codex
-    session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
+    session_id: 01a17c17-3e07-77f3-b143-eaa031e4cbf7
     cwd: /private/tmp/pixtuoid-capture/proj
-- ToolUseStart:
-    agent_id: 343160842670398086
-    tool_use_id: call_pD-dgyzqtxsDGzB8
-    detail:
-      Generic:
-        display: apply_patch
-- TurnEnd:
-    agent_id: 343160842670398086
+- ToolUsePending:
+    agent_id: 2184175000670184628
+    tool_use_id: call_GSSatZ52uIGyl0Up
+    tool_name: apply_patch
+    turn:
+      Id: 01a17c17-3e3d-70a2-85d3-0e61d30fecdb
+- UserActionResolved:
+    agent_id: 2184175000670184628
+    by:
+      Turn:
+        Id: 01a17c17-3e3d-70a2-85d3-0e61d30fecdb
 - SessionEnd:
-    agent_id: 343160842670398086
+    agent_id: 2184175000670184628
     as_child: false

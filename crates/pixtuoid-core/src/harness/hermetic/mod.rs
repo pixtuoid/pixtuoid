@@ -135,9 +135,8 @@ pub enum Shape {
     /// A turn that runs one tool: the session registers in the workspace, a
     /// tool starts with a detail naming it, and it ends.
     ToolRun,
-    /// A turn whose tool call needs an approval the run cannot give: the slot
-    /// waits on it, then the refused call ends, or its turn where the call
-    /// never started.
+    /// A turn whose tool call waits on an approval: the slot waits on it, then
+    /// the gated call ends, or its turn where the call never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
@@ -191,9 +190,9 @@ impl Shape {
     }
 
     /// How a TUI run answers its turn.
-    pub const fn answer(self) -> tui::Answer {
+    pub(crate) const fn answer(self) -> tui::Answer {
         match self {
-            Self::Permission => tui::Answer::Deny,
+            Self::Permission => tui::Answer::Gate,
             Self::Cancel => tui::Answer::Cancel,
             Self::ToolRun
             | Self::Subagent
@@ -242,9 +241,13 @@ pub struct Turn {
     pub args: &'static [&'static str],
     /// Its prompt, in place of [`crate::harness::plan::DEFAULT_PROMPT`].
     pub prompt: Option<&'static str>,
-    /// A second headless turn on this one's session, in the same sandbox and
-    /// workspace once its CLI exited: [`Profile::second_turn`]'s words.
+    /// A second turn on this one's session: on a TUI its prompt, typed once
+    /// the first turn settles; headless, [`Profile::second_turn`]'s words once
+    /// its CLI exited.
     pub second: Option<Second>,
+    /// A directory beside its script copied into the workspace before the
+    /// turn: project config this scenario alone runs under.
+    pub(crate) seed: Option<&'static str>,
 }
 
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
@@ -262,6 +265,7 @@ impl Turn {
         args: &[],
         prompt: None,
         second: None,
+        seed: None,
     };
 }
 
@@ -619,7 +623,7 @@ fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario>
         s.not_run_on(windows).is_none()
             && match s.surface {
                 Surface::Headless => true,
-                Surface::Tui { .. } => s.shape.answer() == tui::Answer::Nothing,
+                Surface::Tui { .. } => s.answer() == tui::Answer::Nothing,
             }
     })
 }
@@ -632,12 +636,56 @@ impl Scenario {
             .join(format!("{}.json", self.name))
     }
 
+    /// `source`'s seed for this scenario, if its turn names one.
+    pub fn seed(&self, source: &str) -> Option<PathBuf> {
+        self.turn
+            .seed
+            .map(|dir| scripts_dir().join(source).join(dir))
+    }
+
     /// Why a leg on `windows` doesn't run it, if it doesn't.
     pub fn not_run_on(&self, windows: bool) -> Option<&'static str> {
         match self.surface {
             Surface::Tui { row, .. } if windows => row.conpty.not_run(),
             Surface::Tui { .. } | Surface::Headless => None,
         }
+    }
+
+    /// Its second turn, where a second CLI process runs it: a TUI types its
+    /// own into the same session.
+    pub fn headless_second(&self) -> Option<Second> {
+        match self.surface {
+            Surface::Headless => self.turn.second,
+            Surface::Tui { .. } => None,
+        }
+    }
+
+    /// How its TUI run answers its turn: as its shape says, but nothing where
+    /// its row lists no gate, as a seeded hook then decides every prompt.
+    pub(crate) fn answer(&self) -> tui::Answer {
+        match (self.shape.answer(), self.surface) {
+            (tui::Answer::Gate, Surface::Tui { row }) if row.gates.is_empty() => {
+                tui::Answer::Nothing
+            }
+            (answer, _) => answer,
+        }
+    }
+
+    /// The driver of its TUI run, typing `prompt` and then its second turn's;
+    /// `None` for a headless one.
+    pub fn tui_driver(
+        &self,
+        prompt: String,
+        now: std::time::Instant,
+    ) -> Option<tui::Driver<'static>> {
+        let Surface::Tui { row } = self.surface else {
+            return None;
+        };
+        let driver = tui::Driver::new(row, self.answer(), prompt, now);
+        Some(match self.turn.second {
+            Some(Second::Prompt(next)) => driver.then(next),
+            Some(Second::Bare) | None => driver,
+        })
     }
 }
 
@@ -727,6 +775,9 @@ mod tests {
                     p.source,
                     script.display()
                 );
+                if let Some(seed) = s.seed(p.source) {
+                    assert!(seed.is_dir(), "{}: no seed at {}", p.source, seed.display());
+                }
                 let heard = p.descriptor().hook().is_some() || p.descriptor().is_daemon();
                 assert_eq!(
                     s.expects.is_empty(),
@@ -778,13 +829,14 @@ mod tests {
     }
 
     #[test]
-    fn a_tui_turn_takes_no_args_and_has_no_second_turn() {
+    fn a_tui_turn_takes_no_args_and_a_second_turn_only_as_a_prompt_it_types() {
         for p in PROFILES {
             for s in p.scenarios {
                 assert!(
                     matches!(s.surface, Surface::Headless)
-                        || (s.turn.args.is_empty() && s.turn.second.is_none()),
-                    "{}/{}: a TUI turn takes no args and has no second turn",
+                        || (s.turn.args.is_empty()
+                            && matches!(s.turn.second, None | Some(Second::Prompt(_)))),
+                    "{}/{}: a TUI turn takes no args, and types its second turn's prompt",
                     p.source,
                     s.name
                 );
@@ -923,7 +975,7 @@ mod tests {
                 );
             }
             for s in p.scenarios {
-                let Some(second) = s.turn.second else {
+                let Some(second) = s.headless_second() else {
                     continue;
                 };
                 let words = p
@@ -1135,8 +1187,8 @@ mod tests {
     }
 
     #[test]
-    fn a_permission_script_calls_no_tool_after_its_refusal() {
-        // A retried tool raises a second dialog, which the TUI driver never refuses.
+    fn a_permission_script_calls_no_tool_after_its_gated_call() {
+        // A retried tool raises a second dialog in its turn, which the driver never answers.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
                 let script: serde_json::Value = serde_json::from_str(
@@ -1148,7 +1200,7 @@ mod tests {
                         || reply["match"]["toolResultContains"].is_string();
                     assert!(
                         !(after_a_result && reply["response"]["toolCalls"].is_array()),
-                        "{}: a reply to the refused call calls a tool again",
+                        "{}: a reply to the gated call calls a tool again",
                         p.source
                     );
                 }
@@ -1157,33 +1209,47 @@ mod tests {
     }
 
     /// Whether a scripted reply calls a tool whose command is `rm` then the
-    /// note's name, in one of its top-level string arguments (every committed script's shape).
+    /// note's name: in one of a call's top-level string arguments, or in a
+    /// string literal of a custom call's source (a code-mode cell's).
     fn script_deletes_the_note(script: &serde_json::Value) -> bool {
         let deletes = |command: &str| {
             let words: Vec<&str> = command.split_whitespace().collect();
             words.first() == Some(&"rm") && words[1..].contains(&crate::harness::NOTE_FILE)
         };
+        let calls = |key: &'static str| {
+            script["fixtures"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(move |reply| reply["response"][key].as_array().into_iter().flatten())
+        };
+        let arguments = calls("toolCalls")
+            .filter_map(|call| call["arguments"].as_object())
+            .flat_map(|arguments| arguments.values())
+            .filter_map(serde_json::Value::as_str);
+        let literals = calls("customToolCalls")
+            .filter_map(|call| call["input"].as_str())
+            .flat_map(|source| source.split('"').skip(1).step_by(2));
+        arguments.chain(literals).any(deletes)
+    }
+
+    /// Whether a scripted reply waits on the note's text, which only the
+    /// gated call's result carries once the run approved it.
+    fn script_waits_on_the_note(script: &serde_json::Value) -> bool {
         script["fixtures"]
             .as_array()
             .into_iter()
             .flatten()
-            .flat_map(|reply| {
-                reply["response"]["toolCalls"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-            })
-            .filter_map(|call| call["arguments"].as_object())
-            .flat_map(|arguments| arguments.values())
-            .filter_map(serde_json::Value::as_str)
-            .any(deletes)
+            .any(|f| f["match"]["toolResultContains"] == Placeholder::Note.as_str())
     }
 
     #[test]
-    fn a_permission_script_gates_a_call_that_deletes_the_note() {
+    fn a_permission_script_gates_a_call_that_deletes_the_note_or_waits_on_it() {
         // The recorder's `note_survived` is only evidence of a refusal if the
-        // refused call would have removed the note. A question's gate calls
-        // nothing that could, so those rows are held to the note alone.
+        // refused call would have removed the note, and an approval's is the
+        // note in the gated call's result, which no refused call returns. A
+        // question's gate calls nothing that could, so those rows are held to
+        // the note alone.
         const QUESTIONS: &[&str] = &["ask-user", "ask-question"];
         for p in PROFILES {
             for s in p
@@ -1196,9 +1262,10 @@ mod tests {
                 )
                 .expect("json");
                 assert!(
-                    script_deletes_the_note(&script),
-                    "{}: no scripted tool call deletes the note",
-                    p.source
+                    script_deletes_the_note(&script) || script_waits_on_the_note(&script),
+                    "{}/{}: no scripted tool call deletes the note, and no reply waits on it",
+                    p.source,
+                    s.name
                 );
             }
         }
@@ -1227,6 +1294,18 @@ mod tests {
                 serde_json::json!({ "response": { "content": "I will rm NOTE.txt" } })
             )),
             "a reply's prose is not a call"
+        );
+        let cell = |source: &str| {
+            script(serde_json::json!({ "response": { "customToolCalls": [
+                { "name": "exec", "input": source }
+            ] } }))
+        };
+        assert!(script_deletes_the_note(&cell(
+            r#"await tools.exec_command({ cmd: "rm NOTE.txt" });"#
+        )));
+        assert!(
+            !script_deletes_the_note(&cell("// rm NOTE.txt\ntext(1);")),
+            "a cell's comment is not a call"
         );
     }
 

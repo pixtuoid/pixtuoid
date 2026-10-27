@@ -3,12 +3,19 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::id::AgentId;
+use crate::state::TurnKey;
 
 /// Backpressure bound for the workspace-wide `(Transport, AgentEvent)` event
 /// channel — the ONE place this capacity is defined. The runtime reducer feed
 /// and the hook tee both size their channels from this, so the tee adds a
 /// stage rather than a different backpressure policy.
 pub const EVENT_CHANNEL_CAPACITY: usize = 256;
+
+/// The transcript watcher's poll backstop — also the cadence profile rescans
+/// ride, so "how often we look at the filesystem" has one authority. Ungated,
+/// because it also bounds how far a transcript lags its write for the state
+/// layer.
+pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Which transport produced an event — used by the reducer for hook-wins
 /// dedup. Lives on the source side because every `Source` implementor must
@@ -107,11 +114,38 @@ pub enum AgentEvent {
         /// The completing tool call's id (pairs with its `ToolUseStart`).
         tool_use_id: Option<String>,
     },
+    /// A call about to run, named by its tool: a pending call a request can
+    /// bind by that name, with no item of its own (codex's `PreToolUse`; CC's
+    /// and kimi's beside their start).
+    ToolUsePending {
+        /// The acting agent.
+        agent_id: AgentId,
+        /// The call's id.
+        tool_use_id: String,
+        /// The tool's wire name, the key a request names it by; `None` when
+        /// the wire carries none, which binds by no name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        /// The turn the call runs in, when the wire names it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<TurnKey>,
+    },
+    /// A turn started, from the agent's ordered bracket stream.
+    TurnStart {
+        /// The agent whose turn started.
+        agent_id: AgentId,
+        /// The turn.
+        turn: TurnKey,
+    },
     /// The agent's foreground work ended: its turn, or a wait outside one
     /// (codewhale `session_idle`). It names no call.
     TurnEnd {
         /// The agent whose work ended.
         agent_id: AgentId,
+        /// The turn, from a bracket stream; `None` from a source whose turn
+        /// end names none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<TurnKey>,
     },
     /// The agent is blocked on a permission/input prompt — the slot goes RequiresAction.
     UserActionRequest {
@@ -121,14 +155,25 @@ pub enum AgentEvent {
         /// the wire carries none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        /// The gated tool call's id, when the wire names one (omp
-        /// `tool_approval_requested`). Binds the wait to that call so the
-        /// approval resume/denial resolves it regardless of which transport's
-        /// events arrive first; `None` keeps the reducer's slot-state
-        /// inference. Skipped when serialized so None-emitting sources keep
-        /// their recorded goldens byte-stable.
+        /// The gated call's id, when the wire names one (omp
+        /// `tool_approval_requested`, kimi `tool_call_id`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
+        /// The gated tool's wire name, when the wire names one: the request
+        /// holds that tool's pending calls.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        /// The turn the request blocks, when the wire names it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<TurnKey>,
+    },
+    /// A signal that answers the agent's standing request, if one stands; it
+    /// ends no item.
+    UserActionResolved {
+        /// The agent whose request this answers, if one stands.
+        agent_id: AgentId,
+        /// What answered it.
+        by: Resolution,
     },
     /// Late-discovered display name (e.g. CC subagent `attributionAgent`).
     /// Reducer overrides the slot label; noop if the slot doesn't exist.
@@ -214,6 +259,33 @@ pub enum AgentEvent {
     },
 }
 
+/// What a [`AgentEvent::UserActionRequest`] names on the wire, each `None`
+/// where it names nothing.
+///
+/// `#[non_exhaustive]`: keeps adding a key non-breaking.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RequestKeys {
+    /// The gated call's id.
+    pub tool_use_id: Option<String>,
+    /// The gated tool's wire name.
+    pub tool_name: Option<String>,
+    /// The turn the request blocks.
+    pub turn: Option<TurnKey>,
+}
+
+/// What answered an agent's request: one call, or the whole turn it blocked.
+///
+/// `#[non_exhaustive]`: keeps adding a resolution non-breaking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Resolution {
+    /// The call ran (codex's `PostToolUse`).
+    Call(String),
+    /// The turn stopped with nothing left pending (codex's `Stop`).
+    Turn(TurnKey),
+}
+
 /// A cached agent pid PLUS the kernel start marker read when it was stamped
 /// ([`pid_start_marker`]) — together they name ONE process incarnation, so a
 /// focus click can refuse a RECYCLED pid: re-read the marker, and a mismatch
@@ -260,10 +332,44 @@ impl AgentEvent {
         }
     }
 
-    /// A turn's end. THE constructor every decoder mints one through, so a
-    /// field it gains lands in ONE place.
+    /// A turn end naming no turn: THE constructor every decoder whose wire
+    /// names none mints one through, so a field it gains lands here and in
+    /// [`Self::keyed_turn_end`], never at a decoder.
     pub(crate) fn turn_end(agent_id: AgentId) -> Self {
-        AgentEvent::TurnEnd { agent_id }
+        AgentEvent::TurnEnd {
+            agent_id,
+            turn: None,
+        }
+    }
+
+    /// A bracket stream's turn end, naming its turn.
+    pub(crate) fn keyed_turn_end(agent_id: AgentId, turn: TurnKey) -> Self {
+        AgentEvent::TurnEnd {
+            agent_id,
+            turn: Some(turn),
+        }
+    }
+
+    /// A request for the user's action. THE constructor every site mints one
+    /// through, so a field it gains lands in ONE place: a key in
+    /// [`RequestKeys`], which a keyless site leaves at its default.
+    pub fn user_action_request(
+        agent_id: AgentId,
+        reason: Option<String>,
+        keys: RequestKeys,
+    ) -> Self {
+        let RequestKeys {
+            tool_use_id,
+            tool_name,
+            turn,
+        } = keys;
+        AgentEvent::UserActionRequest {
+            agent_id,
+            reason,
+            tool_use_id,
+            tool_name,
+            turn,
+        }
     }
 
     /// The agent id this event concerns (every variant carries one).
@@ -272,8 +378,11 @@ impl AgentEvent {
             AgentEvent::SessionStart { agent_id, .. } => *agent_id,
             AgentEvent::ToolUseStart { agent_id, .. } => *agent_id,
             AgentEvent::ToolUseEnd { agent_id, .. } => *agent_id,
-            AgentEvent::TurnEnd { agent_id } => *agent_id,
+            AgentEvent::ToolUsePending { agent_id, .. } => *agent_id,
+            AgentEvent::TurnStart { agent_id, .. } => *agent_id,
+            AgentEvent::TurnEnd { agent_id, .. } => *agent_id,
             AgentEvent::UserActionRequest { agent_id, .. } => *agent_id,
+            AgentEvent::UserActionResolved { agent_id, .. } => *agent_id,
             AgentEvent::Rename { agent_id, .. } => *agent_id,
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id,
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
@@ -292,8 +401,11 @@ impl AgentEvent {
         match self {
             AgentEvent::ToolUseStart { .. }
             | AgentEvent::ToolUseEnd { .. }
+            | AgentEvent::ToolUsePending { .. }
+            | AgentEvent::TurnStart { .. }
             | AgentEvent::TurnEnd { .. }
-            | AgentEvent::UserActionRequest { .. } => true,
+            | AgentEvent::UserActionRequest { .. }
+            | AgentEvent::UserActionResolved { .. } => true,
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::SessionEnd { .. }
@@ -310,8 +422,11 @@ impl AgentEvent {
         match self {
             AgentEvent::ToolUseStart { .. }
             | AgentEvent::ToolUseEnd { .. }
+            | AgentEvent::ToolUsePending { .. }
+            | AgentEvent::TurnStart { .. }
             | AgentEvent::TurnEnd { .. }
-            | AgentEvent::UserActionRequest { .. } => true,
+            | AgentEvent::UserActionRequest { .. }
+            | AgentEvent::UserActionResolved { .. } => true,
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::SessionEnd { .. }

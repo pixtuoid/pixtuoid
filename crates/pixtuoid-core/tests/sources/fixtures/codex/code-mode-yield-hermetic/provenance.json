@@ -1,0 +1,32 @@
+{
+  "origin": "recorded",
+  "cli": "codex",
+  "version": "codex-cli 0.164.0",
+  "captured": "2026-10-27",
+  "command": "just hermetic --record codex",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 107
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/codex/code-mode-yield.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/payload/name": [],
+      "/payload/type": [
+        "item_completed",
+        "message",
+        "reasoning",
+        "thread_settings_applied"
+      ],
+      "/type": [
+        "event_msg",
+        "response_item",
+        "session_meta",
+        "token_usage_record",
+        "world_state"
+      ]
+    }
+  }
+}

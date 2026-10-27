@@ -1,36 +1,81 @@
-use super::hook_event_name;
+use super::{SECOND_TURN, hook_event_name};
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
 };
 use crate::harness::plan::Placeholder;
 
-/// codex's TUI, its cites at `rust-v0.163.0`. On-request lets the model ask
-/// (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call asks
-/// to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
+/// codex's TUI flags, its cites at `rust-v0.163.0`. On-request lets the model
+/// ask (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call
+/// asks to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
+const TUI_ARGS: [&str; 3] = [
+    "--dangerously-bypass-hook-trust",
+    "--ask-for-approval",
+    "on-request",
+];
+
 const TUI: tui::Tui = tui::Tui {
-    args: &[
-        "--dangerously-bypass-hook-trust",
-        "--ask-for-approval",
-        "on-request",
-    ],
+    args: &TUI_ARGS,
     composer: tui::Composer {
         marker: "›",
         border: tui::Border::Nothing,
     },
-    gates: &[tui::Gate {
-        shows: "Would you like to run the following command?",
-        // "No, and tell Codex what to do differently", which aborts the turn
-        // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
-        deny: &[tui::Key::Esc],
-        // It loses a key sent the moment it shows (measured; the cause in
-        // codex is unverified).
-        dwell: std::time::Duration::from_millis(500),
-    }],
+    gates: &[GATE],
     // `chat.interrupt_turn` (`tui/src/keymap.rs:1695` at `rust-v0.164.0`),
     // while a turn runs (`tui/src/bottom_pane/mod.rs:1822-1835`).
     cancel: &[tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     conpty: tui::ConPty::Renders,
+};
+
+/// The exec approval dialog, answered "No, and tell Codex what to do
+/// differently", which aborts the turn
+/// (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
+const GATE: tui::Gate = tui::Gate {
+    shows: "Would you like to run the following command?",
+    keys: &[tui::Key::Esc],
+    // It loses a key sent the moment it shows (measured; the cause in
+    // codex is unverified).
+    dwell: std::time::Duration::from_millis(500),
+};
+
+/// [`TUI`] answering its dialog "Yes, proceed", its choices' keys at
+/// `rust-v0.164.0` (`tui/src/bottom_pane/approval_overlay.rs:852-934`,
+/// `tui/src/keymap.rs:1979-1983`).
+const TUI_APPROVE: tui::Tui = tui::Tui {
+    gates: &[tui::Gate {
+        keys: &[tui::Key::Text("y")],
+        ..GATE
+    }],
+    ..TUI
+};
+
+/// [`TUI`] where the seed's own PermissionRequest hook denies every prompt
+/// before a dialog shows: hooks decide ahead of the user
+/// (`core/src/tools/approvals.rs:483-505` at `rust-v0.164.0`).
+const TUI_POLICY: tui::Tui = tui::Tui { gates: &[], ..TUI };
+
+/// Code mode: the model's `exec` cell runs JavaScript whose tools are nested
+/// calls (`code-mode-protocol/src/description.rs:23-48` at `rust-v0.164.0`),
+/// off by default for the profile's model (`features/src/lib.rs:1198-1201`,
+/// `core/src/tools/mod.rs:65-75`; `models-manager/models.json` gives
+/// `gpt-5.5` no `tool_mode`).
+const CODE_MODE: [&str; 2] = ["-c", "features.code_mode=true"];
+
+/// [`TUI`] in code mode.
+const TUI_CODE_MODE: tui::Tui = tui::Tui {
+    // Destructured whole, so a flag added to either list fails to compile here.
+    args: &{
+        let [bypass, ask, policy] = TUI_ARGS;
+        let [set, code_mode] = CODE_MODE;
+        [bypass, ask, policy, set, code_mode]
+    },
+    ..TUI
+};
+
+/// [`TUI_CODE_MODE`] answering its dialog as [`TUI_APPROVE`] does.
+const TUI_CODE_MODE_APPROVE: tui::Tui = tui::Tui {
+    gates: TUI_APPROVE.gates,
+    ..TUI_CODE_MODE
 };
 
 pub(crate) const PROFILE: Profile = Profile {
@@ -172,23 +217,176 @@ trust_level = "trusted"
             fixture: "fixtures/codex/cancel-hermetic",
             turn: Turn::PROFILE,
         },
+        Scenario {
+            name: "two-turn",
+            shape: Shape::ToolRun,
+            surface: Surface::Tui { row: &TUI },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/two-turn-hermetic",
+            turn: Turn {
+                second: Some(Second::Prompt(SECOND_TURN)),
+                ..Turn::PROFILE
+            },
+        },
+        // A turn refused, then the next prompt's own call gated before the
+        // refused turn's rollout lines are read: its lagging end must not
+        // answer the new request.
+        Scenario {
+            name: "refuse-then-prompt",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/refuse-then-prompt-hermetic",
+            turn: Turn {
+                second: Some(Second::Prompt(SECOND_TURN)),
+                ..Turn::PROFILE
+            },
+        },
+        Scenario {
+            name: "approve",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_APPROVE },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/approve-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-failure",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-failure-hermetic",
+            turn: Turn {
+                args: &CODE_MODE,
+                ..Turn::PROFILE
+            },
+        },
+        // The one way an exec is denied and its turn goes on: a policy hook's
+        // deny (`protocol/src/approvals.rs:377-410` offers the user no such
+        // choice), so its request clears through the rollout's output alone.
+        Scenario {
+            name: "policy-deny",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_POLICY },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/policy-deny-hermetic",
+            turn: Turn {
+                seed: Some("policy-deny"),
+                ..Turn::PROFILE
+            },
+        },
+        // The dialog offers no "No, continue without running it" for an exec
+        // (`protocol/src/approvals.rs:377-410`,
+        // `core/src/tools/approvals.rs:710-726` at `rust-v0.164.0`), so a
+        // gated nested call is refused the one way a user can: aborting.
+        Scenario {
+            name: "code-mode-gate",
+            shape: Shape::Permission,
+            surface: Surface::Tui {
+                row: &TUI_CODE_MODE,
+            },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-gate-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-approve",
+            shape: Shape::Permission,
+            surface: Surface::Tui {
+                row: &TUI_CODE_MODE_APPROVE,
+            },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-approve-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-yield",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"],
+            fixture: "fixtures/codex/code-mode-yield-hermetic",
+            turn: Turn {
+                args: &CODE_MODE,
+                ..Turn::PROFILE
+            },
+        },
+        // The seed's own Stop hook blocks the turn's first stop, which goes on
+        // (`core/src/session/turn.rs:722-759`, `hooks/src/events/stop.rs` at
+        // `rust-v0.164.0`); codex reads a trusted project's `.codex/hooks.json`
+        // (`config/src/loader/mod.rs:1838-1965`, `hooks/src/engine/discovery.rs:378-418`).
+        Scenario {
+            name: "stop-hook",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/stop-hook-hermetic",
+            turn: Turn {
+                seed: Some("stop-hook"),
+                ..Turn::PROFILE
+            },
+        },
     ],
     script_vars: &[],
     not_yet: &[],
     event_name: hook_event_name,
-    // aimock's Responses usage has no token details (`CopilotKit/aimock`
-    // `src/responses.ts:543-556` at v1.45.1).
-    not_yet_fields: &[
-        (
-            "tx:event_msg",
-            "/payload/info/last_token_usage/cached_input_tokens",
-        ),
-        (
-            "tx:event_msg",
-            "/payload/info/last_token_usage/reasoning_output_tokens",
-        ),
-    ],
-    not_yet_literals: &[],
+    not_yet_fields: &[],
+    // A `write_stdin` approval, which no shape scripts.
+    not_yet_literals: &["approval_id"],
     children_inherit_cwd: false,
     result_unseen: false,
     live: None,

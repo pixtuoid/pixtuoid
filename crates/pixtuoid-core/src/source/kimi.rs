@@ -175,7 +175,7 @@ mod tests {
         .unwrap();
         assert_eq!(evs.len(), 1);
         assert!(
-            matches!(&evs[0], AgentEvent::TurnEnd { agent_id }
+            matches!(&evs[0], AgentEvent::TurnEnd { agent_id, .. }
                 if *agent_id == AgentId::from_parts(SOURCE_NAME, "s")),
             "got {evs:?}"
         );

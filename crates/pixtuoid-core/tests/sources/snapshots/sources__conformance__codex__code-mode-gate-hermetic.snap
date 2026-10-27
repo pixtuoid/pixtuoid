@@ -1,0 +1,77 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- TurnStart:
+    agent_id: 4171115577320907914
+    turn:
+      Id: 01a17c19-64c8-77d2-bfd8-032d67ec9a18
+- ToolUseStart:
+    agent_id: 4171115577320907914
+    tool_use_id: ~
+    detail: ~
+- ModelInfo:
+    agent_id: 4171115577320907914
+    model: gpt-5.5
+    effort: high
+- ToolUseStart:
+    agent_id: 4171115577320907914
+    tool_use_id: call_jK1dlTMwd6hQ-_uu
+    detail:
+      Generic:
+        display: "exec: exec_command"
+- ToolUseEnd:
+    agent_id: 4171115577320907914
+    tool_use_id: call_jK1dlTMwd6hQ-_uu
+- ToolUseStart:
+    agent_id: 4171115577320907914
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 4171115577320907914
+    fresh_tokens: 19
+- TurnEnd:
+    agent_id: 4171115577320907914
+    turn:
+      Id: 01a17c19-64c8-77d2-bfd8-032d67ec9a18
+- SessionStart:
+    agent_id: 4171115577320907914
+    source: codex
+    session_id: 01a17c19-6444-7833-8e1a-c238aedf124a
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 4171115577320907914
+    model: gpt-5.5
+    effort: ~
+- SessionStart:
+    agent_id: 4171115577320907914
+    source: codex
+    session_id: 01a17c19-6444-7833-8e1a-c238aedf124a
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 4171115577320907914
+    source: codex
+    session_id: 01a17c19-6444-7833-8e1a-c238aedf124a
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 4171115577320907914
+    tool_use_id: exec-ccd1143c-e916-4cf3-a674-ab3ce72c8517
+    tool_name: Bash
+    turn:
+      Id: 01a17c19-64c8-77d2-bfd8-032d67ec9a18
+- Identity:
+    agent_id: 4171115577320907914
+    source: codex
+    session_id: 01a17c19-6444-7833-8e1a-c238aedf124a
+    cwd: /private/tmp/pixtuoid-capture/proj
+- UserActionRequest:
+    agent_id: 4171115577320907914
+    reason: permission
+    tool_name: Bash
+    turn:
+      Id: 01a17c19-64c8-77d2-bfd8-032d67ec9a18
+- SessionEnd:
+    agent_id: 4171115577320907914
+    as_child: false

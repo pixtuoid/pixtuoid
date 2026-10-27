@@ -18,7 +18,7 @@ const TUI: tui::Tui = tui::Tui {
     },
     gates: &[tui::Gate {
         shows: "Do you want to proceed?",
-        deny: &[tui::Key::Esc],
+        keys: &[tui::Key::Esc],
         // Past the 6 s an unanswered dialog waits before it fires `Notification`
         // (`qYt=6000` in `eTe`, the 2.1.302 bundle), and so past the 150 ms it
         // ignores keys for (`AM=150`).
@@ -105,6 +105,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 args: &["--effort", "ultracode"],
                 prompt: Some("ultrathink: read NOTE.txt."),
                 second: Some(Second::Prompt("Say done.")),
+                seed: None,
             },
         },
         Scenario {

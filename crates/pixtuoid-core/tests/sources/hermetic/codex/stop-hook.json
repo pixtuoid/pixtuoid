@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "HERMETIC-STOP" },
+      "response": { "content": "done", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -688,7 +688,6 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
                         return out;
                     };
-                    let mut asks = Vec::new();
                     for b in blocks
                         .iter()
                         .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some(BLOCK_TOOL_CALL))
@@ -701,22 +700,22 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, "name");
                             ""
                         });
-                        let is_ask = name == TOOL_ASK;
-                        let dst = if is_ask { &mut asks } else { &mut out };
-                        dst.push(AgentEvent::ToolUseStart {
+                        out.push(AgentEvent::ToolUseStart {
                             agent_id: acting,
                             tool_use_id: Some(id.to_string()),
                             detail: Some(omp_tool_detail(name, b.get("arguments"))),
                         });
-                        if is_ask {
-                            asks.push(AgentEvent::UserActionRequest {
-                                agent_id: acting,
-                                reason: Some(omp_ask_reason(b.get("arguments"))),
-                                tool_use_id: None,
-                            });
+                        if name == TOOL_ASK {
+                            out.push(AgentEvent::user_action_request(
+                                acting,
+                                Some(omp_ask_reason(b.get("arguments"))),
+                                RequestKeys {
+                                    tool_use_id: Some(id.to_string()),
+                                    ..RequestKeys::default()
+                                },
+                            ));
                         }
                     }
-                    out.extend(asks);
                     out
                 }
                 Some(ROLE_TOOL_RESULT) => {
@@ -916,11 +915,14 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             };
             let tool = obj.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
             let event = if ty == HOOK_APPROVAL_REQUESTED {
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(omp_approval_reason(obj, tool)),
-                    tool_use_id: Some(tool_call_id.to_string()),
-                }
+                    Some(omp_approval_reason(obj, tool)),
+                    RequestKeys {
+                        tool_use_id: Some(tool_call_id.to_string()),
+                        ..RequestKeys::default()
+                    },
+                )
             } else if obj.get("approved").and_then(|a| a.as_bool()) == Some(true) {
                 // The resume. copilot's approve-emits-nothing shape doesn't fit
                 // omp: the transcript wrote this call BEFORE the request, so
@@ -1523,12 +1525,14 @@ mod tests {
                 AgentEvent::UserActionRequest {
                     agent_id: wid,
                     reason,
+                    tool_use_id: asked,
                     ..
                 },
             ] => {
                 assert_eq!(*agent_id, root());
                 assert_eq!(*wid, root());
                 assert_eq!(tool_use_id.as_deref(), Some("tool_ASK1"));
+                assert_eq!(asked, tool_use_id, "the question names its own call");
                 assert!(
                     reason
                         .as_deref()
@@ -1559,22 +1563,27 @@ mod tests {
     }
 
     #[test]
-    fn ask_batched_with_parallel_tool_calls_decodes_last() {
+    fn an_ask_among_parallel_calls_names_its_own() {
         let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {
-                    tool_use_id: bash, ..
-                },
-                AgentEvent::ToolUseStart {
                     tool_use_id: ask, ..
                 },
-                AgentEvent::UserActionRequest { .. },
+                AgentEvent::UserActionRequest {
+                    tool_use_id: asked, ..
+                },
+                AgentEvent::ToolUseStart {
+                    tool_use_id: bash, ..
+                },
             ] => {
-                assert_eq!(bash.as_deref(), Some("t7"));
                 assert_eq!(ask.as_deref(), Some("tool_ASK5"));
+                assert_eq!(asked, ask);
+                assert_eq!(bash.as_deref(), Some("t7"));
             }
-            other => panic!("expected bash Start, then ask Start+UserActionRequest, got {other:?}"),
+            other => panic!(
+                "expected the ask's Start+UserActionRequest, then bash's Start, got {other:?}"
+            ),
         }
     }
 
@@ -2466,6 +2475,7 @@ mod tests {
                     agent_id,
                     reason: Some(reason),
                     tool_use_id,
+                    ..
                 },
             ] => {
                 assert_eq!(iid, agent_id);

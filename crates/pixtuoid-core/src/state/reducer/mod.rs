@@ -5,12 +5,13 @@ use std::time::{Duration, SystemTime};
 use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
-use crate::source::{AgentEvent, Transport};
+use crate::source::{AgentEvent, Resolution, Transport};
 use crate::state::correlation::{
     Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
 };
-use crate::state::requests::Ended;
-use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, fsm, scope};
+use crate::state::requests::{Ended, PendingStart, Raise};
+use crate::state::turns::{End, Start};
+use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnKey, fsm, scope};
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
@@ -224,8 +225,9 @@ impl Refusal {
 /// re-opens the leak or the double-apply the pre-pass was added to close.
 #[must_use]
 enum Preprocessed {
-    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start or
-    /// [`AgentEvent::UserActionRequest`] whose call's End already landed (#242).
+    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start,
+    /// pre-use or [`AgentEvent::UserActionRequest`] whose call's End already
+    /// landed (#242).
     Drop,
     /// Survived the pre-pass; carries what task tracking already applied, so
     /// the general arms can skip work the tracker has done.
@@ -279,6 +281,10 @@ impl Reducer {
         self.corr
             .action_requests
             .retain(|id| scene.agents.contains_key(id));
+        self.corr.turns.retain(|id| scene.agents.contains_key(id));
+        self.corr
+            .item_started_on
+            .retain(|id, _| scene.agents.contains_key(id));
         self.pending_b1_cascades
             .retain(|id, _| scene.agents.contains_key(id));
     }
@@ -357,24 +363,46 @@ impl Reducer {
                 tool_use_id,
             } => {
                 let ended = tool_use_id.as_deref().map_or(Ended::Unnamed, Ended::Call);
-                self.apply_end(scene, agent_id, ended, from, now);
+                self.apply_tool_use_end(scene, agent_id, ended, from, now);
             }
-            AgentEvent::TurnEnd { agent_id } => {
-                self.apply_end(scene, agent_id, Ended::Turn, from, now);
+            AgentEvent::ToolUsePending {
+                agent_id,
+                tool_use_id,
+                tool_name,
+                turn,
+            } => {
+                if scene.agents.contains_key(&agent_id) {
+                    self.register_pending(agent_id, &tool_use_id, tool_name.as_deref(), turn, from);
+                }
+            }
+            AgentEvent::TurnStart { agent_id, turn } => {
+                self.apply_turn_start(scene, agent_id, turn, from, now);
+            }
+            AgentEvent::TurnEnd { agent_id, turn } => {
+                self.apply_turn_end(scene, agent_id, turn, from, now);
             }
             AgentEvent::UserActionRequest {
                 agent_id,
                 reason,
                 tool_use_id,
+                tool_name,
+                turn,
             } => {
                 self.apply_user_action_request(
                     scene,
                     agent_id,
                     reason.as_deref(),
-                    tool_use_id.as_deref(),
-                    from,
+                    Raise {
+                        call: tool_use_id.as_deref(),
+                        tool_name: tool_name.as_deref(),
+                        turn: turn.as_ref(),
+                        from,
+                    },
                     now,
                 );
+            }
+            AgentEvent::UserActionResolved { agent_id, by } => {
+                self.apply_user_action_resolved(scene, agent_id, &by, now);
             }
             AgentEvent::Rename { agent_id, label } => {
                 Self::apply_rename(scene, agent_id, &label, now);
@@ -495,11 +523,15 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        // Likewise a wait for a call whose hook End already landed, from a
-        // reordered hook (#242) or a lagging watcher: its answer came first.
+        // Likewise a wait for a call whose hook End already landed, or its
+        // pre-use, from a reordered hook (#242) or a lagging watcher: its
+        // answer came first.
         if let AgentEvent::UserActionRequest {
             tool_use_id: Some(tuid),
             ..
+        }
+        | AgentEvent::ToolUsePending {
+            tool_use_id: tuid, ..
         } = event
             && self
                 .corr
@@ -543,21 +575,23 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let counted = tool_use_id
-            .as_deref()
-            .is_some_and(|t| self.corr.is_counted(&agent_id, t));
+        if let Some(call) = tool_use_id.as_deref()
+            && scene.agents.contains_key(&agent_id)
+        {
+            self.register_pending(agent_id, call, None, None, from);
+        }
         let runs = self.corr.action_requests.start(
             agent_id,
             tool_use_id.as_deref(),
             from,
             is_requires_action(scene, agent_id),
-            counted,
         );
         self.count_call(scene, agent_id, tool_use_id.as_deref(), &detail, now);
         if !runs {
             return;
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            self.corr.item_started_on.insert(agent_id, from);
             // Derive the category from the typed detail BEFORE it is erased to
             // the HUD display string.
             let kind = detail
@@ -601,11 +635,33 @@ impl Reducer {
         }
     }
 
-    /// The `ToolUseEnd` arm, for an End the pre-pass tracker left to it, and
-    /// the `TurnEnd` arm. It settles the slot when it answers its request, or
-    /// ends the call the slot shows: the one it names, or any when either side
-    /// names none.
-    fn apply_end(
+    /// A start of `call` on `on` that has not ended, scoped to its own turn
+    /// else the open one.
+    fn register_pending(
+        &mut self,
+        agent_id: AgentId,
+        call: &str,
+        tool_name: Option<&str>,
+        turn: Option<TurnKey>,
+        on: Transport,
+    ) {
+        let turn = turn.or_else(|| self.corr.turns.open(&agent_id).cloned());
+        self.corr.action_requests.register(
+            agent_id,
+            PendingStart {
+                call: Arc::from(call),
+                tool_name: tool_name.map(Arc::from),
+                turn,
+                on,
+            },
+        );
+    }
+
+    /// The `ToolUseEnd` arm, for an End the pre-pass tracker left to it. It
+    /// settles the slot when it answers its request, or ends the call the slot
+    /// shows: the one it names, or any when the slot's names none. An end naming
+    /// no call never ends a named one.
+    fn apply_tool_use_end(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
@@ -619,8 +675,109 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
+        let ends_item =
+            scene
+                .agents
+                .get(&agent_id)
+                .is_some_and(|slot| match (&slot.state, ended) {
+                    (
+                        ActivityState::Running {
+                            tool_use_id: Some(shown),
+                            ..
+                        },
+                        Ended::Call(call),
+                    ) => **shown == *call,
+                    (
+                        ActivityState::Running {
+                            tool_use_id: Some(_),
+                            ..
+                        },
+                        _,
+                    ) => false,
+                    _ => true,
+                });
+        self.end_item(scene, agent_id, resolved, ends_item, now);
+    }
+
+    /// The `TurnStart` arm. A thread runs one turn at a time, so a start of
+    /// another turn ends the open one.
+    fn apply_turn_start(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        turn: TurnKey,
+        from: Transport,
+        now: SystemTime,
+    ) {
+        if !scene.agents.contains_key(&agent_id) {
+            return;
+        }
+        if let Start::Opened {
+            superseded: Some(open),
+        } = self.corr.turns.start(agent_id, turn, now)
+        {
+            let ended = Ended::Turn {
+                turn: Some(&open),
+                implied: None,
+            };
+            let resolved = self.corr.action_requests.end(
+                agent_id,
+                ended,
+                from,
+                is_requires_action(scene, agent_id),
+            );
+            self.end_item(scene, agent_id, resolved, true, now);
+        }
+    }
+
+    /// The `TurnEnd` arm: the agent's work ends, unless the ledger shows the
+    /// turn already closed.
+    fn apply_turn_end(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        turn: Option<TurnKey>,
+        from: Transport,
+        now: SystemTime,
+    ) {
+        if !scene.agents.contains_key(&agent_id) {
+            return;
+        }
+        let (applies, implied) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
+            End::Applied { implied } => (true, implied),
+            End::Stale => (false, None),
+        };
+        let ended = Ended::Turn {
+            turn: turn.as_ref(),
+            implied: implied.as_ref(),
+        };
+        let resolved = self.corr.action_requests.end(
+            agent_id,
+            ended,
+            from,
+            is_requires_action(scene, agent_id),
+        );
+        // grok's transcript reads `turn_completed` past its hooks' next call.
+        let lags_the_hooks = from == Transport::Jsonl
+            && turn.is_none()
+            && self.corr.item_started_on.get(&agent_id) == Some(&Transport::Hook);
+        self.end_item(scene, agent_id, resolved, applies && !lags_the_hooks, now);
+    }
+
+    /// Settle the slot when its request was answered or the call it shows
+    /// ended; a dispatch `tasks_in_flight` never tracked ends its subtree with
+    /// it.
+    fn end_item(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        resolved: bool,
+        ends_item: bool,
+        now: SystemTime,
+    ) {
         let task_in_flight = self.corr.any_task_in_flight(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            let ends_item = ends_item && matches!(slot.state, ActivityState::Running { .. });
             let untracked_task = matches!(
                 slot.state,
                 ActivityState::Running {
@@ -629,20 +786,13 @@ impl Reducer {
                     ..
                 }
             );
-            if untracked_task && child_end_inference(slot).dispatch_end_ends_child(false) {
+            if ends_item
+                && untracked_task
+                && child_end_inference(slot).dispatch_end_ends_child(false)
+            {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
-            let ends_shown_call = match (&slot.state, ended) {
-                (
-                    ActivityState::Running {
-                        tool_use_id: Some(shown),
-                        ..
-                    },
-                    Ended::Call(call),
-                ) => **shown == *call,
-                (state, _) => matches!(state, ActivityState::Running { .. }),
-            };
-            if resolved || ends_shown_call {
+            if resolved || ends_item {
                 fsm::settle(slot, task_in_flight, now);
             }
             slot.last_event_at = now;
@@ -654,27 +804,39 @@ impl Reducer {
         scene: &mut SceneState,
         agent_id: AgentId,
         reason: Option<&str>,
-        tool_use_id: Option<&str>,
-        from: Transport,
+        raise: Raise<'_>,
         now: SystemTime,
     ) {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            let in_flight = match &slot.state {
-                ActivityState::Running {
-                    tool_use_id: Some(t),
-                    ..
-                } => Some(t),
-                _ => None,
-            };
+            let open = self.corr.turns.open(&agent_id).cloned();
             let requires_action = matches!(slot.state, ActivityState::RequiresAction { .. });
             self.corr.action_requests.raise(
                 agent_id,
-                tool_use_id,
-                in_flight,
+                Raise {
+                    turn: raise.turn.or(open.as_ref()),
+                    ..raise
+                },
                 requires_action,
-                from,
             );
             fsm::enter_requires_action(slot, reason.map(Arc::<str>::from), now);
+        }
+    }
+
+    /// The `UserActionResolved` arm: it settles a slot it answers, and ends no
+    /// item.
+    fn apply_user_action_resolved(
+        &mut self,
+        scene: &mut SceneState,
+        agent_id: AgentId,
+        by: &Resolution,
+        now: SystemTime,
+    ) {
+        let resolved =
+            self.corr
+                .action_requests
+                .resolved(agent_id, by, is_requires_action(scene, agent_id));
+        if resolved {
+            self.end_item(scene, agent_id, true, false, now);
         }
     }
 
@@ -1128,10 +1290,10 @@ impl Reducer {
     }
 
     /// Hook transport only, on a source whose child hooks arrive unnamed under
-    /// the parent's key: with any Task in flight, a hook ToolUseStart/End or
-    /// TurnEnd for this AgentId is the child's work, so it is dropped. Two
-    /// exemptions: the Task's own PostToolUse (its tool_use_id matches), and a
-    /// request member's Start/End — the parent's own approval round (#951),
+    /// the parent's key: with any Task in flight, a hook ToolUseStart/End, its
+    /// pre-use or a turn bracket for this AgentId is the child's work, so it is
+    /// dropped. Two exemptions: the Task's own PostToolUse (its tool_use_id
+    /// matches), and a request member's — the parent's own approval round (#951),
     /// which eating would strand in RequiresAction until the parent's next own event
     /// or the stale sweep.
     fn suppress_subagent_leak(
@@ -1143,20 +1305,22 @@ impl Reducer {
     ) -> bool {
         let tasks = self.corr.tasks_in_flight.get(&id);
         let in_task = tasks.is_some_and(|s| !s.is_empty());
-        let is_member = |tool_use_id: &Option<String>| {
-            tool_use_id
-                .as_deref()
-                .is_some_and(|t| self.corr.action_requests.is_member(&id, t))
-        };
+        let is_member =
+            |call: Option<&str>| call.is_some_and(|t| self.corr.action_requests.is_member(&id, t));
         let suppress = match event {
-            AgentEvent::ToolUseStart { tool_use_id, .. } => in_task && !is_member(tool_use_id),
+            AgentEvent::ToolUseStart { tool_use_id, .. } => {
+                in_task && !is_member(tool_use_id.as_deref())
+            }
+            AgentEvent::ToolUsePending { tool_use_id, .. } => {
+                in_task && !is_member(Some(tool_use_id))
+            }
             AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 let is_task_self_end = tool_use_id
                     .as_ref()
                     .is_some_and(|t| tasks.is_some_and(|s| s.contains(t)));
-                in_task && !is_task_self_end && !is_member(tool_use_id)
+                in_task && !is_task_self_end && !is_member(tool_use_id.as_deref())
             }
-            AgentEvent::TurnEnd { .. } => in_task,
+            AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { .. } => in_task,
             _ => false,
         };
         if suppress
@@ -1207,16 +1371,20 @@ impl Reducer {
                         .corr
                         .recent_task_drains
                         .contains_key(&(*agent_id, tuid.clone()))
-                    && let Some(slot) = scene.agents.get_mut(agent_id)
-                    && self.corr.action_requests.start(
-                        *agent_id,
-                        Some(tuid),
-                        from,
-                        matches!(slot.state, ActivityState::RequiresAction { .. }),
-                        self.corr.is_counted(agent_id, tuid),
-                    )
+                    && scene.agents.contains_key(agent_id)
                 {
-                    fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                    self.register_pending(*agent_id, tuid, None, None, from);
+                    if let Some(slot) = scene.agents.get_mut(agent_id)
+                        && self.corr.action_requests.start(
+                            *agent_id,
+                            Some(tuid),
+                            from,
+                            matches!(slot.state, ActivityState::RequiresAction { .. }),
+                        )
+                    {
+                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                        self.corr.item_started_on.insert(*agent_id, from);
+                    }
                 }
             }
             AgentEvent::ToolUseEnd {
@@ -1371,7 +1539,9 @@ impl Reducer {
     /// the sweep site — it must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
-        self.corr.action_requests.close(id);
+        self.corr.action_requests.forget(id);
+        self.corr.turns.forget(id);
+        self.corr.item_started_on.remove(id);
         self.corr.counted_calls.remove(id);
         self.pending_b1_cascades.remove(id);
     }

@@ -1,0 +1,83 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- TurnStart:
+    agent_id: 12809657047946264848
+    turn:
+      Id: 01a17c19-117c-7031-8d0e-b26f23d53b91
+- ToolUseStart:
+    agent_id: 12809657047946264848
+    tool_use_id: ~
+    detail: ~
+- ModelInfo:
+    agent_id: 12809657047946264848
+    model: gpt-5.5
+    effort: high
+- ToolUseStart:
+    agent_id: 12809657047946264848
+    tool_use_id: call_dxdTtHqfe89gHq4H
+    detail:
+      Generic:
+        display: "exec: exec_command"
+- ToolUseEnd:
+    agent_id: 12809657047946264848
+    tool_use_id: call_dxdTtHqfe89gHq4H
+- ToolUseStart:
+    agent_id: 12809657047946264848
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 12809657047946264848
+    fresh_tokens: 19
+- Usage:
+    agent_id: 12809657047946264848
+    fresh_tokens: 19
+- TurnEnd:
+    agent_id: 12809657047946264848
+    turn:
+      Id: 01a17c19-117c-7031-8d0e-b26f23d53b91
+- SessionStart:
+    agent_id: 12809657047946264848
+    source: codex
+    session_id: 01a17c19-1146-7430-9c5a-1ae48b70934d
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 12809657047946264848
+    model: gpt-5.5
+    effort: ~
+- SessionStart:
+    agent_id: 12809657047946264848
+    source: codex
+    session_id: 01a17c19-1146-7430-9c5a-1ae48b70934d
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 12809657047946264848
+    source: codex
+    session_id: 01a17c19-1146-7430-9c5a-1ae48b70934d
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 12809657047946264848
+    tool_use_id: exec-dac1034d-ddd5-4e8e-bd49-47941e07d878
+    tool_name: Bash
+    turn:
+      Id: 01a17c19-117c-7031-8d0e-b26f23d53b91
+- Identity:
+    agent_id: 12809657047946264848
+    source: codex
+    session_id: 01a17c19-1146-7430-9c5a-1ae48b70934d
+    cwd: /private/tmp/pixtuoid-capture/proj
+- UserActionResolved:
+    agent_id: 12809657047946264848
+    by:
+      Call: exec-dac1034d-ddd5-4e8e-bd49-47941e07d878
+- UserActionResolved:
+    agent_id: 12809657047946264848
+    by:
+      Turn:
+        Id: 01a17c19-117c-7031-8d0e-b26f23d53b91
+- SessionEnd:
+    agent_id: 12809657047946264848
+    as_child: false

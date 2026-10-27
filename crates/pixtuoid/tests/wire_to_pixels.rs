@@ -196,14 +196,14 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "claude_code",
             source: "claude-code",
-            fixture: "fixtures/claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl",
+            fixture: "fixtures/claude-code/permission-recorded",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "codex",
             source: "codex",
-            fixture: "fixtures/codex/permission-recorded/rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl",
+            fixture: "fixtures/codex/permission-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
