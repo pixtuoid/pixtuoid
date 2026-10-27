@@ -115,8 +115,8 @@ that the decoder mishandled three events pixtuoid never even subscribes to.
 The same trap has a second door: a CLI that SPAWNS another CLI. The OpenClaw
 gateway runs its agent turn on a Claude Code backend, which inherits
 `PIXTUOID_SOCKET` and sends its own unstamped CC hooks to the recorder — six of
-the eight payloads in that capture were Claude Code's. Filter a capture to the
-source's own stamp before committing it.
+the eight payloads in that capture were Claude Code's. The recorder now refuses
+a capture holding any payload not stamped with its source.
 
 One list describes each CLI — `*_EVENTS` in `install/<cli>.rs`: which hooks we
 register, and so what the CLI sends us.
