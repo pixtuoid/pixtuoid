@@ -386,6 +386,7 @@ mod tests {
         let decoder_reads: std::collections::BTreeSet<String> = [
             "session_start",
             "session_end",
+            "turn_end",
             "tool_call",
             "tool_result",
             "approval_asked",

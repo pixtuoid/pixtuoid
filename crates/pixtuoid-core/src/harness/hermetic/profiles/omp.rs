@@ -160,4 +160,5 @@ startup:
     result_unseen: false,
     live: None,
     daemon: None,
+    turn_exits: &[],
 };

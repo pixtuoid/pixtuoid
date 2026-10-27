@@ -108,4 +108,5 @@ pub(crate) const PROFILE: Profile = Profile {
         // `docs/platforms/mac/bundled-gateway.md:46-49`).
         env: &[("OPENCLAW_GATEWAY_HOST_LIFELINE", "stdin")],
     }),
+    turn_exits: &[],
 };

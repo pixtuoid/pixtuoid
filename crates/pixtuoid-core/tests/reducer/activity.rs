@@ -1680,6 +1680,22 @@ fn a_bracketed_turn_runs_between_its_items_and_settles_at_its_end() {
 }
 
 #[test]
+fn a_turn_start_on_a_source_that_does_not_bracket_its_turns_shows_nothing() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = AgentId::from_parts("claude-code", "ses_cc");
+    start_as(&mut r, &mut scene, id, "claude-code");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+#[test]
 fn a_turn_start_leaves_a_standing_request_to_its_answer() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
     let id = codex(&mut r, &mut scene);

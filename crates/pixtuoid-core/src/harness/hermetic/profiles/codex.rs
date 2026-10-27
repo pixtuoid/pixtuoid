@@ -1,6 +1,7 @@
 use super::{SECOND_TURN, hook_event_name};
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn,
+    TurnExit, tui,
 };
 use crate::harness::plan::Placeholder;
 
@@ -219,6 +220,14 @@ trust_level = "trusted"
             turn: Turn::PROFILE,
         },
         Scenario {
+            name: "model-error",
+            shape: Shape::ModelError,
+            surface: Surface::Headless,
+            expects: &["SessionStart", "UserPromptSubmit", "SessionEnd"],
+            fixture: "fixtures/codex/model-error-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
             name: "two-turn",
             shape: Shape::ToolRun,
             surface: Surface::Tui { row: &TUI },
@@ -392,4 +401,21 @@ trust_level = "trusted"
     result_unseen: false,
     live: None,
     daemon: None,
+    // A finished task writes `task_complete`, its error inside when it
+    // failed, and an aborted one `turn_aborted`
+    // (`core/src/tasks/mod.rs:645-669`, `:831-870` at rust-v0.164.0).
+    turn_exits: &[
+        TurnExit {
+            exit: "task_complete",
+            scenario: "tool-run",
+        },
+        TurnExit {
+            exit: "task_complete with its error",
+            scenario: "model-error",
+        },
+        TurnExit {
+            exit: "turn_aborted",
+            scenario: "cancel",
+        },
+    ],
 };

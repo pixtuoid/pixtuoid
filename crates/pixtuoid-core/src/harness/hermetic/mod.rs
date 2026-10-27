@@ -374,6 +374,18 @@ pub struct Profile {
     pub live: Option<Live>,
     /// The server its CLI talks to.
     pub daemon: Option<Daemon>,
+    /// Every in-process exit a turn takes, for a source whose registry row
+    /// brackets its turns; empty for any other.
+    pub(crate) turn_exits: &'static [TurnExit],
+}
+
+/// An in-process exit of a turn, and the scenario recording it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TurnExit {
+    /// The exit, as its CLI names it.
+    pub(crate) exit: &'static str,
+    /// The scenario of its profile that records it.
+    pub(crate) scenario: &'static str,
 }
 
 impl Profile {
@@ -1406,6 +1418,81 @@ mod tests {
                     p.source
                 );
             }
+        }
+    }
+
+    /// Every event a committed capture in `dir` of `source` decodes to.
+    fn captured_events(source: &str, dir: &Path) -> Vec<crate::AgentEvent> {
+        let mut events = Vec::new();
+        for file in crate::harness::jsonl_files_under(dir) {
+            let bytes = std::fs::read(&file).expect("a committed capture reads");
+            let driven = if crate::harness::reads::is_hook_envelope(&file) {
+                crate::harness::Drive::hooks().body(&bytes)
+            } else if let Some(drive) = crate::harness::Drive::transcript_at(source, &file) {
+                drive.seeded().body(&bytes)
+            } else {
+                continue;
+            };
+            events.extend(driven.events);
+        }
+        events
+    }
+
+    /// The spec's `brackets_turns` conformance: a source brackets its turns
+    /// exactly where its profile names a recording of every exit a turn takes,
+    /// each recording closing every turn it opens, and no capture of any other
+    /// source decodes a turn's start.
+    #[test]
+    fn a_source_brackets_turns_only_where_every_exit_is_recorded() {
+        for source in registry::registered_source_names() {
+            let brackets = registry::descriptor_for(source)
+                .expect("registered")
+                .caps()
+                .brackets_turns;
+            let exits = profile(source).map_or(&[][..], |p| p.turn_exits);
+            assert_eq!(
+                brackets,
+                !exits.is_empty(),
+                "{source}: it brackets its turns only with every exit recorded"
+            );
+            for exit in exits {
+                let scenario = profile(source)
+                    .and_then(|p| p.scenario(exit.scenario))
+                    .unwrap_or_else(|| panic!("{source}: no scenario {}", exit.scenario));
+                let dir = crate::harness::sources_root().join(scenario.fixture);
+                let events = captured_events(source, &dir);
+                assert!(
+                    events
+                        .iter()
+                        .any(|e| matches!(e, crate::AgentEvent::TurnStart { .. })),
+                    "{source}/{}: its recording of `{}` opens no turn",
+                    exit.scenario,
+                    exit.exit
+                );
+                let open = verify::unclosed_turns(&events);
+                assert!(
+                    open.is_empty(),
+                    "{source}/{}: its recording of `{}` leaves {open:?} open",
+                    exit.scenario,
+                    exit.exit
+                );
+            }
+        }
+        for capture in crate::harness::captures(&crate::harness::sources_root()) {
+            let brackets =
+                registry::descriptor_for(&capture.source).is_some_and(|d| d.caps().brackets_turns);
+            if brackets {
+                continue;
+            }
+            let starts = captured_events(&capture.source, &capture.dir)
+                .iter()
+                .any(|e| matches!(e, crate::AgentEvent::TurnStart { .. }));
+            assert!(
+                !starts,
+                "{}: {} opens a turn, but its source does not bracket its turns",
+                capture.source,
+                capture.dir.display()
+            );
         }
     }
 }

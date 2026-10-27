@@ -719,8 +719,9 @@ impl Reducer {
         self.end_item(scene, agent_id, resolved, ends_item, now);
     }
 
-    /// The `TurnStart` arm: an Idle agent works. A thread runs one turn at a
-    /// time, so a start of another turn ends the open one.
+    /// The `TurnStart` arm, on a source that brackets its turns: an Idle agent
+    /// works. A thread runs one turn at a time, so a start of another turn
+    /// ends the open one.
     fn apply_turn_start(
         &mut self,
         scene: &mut SceneState,
@@ -729,7 +730,12 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        if !scene.agents.contains_key(&agent_id) {
+        let brackets = scene
+            .agents
+            .get(&agent_id)
+            .and_then(caps_of)
+            .is_some_and(|c| c.brackets_turns);
+        if !brackets {
             return;
         }
         let Start::Opened { superseded } = self.corr.turns.start(agent_id, turn, now) else {

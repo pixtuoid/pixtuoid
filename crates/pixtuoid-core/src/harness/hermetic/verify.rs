@@ -787,6 +787,9 @@ fn judge(
         ),
         Shape::Succession => succession(&events, findings),
     }
+    if p.descriptor().caps().brackets_turns {
+        bracketed(p, scenario, &events, &reached, findings);
+    }
     let shown = match scenario.shape {
         Shape::ToolRun | Shape::Subagent | Shape::ChildError => "running",
         Shape::Permission => "requires_action",
@@ -982,6 +985,53 @@ fn permission(
             "the call or turn the slot waited on never ended".into(),
         ));
     }
+}
+
+/// A run of a source that brackets its turns: once a turn asks the model, the
+/// agent shows running with no item, and every turn the run opened ended.
+fn bracketed(
+    p: &Profile,
+    scenario: &Scenario,
+    events: &[AgentEvent],
+    reached: &[Reach],
+    findings: &mut Vec<(Label, String)>,
+) {
+    if scenario.shape.asks_the_model() && !reached.contains(&Reach::RunningNoItem) {
+        findings.push((
+            Label::Fail,
+            "the open turn never showed the agent running with no item".into(),
+        ));
+    }
+    let open = unclosed_turns(events);
+    if !open.is_empty() {
+        let by = p
+            .turn_exits
+            .iter()
+            .find(|e| e.scenario == scenario.name)
+            .map_or_else(String::new, |e| format!(" by its `{}` exit", e.exit));
+        findings.push((
+            Label::Fail,
+            format!("the run ended{by} with turn(s) {open:?} open"),
+        ));
+    }
+}
+
+/// The turns `events` start that none of them ends, by agent and key.
+pub(crate) fn unclosed_turns(events: &[AgentEvent]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::TurnStart { agent_id, turn } => Some((agent_id, turn)),
+            _ => None,
+        })
+        .filter(|(agent, key)| {
+            !events.iter().any(|e| {
+                matches!(e, AgentEvent::TurnEnd { agent_id, turn: Some(k) }
+                    if agent_id == *agent && k == *key)
+            })
+        })
+        .map(|(agent, key)| format!("{agent:?} {key:?}"))
+        .collect()
 }
 
 /// The turn ends, which its script leaves only one way to: a model error's

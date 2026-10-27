@@ -134,6 +134,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     header: { config: { model: "m", system: "SECRET_SYSTEM" } },
     messages: ["SECRET_MESSAGE"],
   });
+  event("turn/end", { turn: 1, reason: { kind: "error", error: { message: "SECRET_ERROR" } } });
   handlers.get("agent/disposed")({ agent: { session } });
 
   // Exact payloads: a key nobody planted fails too, and so does a payload.
@@ -146,6 +147,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
     { type: "tool_result", ...at, callId: "c1" },
     { type: "usage", ...at, inputTokens: 1, outputTokens: 2 },
     { type: "model", ...at, model: "m" },
+    { type: "turn_end", ...at },
     { type: "session_end", ...at },
   ]);
 });

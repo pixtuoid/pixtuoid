@@ -75,6 +75,8 @@ pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> std::io::Result
 pub enum Reach {
     /// A tool call is in flight.
     Running,
+    /// A turn is open, showing no item.
+    RunningNoItem,
     /// Blocked on a permission/input prompt.
     RequiresAction,
     /// A subagent dispatch is in flight.
@@ -496,7 +498,10 @@ fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
                         ..
                     }),
             } => Reach::Delegating,
-            ActivityState::Running { .. } => Reach::Running,
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { .. }),
+            } => Reach::Running,
+            ActivityState::Running { item: None } => Reach::RunningNoItem,
             ActivityState::RequiresAction { .. } => Reach::RequiresAction,
             ActivityState::Idle => continue,
         };

@@ -72,6 +72,7 @@ fn delegating_slot_with_hook_silent_caps_gets_the_blocked_window() {
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
         child_hooks_unnamed: false,
+        brackets_turns: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -143,6 +144,7 @@ fn generic_tool_displaying_delegating_keeps_the_running_window() {
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
         child_hooks_unnamed: false,
+        brackets_turns: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -1161,15 +1163,16 @@ fn an_open_turn_showing_no_item_keeps_the_longer_of_the_tool_and_idle_windows() 
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,
         child_hooks_unnamed: false,
+        brackets_turns: true,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let id = AgentId::from_parts("bracketing-cli", "/p");
+    let id = AgentId::from_parts("opencode", "ses_p");
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: id,
-            source: "bracketing-cli".into(),
+            source: "opencode".into(),
             session_id: "/p".into(),
             cwd: "/p".into(),
             parent_id: None,

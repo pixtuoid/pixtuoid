@@ -92,6 +92,12 @@ pub(crate) struct SourceCaps {
     /// Then while the parent has a Task in flight its hook activity is the
     /// child's, and the reducer drops it.
     pub(crate) child_hooks_unnamed: bool,
+    /// Does ONE ordered stream carry each turn's start and its end, the end
+    /// written on every in-process exit? Then an open turn shows the agent
+    /// running between its items; on any other source a start with no sure
+    /// end would hold Running until the stale sweep. The hermetic profile
+    /// names the scenario recording each exit.
+    pub(crate) brackets_turns: bool,
 }
 
 /// What a subagent dispatch's end says about its child; where it says the
@@ -132,6 +138,7 @@ impl SourceCaps {
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,
         child_hooks_unnamed: false,
+        brackets_turns: false,
     };
 
     /// The short-idle-reaper policy, derived: only safe when the sweep is the
@@ -556,6 +563,7 @@ const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
             // returns `async_launched` at launch (hooks.md).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::TranscriptProbe,
     },
@@ -595,6 +603,7 @@ const CODEX: SourceDescriptor = SourceDescriptor {
             // it (`codex-rs/core/src/hook_runtime.rs:401-437` at rust-v0.163.0).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
+            brackets_turns: true,
         },
         focus: FocusChannel::TranscriptProbe,
     },
@@ -628,6 +637,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
@@ -664,6 +674,7 @@ const REASONIX: SourceDescriptor = SourceDescriptor {
             // `internal/ext/hook/hook.go:827-847` at v2.39.0).
             child_end_inference: ChildEndInference::AnyTaskEnd,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
@@ -706,6 +717,11 @@ const DSH: SourceDescriptor = SourceDescriptor {
             // at `dsh-v0.2.1-rc.2`; the delegation capture).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
+            // A Ctrl-C'd turn's `turn/end` is appended once the agents unload
+            // (`packages/core/agent-loop/src/index.ts:544-580`), after our
+            // plugin, which injects them: only an injected provider outlives
+            // its consumers (`session-persistence-jsonl/src/index.ts:1814-1817`).
+            brackets_turns: false,
         },
         // The plugin runs in-process (a cordis plugin in the launcher's one
         // root context; no worker mode exists for plugins), so its stamped
@@ -738,6 +754,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
             // own `subagent_complete`.
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
@@ -767,6 +784,7 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
             // and a session ends only by `session.deleted`.
             child_end_inference: ChildEndInference::Durable,
             child_hooks_unnamed: false,
+            brackets_turns: true,
         },
         // The plugin runs in the background server every TUI attaches to
         // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
@@ -820,6 +838,7 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::Unsupported,
     },
@@ -855,6 +874,7 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: true,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
@@ -886,6 +906,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
@@ -932,6 +953,7 @@ const GROK: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         // `active_sessions.json` maps session_id → pid with an `opened_at` recycle
         // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
@@ -987,6 +1009,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
+            brackets_turns: false,
         },
         // The bridge extension runs IN-PROCESS (upstream: extensions share
         // the runtime), so its stamped `process.pid` IS omp's own —
@@ -1038,6 +1061,7 @@ const KIMI: SourceDescriptor = SourceDescriptor {
             // A subagent's tool hooks carry the session's id alone
             // (kimi-code@2.2.0 `agentExternalHooksService.ts:301-313`).
             child_hooks_unnamed: true,
+            brackets_turns: false,
         },
         // kimi-code 2.2.0 spawns every hook with `shell: true`, which Node runs as
         // `/bin/sh -c` on Unix and `%ComSpec%` on Windows
