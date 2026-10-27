@@ -166,7 +166,7 @@ fn state_count_maps_each_kind() {
     assert_eq!(StateKind::Exiting.count(c), 1);
 }
 
-// Busy needs a placeholder in-flight run key because Busy is DERIVED from the run
+// Busy needs a placeholder in-flight turn key because Busy is DERIVED from the turn
 // set, never stored — without one the fixture is silently Idle.
 fn daemon(state: pixtuoid_core::state::DaemonState) -> pixtuoid_core::state::DaemonPresence {
     use pixtuoid_core::state::{DaemonLiveness, DaemonState};

@@ -405,7 +405,7 @@ pub fn pet(
 }
 
 /// The gateway mascot's label. The verb keys on `busy` — see
-/// [`GatewayCard::busy`] for why the run state, not the session count — and
+/// [`GatewayCard::busy`] for why the turn state, not the session count — and
 /// `degraded` outranks busy/idle.
 pub fn mascot_text(card: &GatewayCard) -> String {
     let &GatewayCard {

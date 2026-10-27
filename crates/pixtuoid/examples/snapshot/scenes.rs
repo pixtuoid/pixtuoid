@@ -109,16 +109,16 @@ pub(crate) fn inject_openclaw_presence(
     ports: &[String],
 ) -> Result<()> {
     use pixtuoid_core::state::{DaemonLiveness, DaemonPresence};
-    // Busy is DERIVED from the run set: "busy" = UP + in-flight runs, never a
+    // Busy is DERIVED from the turn set: "busy" = UP + in-flight turns, never a
     // stored state.
-    let (liveness, active_sessions, runs) = match state {
+    let (liveness, active_sessions, turns) = match state {
         GatewayState::Idle => (DaemonLiveness::UP, 1, Vec::new()),
         GatewayState::Busy => (
             DaemonLiveness::UP,
             1,
             vec!["run-a".to_string(), "run-b".to_string()],
         ),
-        // Up, but the model backend fails every run — no in-flight runs, because
+        // Up, but the model backend fails every turn — no in-flight turns, because
         // the last one FAILED out of the set.
         GatewayState::Degraded => (DaemonLiveness::Up { degraded: true }, 1, Vec::new()),
         GatewayState::Down => (DaemonLiveness::Down, 0, Vec::new()),
@@ -143,7 +143,7 @@ pub(crate) fn inject_openclaw_presence(
                 active_sessions,
                 last_seen: now,
                 entered_at,
-                in_flight_turns: runs
+                in_flight_turns: turns
                     .iter()
                     // Fresh leases at `now` so the snapshot renders the BUSY mascot.
                     .map(|r| (pixtuoid_core::state::TurnKey::Id(r.as_str().into()), now))

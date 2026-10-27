@@ -1720,9 +1720,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ToolKind
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ToolKind
 pub enum pixtuoid_core::state::TurnKey
 pub pixtuoid_core::state::TurnKey::Id(alloc::rcs::arc::Arc<str>)
-pub pixtuoid_core::state::TurnKey::Seq(u64)
-impl pixtuoid_core::state::TurnKey
-pub fn pixtuoid_core::state::TurnKey::newer_than(&self, &Self) -> core::option::Option<bool>
 impl core::clone::Clone for pixtuoid_core::state::TurnKey
 pub fn pixtuoid_core::state::TurnKey::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::TurnKey

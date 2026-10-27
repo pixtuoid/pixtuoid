@@ -4,7 +4,7 @@
   "version": "unknown",
   "captured": "2026-08-15",
   "command": "omp --approval-mode always-ask (interactive TUI, driven under a pty)",
-  "note": "omp's Waiting is NOT a permission gate — it is the model CALLING a tool named `ask`, so the capture prompt has to force a question rather than a risky command. The driver answered it (\"User selected: notes.txt\"), which is also what resolves the gate.",
+  "note": "omp's UserActionRequest is NOT a permission gate — it is the model CALLING a tool named `ask`, so the capture prompt has to force a question rather than a risky command. The driver answered it (\"User selected: notes.txt\"), which is also what resolves the gate.",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 61

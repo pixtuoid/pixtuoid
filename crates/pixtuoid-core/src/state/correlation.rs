@@ -143,7 +143,7 @@ pub(super) struct Correlation {
     /// lagged JSONL pair-replay after the drain re-inserts the tuid as a
     /// FRESH first insert (set empty, dedup record GC'd), so the tracker's
     /// first-insert gate alone can't stop `enter_delegating` from clobbering
-    /// a Waiting raised since.
+    /// a [`AgentEvent::UserActionRequest`](crate::AgentEvent::UserActionRequest) raised since.
     pub(super) recent_task_drains: HashMap<(AgentId, String), SystemTime>,
     /// Sweep-exemption timestamps from [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) (#220):
     /// a slot vouched for within [`PROOF_OF_LIFE_TTL`] is skipped by

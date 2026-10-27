@@ -788,7 +788,7 @@ mod tests {
             summarize(&scene)
         );
 
-        // TurnFailed drains the in-flight run, so the later GatewayDown still reads down.
+        // TurnFailed drains the in-flight turn, so the later GatewayDown still reads down.
         apply_presence(
             &mut scene,
             &gw,

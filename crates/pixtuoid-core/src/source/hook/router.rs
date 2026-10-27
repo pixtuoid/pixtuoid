@@ -102,7 +102,7 @@ impl Source for HookRouter {
                 let chain = format!("{e:#}");
                 tracing::warn!(
                     error = ?chain,
-                    "hook plane disabled — hook-borne signals (permission Waiting, instant \
+                    "hook plane disabled — hook-borne signals (permission requests, instant \
                      lifecycle, daemon presence) belong to the owning instance; transcript \
                      sources keep running"
                 );

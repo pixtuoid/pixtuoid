@@ -9,17 +9,17 @@ fn gateway_scene(
     last_seen: SystemTime,
     sessions: u32,
 ) -> SceneState {
-    gateway_scene_runs(liveness, entered_at, last_seen, sessions, &[])
+    gateway_scene_turns(liveness, entered_at, last_seen, sessions, &[])
 }
 
-/// As `gateway_scene`, with in-flight RUN keys. Busy is DERIVED: pass
-/// `DaemonLiveness::UP` + ≥1 run, not a stored Busy state.
-fn gateway_scene_runs(
+/// As `gateway_scene`, with in-flight TURN keys. Busy is DERIVED: pass
+/// `DaemonLiveness::UP` + ≥1 turn, not a stored Busy state.
+fn gateway_scene_turns(
     liveness: pixtuoid_core::state::DaemonLiveness,
     entered_at: SystemTime,
     last_seen: SystemTime,
     sessions: u32,
-    runs: &[&str],
+    turns: &[&str],
 ) -> SceneState {
     let mut s = SceneState::uniform(16);
     s.insert_daemon(
@@ -30,9 +30,9 @@ fn gateway_scene_runs(
             active_sessions: sessions,
             last_seen,
             entered_at,
-            in_flight_turns: runs
+            in_flight_turns: turns
                 .iter()
-                // Stamped at the scene's own clock so the run lease is fresh —
+                // Stamped at the scene's own clock so the turn lease is fresh —
                 // these fixtures assert the BUSY render, not the decay.
                 .map(|r| {
                     (
@@ -357,9 +357,9 @@ fn gateway_mascot_present_when_up() {
 fn gateway_mascot_busy_bubbles_track_turns_not_sessions() {
     let entered = t0() - Duration::from_secs(20);
 
-    // sessions=1 with NO runs; then the same session WITH two in-flight runs.
+    // sessions=1 with NO turns; then the same session WITH two in-flight turns.
     let idle = gateway_scene(pixtuoid_core::state::DaemonLiveness::UP, entered, t0(), 1);
-    let busy = gateway_scene_runs(
+    let busy = gateway_scene_turns(
         pixtuoid_core::state::DaemonLiveness::UP,
         entered,
         t0(),
@@ -370,19 +370,19 @@ fn gateway_mascot_busy_bubbles_track_turns_not_sessions() {
     let mut p = Probe::new();
     // Bubbles animate by `now`; scan a few frames so we don't land on an
     // all-off-screen phase.
-    let mut runs_add = 0;
+    let mut turns_add = 0;
     let mut session_adds = 0;
     for k in 0..8u64 {
         let now = t0() + Duration::from_millis(k * 130);
         // Runs are the ONLY difference between the two scenes, so their diff is
         // the bubbles. The session arm is the negative half: a second session
-        // with no runs must move nothing.
-        runs_add = runs_add.max(p.diff(&busy, &idle, now).len());
+        // with no turns must move nothing.
+        turns_add = turns_add.max(p.diff(&busy, &idle, now).len());
         let more_sessions =
             gateway_scene(pixtuoid_core::state::DaemonLiveness::UP, entered, t0(), 3);
         session_adds = session_adds.max(p.diff(&more_sessions, &idle, now).len());
     }
-    assert!(runs_add > 0, "an in-flight run ⇒ activity bubbles render");
+    assert!(turns_add > 0, "an in-flight turn ⇒ activity bubbles render");
     assert_eq!(session_adds, 0, "more idle sessions must NOT bubble");
 }
 

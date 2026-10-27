@@ -641,7 +641,7 @@ fn hook_tool_use_start_for_unknown_id_synthesizes_slot_and_goes_active() {
 }
 
 #[test]
-fn hook_waiting_for_unknown_id_synthesizes_slot_in_waiting_state() {
+fn hook_user_action_request_for_unknown_id_synthesizes_slot_in_waiting_state() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "parked-sess");
@@ -652,7 +652,7 @@ fn hook_waiting_for_unknown_id_synthesizes_slot_in_waiting_state() {
     let slot = scene
         .agents
         .get(&id)
-        .expect("hook Waiting must synthesize the slot");
+        .expect("hook UserActionRequest must synthesize the slot");
     assert!(
         matches!(slot.state, ActivityState::Waiting { .. }),
         "slot enters Waiting so the permission prompt is visible"

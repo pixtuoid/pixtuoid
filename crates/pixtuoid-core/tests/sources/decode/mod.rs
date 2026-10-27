@@ -662,7 +662,7 @@ fn ag_tool_result_emits_tool_use_end() {
 }
 
 #[test]
-fn ag_ask_permission_and_question_emits_waiting() {
+fn ag_ask_permission_and_question_emits_user_action_request() {
     let transcript = "/Users/me/.gemini/antigravity-cli/brain/sess/transcript.jsonl";
 
     let v_perm = serde_json::json!({
@@ -683,7 +683,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
             assert_eq!(reason, "asking permission");
             assert_eq!(tool_use_id.as_deref(), Some("ag-5"));
         }
-        other => panic!("expected Waiting, got {other:?}"),
+        other => panic!("expected UserActionRequest, got {other:?}"),
     }
 
     let v_quest = serde_json::json!({
@@ -704,7 +704,7 @@ fn ag_ask_permission_and_question_emits_waiting() {
             assert_eq!(reason, "asking permission");
             assert_eq!(tool_use_id.as_deref(), Some("ag-6"));
         }
-        other => panic!("expected Waiting, got {other:?}"),
+        other => panic!("expected UserActionRequest, got {other:?}"),
     }
 }
 

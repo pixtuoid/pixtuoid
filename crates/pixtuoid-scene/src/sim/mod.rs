@@ -166,13 +166,13 @@ pub(crate) struct MascotPlacement {
     pub(crate) frame_idx: usize,
     /// Which gateway instance it is.
     pub(crate) key: DaemonInstanceKey,
-    /// Its gateway's backend fails every run ([`GatewayCard::degraded`]), so
+    /// Its gateway's backend fails every turn ([`GatewayCard::degraded`]), so
     /// it greys.
     pub(crate) degraded: bool,
     /// Its gateway is in the roster; one walking out past that has no
     /// [`GatewayCard`], so it hovers as nothing.
     pub(crate) on_roster: bool,
-    /// What rides on it this tick: a bubble per run in flight.
+    /// What rides on it this tick: a bubble per turn in flight.
     pub(crate) effects: Vec<Effect>,
 }
 
@@ -613,8 +613,8 @@ struct DrawnMascot {
     degraded: bool,
     /// [`MascotPlacement::on_roster`].
     on_roster: bool,
-    /// Its gateway's runs in flight.
-    runs: u32,
+    /// Its gateway's turns in flight.
+    turns: u32,
     /// [`CreatureWalk::carried`].
     carried: bool,
 }
@@ -676,7 +676,7 @@ fn mascot_placements(
                 on_roster: true,
                 key,
                 stance,
-                runs: presence.in_flight_turns.len() as u32,
+                turns: presence.in_flight_turns.len() as u32,
                 carried: walk.carried(),
             });
         }
@@ -712,7 +712,7 @@ fn mascot_placements(
                 stance,
                 degraded: false,
                 on_roster: false,
-                runs: 0,
+                turns: 0,
                 carried: walk.carried(),
             });
         }
@@ -726,7 +726,7 @@ fn mascot_placements(
                  stance: Stance { at, walking },
                  degraded,
                  on_roster,
-                 runs,
+                 turns,
                  carried,
              }| {
                 let def = gateway_mascot_def(key.source())?;
@@ -756,8 +756,8 @@ fn mascot_placements(
                     on_roster,
                     // The busy tell keys on in-flight RUNS, not the (persistent,
                     // single-user) session count, which sticks at 1 at rest.
-                    effects: if runs > 0 {
-                        effects::mascot_bubbles(pos, size.h, runs, beat).collect()
+                    effects: if turns > 0 {
+                        effects::mascot_bubbles(pos, size.h, turns, beat).collect()
                     } else {
                         Vec::new()
                     },

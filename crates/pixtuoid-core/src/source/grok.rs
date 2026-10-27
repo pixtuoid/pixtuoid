@@ -151,7 +151,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         // A FAILED tool fires `post_tool_use_failure` INSTEAD OF
         // `post_tool_use`; a DENIED one fires `permission_denied` and never
         // runs at all. All three close the activity, which also resolves a
-        // permission `Waiting` gated on this tool — right for the denied case:
+        // permission `UserActionRequest` gated on this tool — right for the denied case:
         // the prompt is answered, so the sprite must not stay Waiting.
         "post_tool_use" | "post_tool_use_failure" | "permission_denied" => Ok(vec![
             identity(),
@@ -733,23 +733,23 @@ mod tests {
     }
 
     #[test]
-    fn permission_and_elicitation_notifications_are_waiting() {
+    fn permission_and_elicitation_notifications_are_user_action_requests() {
         for kind in ["permission_prompt", "elicitation_dialog"] {
             let mut v = envelope("notification");
             v["notificationType"] = json!(kind);
             v["message"] = json!("Tool permission requested");
             let evs = decode_all(v);
-            assert_eq!(evs.len(), 2, "{kind}: Identity + Waiting");
+            assert_eq!(evs.len(), 2, "{kind}: Identity + UserActionRequest");
             assert!(
                 matches!(&evs[1], AgentEvent::UserActionRequest { reason, .. }
                     if reason == "Tool permission requested"),
-                "{kind} must decode to Waiting"
+                "{kind} must decode to UserActionRequest"
             );
         }
     }
 
     #[test]
-    fn waiting_reason_falls_back_to_the_notification_type() {
+    fn user_action_request_reason_falls_back_to_the_notification_type() {
         let mut v = envelope("notification");
         v["notificationType"] = json!("permission_prompt");
         assert!(

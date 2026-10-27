@@ -13,7 +13,7 @@
 //! Capture-grounded: tools are invisible under the `claude-cli` backend (no
 //! `before_tool_call`), `before_agent_run`/`agent_end` require
 //! `allowConversationAccess`, and `session_end` fires on a clean stop but not on
-//! a kill. Busy is therefore a self-healing decay keyed PER RUN, never a latch —
+//! a kill. Busy is therefore a self-healing decay keyed PER TURN, never a latch —
 //! the daemon-wide `last_seen` is refreshed by any event, so keying the decay on it
 //! latched Busy on a gateway that kept serving other traffic.
 

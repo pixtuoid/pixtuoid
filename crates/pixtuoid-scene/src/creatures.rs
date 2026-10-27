@@ -511,10 +511,10 @@ pub struct GatewayCard {
     /// concurrent lobsters names the one under the cursor. `None` when its
     /// source runs a single instance, whose id means nothing to the user.
     pub instance: Option<String>,
-    /// An agent run is in flight. Keyed on the run state, NOT the session count
+    /// An agent turn is in flight. Keyed on the turn state, NOT the session count
     /// — a single-user gateway holds one persistent session even at rest.
     pub busy: bool,
-    /// Gateway up but its model backend is failing every run.
+    /// Gateway up but its model backend is failing every turn.
     pub degraded: bool,
     /// Number of sessions the gateway currently holds.
     pub active_sessions: u32,

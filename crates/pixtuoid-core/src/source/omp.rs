@@ -576,7 +576,7 @@ const BLOCK_TOOL_CALL: &str = "toolCall";
 /// The tool that BLOCKS on human input: its `ToolUseStart` makes the ask's own
 /// tool_use_id a member of the reducer's action request, so the answer's
 /// `toolResult` resolves the Wait. The request takes as its member the call
-/// shown when it is raised, so ask pairs are appended LAST: each ask's Waiting
+/// shown when it is raised, so ask pairs are appended LAST: each ask's [`AgentEvent::UserActionRequest`]
 /// directly follows its own start, never a sibling's.
 const TOOL_ASK: &str = "ask";
 
@@ -776,7 +776,7 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
 }
 
-/// The Waiting reason for an `ask` round: the first question's text, falling
+/// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the first question's text, falling
 /// back to the call's intent (`arguments.i`), then the bare tool name.
 fn omp_ask_reason(args: Option<&Value>) -> String {
     args.and_then(|a| {
@@ -967,7 +967,7 @@ fn omp_hook_session_key(obj: &serde_json::Map<String, Value>) -> Option<(String,
         .map(|s| (s.to_string(), None))
 }
 
-/// The Waiting reason for an approval gate: the wire's `reason` when it says
+/// The [`AgentEvent::UserActionRequest`] reason for an approval gate: the wire's `reason` when it says
 /// anything (a plain bash gate sends none — probe-verified at this source's
 /// `verified_version`), else the tool name, else the literal gate.
 fn omp_approval_reason(obj: &serde_json::Map<String, Value>, tool: &str) -> String {
@@ -1305,7 +1305,7 @@ mod tests {
             );
         }
 
-        // The ask arm's OWN probe: an ask-named call must gate Waiting, and a
+        // The ask arm's OWN probe: an ask-named call must gate a UserActionRequest, and a
         // renamed ask must not — start-only, never the gate.
         let waits = |tool: &str| {
             decode_omp_line(
@@ -1319,10 +1319,10 @@ mod tests {
             .iter()
             .any(|e| matches!(e, AgentEvent::UserActionRequest { .. }))
         };
-        assert!(waits(TOOL_ASK), "an ask call must gate Waiting");
+        assert!(waits(TOOL_ASK), "an ask call must gate a UserActionRequest");
         assert!(
             !waits("pxd_renamed_ask"),
-            "a renamed ask must not gate Waiting"
+            "a renamed ask must not gate a UserActionRequest"
         );
     }
 
@@ -1534,7 +1534,7 @@ mod tests {
                     "reason carries the question text, got {reason:?}"
                 );
             }
-            other => panic!("expected ToolUseStart then Waiting, got {other:?}"),
+            other => panic!("expected ToolUseStart then UserActionRequest, got {other:?}"),
         }
     }
 
@@ -1545,12 +1545,12 @@ mod tests {
             [_, AgentEvent::UserActionRequest { reason, .. }] => {
                 assert_eq!(reason, "Confirming scope")
             }
-            other => panic!("expected Start+Waiting, got {other:?}"),
+            other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
         let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
         match &decode(bare)[..] {
             [_, AgentEvent::UserActionRequest { reason, .. }] => assert_eq!(reason, "ask"),
-            other => panic!("expected Start+Waiting, got {other:?}"),
+            other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
     }
 
@@ -1570,7 +1570,7 @@ mod tests {
                 assert_eq!(bash.as_deref(), Some("t7"));
                 assert_eq!(ask.as_deref(), Some("tool_ASK5"));
             }
-            other => panic!("expected bash Start, then ask Start+Waiting, got {other:?}"),
+            other => panic!("expected bash Start, then ask Start+UserActionRequest, got {other:?}"),
         }
     }
 

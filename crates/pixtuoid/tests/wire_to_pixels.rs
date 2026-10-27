@@ -231,7 +231,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "omp-bridge",
             source: "omp",
-            // The bridge's approval round: the Waiting the transcript can
+            // The bridge's approval round: the UserActionRequest the transcript can
             // never carry must survive all the way to pixels (#951).
             fixture: "omp/fixtures/approval-recorded/hook-payloads.jsonl",
             wire: Wire::Hooks,
@@ -427,12 +427,12 @@ fn a_gateway_we_never_saw_start_still_materializes_from_its_session_wire() {
         openclaw_state("mid-attach-recorded", &["agent_end"]),
         DaemonState::Busy,
         "a mid-attach stream carries no gateway_start, so the session envelopes must \
-         materialize the instance themselves and put the run in flight on it"
+         materialize the instance themselves and put the turn in flight on it"
     );
     assert_eq!(
         openclaw_state("mid-attach-recorded", &[]),
         DaemonState::Idle,
-        "and agent_end must retire that run"
+        "and agent_end must retire that turn"
     );
 }
 

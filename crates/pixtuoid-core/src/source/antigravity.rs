@@ -126,7 +126,7 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 }
 
 /// Decode one tool call, from either transport: a permission/question prompt
-/// becomes `Waiting`, anything else an `ToolUseStart`, each keyed `tool_use_id`.
+/// becomes [`AgentEvent::UserActionRequest`], anything else a `ToolUseStart`, each keyed `tool_use_id`.
 fn decode_ag_tool_call(
     agent_id: AgentId,
     name: &str,

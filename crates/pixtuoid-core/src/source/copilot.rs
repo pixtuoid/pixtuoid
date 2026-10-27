@@ -711,7 +711,7 @@ mod tests {
                     "the wait names the call it gates"
                 );
             }
-            other => panic!("expected Waiting, got {other:?}"),
+            other => panic!("expected UserActionRequest, got {other:?}"),
         }
         let approved = r#"{"type":"permission.completed","data":{"requestId":"8c508e21-0a6c-4a06-8824-3930476499ea","toolCallId":"call_K8WLZkwufHsI9bTvkZmMKec2","result":{"kind":"approved"}},"id":"8123a44a-3471-4262-9191-b3cddaf5224d","timestamp":"2026-06-14T21:35:58.218Z","parentId":"1f975691-a108-4d6f-924b-d48263d46274"}"#;
         assert!(

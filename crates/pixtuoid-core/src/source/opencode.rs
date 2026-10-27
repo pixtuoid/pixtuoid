@@ -228,7 +228,7 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
     ])
 }
 
-/// Waiting, labelled by the request's `action` and keyed on its tool call
+/// [`AgentEvent::UserActionRequest`], labelled by the request's `action` and keyed on its tool call
 /// (`source.id`) when it has one.
 fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
     let (agent_id, session_id) = session(data, PERMISSION_ASKED)?;
@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn a_permission_ask_is_waiting_on_its_tool_call() {
+    fn a_permission_ask_is_a_user_action_request_on_its_tool_call() {
         let evs = decode_all(json!({"type": PERMISSION_ASKED, "data": {
             "id": "per_1", "sessionID": "ses_x", "action": "bash", "resources": ["rm -rf /tmp/x"],
             "source": {"type": "tool", "messageID": "msg_1", "id": "call_abc"}}}));

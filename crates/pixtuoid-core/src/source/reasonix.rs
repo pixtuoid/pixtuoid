@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn permission_request_maps_to_waiting_with_tool_and_subject() {
+    fn permission_request_maps_to_user_action_request_with_tool_and_subject() {
         let ev = decode(json!({
             "event": "PermissionRequest",
             "sessionId": "s", "cwd": "/r",
@@ -481,7 +481,7 @@ mod tests {
                 assert_eq!(reason.chars().count(), MAX_DECODED_FIELD_CHARS + 1);
                 assert!(reason.ends_with('…'));
             }
-            other => panic!("expected Waiting, got {other:?}"),
+            other => panic!("expected UserActionRequest, got {other:?}"),
         }
     }
 
@@ -531,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_without_message_falls_back_to_waiting() {
+    fn notification_without_message_falls_back_to_user_action_request() {
         let ev = decode(json!({"event": "Notification", "sessionId": "s", "cwd": "/r"}));
         assert!(matches!(ev, AgentEvent::UserActionRequest { reason, .. } if reason == "waiting"));
     }

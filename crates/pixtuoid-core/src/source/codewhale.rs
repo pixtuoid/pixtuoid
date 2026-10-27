@@ -17,7 +17,7 @@
 //!   workspace are two sprites. A tool call's before and after share
 //!   `CODEWHALE_TOOL_CALL_ID` (`crates/tui/src/hooks/executor.rs:371-374`).
 //!
-//! - **Waiting.** `waiting_for_user` fires as an approval prompt opens, a
+//! - **[`AgentEvent::UserActionRequest`].** `waiting_for_user` fires as an approval prompt opens, a
 //!   question is asked or a goal continuation parks (`docs/HOOKS.md:248`); its
 //!   `reason` rides stdin (`:251-252`), which env-mode never reads, so every wait
 //!   reads alike. `session_idle` fires as a turn or a wait settles to idle

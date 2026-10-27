@@ -408,7 +408,7 @@ pub enum DaemonState {
     Busy,
     /// Gateway is UP but every turn fails on its model backend (auth revoked /
     /// provider down) — alive-but-broken, NOT idle. Self-heals on the next
-    /// successful turn, a new run start, or a gateway restart.
+    /// successful turn, a new turn start, or a gateway restart.
     Degraded,
     /// Seen and then died — the mascot walks out (distinct from *absent*).
     Down,
@@ -887,7 +887,7 @@ mod tests {
         assert_eq!(
             back.display_state(),
             DaemonState::Idle,
-            "skipped run set restores empty ⇒ Idle, never a stranded Busy"
+            "skipped turn set restores empty ⇒ Idle, never a stranded Busy"
         );
         assert_eq!(back.active_sessions, 3);
         assert_eq!(back.current_pid, Some(4242));
@@ -991,7 +991,7 @@ mod tests {
     }
 
     #[test]
-    fn display_state_derives_busy_from_the_run_set_not_a_stored_flag() {
+    fn display_state_derives_busy_from_the_turn_set_not_a_stored_flag() {
         let mut p = presence_at(DaemonLiveness::Up { degraded: false });
         assert_eq!(p.display_state(), DaemonState::Idle);
         assert!(!p.is_busy());
@@ -1004,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn display_state_degraded_wins_over_busy_with_a_run_still_in_flight() {
+    fn display_state_degraded_wins_over_busy_with_a_turn_still_in_flight() {
         let mut p = presence_at(DaemonLiveness::Up { degraded: true });
         p.in_flight_turns
             .insert(TurnKey::Id("still-running".into()), SystemTime::UNIX_EPOCH);

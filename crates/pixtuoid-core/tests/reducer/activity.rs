@@ -166,7 +166,7 @@ fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
 }
 
 #[test]
-fn waiting_sets_state_with_reason() {
+fn user_action_request_sets_state_with_reason() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/a.jsonl");
@@ -376,11 +376,11 @@ fn a_member_end_while_waiting_resolves_to_idle() {
 }
 
 /// CC's recorded prompt fires PermissionRequest (no tool_use_id) and then, if the
-/// prompt sits, the idle Notification — both decode to Waiting. The second one
+/// prompt sits, the idle Notification — both decode to UserActionRequest. The second one
 /// must not erase the tool the first remembered, or the approved tool's
 /// PostToolUse resolves nothing and the slot never leaves Waiting.
 #[test]
-fn a_second_waiting_keeps_the_member_the_first_one_remembered() {
+fn a_second_user_action_request_keeps_the_member_the_first_one_remembered() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/gate.jsonl");
@@ -583,7 +583,7 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
 
 #[test]
 fn codex_permission_then_jsonl_output_resumes_to_active() {
-    // The hook Waiting and the JSONL resume coalesce on the session UUID.
+    // The hook UserActionRequest and the JSONL resume coalesce on the session UUID.
     let mut reducer = Reducer::new();
     let mut scene = SceneState::uniform(4);
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
@@ -899,7 +899,7 @@ fn approval_transcript_start_first_waits_then_resumes_active_counting_once() {
 }
 
 #[test]
-fn approval_hook_waiting_first_survives_a_late_transcript_start() {
+fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/b.jsonl");

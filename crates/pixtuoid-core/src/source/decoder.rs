@@ -670,7 +670,7 @@ pub(crate) fn describe_tool_target<'a>(tool: &str, input: Option<&'a Value>) -> 
 /// Generic tool display) — a glanceable fragment, not a full field.
 pub(crate) const MAX_TOOL_TARGET_CHARS: usize = 40;
 
-/// Cap for content-derived strings that become slot state (Waiting reason,
+/// Cap for content-derived strings that become slot state ([`AgentEvent::UserActionRequest`] reason,
 /// Rename label) — generous against every legitimate value, tight against a
 /// crafted ~1 MiB hook/transcript line: every TUI display site is individually
 /// bounded, but the headless summary line is not, and the uncapped value would
@@ -964,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_permission_request_maps_to_identity_plus_waiting() {
+    fn codex_permission_request_maps_to_identity_plus_user_action_request() {
         // The captured Codex shape carries no cwd.
         let evs = decode_hook_payload(json!({
             "hook_event_name": "PermissionRequest",
@@ -972,7 +972,7 @@ mod tests {
             "_pixtuoid_source": "codex"
         }))
         .expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + Waiting, got {evs:?}");
+        assert_eq!(evs.len(), 2, "Identity + UserActionRequest, got {evs:?}");
         match &evs[0] {
             AgentEvent::Identity {
                 source,
@@ -1514,19 +1514,19 @@ mod tests {
         }
     }
 
-    /// How a source derives its `Waiting.reason` — the axis this gate keys on.
+    /// How a source derives its [`AgentEvent::UserActionRequest`]`.reason` — the axis this gate keys on.
     enum ReasonKind {
         /// Minted from raw wire content: must route through `ellipsize`.
         Wire,
         /// A fixed `&'static str`: the over-cap wire value must NOT leak in, so
         /// a later switch to a wire field cannot slip past uncapped.
         Fixed,
-        /// No Waiting wire today. The row exists so adding one forces a visit.
-        NoWaiting,
+        /// No [`AgentEvent::UserActionRequest`] wire today. The row exists so adding one forces a visit.
+        NoUserActionRequest,
     }
 
     #[test]
-    fn every_agent_decoder_caps_its_waiting_reason() {
+    fn every_agent_decoder_caps_its_user_action_request_reason() {
         use crate::source::{
             antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes, kimi,
             omp, opencode, reasonix, registry,
@@ -1653,7 +1653,7 @@ mod tests {
             ),
             (
                 cursor::SOURCE_NAME,
-                ReasonKind::NoWaiting,
+                ReasonKind::NoUserActionRequest,
                 Box::new(|| {
                     cursor::decode_cursor_hook_payload(test_obj(&json!({
                         "hook_event_name":"preToolUse","session_id":"s",
@@ -1696,11 +1696,11 @@ mod tests {
             match kind {
                 ReasonKind::Wire => {
                     let reason = reason.unwrap_or_else(|| {
-                        panic!("{src}: expected a Waiting, got {evs:?}");
+                        panic!("{src}: expected a UserActionRequest, got {evs:?}");
                     });
                     assert!(
                         reason.chars().count() <= bound,
-                        "{src}: Waiting reason {} chars > cap bound {bound} — a \
+                        "{src}: UserActionRequest reason {} chars > cap bound {bound} — a \
                          chokepoint bypass leaks raw content into slot state",
                         reason.chars().count()
                     );
@@ -1711,7 +1711,7 @@ mod tests {
                 }
                 ReasonKind::Fixed => {
                     let reason = reason.unwrap_or_else(|| {
-                        panic!("{src}: expected a Waiting, got {evs:?}");
+                        panic!("{src}: expected a UserActionRequest, got {evs:?}");
                     });
                     assert!(
                         !reason.contains(marker) && reason.chars().count() <= bound,
@@ -1719,9 +1719,9 @@ mod tests {
                          the wire value through `ellipsize` and move this row to Wire"
                     );
                 }
-                ReasonKind::NoWaiting => assert!(
+                ReasonKind::NoUserActionRequest => assert!(
                     reason.is_none(),
-                    "{src}: grew a Waiting wire ({reason:?}) — classify it in this table"
+                    "{src}: grew a UserActionRequest wire ({reason:?}) — classify it in this table"
                 ),
             }
         }
@@ -1732,7 +1732,7 @@ mod tests {
             if !daemon {
                 assert!(
                     covered.contains(s),
-                    "add {s} to the Waiting-reason cap table"
+                    "add {s} to the UserActionRequest-reason cap table"
                 );
             }
         }

@@ -173,7 +173,7 @@ fn live_for_reports_a_daemons_instances_not_the_agent_slots_it_never_creates() {
         mk_slot(ghost, src, SystemTime::UNIX_EPOCH + Duration::from_secs(99)),
     );
 
-    let mut add = |port: &str, runs: &[&str]| {
+    let mut add = |port: &str, turns: &[&str]| {
         scene.insert_daemon(
             src,
             pixtuoid_core::state::DaemonInstanceId::new(port).expect("non-empty"),
@@ -182,7 +182,7 @@ fn live_for_reports_a_daemons_instances_not_the_agent_slots_it_never_creates() {
                 active_sessions: 0,
                 last_seen: now,
                 entered_at: now,
-                in_flight_turns: runs
+                in_flight_turns: turns
                     .iter()
                     .map(|r| (pixtuoid_core::state::TurnKey::Id(r.to_string().into()), now))
                     .collect(),

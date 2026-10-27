@@ -224,7 +224,7 @@ impl Refusal {
 #[must_use]
 enum Preprocessed {
     /// An unnamed child's hook activity, a hook-wins duplicate, or a Start or
-    /// Waiting whose call's End already landed (#242).
+    /// [`AgentEvent::UserActionRequest`] whose call's End already landed (#242).
     Drop,
     /// Survived the pre-pass; carries what task tracking already applied, so
     /// the general arms can skip work the tracker has done.
@@ -232,9 +232,9 @@ enum Preprocessed {
 }
 
 struct TaskTracking {
-    /// An `ToolUseEnd` drained a tracked Task, applying its transition.
+    /// A `ToolUseEnd` drained a tracked Task, applying its transition.
     handled_by_task_tracking: bool,
-    /// An `ToolUseStart` was a Task dispatch, which the tracker owns — replays
+    /// A `ToolUseStart` was a Task dispatch, which the tracker owns — replays
     /// included.
     handled_by_task_start: bool,
 }
@@ -366,7 +366,14 @@ impl Reducer {
                 reason,
                 tool_use_id,
             } => {
-                self.apply_waiting(scene, agent_id, &reason, tool_use_id.as_deref(), from, now);
+                self.apply_user_action_request(
+                    scene,
+                    agent_id,
+                    &reason,
+                    tool_use_id.as_deref(),
+                    from,
+                    now,
+                );
             }
             AgentEvent::Rename { agent_id, label } => {
                 Self::apply_rename(scene, agent_id, &label, now);
@@ -639,7 +646,7 @@ impl Reducer {
         }
     }
 
-    fn apply_waiting(
+    fn apply_user_action_request(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,

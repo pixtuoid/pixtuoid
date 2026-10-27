@@ -310,7 +310,7 @@ pub fn apply_presence(
 
 /// Decay one daemon source's stale presence on the reducer's sweep tick,
 /// INSTANCE-LOCALLY: each instance decays on its OWN `last_seen`, so traffic from
-/// gateway A can never renew gateway B. Per instance: each in-flight RUN expires
+/// gateway A can never renew gateway B. Per instance: each in-flight TURN expires
 /// `ttl.busy_decay_ms` after ITS OWN last observation (so a dropped `agent_end`
 /// self-heals even while the gateway keeps serving other turns — never a latch),
 /// any live state → DOWN after `ttl.presence_ttl_ms` of total silence (a kill),
@@ -568,11 +568,11 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Degraded,
-                "a failed run ⇒ degraded"
+                "a failed turn ⇒ degraded"
             );
             assert!(
                 p(&s, src).in_flight_turns.is_empty(),
-                "the failed run leaves the in-flight set"
+                "the failed turn leaves the in-flight set"
             );
         }
     }
@@ -637,7 +637,7 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Idle,
-                "a clean run drains the in-flight set ⇒ heals to idle"
+                "a clean turn drains the in-flight set ⇒ heals to idle"
             );
         }
     }
@@ -996,7 +996,7 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Busy,
-                "a backwards clock must not expire a live run"
+                "a backwards clock must not expire a live turn"
             );
         }
     }
@@ -1128,7 +1128,7 @@ mod tests {
         assert_eq!(
             st_at(&s, src, B),
             Some(DaemonState::Idle),
-            "gateway A's run must not make gateway B busy"
+            "gateway A's turn must not make gateway B busy"
         );
         apply_at(&mut s, src, A, DaemonPresenceUpdate::GatewayDown, 2);
         assert_eq!(st_at(&s, src, A), Some(DaemonState::Down));
@@ -1375,7 +1375,7 @@ mod tests {
         assert_eq!(
             st_at(&s, src, A),
             Some(DaemonState::Idle),
-            "A's stranded run decays on A's own clock"
+            "A's stranded turn decays on A's own clock"
         );
         assert_eq!(
             st_at(&s, src, B),
@@ -1432,7 +1432,7 @@ mod tests {
             0,
         );
         // The gateway stays chatty right up to the decay boundary, so the daemon-wide
-        // `last_seen` is always fresh — only a per-RUN clock can expire the lease.
+        // `last_seen` is always fresh — only a per-TURN clock can expire the lease.
         let mut t = 0;
         while t < ttl.busy_decay_ms {
             t += ttl.busy_decay_ms / 4;
@@ -1442,7 +1442,7 @@ mod tests {
         assert_eq!(
             st_at(&s, src, A),
             Some(DaemonState::Idle),
-            "the stranded run must expire on its own clock, not the daemon's"
+            "the stranded turn must expire on its own clock, not the daemon's"
         );
         apply_at(
             &mut s,
@@ -1485,7 +1485,7 @@ mod tests {
         assert_eq!(
             st_at(&s, src, A),
             Some(DaemonState::Degraded),
-            "a lapsed run lease must not silently heal a broken backend"
+            "a lapsed turn lease must not silently heal a broken backend"
         );
     }
 

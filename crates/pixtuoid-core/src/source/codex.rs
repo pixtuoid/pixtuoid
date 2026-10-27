@@ -251,7 +251,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
             }
         }
         // Resume signals: a command/patch finished, or a call was refused. Each
-        // is an ToolUseStart, which answers a permission request holding no
+        // is a ToolUseStart, which answers a permission request holding no
         // call. A call's output also ENDS that call, answering a request that
         // holds it: a refused call gets no `PostToolUse`, so this is its only end.
         (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
@@ -273,7 +273,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         (EVENT_MSG, i) if EM_RESUME.contains(&i) => vec![start()],
         // Web/tool search are turn-INTERNAL work pulses that keep the agent
         // Active; only task_complete / turn_aborted end the turn. Searching is
-        // never permission-prompted — no Waiting branch.
+        // never permission-prompted — no UserActionRequest branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![AgentEvent::turn_end(agent_id)],
@@ -333,7 +333,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
 
 /// A Codex `function_call` requesting escalated sandbox permissions
 /// (`arguments` is a JSON string carrying `sandbox_permissions:
-/// "require_escalated"`) is an approval gate → Waiting. A bare `justification`
+/// "require_escalated"`) is an approval gate → [`AgentEvent::UserActionRequest`]. A bare `justification`
 /// is intentionally NOT a signal: Codex emits it on auto-approved commands too,
 /// so keying on it would false-Wait.
 /// Codex has TWO tool surfaces and only this one marks escalation in the
@@ -720,7 +720,7 @@ mod tests {
                     "tool name must reach the detail: {d:?}"
                 )
             }
-            other => panic!("expected an ToolUseStart carrying the tool, got {other:?}"),
+            other => panic!("expected a ToolUseStart carrying the tool, got {other:?}"),
         }
         let resumed = ev(json!({"type":"response_item","payload":{
             "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
@@ -809,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn escalated_function_call_is_waiting() {
+    fn escalated_function_call_is_user_action_request() {
         let args = format!(
             r#"{{"cmd":"date","{SANDBOX_PERMISSIONS_FIELD}":"{REQUIRE_ESCALATED}","justification":"allow?"}}"#
         );
@@ -833,7 +833,7 @@ mod tests {
     }
 
     #[test]
-    fn justification_without_escalation_is_not_waiting() {
+    fn justification_without_escalation_is_not_user_action_request() {
         let args = r#"{"cmd":"ls","justification":"because"}"#;
         let out = ev(
             json!({"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":args}}),
@@ -967,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn function_call_without_arguments_starts_work_not_waiting() {
+    fn function_call_without_arguments_starts_work_not_user_action_request() {
         let out = ev(json!({
             "type": "response_item",
             "payload": { "type": "function_call", "name": "x" }
@@ -981,7 +981,7 @@ mod tests {
     #[test]
     fn function_call_without_name_falls_back_to_tool_label() {
         // The `arguments` must stay non-escalated so routing reaches
-        // codex_tool_start rather than the Waiting arm.
+        // codex_tool_start rather than the UserActionRequest arm.
         use crate::source::ToolDetail;
         let out = ev(json!({
             "type": "response_item",
