@@ -27,6 +27,10 @@ pub struct Step {
     /// first-sight seed rides in with the transcript's first line.
     pub line: usize,
     /// When it reached the reducer.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "its test pins the arrival rule")
+    )]
     pub(crate) at: SystemTime,
     /// The event.
     pub event: AgentEvent,
@@ -184,25 +188,6 @@ fn first_order(bounds: &[(usize, usize)]) -> Option<Vec<usize>> {
 }
 
 impl Merges {
-    /// How many orders there are, saturating.
-    pub(crate) fn orders(&self) -> usize {
-        // ways[k]: the orders of the lines from this one on, with k hooks
-        // before this one; `None` past the last line, which has one way.
-        let mut ways: Option<Vec<usize>> = None;
-        for &(lo, hi) in self.bounds.iter().rev() {
-            let mut here = vec![0_usize; self.hooks.len() + 1];
-            let mut tail = 0_usize;
-            for k in (0..here.len()).rev() {
-                tail = tail.saturating_add(ways.as_ref().map_or(0, |next| next[k]));
-                if (lo..=hi).contains(&k) {
-                    here[k] = if ways.is_some() { tail } else { 1 };
-                }
-            }
-            ways = Some(here);
-        }
-        ways.map_or(1, |w| w.iter().fold(0, |sum, n| sum.saturating_add(*n)))
-    }
-
     /// The order after `order`, as an odometer counts: the last line that can
     /// move one hook later does, and every line after it goes back to its
     /// earliest.
@@ -374,7 +359,6 @@ mod tests {
         let hooks = [hook("SessionStart", 1_000), hook("PreToolUse", 3_000)];
         let lines = [call(2_000)];
         let merges = drive().merges(&hooks, &lines).expect("codex merges");
-        assert_eq!(merges.orders(), 2);
         assert_eq!(
             orders(merges),
             [vec![(H, 0), (J, 0), (H, 1)], vec![(H, 0), (H, 1), (J, 0)],]
@@ -464,19 +448,5 @@ mod tests {
                 .merges(&none, &none)
                 .is_none()
         );
-    }
-
-    #[test]
-    fn the_count_matches_the_orders_walked() {
-        let hooks = [
-            hook("SessionStart", 100),
-            hook("PreToolUse", 1_500),
-            hook("PostToolUse", 2_500),
-            hook("Stop", 4_000),
-        ];
-        let lines = [call(1_000), output(2_000), call(3_000)];
-        let merges = drive().merges(&hooks, &lines).expect("codex merges");
-        let counted = merges.orders();
-        assert_eq!(merges.count(), counted);
     }
 }
