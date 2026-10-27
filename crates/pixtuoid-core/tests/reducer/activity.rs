@@ -136,6 +136,24 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
         t2 + Duration::from_secs(2),
         Transport::Hook,
     );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "t2"
+        ),
+        "t2 still runs: {:?}",
+        scene.agents[&id].state
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t2"),
+        t2 + Duration::from_secs(3),
+        Transport::Hook,
+    );
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
@@ -724,6 +742,119 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
         ),
         "the answered ask must clear RequiresAction (else the sprite hangs 60 min)"
     );
+}
+
+/// An ask that precedes a sibling call in one message: the sibling's start
+/// only counts while the ask stands, and once the ask is answered the slot
+/// shows the sibling, still running, until its own result (CodeRabbit on
+/// #1940, omp.rs's ask arm).
+#[test]
+fn an_answered_omp_ask_shows_the_sibling_call_still_running() {
+    use pixtuoid_core::source::omp::decode_omp_line;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let path = "/h/.omp/agent/sessions/-p/2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000002.jsonl";
+    let id = AgentId::from_parts(
+        "omp",
+        "2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000002",
+    );
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str, at: SystemTime| {
+        for ev in decode_omp_line(path, "omp", serde_json::from_str(line).unwrap()) {
+            r.apply(scene, ev, at, Transport::Jsonl);
+        }
+    };
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"session","version":3,"id":"01000000-0000-7000-8000-000000000002","timestamp":"2026-07-05T20:37:08.710Z","cwd":"/repo"}"#,
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#,
+        t0,
+    );
+    assert!(requires_action(&scene, id), "the ask stands");
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mC","parentId":"mB","timestamp":"t","message":{"role":"toolResult","toolCallId":"tool_ASK5","toolName":"ask","content":[],"isError":false,"timestamp":2}}"#,
+        t0 + Duration::from_secs(5),
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "t7"
+        ),
+        "the answered ask shows the sibling call still running: {:?}",
+        scene.agents[&id].state
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mD","parentId":"mC","timestamp":"t","message":{"role":"toolResult","toolCallId":"t7","toolName":"bash","content":[],"isError":false,"timestamp":3}}"#,
+        t0 + Duration::from_secs(9),
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+/// claude-code's parallel calls under a prompt: the gated call's answer shows
+/// the call still running beside it.
+#[test]
+fn an_answered_cc_prompt_shows_the_parallel_call_still_running() {
+    use pixtuoid_core::source::decoder::decode_hook_payload;
+    use serde_json::json;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let hook = |r: &mut Reducer, scene: &mut SceneState, v: serde_json::Value| {
+        let mut v = v;
+        v["_pixtuoid_source"] = json!("claude-code");
+        v["session_id"] = json!("ses_par");
+        v["cwd"] = json!("/repo");
+        for ev in decode_hook_payload(v).expect("decodes") {
+            r.apply(scene, ev, t0, Transport::Hook);
+        }
+    };
+    let pre = |tool: &str, call: &str| {
+        json!({"hook_event_name": "PreToolUse", "tool_name": tool,
+               "tool_input": {"command": "ls"}, "tool_use_id": call})
+    };
+    hook(&mut r, &mut scene, pre("Bash", "tA"));
+    hook(&mut r, &mut scene, pre("Read", "tB"));
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash",
+               "tool_input": {"command": "ls"}}),
+    );
+    let id = *scene.agents.keys().next().expect("the session registered");
+    assert!(requires_action(&scene, id), "the Bash call is gated");
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "tA"}),
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "tB"
+        ),
+        "the answered prompt shows the parallel Read still running: {:?}",
+        scene.agents[&id].state
+    );
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PostToolUse", "tool_name": "Read", "tool_use_id": "tB"}),
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 // Line shapes follow agy's `ask-question` recording.
@@ -2034,9 +2165,20 @@ fn a_cc_pre_use_delivered_after_its_prompt_joins_it() {
     feed(&mut r, &mut scene, cc_hook("PreToolUse", bash.clone()), t0);
     assert!(requires_action(&scene, id), "its pre-use is no answer");
     let read = json!({"tool_name": "Read", "tool_use_id": "r1"});
-    feed(&mut r, &mut scene, cc_hook("PreToolUse", read), t0);
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", read.clone()), t0);
     assert!(requires_action(&scene, id), "nor is another tool's start");
     feed(&mut r, &mut scene, cc_hook("PostToolUse", bash), t0);
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(TurnItem::ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "r1"
+        ),
+        "the Read still runs: {:?}",
+        scene.agents[&id].state
+    );
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", read), t0);
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 

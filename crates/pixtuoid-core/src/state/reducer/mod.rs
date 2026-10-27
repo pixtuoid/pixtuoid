@@ -386,7 +386,14 @@ impl Reducer {
                 turn,
             } => {
                 if scene.agents.contains_key(&agent_id) {
-                    self.register_pending(agent_id, &tool_use_id, tool_name.as_deref(), turn, from);
+                    self.register_pending(
+                        agent_id,
+                        &tool_use_id,
+                        tool_name.as_deref(),
+                        turn,
+                        from,
+                        None,
+                    );
                 }
             }
             AgentEvent::TurnStart { agent_id, turn } => {
@@ -589,10 +596,19 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
+        // Derive the category from the typed detail BEFORE it is erased to
+        // the HUD display string.
+        let item = TurnItem::ToolUse {
+            tool_use_id: tool_use_id.as_deref().map(Arc::from),
+            detail: detail.as_ref().map(|d| Arc::<str>::from(d.display())),
+            kind: detail
+                .as_ref()
+                .map_or(ToolKind::Other, ToolKind::from_detail),
+        };
         if let Some(call) = tool_use_id.as_deref()
             && scene.agents.contains_key(&agent_id)
         {
-            self.register_pending(agent_id, call, None, None, from);
+            self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
         }
         let runs = self.corr.action_requests.start(
             agent_id,
@@ -606,18 +622,7 @@ impl Reducer {
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             self.corr.item_started_on.insert(agent_id, from);
-            // Derive the category from the typed detail BEFORE it is erased to
-            // the HUD display string.
-            let kind = detail
-                .as_ref()
-                .map_or(ToolKind::Other, ToolKind::from_detail);
-            fsm::enter_running(
-                slot,
-                tool_use_id.map(|s| Arc::<str>::from(s.as_str())),
-                detail.map(|d| Arc::<str>::from(d.display())),
-                kind,
-                now,
-            );
+            fsm::enter_running(slot, item, now);
         }
     }
 
@@ -650,7 +655,7 @@ impl Reducer {
     }
 
     /// A start of `call` on `on` that has not ended, scoped to its own turn
-    /// else the open one.
+    /// else the open one; `item` is what its start shows, `None` for a pre-use.
     fn register_pending(
         &mut self,
         agent_id: AgentId,
@@ -658,6 +663,7 @@ impl Reducer {
         tool_name: Option<&str>,
         turn: Option<TurnKey>,
         on: Transport,
+        item: Option<TurnItem>,
     ) {
         let turn = turn.or_else(|| self.corr.turns.open(&agent_id).cloned());
         self.corr.action_requests.register(
@@ -667,6 +673,7 @@ impl Reducer {
                 tool_name: tool_name.map(Arc::from),
                 turn,
                 on,
+                item,
             },
         );
     }
@@ -834,6 +841,7 @@ impl Reducer {
     /// open turn.
     fn settle_ctx(&self, id: &AgentId) -> SettleCtx {
         SettleCtx {
+            in_flight: self.corr.action_requests.newest_in_flight(id),
             task_in_flight: self.corr.any_task_in_flight(id),
             turn_open: self.corr.turns.open(id).is_some(),
         }
@@ -1373,6 +1381,7 @@ impl Reducer {
             )
         {
             let ctx = SettleCtx {
+                in_flight: self.corr.action_requests.newest_in_flight(&id),
                 task_in_flight: any_task(tasks),
                 turn_open: self.corr.turns.open(&id).is_some(),
             };
@@ -1417,7 +1426,14 @@ impl Reducer {
                         .contains_key(&(*agent_id, tuid.clone()))
                     && scene.agents.contains_key(agent_id)
                 {
-                    self.register_pending(*agent_id, tuid, None, None, from);
+                    self.register_pending(
+                        *agent_id,
+                        tuid,
+                        None,
+                        None,
+                        from,
+                        Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
+                    );
                     if let Some(slot) = scene.agents.get_mut(agent_id)
                         && self.corr.action_requests.start(
                             *agent_id,
@@ -1470,6 +1486,7 @@ impl Reducer {
                         ) && (set.is_empty() || shown_drained)
                         {
                             let ctx = SettleCtx {
+                                in_flight: self.corr.action_requests.newest_in_flight(agent_id),
                                 task_in_flight: any_task(set),
                                 turn_open: self.corr.turns.open(agent_id).is_some(),
                             };

@@ -25,25 +25,23 @@ fn accumulate_running_ms(slot: &mut AgentSlot, now: SystemTime) {
     }
 }
 
-/// Enter `Running` with a concrete tool — the general `ToolUseStart` path.
+/// Enter `Running` with a concrete item — the general `ToolUseStart` path.
 /// Stamps `last_event_at` (this is the actor's own event).
-pub(crate) fn enter_running(
-    slot: &mut AgentSlot,
-    tool_use_id: Option<Arc<str>>,
-    detail: Option<Arc<str>>,
-    kind: ToolKind,
-    now: SystemTime,
-) {
+pub(crate) fn enter_running(slot: &mut AgentSlot, item: TurnItem, now: SystemTime) {
     accumulate_running_ms(slot, now);
-    slot.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
-            tool_use_id,
-            detail,
-            kind,
-        }),
-    };
+    slot.state = ActivityState::Running { item: Some(item) };
     slot.state_started_at = now;
     slot.last_event_at = now;
+}
+
+/// The `Running("Delegating")` item of the Task `tool_use_id`.
+pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> TurnItem {
+    TurnItem::ToolUse {
+        tool_use_id,
+        // HUD text only — semantics ride on `kind`, never on this string.
+        detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
+        kind: ToolKind::Task,
+    }
 }
 
 /// Enter the `Running("Delegating")` state — a parent dispatched a Task, or a
@@ -56,12 +54,7 @@ pub(crate) fn enter_delegating(
 ) {
     accumulate_running_ms(slot, now);
     slot.state = ActivityState::Running {
-        item: Some(TurnItem::ToolUse {
-            tool_use_id,
-            // HUD text only — semantics ride on `kind`, never on this string.
-            detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
-            kind: ToolKind::Task,
-        }),
+        item: Some(delegating_item(tool_use_id)),
     };
     slot.state_started_at = now;
 }
@@ -80,6 +73,8 @@ pub(crate) fn enter_requires_action(
 
 /// What a [`settle`] lands on besides the slot's own state.
 pub(crate) struct SettleCtx {
+    /// The item of the slot's newest call that started and has not ended.
+    pub(crate) in_flight: Option<TurnItem>,
     /// A Task the slot dispatched that still runs.
     pub(crate) task_in_flight: Option<Arc<str>>,
     /// The slot's turn is still open.
@@ -95,11 +90,15 @@ pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
     }
 }
 
-/// The slot's item or wait ended: land on Delegating while a Task it
-/// dispatched still runs, else on Running with no item while its turn is
-/// open, else on Idle. Landing on the state the slot is already in keeps its
-/// clock. The caller owns `last_event_at`.
+/// The slot's item or wait ended: land on its newest call still in flight,
+/// else on Delegating while a Task it dispatched still runs, else on Running
+/// with no item while its turn is open, else on Idle. Landing on the state the
+/// slot is already in keeps its clock. The caller owns `last_event_at`.
 pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
+    if let Some(item) = ctx.in_flight {
+        show(slot, item, now);
+        return;
+    }
     match (ctx.task_in_flight, &mut slot.state) {
         (
             Some(task),
@@ -122,6 +121,34 @@ pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
             } else {
                 ActivityState::Idle
             };
+            slot.state_started_at = now;
+        }
+    }
+}
+
+/// Show `item` on the slot. One Task over another, or the item it shows, is
+/// the same state, so it keeps its clock.
+fn show(slot: &mut AgentSlot, item: TurnItem, now: SystemTime) {
+    match (&mut slot.state, item) {
+        (
+            ActivityState::Running {
+                item:
+                    Some(TurnItem::ToolUse {
+                        kind: ToolKind::Task,
+                        tool_use_id: shown,
+                        ..
+                    }),
+            },
+            TurnItem::ToolUse {
+                kind: ToolKind::Task,
+                tool_use_id,
+                ..
+            },
+        ) => *shown = tool_use_id,
+        (ActivityState::Running { item: Some(shown) }, item) if *shown == item => {}
+        (_, item) => {
+            accumulate_running_ms(slot, now);
+            slot.state = ActivityState::Running { item: Some(item) };
             slot.state_started_at = now;
         }
     }
@@ -189,9 +216,44 @@ mod tests {
 
     fn ctx(task_in_flight: Option<&str>, turn_open: bool) -> SettleCtx {
         SettleCtx {
+            in_flight: None,
             task_in_flight: task_in_flight.map(Arc::from),
             turn_open,
         }
+    }
+
+    fn call(id: &str) -> TurnItem {
+        TurnItem::ToolUse {
+            tool_use_id: Some(Arc::from(id)),
+            detail: Some(Arc::from("Read: a.rs")),
+            kind: ToolKind::Read,
+        }
+    }
+
+    #[test]
+    fn a_settle_lands_on_the_newest_call_in_flight_before_any_other_state() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let asking = ActivityState::RequiresAction { reason: None };
+        let mut s = slot_at(asking, t0);
+        let first = SettleCtx {
+            in_flight: Some(call("c2")),
+            ..ctx(Some("task-1"), true)
+        };
+        settle(&mut s, first, now);
+        assert_eq!(
+            s.state,
+            ActivityState::Running {
+                item: Some(call("c2"))
+            }
+        );
+        assert_eq!(s.state_started_at, now);
+        let again = SettleCtx {
+            in_flight: Some(call("c2")),
+            ..ctx(None, false)
+        };
+        settle(&mut s, again, now + Duration::from_secs(1));
+        assert_eq!(s.state_started_at, now, "the item it shows keeps its clock");
     }
 
     #[test]
@@ -258,13 +320,7 @@ mod tests {
     fn enter_running_accumulates_prior_running_span_and_resets_timers() {
         let t0 = SystemTime::now();
         let mut s = running(t0);
-        enter_running(
-            &mut s,
-            None,
-            None,
-            ToolKind::Other,
-            t0 + Duration::from_secs(1),
-        );
+        enter_running(&mut s, call("c1"), t0 + Duration::from_secs(1));
         assert_eq!(s.running_ms, 1000, "prior Running span folded in");
         assert_eq!(s.state_started_at, t0 + Duration::from_secs(1));
         assert_eq!(s.last_event_at, t0 + Duration::from_secs(1));

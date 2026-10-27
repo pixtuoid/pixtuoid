@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::AgentId;
 use crate::source::{Resolution, Transport};
-use crate::state::TurnKey;
+use crate::state::{TurnItem, TurnKey};
 
 /// What an end names.
 #[derive(Clone, Copy, Debug)]
@@ -59,6 +59,8 @@ pub(crate) struct PendingStart {
     /// Its own turn, else the agent's open one.
     pub(crate) turn: Option<TurnKey>,
     pub(crate) on: Transport,
+    /// The item its start shows; `None` for a pre-use, which starts nothing.
+    pub(crate) item: Option<TurnItem>,
 }
 
 /// A pending call, once per id however many of its starts arrive: a pre-use
@@ -69,6 +71,8 @@ struct Pending {
     tool_name: Option<Arc<str>>,
     turn: Option<TurnKey>,
     seen_on: Vec<Transport>,
+    /// What its start showed, once it started: the call is in flight.
+    item: Option<TurnItem>,
 }
 
 #[derive(Debug)]
@@ -173,7 +177,7 @@ impl ActionRequests {
     /// (#242).
     pub(crate) fn register(&mut self, id: AgentId, start: PendingStart) {
         let starts = self.pending.entry(id).or_default();
-        let at = match starts.iter().position(|p| p.call == start.call) {
+        let mut at = match starts.iter().position(|p| p.call == start.call) {
             Some(at) => at,
             None => {
                 starts.push(Pending {
@@ -181,10 +185,20 @@ impl ActionRequests {
                     tool_name: None,
                     turn: None,
                     seen_on: Vec::new(),
+                    item: None,
                 });
                 starts.len() - 1
             }
         };
+        // A call's first start makes it the newest in flight.
+        if let Some(item) = start.item
+            && starts[at].item.is_none()
+        {
+            let mut started = starts.remove(at);
+            started.item = Some(item);
+            starts.push(started);
+            at = starts.len() - 1;
+        }
         let pending = &mut starts[at];
         if pending.tool_name.is_none() {
             pending.tool_name = start.tool_name;
@@ -317,6 +331,15 @@ impl ActionRequests {
         }
     }
 
+    /// The item of `id`'s newest call that started and has not ended.
+    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<TurnItem> {
+        self.pending
+            .get(id)?
+            .iter()
+            .rev()
+            .find_map(|p| p.item.clone())
+    }
+
     pub(crate) fn is_member(&self, id: &AgentId, call: &str) -> bool {
         self.open
             .get(id)
@@ -433,7 +456,49 @@ mod tests {
             tool_name: tool_name.map(Arc::from),
             turn: None,
             on,
+            item: None,
         }
+    }
+
+    fn started(call: &str) -> PendingStart {
+        PendingStart {
+            item: Some(TurnItem::ToolUse {
+                tool_use_id: Some(call.into()),
+                detail: None,
+                kind: crate::state::ToolKind::Other,
+            }),
+            ..pending(call, None, HOOK)
+        }
+    }
+
+    fn in_flight(reqs: &ActionRequests) -> Option<String> {
+        match reqs.newest_in_flight(&id())? {
+            TurnItem::ToolUse { tool_use_id, .. } => tool_use_id.map(|c| c.to_string()),
+        }
+    }
+
+    #[test]
+    fn the_newest_call_in_flight_is_the_last_to_start_and_not_end() {
+        let mut reqs = ActionRequests::default();
+        reqs.register(id(), pending("a", Some("Bash"), HOOK));
+        assert_eq!(in_flight(&reqs), None, "a pre-use starts nothing");
+        reqs.register(id(), started("b"));
+        reqs.register(id(), started("a"));
+        assert_eq!(
+            in_flight(&reqs).as_deref(),
+            Some("a"),
+            "a's start came last, though its pre-use came first"
+        );
+        reqs.register(id(), started("b"));
+        assert_eq!(
+            in_flight(&reqs).as_deref(),
+            Some("a"),
+            "a second start of b is no newer"
+        );
+        reqs.end(id(), Ended::Call("a"), HOOK, false);
+        assert_eq!(in_flight(&reqs).as_deref(), Some("b"));
+        reqs.end(id(), Ended::Call("b"), HOOK, false);
+        assert_eq!(in_flight(&reqs), None);
     }
 
     fn raise(
