@@ -166,7 +166,7 @@ pub(crate) fn would_create_cycle(
 /// True if any ancestor of `id` is in `RequiresAction` state. A subagent's permission
 /// event that lands on an ancestor leaves the blocked subagent `Running` — paused
 /// on a human gate, not dead, so `sweep_stale` exempts it from the aggressive
-/// Running timer.
+/// `STALE_TOOL_TIMEOUT`.
 pub(crate) fn has_requires_action_ancestor(
     agents: &BTreeMap<AgentId, AgentSlot>,
     id: AgentId,

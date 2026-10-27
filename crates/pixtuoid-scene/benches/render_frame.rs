@@ -1,5 +1,5 @@
 //! Whole-frame render benchmarks. `render_floor` runs two axes: the SIZES #900
-//! measured (12 agents, running and idle), and OCCUPANCY at the larger of them.
+//! measured (12 agents, busy and idle), and OCCUPANCY at the larger of them.
 //! Size is the near-linear axis — #900 measured frame cost tracking pixel
 //! count — so occupancy is the one that still teaches something: the per-agent
 //! work is the part that isn't linear in pixels. The largest crowd carries an
@@ -59,7 +59,7 @@ const RICH_SIZES: [Size; 4] = [
     Size { w: 768, h: 640 },
     Size { w: 1536, h: 1280 },
 ];
-/// Crowds above the 12 the size axis fixes — a running pod-farm and a near-full floor.
+/// Crowds above the 12 the size axis fixes — a busy pod-farm and a near-full floor.
 const OCCUPANCY: [usize; 2] = [32, 64];
 /// The extent the cutaway's own paint tests lay out. Nothing ships a cutaway
 /// extent yet — a painter will size it from its terminal or window.
@@ -87,11 +87,11 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, running: bool) -> 
     let idle_epoch = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     // At n=12 this is exactly the 6/2/4 split the size cases have measured since #900.
     let n_running = n / 2;
-    let n_requires_action = n_running + n / 6;
+    let requires_action_end = n_running + n / 6;
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/p/{i}.jsonl"));
         let state = match i {
-            _ if !running || i >= n_requires_action => ActivityState::Idle,
+            _ if !running || i >= requires_action_end => ActivityState::Idle,
             _ if i < n_running => ActivityState::Running {
                 tool_use_id: Some(Arc::from(format!("t{i}").as_str())),
                 detail: Some(Arc::from("cargo test")),

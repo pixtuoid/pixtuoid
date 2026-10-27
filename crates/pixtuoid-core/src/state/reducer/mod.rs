@@ -30,8 +30,9 @@ const _: () = assert!(EXIT_GRACE_WINDOW.as_nanos() < STRAGGLER_TTL.as_nanos());
 #[doc(hidden)]
 pub const B1_CASCADE_GRACE: Duration = Duration::from_millis(2500);
 
-/// Stale spread by state: Running silence is death mid-tool; Idle/RequiresAction must
-/// not reap a human on a break or a prompt; unknown-cwd is a seeding ghost.
+/// Stale windows: `STALE_TOOL_TIMEOUT` (silence mid-tool is death), `STALE_IDLE_TIMEOUT`,
+/// `STALE_BLOCKED_TIMEOUT` (a prompt, a hook-silent delegation, a blocked relative);
+/// unknown-cwd is a seeding ghost.
 #[doc(hidden)]
 pub const STALE_TOOL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 #[doc(hidden)]

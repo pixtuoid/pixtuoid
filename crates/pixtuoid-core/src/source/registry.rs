@@ -84,7 +84,7 @@ pub(crate) struct SourceCaps {
     /// Are subagent delegations invisible on this source's event stream (a
     /// window in which the PARENT's own stream goes quiet)? When true, a Delegating slot's
     /// `last_event_at` freezes for the whole delegation, so the reducer gives it
-    /// the RequiresAction-class stale window instead of sweeping mid-delegation.
+    /// the `STALE_BLOCKED_TIMEOUT` window instead of sweeping mid-delegation.
     pub(crate) delegations_are_hook_silent: bool,
     /// What a subagent dispatch's end says about its child.
     pub(crate) child_end_inference: ChildEndInference,
