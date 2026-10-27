@@ -3,6 +3,7 @@
 //! (`harness::merge`), holds the turn axis's oracles in all of them.
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::merge::{Merged, Step};
@@ -12,12 +13,15 @@ use serde_json::Value;
 
 use super::captures::{fixture_lines, fixtures_root, transcript_in};
 
-/// One recorded run's two streams, and its every merge.
+/// One recorded run's two streams.
 struct Run {
     name: String,
+    source: String,
+    transcript: PathBuf,
+    hooks: Vec<String>,
+    lines: Vec<String>,
     hook_values: Vec<Value>,
     line_values: Vec<Value>,
-    every: Vec<Merged>,
 }
 
 impl Run {
@@ -32,23 +36,32 @@ impl Run {
                 .map(|l| serde_json::from_str(l).expect("a recorded line is JSON"))
                 .collect()
         };
-        let merges = Drive::transcript_at(source, &transcript)
-            .expect("a transcript source")
-            .seeded()
-            .merges(&hooks, &lines)
-            .expect("its transcript carries a write stamp");
-        let every: Vec<Merged> = merges.collect();
-        let name = format!("{source}/{scenario}");
-        assert!(!every.is_empty(), "{name}: no order to merge in");
-        for m in &every {
-            m.driven.assert_clean(&name);
-        }
         Self {
-            name,
+            name: format!("{source}/{scenario}"),
+            source: source.to_owned(),
+            transcript,
             hook_values: parsed(&hooks),
             line_values: parsed(&lines),
-            every,
+            hooks,
+            lines,
         }
+    }
+
+    /// `check` over every order the run's lines can arrive in, folded one at a
+    /// time: a run has tens of thousands.
+    fn each(&self, mut check: impl FnMut(&Merged)) {
+        let merges = Drive::transcript_at(&self.source, &self.transcript)
+            .expect("a transcript source")
+            .seeded()
+            .merges(&self.hooks, &self.lines)
+            .expect("its transcript carries a write stamp");
+        let mut orders = 0;
+        for m in merges {
+            m.driven.assert_clean(&self.name);
+            check(&m);
+            orders += 1;
+        }
+        assert!(orders > 0, "{}: no order to merge in", self.name);
     }
 
     /// The raw line a step's event decoded from.
@@ -134,13 +147,17 @@ fn requires_action(step: &Step) -> bool {
 fn a_request_stands_until_its_resolution(run: &Run) {
     let requests = codex_requests(run);
     assert!(!requests.is_empty(), "{}: no request recorded", run.name);
-    for m in &run.every {
+    run.each(|m| {
         for req in &requests {
             let steps = &m.steps;
             let raised = steps
                 .iter()
-                .position(|s| s.transport == Transport::Hook && s.line == req.line)
-                .expect("the request's line applied");
+                .position(|s| {
+                    s.transport == Transport::Hook
+                        && s.line == req.line
+                        && matches!(s.event, AgentEvent::UserActionRequest { .. })
+                })
+                .expect("the request's line raised it");
             let until = steps[raised..]
                 .iter()
                 .position(|s| resolves(run, req, s))
@@ -158,14 +175,14 @@ fn a_request_stands_until_its_resolution(run: &Run) {
                 );
             }
         }
-    }
+    });
 }
 
 /// A top-level request is resolved once its call's rollout output applied,
 /// in every order.
 fn a_top_level_request_resolves_by_its_calls_output(run: &Run) {
     let requests = codex_requests(run);
-    for m in &run.every {
+    run.each(|m| {
         for req in &requests {
             let call = req.call.as_deref().expect("a top-level request's call");
             let output = |s: &Step| {
@@ -188,14 +205,14 @@ fn a_top_level_request_resolves_by_its_calls_output(run: &Run) {
                 req.line
             );
         }
-    }
+    });
 }
 
 /// An item a Hook start set survives a Jsonl turn end that lags behind it,
 /// in every order.
 fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
     let mut lagged = false;
-    for m in &run.every {
+    run.each(|m| {
         // The calls whose first start came on Hook, until any end of theirs.
         let mut started = BTreeSet::new();
         let mut hook_set = BTreeSet::new();
@@ -236,7 +253,7 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
             }
             before = s.state.as_ref();
         }
-    }
+    });
     assert!(
         lagged,
         "{}: no order lags a Jsonl turn end behind a Hook-set item",
@@ -245,10 +262,24 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
 }
 
 #[test]
-fn a_codex_request_denied_in_the_tui_stands_until_its_resolution() {
+fn a_codex_request_refused_in_the_tui_stands_until_its_resolution() {
     let run = Run::of("codex", "permission-hermetic");
     a_request_stands_until_its_resolution(&run);
     a_top_level_request_resolves_by_its_calls_output(&run);
+}
+
+#[test]
+fn a_codex_request_approved_in_the_tui_stands_until_its_resolution() {
+    let run = Run::of("codex", "approve-hermetic");
+    a_request_stands_until_its_resolution(&run);
+    a_top_level_request_resolves_by_its_calls_output(&run);
+}
+
+/// A nested call has no rollout output: its request stands past its cell's
+/// own end, until its turn's.
+#[test]
+fn a_code_mode_cell_s_gated_call_stands_until_its_turn_ends() {
+    a_request_stands_until_its_resolution(&Run::of("codex", "code-mode-gate-hermetic"));
 }
 
 #[test]
