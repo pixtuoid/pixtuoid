@@ -1407,6 +1407,7 @@ mod tests {
 
     #[test]
     fn a_permission_request_naming_no_tool_leaves_a_drift_breadcrumb() {
+        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
         for (source, extra) in [
             ("claude-code", json!({})),
             ("codex", json!({"turn_id": "t"})),
@@ -1425,20 +1426,17 @@ mod tests {
                     decode_hook_payload(v).expect("decodes");
                 });
                 if name.is_some() {
-                    assert!(
-                        !logs.contains(crate::source::drift::TARGET),
-                        "{source}: {logs}"
-                    );
+                    assert!(!logs.contains(TARGET), "{source}: {logs}");
                     continue;
                 }
-                for needle in [
-                    crate::source::drift::TARGET,
-                    "missing_field",
-                    "tool_name",
-                    "PermissionRequest",
-                ] {
-                    assert!(logs.contains(needle), "{source}: {needle:?} in\n{logs}");
-                }
+                let line = format!(
+                    "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\" event=PermissionRequest field=tool_name",
+                    <&str>::from(DriftKind::MissingField),
+                );
+                assert!(
+                    logs.contains(TARGET) && logs.contains(&line),
+                    "{line:?} in\n{logs}"
+                );
             }
         }
     }
