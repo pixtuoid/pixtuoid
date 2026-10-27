@@ -2605,18 +2605,20 @@ async fn oversized_attach_seeds_unmatched_task_dispatch() {
     );
 }
 
-/// The skip may bury a turn's end; the window's last bracket re-emits it only
-/// when it is an end, which the ledger's in-order rule applies.
+/// The skip may bury a turn's bracket; the window's last one is re-emitted,
+/// start or end, so the turn the session is in shows, and one it left ends
+/// through the ledger's in-order rule.
 #[tokio::test]
-async fn oversized_attach_re_emits_only_a_last_turn_end() {
+async fn oversized_attach_re_emits_the_last_turn_bracket() {
     let line = |inner: &str, turn: &str| {
         serde_json::json!({"type": "event_msg", "payload": {"type": inner, "turn_id": turn}})
             .to_string()
             + "\n"
     };
+    let key = |k: &str| crate::state::TurnKey::Id(k.into());
     let ended = [line("task_started", "t1"), line("task_complete", "t1")];
     let started = [line("task_complete", "t1"), line("task_started", "t2")];
-    for (tail, want) in [(&ended, Some("t1")), (&started, None)] {
+    for (tail, want) in [(&ended, (None, Some("t1"))), (&started, (Some("t2"), None))] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rollout-big.jsonl");
         tokio::fs::write(&path, oversized_body(tail)).await.unwrap();
@@ -2630,23 +2632,15 @@ async fn oversized_attach_re_emits_only_a_last_turn_end() {
             &seen,
         )
         .await;
-        let ends: Vec<_> = events
+        let brackets: Vec<_> = events
             .iter()
             .filter_map(|(_, e)| match e {
-                AgentEvent::TurnEnd {
-                    turn: Some(crate::state::TurnKey::Id(k)),
-                    ..
-                } => Some(&**k),
+                AgentEvent::TurnStart { turn, .. } => Some((Some(turn.clone()), None)),
+                AgentEvent::TurnEnd { turn, .. } => Some((None, turn.clone())),
                 _ => None,
             })
             .collect();
-        assert_eq!(ends, want.into_iter().collect::<Vec<_>>(), "{events:?}");
-        assert!(
-            !events
-                .iter()
-                .any(|(_, e)| matches!(e, AgentEvent::TurnStart { .. })),
-            "a start is not re-emitted: {events:?}"
-        );
+        assert_eq!(brackets, [(want.0.map(key), want.1.map(key))], "{events:?}");
     }
 }
 
