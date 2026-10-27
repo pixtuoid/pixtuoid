@@ -24,6 +24,7 @@ for the 1x desk.
 import argparse
 import difflib
 import inspect
+import itertools
 import math
 import pathlib
 import random
@@ -524,7 +525,7 @@ def terminator(g, cx, cy, r, from_y=0):
 def comb(g, lines, dy=0):
     """Comb lines in hair shade."""
     for pts in lines:
-        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        for (x0, y0), (x1, y1) in itertools.pairwise(pts):
             n = max(abs(x1 - x0), abs(y1 - y0))
             for i in range(n + 1):
                 x, y = round(x0 + (x1 - x0) * i / n), round(y0 + (y1 - y0) * i / n) + dy
@@ -543,7 +544,7 @@ def fringe_locks(g, locks, top, dy=0):
     """A fringe of separate locks, each a wedge from the hairline to its tip, so
     the brow shows between them."""
     for cx, tip, half in locks:
-        tip = int(round(tip)) + dy
+        tip = round(tip) + dy
         for y in range(top + dy, tip):
             w = half * (tip - y) / (tip - top - dy)
             for x in range(int(cx - w - 0.5), int(cx + w + 1.5)):
@@ -2230,7 +2231,7 @@ def desk_south():
     """The viewer-facing desk: the monitor turns its back to us (casing, vents,
     a badge) on its stand, a lamp west pooling light on the wood; the cup and
     papers stand where its arrangement marks them."""
-    g, (w, h, ty, ly, gy) = desk_wood(0, 5)
+    g, (_w, _h, ty, _ly, _gy) = desk_wood(0, 5)
     bx = lamp_base_x("desk")
     lamp_pool(g, bx + LAMP_POOL_DX, ty + 9, 11, 6, ty + 1)
     south_monitor(g)
@@ -2264,7 +2265,7 @@ def desk_north():
     """The back-turned desk: its raised monitor's glass with a few lines of
     code, a keyboard and mouse before it, a lamp east; the cup and papers stand
     where its arrangement marks them."""
-    g, (w, h, ty, ly, gy) = desk_wood(DESK_NORTH_LIFT, 3)
+    g, (_w, _h, ty, _ly, _gy) = desk_wood(DESK_NORTH_LIFT, 3)
     mx0, mx1, chin = DESK_MONITOR_X0 * S, DESK_MONITOR_X1 * S, DESK_CHIN_Y * S
     mid = (mx0 + mx1) // 2
     bx = lamp_base_x("desk_north")
@@ -2454,7 +2455,7 @@ def plant_tall():
 
 def stem(g, pts, r, key):
     """Stroke a polyline of radius `r`: a flower's stem."""
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+    for (x0, y0), (x1, y1) in itertools.pairwise(pts):
         steps = int(max(abs(x1 - x0), abs(y1 - y0)) * 2) + 1
         for i in range(steps + 1):
             t = i / steps
@@ -3179,14 +3180,14 @@ def printer():
     gx0, gx1 = PRN_GLASS_SPAN
     sweep = [gx0 + (gx1 - gx0 - 1) * i // 3 for i in range(4)]
     busy = [
-        dict(scan=sweep[0], led=True),
-        dict(scan=sweep[1], led=False, page=1),
-        dict(scan=sweep[2], led=True, page=2),
-        dict(scan=sweep[3], led=False, page=3),
-        dict(led=True, page=3),
-        dict(led=False, page=3),
-        dict(led=True, page=3),
-        dict(led=False),
+        {"scan": sweep[0], "led": True},
+        {"scan": sweep[1], "led": False, "page": 1},
+        {"scan": sweep[2], "led": True, "page": 2},
+        {"scan": sweep[3], "led": False, "page": 3},
+        {"led": True, "page": 3},
+        {"led": False, "page": 3},
+        {"led": True, "page": 3},
+        {"led": False},
     ]
     require(len(busy) == PRINT_STEPS, "the printer's busy art fills its PRINT_STEPS")
     return [union_outlined(printer_body(**f)) for f in [{}] + busy]
@@ -3220,14 +3221,14 @@ def printer_1x():
         return g
 
     steps = [
-        dict(scan=1, led=True),
-        dict(scan=2, page=1),
-        dict(scan=3, page=2, led=True),
-        dict(scan=4, page=2),
-        dict(page=2, led=True),
-        dict(page=2),
-        dict(page=1, led=True),
-        dict(),
+        {"scan": 1, "led": True},
+        {"scan": 2, "page": 1},
+        {"scan": 3, "page": 2, "led": True},
+        {"scan": 4, "page": 2},
+        {"page": 2, "led": True},
+        {"page": 2},
+        {"page": 1, "led": True},
+        {},
     ]
     require(len(steps) == PRINT_STEPS, "the printer's steps fill its PRINT_STEPS")
     return [body()] + [body(**f) for f in steps]

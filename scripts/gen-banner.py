@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import unittest
 
 from readme_pixels import (
     BASELINE,
@@ -23,8 +24,6 @@ from readme_pixels import (
     Pack,
     _run,
     animation,
-    check,
-    run_selftest,
     sprite_path,
     sprite_size,
     text_path,
@@ -194,124 +193,133 @@ def stale(out_dir: pathlib.Path) -> list[str]:
     ]
 
 
-def test_read_art_keeps_each_animation_s_frames_in_order() -> None:
-    art = read_art(
-        "@palette a=#010203 b=#040506\n@frame cat 750\n. a\n@frame guy 600\nb b\n@frame cat 750\na .\n"
-    )
-    check(art.palette == {"a": "#010203", "b": "#040506"}, f"palette: {art.palette}")
-    check(
-        art.animations
-        == {"cat": ([[[".", "a"]], [["a", "."]]], 750), "guy": ([[["b", "b"]]], 600)},
-        f"animations: {art.animations}",
-    )
-
-
-def test_glowing_rings_the_art_ring_by_ring_above_the_cut() -> None:
-    got = glowing([["a"]], 2)
-    check(
-        len(got) == 5 and len(got[0]) == 5 and got[2][2] == "a",
-        f"padded by two rings round the art: {got}",
-    )
-    check(
-        got[1][2] == got[2][3] == "glow0"
-        and got[1][1] == got[0][2] == "glow1"
-        and got[0][0] == ".",
-        f"rings by N4 steps: {got}",
-    )
-    cut = glowing([["a"]], 2, rows=3)
-    check(
-        cut[3][2] == cut[4][2] == "." and cut[2][1] == "glow0",
-        f"no light past `rows`: {cut}",
-    )
-    check(glowing([["a", "b"]], 0) == [["a", "b"]], "no rings leave the frame as it is")
-
-
-def test_only_the_dark_banner_glows() -> None:
-    import re
-
-    for theme in THEMES:
-        lit = re.findall(
-            rf'fill="{THEMES[theme].neon_brand}([0-9a-f]{{2}})"', render_svg(theme)
+class SelfTest(unittest.TestCase):
+    def test_read_art_keeps_each_animation_s_frames_in_order(self) -> None:
+        art = read_art(
+            "@palette a=#010203 b=#040506\n@frame cat 750\n. a\n@frame guy 600\nb b\n@frame cat 750\na .\n"
         )
-        want = [f"{round(a * 255):02x}" for a in GLOW[theme]]
-        check(
-            sorted(set(lit)) == sorted(want),
-            f"{theme}: the figures glow only where GLOW says: {sorted(set(lit))}",
+        self.assertTrue(
+            art.palette == {"a": "#010203", "b": "#040506"}, f"palette: {art.palette}"
+        )
+        self.assertTrue(
+            art.animations
+            == {
+                "cat": ([[[".", "a"]], [["a", "."]]], 750),
+                "guy": ([[["b", "b"]]], 600),
+            },
+            f"animations: {art.animations}",
         )
 
-
-def test_stale_flags_an_edited_or_missing_banner_and_passes_fresh_ones() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        out = pathlib.Path(tmp)
-        edited, missing = write_banners(out)
-        check(stale(out) == [], f"fresh banners are not stale: {stale(out)}")
-        edited.write_text(edited.read_text(encoding="utf-8") + " ", encoding="utf-8")
-        missing.unlink()
-        check(
-            stale(out) == [edited.name, missing.name],
-            f"an edited and a missing banner are both stale: {stale(out)}",
+    def test_glowing_rings_the_art_ring_by_ring_above_the_cut(self) -> None:
+        got = glowing([["a"]], 2)
+        self.assertTrue(
+            len(got) == 5 and len(got[0]) == 5 and got[2][2] == "a",
+            f"padded by two rings round the art: {got}",
+        )
+        self.assertTrue(
+            got[1][2] == got[2][3] == "glow0"
+            and got[1][1] == got[0][2] == "glow1"
+            and got[0][0] == ".",
+            f"rings by N4 steps: {got}",
+        )
+        cut = glowing([["a"]], 2, rows=3)
+        self.assertTrue(
+            cut[3][2] == cut[4][2] == "." and cut[2][1] == "glow0",
+            f"no light past `rows`: {cut}",
+        )
+        self.assertTrue(
+            glowing([["a", "b"]], 0) == [["a", "b"]],
+            "no rings leave the frame as it is",
         )
 
+    def test_only_the_dark_banner_glows(self) -> None:
+        import re
 
-def test_every_banner_pixel_has_a_colour() -> None:
-    for theme in THEMES:
-        svg = render_svg(theme)
-        check(
-            'fill="None"' not in svg and 'fill=""' not in svg,
-            f"{theme}: a pixel without a colour",
-        )
+        for theme in THEMES:
+            lit = re.findall(
+                rf'fill="{THEMES[theme].neon_brand}([0-9a-f]{{2}})"', render_svg(theme)
+            )
+            want = [f"{round(a * 255):02x}" for a in GLOW[theme]]
+            self.assertTrue(
+                sorted(set(lit)) == sorted(want),
+                f"{theme}: the figures glow only where GLOW says: {sorted(set(lit))}",
+            )
 
+    def test_stale_flags_an_edited_or_missing_banner_and_passes_fresh_ones(
+        self,
+    ) -> None:
+        import tempfile
 
-def test_render_is_well_formed_animated_and_deterministic() -> None:
-    import xml.etree.ElementTree as ET
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp)
+            edited, missing = write_banners(out)
+            self.assertTrue(
+                stale(out) == [], f"fresh banners are not stale: {stale(out)}"
+            )
+            edited.write_text(
+                edited.read_text(encoding="utf-8") + " ", encoding="utf-8"
+            )
+            missing.unlink()
+            self.assertTrue(
+                stale(out) == [edited.name, missing.name],
+                f"an edited and a missing banner are both stale: {stale(out)}",
+            )
 
-    for theme in THEMES:
-        svg = render_svg(theme)
-        root = ET.fromstring(svg)
-        title = root.find("{http://www.w3.org/2000/svg}title")
-        check(
-            title is not None and "pixtuoid" in (title.text or ""),
-            f"{theme}: the title must name pixtuoid",
-        )
-        check(
-            'class="neon"' in svg
-            and 'class="cat"' in svg
-            and "prefers-reduced-motion" in svg,
-            f"{theme}: the sign flickers, the cat sleeps and motion can be reduced",
-        )
-        check(svg == render_svg(theme), f"{theme}: render must be deterministic")
+    def test_every_banner_pixel_has_a_colour(self) -> None:
+        for theme in THEMES:
+            svg = render_svg(theme)
+            self.assertTrue(
+                'fill="None"' not in svg and 'fill=""' not in svg,
+                f"{theme}: a pixel without a colour",
+            )
 
+    def test_render_is_well_formed_animated_and_deterministic(self) -> None:
+        import xml.etree.ElementTree as ET
 
-def test_render_paints_inside_the_canvas() -> None:
-    import re
+        for theme in THEMES:
+            svg = render_svg(theme)
+            root = ET.fromstring(svg)
+            title = root.find("{http://www.w3.org/2000/svg}title")
+            self.assertTrue(
+                title is not None and "pixtuoid" in (title.text or ""),
+                f"{theme}: the title must name pixtuoid",
+            )
+            self.assertTrue(
+                'class="neon"' in svg
+                and 'class="cat"' in svg
+                and "prefers-reduced-motion" in svg,
+                f"{theme}: the sign flickers, the cat sleeps and motion can be reduced",
+            )
+            self.assertTrue(
+                svg == render_svg(theme), f"{theme}: render must be deterministic"
+            )
 
-    for theme in THEMES:
-        svg = render_svg(theme)
-        w, h = (int(v) for v in re.search(r'viewBox="0 0 (\d+) (\d+)"', svg).groups())
-        runs = [
-            tuple(map(int, r))
-            for r in re.findall(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z", svg)
-        ]
-        outside = [
-            r
-            for r in runs
-            if r[0] < 0 or r[1] < 0 or r[0] + r[2] > w or r[1] + r[3] > h
-        ]
-        check(
-            bool(runs) and not outside,
-            f"{theme}: runs leave the {w}x{h} canvas: {outside[:3]}",
-        )
+    def test_render_paints_inside_the_canvas(self) -> None:
+        import re
 
-
-def selftest() -> int:
-    return run_selftest("gen-banner", globals())
+        for theme in THEMES:
+            svg = render_svg(theme)
+            w, h = (
+                int(v) for v in re.search(r'viewBox="0 0 (\d+) (\d+)"', svg).groups()
+            )
+            runs = [
+                tuple(map(int, r))
+                for r in re.findall(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z", svg)
+            ]
+            outside = [
+                r
+                for r in runs
+                if r[0] < 0 or r[1] < 0 or r[0] + r[2] > w or r[1] + r[3] > h
+            ]
+            self.assertTrue(
+                bool(runs) and not outside,
+                f"{theme}: runs leave the {w}x{h} canvas: {outside[:3]}",
+            )
 
 
 def main(argv: list[str]) -> int:
     if "--selftest" in argv:
-        return selftest()
+        unittest.main(argv=sys.argv[:1])
     check_mode = "--check" in argv
     args = [a for a in argv if a != "--check"]
     if len(args) != 1:

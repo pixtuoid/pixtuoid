@@ -3,7 +3,7 @@
 # `workspace-version` names the one exception.
 #
 # Recipes are grouped by intent (see `just --list`):
-#   rust     — build, test and lint the repo (Rust, shell, workflows), plus the
+#   rust     — build, test and lint the repo (Rust, shell, workflows, Python), plus the
 #              on-demand e2e / capture / fixture recipes
 #   site     — the Astro landing page under site/ (npm + the wasm build)
 #   gen      — regenerate + check committed artifacts
@@ -213,6 +213,12 @@ links:
     # site build, while this gate owns documentation links and anchors.
     lychee --offline --include-fragments --extensions md --hidden .
 
+[doc('Lint and format-check the Python (ruff)')]
+[group('rust')]
+ruff:
+    ruff check
+    ruff format --check
+
 # Clippy across the workspace, warnings denied.
 [group('rust')]
 clippy:
@@ -281,6 +287,7 @@ lint:
     run ci-obs  just ci-observability     & pids+=($!)
     run schemas just json-schemas         & pids+=($!)
     run links   just links               & pids+=($!)
+    run ruff    just ruff                & pids+=($!)
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)

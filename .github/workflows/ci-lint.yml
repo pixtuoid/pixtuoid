@@ -89,7 +89,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-tools
         with:
-          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv
+          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee pypi:check-jsonschema uv ruff
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
@@ -101,6 +101,7 @@ jobs:
       - run: just ci-observability
       - run: just json-schemas
       - run: just links
+      - run: just ruff
       - run: just hook-scrub-selftest
       - run: just star-history-selftest
       - run: just bmc-button-selftest

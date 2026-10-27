@@ -504,7 +504,8 @@ def run_check(out_base, work, manifest, only=None):
                 continue
             diff = DIFF_DIR / f"diff-{target}-{name}"
             rc = subprocess.run(
-                [sys.executable, str(COMPARE), str(c), str(tdir / name), str(diff)]
+                [sys.executable, str(COMPARE), str(c), str(tdir / name), str(diff)],
+                check=False,
             ).returncode
             if rc != 0:
                 failures.append(f"PIXEL DRIFT: {target}/{name} (compare rc={rc})")

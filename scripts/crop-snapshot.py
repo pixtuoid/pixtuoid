@@ -20,7 +20,6 @@ from pathlib import Path
 
 from PIL import Image
 
-
 QUADRANTS = {
     "meeting": (0.00, 0.00, 0.30, 0.55),
     "pantry": (0.00, 0.49, 0.30, 1.00),

@@ -15,6 +15,7 @@ alpha_only=True, which would make ANY two same-size images compare equal.
 import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 from PIL import Image, ImageChops
@@ -71,95 +72,73 @@ def compare_images(ref_path, cand_path, diff_path):
     return 1
 
 
-def _selftest():
-    """Assert the comparator can actually FAIL. Returns an exit code.
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
 
-    Two required gates ride on this predicate, so a silently-always-green
-    comparator would report success for any render.
-    """
-    checks = []
 
-    def check(name, got, want):
-        checks.append((name, got, want))
+class SelfTest(unittest.TestCase):
+    """The comparator can actually FAIL: two required gates ride on it, so an
+    always-green one would report success for any render."""
 
-    black = (0, 0, 0)
-    white = (255, 255, 255)
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.diff_out = self.dir / "diff.png"
 
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
-        diff_out = td / "diff.png"
+    def write(self, name, mode, color, size=(8, 8)):
+        p = self.dir / name
+        Image.new(mode, size, color).save(p)
+        return p
 
-        def write(name, mode, color, size=(8, 8)):
-            p = td / name
-            Image.new(mode, size, color).save(p)
-            return p
-
+    def test_differing_rgba_images_fail(self):
         # THE anti-rot check: opaque RGBA differing only in colour. Without the
         # RGB conversion this returns 0 and the whole gate is decorative.
-        rgba_a = write("rgba_a.png", "RGBA", black + (255,))
-        rgba_b = write("rgba_b.png", "RGBA", white + (255,))
-        check(
-            "differing RGBA images must FAIL",
-            compare_images(rgba_a, rgba_b, diff_out),
-            1,
-        )
+        a = self.write("rgba_a.png", "RGBA", BLACK + (255,))
+        b = self.write("rgba_b.png", "RGBA", WHITE + (255,))
+        self.assertEqual(compare_images(a, b, self.diff_out), 1)
 
-        rgb_a = write("rgb_a.png", "RGB", black)
-        rgb_b = write("rgb_b.png", "RGB", white)
+    def test_identical_images_pass(self):
+        a = self.write("rgb_a.png", "RGB", BLACK)
+        self.assertEqual(compare_images(a, a, self.diff_out), 0)
 
-        check("identical images must PASS", compare_images(rgb_a, rgb_a, diff_out), 0)
+    def test_a_size_mismatch_errors(self):
+        a = self.write("rgb_a.png", "RGB", BLACK)
+        bigger = self.write("bigger.png", "RGB", BLACK, size=(16, 16))
+        self.assertEqual(compare_images(a, bigger, self.diff_out), 2)
 
-        bigger = write("bigger.png", "RGB", black, size=(16, 16))
-        check("size mismatch must ERROR", compare_images(rgb_a, bigger, diff_out), 2)
-
-        spotted = Image.new("RGB", (10, 10), black)
-        spotted.putpixel((0, 0), white)
-        spot = td / "spot.png"
+    def test_a_single_differing_pixel_fails(self):
+        spotted = Image.new("RGB", (10, 10), BLACK)
+        spotted.putpixel((0, 0), WHITE)
+        spot = self.dir / "spot.png"
         spotted.save(spot)
-        flat = write("flat.png", "RGB", black, size=(10, 10))
-        check(
-            "a single differing pixel must FAIL",
-            compare_images(flat, spot, diff_out),
-            1,
-        )
+        flat = self.write("flat.png", "RGB", BLACK, size=(10, 10))
+        self.assertEqual(compare_images(flat, spot, self.diff_out), 1)
 
+    def test_the_cli_maps_argv_to_exit_codes(self):
         # The consumers subprocess this module rather than importing it, so argv
         # handling and the exit-code mapping need their own exercise.
-        argv = [sys.executable, str(Path(__file__).resolve())]
-        cli_ok = subprocess.run(
-            [*argv, str(rgb_a), str(rgb_a), str(diff_out)], capture_output=True
-        )
-        check("CLI: identical images exit 0", cli_ok.returncode, 0)
-        cli_bad = subprocess.run(
-            [*argv, str(rgb_a), str(rgb_b), str(diff_out)], capture_output=True
-        )
-        check("CLI: differing images exit 1", cli_bad.returncode, 1)
-        cli_usage = subprocess.run([*argv, str(rgb_a)], capture_output=True)
-        check("CLI: wrong arity exits 2", cli_usage.returncode, 2)
-        cli_extra = subprocess.run(
-            [*argv, str(rgb_a), str(rgb_a), str(diff_out), "1.0"], capture_output=True
-        )
-        check("CLI: a fourth argument exits 2", cli_extra.returncode, 2)
-
-    failed = [(n, got, want) for n, got, want in checks if got != want]
-    for name, got, want in failed:
-        print(f"SELFTEST FAIL: {name} — got exit {got}, want {want}", file=sys.stderr)
-    if failed:
-        print(
-            f"compare-screenshots selftest: {len(failed)}/{len(checks)} checks FAILED",
-            file=sys.stderr,
-        )
-        return 1
-    print(
-        f"compare-screenshots selftest: all {len(checks)} checks passed",
-        file=sys.stderr,
-    )
-    return 0
+        a = str(self.write("rgb_a.png", "RGB", BLACK))
+        b = str(self.write("rgb_b.png", "RGB", WHITE))
+        out = str(self.diff_out)
+        for args, want, why in (
+            ([a, a, out], 0, "identical images"),
+            ([a, b, out], 1, "differing images"),
+            ([a], 2, "wrong arity"),
+            ([a, a, out, "1.0"], 2, "a fourth argument"),
+        ):
+            with self.subTest(why):
+                run = subprocess.run(
+                    [sys.executable, str(Path(__file__).resolve()), *args],
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(run.returncode, want)
 
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv[1:]:
-        sys.exit(_selftest())
+        unittest.main(argv=sys.argv[:1])
 
     if len(sys.argv) != 4:
         print("Usage: compare-screenshots.py <reference> <candidate> <diff_out>")
