@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
-use pixtuoid_core::state::{ActivityState, SceneState, ToolKind};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::cutaway::chrome_cell;
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, PetInputs};
@@ -32,9 +32,11 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         (
             "claude-code",
             ActivityState::Running {
-                tool_use_id: Some("tu_a".into()),
-                detail: Some("Write: src/foo.rs".into()),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_a".into()),
+                    detail: Some("Write: src/foo.rs".into()),
+                    kind: ToolKind::Edit,
+                }),
             },
         ),
         ("codex", ActivityState::Idle),
@@ -47,18 +49,22 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
         (
             "cc",
             ActivityState::Running {
-                tool_use_id: Some("tu_d".into()),
-                detail: Some("Bash: cargo test".into()),
-                kind: ToolKind::Bash,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_d".into()),
+                    detail: Some("Bash: cargo test".into()),
+                    kind: ToolKind::Bash,
+                }),
             },
         ),
         ("reasonix", ActivityState::Idle),
         (
             "opencode",
             ActivityState::Running {
-                tool_use_id: Some("tu_e".into()),
-                detail: Some("Grep: TODO".into()),
-                kind: ToolKind::Search,
+                item: Some(ToolUse {
+                    tool_use_id: Some("tu_e".into()),
+                    detail: Some("Grep: TODO".into()),
+                    kind: ToolKind::Search,
+                }),
             },
         ),
     ];

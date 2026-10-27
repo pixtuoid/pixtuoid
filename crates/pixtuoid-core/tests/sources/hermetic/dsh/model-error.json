@@ -1,0 +1,12 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "Create a concise title" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "error": { "message": "hermetic model error", "type": "invalid_request_error" }, "status": 400 }
+    }
+  ]
+}

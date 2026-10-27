@@ -30,6 +30,7 @@ use crate::source::decoder::{
 };
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
+use crate::state::TurnKey;
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
@@ -44,6 +45,11 @@ const TOOL_STARTED: &str = "session.tool.input.started";
 const TOOL_SUCCESS: &str = "session.tool.success";
 const TOOL_FAILED: &str = "session.tool.failed";
 const PERMISSION_ASKED: &str = "permission.asked";
+
+/// The envelope's turn: an execution start's durable `seq`, which the plugin
+/// also stamps on that execution's settle; one whose start it never saw names
+/// none.
+const TURN: &str = "turn";
 
 /// The subagent dispatch tool (`packages/core/src/tool/plugin/subagent.ts:17`
 /// at v2.0.32).
@@ -105,11 +111,23 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty());
 
+    let turn = obj.get(TURN).and_then(Value::as_u64).map(TurnKey::Seq);
     match event {
+        SESSION_CREATED => session_start(data, at, event),
         // A new prompt re-emits SessionStart, the event that walks a swept
         // session back in, mid-walkout too. Its own `data` is only `sessionID`,
         // so the plugin adds the session's record (`ctx.session.get`).
-        SESSION_CREATED | EXECUTION_STARTED => session_start(data, at, event),
+        EXECUTION_STARTED => {
+            let mut out = session_start(data, at, event)?;
+            match turn {
+                Some(turn) => out.push(AgentEvent::TurnStart {
+                    agent_id: session(data, event)?.0,
+                    turn,
+                }),
+                None => crate::source::drift::missing_field(SOURCE_NAME, event, TURN),
+            }
+            Ok(out)
+        }
         // `data` is only `sessionID` (`packages/schema/src/session-event.ts:178`,
         // `Base`), so a child's end cannot be told from a root's here.
         SESSION_DELETED => Ok(vec![AgentEvent::SessionEnd {
@@ -117,7 +135,10 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             as_child: false,
         }]),
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, AgentEvent::turn_end)
+            ended(data, at, event, |agent_id| match turn {
+                Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
+                None => AgentEvent::turn_end(agent_id),
+            })
         }
         TOOL_STARTED => tool_started(data, at),
         TOOL_SUCCESS | TOOL_FAILED => {
@@ -427,39 +448,87 @@ mod tests {
     }
 
     #[test]
-    fn an_execution_start_is_a_session_start_with_its_record_and_its_end_closes_the_turn() {
+    fn an_execution_start_is_a_session_start_with_its_record_opening_its_turn() {
         let start = decode_all(
-            json!({"type": EXECUTION_STARTED, "data": {"sessionID": "ses_c",
+            json!({"type": EXECUTION_STARTED, "turn": 7, "data": {"sessionID": "ses_c",
             "location": {"directory": "/repo"}, "parentID": "ses_p", "model": {"id": "m-1"}}}),
         );
         assert!(
             matches!(start.as_slice(), [
                 AgentEvent::SessionStart { session_id, cwd, parent_id: Some(p), .. },
                 AgentEvent::ModelInfo { model: Some(m), .. },
+                AgentEvent::TurnStart { turn: TurnKey::Seq(7), .. },
             ] if session_id == "ses_c" && cwd.as_path() == std::path::Path::new("/repo")
                 && *p == AgentId::from_parts(SOURCE_NAME, "ses_p") && m == "m-1"),
             "{start:?}"
         );
-        let bare = decode_all(json!({"type": EXECUTION_STARTED, "data": {"sessionID": "ses_c"}}));
+        let bare = decode_all(
+            json!({"type": EXECUTION_STARTED, "turn": 7, "data": {"sessionID": "ses_c"}}),
+        );
         assert!(
             matches!(
                 bare.as_slice(),
                 [
                     AgentEvent::Identity { cwd: None, .. },
-                    AgentEvent::SessionStart { .. }
+                    AgentEvent::SessionStart { .. },
+                    AgentEvent::TurnStart { .. },
                 ]
             ),
             "a start with no record is process-proven: {bare:?}"
         );
+    }
+
+    /// The plugin stamps every start with its durable `seq`, so one without it
+    /// is drift, and opens no turn.
+    #[test]
+    fn an_execution_start_naming_no_turn_opens_none_and_breadcrumbs() {
+        let logs = crate::test_capture::capture_logs(|| {
+            let got = decode_all(json!({"type": EXECUTION_STARTED,
+                "data": {"sessionID": "ses_c", "location": {"directory": "/repo"}}}));
+            assert!(
+                matches!(got.as_slice(), [AgentEvent::SessionStart { .. }]),
+                "{got:?}"
+            );
+        });
+        assert!(
+            logs.contains("missing_field") && logs.contains(TURN),
+            "{logs}"
+        );
+    }
+
+    /// A settle names its start's turn; one whose start this plugin never saw
+    /// names none, which ends whatever is open.
+    #[test]
+    fn a_settle_ends_the_turn_its_start_opened() {
         for ev in [EXECUTION_SUCCEEDED, EXECUTION_FAILED, EXECUTION_INTERRUPTED] {
-            let got = decode_all(json!({"type": ev, "data": {"sessionID": "ses_x"}}));
+            let got = decode_all(json!({"type": ev, "turn": 7, "data": {"sessionID": "ses_x"}}));
             assert!(
                 matches!(
                     got.as_slice(),
-                    [AgentEvent::Identity { .. }, AgentEvent::TurnEnd { .. }]
+                    [
+                        AgentEvent::Identity { .. },
+                        AgentEvent::TurnEnd {
+                            turn: Some(TurnKey::Seq(7)),
+                            ..
+                        }
+                    ]
                 ),
                 "{ev}: {got:?}"
             );
+            let logs = crate::test_capture::capture_logs(|| {
+                let got = decode_all(json!({"type": ev, "data": {"sessionID": "ses_x"}}));
+                assert!(
+                    matches!(
+                        got.as_slice(),
+                        [
+                            AgentEvent::Identity { .. },
+                            AgentEvent::TurnEnd { turn: None, .. }
+                        ]
+                    ),
+                    "{ev}: {got:?}"
+                );
+            });
+            assert!(!logs.contains("missing_field"), "{ev}: {logs}");
         }
     }
 

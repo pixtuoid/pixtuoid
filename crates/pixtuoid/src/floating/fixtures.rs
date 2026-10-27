@@ -32,7 +32,7 @@ pub(super) fn running_on(
     floor_idx: usize,
     desk: usize,
 ) -> pixtuoid_core::state::AgentSlot {
-    use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind};
+    use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, ToolKind, ToolUse};
     use std::sync::Arc;
     let started = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     AgentSlot {
@@ -42,9 +42,11 @@ pub(super) fn running_on(
         cwd: Arc::from(std::path::Path::new("/repo")),
         label: "a".into(),
         state: ActivityState::Running {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from("Edit")),
-            kind: ToolKind::from_display("Edit"),
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from("Edit")),
+                kind: ToolKind::from_display("Edit"),
+            }),
         },
         state_started_at: started,
         created_at: started,

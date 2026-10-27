@@ -24,6 +24,7 @@ pub const SOURCE_NAME: &str = "dsh";
 /// nothing upstream-shaped, so an upstream rename lands in ONE file.
 const SESSION_START: &str = "session_start";
 const SESSION_END: &str = "session_end";
+const TURN_END: &str = "turn_end";
 const TOOL_CALL: &str = "tool_call";
 const TOOL_RESULT: &str = "tool_result";
 const APPROVAL_ASKED: &str = "approval_asked";
@@ -119,6 +120,7 @@ pub fn decode_dsh_payload(
             agent_id,
             as_child: parent_id.is_some(),
         }]),
+        TURN_END => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         TOOL_CALL => {
             if non_empty(obj, "callId").is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, "callId");
@@ -386,6 +388,18 @@ mod tests {
                 }
             ]
         ));
+    }
+
+    /// dsh's turn ends name no turn here: it does not bracket its turns
+    /// (its registry row says why).
+    #[test]
+    fn a_turns_end_ends_the_agents_work() {
+        let evs = decode(json!({"type": "turn_end", "sessionId": SID}));
+        assert!(
+            matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::TurnEnd { turn: None, agent_id }]
+                if *agent_id == id()),
+            "{evs:?}"
+        );
     }
 
     #[test]

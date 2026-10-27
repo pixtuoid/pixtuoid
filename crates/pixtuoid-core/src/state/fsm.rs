@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::source::ToolDetail;
-use crate::state::{ActivityState, AgentSlot, ToolKind};
+use crate::state::{ActivityState, AgentSlot, ToolKind, ToolUse};
 
 /// Fold the time the slot has spent Running into `running_ms`, after which it is
 /// safe to overwrite `state`/`state_started_at`.
@@ -25,28 +25,28 @@ fn accumulate_running_ms(slot: &mut AgentSlot, now: SystemTime) {
     }
 }
 
-/// Enter `Running` with a concrete tool — the general `ToolUseStart` path.
+/// Enter `Running` with a concrete item — the general `ToolUseStart` path.
 /// Stamps `last_event_at` (this is the actor's own event).
-pub(crate) fn enter_running(
-    slot: &mut AgentSlot,
-    tool_use_id: Option<Arc<str>>,
-    detail: Option<Arc<str>>,
-    kind: ToolKind,
-    now: SystemTime,
-) {
+pub(crate) fn enter_running(slot: &mut AgentSlot, item: ToolUse, now: SystemTime) {
     accumulate_running_ms(slot, now);
-    slot.state = ActivityState::Running {
-        tool_use_id,
-        detail,
-        kind,
-    };
+    slot.state = ActivityState::Running { item: Some(item) };
     slot.state_started_at = now;
     slot.last_event_at = now;
 }
 
-/// Enter the `Running("Delegating")` state — a parent dispatched a Task, or a
-/// [`settle`] lands on one still in flight. Deliberately does NOT stamp
-/// `last_event_at`: every caller already refreshed lineage.
+/// The `Running("Delegating")` item of the Task `tool_use_id`.
+pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> ToolUse {
+    ToolUse {
+        tool_use_id,
+        // HUD text only — semantics ride on `kind`, never on this string.
+        detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
+        kind: ToolKind::Task,
+    }
+}
+
+/// Enter the `Running("Delegating")` state — a parent dispatched a Task.
+/// Deliberately does NOT stamp `last_event_at`: every caller already
+/// refreshed lineage.
 pub(crate) fn enter_delegating(
     slot: &mut AgentSlot,
     tool_use_id: Option<Arc<str>>,
@@ -54,10 +54,7 @@ pub(crate) fn enter_delegating(
 ) {
     accumulate_running_ms(slot, now);
     slot.state = ActivityState::Running {
-        tool_use_id,
-        // HUD text only — semantics ride on `kind`, never on this string.
-        detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
-        kind: ToolKind::Task,
+        item: Some(delegating_item(tool_use_id)),
     };
     slot.state_started_at = now;
 }
@@ -74,24 +71,72 @@ pub(crate) fn enter_requires_action(
     slot.last_event_at = now;
 }
 
-/// The slot's work or wait ended: land on Delegating while `task_in_flight`,
-/// a Task the slot dispatched, still runs, else Idle. Landing on the state the
+/// What a [`settle`] lands on besides the slot's own state.
+pub(crate) struct SettleCtx {
+    /// The item of the slot's newest call that started and has not ended.
+    pub(crate) in_flight: Option<ToolUse>,
+    /// A Task the slot dispatched that still runs.
+    pub(crate) task_in_flight: Option<Arc<str>>,
+    /// The slot's turn is still open.
+    pub(crate) turn_open: bool,
+}
+
+/// A turn opened on an Idle slot: it works, showing no item yet. The caller's
+/// lineage refresh stamps `last_event_at`.
+pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
+    if slot.state == ActivityState::Idle {
+        slot.state = ActivityState::Running { item: None };
+        slot.state_started_at = now;
+    }
+}
+
+/// The slot's item or wait ended: land on its newest call still in flight,
+/// else on Delegating while a Task it dispatched still runs, else on Running
+/// with no item while its turn is open, else on Idle. Landing on the state the
 /// slot is already in keeps its clock. The caller owns `last_event_at`.
-pub(crate) fn settle(slot: &mut AgentSlot, task_in_flight: Option<Arc<str>>, now: SystemTime) {
-    match (task_in_flight, &mut slot.state) {
+pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
+    let task = ctx.task_in_flight.map(|task| delegating_item(Some(task)));
+    if let Some(item) = ctx.in_flight.or(task) {
+        return show(slot, item, now);
+    }
+    match slot.state {
+        ActivityState::Running { item: None } if ctx.turn_open => {}
+        ActivityState::Idle if !ctx.turn_open => {}
+        _ => {
+            accumulate_running_ms(slot, now);
+            slot.state = if ctx.turn_open {
+                ActivityState::Running { item: None }
+            } else {
+                ActivityState::Idle
+            };
+            slot.state_started_at = now;
+        }
+    }
+}
+
+/// Show `item` on the slot. One Task over another, or the item it shows, is
+/// the same state, so it keeps its clock.
+fn show(slot: &mut AgentSlot, item: ToolUse, now: SystemTime) {
+    match (&mut slot.state, item) {
         (
-            Some(task),
             ActivityState::Running {
+                item:
+                    Some(ToolUse {
+                        kind: ToolKind::Task,
+                        tool_use_id: shown,
+                        ..
+                    }),
+            },
+            ToolUse {
                 kind: ToolKind::Task,
                 tool_use_id,
                 ..
             },
-        ) => *tool_use_id = Some(task),
-        (Some(task), _) => enter_delegating(slot, Some(task), now),
-        (None, ActivityState::Idle) => {}
-        (None, _) => {
+        ) => *shown = tool_use_id,
+        (ActivityState::Running { item: Some(shown) }, item) if *shown == item => {}
+        (_, item) => {
             accumulate_running_ms(slot, now);
-            slot.state = ActivityState::Idle;
+            slot.state = ActivityState::Running { item: Some(item) };
             slot.state_started_at = now;
         }
     }
@@ -157,12 +202,103 @@ mod tests {
         }
     }
 
+    fn ctx(task_in_flight: Option<&str>, turn_open: bool) -> SettleCtx {
+        SettleCtx {
+            in_flight: None,
+            task_in_flight: task_in_flight.map(Arc::from),
+            turn_open,
+        }
+    }
+
+    fn call(id: &str) -> ToolUse {
+        ToolUse {
+            tool_use_id: Some(Arc::from(id)),
+            detail: Some(Arc::from("Read: a.rs")),
+            kind: ToolKind::Read,
+        }
+    }
+
+    #[test]
+    fn a_settle_lands_on_the_newest_call_in_flight_before_any_other_state() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let asking = ActivityState::RequiresAction { reason: None };
+        let mut s = slot_at(asking, t0);
+        let first = SettleCtx {
+            in_flight: Some(call("c2")),
+            ..ctx(Some("task-1"), true)
+        };
+        settle(&mut s, first, now);
+        assert_eq!(
+            s.state,
+            ActivityState::Running {
+                item: Some(call("c2"))
+            }
+        );
+        assert_eq!(s.state_started_at, now);
+        let again = SettleCtx {
+            in_flight: Some(call("c2")),
+            ..ctx(None, false)
+        };
+        settle(&mut s, again, now + Duration::from_secs(1));
+        assert_eq!(s.state_started_at, now, "the item it shows keeps its clock");
+    }
+
+    #[test]
+    fn a_settle_inside_an_open_turn_lands_running_with_no_item_and_then_keeps_its_clock() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let mut s = running(t0);
+        settle(&mut s, ctx(None, true), now);
+        assert_eq!(s.state, ActivityState::Running { item: None });
+        assert_eq!(s.running_ms, 1000, "the item's span folds in");
+        assert_eq!(s.state_started_at, now);
+        settle(&mut s, ctx(None, true), now + Duration::from_secs(1));
+        assert_eq!(
+            s.state_started_at, now,
+            "Running with no item isn't re-stamped"
+        );
+        settle(&mut s, ctx(Some("task-1"), true), now);
+        assert!(
+            matches!(
+                s.state,
+                ActivityState::Running {
+                    item: Some(ToolUse {
+                        kind: ToolKind::Task,
+                        ..
+                    })
+                }
+            ),
+            "a Task in flight still shows Delegating: {:?}",
+            s.state
+        );
+    }
+
+    #[test]
+    fn a_turn_shows_only_an_idle_slot_running() {
+        let t0 = SystemTime::now();
+        let now = t0 + Duration::from_secs(1);
+        let mut s = slot_at(ActivityState::Idle, t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, ActivityState::Running { item: None });
+        assert_eq!(s.state_started_at, now);
+        let mut s = running(t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, running(t0).state, "the item it shows stays");
+        let asking = ActivityState::RequiresAction { reason: None };
+        let mut s = slot_at(asking.clone(), t0);
+        enter_turn(&mut s, now);
+        assert_eq!(s.state, asking);
+    }
+
     fn running(started: SystemTime) -> AgentSlot {
         slot_at(
             ActivityState::Running {
-                tool_use_id: None,
-                detail: None,
-                kind: ToolKind::Other,
+                item: Some(ToolUse {
+                    tool_use_id: None,
+                    detail: None,
+                    kind: ToolKind::Other,
+                }),
             },
             started,
         )
@@ -172,13 +308,7 @@ mod tests {
     fn enter_running_accumulates_prior_running_span_and_resets_timers() {
         let t0 = SystemTime::now();
         let mut s = running(t0);
-        enter_running(
-            &mut s,
-            None,
-            None,
-            ToolKind::Other,
-            t0 + Duration::from_secs(1),
-        );
+        enter_running(&mut s, call("c1"), t0 + Duration::from_secs(1));
         assert_eq!(s.running_ms, 1000, "prior Running span folded in");
         assert_eq!(s.state_started_at, t0 + Duration::from_secs(1));
         assert_eq!(s.last_event_at, t0 + Duration::from_secs(1));
@@ -200,7 +330,9 @@ mod tests {
             "enter_delegating leaves last_event_at to refresh_lineage"
         );
         match &s.state {
-            ActivityState::Running { detail, kind, .. } => {
+            ActivityState::Running {
+                item: Some(ToolUse { detail, kind, .. }),
+            } => {
                 assert_eq!(detail.as_deref(), Some("Delegating"));
                 assert_eq!(*kind, ToolKind::Task, "delegation is typed, not spelled");
             }
@@ -222,7 +354,7 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(1);
         let mut s = running(t0);
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.running_ms, 1000);
         assert_eq!(s.state_started_at, now);
@@ -238,7 +370,7 @@ mod tests {
             },
             t0,
         );
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(
             s.running_ms, 0,
@@ -252,10 +384,12 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(2);
         let mut s = running(t0);
-        settle(&mut s, Some(Arc::from("task-1")), now);
+        settle(&mut s, ctx(Some("task-1"), false), now);
         match &s.state {
             ActivityState::Running {
-                tool_use_id, kind, ..
+                item: Some(ToolUse {
+                    tool_use_id, kind, ..
+                }),
             } => {
                 assert_eq!(tool_use_id.as_deref(), Some("task-1"));
                 assert_eq!(*kind, ToolKind::Task);
@@ -271,16 +405,18 @@ mod tests {
         let t0 = SystemTime::now();
         let now = t0 + Duration::from_secs(5);
         let mut s = slot_at(ActivityState::Idle, t0);
-        settle(&mut s, None, now);
+        settle(&mut s, ctx(None, false), now);
         assert!(matches!(s.state, ActivityState::Idle));
         assert_eq!(s.state_started_at, t0, "Idle isn't re-stamped");
 
         let mut s = running(t0);
         enter_delegating(&mut s, Some(Arc::from("task-1")), t0);
         let folded = s.running_ms;
-        settle(&mut s, Some(Arc::from("task-2")), now);
+        settle(&mut s, ctx(Some("task-2"), false), now);
         match &s.state {
-            ActivityState::Running { tool_use_id, .. } => {
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id, .. }),
+            } => {
                 assert_eq!(
                     tool_use_id.as_deref(),
                     Some("task-2"),

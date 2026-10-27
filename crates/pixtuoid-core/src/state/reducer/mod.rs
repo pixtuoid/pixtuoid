@@ -6,12 +6,11 @@ use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, Resolution, Transport};
-use crate::state::correlation::{
-    Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
-};
+use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
+use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{End, Start};
-use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, TurnKey, fsm, scope};
+use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, ToolUse, TurnKey, fsm, scope};
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
@@ -82,15 +81,28 @@ fn stale_threshold_with_caps(
         // `STALE_TOOL_TIMEOUT`. Keyed on the typed `ToolKind::Task`, never the display string:
         // a Generic tool spelling "Delegating" is not a delegation.
         ActivityState::Running {
-            kind: ToolKind::Task,
-            ..
+            item:
+                Some(ToolUse {
+                    kind: ToolKind::Task,
+                    ..
+                }),
         } if caps.is_some_and(|c| c.delegations_are_hook_silent) => STALE_BLOCKED_TIMEOUT,
-        ActivityState::Running { .. } => STALE_TOOL_TIMEOUT,
-        ActivityState::Idle if caps.is_some_and(|c| c.short_idle_reap()) => {
-            STALE_SHORT_IDLE_TIMEOUT
-        }
-        ActivityState::Idle => STALE_IDLE_TIMEOUT,
+        ActivityState::Running {
+            item: Some(ToolUse { .. }),
+        } => STALE_TOOL_TIMEOUT,
+        // The model's silence mid-turn may last as long as a tool's, and a
+        // turn whose end was lost may hide a human on a break.
+        ActivityState::Running { item: None } => STALE_TOOL_TIMEOUT.max(idle_threshold(caps)),
+        ActivityState::Idle => idle_threshold(caps),
         ActivityState::RequiresAction { .. } => STALE_BLOCKED_TIMEOUT,
+    }
+}
+
+fn idle_threshold(caps: Option<crate::source::registry::SourceCaps>) -> Duration {
+    if caps.is_some_and(|c| c.short_idle_reap()) {
+        STALE_SHORT_IDLE_TIMEOUT
+    } else {
+        STALE_IDLE_TIMEOUT
     }
 }
 
@@ -372,7 +384,14 @@ impl Reducer {
                 turn,
             } => {
                 if scene.agents.contains_key(&agent_id) {
-                    self.register_pending(agent_id, &tool_use_id, tool_name.as_deref(), turn, from);
+                    self.register_pending(
+                        agent_id,
+                        &tool_use_id,
+                        tool_name.as_deref(),
+                        turn,
+                        from,
+                        None,
+                    );
                 }
             }
             AgentEvent::TurnStart { agent_id, turn } => {
@@ -575,10 +594,19 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
+        // Derive the category from the typed detail BEFORE it is erased to
+        // the HUD display string.
+        let item = ToolUse {
+            tool_use_id: tool_use_id.as_deref().map(Arc::from),
+            detail: detail.as_ref().map(|d| Arc::<str>::from(d.display())),
+            kind: detail
+                .as_ref()
+                .map_or(ToolKind::Other, ToolKind::from_detail),
+        };
         if let Some(call) = tool_use_id.as_deref()
             && scene.agents.contains_key(&agent_id)
         {
-            self.register_pending(agent_id, call, None, None, from);
+            self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
         }
         let runs = self.corr.action_requests.start(
             agent_id,
@@ -592,23 +620,12 @@ impl Reducer {
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             self.corr.item_started_on.insert(agent_id, from);
-            // Derive the category from the typed detail BEFORE it is erased to
-            // the HUD display string.
-            let kind = detail
-                .as_ref()
-                .map_or(ToolKind::Other, ToolKind::from_detail);
-            fsm::enter_running(
-                slot,
-                tool_use_id.map(|s| Arc::<str>::from(s.as_str())),
-                detail.map(|d| Arc::<str>::from(d.display())),
-                kind,
-                now,
-            );
+            fsm::enter_running(slot, item, now);
         }
     }
 
     /// Count a tool call ONCE per (agent, call id) life; the id-less path
-    /// (Codex JSONL) counts every time.
+    /// counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
@@ -636,7 +653,7 @@ impl Reducer {
     }
 
     /// A start of `call` on `on` that has not ended, scoped to its own turn
-    /// else the open one.
+    /// else the open one; `item` is what its start shows, `None` for a pre-use.
     fn register_pending(
         &mut self,
         agent_id: AgentId,
@@ -644,6 +661,7 @@ impl Reducer {
         tool_name: Option<&str>,
         turn: Option<TurnKey>,
         on: Transport,
+        item: Option<ToolUse>,
     ) {
         let turn = turn.or_else(|| self.corr.turns.open(&agent_id).cloned());
         self.corr.action_requests.register(
@@ -653,6 +671,7 @@ impl Reducer {
                 tool_name: tool_name.map(Arc::from),
                 turn,
                 on,
+                item,
             },
         );
     }
@@ -682,15 +701,21 @@ impl Reducer {
                 .is_some_and(|slot| match (&slot.state, ended) {
                     (
                         ActivityState::Running {
-                            tool_use_id: Some(shown),
-                            ..
+                            item:
+                                Some(ToolUse {
+                                    tool_use_id: Some(shown),
+                                    ..
+                                }),
                         },
                         Ended::Call(call),
                     ) => **shown == *call,
                     (
                         ActivityState::Running {
-                            tool_use_id: Some(_),
-                            ..
+                            item:
+                                Some(ToolUse {
+                                    tool_use_id: Some(_),
+                                    ..
+                                }),
                         },
                         _,
                     ) => false,
@@ -699,8 +724,9 @@ impl Reducer {
         self.end_item(scene, agent_id, resolved, ends_item, now);
     }
 
-    /// The `TurnStart` arm. A thread runs one turn at a time, so a start of
-    /// another turn ends the open one.
+    /// The `TurnStart` arm, on a source that brackets its turns: an Idle agent
+    /// works. A thread runs one turn at a time, so a start of another turn
+    /// ends the open one.
     fn apply_turn_start(
         &mut self,
         scene: &mut SceneState,
@@ -709,16 +735,22 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        if !scene.agents.contains_key(&agent_id) {
+        let brackets = scene
+            .agents
+            .get(&agent_id)
+            .and_then(caps_of)
+            .is_some_and(|c| c.brackets_turns);
+        if !brackets {
             return;
         }
-        if let Start::Opened {
-            superseded: Some(open),
-        } = self.corr.turns.start(agent_id, turn, now)
-        {
+        let Start::Opened { superseded } = self.corr.turns.start(agent_id, turn, now) else {
+            return;
+        };
+        if let Some(open) = superseded {
             let ended = Ended::Turn {
                 turn: Some(&open),
                 implied: None,
+                turnless: false,
             };
             let resolved = self.corr.action_requests.end(
                 agent_id,
@@ -727,6 +759,9 @@ impl Reducer {
                 is_requires_action(scene, agent_id),
             );
             self.end_item(scene, agent_id, resolved, true, now);
+        }
+        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            fsm::enter_turn(slot, now);
         }
     }
 
@@ -743,13 +778,15 @@ impl Reducer {
         if !scene.agents.contains_key(&agent_id) {
             return;
         }
-        let (applies, implied) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
-            End::Applied { implied } => (true, implied),
-            End::Stale => (false, None),
+        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
+            End::Applied { implied } => (true, implied, turn.is_none()),
+            End::StartUnseen => (true, None, true),
+            End::Stale => (false, None, false),
         };
         let ended = Ended::Turn {
             turn: turn.as_ref(),
             implied: implied.as_ref(),
+            turnless,
         };
         let resolved = self.corr.action_requests.end(
             agent_id,
@@ -775,15 +812,17 @@ impl Reducer {
         ends_item: bool,
         now: SystemTime,
     ) {
-        let task_in_flight = self.corr.any_task_in_flight(&agent_id);
+        let settle_ctx = self.settle_ctx(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let ends_item = ends_item && matches!(slot.state, ActivityState::Running { .. });
             let untracked_task = matches!(
                 slot.state,
                 ActivityState::Running {
-                    kind: ToolKind::Task,
-                    tool_use_id: None,
-                    ..
+                    item: Some(ToolUse {
+                        kind: ToolKind::Task,
+                        tool_use_id: None,
+                        ..
+                    })
                 }
             );
             if ends_item
@@ -793,10 +832,26 @@ impl Reducer {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
             if resolved || ends_item {
-                fsm::settle(slot, task_in_flight, now);
+                fsm::settle(slot, settle_ctx, now);
             }
             slot.last_event_at = now;
         }
+    }
+
+    /// What `id`'s settle lands on: its newest call still in flight, a Task
+    /// of its still in flight, or its open turn.
+    fn settle_ctx(&self, id: &AgentId) -> SettleCtx {
+        SettleCtx {
+            in_flight: self.corr.action_requests.newest_in_flight(id),
+            task_in_flight: self.corr.any_task_in_flight(id),
+            turn_open: self.corr.turns.open(id).is_some(),
+        }
+    }
+
+    /// The item of `id`'s newest call still in flight.
+    #[cfg(test)]
+    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<ToolUse> {
+        self.corr.action_requests.newest_in_flight(id)
     }
 
     fn apply_user_action_request(
@@ -1323,6 +1378,16 @@ impl Reducer {
             AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { .. } => in_task,
             _ => false,
         };
+        // A dropped end may be the parent's own call's, whose start was kept;
+        // a child's call never registered, its start dropped too.
+        if suppress
+            && let AgentEvent::ToolUseEnd {
+                tool_use_id: Some(call),
+                ..
+            } = event
+        {
+            self.corr.action_requests.retire(&id, call);
+        }
         if suppress
             && let Some(tasks) = tasks
             && let Some(slot) = scene.agents.get_mut(&id)
@@ -1332,7 +1397,7 @@ impl Reducer {
                 matches!(slot.state, ActivityState::RequiresAction { .. }),
             )
         {
-            fsm::settle(slot, any_task(tasks), now);
+            fsm::settle(slot, self.settle_ctx(&id), now);
         }
         suppress
     }
@@ -1373,7 +1438,14 @@ impl Reducer {
                         .contains_key(&(*agent_id, tuid.clone()))
                     && scene.agents.contains_key(agent_id)
                 {
-                    self.register_pending(*agent_id, tuid, None, None, from);
+                    self.register_pending(
+                        *agent_id,
+                        tuid,
+                        None,
+                        None,
+                        from,
+                        Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
+                    );
                     if let Some(slot) = scene.agents.get_mut(agent_id)
                         && self.corr.action_requests.start(
                             *agent_id,
@@ -1411,18 +1483,21 @@ impl Reducer {
                         // call's own end.
                         let shown_drained = matches!(
                             &slot.state,
-                            ActivityState::Running { tool_use_id: Some(t), .. } if **t == **tuid
+                            ActivityState::Running {
+                                item: Some(ToolUse { tool_use_id: Some(t), .. }),
+                            } if **t == **tuid
                         );
                         if matches!(
                             slot.state,
                             ActivityState::Running {
-                                kind: ToolKind::Task,
-                                ..
+                                item: Some(ToolUse {
+                                    kind: ToolKind::Task,
+                                    ..
+                                })
                             }
                         ) && (set.is_empty() || shown_drained)
                         {
-                            let task_in_flight = any_task(set);
-                            fsm::settle(slot, task_in_flight, now);
+                            fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }
                 }

@@ -804,12 +804,6 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
-    const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
-         which only a thread store without paginated lists gets, as `EM_RESUME` cites; \
-         the tier's rollouts are Paginated";
-    const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
-         call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
-         aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
     const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage carries no cache \
          writes, as claude-code's `cache_creation_input_tokens` row cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
@@ -914,10 +908,6 @@ mod tests {
         sibling("reasonix.rs", "review", "explore"),
         sibling("reasonix.rs", "security_review", "explore"),
         sibling("antigravity.rs", "ask_permission", "ask_question"),
-        literal("codex.rs", "patch_apply_end", LOSS_LEGACY),
-        literal("codex.rs", "web_search_end", LOSS_LEGACY),
-        literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
-        literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
         literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),

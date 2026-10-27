@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use pixtuoid::dev::{RenderFrames, TuiRenderer};
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pack::load_bundled_pack;
@@ -68,9 +68,11 @@ fn tui_renderer_render_paints_a_full_frame() {
             GlobalDeskIndex(0),
             0,
             ActivityState::Running {
-                tool_use_id: Some(std::sync::Arc::from("t1")),
-                detail: Some(std::sync::Arc::from("Write")),
-                kind: pixtuoid_core::state::ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some(std::sync::Arc::from("t1")),
+                    detail: Some(std::sync::Arc::from("Write")),
+                    kind: pixtuoid_core::state::ToolKind::Edit,
+                }),
             },
             now,
         ),

@@ -241,29 +241,18 @@ pub(crate) const TURN_CONTEXT: &str = "turn_context";
 /// The rollout inners, grouped BY BEHAVIOUR: each group is the matcher (the
 /// arms below guard on `contains`).
 const EM_TURN_START: &[&str] = &["task_started"];
-/// Written only to a Legacy-history rollout (`codex-rs/rollout/src/policy.rs:141-155`):
-/// exec and the TUI ask for a Paginated one (`codex-rs/exec/src/lib.rs:1462`,
-/// `codex-rs/tui/src/app_server_session.rs:2175`), which a thread store without
-/// paginated lists refuses, and exec then retries with none, the Legacy default
-/// (`codex-rs/app-server/src/request_processors/thread_processor.rs:1179-1186`,
-/// `codex-rs/exec/src/lib.rs:1426-1432`, `codex-rs/protocol/src/protocol.rs:880-882`,
-/// at `rust-v0.163.0`).
-const EM_RESUME: &[&str] = &["patch_apply_end"];
-/// As [`EM_RESUME`].
-const EM_SEARCH: &[&str] = &["web_search_end"];
 const EM_TURN_END: &[&str] = &["task_complete", "turn_aborted"];
 const EM_TOKENS: &[&str] = &["token_count"];
 
 const RI_TOOL_START: &[&str] = &["function_call", "custom_tool_call"];
 const RI_CALL_OUTPUT: &str = "function_call_output";
 const RI_CUSTOM_OUTPUT: &str = "custom_tool_call_output";
-const RI_RESUME: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
+const RI_CALL_END: &[&str] = &[RI_CALL_OUTPUT, RI_CUSTOM_OUTPUT];
 /// The call an output answers. Optional on a `function_call_output`, which
 /// codex also writes for a host-delivered output that answers no call
 /// (`codex-rs/protocol/src/models.rs:1151-1153` at `rust-v0.163.0`), and
 /// required on a `custom_tool_call_output` (`:1195`).
 const CALL_ID: &str = "call_id";
-const RI_SEARCH: &[&str] = &["web_search_call", "tool_search_call", "tool_search_output"];
 
 /// Decode one rollout line: the turns' brackets and the items, each keyed by
 /// the wire's own id.
@@ -279,12 +268,6 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         .and_then(|s| s.as_str())
         .unwrap_or("");
 
-    let start = || AgentEvent::ToolUseStart {
-        agent_id,
-        tool_use_id: None,
-        detail: None,
-    };
-
     // The turns ride the rollout, which is complete and in order; their keys
     // are `sub_id` (`codex-rs/core/src/tasks/mod.rs:848-850` at rust-v0.164.0).
     let turn = || payload.and_then(|p| turn_of(p, inner));
@@ -292,18 +275,15 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         (EVENT_MSG, i) if EM_TURN_START.contains(&i) => turn()
             .map(|turn| AgentEvent::TurnStart { agent_id, turn })
             .into_iter()
-            .chain([start()])
             .collect(),
         // `custom_tool_call` is the SAME item under codex's custom-tool API and is
         // what a modern session serializes — `a_custom_tool_call_is_a_tool_call`.
         (RESPONSE_ITEM, i) if RI_TOOL_START.contains(&i) => {
             vec![codex_tool_start(agent_id, i, payload)]
         }
-        // Resume signals: a command/patch finished, or a call was refused. Each
-        // is a ToolUseStart that keeps the turn showing work. A call's output
-        // also ENDS that call, answering a request that holds it: a refused
-        // call gets no `PostToolUse`, so this is its only end.
-        (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
+        // A call's output ends it, answering a request that holds it: a
+        // refused call gets no `PostToolUse`, so this is its only end.
+        (RESPONSE_ITEM, i) if RI_CALL_END.contains(&i) => {
             let call = payload.and_then(|p| non_empty(p, CALL_ID));
             if call.is_none() && i == RI_CUSTOM_OUTPUT {
                 crate::source::drift::missing_field(SOURCE_NAME, i, CALL_ID);
@@ -313,15 +293,8 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
                 tool_use_id: Some(c.to_owned()),
             })
             .into_iter()
-            .chain([start()])
             .collect()
         }
-        (EVENT_MSG, i) if EM_RESUME.contains(&i) => vec![start()],
-        // Web/tool search are turn-INTERNAL work pulses that keep the agent
-        // Running; only task_complete / turn_aborted end the turn. Searching is
-        // never permission-prompted — no UserActionRequest branch.
-        (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
-        (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![match turn() {
             Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
             None => AgentEvent::turn_end(agent_id),
@@ -501,13 +474,13 @@ mod tests {
             });
             !decode_codex_line("/p/rollout-2026-07-10-abc.jsonl", "codex", v).is_empty()
         };
-        for inner in [EM_TURN_START, EM_RESUME, EM_SEARCH, EM_TURN_END, EM_TOKENS].concat() {
+        for inner in [EM_TURN_START, EM_TURN_END, EM_TOKENS].concat() {
             assert!(
                 drive(EVENT_MSG, inner),
                 "event_msg/{inner} must reach an arm"
             );
         }
-        for inner in [RI_TOOL_START, RI_RESUME, RI_SEARCH].concat() {
+        for inner in [RI_TOOL_START, RI_CALL_END].concat() {
             assert!(
                 drive(RESPONSE_ITEM, inner),
                 "response_item/{inner} must reach an arm",
@@ -801,12 +774,11 @@ mod tests {
     }
 
     #[test]
-    fn task_started_opens_its_turn_and_shows_work() {
+    fn task_started_opens_its_turn() {
         let out = ev(json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"t"}}));
         assert!(
             matches!(out.as_slice(), [
                 AgentEvent::TurnStart { turn: TurnKey::Id(t), .. },
-                AgentEvent::ToolUseStart { tool_use_id: None, .. },
             ] if &**t == "t"),
             "{out:?}"
         );
@@ -837,34 +809,29 @@ mod tests {
                 if c == "call_x" && d.display() == "apply_patch"),
             "{out:?}"
         );
-        let resumed = ev(json!({"type":"response_item","payload":{
+        let ended = ev(json!({"type":"response_item","payload":{
             "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
         assert!(
-            matches!(resumed.as_slice(), [
+            matches!(ended.as_slice(), [
                 AgentEvent::ToolUseEnd { tool_use_id: Some(c), .. },
-                AgentEvent::ToolUseStart { .. },
             ] if c == "call_x"),
-            "its output must end its call and resume work like function_call_output does"
+            "its output must end its call like function_call_output does"
         );
     }
 
     #[test]
-    fn function_call_output_ends_its_call_and_resumes_work() {
+    fn a_calls_output_ends_it() {
         let out = ev(
             json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"c","output":"ok"}}),
         );
         assert!(matches!(out.as_slice(), [
             AgentEvent::ToolUseEnd { tool_use_id: Some(c), .. },
-            AgentEvent::ToolUseStart { .. },
         ] if c == "c"));
         let logs = crate::test_capture::capture_logs(|| {
             let unpaired = ev(
                 json!({"type":"response_item","payload":{"type":"function_call_output","output":"ok"}}),
             );
-            assert!(matches!(
-                unpaired.as_slice(),
-                [AgentEvent::ToolUseStart { .. }]
-            ));
+            assert!(unpaired.is_empty(), "{unpaired:?}");
         });
         assert!(
             !logs.contains("missing_field"),
@@ -876,10 +843,7 @@ mod tests {
                 if !call.is_null() {
                     line["payload"]["call_id"] = call.clone();
                 }
-                assert!(matches!(
-                    ev(line).as_slice(),
-                    [AgentEvent::ToolUseStart { .. }]
-                ));
+                assert!(ev(line).is_empty());
             });
             assert!(
                 logs.contains("missing_field") && logs.contains("call_id"),
@@ -891,36 +855,12 @@ mod tests {
                 "type":"custom_tool_call_output","call_id":"call_x","output":"ok"}}));
             assert!(matches!(keyed.as_slice(), [
                 AgentEvent::ToolUseEnd { tool_use_id: Some(c), .. },
-                AgentEvent::ToolUseStart { .. },
             ] if c == "call_x"));
         });
         assert!(
             !logs.contains("missing_field"),
             "a keyed custom output owes nothing: {logs}"
         );
-    }
-
-    #[test]
-    fn patch_apply_end_resumes_work() {
-        let out =
-            ev(json!({"type":"event_msg","payload":{"type":"patch_apply_end","success":true}}));
-        assert!(matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]));
-    }
-
-    #[test]
-    fn web_and_tool_search_keep_the_agent_running() {
-        for line in [
-            json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{}}}),
-            json!({"type":"event_msg","payload":{"type":"web_search_end","call_id":"c","query":"q","action":{}}}),
-            json!({"type":"response_item","payload":{"type":"tool_search_call","call_id":"c","status":"in_progress","arguments":"{}"}}),
-            json!({"type":"response_item","payload":{"type":"tool_search_output","call_id":"c","status":"completed","tools":[]}}),
-        ] {
-            let out = ev(line.clone());
-            assert!(
-                matches!(out.as_slice(), [AgentEvent::ToolUseStart { .. }]),
-                "search event {line} must keep the agent Running"
-            );
-        }
     }
 
     /// A cell's nested calls run inside it, so its detail is the first tool

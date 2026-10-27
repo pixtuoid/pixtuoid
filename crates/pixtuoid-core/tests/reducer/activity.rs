@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::state::{ActivityState, SceneState};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolUse};
 
 use crate::{
     HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, start, start_as, tool_use_end, tool_use_start,
@@ -70,7 +70,9 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
         Transport::Hook,
     );
     match &scene.agents[&id].state {
-        ActivityState::Running { tool_use_id, .. } => assert_eq!(tool_use_id.as_deref(), Some("b")),
+        ActivityState::Running {
+            item: Some(ToolUse { tool_use_id, .. }),
+        } => assert_eq!(tool_use_id.as_deref(), Some("b")),
         other => panic!("expected b still running, got {other:?}"),
     }
     tool_use_end(
@@ -132,6 +134,24 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
         id,
         Some("t1"),
         t2 + Duration::from_secs(2),
+        Transport::Hook,
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "t2"
+        ),
+        "t2 still runs: {:?}",
+        scene.agents[&id].state
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t2"),
+        t2 + Duration::from_secs(3),
         Transport::Hook,
     );
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
@@ -722,6 +742,119 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
         ),
         "the answered ask must clear RequiresAction (else the sprite hangs 60 min)"
     );
+}
+
+/// An ask that precedes a sibling call in one message: the sibling's start
+/// only counts while the ask stands, and once the ask is answered the slot
+/// shows the sibling, still running, until its own result (CodeRabbit on
+/// #1940, omp.rs's ask arm).
+#[test]
+fn an_answered_omp_ask_shows_the_sibling_call_still_running() {
+    use pixtuoid_core::source::omp::decode_omp_line;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let path = "/h/.omp/agent/sessions/-p/2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000002.jsonl";
+    let id = AgentId::from_parts(
+        "omp",
+        "2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000002",
+    );
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str, at: SystemTime| {
+        for ev in decode_omp_line(path, "omp", serde_json::from_str(line).unwrap()) {
+            r.apply(scene, ev, at, Transport::Jsonl);
+        }
+    };
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"session","version":3,"id":"01000000-0000-7000-8000-000000000002","timestamp":"2026-07-05T20:37:08.710Z","cwd":"/repo"}"#,
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#,
+        t0,
+    );
+    assert!(requires_action(&scene, id), "the ask stands");
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mC","parentId":"mB","timestamp":"t","message":{"role":"toolResult","toolCallId":"tool_ASK5","toolName":"ask","content":[],"isError":false,"timestamp":2}}"#,
+        t0 + Duration::from_secs(5),
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "t7"
+        ),
+        "the answered ask shows the sibling call still running: {:?}",
+        scene.agents[&id].state
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"mD","parentId":"mC","timestamp":"t","message":{"role":"toolResult","toolCallId":"t7","toolName":"bash","content":[],"isError":false,"timestamp":3}}"#,
+        t0 + Duration::from_secs(9),
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+/// claude-code's parallel calls under a prompt: the gated call's answer shows
+/// the call still running beside it.
+#[test]
+fn an_answered_cc_prompt_shows_the_parallel_call_still_running() {
+    use pixtuoid_core::source::decoder::decode_hook_payload;
+    use serde_json::json;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let hook = |r: &mut Reducer, scene: &mut SceneState, v: serde_json::Value| {
+        let mut v = v;
+        v["_pixtuoid_source"] = json!("claude-code");
+        v["session_id"] = json!("ses_par");
+        v["cwd"] = json!("/repo");
+        for ev in decode_hook_payload(v).expect("decodes") {
+            r.apply(scene, ev, t0, Transport::Hook);
+        }
+    };
+    let pre = |tool: &str, call: &str| {
+        json!({"hook_event_name": "PreToolUse", "tool_name": tool,
+               "tool_input": {"command": "ls"}, "tool_use_id": call})
+    };
+    hook(&mut r, &mut scene, pre("Bash", "tA"));
+    hook(&mut r, &mut scene, pre("Read", "tB"));
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash",
+               "tool_input": {"command": "ls"}}),
+    );
+    let id = *scene.agents.keys().next().expect("the session registered");
+    assert!(requires_action(&scene, id), "the Bash call is gated");
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "tA"}),
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "tB"
+        ),
+        "the answered prompt shows the parallel Read still running: {:?}",
+        scene.agents[&id].state
+    );
+    hook(
+        &mut r,
+        &mut scene,
+        json!({"hook_event_name": "PostToolUse", "tool_name": "Read", "tool_use_id": "tB"}),
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 // Line shapes follow agy's `ask-question` recording.
@@ -1482,7 +1615,9 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Hook,
     );
     match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Running { detail, .. } => {
+        ActivityState::Running {
+            item: Some(ToolUse { detail, .. }),
+        } => {
             assert_eq!(detail.as_deref(), Some("bash"));
         }
         other => panic!("expected Running after the resume, got {other:?}"),
@@ -1637,9 +1772,93 @@ fn a_keyed_turn_end_settles_its_turn_once() {
 }
 
 #[test]
+fn a_bracketed_turn_runs_between_its_items_and_settles_at_its_end() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let no_item = ActivityState::Running { item: None };
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].state, no_item);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c1"),
+        Some("exec_command"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(matches!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: Some(_) }
+    ));
+    tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
+    assert_eq!(scene.agents[&id].state, no_item, "between its items");
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+#[test]
+fn a_turn_start_on_a_source_that_does_not_bracket_its_turns_shows_nothing() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = AgentId::from_parts("claude-code", "ses_cc");
+    start_as(&mut r, &mut scene, id, "claude-code");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+#[test]
+fn a_turn_start_leaves_a_standing_request_to_its_answer() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        AgentEvent::user_action_request(id, None, RequestKeys::default()),
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(requires_action(&scene, id));
+}
+
+#[test]
 fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for next in [turn_start, keyed_turn_end] {
+    let next_turn_open = ActivityState::Running { item: None };
+    for (next, then) in [
+        (
+            turn_start as fn(AgentId, &str) -> AgentEvent,
+            next_turn_open,
+        ),
+        (keyed_turn_end, ActivityState::Idle),
+    ] {
         let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
         let id = codex(&mut r, &mut scene);
         apply(
@@ -1659,8 +1878,74 @@ fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
             Transport::Jsonl,
         );
         apply(&mut r, &mut scene, next(id, "t2"), t0, Transport::Jsonl);
-        assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+        assert_eq!(scene.agents[&id].state, then);
     }
+}
+
+/// A late attach: the reducer never saw the turn's start, yet the stream keys
+/// its end by it.
+#[test]
+fn the_end_of_a_turn_whose_start_went_unseen_ends_what_the_turn_left() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let start = |id, k| AgentEvent::TurnStart {
+        agent_id: id,
+        turn: TurnKey::Seq(k),
+    };
+    let end = |id, k| AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: Some(TurnKey::Seq(k)),
+    };
+    let opencode = |r: &mut Reducer, scene: &mut SceneState| {
+        let id = AgentId::from_parts("opencode", "ses_p");
+        start_as(r, scene, id, "opencode");
+        id
+    };
+
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = opencode(&mut r, &mut scene);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    apply(&mut r, &mut scene, end(id, 5), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "it answers the request no call did"
+    );
+
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = opencode(&mut r, &mut scene);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c1"),
+        Some("bash"),
+        t0,
+        Transport::Hook,
+    );
+    apply(&mut r, &mut scene, end(id, 5), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "it retires the call whose end never came"
+    );
+    apply(&mut r, &mut scene, start(id, 7), t0, Transport::Hook);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c2"),
+        Some("bash"),
+        t0,
+        Transport::Hook,
+    );
+    tool_use_end(&mut r, &mut scene, id, Some("c2"), t0, Transport::Hook);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "the next turn shows none of its calls"
+    );
+    apply(&mut r, &mut scene, end(id, 7), t0, Transport::Hook);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 #[test]
@@ -1706,14 +1991,17 @@ fn a_codex_request_binds_its_tools_pending_call_and_resolves_on_its_output() {
         Transport::Hook,
     );
     assert!(requires_action(&scene, id));
-    tool_use_start(&mut r, &mut scene, id, None, None, t0, Transport::Jsonl);
     tool_use_end(&mut r, &mut scene, id, Some("c2"), t0, Transport::Jsonl);
     assert!(
         requires_action(&scene, id),
-        "the rollout's pulse and another call's output answer nothing"
+        "another call's output answers nothing"
     );
     tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None },
+        "answered, inside its open turn"
+    );
 }
 
 #[test]
@@ -1803,7 +2091,10 @@ fn a_pre_use_delivered_after_its_request_joins_it() {
     );
     assert!(requires_action(&scene, id), "a pre-use is no item");
     tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running { item: None }
+    );
 }
 
 /// #951 extended: the other transport's start lands while the human decides.
@@ -1940,9 +2231,20 @@ fn a_cc_pre_use_delivered_after_its_prompt_joins_it() {
     feed(&mut r, &mut scene, cc_hook("PreToolUse", bash.clone()), t0);
     assert!(requires_action(&scene, id), "its pre-use is no answer");
     let read = json!({"tool_name": "Read", "tool_use_id": "r1"});
-    feed(&mut r, &mut scene, cc_hook("PreToolUse", read), t0);
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", read.clone()), t0);
     assert!(requires_action(&scene, id), "nor is another tool's start");
     feed(&mut r, &mut scene, cc_hook("PostToolUse", bash), t0);
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "r1"
+        ),
+        "the Read still runs: {:?}",
+        scene.agents[&id].state
+    );
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", read), t0);
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
@@ -2021,7 +2323,6 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
     );
     let t2 = t1 + Duration::from_secs(5);
     tool_use_end(&mut r, &mut scene, id, Some("xn"), t2, Transport::Jsonl);
-    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
     apply(
         &mut r,
         &mut scene,
@@ -2036,7 +2337,6 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
         t2,
         Transport::Jsonl,
     );
-    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
     assert!(
         requires_action(&scene, id),
         "m's prompt still waits on the human: {:?}",
@@ -2045,8 +2345,8 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
     tool_use_end(&mut r, &mut scene, id, Some("xm"), t2, Transport::Jsonl);
     assert_eq!(
         scene.agents[&id].state,
-        ActivityState::Idle,
-        "m's own call answers it"
+        ActivityState::Running { item: None },
+        "m's own call answers it, inside m"
     );
 }
 
@@ -2111,6 +2411,37 @@ fn an_unnamed_childs_pre_use_stays_out_of_its_parents_request() {
             scene.agents[&id].state
         );
     }
+}
+
+/// kimi's parent call that ends while its Task runs: the end is dropped as
+/// possibly the child's, yet the call still ended.
+#[test]
+fn a_parents_call_ending_while_its_task_runs_is_not_shown_after_the_drain() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "sess-k");
+    start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
+    feed(&mut r, &mut scene, kimi_hook("PreToolUse", "Bash", "P"), t0);
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PreToolUse", "Agent", "T"),
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PostToolUse", "Bash", "P"),
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PostToolUse", "Agent", "T"),
+        t0,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 /// After an oversized skip or a late attach no turn is open, so the rollout's

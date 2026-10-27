@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "dsh",
   "version": "0.2.1-rc.2",
-  "captured": "2026-10-26",
+  "captured": "2026-10-27",
   "command": "just hermetic --record dsh",
   "deidentified": {
     "method": "decoder-allowlist",

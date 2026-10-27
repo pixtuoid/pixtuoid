@@ -2,7 +2,7 @@ use super::*;
 use crate::anim::Motion;
 use crate::character::test_support::make_slot;
 use pixtuoid_core::id::AgentId;
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, ToolUse};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1497,9 +1497,11 @@ fn ambient_office(t0: SystemTime, resting: bool) -> SceneState {
     use pixtuoid_core::source::daemon::{DaemonInstanceKey, DaemonPresenceUpdate, apply_presence};
     use pixtuoid_core::state::{DaemonInstanceId, EffortObservation, ToolKind};
     let typing = || ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Edit,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Edit,
+        }),
     };
     let settled = t0 - Duration::from_secs(3_600);
     let n = if resting { 5 } else { 3 };
@@ -1662,9 +1664,11 @@ fn a_floor_still_off_the_beat_paints_one_frame_until_the_beat_turns() {
     let mut typing = lived_in.clone();
     for slot in typing.agents.values_mut() {
         slot.state = ActivityState::Running {
-            tool_use_id: None,
-            detail: None,
-            kind: pixtuoid_core::state::ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: None,
+                kind: pixtuoid_core::state::ToolKind::Edit,
+            }),
         };
     }
     let mut asking = typing.clone();
@@ -2328,10 +2332,9 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
         let later = (3..).map(|tenth| step(&mut session, 100 * tenth));
         match first {
             Figure::Agent(_) => assert!(
-                later.take(300).any(|f| matches!(
-                    f.poses[&a],
-                    Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)
-                )),
+                later
+                    .take(300)
+                    .any(|f| matches!(f.poses[&a], Some(Pose::SeatedIdle | Pose::SeatedTyping))),
                 "the agent set down walks home and sits"
             ),
             _ => {
@@ -2434,9 +2437,11 @@ fn a_lifted_creature_is_in_front_of_the_room() {
     // At work, so it stays in its chair.
     for slot in scene.agents.values_mut() {
         slot.state = ActivityState::Running {
-            tool_use_id: None,
-            detail: None,
-            kind: pixtuoid_core::state::ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: None,
+                detail: None,
+                kind: pixtuoid_core::state::ToolKind::Edit,
+            }),
         };
     }
     let lobster = crate::creatures::openclaw_key("18789");

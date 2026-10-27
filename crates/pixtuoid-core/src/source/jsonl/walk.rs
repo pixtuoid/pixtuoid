@@ -547,13 +547,13 @@ pub(super) async fn check_session_ended(path: &Path, checker: SessionEndChecker)
 pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 
 /// Tail-scan an oversized skipped span and re-emit what the skip buried: its
-/// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), and its last turn bracket
-/// when that is a keyed end. Mid-attach to a delegating session whose backlog
-/// exceeds `MAX_PENDING_BYTES` never decodes the in-flight dispatch line,
-/// leaving the reducer's `tasks_in_flight` empty: the parent never shows
-/// Delegating and the b1 completion cascade never arms. A re-emitted end closes,
-/// through the turn ledger's in-order rule, whatever turn the skip buried the
-/// end of.
+/// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), and its last turn
+/// bracket, a start or a keyed end. Mid-attach to a delegating session whose
+/// backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight dispatch
+/// line, leaving the reducer's `tasks_in_flight` empty: the parent never shows
+/// Delegating and the b1 completion cascade never arms. A re-emitted start
+/// shows the turn the session is in; a re-emitted end closes, through the turn
+/// ledger's in-order rule, whatever turn the skip buried the end of.
 ///
 /// Tail-window geometry guarantees no false leak: a completion is always LATER
 /// in the file than its start, so any windowed start's completion is also in
@@ -597,19 +597,17 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
             }
         }
     }
-    for (tuid, ev) in pending {
-        debug!(
-            ?tuid,
-            path = ?path,
-            "re-emitting in-flight Task dispatch from the oversized tail"
-        );
+    // A start precedes the dispatches of its turn, and an end follows them.
+    let (start, end) = match last_bracket {
+        Some(start @ AgentEvent::TurnStart { .. }) => (Some(start), None),
+        end => (None, end),
+    };
+    let rest = pending.into_iter().map(|(_, ev)| ev).chain(end);
+    for ev in start.into_iter().chain(rest) {
+        debug!(path = ?path, event = ?ev, "re-emitting from the oversized tail");
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }
-    }
-    if let Some(end @ AgentEvent::TurnEnd { .. }) = last_bracket {
-        debug!(path = ?path, "re-emitting the turn end of the oversized tail");
-        let _ = ctx.tx.send((Transport::Jsonl, end)).await;
     }
 }
 

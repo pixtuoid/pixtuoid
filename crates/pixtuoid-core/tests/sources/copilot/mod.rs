@@ -5,7 +5,7 @@
 
 use pixtuoid_core::harness::{Drive, Driven, Reach};
 use pixtuoid_core::source::AgentEvent;
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, ToolUse};
 
 fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
     d.assert_clean(what);
@@ -112,7 +112,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
     );
     let parent = d.scene.agents.get(&child.1).expect("the parent's slot");
     assert!(
-        !matches!(&parent.state, ActivityState::Running { detail: Some(d), .. } if &**d == "Delegating"),
+        !matches!(&parent.state, ActivityState::Running { item: Some(ToolUse { detail: Some(d), .. }) } if &**d == "Delegating"),
         "the parent still delegates: {:?}",
         parent.state
     );

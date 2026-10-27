@@ -371,7 +371,9 @@ mod tests {
             },
         );
         let patch = Emitter {
-            kind: EmitterKind::MonitorHalo(pixtuoid_core::state::ToolKind::Edit),
+            kind: EmitterKind::MonitorHalo(crate::lighting::ScreenWork::ToolUse(
+                pixtuoid_core::state::ToolKind::Edit,
+            )),
             light: Light::Patch {
                 centre: Point { x: 60, y: 20 },
             },

@@ -151,9 +151,7 @@ pub(crate) fn character_top_left(
     let pose = pose::derive_with_routing(agent, now, layout, rctx)?;
     let w = CHARACTER_SPRITE_W;
     let top_left = match pose {
-        Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping => {
-            seated_top_left(desk.at, w, desk.facing)
-        }
+        Pose::SeatedIdle | Pose::SeatedTyping => seated_top_left(desk.at, w, desk.facing),
         Pose::AtWaypoint { wp, kind } => {
             let wp_obj = layout.waypoints.get(wp)?;
             let stand = layout.stand_point(wp_obj.kind, wp_obj.pos, desk.at, wp_obj.facing);

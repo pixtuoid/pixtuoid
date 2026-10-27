@@ -75,7 +75,8 @@ pub use source::{Source, TaggedReceiver, TaggedSender};
 pub use sprite::{Frame, Palette, Pixel, Rgb, RgbBuffer, Sprite, WriteEpoch};
 pub use state::reducer::Reducer;
 pub use state::{
-    ActivityState, AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState, SlotLabel, ToolKind,
+    ActivityState, AgentSlot, FloorLocalDeskIndex, GlobalDeskIndex, SceneState, SlotLabel,
+    ToolKind, ToolUse,
 };
 pub use walkable::{OccupancyOverlay, WalkableMask};
 

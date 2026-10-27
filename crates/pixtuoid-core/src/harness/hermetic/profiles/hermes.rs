@@ -115,4 +115,5 @@ telemetry:
     // Every turn runs in a gateway the CLI starts and leaves up
     // (`hermes_cli/main.py:2870-2875`, `hermes_cli/gateway_runtime_start.py:35-80`).
     server_stop: Some(&["hermes", "gateway", "stop"]),
+    turn_exits: &[],
 };

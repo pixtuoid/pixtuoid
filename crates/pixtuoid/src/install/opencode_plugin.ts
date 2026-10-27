@@ -24,15 +24,19 @@ const DRAIN_MS = 2000
 // published reaches the loop well within it.
 const QUIET_MS = 50
 
+const SETTLES = new Set<string>([
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+])
+
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
 const FORWARD = new Set<string>([
   "session.created",
   "session.deleted",
   "session.execution.started",
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
+  ...SETTLES,
   "session.tool.input.started",
   "session.tool.success",
   "session.tool.failed",
@@ -91,6 +95,29 @@ export default {
     const controller = new AbortController()
     let inFlight = 0
     let lastActivity = 0
+    // Each session's open execution, by its start's durable seq. A settle
+    // carries its own seq, so it is stamped with its start's: the turn it
+    // ends. One execution runs per session at a time
+    // (`packages/core/src/session/run-coordinator.ts:6` at v2.2.0), and the
+    // bus delivers in order, so a session's next settle is its start's. A
+    // settle whose start this process never saw goes unstamped.
+    const openTurns = new Map<unknown, number>()
+    const turnOf = (event: any): number | undefined => {
+      const session = event.data?.sessionID
+      if (event.type === "session.execution.started") {
+        const seq = event.durable?.seq
+        if (typeof seq !== "number") {
+          openTurns.delete(session)
+          return undefined
+        }
+        openTurns.set(session, seq)
+        return seq
+      }
+      if (!SETTLES.has(event.type)) return undefined
+      const seq = openTurns.get(session)
+      openTurns.delete(session)
+      return seq
+    }
     // Not awaited: setup returns at once, and the loop's own awaits only pace
     // this subscription, whose queue is unbounded.
     void (async () => {
@@ -99,6 +126,7 @@ export default {
           if (!FORWARD.has(event?.type)) continue
           inFlight++
           try {
+            const turn = turnOf(event)
             // A turn's start carries only `sessionID`; the session's record adds
             // what `session.created` did, for a session swept since.
             const data =
@@ -109,6 +137,7 @@ export default {
               JSON.stringify({
                 type: event.type,
                 location: event.location && { directory: event.location.directory },
+                turn,
                 data: allowlisted(data),
                 // The opencode server's pid; the daemon's HookPidWatch ends every
                 // sprite bound to it when it dies.

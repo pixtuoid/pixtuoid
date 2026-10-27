@@ -3,51 +3,57 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     source: opencode
-    session_id: ses_e970912f5ffev3puE3ERmMbl1u
+    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     source: opencode
-    session_id: ses_e970912f5ffev3puE3ERmMbl1u
+    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     model: gpt-5.2
     effort: ~
+- TurnStart:
+    agent_id: 7509638496550593894
+    turn:
+      Seq: 2
 - Identity:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     source: opencode
-    session_id: ses_e970912f5ffev3puE3ERmMbl1u
+    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 15302167102773164551
-    tool_use_id: call_v6aPoBfNPXv3A06G
+    agent_id: 7509638496550593894
+    tool_use_id: call_xQcaxD330eRRACoB
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     source: opencode
-    session_id: ses_e970912f5ffev3puE3ERmMbl1u
+    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 15302167102773164551
-    tool_use_id: call_v6aPoBfNPXv3A06G
+    agent_id: 7509638496550593894
+    tool_use_id: call_xQcaxD330eRRACoB
 - Identity:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     source: opencode
-    session_id: ses_e970912f5ffev3puE3ERmMbl1u
+    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
     cwd: ~
 - TurnEnd:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
+    turn:
+      Seq: 2
 - SessionEnd:
-    agent_id: 15302167102773164551
+    agent_id: 7509638496550593894
     as_child: false

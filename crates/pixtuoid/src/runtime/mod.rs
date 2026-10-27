@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::source::manager::SourceDeath;
-use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS};
+use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, ToolUse};
 use ratatui::layout::Size as TermSize;
 use tokio::sync::{Notify, mpsc, watch};
 
@@ -153,12 +153,18 @@ fn summarize(scene: &SceneState) -> String {
             let state = match &a.state {
                 ActivityState::Idle => "idle".to_string(),
                 ActivityState::Running {
-                    detail: Some(detail),
-                    ..
+                    item:
+                        Some(ToolUse {
+                            detail: Some(detail),
+                            ..
+                        }),
                 } => {
                     format!("running({})", sanitize_line(detail))
                 }
-                ActivityState::Running { detail: None, .. } => "running".to_string(),
+                ActivityState::Running {
+                    item: Some(ToolUse { detail: None, .. }),
+                }
+                | ActivityState::Running { item: None } => "running".to_string(),
                 ActivityState::RequiresAction {
                     reason: Some(reason),
                 } => {
@@ -738,7 +744,36 @@ mod tests {
         let c = AgentId::from_transcript_path("/p/c.jsonl");
         seat(&mut reducer, &mut scene, c);
 
+        // An open turn between items: running, with no tool token.
+        let d = AgentId::from_parts("opencode", "ses_d");
+        reducer.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: d,
+                source: "opencode".into(),
+                session_id: "ses_d".into(),
+                cwd: std::path::PathBuf::from("/turn"),
+                parent_id: None,
+            },
+            now,
+            Transport::Hook,
+        );
+        reducer.apply(
+            &mut scene,
+            AgentEvent::TurnStart {
+                agent_id: d,
+                turn: pixtuoid_core::state::TurnKey::Seq(1),
+            },
+            now,
+            Transport::Hook,
+        );
+
         let summary = summarize(&scene);
+        let turn = summary
+            .split(['[', ',', ']'])
+            .find(|e| e.trim_start().starts_with("oc\u{b7}turn@"))
+            .unwrap_or_else(|| panic!("no open-turn agent in {summary}"));
+        assert!(turn.ends_with(":running"), "got: {summary}");
         assert!(summary.starts_with("agents=["), "got: {summary}");
         assert!(summary.contains("running(Edit: foo.rs)"), "got: {summary}");
         assert!(

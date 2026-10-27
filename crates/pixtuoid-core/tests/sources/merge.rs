@@ -1,15 +1,15 @@
 //! The two-transport merge: each recorded run below, its hook and transcript
 //! lines folded in every order they can reach the reducer in
-//! (`harness::merge`), holds in all of them: a RequiresAction stands until its
-//! resolution, and a hook-set item survives a lagging transcript turn end.
+//! (`harness::merge`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::merge::{Merged, Step};
 use pixtuoid_core::source::AgentEvent;
-use pixtuoid_core::{ActivityState, Transport};
+use pixtuoid_core::state::TurnKey;
+use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
 use super::captures::{fixture_lines, fixtures_root, transcript_in};
@@ -260,15 +260,15 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
                     hook_set.remove(id.as_str());
                 }
                 AgentEvent::TurnEnd { .. } if s.transport == Transport::Jsonl => {
-                    if let Some(ActivityState::Running {
+                    if let Some(ActivityState::Running { item: Some(ToolUse {
                         tool_use_id: Some(id),
                         ..
-                    }) = before
+                    }) }) = before
                         && hook_set.contains(&**id)
                     {
                         lagged = true;
                         assert!(
-                            matches!(&s.state, Some(ActivityState::Running { tool_use_id: Some(after), .. }) if after == id),
+                            matches!(&s.state, Some(ActivityState::Running { item: Some(ToolUse { tool_use_id: Some(after), .. }) }) if after == id),
                             "{}: a Jsonl turn end at line {} took the Hook-set item {id}",
                             run.name,
                             s.line
@@ -287,11 +287,71 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
     );
 }
 
+/// On a source that brackets its turns (codex's registry row), a turn the
+/// stream delivered open shows its agent working, in every order: its start
+/// arrived, and its end has not.
+fn a_delivered_open_turn_is_never_idle(run: &Run) {
+    let mut opened = false;
+    run.each(|m| {
+        let mut open: BTreeMap<AgentId, TurnKey> = BTreeMap::new();
+        for s in &m.steps {
+            match &s.event {
+                AgentEvent::TurnStart { agent_id, turn } => {
+                    open.insert(*agent_id, turn.clone());
+                    opened = true;
+                }
+                AgentEvent::TurnEnd { agent_id, turn }
+                    if turn.is_none() || open.get(agent_id) == turn.as_ref() =>
+                {
+                    open.remove(agent_id);
+                }
+                _ => {}
+            }
+            let agent = s.event.agent_id();
+            if let (Some(turn), Some(state)) = (open.get(&agent), &s.state) {
+                assert_ne!(
+                    *state,
+                    ActivityState::Idle,
+                    "{}: turn {turn:?} was delivered open, yet {:?} line {} ({:?}) left its agent Idle",
+                    run.name,
+                    s.transport,
+                    s.line,
+                    s.event
+                );
+            }
+        }
+    });
+    assert!(opened, "{}: no order opens a turn", run.name);
+}
+
+#[test]
+fn a_codex_turn_delivered_open_shows_its_agent_working_through_its_items() {
+    a_delivered_open_turn_is_never_idle(&Run::of("codex", "tool-run-hermetic"));
+}
+
+#[test]
+fn a_codex_turn_cancelled_or_failed_shows_its_agent_working_until_its_end() {
+    for scenario in ["cancel-hermetic", "model-error-hermetic"] {
+        a_delivered_open_turn_is_never_idle(&Run::of("codex", scenario));
+    }
+}
+
+#[test]
+fn a_codex_turn_a_stop_hook_continues_shows_its_agent_working() {
+    a_delivered_open_turn_is_never_idle(&Run::of("codex", "stop-hook-hermetic"));
+}
+
+#[test]
+fn a_codex_code_mode_turn_shows_its_agent_working_around_its_cell() {
+    a_delivered_open_turn_is_never_idle(&Run::of("codex", "code-mode-failure-hermetic"));
+}
+
 #[test]
 fn a_codex_request_refused_in_the_tui_stands_until_its_resolution() {
     let run = Run::of("codex", "permission-hermetic");
     a_request_stands_until_its_resolution(&run);
     a_top_level_request_resolves_by_its_calls_output(&run);
+    a_delivered_open_turn_is_never_idle(&run);
 }
 
 /// A refused turn's end can lag past the next turn's raise: it answers its
@@ -301,6 +361,7 @@ fn a_refused_turn_s_lagging_end_leaves_the_next_turn_s_request_standing() {
     let run = Run::of("codex", "refuse-then-prompt-hermetic");
     a_request_stands_until_its_resolution(&run);
     a_top_level_request_resolves_by_its_calls_output(&run);
+    a_delivered_open_turn_is_never_idle(&run);
 }
 
 #[test]
@@ -308,6 +369,7 @@ fn a_codex_request_approved_in_the_tui_stands_until_its_resolution() {
     let run = Run::of("codex", "approve-hermetic");
     a_request_stands_until_its_resolution(&run);
     a_top_level_request_resolves_by_its_calls_output(&run);
+    a_delivered_open_turn_is_never_idle(&run);
 }
 
 /// A policy hook's deny fires no PostToolUse: the call's rollout output alone

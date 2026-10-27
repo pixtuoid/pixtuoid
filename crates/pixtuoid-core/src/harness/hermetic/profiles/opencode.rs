@@ -4,7 +4,7 @@
 use super::type_field;
 use crate::harness::hermetic::{
     ConfigFile, Daemon, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface,
-    Turn, tui,
+    Turn, TurnExit, tui,
 };
 use crate::harness::plan::Placeholder;
 
@@ -224,6 +224,25 @@ pub(crate) const PROFILE: Profile = Profile {
         env: &[],
     }),
     server_stop: None,
+    // A session's execution settles on every exit as one of three
+    // (`packages/core/src/session/execution.ts:116-145` at v2.2.0).
+    turn_exits: &[
+        TurnExit {
+            exit: "session.execution.succeeded",
+            with: None,
+            scenario: "tool-run",
+        },
+        TurnExit {
+            exit: "session.execution.failed",
+            with: None,
+            scenario: "model-error",
+        },
+        TurnExit {
+            exit: "session.execution.interrupted",
+            with: None,
+            scenario: "cancel",
+        },
+    ],
 };
 
 #[cfg(test)]

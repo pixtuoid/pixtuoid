@@ -146,4 +146,5 @@ pub(crate) const PROFILE: Profile = Profile {
     live: None,
     daemon: None,
     server_stop: None,
+    turn_exits: &[],
 };
