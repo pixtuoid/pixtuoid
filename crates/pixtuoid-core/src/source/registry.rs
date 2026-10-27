@@ -524,7 +524,7 @@ pub fn daemon_sources() -> impl Iterator<Item = (&'static str, crate::source::da
 const CLAUDE_CODE: SourceDescriptor = SourceDescriptor {
     name: claude_code::SOURCE_NAME,
     label_prefix: "cc",
-    verified_version: "2.1.310",
+    verified_version: "2.1.311",
     version_probe: Some(&["claude", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("CLAUDE_CONFIG_DIR"),
@@ -579,8 +579,7 @@ const CODEX: SourceDescriptor = SourceDescriptor {
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
-            // A child's events change their SUBJECT, and a root's `spawn_agent`
-            // is a Task: neither is expressible in the shared arms.
+            // Its arms and why: `codex::decode_codex_hook_custom`.
             extend: codex::decode_codex_hook_custom,
         }),
         caps: SourceCaps {
@@ -638,7 +637,7 @@ const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
 const REASONIX: SourceDescriptor = SourceDescriptor {
     name: reasonix::SOURCE_NAME,
     label_prefix: "rx",
-    verified_version: "2.52.0",
+    verified_version: "2.53.1",
     version_probe: Some(&["reasonix", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
@@ -778,7 +777,7 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
 const OPENCLAW: SourceDescriptor = SourceDescriptor {
     name: openclaw::SOURCE_NAME,
     label_prefix: "ok",
-    verified_version: "2026.10.7",
+    verified_version: "2026.10.8",
     version_probe: Some(&["openclaw", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
@@ -794,7 +793,7 @@ const OPENCLAW: SourceDescriptor = SourceDescriptor {
 const COPILOT: SourceDescriptor = SourceDescriptor {
     name: copilot::SOURCE_NAME,
     label_prefix: "cp",
-    verified_version: "1.0.103",
+    verified_version: "1.0.104",
     version_probe: Some(&["copilot", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("COPILOT_HOME"),
@@ -833,7 +832,7 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
 const CURSOR: SourceDescriptor = SourceDescriptor {
     name: cursor::SOURCE_NAME,
     label_prefix: "cu",
-    verified_version: "2026.09.18",
+    verified_version: "2026.10.22",
     version_probe: Some(&["cursor-agent", "--version"]),
     version_hyphen: Hyphen::Build,
     home_env: None,
@@ -951,7 +950,7 @@ const GROK: SourceDescriptor = SourceDescriptor {
 const OMP: SourceDescriptor = SourceDescriptor {
     name: omp::SOURCE_NAME,
     label_prefix: "om",
-    verified_version: "18.12.6",
+    verified_version: "18.13.1",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),

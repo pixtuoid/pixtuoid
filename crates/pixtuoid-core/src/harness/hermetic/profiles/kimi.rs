@@ -19,7 +19,7 @@ const TUI: tui::Tui = tui::Tui {
         shows: "Run this command?",
         // Esc rejects the call outright
         // (`apps/kimi-code/src/tui/components/dialogs/approval-panel.ts:262-268`).
-        deny: &[tui::Key::Esc],
+        keys: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],

@@ -19,6 +19,7 @@ tests/
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
+│   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`): a RequiresAction stands until its resolution, a hook-set item survives a lagging transcript turn end
 │   ├── claude/ codex/ codewhale/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
 │   │                    an independent session (two sprites), so these can't live under the one-AgentId rule
 │   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel) and a failed child's own end
@@ -56,7 +57,7 @@ captures the one-AgentId rule cannot host.
 ## The one pipeline
 
 Real wire bytes ride `pixtuoid_core::harness::Drive` (dev-only `harness`
-feature): `conformance.rs`, `sources/{grok,cursor,opencode,copilot,delegation}`,
+feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,delegation}`,
 `pixtuoid/tests/wire_to_pixels.rs`, and the on-demand
 `corpus_check`. A shell supplies bytes and asserts;
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's

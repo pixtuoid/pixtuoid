@@ -71,9 +71,8 @@ pub(crate) const PROFILE: Profile = Profile {
             expects: &[],
             fixture: "fixtures/copilot/resume-hermetic",
             turn: Turn {
-                args: &[],
-                prompt: None,
                 second: Some(Second::Prompt("Say done.")),
+                ..Turn::PROFILE
             },
         },
         Scenario {

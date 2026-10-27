@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.103.",
+  "version": "GitHub Copilot CLI 1.0.104.",
   "captured": "2026-10-27",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 74
+    "blanked": 60
   },
-  "aimock": "1.47.0",
+  "aimock": "1.45.1",
   "script": "tests/sources/hermetic/copilot/autopilot.json",
   "dropped": {
     "os": "macos",

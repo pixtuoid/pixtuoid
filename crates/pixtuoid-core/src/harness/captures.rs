@@ -491,6 +491,23 @@ const ID_FAMILIES: &[IdFamily] = &[
             r#"{"_shim_ts_ms":1792482405228}"#,
         )],
     },
+    // A transcript's write stamps, which the strip keeps for the merge test
+    // (`reads::WRITE_STAMPS`): codex's RFC 3339, grok's epoch seconds.
+    IdFamily {
+        name: "transcript-clock",
+        pattern: r#""timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z)""#,
+        seen_in: "fixtures/codex/tool-run-hermetic",
+        renamed: &[(
+            r#"{"timestamp":"2026-10-27T04:47:02.476Z"}"#,
+            r#"{"timestamp":"2026-10-27T06:40:52.169Z"}"#,
+        )],
+    },
+    IdFamily {
+        name: "transcript-epoch-clock",
+        pattern: r#""timestamp":(\d{10})\b"#,
+        seen_in: "fixtures/grok/tool-run-hermetic",
+        renamed: &[(r#"{"timestamp":1793078269}"#, r#"{"timestamp":1793083460}"#)],
+    },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",

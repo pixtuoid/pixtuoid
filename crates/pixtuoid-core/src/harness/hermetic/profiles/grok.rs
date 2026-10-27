@@ -6,9 +6,9 @@ use std::borrow::Cow;
 
 use serde_json::Value;
 
-use super::AIMOCK_V1;
+use super::{AIMOCK_V1, SECOND_TURN};
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
 };
 
 /// grok's TUI. Its default mode asks before a shell command off the read-only
@@ -24,7 +24,7 @@ const TUI: tui::Tui = tui::Tui {
     },
     gates: &[tui::Gate {
         shows: "No, reject (type to add feedback)",
-        deny: &[tui::Key::Text("4")],
+        keys: &[tui::Key::Text("4")],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],
@@ -220,6 +220,24 @@ pub(crate) const PROFILE: Profile = Profile {
             ],
             fixture: "fixtures/grok/ask-user-hermetic",
             turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "two-turn",
+            shape: Shape::ToolRun,
+            surface: Surface::Tui { row: &TUI },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/grok/two-turn-hermetic",
+            turn: Turn {
+                second: Some(Second::Prompt(SECOND_TURN)),
+                ..Turn::PROFILE
+            },
         },
     ],
     script_vars: &[],

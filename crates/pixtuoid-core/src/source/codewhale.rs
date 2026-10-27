@@ -34,7 +34,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The CodeWhale CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "codewhale";
@@ -140,11 +140,7 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // this after its exit; the next tool start, `session_idle` or end clears that RequiresAction.
         "waiting_for_user" => Ok(vec![
             identity(),
-            AgentEvent::UserActionRequest {
-                agent_id,
-                reason: None,
-                tool_use_id: None,
-            },
+            AgentEvent::user_action_request(agent_id, None, RequestKeys::default()),
         ]),
         "session_idle" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         "session_end" => Ok(vec![AgentEvent::SessionEnd {

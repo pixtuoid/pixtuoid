@@ -215,11 +215,11 @@ fn an_action_request_is_evicted_on_apply_path_sweep() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some("perm".into()),
-            tool_use_id: None,
-        },
+        AgentEvent::user_action_request(
+            id,
+            Some("perm".into()),
+            crate::source::RequestKeys::default(),
+        ),
         t0,
         Transport::Hook,
     );
@@ -720,11 +720,11 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some("perm".into()),
-            tool_use_id: None,
-        },
+        AgentEvent::user_action_request(
+            id,
+            Some("perm".into()),
+            crate::source::RequestKeys::default(),
+        ),
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
@@ -979,11 +979,11 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
-            AgentEvent::UserActionRequest {
-                agent_id: a,
-                reason: Some("perm".into()),
-                tool_use_id: None,
-            },
+            AgentEvent::user_action_request(
+                a,
+                Some("perm".into()),
+                crate::source::RequestKeys::default(),
+            ),
             now,
             Transport::Hook,
         );

@@ -18,7 +18,7 @@ const TUI: tui::Tui = tui::Tui {
         shows: "Dangerous Command",
         // A digit picks its choice, "4. Deny" here
         // (`hermes_cli/cli_tui_mixin.py:1301-1307`, `:2066-2068`).
-        deny: &[tui::Key::Text("4")],
+        keys: &[tui::Key::Text("4")],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],

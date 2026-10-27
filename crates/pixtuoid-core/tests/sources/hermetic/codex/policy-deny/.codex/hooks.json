@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "node .codex/deny.js" }] }]
+  }
+}

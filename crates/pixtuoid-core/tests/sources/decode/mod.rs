@@ -19,7 +19,12 @@ fn decode_single(v: serde_json::Value) -> AgentEvent {
 
 fn decode_activity(v: serde_json::Value) -> AgentEvent {
     let mut evs = decode_hook_payload(v).expect("decodes");
-    assert_eq!(evs.len(), 2, "expected Identity + activity, got {evs:?}");
+    let pre_use = matches!(evs.get(1), Some(AgentEvent::ToolUsePending { .. }));
+    assert_eq!(
+        evs.len(),
+        2 + usize::from(pre_use),
+        "expected Identity + (a pre-use's pending call) + activity, got {evs:?}"
+    );
     assert!(
         matches!(evs[0], AgentEvent::Identity { .. }),
         "tool/permission arms must lead with Identity, got {evs:?}"
@@ -1032,22 +1037,22 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     use std::path::{Path, PathBuf};
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures");
-    // A hermetic recording names its session dir after the conversation, which
-    // every re-record changes.
-    let agy = pixtuoid_core::harness::transcript_in(
-        "antigravity",
-        &fixtures.join("antigravity/tool-run-hermetic"),
-    )
-    .unwrap_or_else(|found| panic!("one antigravity transcript, found {found:?}"));
+    // A recording names its transcript after its session, which every
+    // re-record changes.
+    let transcript_of = |source: &str, capture: &str| {
+        pixtuoid_core::harness::transcript_in(source, &fixtures.join(capture))
+            .unwrap_or_else(|found| panic!("one {source} transcript, found {found:?}"))
+    };
+    let agy = transcript_of("antigravity", "antigravity/tool-run-hermetic");
     let cases: [(&str, PathBuf, Option<&str>); 4] = [
         (
             "claude-code",
-            fixtures.join("claude-code/permission-recorded/947851e2-a15a-4de8-8375-46e9cddb5c8f.jsonl"),
+            transcript_of("claude-code", "claude-code/permission-recorded"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
             "codex",
-            fixtures.join("codex/permission-recorded/rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl"),
+            transcript_of("codex", "codex/permission-hermetic"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
@@ -1055,11 +1060,7 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
             fixtures.join("copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl"),
             Some(r"d:\contentforge-fullstack (1)"),
         ),
-        (
-            "antigravity",
-            agy,
-            None,
-        ),
+        ("antigravity", agy, None),
     ];
     for (source, path, expected) in cases {
         let extract = pixtuoid_core::source::registry::cwd_extractor_for(source);

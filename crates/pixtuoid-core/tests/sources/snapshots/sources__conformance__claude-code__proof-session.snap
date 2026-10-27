@@ -40,6 +40,10 @@ expression: events
     source: claude-code
     session_id: 01000000-0000-7000-8000-0000000000f4
     cwd: /home/user/pixtuoid
+- ToolUsePending:
+    agent_id: 17397579914300320350
+    tool_use_id: toolu_proof000000000000001
+    tool_name: Read
 - ToolUseStart:
     agent_id: 17397579914300320350
     tool_use_id: toolu_proof000000000000001

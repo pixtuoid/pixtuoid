@@ -1,0 +1,23 @@
+{"timestamp":"2026-10-27T06:43:00.142Z","ordinal":0,"type":"","payload":{"session_id":"","id":"","timestamp":"","cwd":"/private/tmp/pixtuoid-capture/proj","runtime_workspace_roots":[],"originator":"","cli_version":"","source":"","thread_source":"","model_provider":"","base_instructions":{},"history_mode":"","context_window":{},"git":{}}}
+{"timestamp":"2026-10-27T06:43:00.142Z","ordinal":0,"type":"event_msg","payload":{"type":"task_started","turn_attribution":{},"turn_id":"01a17c19-117c-7031-8d0e-b26f23d53b91","root_turn_id":"","started_at":0,"model_context_window":0,"collaboration_mode_kind":""}}
+{}
+{}
+{}
+{"timestamp":"2026-10-27T06:43:00.151Z","ordinal":0,"type":"turn_context","payload":{"turn_id":"","root_turn_id":"","disabled_plugin_ids":[],"cwd":"/private/tmp/pixtuoid-capture/proj","approval_policy":"","approvals_reviewer":"","sandbox_policy":{},"permission_profile":{},"model":"gpt-5.5","comp_hash":"","collaboration_mode":{},"multi_agent_version":"","realtime_active":false,"effort":"high","summary":""}}
+{}
+{}
+{}
+{}
+{}
+{"timestamp":"2026-10-27T06:43:00.177Z","ordinal":0,"type":"response_item","payload":{"type":"custom_tool_call","id":"","status":"","call_id":"call_dxdTtHqfe89gHq4H","name":"exec","input":"// @exec: {\"max_output_tokens\": 1000}\ntry {\n  text(await tools.exec_command({ cmd: \"cat MISSING.txt\" }));\n} catch (e) {\n  text(String(e));\n}\ntext(\"HERMETIC-CELL-END\");\n","internal_chat_message_metadata_passthrough":{}}}
+{}
+{}
+{"timestamp":"2026-10-27T06:43:00.289Z","ordinal":0,"type":"response_item","payload":{"type":"custom_tool_call_output","id":"","call_id":"call_dxdTtHqfe89gHq4H","output":[],"internal_chat_message_metadata_passthrough":{}},"metadata":{}}
+{"timestamp":"2026-10-27T06:43:00.290Z","ordinal":0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{},"last_token_usage":{"input_tokens":12,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":7,"reasoning_output_tokens":0,"total_tokens":0},"model_context_window":0},"rate_limits":{}}}
+{}
+{}
+{}
+{}
+{}
+{"timestamp":"2026-10-27T06:43:00.297Z","ordinal":0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{},"last_token_usage":{"input_tokens":12,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":7,"reasoning_output_tokens":0,"total_tokens":0},"model_context_window":0},"rate_limits":{}}}
+{"timestamp":"2026-10-27T06:43:00.306Z","ordinal":0,"type":"event_msg","payload":{"type":"task_complete","root_turn_id":"","turn_id":"01a17c19-117c-7031-8d0e-b26f23d53b91","last_agent_message":"","started_at":0,"completed_at":0,"duration_ms":0,"time_to_first_token_ms":0}}

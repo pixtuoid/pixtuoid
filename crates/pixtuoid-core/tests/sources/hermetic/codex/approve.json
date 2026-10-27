@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "Generate a concise, single-line task title" },
+      "response": { "content": "Hermetic", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "approved", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt", "sandbox_permissions": "require_escalated", "justification": "Read the note?" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}

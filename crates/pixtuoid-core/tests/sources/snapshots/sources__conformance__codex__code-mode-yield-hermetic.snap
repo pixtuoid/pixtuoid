@@ -1,0 +1,79 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- TurnStart:
+    agent_id: 9157567666502660018
+    turn:
+      Id: 01a17c19-d1fc-70c0-b232-d9bf63ca2523
+- ToolUseStart:
+    agent_id: 9157567666502660018
+    tool_use_id: ~
+    detail: ~
+- ModelInfo:
+    agent_id: 9157567666502660018
+    model: gpt-5.5
+    effort: high
+- ToolUseStart:
+    agent_id: 9157567666502660018
+    tool_use_id: call_Os0emwLWapdk-nqH
+    detail:
+      Generic:
+        display: exec
+- ToolUseEnd:
+    agent_id: 9157567666502660018
+    tool_use_id: call_Os0emwLWapdk-nqH
+- ToolUseStart:
+    agent_id: 9157567666502660018
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 9157567666502660018
+    fresh_tokens: 19
+- ToolUseStart:
+    agent_id: 9157567666502660018
+    tool_use_id: call_hermetic_wait_cell_1
+    detail:
+      Generic:
+        display: wait
+- ToolUseEnd:
+    agent_id: 9157567666502660018
+    tool_use_id: call_hermetic_wait_cell_1
+- ToolUseStart:
+    agent_id: 9157567666502660018
+    tool_use_id: ~
+    detail: ~
+- Usage:
+    agent_id: 9157567666502660018
+    fresh_tokens: 19
+- Usage:
+    agent_id: 9157567666502660018
+    fresh_tokens: 19
+- TurnEnd:
+    agent_id: 9157567666502660018
+    turn:
+      Id: 01a17c19-d1fc-70c0-b232-d9bf63ca2523
+- SessionStart:
+    agent_id: 9157567666502660018
+    source: codex
+    session_id: 01a17c19-d1c8-7c63-8c2c-f947e0b8d8d6
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 9157567666502660018
+    model: gpt-5.5
+    effort: ~
+- SessionStart:
+    agent_id: 9157567666502660018
+    source: codex
+    session_id: 01a17c19-d1c8-7c63-8c2c-f947e0b8d8d6
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- UserActionResolved:
+    agent_id: 9157567666502660018
+    by:
+      Turn:
+        Id: 01a17c19-d1fc-70c0-b232-d9bf63ca2523
+- SessionEnd:
+    agent_id: 9157567666502660018
+    as_child: false

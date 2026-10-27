@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::{AgentEvent, Transport};
+use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
@@ -128,7 +128,15 @@ fn tool_use_end(
 }
 
 fn turn_end(r: &mut Reducer, scene: &mut SceneState, id: AgentId, at: SystemTime, tp: Transport) {
-    r.apply(scene, AgentEvent::TurnEnd { agent_id: id }, at, tp);
+    r.apply(
+        scene,
+        AgentEvent::TurnEnd {
+            agent_id: id,
+            turn: None,
+        },
+        at,
+        tp,
+    );
 }
 
 fn user_action_request(
@@ -141,11 +149,7 @@ fn user_action_request(
 ) {
     r.apply(
         scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some(reason.into()),
-            tool_use_id: None,
-        },
+        AgentEvent::user_action_request(id, Some(reason.into()), RequestKeys::default()),
         at,
         tp,
     );
@@ -161,13 +165,11 @@ fn user_action_request_for(
     at: SystemTime,
     tp: Transport,
 ) {
+    let mut keys = RequestKeys::default();
+    keys.tool_use_id = tool_use_id.map(Into::into);
     r.apply(
         scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some(reason.into()),
-            tool_use_id: tool_use_id.map(Into::into),
-        },
+        AgentEvent::user_action_request(id, Some(reason.into()), keys),
         at,
         tp,
     );

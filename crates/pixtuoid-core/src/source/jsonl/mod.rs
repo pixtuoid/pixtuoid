@@ -8,8 +8,8 @@ use notify::RecursiveMode;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use crate::source::TaggedSender;
 use crate::source::exit_watch::ExitWatch;
+use crate::source::{DEFAULT_POLL_INTERVAL, TaggedSender};
 
 mod follow;
 mod health;
@@ -209,9 +209,6 @@ impl std::fmt::Debug for JsonlWatcher {
 }
 
 const DEFAULT_INITIAL_WINDOW: Duration = Duration::from_secs(3600);
-/// The watcher's poll backstop — also the cadence profile rescans ride, so
-/// "how often we look at the filesystem" has one authority.
-pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Test-only seam: forces every recursive root watch in this process onto a
 /// polling backend (`notify::PollWatcher`) at `interval`, instead of the native

@@ -59,18 +59,19 @@ impl Key {
 pub(crate) struct Gate {
     /// Text on screen only while the dialog is open.
     pub(crate) shows: &'static str,
-    /// The keys that refuse it.
-    pub(crate) deny: &'static [Key],
+    /// The keys the run answers it with: a refusal, unless its row is one
+    /// that approves.
+    pub(crate) keys: &'static [Key],
     /// How long it must stand before it is answered: a key it ignores is lost.
     pub(crate) dwell: Duration,
 }
 
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
-    /// Refuse its dialog with its gate's `deny` keys; the turn is over once
-    /// refused and the screen settles.
-    Deny,
+pub(crate) enum Answer {
+    /// Answer its dialog with its gate's `keys`; the turn is over once
+    /// answered and the screen settles.
+    Gate,
     /// Cancel it with its row's `cancel` keys once the screen shows its reply
     /// streaming; the turn is over once cancelled and the screen settles.
     Cancel,
@@ -83,7 +84,7 @@ impl Answer {
     /// What the screen must show before this answer is given, if anything.
     pub(crate) const fn awaits(self) -> Option<&'static str> {
         match self {
-            Self::Deny => Some("a gate the driver knows to refuse"),
+            Self::Gate => Some("a gate the driver knows to answer"),
             Self::Cancel => Some("its reply streaming for the driver to cancel"),
             Self::Nothing => None,
         }
@@ -131,8 +132,8 @@ pub struct Tui {
     /// included; no prompt.
     pub(crate) args: &'static [&'static str],
     pub(crate) composer: Composer,
-    /// Every dialog the turn may raise; one per run, since its script calls no
-    /// tool after the refusal (`a_permission_script_calls_no_tool_after_its_refusal`).
+    /// Every dialog the turn may raise; one per turn, since its script calls no
+    /// tool after the gate's answer (`a_permission_script_calls_no_tool_after_its_gated_call`).
     /// One the table doesn't name stalls the run.
     pub(crate) gates: &'static [Gate],
     /// What cancels a running turn the way a user would, for a run that
@@ -214,13 +215,15 @@ struct Open {
     since: Instant,
 }
 
-/// The state machine one run steps through, its turn over once [`Answer`]
+/// The state machine one run steps through, its turn over once its `Answer`
 /// says.
 #[derive(Debug)]
 pub struct Driver<'a> {
     tui: &'a Tui,
     answer: Answer,
     prompt: String,
+    /// The prompt typed once the first turn settles, in the same session.
+    then: Option<String>,
     phase: Phase,
     screen: String,
     changed_at: Instant,
@@ -234,17 +237,25 @@ const PROMPT_HEAD: usize = 16;
 
 impl<'a> Driver<'a> {
     /// A run through `tui`, typing `prompt` and answering as `answer` says.
-    pub fn new(tui: &'a Tui, answer: Answer, prompt: String, now: Instant) -> Self {
+    pub(crate) fn new(tui: &'a Tui, answer: Answer, prompt: String, now: Instant) -> Self {
         Self {
             tui,
             answer,
             prompt,
+            then: None,
             phase: Phase::Boot,
             screen: String::new(),
             changed_at: now,
             open: None,
             answered: false,
         }
+    }
+
+    /// The same run with a second turn, `prompt`, typed into its session.
+    #[must_use]
+    pub(crate) fn then(mut self, prompt: &str) -> Self {
+        self.then = Some(prompt.to_owned());
+        self
     }
 
     /// The next action for the screen as it now reads.
@@ -291,6 +302,12 @@ impl<'a> Driver<'a> {
                     && self.changed_at > enter_at
                     && now.duration_since(self.changed_at) >= SETTLE =>
             {
+                if let Some(next) = self.then.take() {
+                    self.prompt = next;
+                    self.phase = Phase::Typed;
+                    (self.answered, self.open) = (false, None);
+                    return Action::Type(self.prompt.clone());
+                }
                 self.phase = Phase::Quit;
                 Action::Quit(self.tui.quit)
             }
@@ -311,18 +328,18 @@ impl<'a> Driver<'a> {
         self.answer.awaits().is_some() && !self.answered
     }
 
-    /// Its answer's cue on screen, if one stands: for a refusal the first
-    /// dialog its row lists, for a cancel the reply's first line.
+    /// Its answer's cue on screen, if one stands: for a gate the first dialog
+    /// its row lists, for a cancel the reply's first line.
     fn cue(&self) -> Option<Cue> {
         match self.answer {
-            Answer::Deny => self
+            Answer::Gate => self
                 .tui
                 .gates
                 .iter()
                 .find(|g| self.screen.contains(g.shows))
                 .map(|g| Cue {
                     shows: g.shows,
-                    keys: g.deny,
+                    keys: g.keys,
                     dwell: g.dwell,
                 }),
             Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
@@ -335,7 +352,7 @@ impl<'a> Driver<'a> {
     }
 
     /// Its answer, once its cue has stood its dwell after the prompt was
-    /// submitted; a cue before that stalls the run. Once per run: a frame
+    /// submitted; a cue before that stalls the run. Once per turn: a frame
     /// drawn before the answer landed still shows its cue, and a second key
     /// would land on the turn.
     fn answer(&mut self, now: Instant) -> Option<Action> {
@@ -366,7 +383,7 @@ impl<'a> Driver<'a> {
 
     /// Whether a dialog its row lists stands ([`Tui::gates`]): nothing else is
     /// sent then, so no Enter can land on it and pick its first choice, and
-    /// one its answer does not refuse stalls the run like any dialog nobody
+    /// one its answer leaves standing stalls the run like any dialog nobody
     /// planned for.
     fn dialog_open(&self) -> bool {
         self.tui.gates.iter().any(|g| self.screen.contains(g.shows))
@@ -500,14 +517,15 @@ impl CommandLine {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Surface, profile};
+    use super::super::{Second, Surface, profile};
     use super::*;
 
     const BOOT: &str = include_str!("screens/claude-code-boot.txt");
     const READY: &str = include_str!("screens/claude-code-ready.txt");
     const GATE: &str = include_str!("screens/claude-code-gate.txt");
     const DONE: &str = include_str!("screens/claude-code-done.txt");
-    const PROMPT: &str = "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
+    /// What every recorded screen's run typed.
+    const PROMPT: &str = crate::harness::plan::DEFAULT_PROMPT;
     const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
     const CODEX_CANCEL: &str = include_str!("screens/codex-cancel.txt");
@@ -526,7 +544,7 @@ mod tests {
             .and_then(|p| p.scenario(name))
             .expect("profiled");
         match s.surface {
-            Surface::Tui { row } => (row, s.shape.answer()),
+            Surface::Tui { row } => (row, s.answer()),
             Surface::Headless => panic!("{source}/{name} drives no TUI"),
         }
     }
@@ -658,7 +676,7 @@ mod tests {
     #[test]
     fn hermes_enters_nothing_into_its_working_turn_nor_onto_its_echo() {
         let (tui, answer) = tui_scenario("hermes", "permission");
-        let [refused] = tui.gates else {
+        let [gate] = tui.gates else {
             panic!("one gate");
         };
         let t0 = Instant::now();
@@ -674,7 +692,7 @@ mod tests {
         assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
         assert_eq!(
             next(include_str!("screens/hermes-gate.txt")),
-            Action::Keys(refused.deny)
+            Action::Keys(gate.keys)
         );
         assert_eq!(
             next(include_str!("screens/hermes-echo.txt")),
@@ -722,9 +740,73 @@ mod tests {
     }
 
     #[test]
+    fn a_second_prompt_goes_in_once_the_first_turn_settles_and_the_run_quits_after_its_own() {
+        const SECOND: &str = "List this directory.";
+        let (tui, answer) = omp();
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0).then(SECOND);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(
+            d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
+            Action::Keys(&[Key::Enter])
+        );
+        let t1 = t0 + Duration::from_millis(1);
+        assert_eq!(d.step(OMP_NEW, t1), Action::Wait);
+        assert_eq!(
+            d.step(OMP_NEW, t1 + SETTLE),
+            Action::Type(SECOND.to_owned())
+        );
+        assert_eq!(d.step(OMP_NEW, t1 + SETTLE), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(OMP_NEW, t1 + SETTLE * 2),
+            Action::Wait,
+            "a screen standing since before the second Enter is no second turn's end"
+        );
+        let t2 = t1 + SETTLE * 2 + Duration::from_millis(1);
+        assert_eq!(d.step(OMP_BOOT, t2), Action::Wait);
+        assert_eq!(d.step(OMP_BOOT, t2 + SETTLE), Action::Quit(tui.quit));
+    }
+
+    #[test]
+    fn a_second_turn_answers_its_own_gate() {
+        const SECOND: &str = "Second turn.";
+        let (tui, answer) = tui_scenario("codex", "permission");
+        let [gate] = tui.gates else {
+            panic!("one gate");
+        };
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0).then(SECOND);
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Keys(&[Key::Enter]));
+        let mut t = t0;
+        for turn in ["first", "second"] {
+            t += Duration::from_millis(1);
+            assert_eq!(
+                d.step(CODEX_GATE, t),
+                Action::Wait,
+                "{turn}: inside its dwell"
+            );
+            t += gate.dwell;
+            assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.keys), "{turn}");
+            t += Duration::from_millis(1);
+            assert_eq!(
+                d.step(CODEX_BOOT, t),
+                Action::Wait,
+                "{turn}: the screen moved"
+            );
+            t += SETTLE;
+            if turn == "first" {
+                assert_eq!(d.step(CODEX_BOOT, t), Action::Type(SECOND.to_owned()));
+                assert_eq!(d.step(CODEX_BOOT, t), Action::Keys(&[Key::Enter]));
+            }
+        }
+        assert_eq!(d.step(CODEX_BOOT, t), Action::Quit(tui.quit));
+    }
+
+    #[test]
     fn a_run_quits_unanswered_only_where_it_answers_nothing() {
         let (tui, _) = omp();
-        for answer in [Answer::Deny, Answer::Cancel, Answer::Nothing] {
+        for answer in [Answer::Gate, Answer::Cancel, Answer::Nothing] {
             let t0 = Instant::now();
             let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
             assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
@@ -735,7 +817,7 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             assert_eq!(d.step(OMP_NEW, moved), Action::Wait);
             let end = match answer {
-                Answer::Deny | Answer::Cancel => Action::Wait,
+                Answer::Gate | Answer::Cancel => Action::Wait,
                 Answer::Nothing => Action::Quit(tui.quit),
             };
             assert_eq!(d.step(OMP_NEW, moved + SETTLE), end, "{answer:?}");
@@ -954,62 +1036,99 @@ mod tests {
     }
 
     /// Each row over its run's recorded boot screen and the screen its turn
-    /// ended at: the gate it refused or the reply it cancelled, where it
+    /// ended at: the gate it answered or the reply it cancelled, where it
     /// answers one.
     #[test]
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
-        let recorded = [
-            ("claude-code", "permission", BOOT, GATE),
-            ("codex", "permission", CODEX_BOOT, CODEX_GATE),
-            ("codex", "cancel", CODEX_BOOT, CODEX_CANCEL),
+        const CODEX_TURN_ONE: &str = include_str!("screens/codex-turn-one.txt");
+        const GROK_TURN_ONE: &str = include_str!("screens/grok-turn-one.txt");
+        // Each run's boot screen, then the screen each of its turns ended at:
+        // the gate it answered or the reply it cancelled, where it answers one.
+        let recorded: [(&str, &str, &str, &[&str]); 19] = [
+            ("claude-code", "permission", BOOT, &[GATE]),
+            ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
+            ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
+            (
+                "codex",
+                "two-turn",
+                CODEX_BOOT,
+                &[CODEX_TURN_ONE, include_str!("screens/codex-turn-two.txt")],
+            ),
+            (
+                "codex",
+                "refuse-then-prompt",
+                CODEX_BOOT,
+                &[
+                    CODEX_GATE,
+                    include_str!("screens/codex-refused.txt"),
+                    include_str!("screens/codex-gate-again.txt"),
+                    include_str!("screens/codex-refused-again.txt"),
+                ],
+            ),
+            // The same dialog as the refused one's, answered otherwise.
+            ("codex", "approve", CODEX_BOOT, &[CODEX_GATE]),
+            (
+                "codex",
+                "policy-deny",
+                CODEX_BOOT,
+                &[include_str!("screens/codex-policy-denied.txt")],
+            ),
+            ("codex", "code-mode-gate", CODEX_BOOT, &[CODEX_GATE]),
+            ("codex", "code-mode-approve", CODEX_BOOT, &[CODEX_GATE]),
             (
                 "opencode",
                 "cancel",
                 include_str!("screens/opencode-boot.txt"),
-                include_str!("screens/opencode-cancel.txt"),
+                &[include_str!("screens/opencode-cancel.txt")],
             ),
             (
                 "kimi",
                 "permission",
                 include_str!("screens/kimi-boot.txt"),
-                include_str!("screens/kimi-gate.txt"),
+                &[include_str!("screens/kimi-gate.txt")],
             ),
             (
                 "grok",
                 "permission",
                 include_str!("screens/grok-boot.txt"),
-                include_str!("screens/grok-gate.txt"),
+                &[include_str!("screens/grok-gate.txt")],
+            ),
+            (
+                "grok",
+                "two-turn",
+                include_str!("screens/grok-boot.txt"),
+                &[GROK_TURN_ONE, include_str!("screens/grok-turn-two.txt")],
             ),
             (
                 "reasonix",
                 "permission",
                 include_str!("screens/reasonix-boot.txt"),
-                include_str!("screens/reasonix-gate.txt"),
+                &[include_str!("screens/reasonix-gate.txt")],
             ),
-            ("omp", "new-session", OMP_BOOT, OMP_NEW),
+            ("omp", "new-session", OMP_BOOT, &[OMP_NEW]),
             (
                 "hermes",
                 "permission",
                 include_str!("screens/hermes-boot.txt"),
-                include_str!("screens/hermes-gate.txt"),
+                &[include_str!("screens/hermes-gate.txt")],
             ),
             (
                 "codewhale",
                 "tool-run",
                 CODEWHALE_BOOT,
-                include_str!("screens/codewhale-done.txt"),
+                &[include_str!("screens/codewhale-done.txt")],
             ),
             (
                 "codewhale",
                 "permission",
                 CODEWHALE_BOOT,
-                include_str!("screens/codewhale-gate.txt"),
+                &[include_str!("screens/codewhale-gate.txt")],
             ),
             (
                 "codewhale",
                 "child-error",
                 CODEWHALE_BOOT,
-                include_str!("screens/codewhale-child-failed.txt"),
+                &[include_str!("screens/codewhale-child-failed.txt")],
             ),
         ];
         let scenarios: Vec<(&str, &str)> = super::super::PROFILES
@@ -1022,47 +1141,116 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            recorded.map(|(source, name, ..)| (source, name)).to_vec(),
+            recorded
+                .iter()
+                .map(|(source, name, ..)| (*source, *name))
+                .collect::<Vec<_>>(),
             scenarios
         );
-        for (source, name, boot, end) in recorded {
-            let (tui, answer) = tui_scenario(source, name);
+        for (source, name, boot, ends) in recorded {
+            let scenario = profile(source)
+                .and_then(|p| p.scenario(name))
+                .expect("profiled");
+            let Surface::Tui { row: tui } = scenario.surface else {
+                panic!("{source}/{name} drives no TUI");
+            };
             let t0 = Instant::now();
-            let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+            let mut d = scenario
+                .tui_driver(PROMPT.to_owned(), t0)
+                .expect("a TUI scenario's driver");
             assert_eq!(
                 d.step(boot, t0),
                 Action::Type(PROMPT.to_owned()),
-                "{source}"
+                "{source}/{name}"
             );
-            assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
+            assert_eq!(
+                d.step(boot, t0),
+                Action::Keys(&[Key::Enter]),
+                "{source}/{name}"
+            );
             let moved = t0 + Duration::from_millis(1);
-            let first = match answer {
-                Answer::Deny => None,
-                Answer::Cancel => Some(Action::Keys(tui.cancel)),
-                Answer::Nothing => Some(Action::Wait),
+            let (first, then) = match scenario.answer() {
+                Answer::Gate => {
+                    let [gate] = tui.gates else {
+                        panic!("{source}: one gate per row");
+                    };
+                    let (end, rest) = ends.split_first().expect("a gate");
+                    let answers: Vec<Action> = [t0, t0 + gate.dwell]
+                        .map(|t| d.step(end, t))
+                        .into_iter()
+                        .filter(|a| *a != Action::Wait)
+                        .collect();
+                    assert_eq!(answers, [Action::Keys(gate.keys)], "{source}/{name}");
+                    let mut t = t0 + gate.dwell + SETTLE;
+                    assert_eq!(
+                        d.step(end, t),
+                        Action::Wait,
+                        "{source}/{name}: a repeat would land on the turn"
+                    );
+                    let Some(Second::Prompt(second)) = scenario.turn.second else {
+                        assert!(rest.is_empty(), "{source}/{name}: one turn");
+                        continue;
+                    };
+                    // The screen each gate left, and the second turn's gate.
+                    let [after, again, last] = rest else {
+                        panic!("{source}/{name}: two turns' gates and what each left");
+                    };
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(after, t), Action::Wait, "{source}/{name}");
+                    t += SETTLE;
+                    assert_eq!(d.step(after, t), Action::Type(second.to_owned()));
+                    assert_eq!(d.step(after, t), Action::Keys(&[Key::Enter]));
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(again, t), Action::Wait, "{source}/{name}: its dwell");
+                    t += gate.dwell;
+                    assert_eq!(d.step(again, t), Action::Keys(gate.keys), "{source}/{name}");
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(last, t), Action::Wait, "{source}/{name}");
+                    assert_eq!(
+                        d.step(last, t + SETTLE),
+                        Action::Quit(tui.quit),
+                        "{source}/{name}"
+                    );
+                    continue;
+                }
+                Answer::Cancel => (Action::Keys(tui.cancel), ends),
+                Answer::Nothing => (Action::Wait, ends),
             };
-            if let Some(first) = first {
-                assert_eq!(d.step(end, moved), first, "{source}: the screen moved");
+            let (end, later) = then.split_first().expect("a turn's end");
+            assert_eq!(
+                d.step(end, moved),
+                first,
+                "{source}/{name}: the screen moved"
+            );
+            let settled = moved + SETTLE;
+            let Some(Second::Prompt(second)) = scenario.turn.second else {
+                assert!(later.is_empty(), "{source}/{name}: one turn");
                 assert_eq!(
-                    d.step(end, moved + SETTLE),
+                    d.step(end, settled),
                     Action::Quit(tui.quit),
-                    "{source}"
+                    "{source}/{name}"
                 );
                 continue;
-            }
-            let [refused] = tui.gates else {
-                panic!("{source}: one gate per row");
             };
-            let answers: Vec<Action> = [t0, t0 + refused.dwell]
-                .map(|t| d.step(end, t))
-                .into_iter()
-                .filter(|a| *a != Action::Wait)
-                .collect();
-            assert_eq!(answers, [Action::Keys(refused.deny)], "{source}");
+            let [last] = later else {
+                panic!("{source}/{name}: two turns' ends");
+            };
             assert_eq!(
-                d.step(end, t0 + refused.dwell + SETTLE),
-                Action::Wait,
-                "{source}: a repeat would land on the turn"
+                d.step(end, settled),
+                Action::Type(second.to_owned()),
+                "{source}/{name}"
+            );
+            assert_eq!(
+                d.step(end, settled),
+                Action::Keys(&[Key::Enter]),
+                "{source}/{name}"
+            );
+            let moved = settled + Duration::from_millis(1);
+            assert_eq!(d.step(last, moved), Action::Wait, "{source}/{name}");
+            assert_eq!(
+                d.step(last, moved + SETTLE),
+                Action::Quit(tui.quit),
+                "{source}/{name}"
             );
         }
     }

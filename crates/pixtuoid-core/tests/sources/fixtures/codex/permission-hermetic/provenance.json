@@ -2,18 +2,17 @@
   "origin": "recorded",
   "cli": "codex",
   "version": "codex-cli 0.164.0",
-  "captured": "2026-10-23",
+  "captured": "2026-10-27",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 94
+    "blanked": 82
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codex/permission.json",
   "dropped": {
     "os": "macos",
     "at": {
-      "/payload/arguments/sandbox_permissions": [],
       "/payload/type": [
         "item_completed",
         "message",

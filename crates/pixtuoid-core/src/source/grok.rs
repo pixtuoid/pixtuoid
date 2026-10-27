@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -184,11 +184,11 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                         .unwrap_or(kind);
                     Ok(vec![
                         identity(),
-                        AgentEvent::UserActionRequest {
+                        AgentEvent::user_action_request(
                             agent_id,
-                            reason: Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
-                            tool_use_id: None,
-                        },
+                            Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
+                            RequestKeys::default(),
+                        ),
                     ])
                 }
                 // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
@@ -868,7 +868,7 @@ mod tests {
             "hookEventName": "stop",
             "cwd": "/Users/dev/proj"
         }));
-        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id }
+        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id, .. }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
     }
 
