@@ -14,13 +14,6 @@
 //! and CONSISTENT across every CLI event, so concurrent sessions in one project
 //! stay distinct.
 //!
-//! - **A start's `tool_use_id` is DROPPED deliberately — do not "fix"
-//!   that.** `Task` fires `preToolUse` and NEVER a post (capture-verified), so
-//!   passing the id through would satisfy `track_tasks_in_flight`' `Some(tuid)` arm,
-//!   insert a tuid nothing drains, and strand the parent Delegating for the rest
-//!   of the session. A post's id is kept: it equals its start's, and an id-less
-//!   start's item matches any keyed end. Pinned by
-//!   `only_a_post_keeps_its_tool_use_id`.
 //! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
 //!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
 //!   user who connected both CLIs gets each cursor event again through CC's shim,
@@ -119,7 +112,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
-                    tool_use_id: None,
+                    tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
                     detail: Some(cursor_tool_detail(tool, obj.get("tool_input"))),
                 },
             ])
@@ -230,15 +223,12 @@ mod tests {
         );
     }
 
-    /// The wire's `tool_use_id` pairs a start with its post. A start's is
-    /// dropped on purpose: wiring it would let `track_tasks_in_flight` claim
-    /// cursor's `Task` — which never gets a `postToolUse` — and strand the parent
-    /// Delegating. See the module doc before changing this.
+    /// The wire's `tool_use_id` pairs a start with its post.
     #[test]
-    fn only_a_post_keeps_its_tool_use_id() {
+    fn a_start_and_its_post_keep_their_tool_use_id() {
         const ID: &str = "tool_b3a89c28-dbe4-487e-8c70-ea05a83083a";
         for (event, kept) in [
-            ("preToolUse", None),
+            ("preToolUse", Some(ID)),
             ("postToolUse", Some(ID)),
             ("postToolUseFailure", Some(ID)),
         ] {

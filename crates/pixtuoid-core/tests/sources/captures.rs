@@ -282,7 +282,7 @@ fn a_recorded_captures_cli_is_its_trees_binary() {
 /// set so an exemption is a reviewed diff here, never a quiet key in a record:
 /// an exempt capture is the one path inventory data the gitleaks backstop
 /// cannot see has back into the tree.
-const EXEMPT_FROM_STRIP: &[&str] = &["cursor/fixtures/delegation"];
+const EXEMPT_FROM_STRIP: &[&str] = &[];
 
 /// Keys whose VALUE is an operator's account rather than the wire's content. Not
 /// a guess at what a vendor might name one — the strip already removes every field
@@ -499,14 +499,6 @@ fn a_recorded_capture_that_was_edited_says_so() {
     );
 }
 
-/// Captures not yet at their source's pin, each group retired by what its
-/// comment names. It only shrinks: a listed capture that is current, or gone,
-/// leaves the list.
-const OWED_CURRENT: &[&str] = &[
-    // cursor has no hermetic profile (`hermetic::NOT_HERMETIC`): a billed capture.
-    "cursor/fixtures/delegation",
-];
-
 /// `verified_version` is the release the hermetic tier installs and the newest
 /// wire we have SEEN (`hermetic::pin`), so a capture of any other release, or of
 /// none, is outdated. The nightly re-records a profiled CLI's scenarios at each
@@ -530,24 +522,15 @@ fn every_capture_is_recorded_at_its_sources_pin() {
         };
         outdated.insert(c.label(), why);
     }
-    let unlisted: Vec<String> = outdated
-        .iter()
-        .filter(|(at, _)| !OWED_CURRENT.contains(&at.as_str()))
-        .map(|(at, why)| format!("{at}: {why}"))
-        .collect();
     assert!(
-        unlisted.is_empty(),
+        outdated.is_empty(),
         "outdated captures: re-record each at its pin, or delete it once a current \
          one covers its readers:\n  {}",
-        unlisted.join("\n  ")
-    );
-    let paid: Vec<&&str> = OWED_CURRENT
-        .iter()
-        .filter(|at| !outdated.contains_key(**at))
-        .collect();
-    assert!(
-        paid.is_empty(),
-        "current or gone, so they leave OWED_CURRENT: {paid:?}"
+        outdated
+            .iter()
+            .map(|(at, why)| format!("{at}: {why}"))
+            .collect::<Vec<_>>()
+            .join("\n  ")
     );
     let bare: Vec<&str> = registry::registered_source_names()
         .filter(|n| !current.contains(*n))

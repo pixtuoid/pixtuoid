@@ -1,12 +1,13 @@
 {
   "origin": "recorded",
   "cli": "cursor-agent",
-  "version": "unknown",
-  "captured": "unknown",
-  "command": "see the module header",
-  "note": "A real `cursor-agent -p` turn asked for a subagent. Pins the two wire premises `source/cursor.rs` documents and declines to fix: the flat render, and the `Task` id that never pairs. Redacted: home path rewritten to /Users/dev; an account address rewritten to dev@.",
+  "version": "2026.10.22-27dcf5f",
+  "captured": "2026-10-27",
+  "command": "cursor-agent -p --trust --model auto {prompt}",
+  "note": "Redacted: the isolated home's path rewritten to /Users/dev; the account address rewritten to dev@example.com.",
   "deidentified": {
-    "method": "none",
-    "why": "pins two wire premises the decoder drops on purpose — the Task id that never pairs and the flat render (tests/sources/cursor/mod.rs reads them off the raw bytes)"
-  }
+    "method": "decoder-allowlist",
+    "blanked": 45
+  },
+  "prompt": "Use the Task tool to dispatch one subagent that reads NOTE.txt and reports its text back to you. Do not read NOTE.txt yourself."
 }
