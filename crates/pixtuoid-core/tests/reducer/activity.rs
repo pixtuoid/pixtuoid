@@ -2413,6 +2413,37 @@ fn an_unnamed_childs_pre_use_stays_out_of_its_parents_request() {
     }
 }
 
+/// kimi's parent call that ends while its Task runs: the end is dropped as
+/// possibly the child's, yet the call still ended.
+#[test]
+fn a_parents_call_ending_while_its_task_runs_is_not_shown_after_the_drain() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "sess-k");
+    start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
+    feed(&mut r, &mut scene, kimi_hook("PreToolUse", "Bash", "P"), t0);
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PreToolUse", "Agent", "T"),
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PostToolUse", "Bash", "P"),
+        t0,
+    );
+    feed(
+        &mut r,
+        &mut scene,
+        kimi_hook("PostToolUse", "Agent", "T"),
+        t0,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
 /// After an oversized skip or a late attach no turn is open, so the rollout's
 /// start of a call registers it turnless; the hook's pre-use then names its
 /// turn, which the prompt is scoped to.

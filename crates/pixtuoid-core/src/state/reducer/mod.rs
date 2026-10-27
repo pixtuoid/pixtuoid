@@ -1372,6 +1372,16 @@ impl Reducer {
             AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { .. } => in_task,
             _ => false,
         };
+        // A dropped end may be the parent's own call's, whose start was kept;
+        // a child's call never registered, its start dropped too.
+        if suppress
+            && let AgentEvent::ToolUseEnd {
+                tool_use_id: Some(call),
+                ..
+            } = event
+        {
+            self.corr.action_requests.retire(&id, call);
+        }
         if suppress
             && let Some(tasks) = tasks
             && let Some(slot) = scene.agents.get_mut(&id)
