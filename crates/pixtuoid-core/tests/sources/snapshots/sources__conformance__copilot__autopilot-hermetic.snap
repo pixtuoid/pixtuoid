@@ -3,39 +3,42 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 5417644779581142319
+    agent_id: 3196156340769628981
     source: copilot
-    session_id: fd97bd76-ca8e-48c5-b720-4d5dd054a47f
+    session_id: a746bb56-9ae8-43f7-b8a9-6713358c27f0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ToolUseStart:
-    agent_id: 5417644779581142319
-    tool_use_id: call_vziMQIaVsrE30iE8
+    agent_id: 3196156340769628981
+    tool_use_id: call_8iX5iQuyWL2AvsVf
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 5417644779581142319
-    tool_use_id: call_vziMQIaVsrE30iE8
+    agent_id: 3196156340769628981
+    tool_use_id: call_8iX5iQuyWL2AvsVf
 - ModelInfo:
-    agent_id: 5417644779581142319
+    agent_id: 3196156340769628981
     model: gpt-4.1
     effort: ~
 - ToolUseStart:
-    agent_id: 5417644779581142319
-    tool_use_id: call_DSO0lX6Bc0FTCoVT
+    agent_id: 3196156340769628981
+    tool_use_id: call_JekUM_ZSHNH9uY4M
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 5417644779581142319
-    tool_use_id: call_DSO0lX6Bc0FTCoVT
+    agent_id: 3196156340769628981
+    tool_use_id: call_JekUM_ZSHNH9uY4M
 - ModelInfo:
-    agent_id: 5417644779581142319
+    agent_id: 3196156340769628981
     model: gpt-4.1
     effort: ~
 - TurnEnd:
-    agent_id: 5417644779581142319
+    agent_id: 3196156340769628981
 - SessionEnd:
-    agent_id: 5417644779581142319
+    agent_id: 3196156340769628981
     as_child: false
+- Usage:
+    agent_id: 3196156340769628981
+    fresh_tokens: 14371

@@ -6,7 +6,7 @@
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 38
+    "blanked": 53
   },
   "aimock": "1.47.0",
   "script": "tests/sources/hermetic/copilot/tool-run.json",
