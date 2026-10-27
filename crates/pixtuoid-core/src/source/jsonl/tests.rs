@@ -2679,8 +2679,8 @@ async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
     let (mut r, mut scene) = (crate::Reducer::new(), crate::SceneState::uniform(4));
     let t0 = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let id = events[start].1.agent_id();
-    // The walk's own registration is under its `test` source and deriver; the
-    // reducer opens a turn only for a codex slot.
+    // The walk registers its own slot under its `test` source and deriver, and
+    // `test` sets no `SourceCaps::brackets_turns`; a codex slot does.
     let codex = AgentEvent::SessionStart {
         agent_id: id,
         source: crate::source::codex::SOURCE_NAME.into(),

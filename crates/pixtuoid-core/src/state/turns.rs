@@ -58,8 +58,8 @@ impl TurnLedger {
         if self.is_closed(id, &key, now) {
             return Start::Stale;
         }
-        // An in-order stream never starts its newest position again, so only
-        // the open turn's start repeats.
+        // A start of the newest position replays an ended turn unless that
+        // turn is still open: an in-order stream never restarts a position.
         let restarted = self.newest.get(&id) == Some(&key) && self.open.get(&id) != Some(&key);
         if restarted || self.is_older_than_newest(id, &key) {
             self.closed.insert((id, key), now);
