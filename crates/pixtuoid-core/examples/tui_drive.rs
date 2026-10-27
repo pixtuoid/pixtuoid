@@ -72,7 +72,7 @@ fn tui_of(source: &str, scenario: &str) -> std::io::Result<(&'static Tui, Answer
         .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
         .scenario(scenario)
         .and_then(|s| match s.surface {
-            Surface::Tui { row, answer } => Some((row, answer)),
+            Surface::Tui { row } => Some((row, s.shape.answer())),
             Surface::Headless => None,
         })
         .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))

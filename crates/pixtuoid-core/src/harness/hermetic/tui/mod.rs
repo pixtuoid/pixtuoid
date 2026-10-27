@@ -80,8 +80,8 @@ pub enum Answer {
 }
 
 impl Answer {
-    /// What the turn must show before this answer is given, where it owes one.
-    pub(crate) const fn owed(self) -> Option<&'static str> {
+    /// What the screen must show before this answer is given, if anything.
+    pub(crate) const fn awaits(self) -> Option<&'static str> {
         match self {
             Self::Deny => Some("a gate the driver knows to refuse"),
             Self::Cancel => Some("its reply streaming for the driver to cancel"),
@@ -93,17 +93,17 @@ impl Answer {
 /// Where a CLI's composer is on screen.
 #[derive(Debug)]
 pub(crate) struct Composer {
-    /// What its input line starts with, at the line's first column unless its
-    /// frame finds the line by position. A dialog's highlighted choice and the
+    /// What its input line starts with, at the line's first column, or at any
+    /// indent under [`Border::Footed`]. A dialog's highlighted choice and the
     /// conversation's echo of a prompt can start with it too.
     pub(crate) marker: &'static str,
-    pub(crate) frame: Frame,
+    pub(crate) border: Border,
 }
 
 /// What a composer draws around its input line, which tells the input line
 /// from the other marked lines.
 #[derive(Debug)]
-pub(crate) enum Frame {
+pub(crate) enum Border {
     /// A rule of `glyph` above it, between `corners` when the composer is
     /// boxed; no other marked line sits under it.
     Rule {
@@ -112,8 +112,8 @@ pub(crate) enum Frame {
     },
     /// A rule of `glyph` above it, which may carry a title, and another under
     /// it: the input line is the one under the screen's next-to-last rule,
-    /// since a pair of them also frames the conversation's echo of a prompt.
-    Between { glyph: char },
+    /// since a pair of them also borders the conversation's echo of a prompt.
+    Rules { glyph: char },
     /// A box closed by a bottom edge opening with `edge`, the input line
     /// `rows` rows above the screen's last such edge, at any indent: the
     /// conversation's echo of a prompt wears the same marker, in a box with no
@@ -197,10 +197,20 @@ enum Phase {
     Quit,
 }
 
-/// A dialog on screen: its row in the gate table, and when it appeared.
+/// What a run's answer waits for on screen, and how it is given.
+#[derive(Debug, Clone, Copy)]
+struct Cue {
+    /// Text on screen while it stands.
+    shows: &'static str,
+    keys: &'static [Key],
+    /// As [`Gate::dwell`].
+    dwell: Duration,
+}
+
+/// A cue on screen, and when it appeared.
 #[derive(Debug, Clone, Copy)]
 struct Open {
-    gate: usize,
+    shows: &'static str,
     since: Instant,
 }
 
@@ -249,8 +259,11 @@ impl<'a> Driver<'a> {
         if now.duration_since(self.changed_at) >= STALL {
             return Action::Fail("the screen stood still with the turn unfinished");
         }
-        if let Some(action) = self.gate(now) {
+        if let Some(action) = self.answer(now) {
             return action;
+        }
+        if self.dialog_open() {
+            return Action::Wait;
         }
         match self.phase {
             Phase::Boot if self.composer().is_some() => {
@@ -269,15 +282,6 @@ impl<'a> Driver<'a> {
                 }
                 self.phase = Phase::Submitted { enter_at: now };
                 Action::Keys(&[Key::Enter])
-            }
-            // Once: a second press lands on the composer the cancel returned to.
-            Phase::Submitted { .. }
-                if self.answer == Answer::Cancel
-                    && self.owes_answer()
-                    && self.screen.contains(super::STREAM_CUE) =>
-            {
-                self.answered = true;
-                Action::Keys(self.tui.cancel)
             }
             // The screen must move after the Enter: one standing since before
             // it may hold a prompt the CLI dropped, its command never run. A
@@ -304,60 +308,81 @@ impl<'a> Driver<'a> {
 
     /// Whether the turn still waits on what its answer answers.
     fn owes_answer(&self) -> bool {
-        self.answer.owed().is_some() && !self.answered
+        self.answer.awaits().is_some() && !self.answered
     }
 
-    /// A dialog on screen: answered after it has stood its dwell, once the
-    /// prompt is submitted; before that, or in a run that answers none, it
-    /// stalls the run like any dialog nobody planned for. Once per run
-    /// ([`Tui::gates`]): a frame drawn before the answer landed still shows the
-    /// dialog, and so does one after a frame that dropped it; a second key would
-    /// land on the turn. While one is open nothing else is sent, so no Enter can
-    /// land on it and pick its first choice.
-    fn gate(&mut self, now: Instant) -> Option<Action> {
-        let Some(index) = self
-            .tui
-            .gates
-            .iter()
-            .position(|g| self.screen.contains(g.shows))
-        else {
+    /// Its answer's cue on screen, if one stands: for a refusal the first
+    /// dialog its row lists, for a cancel the reply's first line.
+    fn cue(&self) -> Option<Cue> {
+        match self.answer {
+            Answer::Deny => self
+                .tui
+                .gates
+                .iter()
+                .find(|g| self.screen.contains(g.shows))
+                .map(|g| Cue {
+                    shows: g.shows,
+                    keys: g.deny,
+                    dwell: g.dwell,
+                }),
+            Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
+                shows: super::STREAM_CUE,
+                keys: self.tui.cancel,
+                dwell: Duration::ZERO,
+            }),
+            Answer::Nothing => None,
+        }
+    }
+
+    /// Its answer, once its cue has stood its dwell after the prompt was
+    /// submitted; a cue before that stalls the run. Once per run: a frame
+    /// drawn before the answer landed still shows its cue, and a second key
+    /// would land on the turn.
+    fn answer(&mut self, now: Instant) -> Option<Action> {
+        if self.answered {
+            return None;
+        }
+        let Some(cue) = self.cue() else {
             self.open = None;
             return None;
-        };
-        let gate = &self.tui.gates[index];
-        let keys = match self.answer {
-            Answer::Deny => gate.deny,
-            Answer::Cancel | Answer::Nothing => return Some(Action::Wait),
         };
         if !matches!(self.phase, Phase::Submitted { .. }) {
             return Some(Action::Wait);
         }
         let open = match self.open {
-            Some(open) if open.gate == index => open,
+            Some(open) if open.shows == cue.shows => open,
             _ => Open {
-                gate: index,
+                shows: cue.shows,
                 since: now,
             },
         };
         self.open = Some(open);
-        if self.answered || now.duration_since(open.since) < gate.dwell {
+        if now.duration_since(open.since) < cue.dwell {
             return Some(Action::Wait);
         }
         self.answered = true;
-        Some(Action::Keys(keys))
+        Some(Action::Keys(cue.keys))
+    }
+
+    /// Whether a dialog its row lists stands ([`Tui::gates`]): nothing else is
+    /// sent then, so no Enter can land on it and pick its first choice, and
+    /// one its answer does not refuse stalls the run like any dialog nobody
+    /// planned for.
+    fn dialog_open(&self) -> bool {
+        self.tui.gates.iter().any(|g| self.screen.contains(g.shows))
     }
 
     /// The text after the composer's marker on its input line.
     fn composer(&self) -> Option<&str> {
         let composer = &self.tui.composer;
         let lines: Vec<&str> = self.screen.lines().collect();
-        match composer.frame {
-            Frame::Rule { glyph, corners } => lines.windows(2).rev().find_map(|pair| {
+        match composer.border {
+            Border::Rule { glyph, corners } => lines.windows(2).rev().find_map(|pair| {
                 is_rule(pair[0], glyph, corners)
                     .then(|| pair[1].strip_prefix(composer.marker))
                     .flatten()
             }),
-            Frame::Between { glyph } => {
+            Border::Rules { glyph } => {
                 let (top, _) = lines
                     .iter()
                     .enumerate()
@@ -366,7 +391,7 @@ impl<'a> Driver<'a> {
                     .nth(1)?;
                 lines.get(top + 1)?.strip_prefix(composer.marker)
             }
-            Frame::Footed { edge, rows } => {
+            Border::Footed { edge, rows } => {
                 let bottom = lines
                     .iter()
                     .rposition(|l| l.trim_start().starts_with(edge))?;
@@ -375,7 +400,7 @@ impl<'a> Driver<'a> {
                     .trim_start()
                     .strip_prefix(composer.marker)
             }
-            Frame::Nothing => {
+            Border::Nothing => {
                 let typed = lines
                     .iter()
                     .rev()
@@ -495,12 +520,11 @@ mod tests {
 
     /// `source`'s TUI scenario `name`: its row, and how it answers its turn.
     fn tui_scenario(source: &str, name: &str) -> (&'static Tui, Answer) {
-        match profile(source)
+        let s = profile(source)
             .and_then(|p| p.scenario(name))
-            .expect("profiled")
-            .surface
-        {
-            Surface::Tui { row, answer } => (row, answer),
+            .expect("profiled");
+        match s.surface {
+            Surface::Tui { row } => (row, s.shape.answer()),
             Surface::Headless => panic!("{source}/{name} drives no TUI"),
         }
     }
@@ -807,7 +831,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unlisted_dialog_never_reads_as_a_composer_framed_by_nothing() {
+    fn an_unlisted_dialog_never_reads_as_a_composer_with_nothing_above() {
         let unlisted = CODEX_GATE.replace(
             "Would you like to run the following command?",
             "Allow this tool?",

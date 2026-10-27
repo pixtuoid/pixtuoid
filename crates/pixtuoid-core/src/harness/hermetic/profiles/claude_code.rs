@@ -11,7 +11,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--permission-mode", "manual"],
     composer: tui::Composer {
         marker: "❯",
-        frame: tui::Frame::Rule {
+        border: tui::Border::Rule {
             glyph: '─',
             corners: None,
         },
@@ -125,10 +125,7 @@ pub(crate) const PROFILE: Profile = Profile {
         Scenario {
             name: "permission",
             shape: Shape::Permission,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Deny,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "SessionStart",
                 "PreToolUse",

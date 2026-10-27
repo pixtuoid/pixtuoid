@@ -15,7 +15,7 @@ const TUI: tui::Tui = tui::Tui {
     ],
     composer: tui::Composer {
         marker: "›",
-        frame: tui::Frame::Nothing,
+        border: tui::Border::Nothing,
     },
     gates: &[tui::Gate {
         shows: "Would you like to run the following command?",
@@ -153,10 +153,7 @@ trust_level = "trusted"
         Scenario {
             name: "permission",
             shape: Shape::Permission,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Deny,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "SessionStart",
                 "UserPromptSubmit",
@@ -170,10 +167,7 @@ trust_level = "trusted"
         Scenario {
             name: "cancel",
             shape: Shape::Cancel,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Cancel,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &["SessionStart", "UserPromptSubmit", "SessionEnd"],
             fixture: "fixtures/codex/cancel-hermetic",
             turn: Turn::PROFILE,

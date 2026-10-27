@@ -12,7 +12,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &["--accept-hooks", "--cli", "chat"],
     composer: tui::Composer {
         marker: "❯",
-        frame: tui::Frame::Between { glyph: '─' },
+        border: tui::Border::Rules { glyph: '─' },
     },
     gates: &[tui::Gate {
         shows: "Dangerous Command",
@@ -93,10 +93,7 @@ telemetry:
         Scenario {
             name: "permission",
             shape: Shape::Permission,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Deny,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "on_session_start",
                 "pre_tool_call",

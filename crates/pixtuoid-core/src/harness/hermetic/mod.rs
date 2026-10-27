@@ -152,8 +152,7 @@ pub enum Shape {
     /// switches away from ends, and a root session succeeds it.
     Succession,
     /// A turn the user cancels while its reply streams: the session
-    /// registers, and its turn ends. ACP's `cancelled` and A2A's `CANCELED`;
-    /// "interrupt" is a pause for human input in AG-UI and LangGraph.
+    /// registers, and its turn ends.
     Cancel,
 }
 
@@ -190,6 +189,19 @@ impl Shape {
             Self::Succession => false,
         }
     }
+
+    /// How a TUI run answers its turn.
+    pub const fn answer(self) -> tui::Answer {
+        match self {
+            Self::Permission => tui::Answer::Deny,
+            Self::Cancel => tui::Answer::Cancel,
+            Self::ToolRun
+            | Self::Subagent
+            | Self::ModelError
+            | Self::ChildError
+            | Self::Succession => tui::Answer::Nothing,
+        }
+    }
 }
 
 /// Which of a CLI's surfaces a scenario's turn is driven through.
@@ -201,8 +213,6 @@ pub enum Surface {
     Tui {
         /// The CLI's interactive facts.
         row: &'static tui::Tui,
-        /// How the run answers the turn's dialog.
-        answer: tui::Answer,
     },
 }
 
@@ -601,14 +611,15 @@ impl Profile {
     }
 }
 
-/// The first of `scenarios` a leg on `windows` runs and no dialog stops, since
-/// a TUI's gate waits on a hook.
+/// The first of `scenarios` a leg on `windows` runs whose TUI turn, if it has
+/// one, the driver need not answer: a gate waits on a hook, and a cancel's
+/// reply outlasts the turn.
 fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario> {
     scenarios.iter().find(|s| {
         s.not_run_on(windows).is_none()
             && match s.surface {
                 Surface::Headless => true,
-                Surface::Tui { answer, .. } => answer == tui::Answer::Nothing,
+                Surface::Tui { .. } => s.shape.answer() == tui::Answer::Nothing,
             }
     })
 }
@@ -797,63 +808,55 @@ mod tests {
     }
 
     #[test]
-    fn a_lifecycle_turns_a_scenario_its_leg_runs_and_no_dialog_stops() {
-        let tui = |source: &str, name: &str, answer| match profile(source)
-            .and_then(|p| p.scenario(name))
-            .expect("profiled")
-            .surface
-        {
-            Surface::Tui { row, .. } => Surface::Tui { row, answer },
-            Surface::Headless => panic!("{source}/{name} drives no TUI"),
+    fn a_lifecycle_turns_a_scenario_its_leg_runs_and_the_driver_need_not_answer() {
+        let tui = |source: &str, name: &str| {
+            let surface = profile(source)
+                .and_then(|p| p.scenario(name))
+                .expect("profiled")
+                .surface;
+            assert!(
+                matches!(surface, Surface::Tui { .. }),
+                "{source}/{name} drives no TUI"
+            );
+            surface
         };
-        let scenario = |name, surface| Scenario {
+        let scenario = |name, shape, surface| Scenario {
             name,
-            shape: Shape::ToolRun,
+            shape,
             surface,
             expects: &[],
             fixture: name,
             turn: Turn::PROFILE,
         };
         let scenarios = [
-            scenario("gated", tui("claude-code", "permission", tui::Answer::Deny)),
-            scenario("unpainted", tui("grok", "permission", tui::Answer::Nothing)),
-            scenario("ungated", tui("omp", "new-session", tui::Answer::Nothing)),
-            scenario("headless", Surface::Headless),
+            scenario("gated", Shape::Permission, tui("claude-code", "permission")),
+            scenario("cancelled", Shape::Cancel, tui("codex", "cancel")),
+            scenario("unpainted", Shape::ToolRun, tui("grok", "permission")),
+            scenario("ungated", Shape::ToolRun, tui("omp", "new-session")),
+            scenario("headless", Shape::ToolRun, Surface::Headless),
         ];
         let picked = |s: &[Scenario], windows| lifecycle_turn_of(s, windows).map(|s| s.name);
-        assert_eq!(picked(&scenarios[..1], false), None);
-        assert_eq!(picked(&scenarios[..2], false), Some("unpainted"));
+        assert_eq!(picked(&scenarios[..2], false), None);
+        assert_eq!(picked(&scenarios[..3], false), Some("unpainted"));
         assert_eq!(
-            picked(&scenarios[..2], true),
+            picked(&scenarios[..3], true),
             None,
             "ConPTY paints it nothing"
         );
-        assert_eq!(picked(&scenarios[..3], true), Some("ungated"));
-        assert_eq!(picked(&scenarios[3..], true), Some("headless"));
+        assert_eq!(picked(&scenarios[..4], true), Some("ungated"));
+        assert_eq!(picked(&scenarios[4..], true), Some("headless"));
     }
 
     #[test]
-    fn a_tui_turn_answers_exactly_what_its_shape_raises_and_only_a_tui_cancels() {
-        // A turn waiting on a dialog it never raises stalls, and the verdict
-        // blames its CLI; a headless run has no way to cancel its turn.
+    fn a_cancel_runs_on_a_tui_whose_row_names_its_cancel_keys() {
+        // A headless run has no way to cancel its turn.
         for p in PROFILES {
-            for s in p.scenarios {
-                let Surface::Tui { row, answer } = s.surface else {
-                    assert_ne!(s.shape, Shape::Cancel, "{}/{}", p.source, s.name);
-                    continue;
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Cancel) {
+                let Surface::Tui { row } = s.surface else {
+                    panic!("{}/{} runs headless", p.source, s.name);
                 };
-                let raised = match s.shape {
-                    Shape::Permission => tui::Answer::Deny,
-                    Shape::Cancel => tui::Answer::Cancel,
-                    Shape::ToolRun
-                    | Shape::Subagent
-                    | Shape::ModelError
-                    | Shape::ChildError
-                    | Shape::Succession => tui::Answer::Nothing,
-                };
-                assert_eq!(answer, raised, "{}/{}", p.source, s.name);
                 assert!(
-                    answer != tui::Answer::Cancel || !row.cancel.is_empty(),
+                    !row.cancel.is_empty(),
                     "{}: its row names no cancel keys",
                     p.source
                 );
@@ -882,11 +885,15 @@ mod tests {
                 let [stream] = streams[..] else {
                     panic!("{}: {} replies stream", p.source, streams.len());
                 };
-                // aimock paces every chunk by `latency` alone unless one of
-                // these overrides it (`src/sse-writer.ts`'s `calculateDelay`
+                // Any other key may pace or cut the stream (aimock's
+                // `dist/sse-writer.js` `calculateDelay`, `dist/interruption.js`
                 // at v1.45.1).
-                for pace in ["streamingProfile", "recordedTimings", "replaySpeed"] {
-                    assert!(stream.get(pace).is_none(), "{}: {pace}", p.source);
+                for key in stream.as_object().expect("a reply").keys() {
+                    assert!(
+                        ["match", "response", "latency", "chunkSize"].contains(&key.as_str()),
+                        "{}: {key}",
+                        p.source
+                    );
                 }
                 let per_chunk = |key: &str| {
                     stream[key]

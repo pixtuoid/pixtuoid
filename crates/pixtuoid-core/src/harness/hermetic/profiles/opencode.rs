@@ -19,7 +19,7 @@ const TUI: tui::Tui = tui::Tui {
     composer: tui::Composer {
         marker: "┃",
         // The input line, a padding row, then the agent and model above the edge.
-        frame: tui::Frame::Footed {
+        border: tui::Border::Footed {
             edge: '╹', rows: 3
         },
     },
@@ -192,10 +192,7 @@ pub(crate) const PROFILE: Profile = Profile {
         Scenario {
             name: "cancel",
             shape: Shape::Cancel,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Cancel,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "session.created",
                 "session.execution.started",

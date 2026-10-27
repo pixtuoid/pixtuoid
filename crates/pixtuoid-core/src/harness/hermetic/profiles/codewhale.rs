@@ -11,7 +11,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: "│❯",
-        frame: tui::Frame::Rule {
+        border: tui::Border::Rule {
             glyph: '─',
             corners: Some(('╭', '╮')),
         },
@@ -84,10 +84,7 @@ model = "hermetic"
         Scenario {
             name: "tool-run",
             shape: Shape::ToolRun,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Nothing,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "session_start",
                 "message_submit",
@@ -102,10 +99,7 @@ model = "hermetic"
         Scenario {
             name: "permission",
             shape: Shape::Permission,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Deny,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "session_start",
                 "message_submit",
@@ -123,10 +117,7 @@ model = "hermetic"
         Scenario {
             name: "child-error",
             shape: Shape::ChildError,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Nothing,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &[
                 "session_start",
                 "message_submit",

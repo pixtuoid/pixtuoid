@@ -657,18 +657,16 @@ fn judge(
     // Before the Blocked return: a CLI the script lost may then exit non-zero.
     let completed = completed_turn(manifest, scenario.shape, findings);
     let unanswered = match scenario.surface {
-        Surface::Tui { answer, .. }
-            if manifest.capture.end == ProcessExit::Exited(tui::UNANSWERED) =>
-        {
-            answer.owed()
+        Surface::Tui { .. } if manifest.capture.end == ProcessExit::Exited(tui::UNANSWERED) => {
+            scenario.shape.answer().awaits()
         }
         Surface::Tui { .. } | Surface::Headless => None,
     };
-    if let Some(owed) = unanswered
+    if let Some(awaited) = unanswered
         && manifest.requests > 0
         && manifest.unmatched == 0
     {
-        findings.push((Label::Fail, format!("the turn never showed {owed}")));
+        findings.push((Label::Fail, format!("the turn never showed {awaited}")));
         return Ok(None);
     }
     // A CLI that never ran says nothing about pixtuoid, so nothing below is judged.

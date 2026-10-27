@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "systemMessage": "title generator" },
+      "match": { "systemMessage": "You name conversations" },
       "response": { "content": "Hermetic" }
     },
     {

@@ -11,7 +11,7 @@ const TUI: tui::Tui = tui::Tui {
     args: &[],
     composer: tui::Composer {
         marker: "╰─",
-        frame: tui::Frame::Nothing,
+        border: tui::Border::Nothing,
     },
     gates: &[],
     cancel: &[],
@@ -130,10 +130,7 @@ startup:
         Scenario {
             name: "new-session",
             shape: Shape::Succession,
-            surface: Surface::Tui {
-                row: &TUI,
-                answer: tui::Answer::Nothing,
-            },
+            surface: Surface::Tui { row: &TUI },
             expects: &["session_start", "session_switch", "session_shutdown"],
             fixture: "omp/fixtures/new-session-hermetic",
             turn: Turn {
