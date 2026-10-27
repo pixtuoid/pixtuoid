@@ -1,7 +1,7 @@
 //! One session's two streams folded in every order they can reach the reducer
 //! in: a hook at its shim stamp, and a transcript line no sooner than its write
-//! stamp and at most [`DEFAULT_POLL_INTERVAL`] after it, behind every line above
-//! it, since the watcher reads a file in order.
+//! stamp and at most the watcher's `DEFAULT_POLL_INTERVAL` after it, behind
+//! every line above it, since the watcher reads a file in order.
 
 use std::time::{Duration, SystemTime};
 
@@ -27,7 +27,7 @@ pub struct Step {
     /// first-sight seed rides in with the transcript's first line.
     pub line: usize,
     /// When it reached the reducer.
-    pub at: SystemTime,
+    pub(crate) at: SystemTime,
     /// The event.
     pub event: AgentEvent,
     /// Its agent's state once it applied; `None` with no slot to hold it.
@@ -70,7 +70,7 @@ pub struct Merges {
 impl Drive {
     /// Every order `hooks` and this transcript's `lines` can reach the reducer
     /// in ([`Merges`]); `None` for a drive of hooks alone, or of a source whose
-    /// transcript carries no write stamp ([`WRITE_STAMPS`]).
+    /// transcript carries no write stamp (`reads::WRITE_STAMPS`).
     pub fn merges<S: AsRef<str>>(&self, hooks: &[S], lines: &[S]) -> Option<Merges> {
         let Decode::Transcript { source, .. } = &self.decode else {
             return None;
@@ -185,7 +185,7 @@ fn first_order(bounds: &[(usize, usize)]) -> Option<Vec<usize>> {
 
 impl Merges {
     /// How many orders there are, saturating.
-    pub fn orders(&self) -> usize {
+    pub(crate) fn orders(&self) -> usize {
         // ways[k]: the orders of the lines from this one on, with k hooks
         // before this one; `None` past the last line, which has one way.
         let mut ways: Option<Vec<usize>> = None;

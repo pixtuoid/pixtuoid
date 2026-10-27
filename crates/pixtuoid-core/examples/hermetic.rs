@@ -2472,8 +2472,8 @@ mod run {
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
             assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(5), false));
-            assert!(judges_leg(grok, &judged(6), false));
+            assert!(!judges_leg(grok, &judged(6), false));
+            assert!(judges_leg(grok, &judged(7), false));
         }
 
         #[test]

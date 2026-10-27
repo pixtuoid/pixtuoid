@@ -191,7 +191,7 @@ impl Shape {
     }
 
     /// How a TUI run answers its turn.
-    pub const fn answer(self) -> tui::Answer {
+    pub(crate) const fn answer(self) -> tui::Answer {
         match self {
             Self::Permission => tui::Answer::Gate,
             Self::Cancel => tui::Answer::Cancel,
@@ -248,7 +248,7 @@ pub struct Turn {
     pub second: Option<Second>,
     /// A directory beside its script copied into the workspace before the
     /// turn: project config this scenario alone runs under.
-    pub seed: Option<&'static str>,
+    pub(crate) seed: Option<&'static str>,
 }
 
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
