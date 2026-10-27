@@ -2165,6 +2165,7 @@ mod run {
                 })
                 .transpose()
                 .map_err(plan_error)?,
+            keychains: None,
         })
     }
 

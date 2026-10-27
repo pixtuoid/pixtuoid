@@ -541,9 +541,8 @@ mutants *args:
     TZ={{ TEST_TZ }} cargo mutants --in-diff target/mutants.diff "$@"
 
 # Record a conformance fixture from bytes a real CLI actually sent, the CLI run
-# under a throwaway home holding only the built pixtuoid's hook for it, so it
-# authenticates from the environment (cursor-agent: CURSOR_API_KEY). One BILLED
-# model turn per run. `{prompt}` expands to the shared scenario prompt; a
+# under a throwaway home holding only the built pixtuoid's hook for it and a
+# link to the operator's login keychain. One BILLED model turn per run. `{prompt}` expands to the shared scenario prompt; a
 # custom one is a quoted arg.
 #   just capture-fixture cursor tool-run cursor-agent -p --trust '{prompt}'
 [doc('Record a conformance fixture from a real CLI run (BILLED — one model turn)')]

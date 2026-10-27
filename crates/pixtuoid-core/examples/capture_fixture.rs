@@ -34,7 +34,7 @@ mod recorder {
         RELEASE_PATIENCE, SANDBOX_HOMES, create_private_dir, hold_lock, owned_by_us,
         remove_once_released,
     };
-    use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
+    use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, KEYCHAINS, Sink};
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
@@ -313,12 +313,11 @@ mod recorder {
     /// a throwaway directory holding only pixtuoid's own hook for the source,
     /// so no hook the operator installed reaches the tap. Cursor also runs
     /// Claude Code's user hooks (cursor.com/docs/reference/third-party-hooks).
-    /// The CLI authenticates from the environment it inherits, cursor-agent
-    /// from `CURSOR_API_KEY` (`cursor-agent --help`): a keychain login keys on
-    /// the operator's home.
+    /// The CLI authenticates from the operator's keychain, which alone of their
+    /// home it reaches.
     fn isolated(plan: &CapturePlan) -> std::io::Result<()> {
         let dir = tempfile::tempdir()?;
-        let homes = isolated_homes(dir.path())?;
+        let homes = isolated_homes(dir.path(), plan.keychains.as_ref().map(|k| k.as_path()))?;
         connect(&plan.source, &homes)?;
         let status = std::process::Command::new(std::env::current_exe()?)
             .args(Invocation::plan_args(&plan.write_to(dir.path())?))
@@ -328,16 +327,34 @@ mod recorder {
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    /// Each of [`SANDBOX_HOMES`] as a directory under `dir`.
-    fn isolated_homes(dir: &Path) -> std::io::Result<Vec<(String, PathBuf)>> {
-        SANDBOX_HOMES
+    /// Each of [`SANDBOX_HOMES`] as a directory under `dir`, its `HOME` linking
+    /// the operator's `keychains` where they exist.
+    fn isolated_homes(
+        dir: &Path,
+        keychains: Option<&Path>,
+    ) -> std::io::Result<Vec<(String, PathBuf)>> {
+        let homes = SANDBOX_HOMES
             .iter()
             .map(|(var, rel)| {
                 let at = dir.join(rel);
                 std::fs::create_dir_all(&at)?;
                 Ok(((*var).to_owned(), at))
             })
-            .collect()
+            .collect::<std::io::Result<Vec<_>>>()?;
+        if let (Some(keychains), Some((_, home))) = (
+            keychains.filter(|k| k.is_dir()),
+            homes.iter().find(|(var, _)| var == "HOME"),
+        ) {
+            let link = home.join(KEYCHAINS);
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(keychains, link)?;
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_dir(keychains, link)?;
+        }
+        Ok(homes)
     }
 
     /// `source`'s hook installed into `homes` by the pixtuoid built beside
@@ -3435,7 +3452,7 @@ mod recorder {
         #[test]
         fn an_isolated_capture_sets_every_home_inside_its_own_dir() {
             let d = tempfile::tempdir().expect("tempdir");
-            let homes = isolated_homes(d.path()).expect("homes");
+            let homes = isolated_homes(d.path(), None).expect("homes");
             for (var, _) in SANDBOX_HOMES {
                 let (_, at) = homes.iter().find(|(v, _)| v == var).expect("set");
                 assert!(
@@ -3444,6 +3461,31 @@ mod recorder {
                     at.display()
                 );
             }
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn an_isolated_home_reaches_only_the_operators_keychains() {
+            let operator = tempfile::tempdir().expect("operator");
+            let keychains = operator.path().join(KEYCHAINS);
+            std::fs::create_dir_all(&keychains).expect("keychains");
+            std::fs::create_dir_all(operator.path().join(".claude")).expect("hooks");
+            let d = tempfile::tempdir().expect("tempdir");
+            let homes = isolated_homes(d.path(), Some(&keychains)).expect("homes");
+            let (_, home) = homes.iter().find(|(v, _)| v == "HOME").expect("HOME");
+            assert_eq!(
+                std::fs::read_link(home.join(KEYCHAINS)).expect("linked"),
+                keychains
+            );
+            assert!(
+                !home.join(".claude").exists(),
+                "nothing else of the operator's"
+            );
+            let missing = tempfile::tempdir().expect("tempdir");
+            let homes = isolated_homes(missing.path(), Some(&operator.path().join("gone")))
+                .expect("a keychain-less operator still isolates");
+            let (_, home) = homes.iter().find(|(v, _)| v == "HOME").expect("HOME");
+            assert!(!home.join(KEYCHAINS).exists());
         }
 
         #[test]

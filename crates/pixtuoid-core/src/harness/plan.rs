@@ -31,6 +31,11 @@ pub const DEFAULT_PROMPT: &str =
 pub(crate) const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 /// A directory the operator's capture copies into its workspace first.
 pub(crate) const SEED_ENV: &str = "CAPTURE_SEED";
+/// Where macOS keeps a home's login keychain: the one part of the operator's
+/// home an isolated capture reaches, so a CLI that keeps its login there
+/// authenticates (cursor-agent 2026.10.22 runs `/usr/bin/security`, whose
+/// search list is the home's) while none of the home's hooks or settings run.
+pub const KEYCHAINS: &str = "Library/Keychains";
 
 /// A word a profile, script or config spells for the host to fill in. Each
 /// spelling here is the one every expansion site and every check reads.
@@ -305,6 +310,10 @@ pub struct CapturePlan {
     pub first_turn: Argv<Resolved>,
     /// What stops the server the CLI started for its turns, run after them.
     pub server_stop: Option<Argv<Resolved>>,
+    /// The operator's [`KEYCHAINS`], which an isolated capture links into its
+    /// throwaway home.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keychains: Option<AbsPath>,
 }
 
 impl CapturePlan {
@@ -530,6 +539,8 @@ impl CapturePlan {
             daemon: None,
             first_turn,
             server_stop: None,
+            keychains: env("HOME")
+                .and_then(|home| AbsPath::try_from(Path::new(&home).join(KEYCHAINS)).ok()),
         })
     }
 }
@@ -561,6 +572,7 @@ mod tests {
             daemon: None,
             first_turn: Argv::resolved(["kimi", "-p", "go"]).expect("resolved"),
             server_stop: None,
+            keychains: None,
         }
     }
 
@@ -707,6 +719,16 @@ mod tests {
         .expect("plan");
         assert!(matches!(plan.sink, Sink::Committed { .. }));
         assert_eq!(plan.first_turn.strings(), ["kimi", "--out", "x"]);
+    }
+
+    #[test]
+    fn an_operators_keychains_are_their_homes() {
+        let line = args(&["cursor", "delegation", "cursor-agent", "-p", "{prompt}"]);
+        let plan =
+            CapturePlan::from_operator(&line, &env_of(&[("HOME", "/Users/ada")])).expect("plan");
+        assert_eq!(plan.keychains, Some(abs("/Users/ada/Library/Keychains")));
+        let homeless = CapturePlan::from_operator(&line, &env_of(&[])).expect("plan");
+        assert_eq!(homeless.keychains, None);
     }
 
     #[test]
