@@ -593,9 +593,14 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
 
 /// Put the locked file back as an install found it: `prior`, or no file at all.
 fn restore(lock: &io::ConfigLock, prior: Option<&str>) -> Result<()> {
+    // A host's failed registration may have taken the file's dir with it.
     match prior {
-        Some(content) => lock.write_atomic(content),
-        // A host's failed registration may have taken it with the plugin's dir.
+        Some(content) => {
+            if let Some(dir) = lock.target().parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            lock.write_atomic(content)
+        }
         None => match std::fs::remove_file(lock.target()) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),

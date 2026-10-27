@@ -2403,14 +2403,25 @@ fn hermes_disconnect_without_hermes_on_path_leaves_a_registered_plugin_inert() {
 }
 
 #[test]
-fn hermes_connect_fails_when_enabling_fails_and_leaves_no_plugin() {
-    with_fake_hosts_failing(Some("hermes plugins enable pixtuoid"), |_| {
-        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
-        let e = install_target_from(&HERMES, None, hook).unwrap_err();
-        assert!(!format!("{e:#}").contains("stay in place"), "{e:#}");
-        assert!(!has_hooks(&HERMES, None));
-        assert!(!hermes_plugin().parent().unwrap().exists());
-    });
+fn hermes_connect_fails_when_enabling_fails_and_leaves_the_plugin_dir_as_it_found_it() {
+    for prior in [None, Some(crate::install::hermes::REMOVED_STUB)] {
+        with_fake_hosts_failing(Some("hermes plugins enable pixtuoid"), |_| {
+            let plugin = hermes_plugin();
+            if let Some(prior) = prior {
+                std::fs::create_dir_all(plugin.parent().unwrap()).unwrap();
+                std::fs::write(&plugin, prior).unwrap();
+            }
+            let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+            let e = install_target_from(&HERMES, None, hook).unwrap_err();
+            assert!(!format!("{e:#}").contains("stay in place"), "{e:#}");
+            assert!(!has_hooks(&HERMES, None));
+            assert!(!plugin.with_file_name("plugin.yaml").exists());
+            assert_eq!(std::fs::read_to_string(&plugin).ok().as_deref(), prior);
+            if prior.is_none() {
+                assert!(!plugin.parent().unwrap().exists());
+            }
+        });
+    }
 }
 
 /// Redirects every CLI state resolver an owned file renders under (OpenClaw's plugin
