@@ -624,7 +624,7 @@ fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario>
         s.not_run_on(windows).is_none()
             && match s.surface {
                 Surface::Headless => true,
-                Surface::Tui { .. } => s.shape.answer() == tui::Answer::Nothing,
+                Surface::Tui { .. } => s.answer() == tui::Answer::Nothing,
             }
     })
 }
@@ -637,7 +637,7 @@ impl Scenario {
             .join(format!("{}.json", self.name))
     }
 
-    /// `source`'s seed for this scenario, if it has one ([`Turn::seed`]).
+    /// `source`'s seed for this scenario, if its turn names one.
     pub fn seed(&self, source: &str) -> Option<PathBuf> {
         self.turn
             .seed
@@ -652,6 +652,26 @@ impl Scenario {
         }
     }
 
+    /// Its second turn, where a second CLI process runs it: a TUI types its
+    /// own into the same session.
+    pub fn headless_second(&self) -> Option<Second> {
+        match self.surface {
+            Surface::Headless => self.turn.second,
+            Surface::Tui { .. } => None,
+        }
+    }
+
+    /// How its TUI run answers its turn: as its shape says, but nothing where
+    /// its row lists no gate, as a seeded hook then decides every prompt.
+    pub(crate) fn answer(&self) -> tui::Answer {
+        match (self.shape.answer(), self.surface) {
+            (tui::Answer::Gate, Surface::Tui { row }) if row.gates.is_empty() => {
+                tui::Answer::Nothing
+            }
+            (answer, _) => answer,
+        }
+    }
+
     /// The driver of its TUI run, typing `prompt` and then its second turn's;
     /// `None` for a headless one.
     pub fn tui_driver(
@@ -662,7 +682,7 @@ impl Scenario {
         let Surface::Tui { row } = self.surface else {
             return None;
         };
-        let driver = tui::Driver::new(row, self.shape.answer(), prompt, now);
+        let driver = tui::Driver::new(row, self.answer(), prompt, now);
         Some(match self.turn.second {
             Some(Second::Prompt(next)) => driver.then(next),
             Some(Second::Bare) | None => driver,
@@ -956,7 +976,7 @@ mod tests {
                 );
             }
             for s in p.scenarios {
-                let (Some(second), Surface::Headless) = (s.turn.second, s.surface) else {
+                let Some(second) = s.headless_second() else {
                     continue;
                 };
                 let words = p

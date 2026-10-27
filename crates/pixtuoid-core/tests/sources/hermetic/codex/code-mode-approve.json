@@ -1,0 +1,22 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "Generate a concise, single-line task title" },
+      "response": { "content": "Hermetic", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "toolResultContains": "{note}" },
+      "response": { "content": "approved", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [],
+        "customToolCalls": [
+          { "name": "exec", "input": "const read = await tools.exec_command({ cmd: \"cat NOTE.txt\", sandbox_permissions: \"require_escalated\", justification: \"Read the note?\" });\ntext(read.output);\n" }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}

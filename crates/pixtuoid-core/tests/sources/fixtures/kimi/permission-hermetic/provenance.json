@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "kimi",
   "version": "2.3.3",
-  "captured": "2026-10-26",
+  "captured": "2026-10-27",
   "command": "just hermetic --record kimi",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 24
+    "blanked": 22
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/kimi/permission.json",

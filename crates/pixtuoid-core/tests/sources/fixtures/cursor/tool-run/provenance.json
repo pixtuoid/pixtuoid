@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "cursor-agent",
-  "version": "2026.09.18-9a7762b",
-  "captured": "2026-09-19",
+  "version": "2026.10.22-27dcf5f",
+  "captured": "2026-10-27",
   "command": "cursor-agent -p --trust --model auto {prompt}",
-  "note": "Recorded with `--model auto`: cursor-agent on a free plan refuses named models.",
+  "note": "Recorded with `--model auto`: cursor-agent on a free plan refuses named models. Filtered to cursor's own `_pixtuoid_source` stamp, as fixtures/README.md requires: cursor-agent also ran the operator's Claude Code hooks and three unstamped registrations, so `blanked` counts the unfiltered capture.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 444
+    "blanked": 897
   }
 }

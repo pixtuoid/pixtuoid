@@ -47,6 +47,11 @@ const TUI_APPROVE: tui::Tui = tui::Tui {
     ..TUI
 };
 
+/// [`TUI`] where the seed's own PermissionRequest hook denies every prompt
+/// before a dialog shows: hooks decide ahead of the user
+/// (`core/src/tools/approvals.rs:483-505` at `rust-v0.164.0`).
+const TUI_POLICY: tui::Tui = tui::Tui { gates: &[], ..TUI };
+
 /// Code mode: the model's `exec` cell runs JavaScript whose tools are nested
 /// calls (`code-mode-protocol/src/description.rs:23-48` at `rust-v0.164.0`),
 /// off by default for the profile's model (`features/src/lib.rs:1198-1201`,
@@ -64,6 +69,12 @@ const TUI_CODE_MODE: tui::Tui = tui::Tui {
         CODE_MODE[1],
     ],
     ..TUI
+};
+
+/// [`TUI_CODE_MODE`] answering its dialog as [`TUI_APPROVE`] does.
+const TUI_CODE_MODE_APPROVE: tui::Tui = tui::Tui {
+    gates: TUI_APPROVE.gates,
+    ..TUI_CODE_MODE
 };
 
 pub(crate) const PROFILE: Profile = Profile {
@@ -256,6 +267,27 @@ trust_level = "trusted"
                 ..Turn::PROFILE
             },
         },
+        // The one way an exec is denied and its turn goes on: a policy hook's
+        // deny (`protocol/src/approvals.rs:377-410` offers the user no such
+        // choice), so its request clears through the rollout's output alone.
+        Scenario {
+            name: "policy-deny",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_POLICY },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/policy-deny-hermetic",
+            turn: Turn {
+                seed: Some("policy-deny"),
+                ..Turn::PROFILE
+            },
+        },
         // The dialog offers no "No, continue without running it" for an exec
         // (`protocol/src/approvals.rs:377-410`,
         // `core/src/tools/approvals.rs:710-726` at `rust-v0.164.0`), so a
@@ -274,6 +306,24 @@ trust_level = "trusted"
                 "SessionEnd",
             ],
             fixture: "fixtures/codex/code-mode-gate-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-approve",
+            shape: Shape::Permission,
+            surface: Surface::Tui {
+                row: &TUI_CODE_MODE_APPROVE,
+            },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-approve-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -313,20 +363,9 @@ trust_level = "trusted"
     script_vars: &[],
     not_yet: &[],
     event_name: hook_event_name,
-    // aimock's Responses usage has no token details (`CopilotKit/aimock`
-    // `src/responses.ts:543-556` at v1.45.1).
-    not_yet_fields: &[
-        (
-            "tx:event_msg",
-            "/payload/info/last_token_usage/cached_input_tokens",
-        ),
-        (
-            "tx:event_msg",
-            "/payload/info/last_token_usage/reasoning_output_tokens",
-        ),
-    ],
-    // A code-mode cell, and a `write_stdin` approval, which no shape scripts.
-    not_yet_literals: &["exec", "// @exec:", "approval_id"],
+    not_yet_fields: &[],
+    // A `write_stdin` approval, which no shape scripts.
+    not_yet_literals: &["approval_id"],
     children_inherit_cwd: false,
     result_unseen: false,
     live: None,

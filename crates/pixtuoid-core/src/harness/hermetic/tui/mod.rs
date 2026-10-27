@@ -523,7 +523,8 @@ mod tests {
     const READY: &str = include_str!("screens/claude-code-ready.txt");
     const GATE: &str = include_str!("screens/claude-code-gate.txt");
     const DONE: &str = include_str!("screens/claude-code-done.txt");
-    const PROMPT: &str = "Read NOTE.txt, then list this directory, then read NOTE.txt again.";
+    /// What every recorded screen's run typed.
+    const PROMPT: &str = crate::harness::plan::DEFAULT_PROMPT;
     const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
     const CODEX_CANCEL: &str = include_str!("screens/codex-cancel.txt");
@@ -542,7 +543,7 @@ mod tests {
             .and_then(|p| p.scenario(name))
             .expect("profiled");
         match s.surface {
-            Surface::Tui { row } => (row, s.shape.answer()),
+            Surface::Tui { row } => (row, s.answer()),
             Surface::Headless => panic!("{source}/{name} drives no TUI"),
         }
     }
@@ -1006,7 +1007,7 @@ mod tests {
         const GROK_TURN_ONE: &str = include_str!("screens/grok-turn-one.txt");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
-        let recorded: [(&str, &str, &str, &[&str]); 16] = [
+        let recorded: [(&str, &str, &str, &[&str]); 18] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
@@ -1018,7 +1019,14 @@ mod tests {
             ),
             // The same dialog as the refused one's, answered otherwise.
             ("codex", "approve", CODEX_BOOT, &[CODEX_GATE]),
+            (
+                "codex",
+                "policy-deny",
+                CODEX_BOOT,
+                &[include_str!("screens/codex-policy-denied.txt")],
+            ),
             ("codex", "code-mode-gate", CODEX_BOOT, &[CODEX_GATE]),
+            ("codex", "code-mode-approve", CODEX_BOOT, &[CODEX_GATE]),
             (
                 "opencode",
                 "cancel",
@@ -1113,7 +1121,7 @@ mod tests {
                 "{source}/{name}"
             );
             let moved = t0 + Duration::from_millis(1);
-            let (first, then) = match scenario.shape.answer() {
+            let (first, then) = match scenario.answer() {
                 Answer::Gate => {
                     let [refused] = tui.gates else {
                         panic!("{source}: one gate per row");

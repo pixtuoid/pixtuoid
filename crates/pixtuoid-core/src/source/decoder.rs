@@ -251,7 +251,7 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     if b.get(i) == Some(&b'.') {
         i += 1;
         // The first digit is tenths of a second; one past nanoseconds is cut.
-        let mut place = 100_000_000;
+        let mut place = std::time::Duration::from_millis(100).subsec_nanos();
         while let Some(digit) = b.get(i).filter(|c| c.is_ascii_digit()) {
             nanos += u32::from(digit - b'0') * place;
             place /= 10;

@@ -2071,9 +2071,8 @@ mod run {
             }),
             None => None,
         };
-        // A TUI's driver types its second turn into the same session.
-        let second_turn = match (scenario.surface, scenario.turn.second, p.second_turn) {
-            (Surface::Headless, Some(second), Some(words)) => {
+        let second_turn = match (scenario.headless_second(), p.second_turn) {
+            (Some(second), Some(words)) => {
                 let words = with_launch(
                     words[1..]
                         .iter()

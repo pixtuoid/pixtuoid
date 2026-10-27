@@ -127,10 +127,11 @@ fn headless_replay(connect: &[&str], budget: std::time::Duration) -> Replay {
 
     // Read the fixture BEFORE spawning, so a read panic stays on the near side
     // of the kill.
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../pixtuoid-core/tests/sources/fixtures/codex/permission-recorded")
-        .join("rollout-2026-08-15T06-28-11-01a0059b-cb9d-7a92-8821-85ebb7604464.jsonl");
-    let body = std::fs::read_to_string(&fixture).expect("committed permission-recorded fixture");
+    let capture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../pixtuoid-core/tests/sources/fixtures/codex/permission-hermetic");
+    let fixture = pixtuoid_core::harness::transcript_in("codex", &capture)
+        .unwrap_or_else(|found| panic!("one codex rollout, found {found:?}"));
+    let body = std::fs::read_to_string(&fixture).expect("committed permission-hermetic fixture");
 
     let home = tempfile::tempdir().expect("home");
     let cfg = tempfile::tempdir().expect("config");

@@ -9,8 +9,8 @@ use serde_json::Value;
 
 use super::reads::{Spelling, WRITE_STAMPS};
 use super::{BreadcrumbSink, CASCADE_TICK, Decode, Drive, Driven, note_reached};
+use crate::source::DEFAULT_POLL_INTERVAL;
 use crate::source::decoder::rfc3339_to_epoch;
-use crate::source::jsonl::DEFAULT_POLL_INTERVAL;
 use crate::state::ActivityState;
 use crate::{AgentEvent, Reducer, Transport};
 
@@ -435,6 +435,20 @@ mod tests {
         assert_eq!(at, Duration::from_secs(1_793_078_269));
         assert_eq!(within, Duration::from_secs(1));
         assert_eq!(stamp_of(&json!("1793078269"), Spelling::EpochSecs), None);
+    }
+
+    /// The shim (`pixtuoid-hook`) is the key's one writer, a crate this one
+    /// cannot import from, so its own recorded output pins the spelling.
+    #[test]
+    fn a_recorded_envelope_carries_the_shim_stamp_by_this_key() {
+        let hooks = crate::harness::sources_root()
+            .join("fixtures/codex/tool-run-hermetic")
+            .join(crate::harness::HOOK_PAYLOADS);
+        let text = std::fs::read_to_string(&hooks).expect("a recorded hook capture");
+        for line in text.lines() {
+            let v: Value = serde_json::from_str(line).expect("json");
+            assert!(v[SHIM_STAMP].as_u64().is_some_and(|ms| ms > 0), "{line}");
+        }
     }
 
     #[test]

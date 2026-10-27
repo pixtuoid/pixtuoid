@@ -658,7 +658,7 @@ fn judge(
     let completed = completed_turn(manifest, scenario.shape, findings);
     let unanswered = match scenario.surface {
         Surface::Tui { .. } if manifest.capture.end == ProcessExit::Exited(tui::UNANSWERED) => {
-            scenario.shape.answer().awaits()
+            scenario.answer().awaits()
         }
         Surface::Tui { .. } | Surface::Headless => None,
     };
@@ -680,10 +680,7 @@ fn judge(
     }
     // A headless second turn that never ran had no session the first turn's
     // wire named, which is pixtuoid's to name; one that ran `completed_turn` held.
-    if matches!(scenario.surface, Surface::Headless)
-        && scenario.turn.second.is_some()
-        && manifest.capture.second_turn.is_none()
-    {
+    if scenario.headless_second().is_some() && manifest.capture.second_turn.is_none() {
         findings.push((
             Label::Fail,
             "the first turn's wire named no session for its second turn".into(),
@@ -1352,7 +1349,7 @@ mod tests {
             .expect("a profiled scenario");
         let src = crate::harness::sources_root().join(scenario.fixture);
         let d = run_of(&src, source, name, scene);
-        if matches!(scenario.surface, Surface::Headless) && scenario.turn.second.is_some() {
+        if scenario.headless_second().is_some() {
             write_manifest(d.path(), source, |m| {
                 m.scenario = name.into();
                 m.capture.second_turn = Some(crate::harness::SecondTurn {
@@ -2407,7 +2404,7 @@ mod tests {
 
     #[test]
     fn a_recorded_codex_tool_run_passes() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
@@ -2512,7 +2509,7 @@ mod tests {
 
     #[test]
     fn a_session_id_that_splits_the_run_into_two_agents_fails() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         let mut first = true;
         edit_hooks(d.path(), |mut v| {
             if std::mem::take(&mut first) {
@@ -2558,7 +2555,7 @@ mod tests {
 
     #[test]
     fn a_cwd_outside_the_workspace_fails() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         write_manifest(d.path(), "codex", |m| {
             m.capture.workspace = PathBuf::from("/elsewhere")
         });
@@ -2774,7 +2771,7 @@ mod tests {
 
     #[test]
     fn a_line_the_decoder_rejects_fails() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         edit_hooks(d.path(), |mut v| {
             if v["hook_event_name"] == "PreToolUse" {
                 v["session_id"] = Value::Null;
@@ -2793,7 +2790,7 @@ mod tests {
 
     #[test]
     fn a_hook_the_scenario_expects_but_never_fired_fails() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         edit_hooks(d.path(), |v| (v["hook_event_name"] != "Stop").then_some(v));
         let v = verify(d.path()).expect("verify");
         assert!(has(&v, Label::Fail, "must fire Stop"), "{:?}", v.findings());
@@ -2827,7 +2824,7 @@ mod tests {
             Label::Script,
             "a script that lost the turn never asked for the gated tool"
         );
-        let h = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let h = recorded("codex", "tool-run", CX_SCENE);
         write_manifest(h.path(), "codex", |m| {
             m.capture.end = ProcessExit::Exited(tui::UNANSWERED)
         });
@@ -2850,7 +2847,7 @@ mod tests {
 
     #[test]
     fn an_unmatched_model_request_is_script_and_a_cli_that_never_ran_is_blocked() {
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         write_manifest(d.path(), "codex", |m| m.unmatched = 1);
         assert_eq!(verify(d.path()).expect("verify").label(), Label::Script);
         write_manifest(d.path(), "codex", |m| {
@@ -2873,7 +2870,7 @@ mod tests {
     #[test]
     fn a_turn_killed_at_its_budget_is_blocked_and_judges_nothing() {
         let judged = |unmatched| {
-            let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+            let d = recorded("codex", "tool-run", CX_SCENE);
             write_manifest(d.path(), "codex", |m| {
                 m.capture.end = ProcessExit::OutOfTime;
                 m.requests = 4210;
@@ -2916,7 +2913,7 @@ mod tests {
     fn an_incomplete_capture_is_blocked_and_judges_nothing() {
         const WHY: &str = "the daemon outlived its stdin and was killed";
         let judged = |end| {
-            let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+            let d = recorded("codex", "tool-run", CX_SCENE);
             write_manifest(d.path(), "codex", |m| {
                 m.capture.end = end;
                 m.capture.incomplete = Some(WHY.into());
@@ -3145,9 +3142,9 @@ mod tests {
 
     #[test]
     fn a_scene_that_never_shows_the_agent_running_fails() {
-        let d = run_from(
+        let d = recorded(
             "codex",
-            "tool-run-recorded",
+            "tool-run",
             "agents=[cx\u{b7}proj@0:idle]\nagents=[]\n",
         );
         let v = verify(d.path()).expect("verify");
@@ -3158,7 +3155,7 @@ mod tests {
     fn an_agent_still_in_the_scene_after_the_cli_exited_fails() {
         let scene =
             "agents=[cx\u{b7}proj@0:running(Bash: cat NOTE.txt)]\nagents=[cx\u{b7}proj@0:idle]\n";
-        let d = run_from("codex", "tool-run-recorded", scene);
+        let d = recorded("codex", "tool-run", scene);
         let v = verify(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "after the CLI exited"),
@@ -3172,11 +3169,7 @@ mod tests {
         let breadcrumb = crate::test_capture::capture_logs(|| {
             crate::source::drift::missing_field("codex", "PreToolUse", "tool_name");
         });
-        let d = run_from(
-            "codex",
-            "tool-run-recorded",
-            &format!("{breadcrumb}{CX_SCENE}"),
-        );
+        let d = recorded("codex", "tool-run", &format!("{breadcrumb}{CX_SCENE}"));
         let v = verify(d.path()).expect("verify");
         assert!(
             has(&v, Label::Fail, "drift breadcrumb"),
@@ -3574,7 +3567,7 @@ mod tests {
     #[test]
     fn a_rollout_that_loses_its_cwd_fails_the_census() {
         // Every line: codex's head scan takes the first `payload.cwd` it finds.
-        let d = run_from("codex", "tool-run-recorded", CX_SCENE);
+        let d = recorded("codex", "tool-run", CX_SCENE);
         for t in jsonl_files_under(d.path())
             .into_iter()
             .filter(|f| !is_hook_envelope(f))

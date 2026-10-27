@@ -481,7 +481,7 @@ mod tests {
     fn the_first_sight_cwd_survives_the_strip() {
         let (_d, rollout) = stripped_copy_of(&transcript_in(
             "codex",
-            &sources_root().join("fixtures/codex/tool-run-recorded"),
+            &sources_root().join("fixtures/codex/tool-run-hermetic"),
         ));
         let cwds = |p: &Path| -> Vec<Option<PathBuf>> {
             let extract = registry::cwd_extractor_for("codex");
@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn stripping_blanks_what_no_decoder_reads_and_changes_no_event() {
         let d = tempfile::tempdir().expect("tempdir");
-        let src = sources_root().join("fixtures/codex/tool-run-recorded");
+        let src = sources_root().join("fixtures/codex/tool-run-hermetic");
         let files: Vec<PathBuf> = [
             transcript_in("codex", &src),
             src.join("hook-payloads.jsonl"),
@@ -595,6 +595,14 @@ mod tests {
         plant_unread(&files[0], "installed_skills", "example-skill-1");
         let before = scenario_events("codex", &files);
         let wire = std::fs::read_to_string(&files[0]).expect("read");
+        let model = wire
+            .lines()
+            .find_map(|l| {
+                let v: Value = serde_json::from_str(l).ok()?;
+                v["payload"]["model"].as_str().map(str::to_owned)
+            })
+            .filter(|m| !m.is_empty())
+            .expect("a turn's model");
         let session_id = first_hook_field(&files[1], "session_id");
         let blanked = strip_unread("codex", &files).expect("strip").blanked;
         assert!(blanked > 0, "the planted key is unread");
@@ -616,7 +624,7 @@ mod tests {
             "a roster rides a field no decoder reads, so it leaves"
         );
         assert!(
-            transcript.contains("gpt-5.6-sol"),
+            transcript.contains(&model),
             "the model is read, so it stays"
         );
         let hooks = std::fs::read_to_string(&files[1]).expect("read");
@@ -698,7 +706,7 @@ mod tests {
             walked.insert(label);
         }
         for sentinel in [
-            "fixtures/codex/tool-run-recorded",
+            "fixtures/codex/tool-run-hermetic",
             "fixtures/claude-code/tool-run-recorded",
             "omp/fixtures/bridge-run-recorded",
             "cursor/fixtures",
@@ -713,28 +721,38 @@ mod tests {
         }
     }
 
+    /// `capture`, a dir under the corpus, copied to the same path under `root`.
+    fn corpus_copy(root: &Path, capture: &str) -> PathBuf {
+        let to = root.join(capture);
+        std::fs::create_dir_all(&to).expect("mkdir");
+        for from in std::fs::read_dir(sources_root().join(capture))
+            .expect("read")
+            .flatten()
+        {
+            std::fs::copy(from.path(), to.join(from.file_name())).expect("copy");
+        }
+        to
+    }
+
+    /// Each file of `dir` with its bytes, in path order.
+    fn bytes_of(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut out: Vec<_> = std::fs::read_dir(dir)
+            .expect("read")
+            .flatten()
+            .map(|e| (e.path(), std::fs::read(e.path()).expect("bytes")))
+            .collect();
+        out.sort();
+        out
+    }
+
     #[test]
     fn strip_corpus_leaves_a_composed_capture_alone() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = d.path().join("fixtures/claude-code/proof-session");
-        std::fs::create_dir_all(&scenario).expect("mkdir");
-        let src = sources_root().join("fixtures/claude-code/proof-session");
-        for from in std::fs::read_dir(&src).expect("read").flatten() {
-            std::fs::copy(from.path(), scenario.join(from.file_name())).expect("copy");
-        }
-        let bytes = |dir: &Path| -> Vec<(PathBuf, Vec<u8>)> {
-            let mut out: Vec<_> = std::fs::read_dir(dir)
-                .expect("read")
-                .flatten()
-                .map(|e| (e.path(), std::fs::read(e.path()).expect("bytes")))
-                .collect();
-            out.sort();
-            out
-        };
-        let before = bytes(&scenario);
+        let scenario = corpus_copy(d.path(), "fixtures/claude-code/proof-session");
+        let before = bytes_of(&scenario);
         strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
         assert_eq!(
-            bytes(&scenario),
+            bytes_of(&scenario),
             before,
             "composed bytes carry no operator data"
         );
@@ -743,12 +761,7 @@ mod tests {
     #[test]
     fn strip_corpus_honors_an_exemption_the_provenance_declares() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = d.path().join("fixtures/codex/tool-run-recorded");
-        std::fs::create_dir_all(&scenario).expect("mkdir");
-        let src = sources_root().join("fixtures/codex/tool-run-recorded");
-        for from in std::fs::read_dir(&src).expect("read").flatten() {
-            std::fs::copy(from.path(), scenario.join(from.file_name())).expect("copy");
-        }
+        let scenario = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
         let prov = scenario.join("provenance.json");
         let mut record: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&prov).expect("read")).expect("json");
@@ -757,19 +770,10 @@ mod tests {
             "why": "pins a wire premise the decoder drops on purpose"
         });
         std::fs::write(&prov, serde_json::to_string_pretty(&record).expect("json")).expect("write");
-        let bytes = |dir: &Path| -> Vec<(PathBuf, Vec<u8>)> {
-            let mut out: Vec<_> = std::fs::read_dir(dir)
-                .expect("read")
-                .flatten()
-                .map(|e| (e.path(), std::fs::read(e.path()).expect("bytes")))
-                .collect();
-            out.sort();
-            out
-        };
-        let before = bytes(&scenario);
+        let before = bytes_of(&scenario);
         strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
         assert_eq!(
-            bytes(&scenario),
+            bytes_of(&scenario),
             before,
             "an exempt capture keeps its bytes and its record"
         );
@@ -778,27 +782,13 @@ mod tests {
     #[test]
     fn strip_corpus_records_its_count_in_the_provenance_and_is_idempotent() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = d.path().join("fixtures/codex/tool-run-recorded");
-        std::fs::create_dir_all(&scenario).expect("mkdir");
-        let src = sources_root().join("fixtures/codex/tool-run-recorded");
-        for from in std::fs::read_dir(&src).expect("read").flatten() {
-            std::fs::copy(from.path(), scenario.join(from.file_name())).expect("copy");
-        }
-        let snapshot = |dir: &Path| -> Vec<(PathBuf, Vec<u8>)> {
-            let mut out: Vec<_> = std::fs::read_dir(dir)
-                .expect("read")
-                .flatten()
-                .map(|e| (e.path(), std::fs::read(e.path()).expect("bytes")))
-                .collect();
-            out.sort();
-            out
-        };
+        let scenario = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
         plant_unread(
             &transcript_in("codex", &scenario),
             "installed_skills",
             "example-skill-1",
         );
-        let wire = snapshot(&scenario);
+        let wire = bytes_of(&scenario);
         let record = || -> serde_json::Value {
             serde_json::from_str(
                 &std::fs::read_to_string(scenario.join("provenance.json")).expect("read"),
@@ -810,7 +800,7 @@ mod tests {
             .expect("a count");
 
         strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
-        let once = snapshot(&scenario);
+        let once = bytes_of(&scenario);
         assert_ne!(once, wire, "the planted key is unread");
         let prov = record();
         assert_eq!(prov["deidentified"]["method"], "decoder-allowlist");
@@ -823,7 +813,7 @@ mod tests {
 
         strip_corpus(d.path(), |_, _| {}).expect("strip corpus again");
         assert_eq!(
-            snapshot(&scenario),
+            bytes_of(&scenario),
             once,
             "a second pass finds nothing and rewrites nothing"
         );
@@ -901,12 +891,7 @@ mod tests {
     #[test]
     fn strip_corpus_reports_each_capture_before_a_later_failure() {
         let d = tempfile::tempdir().expect("tempdir");
-        let good = d.path().join("fixtures/codex/tool-run-recorded");
-        std::fs::create_dir_all(&good).expect("mkdir");
-        let src = sources_root().join("fixtures/codex/tool-run-recorded");
-        for from in std::fs::read_dir(&src).expect("read").flatten() {
-            std::fs::copy(from.path(), good.join(from.file_name())).expect("copy");
-        }
+        let good = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
         // Walked after codex (the walk sorts), and its record does not parse.
         let broken = d.path().join("fixtures/opencode/zz-broken");
         std::fs::create_dir_all(&broken).expect("mkdir");

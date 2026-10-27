@@ -275,11 +275,22 @@ fn a_codex_request_approved_in_the_tui_stands_until_its_resolution() {
     a_top_level_request_resolves_by_its_calls_output(&run);
 }
 
-/// A nested call has no rollout output: its request stands past its cell's
-/// own end, until its turn's.
+/// A policy hook's deny fires no PostToolUse: the call's rollout output alone
+/// resolves its request.
 #[test]
-fn a_code_mode_cell_s_gated_call_stands_until_its_turn_ends() {
-    a_request_stands_until_its_resolution(&Run::of("codex", "code-mode-gate-hermetic"));
+fn a_codex_request_a_policy_hook_denied_resolves_by_its_calls_output() {
+    let run = Run::of("codex", "policy-deny-hermetic");
+    a_request_stands_until_its_resolution(&run);
+    a_top_level_request_resolves_by_its_calls_output(&run);
+}
+
+/// A nested call has no rollout output: its request stands past its cell's
+/// own end, until its own PostToolUse or its turn's end.
+#[test]
+fn a_code_mode_cell_s_gated_call_stands_until_its_resolution() {
+    for scenario in ["code-mode-gate-hermetic", "code-mode-approve-hermetic"] {
+        a_request_stands_until_its_resolution(&Run::of("codex", scenario));
+    }
 }
 
 #[test]
