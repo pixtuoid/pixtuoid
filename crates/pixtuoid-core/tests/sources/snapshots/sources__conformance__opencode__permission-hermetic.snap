@@ -3,57 +3,57 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 6212484427229100480
-    tool_use_id: call_8N9deXiQtja6iPjY
+    agent_id: 5519931495454438800
+    tool_use_id: call_anqVpJQFHao36eYS
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     reason: shell
-    tool_use_id: call_8N9deXiQtja6iPjY
+    tool_use_id: call_anqVpJQFHao36eYS
 - Identity:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 6212484427229100480
-    tool_use_id: call_8N9deXiQtja6iPjY
+    agent_id: 5519931495454438800
+    tool_use_id: call_anqVpJQFHao36eYS
 - Identity:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800
     source: opencode
-    session_id: ses_e97093910ffeOO72auteldqkUl
+    session_id: ses_e822a7c3effetaqsO2LY9rLL75
     cwd: ~
 - TurnEnd:
-    agent_id: 6212484427229100480
+    agent_id: 5519931495454438800

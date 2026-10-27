@@ -3,38 +3,38 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     source: reasonix
-    session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
+    session_id: 20261027-144914.375682000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     source: reasonix
-    session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
+    session_id: 20261027-144914.375682000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     source: reasonix
-    session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
+    session_id: 20261027-144914.375682000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     tool_use_id: ~
     detail:
       Generic:
         display: "read_file: NOTE.txt"
 - Identity:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     source: reasonix
-    session_id: 20261026-150443.691355000-deepseek-v4-flash + planner planner-model
+    session_id: 20261027-144914.375682000-deepseek-v4-flash + planner planner-model
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     tool_use_id: ~
 - TurnEnd:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
 - SessionEnd:
-    agent_id: 7249668890645938261
+    agent_id: 1620766797001769804
     as_child: false

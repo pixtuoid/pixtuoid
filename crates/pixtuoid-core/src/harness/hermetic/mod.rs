@@ -1001,7 +1001,7 @@ mod tests {
                 };
                 // Any other key may pace or cut the stream (aimock's
                 // `dist/sse-writer.js` `calculateDelay`, `dist/interruption.js`
-                // at v1.45.1).
+                // at v1.47.0).
                 for key in stream.as_object().expect("a reply").keys() {
                     assert!(
                         ["match", "response", "latency", "chunkSize"].contains(&key.as_str()),

@@ -522,8 +522,8 @@ fn a_recorded_capture_that_was_edited_says_so() {
 /// leaves the list.
 const OWED_CURRENT: &[&str] = &[
     // The only carriers of a non-zero cache or reasoning token count, which
-    // each profile owes in `not_yet_fields`: aimock 1.45.1 scripts no usage
-    // detail, 1.46.0 Anthropic's cache counts and 1.47.0 any raw frame.
+    // each profile owes in `not_yet_fields` until a scenario scripts that usage
+    // in an aimock reply.
     "fixtures/claude-code/delegation-recorded",
     "fixtures/claude-code/permission-recorded",
     "fixtures/claude-code/subagent-recorded",

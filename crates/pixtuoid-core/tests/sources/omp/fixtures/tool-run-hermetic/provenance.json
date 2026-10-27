@@ -2,13 +2,13 @@
   "origin": "recorded",
   "cli": "omp",
   "version": "omp/18.12.6",
-  "captured": "2026-10-26",
+  "captured": "2026-10-27",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 61
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/omp/tool-run.json",
   "dropped": {
     "os": "macos",
