@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::sprite::Rgb;
-use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, ToolKind};
+use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS, ToolKind, ToolUse};
 
 use crate::neon_sign::gateway_label;
 use crate::tally::StateCounts;
@@ -193,7 +193,9 @@ pub(crate) struct ToolTally {
 pub(crate) fn footer_tool_tally(scene: &SceneState) -> Vec<ToolTally> {
     let mut tool_counts: HashMap<String, (ToolKind, usize)> = HashMap::new();
     for slot in scene.agents.values() {
-        if let ActivityState::Running { detail, kind, .. } = &slot.state
+        if let ActivityState::Running {
+            item: Some(ToolUse { detail, kind, .. }),
+        } = &slot.state
             && let Some(token) = detail
                 .as_deref()
                 .and_then(|d| d.split(|c: char| !c.is_alphanumeric()).next())
@@ -538,9 +540,11 @@ mod tests {
             cwd: Arc::from(PathBuf::from("/p").as_path()),
             label: "l".into(),
             state: ActivityState::Running {
-                tool_use_id: Some(Arc::from("t")),
-                detail: Some(Arc::from(detail)),
-                kind,
+                item: Some(ToolUse {
+                    tool_use_id: Some(Arc::from("t")),
+                    detail: Some(Arc::from(detail)),
+                    kind,
+                }),
             },
             state_started_at: SystemTime::UNIX_EPOCH,
             created_at: SystemTime::UNIX_EPOCH,

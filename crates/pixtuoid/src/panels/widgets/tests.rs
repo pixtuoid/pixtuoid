@@ -1,6 +1,6 @@
 use super::*;
 use footer::{build_status_spans, build_status_summary, footer_context};
-use pixtuoid_core::state::ActivityState;
+use pixtuoid_core::state::{ActivityState, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex, SceneState};
 use pixtuoid_scene::display::text::cells;
 use pixtuoid_scene::footer::{FooterFloor, FooterInputs};
@@ -39,9 +39,11 @@ fn stat_slot(path: &str, state: ActivityState, exiting: bool) -> AgentSlot {
 fn scene_stats_buckets_exiting_first_and_totals() {
     use pixtuoid_core::state::ToolKind;
     let running = || ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Other,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Other,
+        }),
     };
     let mut scene = SceneState::uniform(16);
     for s in [
@@ -225,9 +227,11 @@ fn gateway_rollup_is_worst_of() {
 fn per_floor_buckets_by_floor_idx() {
     use pixtuoid_core::state::ToolKind;
     let running = || ActivityState::Running {
-        tool_use_id: None,
-        detail: None,
-        kind: ToolKind::Other,
+        item: Some(ToolUse {
+            tool_use_id: None,
+            detail: None,
+            kind: ToolKind::Other,
+        }),
     };
     let mut scene = SceneState::uniform(16);
     let add = |scene: &mut SceneState, path, state, exiting, floor: usize| {
@@ -358,9 +362,11 @@ fn slot_with(state: ActivityState, label: &str) -> AgentSlot {
 fn running_with(detail: &str, label: &str) -> AgentSlot {
     slot_with(
         ActivityState::Running {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from(detail)),
-            kind: pixtuoid_core::state::ToolKind::from_display(detail),
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from(detail)),
+                kind: pixtuoid_core::state::ToolKind::from_display(detail),
+            }),
         },
         label,
     )
@@ -379,9 +385,11 @@ fn idle(label: &str) -> AgentSlot {
 fn running_kind(detail: &str, kind: pixtuoid_core::state::ToolKind, label: &str) -> AgentSlot {
     slot_with(
         ActivityState::Running {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from(detail)),
-            kind,
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from(detail)),
+                kind,
+            }),
         },
         label,
     )

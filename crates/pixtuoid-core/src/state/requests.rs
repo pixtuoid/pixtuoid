@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::AgentId;
 use crate::source::{Resolution, Transport};
-use crate::state::TurnKey;
+use crate::state::{ToolUse, TurnKey};
 
 /// What an end names.
 #[derive(Clone, Copy, Debug)]
@@ -18,11 +18,13 @@ pub(crate) enum Ended<'a> {
     /// A tool end naming no call: its wire carries none (Reasonix's
     /// PostToolUse).
     Unnamed,
-    /// A turn's end: the turn it names, if any, and the open turn it proved
-    /// ended, if that is another.
+    /// A turn's end: the turn it names, if any, the open turn it proved
+    /// ended, if that is another, and whether it also ends what no turn
+    /// scoped: it names none, or its start went unseen.
     Turn {
         turn: Option<&'a TurnKey>,
         implied: Option<&'a TurnKey>,
+        turnless: bool,
     },
 }
 
@@ -59,6 +61,8 @@ pub(crate) struct PendingStart {
     /// Its own turn, else the agent's open one.
     pub(crate) turn: Option<TurnKey>,
     pub(crate) on: Transport,
+    /// The item its start shows; `None` for a pre-use, which starts nothing.
+    pub(crate) item: Option<ToolUse>,
 }
 
 /// A pending call, once per id however many of its starts arrive: a pre-use
@@ -69,6 +73,8 @@ struct Pending {
     tool_name: Option<Arc<str>>,
     turn: Option<TurnKey>,
     seen_on: Vec<Transport>,
+    /// What its start showed, once it started: the call is in flight.
+    item: Option<ToolUse>,
 }
 
 #[derive(Debug)]
@@ -173,7 +179,7 @@ impl ActionRequests {
     /// (#242).
     pub(crate) fn register(&mut self, id: AgentId, start: PendingStart) {
         let starts = self.pending.entry(id).or_default();
-        let at = match starts.iter().position(|p| p.call == start.call) {
+        let mut at = match starts.iter().position(|p| p.call == start.call) {
             Some(at) => at,
             None => {
                 starts.push(Pending {
@@ -181,10 +187,20 @@ impl ActionRequests {
                     tool_name: None,
                     turn: None,
                     seen_on: Vec::new(),
+                    item: None,
                 });
                 starts.len() - 1
             }
         };
+        // A call's first start makes it the newest in flight.
+        if let Some(item) = start.item
+            && starts[at].item.is_none()
+        {
+            let mut started = starts.remove(at);
+            started.item = Some(item);
+            starts.push(started);
+            at = starts.len() - 1;
+        }
         let pending = &mut starts[at];
         if pending.tool_name.is_none() {
             pending.tool_name = start.tool_name;
@@ -245,7 +261,11 @@ impl ActionRequests {
         let resolved = requires_action && self.resolves(&id, Seen::End(ended), from);
         match ended {
             Ended::Call(c) => self.retire(&id, c),
-            Ended::Turn { turn, implied } => self.retire_turn(&id, turn, implied, from),
+            Ended::Turn {
+                turn,
+                implied,
+                turnless,
+            } => self.retire_turn(&id, turn, implied, turnless, from),
             Ended::Unnamed => {}
         }
         if resolved {
@@ -303,18 +323,29 @@ impl ActionRequests {
             Seen::Resolved(Resolution::Call(c)) => req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed) => from == Transport::Hook && !req.named,
-            Seen::End(Ended::Turn { turn, implied }) => match &req.turn {
+            Seen::End(Ended::Turn {
+                turn,
+                implied,
+                turnless,
+            }) => match &req.turn {
                 Some(t) => Some(t) == turn || Some(t) == implied,
                 // The transcript may read a turn's end past a hook's fresh
                 // raise, so it answers only its own.
-                None => {
-                    turn.is_none() && (from == Transport::Hook || req.raised_on == Transport::Jsonl)
-                }
+                None => turnless && (from == Transport::Hook || req.raised_on == Transport::Jsonl),
             },
             Seen::Resolved(Resolution::Turn(k)) => req.turn.as_ref() == Some(k),
             // The child resumed, unless a member is the parent's own call.
             Seen::ChildResumed(tasks) => req.members.iter().all(|m| tasks.contains(&*m.call)),
         }
+    }
+
+    /// The item of `id`'s newest call that started and has not ended.
+    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<ToolUse> {
+        self.pending
+            .get(id)?
+            .iter()
+            .rev()
+            .find_map(|p| p.item.clone())
     }
 
     pub(crate) fn is_member(&self, id: &AgentId, call: &str) -> bool {
@@ -336,14 +367,14 @@ impl ActionRequests {
     }
 
     /// The pending starts a turn's end retires: its turn's and the implied
-    /// one's. An end naming no turn retires the turnless ones, a transcript's
-    /// only its own: grok's transcript reads a turn's end past its hooks' next
-    /// call.
+    /// one's, and the turnless ones when it is `turnless`, a transcript's only
+    /// its own: grok's transcript reads a turn's end past its hooks' next call.
     fn retire_turn(
         &mut self,
         id: &AgentId,
         turn: Option<&TurnKey>,
         implied: Option<&TurnKey>,
+        turnless: bool,
         from: Transport,
     ) {
         let Some(starts) = self.pending.get_mut(id) else {
@@ -352,10 +383,10 @@ impl ActionRequests {
         for p in starts.iter_mut() {
             match &p.turn {
                 Some(t) if Some(t) == turn || Some(t) == implied => p.seen_on.clear(),
-                None if turn.is_none() && from == Transport::Jsonl => {
+                None if turnless && from == Transport::Jsonl => {
                     p.seen_on.retain(|on| *on != Transport::Jsonl);
                 }
-                None if turn.is_none() => p.seen_on.clear(),
+                None if turnless => p.seen_on.clear(),
                 _ => {}
             }
         }
@@ -433,7 +464,47 @@ mod tests {
             tool_name: tool_name.map(Arc::from),
             turn: None,
             on,
+            item: None,
         }
+    }
+
+    fn started(call: &str) -> PendingStart {
+        PendingStart {
+            item: Some(ToolUse {
+                tool_use_id: Some(call.into()),
+                detail: None,
+                kind: crate::state::ToolKind::Other,
+            }),
+            ..pending(call, None, HOOK)
+        }
+    }
+
+    fn in_flight(reqs: &ActionRequests) -> Option<String> {
+        Some(reqs.newest_in_flight(&id())?.tool_use_id?.to_string())
+    }
+
+    #[test]
+    fn the_newest_call_in_flight_is_the_last_to_start_and_not_end() {
+        let mut reqs = ActionRequests::default();
+        reqs.register(id(), pending("a", Some("Bash"), HOOK));
+        assert_eq!(in_flight(&reqs), None, "a pre-use starts nothing");
+        reqs.register(id(), started("b"));
+        reqs.register(id(), started("a"));
+        assert_eq!(
+            in_flight(&reqs).as_deref(),
+            Some("a"),
+            "a's start came last, though its pre-use came first"
+        );
+        reqs.register(id(), started("b"));
+        assert_eq!(
+            in_flight(&reqs).as_deref(),
+            Some("a"),
+            "a second start of b is no newer"
+        );
+        reqs.end(id(), Ended::Call("a"), HOOK, false);
+        assert_eq!(in_flight(&reqs).as_deref(), Some("b"));
+        reqs.end(id(), Ended::Call("b"), HOOK, false);
+        assert_eq!(in_flight(&reqs), None);
     }
 
     fn raise(
@@ -566,6 +637,7 @@ mod tests {
         Ended::Turn {
             turn: k,
             implied: None,
+            turnless: k.is_none(),
         }
     }
 
@@ -711,6 +783,7 @@ mod tests {
                 Seen::End(Ended::Turn {
                     turn: Some(&t2),
                     implied: Some(&t1),
+                    turnless: false,
                 }),
                 JSONL,
                 true,
@@ -721,6 +794,17 @@ mod tests {
                 Seen::End(turn_end(Some(&t1))),
                 HOOK,
                 false,
+            ),
+            (
+                "a turnless request, the end of a turn whose start went unseen",
+                bound(),
+                Seen::End(Ended::Turn {
+                    turn: Some(&t1),
+                    implied: None,
+                    turnless: true,
+                }),
+                HOOK,
+                true,
             ),
             (
                 "a hook turn end",
@@ -872,8 +956,13 @@ mod tests {
             ["b", "c"],
             "a transcript end leaves the hook's"
         );
-        reqs.end(id(), turn_end(None), HOOK, false);
-        assert_eq!(calls(&reqs), ["b"]);
+        let start_unseen = Ended::Turn {
+            turn: Some(&t1),
+            implied: None,
+            turnless: true,
+        };
+        reqs.end(id(), start_unseen, HOOK, false);
+        assert_eq!(calls(&reqs), ["b"], "a turnless end retires the turnless");
     }
 
     /// A pre-use and its start, or the two transports' starts of one call,

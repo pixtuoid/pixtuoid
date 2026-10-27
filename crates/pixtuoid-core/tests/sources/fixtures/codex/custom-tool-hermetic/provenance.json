@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 98
+    "blanked": 94
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codex/custom-tool.json",
@@ -17,7 +17,8 @@
         "item_completed",
         "message",
         "reasoning",
-        "thread_settings_applied"
+        "thread_settings_applied",
+        "web_search_call"
       ],
       "/type": [
         "event_msg",

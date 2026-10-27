@@ -23,6 +23,7 @@ fn row(target: &Target, file: &str) -> Value {
 fn the_plugin_contract_is_the_committed_file() {
     let mut opencode = row(&OPENCODE, "opencode_plugin.ts");
     opencode["data_fields"] = json!(pixtuoid_core::source::opencode::DECODED_DATA_FIELDS);
+    opencode["turn_key"] = json!(pixtuoid_core::source::opencode::TURN);
     let mut hermes = row(&HERMES, "hermes_plugin.py");
     hermes["fields"] = json!(pixtuoid_core::source::hermes::DECODED_FIELDS);
     hermes["detail_keys"] = json!(pixtuoid_core::source::hermes::DETAIL_KEYS);

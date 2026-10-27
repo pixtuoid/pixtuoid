@@ -25,7 +25,7 @@ use std::time::{Duration, SystemTime};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_main};
 use pixtuoid_core::id::AgentId;
 use pixtuoid_core::sprite::RgbBuffer;
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
 use pixtuoid_core::{AgentSlot, SceneState};
 use pixtuoid_scene::cutaway::canvas::CutawayCanvas;
 use pixtuoid_scene::cutaway::paint::render_cutaway;
@@ -93,9 +93,11 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
         let state = match i {
             _ if !busy || i >= requires_action_end => ActivityState::Idle,
             _ if i < n_running => ActivityState::Running {
-                tool_use_id: Some(Arc::from(format!("t{i}").as_str())),
-                detail: Some(Arc::from("cargo test")),
-                kind: kinds[i % kinds.len()],
+                item: Some(ToolUse {
+                    tool_use_id: Some(Arc::from(format!("t{i}").as_str())),
+                    detail: Some(Arc::from("cargo test")),
+                    kind: kinds[i % kinds.len()],
+                }),
             },
             _ => ActivityState::RequiresAction {
                 reason: Some(Arc::from("permission")),

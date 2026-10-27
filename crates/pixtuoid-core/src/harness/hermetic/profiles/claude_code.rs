@@ -106,7 +106,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 args: &["--effort", "ultracode"],
                 prompt: Some("ultrathink: read NOTE.txt."),
                 second: Some(Second::Prompt("Say done.")),
-                seed: None,
+                ..Turn::PROFILE
             },
         },
         Scenario {
@@ -153,4 +153,5 @@ pub(crate) const PROFILE: Profile = Profile {
     live: None,
     daemon: None,
     server_stop: None,
+    turn_exits: &[],
 };

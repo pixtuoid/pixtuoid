@@ -3,7 +3,7 @@ use crate::anim::PAINT_FRAME_MS;
 use crate::character::test_support::make_slot;
 use crate::physics::{LegProgress, octile_distance, octile_path_len, walk_profile};
 use crate::walk::settle_len;
-use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind};
+use pixtuoid_core::state::{ActivityState, GlobalDeskIndex, ToolKind, ToolUse};
 use pixtuoid_core::walkable::WalkableMask;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -141,9 +141,11 @@ fn running_slot(state_started_at: SystemTime, created_at: SystemTime) -> AgentSl
         ..make_slot(
             AgentId::from_transcript_path("/snap.jsonl"),
             ActivityState::Running {
-                tool_use_id: Some(Arc::from("t")),
-                detail: Some(Arc::from("Edit")),
-                kind: ToolKind::Edit,
+                item: Some(ToolUse {
+                    tool_use_id: Some(Arc::from("t")),
+                    detail: Some(Arc::from("Edit")),
+                    kind: ToolKind::Edit,
+                }),
             },
         )
     }
@@ -341,12 +343,7 @@ fn snap_back_derive_is_idempotent_within_a_frame() {
         let t = now0 + Duration::from_millis(i * PAINT_FRAME_MS);
         let p0 = derive_with_routing(&slot, t, &l, &mut rig.rctx());
         let h0 = rig.history.recent(slot.agent_id, 300, t);
-        if arrived_frame.is_none()
-            && matches!(
-                p0,
-                Some(Pose::SeatedTyping | Pose::SeatedIdle | Pose::SeatedThinking)
-            )
-        {
+        if arrived_frame.is_none() && matches!(p0, Some(Pose::SeatedTyping | Pose::SeatedIdle)) {
             arrived_frame = Some(i);
         }
         for k in 1..4 {
@@ -423,9 +420,7 @@ fn snap_back_long_distance_renders_past_window_by_physics() {
                 walking_after_window = true
             }
             Some(Pose::Walking { .. }) => {}
-            Some(Pose::SeatedTyping | Pose::SeatedIdle | Pose::SeatedThinking)
-                if walking_after_window =>
-            {
+            Some(Pose::SeatedTyping | Pose::SeatedIdle) if walking_after_window => {
                 arrived = true;
                 break;
             }
@@ -1295,8 +1290,7 @@ fn wander_coffee_run_coordinates_continuous_under_churn() {
         .map(|i| AgentId::from_transcript_path(&format!("/cont/{i}.jsonl")))
         .find(|id| takes_trip(*id, 0))
         .expect("find a trip agent");
-    // Long-idle, past entry, not in the thinking window (last_event_at ≤
-    // created_at ⇒ was_running = false).
+    // Long-idle, past entry.
     let old = now - Duration::from_secs(120);
     let mut slot = entry_slot(old);
     slot.agent_id = trip_id;
@@ -1358,9 +1352,11 @@ fn wander_interrupted_by_running_does_not_teleport() {
 
     let running = AgentSlot {
         state: ActivityState::Running {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from("Edit")),
-            kind: ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from("Edit")),
+                kind: ToolKind::Edit,
+            }),
         },
         state_started_at: now + Duration::from_millis(flip_frame * PAINT_FRAME_MS),
         ..idle.clone()
@@ -1673,12 +1669,7 @@ impl Hand {
 
     /// Painted until it sits at its desk, at most `paints`.
     fn paint_until_seated(&mut self, paints: u32) -> bool {
-        (0..paints).any(|_| {
-            matches!(
-                self.paint(),
-                Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)
-            )
-        })
+        (0..paints).any(|_| matches!(self.paint(), Some(Pose::SeatedIdle | Pose::SeatedTyping)))
     }
 
     /// Reachable open floor, well clear of `from`'s and the door's, that it is
@@ -2350,7 +2341,7 @@ fn a_resurrect_mid_walkout_re_enters_from_the_live_position() {
     assert!(
         matches!(pose, Some(Pose::Walking { .. })),
         "and it RENDERS that walk — the entry branch runs before the wander \
-         dispatch, which would otherwise return SeatedThinking and teleport it"
+         dispatch, which would otherwise return a seated pose and teleport it"
     );
 }
 

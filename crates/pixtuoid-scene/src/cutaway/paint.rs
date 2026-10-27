@@ -5512,11 +5512,13 @@ mod tests {
             let variants: [&FigureEdit; 7] = [
                 &|_, _| {},
                 &|c, a| {
-                    c.glow = crate::sim::CharacterGlow::Tool;
+                    c.glow = crate::sim::CharacterGlow::Work;
                     a.state = pixtuoid_core::state::ActivityState::Running {
-                        tool_use_id: None,
-                        detail: None,
-                        kind: pixtuoid_core::state::ToolKind::Read,
+                        item: Some(pixtuoid_core::state::ToolUse {
+                            tool_use_id: None,
+                            detail: None,
+                            kind: pixtuoid_core::state::ToolKind::Read,
+                        }),
                     };
                 },
                 &|_, a| a.model = Some(std::sync::Arc::from("claude-fable-5")),

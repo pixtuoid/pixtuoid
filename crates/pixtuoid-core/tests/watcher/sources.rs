@@ -36,17 +36,14 @@ async fn codex_source_run_emits_events_from_rollout() {
         "type": "session_meta",
         "payload": { "id": uuid, "cwd": "/repo" }
     });
-    let task_started = serde_json::json!({
-        "type": "event_msg",
-        "payload": { "type": "task_started", "turn_id": "t" }
-    });
+    let work = crate::codex_work_line();
     let mut f = tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&transcript)
         .await
         .unwrap();
-    f.write_all(format!("{meta}\n{task_started}\n").as_bytes())
+    f.write_all(format!("{meta}\n{work}\n").as_bytes())
         .await
         .unwrap();
     f.flush().await.unwrap();

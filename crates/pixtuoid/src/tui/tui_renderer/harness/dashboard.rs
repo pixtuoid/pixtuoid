@@ -626,9 +626,11 @@ fn dashboard_renders_requires_action_reason_and_running_without_detail() {
     let mut a = idle("/h/a.jsonl", 1, t0());
     a.label = "cc\u{b7}act".into();
     a.state = ActivityState::Running {
-        tool_use_id: Some(Arc::from("t")),
-        detail: None,
-        kind: ToolKind::Other,
+        item: Some(ToolUse {
+            tool_use_id: Some(Arc::from("t")),
+            detail: None,
+            kind: ToolKind::Other,
+        }),
     };
     let scene = scene_with(vec![w, a], 16);
 

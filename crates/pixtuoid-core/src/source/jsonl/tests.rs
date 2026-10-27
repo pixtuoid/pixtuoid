@@ -2605,18 +2605,20 @@ async fn oversized_attach_seeds_unmatched_task_dispatch() {
     );
 }
 
-/// The skip may bury a turn's end; the window's last bracket re-emits it only
-/// when it is an end, which the ledger's in-order rule applies.
+/// The skip may bury a turn's bracket; the window's last one is re-emitted,
+/// start or end, so the turn the session is in shows, and one it left ends
+/// through the ledger's in-order rule.
 #[tokio::test]
-async fn oversized_attach_re_emits_only_a_last_turn_end() {
+async fn oversized_attach_re_emits_the_last_turn_bracket() {
     let line = |inner: &str, turn: &str| {
         serde_json::json!({"type": "event_msg", "payload": {"type": inner, "turn_id": turn}})
             .to_string()
             + "\n"
     };
+    let key = |k: &str| crate::state::TurnKey::Id(k.into());
     let ended = [line("task_started", "t1"), line("task_complete", "t1")];
     let started = [line("task_complete", "t1"), line("task_started", "t2")];
-    for (tail, want) in [(&ended, Some("t1")), (&started, None)] {
+    for (tail, want) in [(&ended, (None, Some("t1"))), (&started, (Some("t2"), None))] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rollout-big.jsonl");
         tokio::fs::write(&path, oversized_body(tail)).await.unwrap();
@@ -2630,24 +2632,80 @@ async fn oversized_attach_re_emits_only_a_last_turn_end() {
             &seen,
         )
         .await;
-        let ends: Vec<_> = events
+        let brackets: Vec<_> = events
             .iter()
             .filter_map(|(_, e)| match e {
-                AgentEvent::TurnEnd {
-                    turn: Some(crate::state::TurnKey::Id(k)),
-                    ..
-                } => Some(&**k),
+                AgentEvent::TurnStart { turn, .. } => Some((Some(turn.clone()), None)),
+                AgentEvent::TurnEnd { turn, .. } => Some((None, turn.clone())),
                 _ => None,
             })
             .collect();
-        assert_eq!(ends, want.into_iter().collect::<Vec<_>>(), "{events:?}");
-        assert!(
-            !events
-                .iter()
-                .any(|(_, e)| matches!(e, AgentEvent::TurnStart { .. })),
-            "a start is not re-emitted: {events:?}"
-        );
+        assert_eq!(brackets, [(want.0.map(key), want.1.map(key))], "{events:?}");
     }
+}
+
+/// The skip's start goes ahead of its turn's in-flight dispatch, so the
+/// dispatch registers in that turn and the turn's keyed end retires it.
+#[tokio::test]
+async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
+    let started = serde_json::json!({"type": "event_msg",
+        "payload": {"type": "task_started", "turn_id": "t2"}});
+    let spawn = serde_json::json!({"type": "response_item", "payload": {
+        "type": "function_call", "name": "spawn_agent", "arguments": "", "call_id": "call_s"}});
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rollout-big.jsonl");
+    let tail = [started.to_string() + "\n", spawn.to_string() + "\n"];
+    tokio::fs::write(&path, oversized_body(&tail))
+        .await
+        .unwrap();
+    let (cursors, seen) = Default::default();
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::codex::decode_codex_line,
+        t_ended,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let at = |is: &dyn Fn(&AgentEvent) -> bool| events.iter().position(|(_, e)| is(e));
+    let start = at(&|e| matches!(e, AgentEvent::TurnStart { .. })).expect("t2's start");
+    let dispatch = at(
+        &|e| matches!(e, AgentEvent::ToolUseStart { tool_use_id: Some(c), .. } if c == "call_s"),
+    )
+    .expect("the in-flight dispatch");
+    assert!(start < dispatch, "{events:?}");
+
+    let (mut r, mut scene) = (crate::Reducer::new(), crate::SceneState::uniform(4));
+    let t0 = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let id = events[start].1.agent_id();
+    // The walk registers its own slot under its `test` source and deriver, and
+    // `test` sets no `SourceCaps::brackets_turns`; a codex slot does.
+    let codex = AgentEvent::SessionStart {
+        agent_id: id,
+        source: crate::source::codex::SOURCE_NAME.into(),
+        session_id: "s".into(),
+        cwd: "/repo".into(),
+        parent_id: None,
+    };
+    r.apply(&mut scene, codex, t0, Transport::Jsonl);
+    for (from, ev) in events {
+        r.apply(&mut scene, ev, t0, from);
+    }
+    assert!(
+        r.newest_in_flight(&id).is_some(),
+        "the dispatch is in flight"
+    );
+    let end = AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: Some(crate::state::TurnKey::Id("t2".into())),
+    };
+    r.apply(&mut scene, end, t0, Transport::Jsonl);
+    assert_eq!(
+        r.newest_in_flight(&id),
+        None,
+        "t2's end retires its dispatch"
+    );
 }
 
 #[tokio::test]

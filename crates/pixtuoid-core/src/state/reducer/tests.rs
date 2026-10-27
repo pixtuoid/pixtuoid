@@ -72,6 +72,7 @@ fn delegating_slot_with_hook_silent_caps_gets_the_blocked_window() {
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
         child_hooks_unnamed: false,
+        brackets_turns: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -143,6 +144,7 @@ fn generic_tool_displaying_delegating_keeps_the_running_window() {
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
         child_hooks_unnamed: false,
+        brackets_turns: false,
     };
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -1143,4 +1145,256 @@ fn the_stale_sweep_logs_the_wire_label_escaped() {
         out.contains(r"re\u{1b}]0;pwned\u{7}po\u{202e}Z"),
         "escaped, not dropped: {out:?}"
     );
+}
+
+/// An open turn showing no item is the agent between items, alive by its
+/// turn: it is reaped on neither the tool's window alone nor the idle one.
+#[test]
+fn an_open_turn_showing_no_item_keeps_the_longer_of_the_tool_and_idle_windows() {
+    use super::{STALE_IDLE_TIMEOUT, STALE_TOOL_TIMEOUT, stale_threshold_with_caps};
+    use crate::source::registry::{ChildEndInference, SourceCaps};
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::{ActivityState, TurnKey};
+    use crate::{AgentId, Reducer, SceneState};
+    use std::time::SystemTime;
+    let caps = |short_idle: bool| SourceCaps {
+        has_exit_signal: !short_idle,
+        resurrects_on_prompt: true,
+        delegations_are_hook_silent: false,
+        child_end_inference: ChildEndInference::None,
+        child_hooks_unnamed: false,
+        brackets_turns: true,
+    };
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("opencode", "ses_p");
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: id,
+            source: "opencode".into(),
+            session_id: "/p".into(),
+            cwd: "/p".into(),
+            parent_id: None,
+        },
+        SystemTime::UNIX_EPOCH,
+        Transport::Hook,
+    );
+    r.apply(
+        &mut scene,
+        AgentEvent::TurnStart {
+            agent_id: id,
+            turn: TurnKey::Seq(1),
+        },
+        SystemTime::UNIX_EPOCH,
+        Transport::Hook,
+    );
+    let slot = &scene.agents[&id];
+    assert_eq!(slot.state, ActivityState::Running { item: None });
+    assert_eq!(
+        stale_threshold_with_caps(slot, Some(caps(true))),
+        STALE_TOOL_TIMEOUT,
+        "the short idle window is shorter than a tool's"
+    );
+    assert_eq!(
+        stale_threshold_with_caps(slot, Some(caps(false))),
+        STALE_IDLE_TIMEOUT
+    );
+}
+
+/// The turn axis over one agent's `Seq` stream, as `step` checks it after
+/// each event.
+mod turn_property {
+    use std::time::{Duration, SystemTime};
+
+    use proptest::prelude::*;
+
+    use crate::source::{AgentEvent, RequestKeys, ToolDetail, Transport};
+    use crate::state::turns::SeqOracle;
+    use crate::state::{ActivityState, TurnKey};
+    use crate::{AgentId, Reducer, SceneState};
+
+    fn id() -> AgentId {
+        AgentId::from_parts("opencode", "ses_p")
+    }
+
+    fn t(at: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000 + at)
+    }
+
+    #[derive(Clone, Debug)]
+    pub(super) enum Ev {
+        Start(u64),
+        End(Option<u64>),
+        Tool(u8),
+        ToolEnd(u8),
+        Task(u8),
+        Raise { call: Option<u8>, turn: Option<u64> },
+    }
+
+    impl Ev {
+        fn event(&self) -> AgentEvent {
+            let call = |c: &u8| format!("c{c}");
+            match self {
+                Ev::Start(k) => AgentEvent::TurnStart {
+                    agent_id: id(),
+                    turn: TurnKey::Seq(*k),
+                },
+                Ev::End(k) => AgentEvent::TurnEnd {
+                    agent_id: id(),
+                    turn: k.map(TurnKey::Seq),
+                },
+                Ev::Tool(c) => AgentEvent::ToolUseStart {
+                    agent_id: id(),
+                    tool_use_id: Some(call(c)),
+                    detail: Some(ToolDetail::from("bash")),
+                },
+                Ev::Task(c) => AgentEvent::ToolUseStart {
+                    agent_id: id(),
+                    tool_use_id: Some(call(c)),
+                    detail: Some(ToolDetail::Task),
+                },
+                Ev::ToolEnd(c) => AgentEvent::ToolUseEnd {
+                    agent_id: id(),
+                    tool_use_id: Some(call(c)),
+                },
+                Ev::Raise { call: c, turn } => AgentEvent::user_action_request(
+                    id(),
+                    Some("permission".into()),
+                    RequestKeys {
+                        tool_use_id: c.as_ref().map(call),
+                        turn: turn.map(TurnKey::Seq),
+                        ..RequestKeys::default()
+                    },
+                ),
+            }
+        }
+    }
+
+    fn see(oracle: &mut SeqOracle, ev: &Ev) {
+        match ev {
+            Ev::Start(k) => oracle.start(*k),
+            Ev::End(k) => oracle.end(*k),
+            _ => {}
+        }
+    }
+
+    pub(super) fn seeded() -> (Reducer, SceneState) {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: id(),
+                source: "opencode".into(),
+                session_id: "ses_p".into(),
+                cwd: "/p".into(),
+                parent_id: None,
+            },
+            t(0),
+            Transport::Hook,
+        );
+        (r, scene)
+    }
+
+    /// Apply `ev` as the `n`th event and check the property after it.
+    pub(super) fn step(
+        r: &mut Reducer,
+        scene: &mut SceneState,
+        oracle: &mut SeqOracle,
+        n: u64,
+        ev: &Ev,
+    ) -> Result<(), String> {
+        r.apply(scene, ev.event(), t(n), Transport::Hook);
+        see(oracle, ev);
+        let state = &scene.agents[&id()].state;
+        let open = r.corr.turns.open(&id()).cloned();
+        if *state == (ActivityState::Running { item: None }) && open.is_none() {
+            return Err(format!(
+                "after {ev:?}: Running with no item and no turn open"
+            ));
+        }
+        if open.is_some() && *state == ActivityState::Idle {
+            return Err(format!("after {ev:?}: Idle with turn {open:?} open"));
+        }
+        if open != oracle.open() {
+            return Err(format!(
+                "after {ev:?}: turn {open:?} open, the stream's newest unended start is {:?}",
+                oracle.open()
+            ));
+        }
+        Ok(())
+    }
+
+    fn ev() -> impl Strategy<Value = Ev> {
+        let call = 0u8..3;
+        prop_oneof![
+            (0u64..5).prop_map(Ev::Start),
+            proptest::option::of(0u64..5).prop_map(Ev::End),
+            call.clone().prop_map(Ev::Tool),
+            call.clone().prop_map(Ev::ToolEnd),
+            call.clone().prop_map(Ev::Task),
+            (proptest::option::of(call), proptest::option::of(0u64..5))
+                .prop_map(|(call, turn)| Ev::Raise { call, turn }),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn every_event_keeps_the_turn_axis_property(evs in proptest::collection::vec(ev(), 0..24)) {
+            let (mut r, mut scene) = seeded();
+            let mut oracle = SeqOracle::default();
+            for (n, ev) in (1..).zip(&evs) {
+                if let Err(e) = step(&mut r, &mut scene, &mut oracle, n, ev) {
+                    return Err(TestCaseError::fail(e));
+                }
+            }
+        }
+    }
+}
+
+/// Every order of two turns' brackets and a request gated in the first, on a
+/// `Seq` stream, keeps the turn-axis property after each event.
+#[test]
+fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
+    use crate::state::turns::SeqOracle;
+    use turn_property::{Ev, seeded, step};
+    let events = [
+        Ev::Start(1),
+        Ev::End(Some(1)),
+        Ev::Start(2),
+        Ev::End(Some(2)),
+        Ev::Raise {
+            call: None,
+            turn: Some(1),
+        },
+    ];
+    let mut orders = 0;
+    let mut check = |order: &[usize]| {
+        let (mut r, mut scene) = seeded();
+        let mut oracle = SeqOracle::default();
+        for (n, &i) in (1..).zip(order) {
+            if let Err(e) = step(&mut r, &mut scene, &mut oracle, n, &events[i]) {
+                panic!("order {order:?}: {e}");
+            }
+        }
+        orders += 1;
+    };
+    // Heap's algorithm: every permutation once.
+    let mut order: Vec<usize> = (0..events.len()).collect();
+    let mut c = vec![0; order.len()];
+    check(&order);
+    let mut i = 0;
+    while i < order.len() {
+        if c[i] < i {
+            order.swap(if i % 2 == 0 { 0 } else { c[i] }, i);
+            check(&order);
+            c[i] += 1;
+            i = 0;
+        } else {
+            c[i] = 0;
+            i += 1;
+        }
+    }
+    assert_eq!(orders, 120, "5! orders");
 }

@@ -110,4 +110,5 @@ pub(crate) const PROFILE: Profile = Profile {
         env: &[("OPENCLAW_GATEWAY_HOST_LIFELINE", "stdin")],
     }),
     server_stop: None,
+    turn_exits: &[],
 };

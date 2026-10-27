@@ -39,7 +39,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
 use pixtuoid::dev::{Protocol, renderer};
-use pixtuoid_core::state::{ActivityState, SceneState, ToolKind};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::anim::{Motion, PAINT_FPS};
 use pixtuoid_scene::look::spans;
@@ -164,9 +164,11 @@ fn office(start: SystemTime) -> SceneState {
         let (state, started) = match i % 3 {
             0 => (
                 ActivityState::Running {
-                    tool_use_id: Some(format!("tu_{i}").into()),
-                    detail: Some("Edit: src/lib.rs".into()),
-                    kind: ToolKind::Edit,
+                    item: Some(ToolUse {
+                        tool_use_id: Some(format!("tu_{i}").into()),
+                        detail: Some("Edit: src/lib.rs".into()),
+                        kind: ToolKind::Edit,
+                    }),
                 },
                 long_ago,
             ),

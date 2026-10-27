@@ -20,7 +20,7 @@ export const POSIX = process.platform !== "win32";
 
 /**
  * @param {string} source
- * @returns {{ source: string, file: string, registers: string[], consumes: string[], data_fields?: string[] }}
+ * @returns {{ source: string, file: string, registers: string[], consumes: string[], data_fields?: string[], turn_key?: string }}
  */
 export function row(source) {
   const found = contract.plugins.find((p) => p.source === source);

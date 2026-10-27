@@ -36,6 +36,7 @@ pub(crate) const DSH_EVENTS: &[&str] = &[
     "request/header",
     "tool/call",
     "tool/result",
+    "turn/end",
 ];
 
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
@@ -379,6 +380,7 @@ mod tests {
         let decoder_reads: std::collections::BTreeSet<String> = [
             "session_start",
             "session_end",
+            "turn_end",
             "tool_call",
             "tool_result",
             "approval_asked",

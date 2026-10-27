@@ -7,7 +7,7 @@ import test from "node:test";
 import { POSIX, assertShimContract, recorded, render, row } from "./lib/plugin-harness.mjs";
 
 const SOURCE = "opencode";
-const { registers, data_fields: dataFields = [] } = row(SOURCE);
+const { registers, data_fields: dataFields = [], turn_key: turnKey = "" } = row(SOURCE);
 
 // Every field the decoder reads, nested as opencode nests it, beside content
 // that must never leave.
@@ -117,4 +117,62 @@ test("an unspawnable shim or an unreadable session never rejects into opencode",
   };
   const cleanup = await run(module, ctx);
   await cleanup();
+});
+
+/**
+ * @param {string} sessionID
+ * @param {number | undefined} seq
+ */
+const started = (sessionID, seq) => ({
+  type: "session.execution.started",
+  durable: seq === undefined ? undefined : { aggregateID: sessionID, seq, version: 1 },
+  data: { sessionID },
+});
+/**
+ * @param {string} type
+ * @param {string} sessionID
+ * @param {number} seq
+ */
+const settled = (type, sessionID, seq) => ({
+  type: `session.execution.${type}`,
+  durable: { aggregateID: sessionID, seq, version: 1 },
+  data: { sessionID },
+});
+
+test("each settle names its start's seq, and one whose start went unseen names none", { skip: !POSIX }, async (t) => {
+  const { module, outFile } = await render(t, SOURCE);
+  const cleanup = await run(
+    module,
+    host([
+      settled("failed", "ses_a", 2),
+      started("ses_a", 4),
+      started("ses_b", 9),
+      { type: "session.tool.input.started", data: { sessionID: "ses_a", id: "c1", name: "bash" } },
+      settled("succeeded", "ses_a", 7),
+      settled("interrupted", "ses_b", 11),
+      settled("succeeded", "ses_b", 12),
+    ]),
+  );
+  const got = (await recorded(outFile, 7)).map((p) => [p.type, p.data.sessionID, p[turnKey]]);
+  await cleanup();
+  assert.deepEqual(got, [
+    ["session.execution.failed", "ses_a", undefined],
+    ["session.execution.started", "ses_a", 4],
+    ["session.execution.started", "ses_b", 9],
+    ["session.tool.input.started", "ses_a", undefined],
+    ["session.execution.succeeded", "ses_a", 4],
+    ["session.execution.interrupted", "ses_b", 9],
+    ["session.execution.succeeded", "ses_b", undefined],
+  ]);
+});
+
+test("a start with no durable seq names no turn, nor does its settle", { skip: !POSIX }, async (t) => {
+  const { module, outFile } = await render(t, SOURCE);
+  const cleanup = await run(
+    module,
+    host([started("ses_a", 3), started("ses_a", undefined), settled("succeeded", "ses_a", 5)]),
+  );
+  const got = (await recorded(outFile, 3)).map((p) => p[turnKey]);
+  await cleanup();
+  assert.deepEqual(got, [3, undefined, undefined]);
 });

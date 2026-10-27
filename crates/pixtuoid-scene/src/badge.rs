@@ -190,7 +190,9 @@ pub fn disambig_suffix(session_id: &str) -> String {
 mod tests {
     use super::{BadgeTone, Namesakes, badge_hue, disambig_suffix, tone_of, truncate_label};
     use pixtuoid_core::AgentId;
-    use pixtuoid_core::state::{ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind};
+    use pixtuoid_core::state::{
+        ActivityState, AgentSlot, GlobalDeskIndex, SceneState, ToolKind, ToolUse,
+    };
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::{Duration, SystemTime};
@@ -227,9 +229,11 @@ mod tests {
 
     fn running() -> ActivityState {
         ActivityState::Running {
-            tool_use_id: Some(Arc::from("t")),
-            detail: Some(Arc::from("Edit")),
-            kind: ToolKind::Edit,
+            item: Some(ToolUse {
+                tool_use_id: Some(Arc::from("t")),
+                detail: Some(Arc::from("Edit")),
+                kind: ToolKind::Edit,
+            }),
         }
     }
 

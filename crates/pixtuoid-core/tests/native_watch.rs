@@ -205,8 +205,8 @@ async fn a_relative_root_keys_each_transcript_once() {
     );
 
     let work = serde_json::json!({
-        "type": "event_msg",
-        "payload": { "type": "task_started", "turn_id": "t" }
+        "type": "response_item",
+        "payload": { "type": "function_call", "name": "exec_command", "call_id": "c1" }
     });
     // Closed at once: on macOS the write's FSEvents event came only at close.
     std::io::Write::write_all(
@@ -287,8 +287,8 @@ mod held_open {
                 "payload": { "id": CODEX_ID, "cwd": "/Users/me/proj" }
             }),
             activity: serde_json::json!({
-                "type": "event_msg",
-                "payload": { "type": "task_started", "turn_id": "t" }
+                "type": "response_item",
+                "payload": { "type": "function_call", "name": "exec_command", "call_id": "c1" }
             }),
         }
     }

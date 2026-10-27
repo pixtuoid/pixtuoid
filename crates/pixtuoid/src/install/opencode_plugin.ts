@@ -32,25 +32,32 @@ type Event = Plugin.Context["event"]["subscribe"] extends (
   ? E
   : never
 
+const SETTLED = [
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+] as const satisfies readonly Event["type"][]
+const SETTLES = new Set<string>(SETTLED)
+
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
 const FORWARDED = [
   "session.created",
   "session.deleted",
   "session.execution.started",
-  "session.execution.succeeded",
-  "session.execution.failed",
-  "session.execution.interrupted",
+  ...SETTLED,
   "session.tool.input.started",
   "session.tool.success",
   "session.tool.failed",
   "permission.asked",
 ] as const satisfies readonly Event["type"][]
 const FORWARD = new Set<string>(FORWARDED)
+type Forwarded = Extract<Event, { type: (typeof FORWARDED)[number] }>
+const forwarded = (event: Event): event is Forwarded => FORWARD.has(event.type)
 
 type SessionRecord = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
 // A forwarded event's data, or the record a turn's start merges in.
-type Data = Fields<Extract<Event, { type: (typeof FORWARDED)[number] }>["data"] | SessionRecord>
+type Data = Fields<Forwarded["data"] | SessionRecord>
 
 // Copied field by field, so no prompt, tool input or output leaves opencode.
 const allowlisted = (data: Data | undefined) => ({
@@ -104,14 +111,38 @@ export default {
     const controller = new AbortController()
     let inFlight = 0
     let lastActivity = 0
+    // Each session's open execution, by its start's durable seq. A settle
+    // carries its own seq, so it is stamped with its start's: the turn it
+    // ends. One execution runs per session at a time
+    // (`packages/core/src/session/run-coordinator.ts:6` at v2.2.0), and the
+    // bus delivers in order, so a session's next settle is its start's. A
+    // settle whose start this process never saw goes unstamped.
+    const openTurns = new Map<Forwarded["data"]["sessionID"], number>()
+    const turnOf = (event: Forwarded): number | undefined => {
+      const session = event.data?.sessionID
+      if (event.type === "session.execution.started") {
+        const seq = event.durable?.seq
+        if (typeof seq !== "number") {
+          openTurns.delete(session)
+          return undefined
+        }
+        openTurns.set(session, seq)
+        return seq
+      }
+      if (!SETTLES.has(event.type)) return undefined
+      const seq = openTurns.get(session)
+      openTurns.delete(session)
+      return seq
+    }
     // Not awaited: setup returns at once, and the loop's own awaits only pace
     // this subscription, whose queue is unbounded.
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          if (!FORWARD.has(event.type)) continue
+          if (!forwarded(event)) continue
           inFlight++
           try {
+            const turn = turnOf(event)
             // A turn's start carries only `sessionID`; the session's record adds
             // what `session.created` did, for a session swept since.
             const data: Data =
@@ -122,6 +153,7 @@ export default {
               JSON.stringify({
                 type: event.type,
                 location: event.location && { directory: event.location.directory },
+                turn,
                 data: allowlisted(data),
                 // The opencode server's pid; the daemon's HookPidWatch ends every
                 // sprite bound to it when it dies.

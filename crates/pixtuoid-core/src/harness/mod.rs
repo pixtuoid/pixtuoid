@@ -25,7 +25,7 @@ use serde_json::Value;
 
 use crate::source::decoder::{LineDecoder, decode_hook_payload, display_safe};
 use crate::source::registry;
-use crate::state::{ActivityState, SceneState, ToolKind};
+use crate::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use crate::{AgentEvent, AgentId, Reducer, Transport};
 
 mod captures;
@@ -77,6 +77,8 @@ pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> std::io::Result
 pub enum Reach {
     /// A tool call is in flight.
     Running,
+    /// A turn is open, showing no item.
+    RunningNoItem,
     /// Blocked on a permission/input prompt.
     RequiresAction,
     /// A subagent dispatch is in flight.
@@ -492,10 +494,16 @@ fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
     for (&id, slot) in &scene.agents {
         let r = match &slot.state {
             ActivityState::Running {
-                kind: ToolKind::Task,
-                ..
+                item:
+                    Some(ToolUse {
+                        kind: ToolKind::Task,
+                        ..
+                    }),
             } => Reach::Delegating,
-            ActivityState::Running { .. } => Reach::Running,
+            ActivityState::Running {
+                item: Some(ToolUse { .. }),
+            } => Reach::Running,
+            ActivityState::Running { item: None } => Reach::RunningNoItem,
             ActivityState::RequiresAction { .. } => Reach::RequiresAction,
             ActivityState::Idle => continue,
         };

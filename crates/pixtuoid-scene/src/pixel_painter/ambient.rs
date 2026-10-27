@@ -15,8 +15,8 @@ pub(super) fn paint_ceiling_halos(buf: &mut RgbBuffer, theme: &Theme, halos: &[E
         return;
     }
     for halo in halos {
-        if let EmitterKind::MonitorHalo(tool) = halo.kind {
-            let color = theme.tool_glow.for_kind(tool);
+        if let EmitterKind::MonitorHalo(work) = halo.kind {
+            let color = theme.tool_glow.for_work(work);
             paint_light(buf, halo, color);
         }
     }
@@ -30,7 +30,9 @@ mod tests {
     /// One monitor halo centred at `(x, y)`, over an edit.
     fn one_halo(x: u16, y: u16) -> Vec<Emitter> {
         vec![Emitter {
-            kind: EmitterKind::MonitorHalo(pixtuoid_core::state::ToolKind::Edit),
+            kind: EmitterKind::MonitorHalo(crate::lighting::ScreenWork::ToolUse(
+                pixtuoid_core::state::ToolKind::Edit,
+            )),
             light: crate::lighting::Light::Patch {
                 centre: crate::layout::Point { x, y },
             },

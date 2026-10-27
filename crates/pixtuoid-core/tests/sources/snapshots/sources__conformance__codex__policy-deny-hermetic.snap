@@ -6,10 +6,6 @@ expression: events
     agent_id: 14670668867204607471
     turn:
       Id: 01a17c19-3390-7123-8a7b-e6c92e82eaa1
-- ToolUseStart:
-    agent_id: 14670668867204607471
-    tool_use_id: ~
-    detail: ~
 - ModelInfo:
     agent_id: 14670668867204607471
     model: gpt-5.5
@@ -23,10 +19,6 @@ expression: events
 - ToolUseEnd:
     agent_id: 14670668867204607471
     tool_use_id: call_5IkCmxeRJ9OAc26P
-- ToolUseStart:
-    agent_id: 14670668867204607471
-    tool_use_id: ~
-    detail: ~
 - Usage:
     agent_id: 14670668867204607471
     fresh_tokens: 19

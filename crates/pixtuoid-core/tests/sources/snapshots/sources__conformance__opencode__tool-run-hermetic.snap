@@ -3,48 +3,54 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     source: opencode
-    session_id: ses_e9709e554ffeVqe11rb8FNCWjU
+    session_id: ses_e818824beffeSxp1kAW4lvXfEU
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     model: gpt-5.2
     effort: ~
 - SessionStart:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     source: opencode
-    session_id: ses_e9709e554ffeVqe11rb8FNCWjU
+    session_id: ses_e818824beffeSxp1kAW4lvXfEU
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     model: gpt-5.2
     effort: ~
+- TurnStart:
+    agent_id: 5245933742564092384
+    turn:
+      Seq: 2
 - Identity:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     source: opencode
-    session_id: ses_e9709e554ffeVqe11rb8FNCWjU
+    session_id: ses_e818824beffeSxp1kAW4lvXfEU
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 5679415051535113916
-    tool_use_id: call_poc6hZC2t09t5HDB
+    agent_id: 5245933742564092384
+    tool_use_id: call_LI8gt8n0CSGT8sL2
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     source: opencode
-    session_id: ses_e9709e554ffeVqe11rb8FNCWjU
+    session_id: ses_e818824beffeSxp1kAW4lvXfEU
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 5679415051535113916
-    tool_use_id: call_poc6hZC2t09t5HDB
+    agent_id: 5245933742564092384
+    tool_use_id: call_LI8gt8n0CSGT8sL2
 - Identity:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
     source: opencode
-    session_id: ses_e9709e554ffeVqe11rb8FNCWjU
+    session_id: ses_e818824beffeSxp1kAW4lvXfEU
     cwd: ~
 - TurnEnd:
-    agent_id: 5679415051535113916
+    agent_id: 5245933742564092384
+    turn:
+      Seq: 2

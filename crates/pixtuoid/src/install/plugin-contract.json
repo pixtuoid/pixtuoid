@@ -14,7 +14,8 @@
         "assistant/message",
         "request/header",
         "tool/call",
-        "tool/result"
+        "tool/result",
+        "turn/end"
       ],
       "consumes": []
     },
@@ -103,7 +104,8 @@
         "name",
         "action",
         "source.id"
-      ]
+      ],
+      "turn_key": "turn"
     }
   ]
 }
