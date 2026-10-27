@@ -6,10 +6,6 @@ expression: events
     agent_id: 17544557714518683235
     turn:
       Id: 01a17c18-9b80-7ea3-9f08-a23d18b1a547
-- ToolUseStart:
-    agent_id: 17544557714518683235
-    tool_use_id: ~
-    detail: ~
 - ModelInfo:
     agent_id: 17544557714518683235
     model: gpt-5.5
@@ -23,10 +19,6 @@ expression: events
 - ToolUseEnd:
     agent_id: 17544557714518683235
     tool_use_id: call_ckskXP-J2x7-iSex
-- ToolUseStart:
-    agent_id: 17544557714518683235
-    tool_use_id: ~
-    detail: ~
 - Usage:
     agent_id: 17544557714518683235
     fresh_tokens: 19
@@ -41,10 +33,6 @@ expression: events
     agent_id: 17544557714518683235
     turn:
       Id: 01a17c18-a938-7a40-9cf5-8cc2df7a6c28
-- ToolUseStart:
-    agent_id: 17544557714518683235
-    tool_use_id: ~
-    detail: ~
 - ModelInfo:
     agent_id: 17544557714518683235
     model: gpt-5.5
@@ -58,10 +46,6 @@ expression: events
 - ToolUseEnd:
     agent_id: 17544557714518683235
     tool_use_id: call_gbWDgSw34R_0obqd
-- ToolUseStart:
-    agent_id: 17544557714518683235
-    tool_use_id: ~
-    detail: ~
 - Usage:
     agent_id: 17544557714518683235
     fresh_tokens: 19

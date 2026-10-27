@@ -3390,8 +3390,8 @@ mod tests {
             has(&v, Label::Stale, &format!("`{owed}`"))
         };
         // A codex turn end the strip keeps.
-        assert!(census("codex", &"web_search_end", &|d| {
-            respell(d, "\"task_complete\"", "\"web_search_end\"");
+        assert!(census("codex", &"turn_aborted", &|d| {
+            respell(d, "\"task_complete\"", "\"turn_aborted\"");
         }));
         // An agy step whose line decodes to nothing, which the strip blanks whole.
         assert!(!census("antigravity", &"USER_INPUT", &|d| {

@@ -1778,11 +1778,10 @@ fn a_codex_request_binds_its_tools_pending_call_and_resolves_on_its_output() {
         Transport::Hook,
     );
     assert!(requires_action(&scene, id));
-    tool_use_start(&mut r, &mut scene, id, None, None, t0, Transport::Jsonl);
     tool_use_end(&mut r, &mut scene, id, Some("c2"), t0, Transport::Jsonl);
     assert!(
         requires_action(&scene, id),
-        "the rollout's pulse and another call's output answer nothing"
+        "another call's output answers nothing"
     );
     tool_use_end(&mut r, &mut scene, id, Some("c1"), t0, Transport::Jsonl);
     assert_eq!(
@@ -2100,7 +2099,6 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
     );
     let t2 = t1 + Duration::from_secs(5);
     tool_use_end(&mut r, &mut scene, id, Some("xn"), t2, Transport::Jsonl);
-    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
     apply(
         &mut r,
         &mut scene,
@@ -2115,7 +2113,6 @@ fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
         t2,
         Transport::Jsonl,
     );
-    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
     assert!(
         requires_action(&scene, id),
         "m's prompt still waits on the human: {:?}",

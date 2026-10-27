@@ -6,10 +6,6 @@ expression: events
     agent_id: 9157567666502660018
     turn:
       Id: 01a17c19-d1fc-70c0-b232-d9bf63ca2523
-- ToolUseStart:
-    agent_id: 9157567666502660018
-    tool_use_id: ~
-    detail: ~
 - ModelInfo:
     agent_id: 9157567666502660018
     model: gpt-5.5
@@ -23,10 +19,6 @@ expression: events
 - ToolUseEnd:
     agent_id: 9157567666502660018
     tool_use_id: call_Os0emwLWapdk-nqH
-- ToolUseStart:
-    agent_id: 9157567666502660018
-    tool_use_id: ~
-    detail: ~
 - Usage:
     agent_id: 9157567666502660018
     fresh_tokens: 19
@@ -39,10 +31,6 @@ expression: events
 - ToolUseEnd:
     agent_id: 9157567666502660018
     tool_use_id: call_hermetic_wait_cell_1
-- ToolUseStart:
-    agent_id: 9157567666502660018
-    tool_use_id: ~
-    detail: ~
 - Usage:
     agent_id: 9157567666502660018
     fresh_tokens: 19
