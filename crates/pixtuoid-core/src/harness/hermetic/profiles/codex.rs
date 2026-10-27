@@ -1,6 +1,6 @@
-use super::hook_event_name;
+use super::{SECOND_TURN, hook_event_name};
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Second, Shape, Surface, Turn, tui,
 };
 use crate::harness::plan::Placeholder;
 
@@ -17,20 +17,53 @@ const TUI: tui::Tui = tui::Tui {
         marker: "›",
         border: tui::Border::Nothing,
     },
-    gates: &[tui::Gate {
-        shows: "Would you like to run the following command?",
-        // "No, and tell Codex what to do differently", which aborts the turn
-        // (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
-        deny: &[tui::Key::Esc],
-        // It loses a key sent the moment it shows (measured; the cause in
-        // codex is unverified).
-        dwell: std::time::Duration::from_millis(500),
-    }],
+    gates: &[GATE],
     // `chat.interrupt_turn` (`tui/src/keymap.rs:1695` at `rust-v0.164.0`),
     // while a turn runs (`tui/src/bottom_pane/mod.rs:1822-1835`).
     cancel: &[tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     conpty: tui::ConPty::Renders,
+};
+
+/// The exec approval dialog, answered "No, and tell Codex what to do
+/// differently", which aborts the turn
+/// (`tui/src/bottom_pane/approval_overlay.rs:911-915`).
+const GATE: tui::Gate = tui::Gate {
+    shows: "Would you like to run the following command?",
+    answer: &[tui::Key::Esc],
+    // It loses a key sent the moment it shows (measured; the cause in
+    // codex is unverified).
+    dwell: std::time::Duration::from_millis(500),
+};
+
+/// [`TUI`] answering its dialog "Yes, proceed", its choices' keys at
+/// `rust-v0.164.0` (`tui/src/bottom_pane/approval_overlay.rs:852-934`,
+/// `tui/src/keymap.rs:1979-1983`).
+const TUI_APPROVE: tui::Tui = tui::Tui {
+    gates: &[tui::Gate {
+        answer: &[tui::Key::Text("y")],
+        ..GATE
+    }],
+    ..TUI
+};
+
+/// Code mode: the model's `exec` cell runs JavaScript whose tools are nested
+/// calls (`code-mode-protocol/src/description.rs:23-48` at `rust-v0.164.0`),
+/// off by default for the profile's model (`features/src/lib.rs:1198-1201`,
+/// `core/src/tools/mod.rs:65-75`; `models-manager/models.json` gives
+/// `gpt-5.5` no `tool_mode`).
+const CODE_MODE: [&str; 2] = ["-c", "features.code_mode=true"];
+
+/// [`TUI`] in code mode.
+const TUI_CODE_MODE: tui::Tui = tui::Tui {
+    args: &[
+        "--dangerously-bypass-hook-trust",
+        "--ask-for-approval",
+        "on-request",
+        CODE_MODE[0],
+        CODE_MODE[1],
+    ],
+    ..TUI
 };
 
 pub(crate) const PROFILE: Profile = Profile {
@@ -171,6 +204,110 @@ trust_level = "trusted"
             expects: &["SessionStart", "UserPromptSubmit", "SessionEnd"],
             fixture: "fixtures/codex/cancel-hermetic",
             turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "two-turn",
+            shape: Shape::ToolRun,
+            surface: Surface::Tui { row: &TUI },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/two-turn-hermetic",
+            turn: Turn {
+                second: Some(Second::Prompt(SECOND_TURN)),
+                ..Turn::PROFILE
+            },
+        },
+        Scenario {
+            name: "approve",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_APPROVE },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/approve-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-failure",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-failure-hermetic",
+            turn: Turn {
+                args: &CODE_MODE,
+                ..Turn::PROFILE
+            },
+        },
+        // The dialog offers no "No, continue without running it" for an exec
+        // (`protocol/src/approvals.rs:377-410`,
+        // `core/src/tools/approvals.rs:710-726` at `rust-v0.164.0`), so a
+        // gated nested call is refused the one way a user can: aborting.
+        Scenario {
+            name: "code-mode-gate",
+            shape: Shape::Permission,
+            surface: Surface::Tui {
+                row: &TUI_CODE_MODE,
+            },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/code-mode-gate-hermetic",
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "code-mode-yield",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"],
+            fixture: "fixtures/codex/code-mode-yield-hermetic",
+            turn: Turn {
+                args: &CODE_MODE,
+                ..Turn::PROFILE
+            },
+        },
+        // The seed's own Stop hook blocks the turn's first stop, which goes on
+        // (`core/src/session/turn.rs:722-759`, `hooks/src/events/stop.rs` at
+        // `rust-v0.164.0`); codex reads a trusted project's `.codex/hooks.json`
+        // (`config/src/loader/mod.rs:1838-1965`, `hooks/src/engine/discovery.rs:378-418`).
+        Scenario {
+            name: "stop-hook",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/stop-hook-hermetic",
+            turn: Turn {
+                seed: Some("stop-hook"),
+                ..Turn::PROFILE
+            },
         },
     ],
     script_vars: &[],

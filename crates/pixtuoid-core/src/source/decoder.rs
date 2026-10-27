@@ -231,6 +231,11 @@ pub enum TailActivity {
 /// Core deliberately carries no date dependency for the handful of wire
 /// timestamps it reads; every caller treats `None` as "no information".
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
+    rfc3339_to_epoch(s).map(|d| d.as_secs())
+}
+
+/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond.
+pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     let b = s.as_bytes();
     if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' && b[10] != b't' {
         return None;
@@ -242,9 +247,14 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
         return None;
     }
     let mut i = 19;
+    let mut nanos = 0;
     if b.get(i) == Some(&b'.') {
         i += 1;
-        while b.get(i).is_some_and(u8::is_ascii_digit) {
+        // The first digit is tenths of a second; one past nanoseconds is cut.
+        let mut place = 100_000_000;
+        while let Some(digit) = b.get(i).filter(|c| c.is_ascii_digit()) {
+            nanos += u32::from(digit - b'0') * place;
+            place /= 10;
             i += 1;
         }
     }
@@ -271,7 +281,7 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
     let secs = days * 86_400 + h * 3600 + mi * 60 + sec - offset_secs;
-    u64::try_from(secs).ok()
+    Some(std::time::Duration::new(u64::try_from(secs).ok()?, nanos))
 }
 
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
@@ -761,6 +771,24 @@ mod tests {
         for bad in ["", "2026-07-16", "not a date", "2026-13-01T00:00:00Z"] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn rfc3339_to_epoch_keeps_the_fraction_the_seconds_drop() {
+        use std::time::Duration;
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05.123456+00:00"),
+            Some(Duration::new(1_784_203_205, 123_456_000))
+        );
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05.1234567891Z"),
+            Some(Duration::new(1_784_203_205, 123_456_789)),
+            "a digit past the nanosecond is cut"
+        );
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05Z"),
+            Some(Duration::from_secs(1_784_203_205))
+        );
     }
 
     #[test]

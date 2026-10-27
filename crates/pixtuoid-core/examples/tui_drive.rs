@@ -18,10 +18,8 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use pixtuoid_core::harness::hermetic::tui::{
-    Action, Answer, BUDGET, CommandLine, Driver, GAVE_UP, Key, Tui,
-};
-use pixtuoid_core::harness::hermetic::{self, Surface};
+use pixtuoid_core::harness::hermetic;
+use pixtuoid_core::harness::hermetic::tui::{Action, BUDGET, CommandLine, Driver, GAVE_UP, Key};
 use pixtuoid_core::harness::{DRIVER_DIR_ENV, GAVE_UP_NOTE};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -67,14 +65,17 @@ fn main() {
     std::process::exit(code);
 }
 
-fn tui_of(source: &str, scenario: &str) -> std::io::Result<(&'static Tui, Answer)> {
+/// `source`'s TUI `scenario`'s driver, typing `prompt` first.
+fn driver_of(
+    source: &str,
+    scenario: &str,
+    prompt: String,
+    now: Instant,
+) -> std::io::Result<Driver<'static>> {
     hermetic::profile(source)
         .ok_or_else(|| std::io::Error::other(format!("{source}: not a profiled source")))?
         .scenario(scenario)
-        .and_then(|s| match s.surface {
-            Surface::Tui { row } => Some((row, s.shape.answer())),
-            Surface::Headless => None,
-        })
+        .and_then(|s| s.tui_driver(prompt, now))
         .ok_or_else(|| std::io::Error::other(format!("{source}: no TUI scenario {scenario}")))
 }
 
@@ -97,7 +98,8 @@ fn command(
 }
 
 fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
-    let (tui, answer) = tui_of(&line.source, &line.scenario)?;
+    let started = Instant::now();
+    let mut driver = driver_of(&line.source, &line.scenario, line.prompt, started)?;
     let mut log = std::fs::File::create(&line.log)?;
     let pair = NativePtySystem::default()
         .openpty(SIZE)
@@ -126,9 +128,7 @@ fn drive(line: CommandLine, budget: Duration) -> std::io::Result<i32> {
         }
     });
 
-    let started = Instant::now();
     let mut screen = parser();
-    let mut driver = Driver::new(tui, answer, line.prompt, started);
     let mut quit_at: Option<Instant> = None;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -248,9 +248,9 @@ mod tests {
         let mut screen = parser();
         let rule = "─".repeat(usize::from(SIZE.cols));
         screen.process(format!("{rule}❯ ").as_bytes());
-        let (tui, answer) = tui_of("claude-code", "permission").expect("a TUI row");
         let now = Instant::now();
-        let mut driver = Driver::new(tui, answer, "hi".to_owned(), now);
+        let mut driver =
+            driver_of("claude-code", "permission", "hi".to_owned(), now).expect("a TUI row");
         assert_eq!(
             driver.step(&shown(screen.screen()), now),
             Action::Type("hi".to_owned())
@@ -273,8 +273,13 @@ mod tests {
             prompt: "hi".into(),
             program: vec!["sh".into(), "-c".into(), "sleep 600".into()],
         };
-        let (tui, answer) = tui_of(&line.source, &line.scenario).expect("a TUI row");
-        let unprompted = Driver::new(tui, answer, line.prompt.clone(), Instant::now());
+        let unprompted = driver_of(
+            &line.source,
+            &line.scenario,
+            line.prompt.clone(),
+            Instant::now(),
+        )
+        .expect("a TUI row");
         let budget = Duration::from_millis(500);
         let code = temp_env::with_var(DRIVER_DIR_ENV, Some(dir.path()), || drive(line, budget))
             .expect("it drove");

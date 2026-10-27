@@ -678,9 +678,12 @@ fn judge(
         findings.push(finding);
         return Ok(None);
     }
-    // A second turn that never ran had no session the first turn's wire named,
-    // which is pixtuoid's to name; one that ran `completed_turn` held.
-    if scenario.turn.second.is_some() && manifest.capture.second_turn.is_none() {
+    // A headless second turn that never ran had no session the first turn's
+    // wire named, which is pixtuoid's to name; one that ran `completed_turn` held.
+    if matches!(scenario.surface, Surface::Headless)
+        && scenario.turn.second.is_some()
+        && manifest.capture.second_turn.is_none()
+    {
         findings.push((
             Label::Fail,
             "the first turn's wire named no session for its second turn".into(),
@@ -1349,7 +1352,7 @@ mod tests {
             .expect("a profiled scenario");
         let src = crate::harness::sources_root().join(scenario.fixture);
         let d = run_of(&src, source, name, scene);
-        if scenario.turn.second.is_some() {
+        if matches!(scenario.surface, Surface::Headless) && scenario.turn.second.is_some() {
             write_manifest(d.path(), source, |m| {
                 m.scenario = name.into();
                 m.capture.second_turn = Some(crate::harness::SecondTurn {

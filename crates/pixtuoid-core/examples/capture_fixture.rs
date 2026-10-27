@@ -643,10 +643,18 @@ mod recorder {
             Path::new(env!("CARGO_MANIFEST_DIR")),
             &scenario.script(&manifest.source),
         )?;
+        let seed = match scenario.seed(&manifest.source) {
+            Some(dir) => Some(filled(
+                "seed",
+                &slashed_under(Path::new(env!("CARGO_MANIFEST_DIR")), &dir)?,
+            )?),
+            None => None,
+        };
         let command = format!("just hermetic --record {}", manifest.source);
         let fresh_record = Recorded {
             aimock: Some(filled("aimock", &manifest.aimock)?),
             script: Some(filled("script", &script)?),
+            seed,
             dropped,
             ..record(
                 &manifest.capture.cli,

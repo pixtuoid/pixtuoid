@@ -2071,8 +2071,9 @@ mod run {
             }),
             None => None,
         };
-        let second_turn = match (scenario.turn.second, p.second_turn) {
-            (Some(second), Some(words)) => {
+        // A TUI's driver types its second turn into the same session.
+        let second_turn = match (scenario.surface, scenario.turn.second, p.second_turn) {
+            (Surface::Headless, Some(second), Some(words)) => {
                 let words = with_launch(
                     words[1..]
                         .iter()
@@ -2130,7 +2131,13 @@ mod run {
             workspace: Some(path(run.workspace)?),
             cli_version: Some(NonEmpty::try_from(run.cli_version).map_err(std::io::Error::other)?),
             cli_env: run.cli_env.clone(),
-            seed: None,
+            seed: scenario
+                .seed(p.source)
+                .map(|dir| {
+                    text(dir.as_os_str())
+                        .and_then(|t| NonEmpty::try_from(t).map_err(std::io::Error::other))
+                })
+                .transpose()?,
             daemon,
             first_turn: Argv::resolved(first_turn).map_err(plan_error)?,
         })
@@ -2409,7 +2416,8 @@ mod run {
                     "subagent",
                     "permission",
                     "model-error",
-                    "ask-user"
+                    "ask-user",
+                    "two-turn"
                 ]
             );
             assert!(not_run(&every, false).is_empty());
@@ -2418,6 +2426,7 @@ mod run {
                 r.ends_with(
                     "\nNot run here: opencode/cancel (its TUI was never run under ConPTY) \
                      grok/permission (its TUI paints nothing under ConPTY) \
+                     grok/two-turn (its TUI paints nothing under ConPTY) \
                      openclaw/live (its tier waits on a Unix socket)\n"
                 ),
                 "{r}"

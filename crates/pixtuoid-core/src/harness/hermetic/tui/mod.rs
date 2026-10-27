@@ -59,8 +59,9 @@ impl Key {
 pub(crate) struct Gate {
     /// Text on screen only while the dialog is open.
     pub(crate) shows: &'static str,
-    /// The keys that refuse it.
-    pub(crate) deny: &'static [Key],
+    /// The keys the run answers it with: a refusal, unless its row is one
+    /// that approves.
+    pub(crate) answer: &'static [Key],
     /// How long it must stand before it is answered: a key it ignores is lost.
     pub(crate) dwell: Duration,
 }
@@ -68,9 +69,9 @@ pub(crate) struct Gate {
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answer {
-    /// Refuse its dialog with its gate's `deny` keys; the turn is over once
-    /// refused and the screen settles.
-    Deny,
+    /// Answer its dialog with its gate's `answer` keys; the turn is over once
+    /// answered and the screen settles.
+    Gate,
     /// Cancel it with its row's `cancel` keys once the screen shows its reply
     /// streaming; the turn is over once cancelled and the screen settles.
     Cancel,
@@ -83,7 +84,7 @@ impl Answer {
     /// What the screen must show before this answer is given, if anything.
     pub(crate) const fn awaits(self) -> Option<&'static str> {
         match self {
-            Self::Deny => Some("a gate the driver knows to refuse"),
+            Self::Gate => Some("a gate the driver knows to answer"),
             Self::Cancel => Some("its reply streaming for the driver to cancel"),
             Self::Nothing => None,
         }
@@ -221,6 +222,8 @@ pub struct Driver<'a> {
     tui: &'a Tui,
     answer: Answer,
     prompt: String,
+    /// The prompt typed once the first turn settles, in the same session.
+    then: Option<String>,
     phase: Phase,
     screen: String,
     changed_at: Instant,
@@ -239,12 +242,20 @@ impl<'a> Driver<'a> {
             tui,
             answer,
             prompt,
+            then: None,
             phase: Phase::Boot,
             screen: String::new(),
             changed_at: now,
             open: None,
             answered: false,
         }
+    }
+
+    /// The same run with a second turn, `prompt`, typed into its session.
+    #[must_use]
+    pub fn then(mut self, prompt: &str) -> Self {
+        self.then = Some(prompt.to_owned());
+        self
     }
 
     /// The next action for the screen as it now reads.
@@ -291,6 +302,11 @@ impl<'a> Driver<'a> {
                     && self.changed_at > enter_at
                     && now.duration_since(self.changed_at) >= SETTLE =>
             {
+                if let Some(next) = self.then.take() {
+                    self.prompt = next;
+                    self.phase = Phase::Typed;
+                    return Action::Type(self.prompt.clone());
+                }
                 self.phase = Phase::Quit;
                 Action::Quit(self.tui.quit)
             }
@@ -311,18 +327,18 @@ impl<'a> Driver<'a> {
         self.answer.awaits().is_some() && !self.answered
     }
 
-    /// Its answer's cue on screen, if one stands: for a refusal the first
-    /// dialog its row lists, for a cancel the reply's first line.
+    /// Its answer's cue on screen, if one stands: for a gate the first dialog
+    /// its row lists, for a cancel the reply's first line.
     fn cue(&self) -> Option<Cue> {
         match self.answer {
-            Answer::Deny => self
+            Answer::Gate => self
                 .tui
                 .gates
                 .iter()
                 .find(|g| self.screen.contains(g.shows))
                 .map(|g| Cue {
                     shows: g.shows,
-                    keys: g.deny,
+                    keys: g.answer,
                     dwell: g.dwell,
                 }),
             Answer::Cancel => self.screen.contains(super::STREAM_CUE).then_some(Cue {
@@ -366,7 +382,7 @@ impl<'a> Driver<'a> {
 
     /// Whether a dialog its row lists stands ([`Tui::gates`]): nothing else is
     /// sent then, so no Enter can land on it and pick its first choice, and
-    /// one its answer does not refuse stalls the run like any dialog nobody
+    /// one a run that answers no gate stalls the run like any dialog nobody
     /// planned for.
     fn dialog_open(&self) -> bool {
         self.tui.gates.iter().any(|g| self.screen.contains(g.shows))
@@ -674,7 +690,7 @@ mod tests {
         assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
         assert_eq!(
             next(include_str!("screens/hermes-gate.txt")),
-            Action::Keys(refused.deny)
+            Action::Keys(refused.answer)
         );
         assert_eq!(
             next(include_str!("screens/hermes-echo.txt")),
@@ -722,9 +738,37 @@ mod tests {
     }
 
     #[test]
+    fn a_second_prompt_goes_in_once_the_first_turn_settles_and_the_run_quits_after_its_own() {
+        const SECOND: &str = "List this directory.";
+        let (tui, answer) = omp();
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0).then(SECOND);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(
+            d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
+            Action::Keys(&[Key::Enter])
+        );
+        let t1 = t0 + Duration::from_millis(1);
+        assert_eq!(d.step(OMP_NEW, t1), Action::Wait);
+        assert_eq!(
+            d.step(OMP_NEW, t1 + SETTLE),
+            Action::Type(SECOND.to_owned())
+        );
+        assert_eq!(d.step(OMP_NEW, t1 + SETTLE), Action::Keys(&[Key::Enter]));
+        assert_eq!(
+            d.step(OMP_NEW, t1 + SETTLE * 2),
+            Action::Wait,
+            "a screen standing since before the second Enter is no second turn's end"
+        );
+        let t2 = t1 + SETTLE * 2 + Duration::from_millis(1);
+        assert_eq!(d.step(OMP_BOOT, t2), Action::Wait);
+        assert_eq!(d.step(OMP_BOOT, t2 + SETTLE), Action::Quit(tui.quit));
+    }
+
+    #[test]
     fn a_run_quits_unanswered_only_where_it_answers_nothing() {
         let (tui, _) = omp();
-        for answer in [Answer::Deny, Answer::Cancel, Answer::Nothing] {
+        for answer in [Answer::Gate, Answer::Cancel, Answer::Nothing] {
             let t0 = Instant::now();
             let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
             assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
@@ -735,7 +779,7 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             assert_eq!(d.step(OMP_NEW, moved), Action::Wait);
             let end = match answer {
-                Answer::Deny | Answer::Cancel => Action::Wait,
+                Answer::Gate | Answer::Cancel => Action::Wait,
                 Answer::Nothing => Action::Quit(tui.quit),
             };
             assert_eq!(d.step(OMP_NEW, moved + SETTLE), end, "{answer:?}");
@@ -1037,7 +1081,7 @@ mod tests {
             assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]), "{source}");
             let moved = t0 + Duration::from_millis(1);
             let first = match answer {
-                Answer::Deny => None,
+                Answer::Gate => None,
                 Answer::Cancel => Some(Action::Keys(tui.cancel)),
                 Answer::Nothing => Some(Action::Wait),
             };
@@ -1058,7 +1102,7 @@ mod tests {
                 .into_iter()
                 .filter(|a| *a != Action::Wait)
                 .collect();
-            assert_eq!(answers, [Action::Keys(refused.deny)], "{source}");
+            assert_eq!(answers, [Action::Keys(refused.answer)], "{source}");
             assert_eq!(
                 d.step(end, t0 + refused.dwell + SETTLE),
                 Action::Wait,

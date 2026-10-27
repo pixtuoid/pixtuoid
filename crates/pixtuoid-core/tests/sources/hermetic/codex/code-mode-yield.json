@@ -1,0 +1,25 @@
+{
+  "fixtures": [
+    {
+      "match": { "toolCallId": "call_hermetic_wait_cell_1" },
+      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "toolResultContains": "Script running with cell ID 1" },
+      "response": {
+        "toolCalls": [ { "id": "call_hermetic_wait_cell_1", "name": "wait", "arguments": { "cell_id": "1" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [],
+        "customToolCalls": [
+          { "name": "exec", "input": "text(\"HERMETIC-YIELDED\");\nyield_control();\nawait new Promise((resolve) => setTimeout(resolve, 1000));\ntext(\"HERMETIC-RESUMED\");\n" }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}
