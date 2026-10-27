@@ -521,9 +521,6 @@ fn a_recorded_capture_that_was_edited_says_so() {
 /// comment names. It only shrinks: a listed capture that is current, or gone,
 /// leaves the list.
 const OWED_CURRENT: &[&str] = &[
-    // The hermetic spawn's script names no `subagent_type`, which the transcript
-    // decoder needs to mint a blocking spawn's Task.
-    "grok/fixtures/subagent-recorded",
     // cursor has no hermetic profile (`hermetic::NOT_HERMETIC`): a billed capture.
     "cursor/fixtures/delegation",
     // The corpus's one Windows cwd, which no recorder writes.

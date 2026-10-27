@@ -3,66 +3,66 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 10806546251448497819
-    tool_use_id: call_2gyu9cLA0WITZ8A4
+    agent_id: 13946189752134775051
+    tool_use_id: call_bnLVNK6v_7gTJEG1
     detail:
       Generic:
         display: ask_user_question
 - ToolUseEnd:
-    agent_id: 10806546251448497819
-    tool_use_id: call_2gyu9cLA0WITZ8A4
+    agent_id: 13946189752134775051
+    tool_use_id: call_bnLVNK6v_7gTJEG1
 - TurnEnd:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
 - SessionEnd:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     as_child: false
 - SessionStart:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     source: grok
-    session_id: 01a17eb0-1a93-7331-919a-7eee29edf8b3
+    session_id: 01a17f20-f456-7df2-a3ca-41e88ec8a0f1
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     source: grok
-    session_id: 01a17eb0-1a93-7331-919a-7eee29edf8b3
+    session_id: 01a17f20-f456-7df2-a3ca-41e88ec8a0f1
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     source: grok
-    session_id: 01a17eb0-1a93-7331-919a-7eee29edf8b3
+    session_id: 01a17f20-f456-7df2-a3ca-41e88ec8a0f1
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 10806546251448497819
-    tool_use_id: call_2gyu9cLA0WITZ8A4
+    agent_id: 13946189752134775051
+    tool_use_id: call_bnLVNK6v_7gTJEG1
     detail:
       Generic:
         display: ask_user_question
 - Identity:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     source: grok
-    session_id: 01a17eb0-1a93-7331-919a-7eee29edf8b3
+    session_id: 01a17f20-f456-7df2-a3ca-41e88ec8a0f1
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     reason: User question requested
 - Identity:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     source: grok
-    session_id: 01a17eb0-1a93-7331-919a-7eee29edf8b3
+    session_id: 01a17f20-f456-7df2-a3ca-41e88ec8a0f1
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 10806546251448497819
-    tool_use_id: call_2gyu9cLA0WITZ8A4
+    agent_id: 13946189752134775051
+    tool_use_id: call_bnLVNK6v_7gTJEG1
 - TurnEnd:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
 - SessionEnd:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051
     as_child: false
 - TurnEnd:
-    agent_id: 10806546251448497819
+    agent_id: 13946189752134775051

@@ -6,7 +6,7 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 106
+    "blanked": 104
   },
   "aimock": "1.47.0",
   "script": "tests/sources/hermetic/grok/tool-error.json",
