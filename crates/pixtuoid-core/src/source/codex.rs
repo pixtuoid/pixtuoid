@@ -956,7 +956,6 @@ mod tests {
         }
     }
 
-    /// The call key is the registry row's, read as the shared arms read it.
     #[test]
     fn the_approval_hooks_read_the_rows_tool_id_key() {
         let key = crate::source::decoder::hook_tool_id_key(

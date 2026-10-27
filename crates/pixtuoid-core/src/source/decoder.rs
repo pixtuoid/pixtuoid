@@ -1406,6 +1406,44 @@ mod tests {
     }
 
     #[test]
+    fn a_permission_request_naming_no_tool_leaves_a_drift_breadcrumb() {
+        for (source, extra) in [
+            ("claude-code", json!({})),
+            ("codex", json!({"turn_id": "t"})),
+        ] {
+            for name in [None, Some("Bash")] {
+                let mut v = json!({
+                    "hook_event_name": "PermissionRequest", "session_id": "s",
+                    "_pixtuoid_source": source,
+                });
+                let obj = v.as_object_mut().expect("an object");
+                obj.extend(extra.as_object().expect("an object").clone());
+                if let Some(n) = name {
+                    obj.insert("tool_name".into(), json!(n));
+                }
+                let logs = capture_logs(|| {
+                    decode_hook_payload(v).expect("decodes");
+                });
+                if name.is_some() {
+                    assert!(
+                        !logs.contains(crate::source::drift::TARGET),
+                        "{source}: {logs}"
+                    );
+                    continue;
+                }
+                for needle in [
+                    crate::source::drift::TARGET,
+                    "missing_field",
+                    "tool_name",
+                    "PermissionRequest",
+                ] {
+                    assert!(logs.contains(needle), "{source}: {needle:?} in\n{logs}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn generic_tool_name_is_capped_in_the_display() {
         let long = "T".repeat(MAX_DECODED_FIELD_CHARS * 10);
         match make_tool_detail("test", &long, None) {
