@@ -726,11 +726,11 @@ mod tests {
         seat(&mut reducer, &mut scene, b);
         reducer.apply(
             &mut scene,
-            AgentEvent::UserActionRequest {
-                agent_id: b,
-                reason: Some("permission".into()),
-                tool_use_id: None,
-            },
+            AgentEvent::user_action_request(
+                b,
+                Some("permission".into()),
+                pixtuoid_core::source::RequestKeys::default(),
+            ),
             now,
             Transport::Hook,
         );
@@ -835,11 +835,11 @@ mod tests {
                 cwd: PathBuf::from("/r"),
                 parent_id: None,
             },
-            AgentEvent::UserActionRequest {
-                agent_id: id,
-                reason: None,
-                tool_use_id: None,
-            },
+            AgentEvent::user_action_request(
+                id,
+                None,
+                pixtuoid_core::source::RequestKeys::default(),
+            ),
         ] {
             reducer.apply(&mut scene, event, now, Transport::Hook);
         }
@@ -903,11 +903,11 @@ mod tests {
         );
         reducer.apply(
             &mut scene,
-            AgentEvent::UserActionRequest {
-                agent_id: id,
-                reason: Some("needs \u{1b}[2J approval".to_string()),
-                tool_use_id: None,
-            },
+            AgentEvent::user_action_request(
+                id,
+                Some("needs \u{1b}[2J approval".to_string()),
+                pixtuoid_core::source::RequestKeys::default(),
+            ),
             now,
             Transport::Hook,
         );

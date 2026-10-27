@@ -21,7 +21,7 @@ const TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         shows: "Permission required",
         // "n/Esc deny" (`internal/base/i18n/messages_en.go:164`).
-        deny: &[tui::Key::Esc],
+        keys: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
     cancel: &[],
@@ -154,9 +154,8 @@ model = "guardian-model"
             ],
             fixture: "fixtures/reasonix/planner-hermetic",
             turn: Turn {
-                args: &[],
                 prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
-                second: None,
+                ..Turn::PROFILE
             },
         },
         Scenario {

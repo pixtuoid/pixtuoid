@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::id::normalize_path_key;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The JSONL line-decoder fn pointer: `(transcript_path, source, raw_line) ->
 /// events`. Defined HERE, NOT in the `native`-gated `jsonl` module, so the
@@ -231,6 +231,11 @@ pub enum TailActivity {
 /// Core deliberately carries no date dependency for the handful of wire
 /// timestamps it reads; every caller treats `None` as "no information".
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
+    rfc3339_to_epoch(s).map(|d| d.as_secs())
+}
+
+/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond.
+pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     let b = s.as_bytes();
     if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' && b[10] != b't' {
         return None;
@@ -242,9 +247,14 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
         return None;
     }
     let mut i = 19;
+    let mut nanos = 0;
     if b.get(i) == Some(&b'.') {
         i += 1;
-        while b.get(i).is_some_and(u8::is_ascii_digit) {
+        // The first digit is tenths of a second; one past nanoseconds is cut.
+        let mut place = std::time::Duration::from_millis(100).subsec_nanos();
+        while let Some(digit) = b.get(i).filter(|c| c.is_ascii_digit()) {
+            nanos += u32::from(digit - b'0') * place;
+            place /= 10;
             i += 1;
         }
     }
@@ -271,7 +281,7 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
     let secs = days * 86_400 + h * 3600 + mi * 60 + sec - offset_secs;
-    u64::try_from(secs).ok()
+    Some(std::time::Duration::new(u64::try_from(secs).ok()?, nanos))
 }
 
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
@@ -336,18 +346,71 @@ fn source_owned_arms(
     }
 }
 
+/// `obj`'s string field `key`, `None` when absent or EMPTY: an empty id or
+/// name keys nothing.
+pub(crate) fn non_empty<'a>(obj: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+/// Whose session a hook speaks for: a subagent names itself in [`SUBAGENT_ID`]
+/// beside its root's `session_id`, a root in `session_id` alone.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HookSubject<'a> {
+    /// The subagent's own id, when a subagent fired it.
+    pub(crate) child: Option<&'a str>,
+    /// The root session's id.
+    pub(crate) root: Option<&'a str>,
+}
+
+impl<'a> HookSubject<'a> {
+    pub(crate) fn of(obj: &'a serde_json::Map<String, Value>) -> Self {
+        Self {
+            child: non_empty(obj, SUBAGENT_ID),
+            root: non_empty(obj, "session_id"),
+        }
+    }
+}
+
+/// A hook's `tool_name`, the key a request binds its pending calls by, so the
+/// pre-use and the prompt derive it alike; its absence is drift.
+pub(crate) fn hook_tool_name(
+    obj: &serde_json::Map<String, Value>,
+    source: &str,
+    event: &str,
+) -> Option<String> {
+    let name = non_empty(obj, "tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS));
+    if name.is_none() {
+        super::drift::missing_field(source, event, "tool_name");
+    }
+    name
+}
+
+/// The per-call id's wire name on `desc`'s hooks: its row's
+/// [`ToolIdKey`](crate::source::registry::ToolIdKey), `tool_use_id` for a row
+/// with no shared arms.
+pub(crate) fn hook_tool_id_key(
+    desc: Option<&'static crate::source::registry::SourceDescriptor>,
+) -> &'static str {
+    match desc.and_then(|d| d.hook()) {
+        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
+        _ => crate::source::registry::ToolIdKey::ToolUse,
+    }
+    .wire_name()
+}
+
 /// The payload's `session_id`, rejected when missing or EMPTY: an empty one passes
 /// `as_str` but, for Codex (which keys the AgentId on it), would mint a phantom
 /// agent that never coalesces with any rollout. This and `hook_event_name`
 /// breadcrumb undeduped — the two fields are the whole hook plane's chokepoint.
-fn hook_session_id(
+pub(crate) fn hook_session_id(
     obj: &serde_json::Map<String, Value>,
     source: &str,
     event: &str,
 ) -> DecodeResult<String> {
-    obj.get("session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
+    HookSubject::of(obj)
+        .root
         .ok_or_else(|| {
             super::drift::missing_field(source, event, "session_id");
             DecodeError::missing_in(source, event, "session_id")
@@ -359,7 +422,7 @@ fn hook_session_id(
 /// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
 /// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
 /// registration path (ordinal label, reap-exempt) applies.
-fn hook_identity(
+pub(crate) fn hook_identity(
     agent_id: AgentId,
     source: &str,
     session_id: &str,
@@ -452,11 +515,7 @@ pub(crate) fn shared_hook_arms(
         })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
-    let tool_id_key = match desc.and_then(|d| d.hook()) {
-        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
-        _ => crate::source::registry::ToolIdKey::ToolUse,
-    }
-    .wire_name();
+    let tool_id_key = hook_tool_id_key(desc);
 
     match event {
         "SessionStart" => {
@@ -484,33 +543,32 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         "PreToolUse" => {
-            let tool_name = obj
-                .get("tool_name")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    super::drift::missing_field(source, "PreToolUse", "tool_name");
-                    "?"
-                });
-            let tool_use_id = obj
-                .get(tool_id_key)
-                .and_then(|s| s.as_str())
-                .map(String::from);
-            let mut evs = vec![
-                hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::ToolUseStart {
-                    agent_id,
-                    tool_use_id,
-                    detail: Some(make_tool_detail(source, tool_name, obj.get("tool_input"))),
-                },
-            ];
+            let tool_name = hook_tool_name(obj, source, event);
+            let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
+            // Named ahead of its item: a permission prompt names only the
+            // tool, so the request binds the calls pending under that name.
+            let pending = tool_use_id.clone().map(|call| AgentEvent::ToolUsePending {
+                agent_id,
+                tool_use_id: call,
+                tool_name: tool_name.clone(),
+                turn: None,
+            });
+            let mut evs = vec![hook_identity(agent_id, source, &session_id, obj)];
+            evs.extend(pending);
+            evs.push(AgentEvent::ToolUseStart {
+                agent_id,
+                tool_use_id,
+                detail: Some(make_tool_detail(
+                    source,
+                    tool_name.as_deref().unwrap_or("?"),
+                    obj.get("tool_input"),
+                )),
+            });
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
         "PostToolUse" => {
-            let tool_use_id = obj
-                .get(tool_id_key)
-                .and_then(|s| s.as_str())
-                .map(String::from);
+            let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             let mut evs = vec![
                 hook_identity(agent_id, source, &session_id, obj),
                 AgentEvent::ToolUseEnd {
@@ -525,21 +583,26 @@ pub(crate) fn shared_hook_arms(
             let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                },
+                    msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
-        // Codex's permission prompt is the same "requires action" signal.
+        // The prompt names its tool, and kimi's its call too; an empty name
+        // binds nothing.
         "PermissionRequest" => Ok(vec![
             hook_identity(agent_id, source, &session_id, obj),
-            AgentEvent::UserActionRequest {
+            AgentEvent::user_action_request(
                 agent_id,
-                reason: Some("permission".into()),
-                tool_use_id: None,
-            },
+                Some("permission".into()),
+                RequestKeys {
+                    tool_use_id: non_empty(obj, tool_id_key).map(String::from),
+                    tool_name: hook_tool_name(obj, source, event),
+                    ..RequestKeys::default()
+                },
+            ),
         ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
         "UserPromptSubmit" => {
@@ -579,19 +642,12 @@ pub(crate) fn subagent_fired(
     source: &str,
     session: fn(&str) -> String,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    let Some(agent) = obj
-        .get(SUBAGENT_ID)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-    else {
+    let subject = HookSubject::of(obj);
+    let Some(agent) = subject.child else {
         return Ok(None);
     };
     let desc = crate::source::registry::descriptor_for(source);
-    let root = obj
-        .get("session_id")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(|root| AgentId::from_parts(source, root));
+    let root = subject.root.map(|root| AgentId::from_parts(source, root));
     let mut own = obj.clone();
     own.insert("session_id".into(), Value::from(session(agent)));
     let mut evs = shared_hook_arms(&own, source, desc)?;
@@ -761,6 +817,24 @@ mod tests {
         for bad in ["", "2026-07-16", "not a date", "2026-13-01T00:00:00Z"] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn rfc3339_to_epoch_keeps_the_fraction_the_seconds_drop() {
+        use std::time::Duration;
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05.123456+00:00"),
+            Some(Duration::new(1_784_203_205, 123_456_000))
+        );
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05.1234567891Z"),
+            Some(Duration::new(1_784_203_205, 123_456_789)),
+            "a digit past the nanosecond is cut"
+        );
+        assert_eq!(
+            rfc3339_to_epoch("2026-07-16T12:00:05Z"),
+            Some(Duration::from_secs(1_784_203_205))
+        );
     }
 
     #[test]
@@ -958,6 +1032,31 @@ mod tests {
         let mut evs = decode_hook_payload(v).expect("decodes");
         assert_eq!(evs.len(), 1, "expected exactly one event, got {evs:?}");
         evs.pop().expect("one event")
+    }
+
+    #[test]
+    fn a_permission_request_names_its_tool_and_kimis_its_call() {
+        for (source, extra, call) in [
+            ("claude-code", json!({}), None),
+            ("kimi", json!({"tool_call_id": "call_k"}), Some("call_k")),
+            ("kimi", json!({"tool_call_id": ""}), None),
+        ] {
+            let mut v = json!({
+                "hook_event_name": "PermissionRequest", "session_id": "s",
+                "tool_name": "Bash", "tool_input": {"command": "ls"},
+                "_pixtuoid_source": source,
+            });
+            v.as_object_mut()
+                .expect("an object")
+                .extend(extra.as_object().expect("an object").clone());
+            let evs = decode_hook_payload(v).expect("decodes");
+            assert!(
+                matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::UserActionRequest {
+                    tool_use_id, tool_name: Some(n), turn: None, .. }]
+                    if tool_use_id.as_deref() == call && n == "Bash"),
+                "{source}: {evs:?}"
+            );
+        }
     }
 
     #[test]
@@ -1304,6 +1403,42 @@ mod tests {
             !cross_fire.contains("missing_field"),
             "the grok cross-fire drop must stay breadcrumb-silent, got:\n{cross_fire}"
         );
+    }
+
+    #[test]
+    fn a_permission_request_naming_no_tool_leaves_a_drift_breadcrumb() {
+        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        for (source, extra) in [
+            ("claude-code", json!({})),
+            ("codex", json!({"turn_id": "t"})),
+        ] {
+            for name in [None, Some("Bash")] {
+                let mut v = json!({
+                    "hook_event_name": "PermissionRequest", "session_id": "s",
+                    "_pixtuoid_source": source,
+                });
+                let obj = v.as_object_mut().expect("an object");
+                obj.extend(extra.as_object().expect("an object").clone());
+                if let Some(n) = name {
+                    obj.insert("tool_name".into(), json!(n));
+                }
+                let logs = capture_logs(|| {
+                    decode_hook_payload(v).expect("decodes");
+                });
+                if name.is_some() {
+                    assert!(!logs.contains(TARGET), "{source}: {logs}");
+                    continue;
+                }
+                let line = format!(
+                    "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\" event=PermissionRequest field=tool_name",
+                    <&str>::from(DriftKind::MissingField),
+                );
+                assert!(
+                    logs.contains(TARGET) && logs.contains(&line),
+                    "{line:?} in\n{logs}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -3,9 +3,9 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
 use crate::source::registry::HookObject;
+use crate::source::{AgentEvent, RequestKeys};
 
 #[cfg(feature = "native")]
 mod native;
@@ -135,11 +135,14 @@ fn decode_ag_tool_call(
 ) -> AgentEvent {
     // The tools that wait on the human (hooks.md, "Supported tools").
     if name == "ask_permission" || name == "ask_question" {
-        return AgentEvent::UserActionRequest {
+        return AgentEvent::user_action_request(
             agent_id,
-            reason: Some("asking permission".to_string()),
-            tool_use_id,
-        };
+            Some("asking permission".to_string()),
+            RequestKeys {
+                tool_use_id,
+                ..RequestKeys::default()
+            },
+        );
     }
     let target = ag_tool_target(args);
     AgentEvent::ToolUseStart {

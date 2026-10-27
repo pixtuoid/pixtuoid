@@ -22,6 +22,10 @@ pub(super) mod reasonix;
 /// The scripted model's `/v1` base, as a profile's env spells it.
 const AIMOCK_V1: &str = "http://127.0.0.1:{port}/v1";
 
+/// The prompt a TUI's second turn types: its script tells the turns apart by
+/// it.
+const SECOND_TURN: &str = "Second turn: read NOTE.txt again.";
+
 fn hook_event_name(v: &Value) -> Option<Cow<'_, str>> {
     v.get("hook_event_name")?.as_str().map(Cow::Borrowed)
 }

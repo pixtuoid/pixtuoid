@@ -31,6 +31,7 @@ use crate::{AgentEvent, AgentId, Reducer, Transport};
 mod captures;
 pub mod hermetic;
 pub mod host;
+pub mod merge;
 pub mod plan;
 pub mod provenance;
 pub mod reads;
@@ -128,6 +129,20 @@ pub struct Driven {
 }
 
 impl Driven {
+    /// Nothing driven yet, on [`DRIVEN_DESKS`].
+    fn empty() -> Self {
+        Self {
+            scene: SceneState::uniform(DRIVEN_DESKS),
+            events: Vec::new(),
+            seed_events: 0,
+            lines: 0,
+            unparseable: 0,
+            decode_errors: Vec::new(),
+            reaches: Vec::new(),
+            breadcrumbs: Vec::new(),
+        }
+    }
+
     /// The classes any slot passed through, in first-reached order.
     pub fn reached(&self) -> Vec<Reach> {
         let mut out = Vec::new();
@@ -221,6 +236,46 @@ enum Decode {
     /// `_pixtuoid_source` stamp, so a source passed in here would be inert at
     /// best and a lie at worst.
     Hooks,
+}
+
+impl Decode {
+    /// A line's events, counted in `d`: blank, `None` uncounted; not JSON or
+    /// refused by the decoder, `None` counted as such. `parsed` reads the line
+    /// before the decoder takes it.
+    fn line(
+        &self,
+        line: Option<&str>,
+        d: &mut Driven,
+        parsed: impl FnOnce(&Value),
+    ) -> Option<Vec<AgentEvent>> {
+        if line.is_some_and(|l| l.trim().is_empty()) {
+            return None;
+        }
+        d.lines += 1;
+        let Some((line, Ok(v))) = line.map(|l| (l, serde_json::from_str::<Value>(l))) else {
+            d.unparseable += 1;
+            return None;
+        };
+        parsed(&v);
+        match self {
+            Self::Transcript {
+                decode,
+                source,
+                logical,
+            } => Some(decode(logical, source, v)),
+            Self::Hooks => match decode_hook_payload(v) {
+                Ok(events) => Some(events),
+                Err(e) => {
+                    d.decode_errors.push(LineFailure {
+                        line: d.lines,
+                        shape: shape_of(line),
+                        message: e.to_string(),
+                    });
+                    None
+                }
+            },
+        }
+    }
 }
 
 impl Drive {
@@ -326,16 +381,7 @@ impl Drive {
         I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
-        let mut d = Driven {
-            scene: SceneState::uniform(DRIVEN_DESKS),
-            events: Vec::new(),
-            seed_events: 0,
-            lines: 0,
-            unparseable: 0,
-            decode_errors: Vec::new(),
-            reaches: Vec::new(),
-            breadcrumbs: Vec::new(),
-        };
+        let mut d = Driven::empty();
         let sink = BreadcrumbSink::default();
         tracing::subscriber::with_default(sink.clone(), || self.drive(lines, &mut d));
         d.breadcrumbs = sink.take();
@@ -347,51 +393,36 @@ impl Drive {
         I: IntoIterator<Item = Option<S>>,
         S: AsRef<str>,
     {
-        if let (
-            true,
-            Decode::Transcript {
-                source, logical, ..
-            },
-        ) = (self.seeded, &self.decode)
-        {
+        if let Some(seed) = self.seed() {
             d.seed_events = 1;
-            d.events.push(AgentEvent::SessionStart {
-                agent_id: Self::seed_id(source, logical),
-                source: source.clone(),
-                session_id: format!("{source}-harness-seed"),
-                cwd: PathBuf::from(SEED_CWD),
-                parent_id: None,
-            });
+            d.events.push(seed);
         }
-
         for line in lines {
-            let line = line.as_ref().map(|l| l.as_ref());
-            if line.is_some_and(|l| l.trim().is_empty()) {
-                continue;
-            }
-            d.lines += 1;
-            let Some((line, Ok(v))) = line.map(|l| (l, serde_json::from_str::<Value>(l))) else {
-                d.unparseable += 1;
-                continue;
-            };
-            match &self.decode {
-                Decode::Transcript {
-                    decode,
-                    source,
-                    logical,
-                } => d.events.extend(decode(logical, source, v)),
-                Decode::Hooks => match decode_hook_payload(v) {
-                    Ok(evs) => d.events.extend(evs),
-                    Err(e) => d.decode_errors.push(LineFailure {
-                        line: d.lines,
-                        shape: shape_of(line),
-                        message: e.to_string(),
-                    }),
-                },
+            if let Some(events) = self
+                .decode
+                .line(line.as_ref().map(AsRef::as_ref), d, |_| {})
+            {
+                d.events.extend(events);
             }
         }
-
         self.fold(d);
+    }
+
+    /// The `SessionStart` [`Self::seeded`] prepends, when it does.
+    fn seed(&self) -> Option<AgentEvent> {
+        let Decode::Transcript {
+            source, logical, ..
+        } = &self.decode
+        else {
+            return None;
+        };
+        self.seeded.then(|| AgentEvent::SessionStart {
+            agent_id: Self::seed_id(source, logical),
+            source: source.clone(),
+            session_id: format!("{source}-harness-seed"),
+            cwd: PathBuf::from(SEED_CWD),
+            parent_id: None,
+        })
     }
 
     /// Each event is observed BEFORE and AFTER a cascade tick, so a transient

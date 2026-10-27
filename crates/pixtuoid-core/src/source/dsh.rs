@@ -11,12 +11,10 @@
 //! (#928). One dsh process hosts MANY sessions (the `web` profile is a
 //! server), so `sessionId` is the identity and `_pid` only drives liveness.
 
-use serde_json::Value;
-
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// Stable source id; MUST equal the registry row's `name`.
 pub const SOURCE_NAME: &str = "dsh";
@@ -55,12 +53,6 @@ const OUTCOME_ALLOWED: &str = "allowed-once";
 /// argument — spoofed or real — ever reaches this decoder.
 const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 
-fn field<'v>(obj: &'v serde_json::Map<String, Value>, key: &str) -> Option<&'v str> {
-    obj.get(key)
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-}
-
 /// Decode one plugin payload into `AgentEvent`s (`HookDecoding::ClaimsAll`).
 ///
 /// Every arm except `session_end` leads or trails an
@@ -84,26 +76,26 @@ pub fn decode_dsh_payload(
         crate::source::drift::missing_field(SOURCE_NAME, "plugin", "type");
         return Ok(vec![]);
     };
-    let Some(session_id) = field(obj, "sessionId") else {
+    let Some(session_id) = non_empty(obj, "sessionId") else {
         crate::source::drift::missing_field(SOURCE_NAME, ty, "sessionId");
         return Ok(vec![]);
     };
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
-    let parent_id = field(obj, "parentSession").map(|p| AgentId::from_parts(SOURCE_NAME, p));
+    let parent_id = non_empty(obj, "parentSession").map(|p| AgentId::from_parts(SOURCE_NAME, p));
     let cwd = || {
         obj.get("cwd")
             .and_then(|c| c.as_str())
             .map(std::path::PathBuf::from)
     };
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, session_id.to_string(), cwd());
-    let call_id = || field(obj, "callId").map(str::to_string);
+    let call_id = || non_empty(obj, "callId").map(str::to_string);
     let tool_display = || {
-        field(obj, "toolName")
+        non_empty(obj, "toolName")
             .map(|t| ellipsize(t, MAX_DECODED_FIELD_CHARS))
             .unwrap_or_default()
     };
     let tool_detail = || {
-        if field(obj, "toolName").is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
+        if non_empty(obj, "toolName").is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
             ToolDetail::Task
         } else {
             ToolDetail::Generic {
@@ -128,10 +120,10 @@ pub fn decode_dsh_payload(
             as_child: parent_id.is_some(),
         }]),
         TOOL_CALL => {
-            if field(obj, "callId").is_none() {
+            if non_empty(obj, "callId").is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, "callId");
             }
-            if field(obj, "toolName").is_none() {
+            if non_empty(obj, "toolName").is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, "toolName");
             }
             Ok(vec![
@@ -144,7 +136,7 @@ pub fn decode_dsh_payload(
             ])
         }
         TOOL_RESULT => {
-            if field(obj, "callId").is_none() {
+            if non_empty(obj, "callId").is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, TOOL_RESULT, "callId");
             }
             Ok(vec![
@@ -156,7 +148,7 @@ pub fn decode_dsh_payload(
             ])
         }
         APPROVAL_ASKED => {
-            let reason = match (field(obj, "toolName"), field(obj, "reason")) {
+            let reason = match (non_empty(obj, "toolName"), non_empty(obj, "reason")) {
                 (Some(t), Some(r)) => format!("{t}: {r}"),
                 (Some(t), None) => t.to_string(),
                 (None, Some(r)) => r.to_string(),
@@ -164,18 +156,21 @@ pub fn decode_dsh_payload(
             };
             Ok(vec![
                 identity(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: call_id(),
-                },
+                    Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys {
+                        tool_use_id: call_id(),
+                        ..RequestKeys::default()
+                    },
+                ),
             ])
         }
         APPROVAL_DECIDED => {
             // A renamed/dropped `outcome` would fail CLOSED (every grant
             // decodes as the deny arm's End) — breadcrumb it, because no
             // event-name drift row can see a field rename.
-            let outcome = field(obj, "outcome");
+            let outcome = non_empty(obj, "outcome");
             if outcome.is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, APPROVAL_DECIDED, "outcome");
             }
@@ -208,8 +203,8 @@ pub fn decode_dsh_payload(
             identity(),
             AgentEvent::ModelInfo {
                 agent_id,
-                model: field(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                effort: field(obj, "reasoningEffort")
+                model: non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
+                effort: non_empty(obj, "reasoningEffort")
                     .map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS)),
             },
         ]),
@@ -238,7 +233,7 @@ pub fn decode_dsh_payload(
 mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     const SID: &str = "01b00000-0000-7000-8000-000000000001";
 

@@ -134,9 +134,8 @@ startup:
             expects: &["session_start", "session_switch", "session_shutdown"],
             fixture: "omp/fixtures/new-session-hermetic",
             turn: Turn {
-                args: &[],
                 prompt: Some("/new"),
-                second: None,
+                ..Turn::PROFILE
             },
         },
     ],

@@ -1,0 +1,36 @@
+{
+  "origin": "recorded",
+  "cli": "grok",
+  "version": "grok 1.0.70 (f50904eaee6c)",
+  "captured": "2026-10-27",
+  "command": "just hermetic --record grok",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 183
+  },
+  "aimock": "1.45.1",
+  "script": "tests/sources/hermetic/grok/two-turn.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/method": [
+        "_x.ai/session/update",
+        "session/update"
+      ],
+      "/params/update/event_name": [
+        "post_tool_use",
+        "pre_tool_use",
+        "session_start",
+        "stop",
+        "user_prompt_submit"
+      ],
+      "/params/update/sessionUpdate": [
+        "agent_message_chunk",
+        "hook_execution",
+        "tool_call_update",
+        "user_message_chunk"
+      ],
+      "/params/update/status": []
+    }
+  }
+}

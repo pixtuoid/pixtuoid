@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::{AgentEvent, ToolDetail, Transport};
+use pixtuoid_core::source::{AgentEvent, RequestKeys, ToolDetail, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
@@ -89,11 +89,11 @@ fn full_scene_serialization_is_stable() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::UserActionRequest {
-            agent_id: solo,
-            reason: Some("permission: Bash".into()),
-            tool_use_id: None,
-        },
+        AgentEvent::user_action_request(
+            solo,
+            Some("permission: Bash".into()),
+            RequestKeys::default(),
+        ),
         at(4),
         Transport::Hook,
     );

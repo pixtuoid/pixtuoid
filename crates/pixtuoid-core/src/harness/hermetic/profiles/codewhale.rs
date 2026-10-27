@@ -20,7 +20,7 @@ const TUI: tui::Tui = tui::Tui {
         // `crates/tui/src/tui/widgets/approval_band_legacy.rs:753-756`.
         shows: "Do you want to proceed?",
         // "Don't allow" (`crates/tui/src/tui/approval/view.rs:399-408`).
-        deny: &[tui::Key::Text("n")],
+        keys: &[tui::Key::Text("n")],
         // Its event loop fires `waiting_for_user` on its next pass
         // (`crates/tui/src/tui/ui/event_loop.rs:2087`): answered on sight, the
         // wait resolves unobserved (measured).

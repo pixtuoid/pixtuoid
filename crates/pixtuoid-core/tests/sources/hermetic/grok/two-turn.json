@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": { "model": "grok-4.6", "systemMessage": "generating the session title" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "model": "grok-4.6", "userMessage": "Second turn", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "userMessage": "Second turn", "toolResultContains": "{note}" },
+      "response": { "content": "done" }
+    },
+    {
+      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "toolResultContains": "{note}" },
+      "response": { "content": "pong" }
+    }
+  ]
+}

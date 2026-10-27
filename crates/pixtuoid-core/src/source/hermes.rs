@@ -22,11 +22,11 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
 };
 use crate::source::registry::HookObject;
+use crate::source::{AgentEvent, RequestKeys};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "hermes";
@@ -290,11 +290,14 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 .unwrap_or_else(|| "permission".to_string());
             vec![
                 identity(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(reason),
-                    tool_use_id: tool_use_id(),
-                },
+                    Some(reason),
+                    RequestKeys {
+                        tool_use_id: tool_use_id(),
+                        ..RequestKeys::default()
+                    },
+                ),
             ]
         }
         // THE session end, as `on_session_end` is not: `finalize_session` closes the

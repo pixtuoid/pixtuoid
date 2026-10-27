@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "Generate a concise, single-line task title" },
+      "response": { "content": "Hermetic", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [],
+        "customToolCalls": [
+          { "name": "exec", "input": "text(await tools.exec_command({ cmd: \"rm NOTE.txt\", sandbox_permissions: \"require_escalated\", justification: \"Delete the note?\" }));\n" }
+        ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}
