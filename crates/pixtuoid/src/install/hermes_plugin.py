@@ -25,13 +25,18 @@ FORWARD = (
     "on_session_end",
     "on_session_finalize",
 )
+# `ctx.session_cwd()` is defined only within a session's turn (plugins.md:1109),
+# and the gateway finalizes a session outside any.
+OUTSIDE_A_TURN = ("on_session_finalize",)
 # Copied by name, so no prompt, tool output or other argument leaves hermes.
 FIELDS = ("session_id", "tool_name", "tool_call_id", "description", "model")
 ARGS = ("command", "file_path", "path", "pattern", "url")
 
 
 def _payload(event, cwd, kwargs):
-    payload = {"hook_event_name": event, "cwd": cwd, "_pid": os.getpid()}
+    payload = {"hook_event_name": event, "_pid": os.getpid()}
+    if cwd is not None:
+        payload["cwd"] = cwd
     payload.update((name, kwargs[name]) for name in FIELDS if name in kwargs)
     args = kwargs.get("args")
     if isinstance(args, dict):
@@ -58,7 +63,8 @@ def _send(payload):
 def _forwarder(ctx, event):
     def forward(**kwargs):
         try:
-            _send(_payload(event, ctx.session_cwd(), kwargs))
+            cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()
+            _send(_payload(event, cwd, kwargs))
         except Exception:
             pass
 

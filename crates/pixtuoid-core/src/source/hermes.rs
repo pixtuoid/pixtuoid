@@ -105,6 +105,14 @@ pub const DECODED_EVENTS: &[&str] = &[
     ON_SESSION_FINALIZE,
 ];
 
+/// The events hermes fires outside a session's turn, where `ctx.session_cwd()`
+/// is undefined (`website/docs/user-guide/features/plugins.md:1109`): the gateway
+/// finalizes a session at its viewer's close or its own stop. The plugin sends
+/// them no cwd, and no arm reads one: `only_an_event_inside_a_turn_reads_the_cwd`.
+#[cfg(any(test, feature = "harness"))]
+#[doc(hidden)]
+pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
+
 /// Every envelope field [`field`] reads, pinned by `every_decoded_field_is_read`.
 /// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more:
 /// `the_plugin_copies_exactly_the_fields_the_decoder_reads`.
@@ -441,6 +449,23 @@ mod tests {
                 "{name} is in DECODED_FIELDS, but no event reads it"
             );
         }
+    }
+
+    /// A cwd outside a turn is not the session's, so it registers nothing.
+    #[test]
+    fn only_an_event_inside_a_turn_reads_the_cwd() {
+        for ev in DECODED_EVENTS {
+            let decoded = |payload: Value| format!("{:?}", decode_all(payload));
+            let with = decoded(json!({"hook_event_name": ev, "session_id": "s", "cwd": "/repo"}));
+            let without = decoded(json!({"hook_event_name": ev, "session_id": "s"}));
+            assert_eq!(with == without, OUTSIDE_A_TURN.contains(ev), "{ev}");
+        }
+        let finalize = decode_all(json!({"hook_event_name": "on_session_finalize",
+            "session_id": "s", "cwd": "/repo"}));
+        assert!(
+            matches!(finalize[..], [AgentEvent::SessionEnd { .. }]),
+            "{finalize:?}"
+        );
     }
 
     #[test]

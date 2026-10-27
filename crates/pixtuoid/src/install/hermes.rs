@@ -375,9 +375,15 @@ mod tests {
         assert_eq!(copied, decoded);
         assert_eq!(python_tuple(PLUGIN_TEMPLATE, "ARGS"), DETAIL_KEYS);
         assert!(
-            PLUGIN_TEMPLATE.contains("_payload(event, ctx.session_cwd(), kwargs)")
-                && PLUGIN_TEMPLATE.contains(r#""cwd": cwd"#),
+            PLUGIN_TEMPLATE
+                .contains("cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()")
+                && PLUGIN_TEMPLATE.contains(r#"payload["cwd"] = cwd"#),
             "the decoder reads the session's cwd, never the gateway's own"
+        );
+        assert_eq!(
+            python_tuple(PLUGIN_TEMPLATE, "OUTSIDE_A_TURN"),
+            pixtuoid_core::source::hermes::OUTSIDE_A_TURN,
+            "an event outside a turn has no cwd to send, and no arm reads one"
         );
     }
 
@@ -408,7 +414,7 @@ mod tests {
             assert!(!code.contains(wait), "the plugin waits on {wait}");
         }
         assert!(code.contains(
-            "        try:\n            _send(_payload(event, ctx.session_cwd(), kwargs))\n        except Exception:\n            pass\n"
+            "        try:\n            cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()\n            _send(_payload(event, cwd, kwargs))\n        except Exception:\n            pass\n"
         ));
         let flag = crate::install::hook_cmd::SOURCE_FLAG.trim();
         let source = pixtuoid_core::source::hermes::SOURCE_NAME;

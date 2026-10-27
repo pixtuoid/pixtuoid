@@ -116,6 +116,15 @@ class PluginTest(unittest.TestCase):
         self.assertNotIn("SECRET", self.out.read_text())
 
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
+    def test_a_finalize_outside_any_turn_asks_and_sends_no_cwd(self):
+        # Asking raises here, as a context outside any session's turn has no cwd.
+        _, ctx = self.plugin(self.recorder(), FakeCtx(cwd=RuntimeError("outside a turn")))
+        ctx.hooks["on_session_finalize"](session_id="s1")
+        [(_, payload)] = self.sent()
+        self.assertEqual(payload["hook_event_name"], "on_session_finalize")
+        self.assertNotIn("cwd", payload)
+
+    @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
     def test_each_event_reaches_the_shim_before_hermes_can_fire_the_next(self):
         _, ctx = self.plugin(self.recorder(hold_s=0.1))
         ctx.hooks["pre_tool_call"](session_id="s1", tool_name="terminal", tool_call_id="c1")
