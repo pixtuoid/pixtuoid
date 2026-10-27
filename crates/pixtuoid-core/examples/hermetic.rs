@@ -2139,8 +2139,8 @@ mod run {
                 .transpose()?,
             daemon,
             first_turn: Argv::resolved(first_turn).map_err(plan_error)?,
-            retire: p
-                .retire
+            server_stop: p
+                .server_stop
                 .map(|words| {
                     Argv::resolved(with_launch(words[1..].iter().map(|w| ported(w)).collect()))
                 })
@@ -2521,7 +2521,7 @@ mod run {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: second.map(|end| SecondTurn { end }),
-                    retired: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: "1.45.1".into(),
@@ -2942,17 +2942,17 @@ mod run {
         }
 
         /// Every scenario, its TUI ones too: a server any turn started outlives
-        /// the run unless retired after it.
+        /// the run unless stopped after it.
         #[test]
-        fn a_retiring_profile_hands_the_recorder_its_retire_for_every_scenario() {
+        fn a_server_stop_reaches_the_recorder_for_every_scenario() {
             let p = hermetic::profile("hermes").expect("hermes");
             for scenario in p.scenarios {
                 let plan = plan_of(p, scenario);
-                let retire = plan.retire.as_ref().expect("a retire");
-                assert_eq!(strings(retire), ["/cli/hermes", "gateway", "stop"]);
+                let stop = plan.server_stop.as_ref().expect("a server stop");
+                assert_eq!(strings(stop), ["/cli/hermes", "gateway", "stop"]);
             }
             let codex = hermetic::profile("codex").expect("codex");
-            assert_eq!(plan_of(codex, &codex.scenarios[0]).retire, None);
+            assert_eq!(plan_of(codex, &codex.scenarios[0]).server_stop, None);
         }
 
         #[test]

@@ -116,5 +116,5 @@ telemetry:
     // (`hermes_cli/main.py:2870-2875`, `hermes_cli/gateway_runtime_start.py:35-80`),
     // and `gateway stop` returns once it is down
     // (`website/docs/user-guide/windows-native.md:236`).
-    retire: Some(&["hermes", "gateway", "stop"]),
+    server_stop: Some(&["hermes", "gateway", "stop"]),
 };

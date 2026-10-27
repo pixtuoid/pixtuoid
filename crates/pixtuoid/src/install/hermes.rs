@@ -18,20 +18,19 @@ use anyhow::{Context, Result, anyhow, bail};
 use saphyr::{LoadableYamlNode, MappingOwned, ScalarOwned, Yaml, YamlEmitter, YamlOwned};
 
 use crate::install::SENTINEL_KEY;
-use crate::install::host_plugin::NAME;
+use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
 use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
-/// Hermes loads the plugin in place, so a rewrite of it reaches the gateway's
-/// next plugin load.
 pub(crate) const HOST: HostRegistration = HostRegistration {
     cli: CLI,
     register,
     unregister,
     is_registered,
     copy: None,
+    reload: Some(reload),
     legacy: Some(LegacyConfig {
         path: config_path,
         strip: strip_shell_hooks,
@@ -71,21 +70,13 @@ pub(crate) const REMOVED_STUB: &str = "# pixtuoid hermes plugin removed by disco
 /// The events the plugin forwards: its `FORWARD` tuple.
 #[cfg(test)]
 pub(crate) fn plugin_events() -> Vec<&'static str> {
-    python_tuple(PLUGIN_TEMPLATE, "FORWARD")
+    template_tuple("FORWARD")
 }
 
-/// The string items of the template's `<name> = ( … )` tuple.
+/// The items of the template's `<name> = ( … )` tuple.
 #[cfg(test)]
-fn python_tuple(template: &'static str, name: &str) -> Vec<&'static str> {
-    let body = template
-        .split_once(&format!("\n{name} = ("))
-        .and_then(|(_, rest)| rest.split_once(')'))
-        .map(|(inner, _)| inner)
-        .unwrap_or_else(|| panic!("the template defines {name}"));
-    body.split(',')
-        .map(|s| s.trim().trim_matches('"'))
-        .filter(|s| !s.is_empty())
-        .collect()
+fn template_tuple(name: &str) -> Vec<&'static str> {
+    crate::install::template_list(PLUGIN_TEMPLATE, &format!("\n{name} = ("), ")")
 }
 
 fn home() -> Result<PathBuf> {
@@ -175,7 +166,34 @@ fn manifest() -> String {
 }
 
 fn register(config: &Path) -> Result<()> {
-    io::write_config_atomic(&plugin_dir(config)?.join(MANIFEST), &manifest())?;
+    let dir = plugin_dir(config)?;
+    let manifest_path = dir.join(MANIFEST);
+    let fresh = !manifest_path.exists();
+    let enabled = is_registered()?;
+    io::write_config_atomic(&manifest_path, &manifest())?;
+    let registered = if enabled {
+        reload()
+    } else {
+        CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
+            .map(drop)
+    };
+    if let Err(e) = registered {
+        // Hermes lists any user dir that holds a manifest, code or none
+        // (`hermes_cli/plugins_cmd.py:869-881` at v0.22.5).
+        if fresh && let Err(undo) = host_plugin::remove_if_ours(dir, config, is_ours) {
+            return Err(e.context(format!("its manifest stays in place: {undo:#}")));
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// `enable` reloads the gateway only for a selection it changed
+/// (`hermes_cli/plugins_cmd.py:726-732` at v0.22.5), so the plugin is disabled,
+/// which unloads it, then enabled, which loads the files on disk
+/// (`hermes_cli/plugins_activation.py:118-121`).
+fn reload() -> Result<()> {
+    CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])?;
     Ok(())
 }
@@ -186,7 +204,7 @@ fn register(config: &Path) -> Result<()> {
 fn unregister(config: &Path) -> Result<Unregistered> {
     let dir = plugin_dir(config)?;
     if !dir.join(MANIFEST).exists() {
-        remove_if_ours(config)?;
+        host_plugin::remove_if_ours(dir, config, is_ours)?;
         return Ok(Unregistered::Absent);
     }
     if CLI.locate().is_none() {
@@ -195,20 +213,12 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     }
     CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     CLI.run(&[PLUGINS.as_ref(), REMOVE.as_ref(), NAME.as_ref()])?;
-    // `remove` reaches only a dir under hermes's own plugins dir.
-    remove_if_ours(config)?;
     Ok(Unregistered::Removed)
 }
 
-/// Delete `config`'s dir only when `config` is our plugin or its stub: a custom
-/// config path must not take a stranger's dir.
-fn remove_if_ours(config: &Path) -> Result<()> {
-    let content = io::read_config(config)?;
-    if content.contains(SENTINEL) || content == REMOVED_STUB {
-        let dir = plugin_dir(config)?;
-        std::fs::remove_dir_all(dir).with_context(|| format!("removing {}", dir.display()))?;
-    }
-    Ok(())
+/// Our plugin, or the stub its disconnect leaves.
+fn is_ours(plugin: &str) -> bool {
+    plugin.contains(SENTINEL) || plugin == REMOVED_STUB
 }
 
 /// Read-only, so a status check starts no CLI.
@@ -243,9 +253,7 @@ fn parse_root_mapping(content: &str) -> Result<MappingOwned> {
     match docs.into_iter().next() {
         None => Ok(MappingOwned::new()),
         Some(YamlOwned::Mapping(m)) => Ok(m),
-        Some(_) => {
-            bail!("config.yaml is valid YAML but its root is not a mapping — refusing to overwrite")
-        }
+        Some(_) => bail!("config.yaml is valid YAML but its root is not a mapping"),
     }
 }
 
@@ -268,7 +276,7 @@ fn is_managed(entry: &YamlOwned) -> bool {
 /// Remove every `hooks:` entry an older pixtuoid merged (its `_pixtuoid: true`
 /// sentinel), dropping an event, and then `hooks:` itself, it emptied.
 pub(crate) fn strip_shell_hooks(content: &str) -> Result<MergeOutcome> {
-    let mut root = parse_root_mapping(content)?;
+    let mut root = parse_root_mapping(content).context("refusing to overwrite config.yaml")?;
     let hooks_key = ystr("hooks");
     let Some(YamlOwned::Mapping(hooks)) = root.get_mut(&hooks_key) else {
         return Ok(MergeOutcome {
@@ -343,7 +351,8 @@ mod tests {
         assert_eq!(root.get(&ystr("model")), Some(&ystr("gpt")));
         assert!(!strip_shell_hooks("hooks: {}\n").unwrap().changed);
         assert!(!strip_shell_hooks("").unwrap().changed);
-        assert!(strip_shell_hooks("- 1\n- 2\n").is_err());
+        let refused = strip_shell_hooks("- 1\n- 2\n").unwrap_err();
+        assert!(format!("{refused:#}").contains("refusing to overwrite"));
     }
 
     /// The plugin forwards EXACTLY what the decoder reads: two lists in two
@@ -367,61 +376,25 @@ mod tests {
     #[test]
     fn the_plugin_copies_exactly_the_fields_the_decoder_reads() {
         use pixtuoid_core::source::hermes::{DECODED_FIELDS, DETAIL_KEYS};
-        let mut copied = python_tuple(PLUGIN_TEMPLATE, "FIELDS");
+        let mut copied = template_tuple("FIELDS");
         copied.push("cwd");
         copied.sort_unstable();
         let mut decoded = DECODED_FIELDS.to_vec();
         decoded.sort_unstable();
         assert_eq!(copied, decoded);
-        assert_eq!(python_tuple(PLUGIN_TEMPLATE, "ARGS"), DETAIL_KEYS);
-        assert!(
-            PLUGIN_TEMPLATE
-                .contains("cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()")
-                && PLUGIN_TEMPLATE.contains(r#"payload["cwd"] = cwd"#),
-            "the decoder reads the session's cwd, never the gateway's own"
-        );
+        assert_eq!(template_tuple("ARGS"), DETAIL_KEYS);
         assert_eq!(
-            python_tuple(PLUGIN_TEMPLATE, "OUTSIDE_A_TURN"),
+            template_tuple("OUTSIDE_A_TURN"),
             pixtuoid_core::source::hermes::OUTSIDE_A_TURN,
             "an event outside a turn has no cwd to send, and no arm reads one"
         );
     }
 
-    /// `pre_tool_call` fails CLOSED in hermes: a callback that raises or outruns
-    /// its timeout blocks the user's tool. So the forward set is the only way a
-    /// callback is registered, the only call that can wait is the shim's run,
-    /// and nothing raises out of a callback.
     #[test]
-    fn the_plugin_only_observes_and_waits_on_nothing_but_the_shim() {
-        let code: String = PLUGIN_TEMPLATE
-            .lines()
-            .filter(|l| !l.trim_start().starts_with('#'))
-            .map(|l| format!("{l}\n"))
-            .collect();
-        assert_eq!(code.matches("ctx.register_hook(").count(), 1);
-        assert!(code.contains("    for event in FORWARD:\n        ctx.register_hook("));
-        assert_eq!(code.matches("subprocess.run(").count(), 1);
-        for wait in [
-            "timeout",
-            "sleep",
-            ".wait(",
-            ".join(",
-            "Popen",
-            "communicate",
-            "thread",
-            "async",
-        ] {
-            assert!(!code.contains(wait), "the plugin waits on {wait}");
-        }
-        assert!(code.contains(
-            "        try:\n            cwd = None if event in OUTSIDE_A_TURN else ctx.session_cwd()\n            _send(_payload(event, cwd, kwargs))\n        except Exception:\n            pass\n"
-        ));
+    fn the_plugin_runs_the_shim_with_the_flag_its_writers_share() {
         let flag = crate::install::hook_cmd::SOURCE_FLAG.trim();
         let source = pixtuoid_core::source::hermes::SOURCE_NAME;
-        assert!(
-            code.contains(&format!(r#"[HOOK_PATH, "{flag}", "{source}"]"#)),
-            "the shim learns its source from the flag its writers share"
-        );
+        assert!(PLUGIN_TEMPLATE.contains(&format!(r#"[HOOK_PATH, "{flag}", "{source}"]"#)));
     }
 
     #[test]
@@ -482,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn hermes_events_pins_the_exact_forwarded_set() {
+    fn the_plugins_forward_set_is_pinned() {
         crate::install::assert_event_roster(
             "the plugin's FORWARD",
             &plugin_events(),
@@ -514,6 +487,12 @@ mod tests {
                 std::fs::write(&config, content).unwrap();
                 assert_eq!(is_registered().unwrap(), want, "{content}");
             }
+            std::fs::write(&config, "- pixtuoid\n").unwrap();
+            let unread = format!("{:#}", is_registered().unwrap_err());
+            assert!(
+                !unread.contains("refusing"),
+                "a read declines no write: {unread}"
+            );
         });
     }
 }

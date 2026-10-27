@@ -55,6 +55,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
         stale: copy_is_stale,
         refresh: add_plugin,
     }),
+    reload: None,
     legacy: Some(LegacyConfig {
         path: config_toml,
         strip: merge_uninstall,
@@ -221,7 +222,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     // The table `marketplace_moved_from` reads the source from.
     let listed = doc.get(MARKETPLACES).and_then(|m| m.get(NAME)).is_some();
     if !installed && !listed {
-        host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+        host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
         return Ok(Unregistered::Absent);
     }
     if CLI.locate().is_none() {
@@ -239,7 +240,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     if listed {
         remove_marketplace()?;
     }
-    host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+    host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
     Ok(Unregistered::Removed)
 }
 

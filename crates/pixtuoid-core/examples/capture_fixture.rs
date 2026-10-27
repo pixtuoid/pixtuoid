@@ -430,7 +430,7 @@ mod recorder {
         };
         let second_turn_skipped = plan.second_turn().is_some() && second_outcome.is_none();
         // Whatever the turns did: a server they left up would outlive the run.
-        let retired = match &plan.retire {
+        let server_stop = match &plan.server_stop {
             Some(words) => Some(run_turn(
                 wired(
                     &words.strings(),
@@ -494,7 +494,7 @@ mod recorder {
                 give_up_reason,
                 incomplete: incomplete.as_ref().map(ToString::to_string),
                 second_turn: second_outcome,
-                retired,
+                server_stop,
                 note_survived,
             };
             std::fs::write(
@@ -1533,7 +1533,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
-                    retired: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: "1.43.0".into(),
@@ -1651,7 +1651,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
-                    retired: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: "1.45.1".into(),
@@ -1846,7 +1846,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
-                    retired: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: versions.1.into(),
@@ -3006,7 +3006,7 @@ mod recorder {
                 second_turn: second.map(|code| SecondTurn {
                     end: ProcessExit::Exited(code),
                 }),
-                retired: None,
+                server_stop: None,
                 note_survived: true,
             };
             assert!(exited_as_scripted(

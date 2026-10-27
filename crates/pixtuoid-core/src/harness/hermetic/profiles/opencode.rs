@@ -223,7 +223,7 @@ pub(crate) const PROFILE: Profile = Profile {
         ready: &["session", "list", "--server", SERVER],
         env: &[],
     }),
-    retire: None,
+    server_stop: None,
 };
 
 #[cfg(test)]

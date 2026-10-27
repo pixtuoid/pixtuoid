@@ -76,9 +76,7 @@ pub fn user_home_opt() -> Option<PathBuf> {
 
 /// Hand back a CLI's env home override unchanged, warning when it is RELATIVE.
 ///
-/// Of the call sites only omp's is absolutized upstream (`path.resolve`, against
-/// OMP's cwd) and only codewhale expands `~`; the rest take it verbatim. Either
-/// way each process resolves against its OWN cwd — one string, two directories,
+/// Each process resolves it against its OWN cwd — one string, two directories,
 /// and the failure is otherwise mute: an empty office and no error (#880).
 pub(crate) fn warn_if_relative_override(var: &str, dir: PathBuf) -> PathBuf {
     if !dir.is_absolute() {

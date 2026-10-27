@@ -248,7 +248,7 @@ pub struct CaptureRecord {
     pub second_turn: Option<SecondTurn>,
     /// How the step that stops the CLI's server exited, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retired: Option<ProcessExit>,
+    pub server_stop: Option<ProcessExit>,
     /// Whether the note the recorder planted was still there, unchanged, once
     /// every turn exited: a refused call that deletes it did not stay refused.
     #[serde(default)]

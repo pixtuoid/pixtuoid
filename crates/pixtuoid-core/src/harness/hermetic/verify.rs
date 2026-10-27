@@ -689,12 +689,12 @@ fn judge(
     }
     // A server the turns left up ends their sessions only when it dies, outside
     // the run.
-    if let Some(words) = p.retire
-        && manifest.capture.retired != Some(ProcessExit::Exited(0))
+    if let Some(words) = p.server_stop
+        && manifest.capture.server_stop != Some(ProcessExit::Exited(0))
     {
         let how = manifest
             .capture
-            .retired
+            .server_stop
             .map_or_else(|| "never ran".to_owned(), |e| e.to_string());
         findings.push((
             Label::Fail,
@@ -1229,7 +1229,7 @@ fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
 /// The scene a headless pixtuoid painted, and every drift breadcrumb it logged.
 /// The agent must be seen in the `shown` state its shape is about, and every
 /// agent, a child under its own label included, gone once the run's last step
-/// exited: every profiled CLI's clean exit, or its server's retire, ends its
+/// exited: every profiled CLI's clean exit, or its server's stop, ends its
 /// sprites, whether by an end event, a drain or a process's death, so one left
 /// standing is a session pixtuoid lost track of.
 fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
@@ -1409,8 +1409,8 @@ mod tests {
                 give_up_reason: None,
                 incomplete: None,
                 second_turn: None,
-                retired: profile(source)
-                    .and_then(|p| p.retire)
+                server_stop: profile(source)
+                    .and_then(|p| p.server_stop)
                     .map(|_| ProcessExit::Exited(0)),
                 note_survived: true,
             },
@@ -2954,9 +2954,9 @@ mod tests {
         assert!(!has(&v, Label::Fail, "uninstall"), "{:?}", v.findings());
     }
 
-    /// The retire's own exit is judged, whatever else the run shows.
+    /// The server stop's own exit is judged, whatever else the run shows.
     #[test]
-    fn a_run_whose_server_was_not_retired_fails() {
+    fn a_run_whose_server_was_not_stopped_fails() {
         let d = recorded("hermes", "tool-run", "agents=[] daemons=[]\n");
         let outlived = |dir: &Path| {
             has(
@@ -2966,9 +2966,9 @@ mod tests {
             )
         };
         assert!(!outlived(d.path()));
-        for retired in [None, Some(ProcessExit::Exited(1))] {
-            write_manifest(d.path(), "hermes", |m| m.capture.retired = retired);
-            assert!(outlived(d.path()), "{retired:?}");
+        for server_stop in [None, Some(ProcessExit::Exited(1))] {
+            write_manifest(d.path(), "hermes", |m| m.capture.server_stop = server_stop);
+            assert!(outlived(d.path()), "{server_stop:?}");
         }
     }
 

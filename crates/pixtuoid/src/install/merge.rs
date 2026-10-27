@@ -17,10 +17,10 @@ pub(crate) fn parse_json_or_empty(content: &str) -> anyhow::Result<Value> {
     serde_json::from_str(content).context("not valid JSON — refusing to overwrite")
 }
 
-/// Bake `hook_path` (JSON-escaped) into a plugin `template` at `placeholder` —
-/// the shared renderer for the code-artifact targets (opencode `.ts`, openclaw
-/// `.js`). A JSON string is a JS string literal since ES2019's
-/// [JSON superset](https://github.com/tc39/proposal-json-superset).
+/// Bake `hook_path` (JSON-escaped) into a plugin `template` at `placeholder`. A
+/// JSON string is a string literal in JS since ES2019's
+/// [JSON superset](https://github.com/tc39/proposal-json-superset) and in Python
+/// ([escapes](https://docs.python.org/3/reference/lexical_analysis.html#escape-sequences)).
 pub(crate) fn bake_hook_path(
     template: &str,
     placeholder: &str,

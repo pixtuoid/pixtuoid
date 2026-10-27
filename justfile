@@ -929,9 +929,9 @@ deb target:
 #     so a generator regression is caught at review time, not at the tag-push.
 #   - scripts/{openclaw,dsh}-plugin.test.mjs — drive each RENDERED plugin the way
 #     its CLI's loader does. The Rust side can only grep a template as a string, so
-#     this is the only place a plugin's runtime contract (never block its host /
-#     never forward content / openclaw's gateway identity, dsh's emit order) is
-#     actually EXECUTED.
+#     this is where those two plugins' runtime contracts (never block the host /
+#     never forward content / openclaw's gateway identity, dsh's emit order) are
+#     EXECUTED.
 # NOT in preflight: a Rust pre-push shouldn't require a Node toolchain. Needs Node ≥ 22.
 [doc('Node gates: the npm package generator + the OpenClaw and dsh plugin contracts (CI; not in preflight)')]
 [group('release')]

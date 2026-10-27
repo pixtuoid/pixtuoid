@@ -249,7 +249,7 @@ pub(crate) const PROFILE: Profile = Profile {
     result_unseen: false,
     live: None,
     daemon: None,
-    retire: None,
+    server_stop: None,
 };
 
 #[cfg(test)]

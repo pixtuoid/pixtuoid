@@ -873,7 +873,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
         transcript: None,
         hook: Some(HookDecoding::ClaimsAll(hermes::decode_hermes_hook_payload)),
         caps: SourceCaps {
-            // `on_session_finalize` when the gateway retires a session, else the
+            // `on_session_finalize` when the gateway finalizes a session, else the
             // gateway's death. NOT `on_session_end`, which despite the name is a
             // TURN boundary (`source/hermes.rs`).
             has_exit_signal: true,

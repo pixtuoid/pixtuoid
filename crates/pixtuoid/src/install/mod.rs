@@ -595,7 +595,11 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
 fn restore(lock: &io::ConfigLock, prior: Option<&str>) -> Result<()> {
     match prior {
         Some(content) => lock.write_atomic(content),
-        None => Ok(std::fs::remove_file(lock.target())?),
+        // A host's failed registration may have taken it with the plugin's dir.
+        None => match std::fs::remove_file(lock.target()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        },
     }
 }
 
@@ -759,12 +763,19 @@ pub(crate) fn assert_event_roster<T: Ord + std::fmt::Debug + Copy>(
 /// than hand-copied beside it.
 #[cfg(test)]
 pub(crate) fn forward_set(template: &'static str) -> std::collections::BTreeSet<&'static str> {
-    let block = template
-        .split_once("const FORWARD = new Set<string>([")
-        .and_then(|(_, rest)| rest.split_once("])"))
+    template_list(template, "const FORWARD = new Set<string>([", "])")
+        .into_iter()
+        .collect()
+}
+
+/// The quoted strings of the list a template writes between `open` and `close`.
+#[cfg(test)]
+pub(crate) fn template_list(template: &'static str, open: &str, close: &str) -> Vec<&'static str> {
+    template
+        .split_once(open)
+        .and_then(|(_, rest)| rest.split_once(close))
         .map(|(inner, _)| inner)
-        .expect("the template defines a FORWARD set");
-    block
+        .unwrap_or_else(|| panic!("the template writes no {open:?} … {close:?} list"))
         .split(',')
         .map(|s| s.trim().trim_matches('"'))
         .filter(|s| !s.is_empty())

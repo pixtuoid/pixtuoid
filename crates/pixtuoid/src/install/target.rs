@@ -216,6 +216,11 @@ pub struct HostRegistration {
     pub is_registered: fn() -> Result<bool>,
     /// `None` when the CLI loads the plugin's files in place.
     pub copy: Option<PluginCopy>,
+    /// Load rewritten files into a CLI that loads them in place but keeps what it
+    /// loaded until told: `None` when a rewrite reaches the CLI's next start. It
+    /// may re-enable a plugin the user disabled, so it runs only while
+    /// [`Self::is_registered`].
+    pub reload: Option<fn() -> Result<()>>,
     /// `None` when no released pixtuoid ever merged hooks into the CLI's own config.
     pub legacy: Option<LegacyConfig>,
 }

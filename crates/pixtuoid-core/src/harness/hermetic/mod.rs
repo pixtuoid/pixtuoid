@@ -376,7 +376,7 @@ pub struct Profile {
     /// The CLI's own command that stops the server it starts for its turns,
     /// run after each scenario's: their sessions end inside the run, and no
     /// process outlives it.
-    pub retire: Option<&'static [&'static str]>,
+    pub server_stop: Option<&'static [&'static str]>,
 }
 
 impl Profile {
@@ -1013,13 +1013,13 @@ mod tests {
     }
 
     #[test]
-    fn a_retire_runs_the_registered_binary() {
+    fn a_server_stop_runs_the_registered_binary() {
         for p in PROFILES {
-            if let Some(words) = p.retire {
+            if let Some(words) = p.server_stop {
                 assert_eq!(
                     words.first(),
                     p.invocation.first(),
-                    "{}: the retire runs a binary the registry does not name",
+                    "{}: the server stop runs a binary the registry does not name",
                     p.source
                 );
             }

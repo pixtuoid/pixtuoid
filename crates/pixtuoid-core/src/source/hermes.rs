@@ -86,10 +86,10 @@ fn resolve_hermes_home(
 
 /// `os.path.expanduser(os.path.expandvars(raw))`, hermes's expansion of
 /// `HERMES_HOME` (`hermes_constants.py:46-48` at v0.22.5), in the host's flavour:
-/// CPython 3.14.8's `Lib/posixpath.py:229-334` or `Lib/ntpath.py:345-468`. Two
-/// cases stay as written where Python asks the passwd database, which core never
-/// reads (`platform::resolve_home_first`): a `~user`, and a Unix `~` with no
-/// `HOME`. A variable whose value is not UTF-8 stays as its reference.
+/// CPython 3.14.8's `Lib/posixpath.py:229-334` or `Lib/ntpath.py:345-468`. On
+/// Unix, where Python asks the passwd database, which core never reads
+/// (`platform::resolve_home_first`), a `~user` and a `~` with no `HOME` stay as
+/// written. A variable whose value is not UTF-8 stays as its reference.
 fn expand_home(raw: &str, windows: bool, var: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
     let text = |name: &str| {
         var(name)
@@ -100,16 +100,51 @@ fn expand_home(raw: &str, windows: bool, var: &dyn Fn(&str) -> Option<OsString>)
     let Some(tail) = expanded.strip_prefix('~') else {
         return expanded.into();
     };
-    let user_end = tail
-        .find(|c| c == '/' || (windows && c == '\\'))
-        .unwrap_or(tail.len());
-    let home = match python_home(windows, var) {
-        Some(home) if user_end == 0 => home,
-        _ => return expanded.into(),
+    let (user, rest) = tail.split_at(
+        tail.find(|c| c == '/' || (windows && c == '\\'))
+            .unwrap_or(tail.len()),
+    );
+    let Some(home) = python_home(windows, var) else {
+        return expanded.into();
     };
-    let mut out = home.into_os_string();
-    out.push(tail);
+    let home = match (user, windows) {
+        ("", _) => home.into_os_string(),
+        (_, true) => match nt_user_home(home, user, text("USERNAME").as_deref()) {
+            Some(home) => home,
+            None => return expanded.into(),
+        },
+        (_, false) => return expanded.into(),
+    };
+    let mut out = home;
+    out.push(rest);
     out.into()
+}
+
+/// `ntpath.expanduser`'s guess at `user`'s home (`Lib/ntpath.py:370-384` at
+/// v3.14.8): the `current` user's own `home`, else the profile beside it when
+/// `home` is named for `current`.
+fn nt_user_home(home: PathBuf, user: &str, current: Option<&str>) -> Option<OsString> {
+    if current == Some(user) {
+        return Some(home.into_os_string());
+    }
+    let home = home.to_str()?;
+    let is_sep = |c: char| c == '\\' || c == '/';
+    // The drive and root `dirname` keeps whole. A UNC share stays in `rest`, where
+    // the split lands as `ntpath`'s unless `home` is the share itself.
+    let root = match home.as_bytes() {
+        [_, b':', sep, ..] if is_sep(char::from(*sep)) => 3,
+        [_, b':', ..] => 2,
+        [sep, ..] if is_sep(char::from(*sep)) => 1,
+        _ => 0,
+    };
+    let (root, rest) = home.split_at(root);
+    let (head, name) = rest.split_at(rest.rfind(is_sep).map_or(0, |at| at + 1));
+    if Some(name) != current {
+        return None;
+    }
+    let head = head.trim_end_matches(is_sep);
+    let sep = if head.is_empty() { "" } else { "\\" };
+    Some(format!("{root}{head}{sep}{user}").into())
 }
 
 /// The `$NAME` and `${NAME}` references in `path` — and on Windows `%NAME%`,
@@ -205,8 +240,8 @@ pub const DECODED_EVENTS: &[&str] = &[
 pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
 
 /// Every envelope field [`field`] reads, pinned by `every_decoded_field_is_read`.
-/// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more:
-/// `the_plugin_copies_exactly_the_fields_the_decoder_reads`.
+/// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more of
+/// hermes's kwargs: `the_plugin_copies_exactly_the_fields_the_decoder_reads`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_FIELDS: &[&str] = &[
@@ -720,10 +755,31 @@ mod tests {
             "with no USERPROFILE, HOMEDRIVE + HOMEPATH"
         );
         assert_eq!(home(Some(r"~\h"), true, &[]), Some(PathBuf::from(r"~\h")));
-        assert_eq!(
-            home(Some(r"~bob\h"), true, &profile),
-            Some(PathBuf::from(r"~bob\h"))
-        );
+        for (raw, vars, want) in [
+            (r"~bob\h", &profile, r"C:\Users\bob\h"),
+            (r"~ada\h", &profile, r"C:\Users\ada\h"),
+            (
+                r"~bob\h",
+                &[("USERPROFILE", r"C:\ada"), ("USERNAME", "ada")],
+                r"C:\bob\h",
+            ),
+            (
+                r"~bob\h",
+                &[("USERPROFILE", r"\\srv\share\ada"), ("USERNAME", "ada")],
+                r"\\srv\share\bob\h",
+            ),
+            (
+                r"~bob\h",
+                &[("USERPROFILE", r"C:\Users\ada"), ("USERNAME", "zed")],
+                r"~bob\h",
+            ),
+        ] {
+            assert_eq!(
+                home(Some(raw), true, vars),
+                Some(PathBuf::from(want)),
+                "{raw} {vars:?}"
+            );
+        }
     }
 
     /// `<home>/.hermes`, suffixed literally by `HERMES_DATA_DIR_SUFFIX`, which an
