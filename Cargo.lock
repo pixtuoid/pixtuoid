@@ -2878,6 +2878,7 @@ name = "pixtuoid-core"
 version = "0.20.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "codspeed-criterion-compat",
  "dunce",
  "enum-map",

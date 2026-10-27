@@ -47,8 +47,8 @@ pub struct Merged {
     pub steps: Vec<Step>,
 }
 
-/// A line that decoded to events, and when its CLI wrote it: in
-/// `at..at + within`.
+/// A line that decoded to events, and when its CLI wrote it: exactly `at` when
+/// `within` is zero, else in `at..at + within`.
 #[derive(Debug)]
 struct Written {
     line: usize,
@@ -163,9 +163,10 @@ fn bounds(hooks: &[Written], transcript: &[Written]) -> Vec<(usize, usize)> {
         .iter()
         .map(|t| {
             let latest = t.at + t.within + DEFAULT_POLL_INTERVAL;
+            let reachable = |h: &&Written| h.at < latest || (t.within.is_zero() && h.at == latest);
             (
                 hooks.iter().filter(|h| h.at < t.at).count(),
-                hooks.iter().filter(|h| h.at < latest).count(),
+                hooks.iter().filter(reachable).count(),
             )
         })
         .collect();
@@ -367,15 +368,49 @@ mod tests {
 
     #[test]
     fn a_transcript_line_reaches_the_reducer_within_the_poll_interval() {
-        let late = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") + 2_000;
-        let hooks = [hook("SessionStart", 1_000), hook("PreToolUse", late)];
+        let deadline = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") + 1_000;
         let lines = [call(1_000)];
-        let merges = drive().merges(&hooks, &lines).expect("codex merges");
+        let orders_with = |pre_use: u64| {
+            let hooks = [hook("SessionStart", 1_000), hook("PreToolUse", pre_use)];
+            orders(drive().merges(&hooks, &lines).expect("codex merges"))
+        };
         assert_eq!(
-            orders(merges),
+            orders_with(deadline + 1),
             [vec![(J, 0), (H, 0), (H, 1)], vec![(H, 0), (J, 0), (H, 1)],],
             "a tie may go either way, and a hook past the interval never precedes it"
         );
+        assert_eq!(
+            orders_with(deadline),
+            [
+                vec![(J, 0), (H, 0), (H, 1)],
+                vec![(H, 0), (J, 0), (H, 1)],
+                vec![(H, 0), (H, 1), (J, 0)],
+            ],
+            "the interval's last instant is in it"
+        );
+    }
+
+    #[test]
+    fn only_an_exact_stamps_deadline_admits_a_hook() {
+        let written = |at: SystemTime, within| Written {
+            line: 0,
+            at,
+            within,
+            events: Vec::new(),
+        };
+        /// Not 1 ns: Windows' `SystemTime` counts 100 ns intervals and drops a
+        /// smaller step (std's `sys/pal/windows/time.rs`, `checked_dur2intervals`).
+        const TICK: Duration = Duration::from_micros(1);
+        for (within, last_in) in [
+            (Duration::ZERO, Duration::ZERO),
+            (Duration::from_secs(1), TICK),
+        ] {
+            let line = written(SystemTime::UNIX_EPOCH + Duration::from_secs(1), within);
+            let deadline = line.at + within + DEFAULT_POLL_INTERVAL;
+            let hooks = [deadline - last_in, deadline - last_in + TICK]
+                .map(|at| written(at, Duration::ZERO));
+            assert_eq!(bounds(&hooks, &[line]), [(0, 1)], "{within:?}");
+        }
     }
 
     #[test]
