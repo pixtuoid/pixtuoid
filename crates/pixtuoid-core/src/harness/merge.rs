@@ -48,7 +48,7 @@ pub struct Merged {
 }
 
 /// A line that decoded to events, and when its CLI wrote it: in
-/// `at..at + within`.
+/// `at..=at + within`.
 #[derive(Debug)]
 struct Written {
     line: usize,
@@ -165,7 +165,7 @@ fn bounds(hooks: &[Written], transcript: &[Written]) -> Vec<(usize, usize)> {
             let latest = t.at + t.within + DEFAULT_POLL_INTERVAL;
             (
                 hooks.iter().filter(|h| h.at < t.at).count(),
-                hooks.iter().filter(|h| h.at < latest).count(),
+                hooks.iter().filter(|h| h.at <= latest).count(),
             )
         })
         .collect();
@@ -367,14 +367,25 @@ mod tests {
 
     #[test]
     fn a_transcript_line_reaches_the_reducer_within_the_poll_interval() {
-        let late = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") + 2_000;
-        let hooks = [hook("SessionStart", 1_000), hook("PreToolUse", late)];
+        let deadline = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") + 1_000;
         let lines = [call(1_000)];
-        let merges = drive().merges(&hooks, &lines).expect("codex merges");
+        let orders_with = |pre_use: u64| {
+            let hooks = [hook("SessionStart", 1_000), hook("PreToolUse", pre_use)];
+            orders(drive().merges(&hooks, &lines).expect("codex merges"))
+        };
         assert_eq!(
-            orders(merges),
+            orders_with(deadline + 1),
             [vec![(J, 0), (H, 0), (H, 1)], vec![(H, 0), (J, 0), (H, 1)],],
             "a tie may go either way, and a hook past the interval never precedes it"
+        );
+        assert_eq!(
+            orders_with(deadline),
+            [
+                vec![(J, 0), (H, 0), (H, 1)],
+                vec![(H, 0), (J, 0), (H, 1)],
+                vec![(H, 0), (H, 1), (J, 0)],
+            ],
+            "the interval's last instant is in it"
         );
     }
 
