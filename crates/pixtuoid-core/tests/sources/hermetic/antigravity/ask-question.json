@@ -3,7 +3,7 @@
     {
       "match": {"systemMessage": "You are Antigravity", "turnIndex": 0},
       "response": {"toolCalls": [
-        {"name": "ask_question", "arguments": {"questions": [{"question": "Which file should I read?", "options": ["NOTE.txt", "README.md"], "is_multi_select": false}], "toolSummary": "File choice", "toolAction": "Asking which file"}}
+        {"name": "ask_question", "arguments": {"questions": [{"question": "Which file should I read?", "options": ["NOTE.txt", "README.md"], "is_multi_select": false}]}}
       ]},
       "latency": 300
     },

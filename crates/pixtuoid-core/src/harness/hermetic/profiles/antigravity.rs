@@ -1,5 +1,5 @@
 //! agy is closed source: its cites are its installer,
-//! antigravity.google/cli/install.sh, and the agy 1.4.2 binary.
+//! antigravity.google/cli/install.sh, and the agy 1.4.8 binary.
 
 use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
@@ -68,7 +68,7 @@ pub(crate) const PROFILE: Profile = Profile {
             turn: Turn::PROFILE,
         },
         // `-p` answers the question itself: "Auto-answering ask_question at
-        // step %d with skipped=true" (`ask_question_manager.go:30`).
+        // step %d with skipped=true" (the 1.4.8 binary's `ask_question_manager.go`).
         Scenario {
             name: "ask-question",
             shape: Shape::Permission,
