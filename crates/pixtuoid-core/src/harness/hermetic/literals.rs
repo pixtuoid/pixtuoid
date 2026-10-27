@@ -807,9 +807,6 @@ mod tests {
     const LOSS_LEGACY: &str = "loss list: only a Legacy-history codex rollout carries it, \
          which only a thread store without paginated lists gets, as `EM_RESUME` cites; \
          the tier's rollouts are Paginated";
-    const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
-         call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
-         aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -911,8 +908,6 @@ mod tests {
         sibling("antigravity.rs", "ask_permission", "ask_question"),
         literal("codex.rs", "patch_apply_end", LOSS_LEGACY),
         literal("codex.rs", "web_search_end", LOSS_LEGACY),
-        literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
-        literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];

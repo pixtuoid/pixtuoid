@@ -9,7 +9,17 @@
     },
     {
       "match": { "toolResultContains": "{note}" },
-      "response": { "content": "pong", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+      "response": { "raw": { "wire": "openai-responses", "events": [
+        {"type": "response.created", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "in_progress", "output": []}},
+        {"type": "response.in_progress", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "in_progress", "output": []}},
+        {"type": "response.output_item.added", "output_index": 0, "item": {"type": "message", "id": "msg-hermetic", "status": "in_progress", "role": "assistant", "content": []}},
+        {"type": "response.content_part.added", "item_id": "msg-hermetic", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}},
+        {"type": "response.output_text.delta", "item_id": "msg-hermetic", "output_index": 0, "content_index": 0, "delta": "pong"},
+        {"type": "response.output_text.done", "item_id": "msg-hermetic", "output_index": 0, "content_index": 0, "text": "pong"},
+        {"type": "response.content_part.done", "item_id": "msg-hermetic", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "pong", "annotations": []}},
+        {"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "id": "msg-hermetic", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "pong", "annotations": []}]}},
+        {"type": "response.completed", "response": {"id": "resp-hermetic", "object": "response", "created_at": 1, "model": "gpt-5", "status": "completed", "output": [{"type": "message", "id": "msg-hermetic", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "pong", "annotations": []}]}], "usage": {"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 300}, "output_tokens": 77, "total_tokens": 1077}}}
+      ] } }
     }
   ]
 }
