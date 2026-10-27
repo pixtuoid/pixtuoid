@@ -16,6 +16,7 @@
 //! alien to the shared CC-shaped arms, so the decoder is
 //! `HookDecoding::ClaimsAll`: it claims EVERY event.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use serde_json::Value;
@@ -31,23 +32,20 @@ use crate::source::registry::HookObject;
 pub const SOURCE_NAME: &str = "hermes";
 
 /// The Hermes home dir (`config.yaml` lives directly in it), mirroring hermes's
-/// own `hermes_constants._hermes_home_from_env` (2026.8.3): `HERMES_HOME`
-/// STRIPPED and taken verbatim when what's left is non-empty — even for a dir
-/// that does not exist, unlike Codex's exists-check — else the PLATFORM-NATIVE
-/// default, which is `%LOCALAPPDATA%\hermes` on Windows and only elsewhere
-/// `<user_home>/.hermes`.
+/// own `get_process_hermes_home` (`hermes_constants.py:237-246`, `:46-58` at
+/// v0.22.5): `HERMES_HOME` STRIPPED and, when what's left is non-empty, expanded
+/// as `expand_home` does — even for a dir that does not exist, unlike Codex's
+/// exists-check — else the PLATFORM-NATIVE default, which is
+/// `%LOCALAPPDATA%\hermes` on Windows and only elsewhere `<user_home>/.hermes`,
+/// with `HERMES_DATA_DIR_SUFFIX` appended literally
+/// (`website/docs/reference/environment-variables.md:894`).
 ///
 /// Hermes PROFILES are applied out-of-band and are deliberately not mirrored:
 /// each CLI's resolver is mirrored on its OWN axes, never a generic union.
 pub fn hermes_home() -> Option<PathBuf> {
     let raw = crate::platform::path_env_trimmed("HERMES_HOME");
     let from_env = raw.is_some();
-    let dir = resolve_hermes_home(
-        raw,
-        crate::platform::path_env_trimmed("LOCALAPPDATA"),
-        cfg!(windows),
-        crate::platform::user_home_opt(),
-    )?;
+    let dir = resolve_hermes_home(raw, cfg!(windows), &|name: &str| std::env::var_os(name))?;
     // Only the ENV branch may be blamed on HERMES_HOME. A relative DEFAULT comes
     // from HOME/LOCALAPPDATA, and naming an unset var as the cause sends the
     // reader chasing the wrong one (#881 review).
@@ -59,29 +57,122 @@ pub fn hermes_home() -> Option<PathBuf> {
 }
 
 /// Pure precedence core, separated so the Windows arm is unit-testable on any
-/// host. `user_home` mirrors `Path.home()`, whose Windows arm is
-/// `USERPROFILE`-first (`ntpath.expanduser`) exactly like [`user_home_opt`].
-///
-/// [`user_home_opt`]: crate::platform::user_home_opt
-/// The env values arrive ALREADY trimmed and blank-filtered from
-/// `platform::path_env_trimmed` — normalized at the read boundary, not here.
+/// host: `HERMES_HOME` arrives trimmed from the read boundary, and `var` reads
+/// every other variable as `std::env::var_os` does.
 fn resolve_hermes_home(
     hermes_home_env: Option<PathBuf>,
-    local_appdata: Option<PathBuf>,
     windows: bool,
-    user_home: Option<PathBuf>,
+    var: &dyn Fn(&str) -> Option<OsString>,
 ) -> Option<PathBuf> {
     if let Some(h) = hermes_home_env {
-        return Some(h);
+        return Some(match h.to_str() {
+            Some(raw) => expand_home(raw, windows, var),
+            None => h,
+        });
     }
-    if !windows {
-        return user_home.map(|h| h.join(".hermes"));
-    }
-    let base = match local_appdata {
-        Some(l) => l,
-        None => user_home?.join("AppData").join("Local"),
+    let (base, mut leaf) = if windows {
+        let local = var("LOCALAPPDATA").and_then(crate::platform::trimmed_path);
+        let base = match local {
+            Some(l) => l,
+            None => python_home(true, var)?.join("AppData").join("Local"),
+        };
+        (base, OsString::from("hermes"))
+    } else {
+        (python_home(false, var)?, OsString::from(".hermes"))
     };
-    Some(base.join("hermes"))
+    leaf.push(var("HERMES_DATA_DIR_SUFFIX").unwrap_or_default());
+    Some(base.join(leaf))
+}
+
+/// `os.path.expanduser(os.path.expandvars(raw))`, hermes's expansion of
+/// `HERMES_HOME` (`hermes_constants.py:46-48` at v0.22.5), in the host's flavour:
+/// CPython 3.14.8's `Lib/posixpath.py:229-334` or `Lib/ntpath.py:345-468`. Two
+/// cases stay as written where Python asks the passwd database, which core never
+/// reads (`platform::resolve_home_first`): a `~user`, and a Unix `~` with no
+/// `HOME`. A variable whose value is not UTF-8 stays as its reference.
+fn expand_home(raw: &str, windows: bool, var: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
+    let text = |name: &str| {
+        var(name)
+            .filter(|_| !name.is_empty())
+            .and_then(|v| v.into_string().ok())
+    };
+    let expanded = expandvars(raw, windows, &text);
+    let Some(tail) = expanded.strip_prefix('~') else {
+        return expanded.into();
+    };
+    let user_end = tail
+        .find(|c| c == '/' || (windows && c == '\\'))
+        .unwrap_or(tail.len());
+    let home = match python_home(windows, var) {
+        Some(home) if user_end == 0 => home,
+        _ => return expanded.into(),
+    };
+    let mut out = home.into_os_string();
+    out.push(tail);
+    out.into()
+}
+
+/// The `$NAME` and `${NAME}` references in `path` — and on Windows `%NAME%`,
+/// `%%`, `$$` and single-quoted runs — replaced as Python's `expandvars` replaces
+/// them: an unknown or unterminated reference stays as written.
+fn expandvars(path: &str, windows: bool, text: &dyn Fn(&str) -> Option<String>) -> String {
+    let specials: &[char] = if windows { &['$', '%', '\''] } else { &['$'] };
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(at) = rest.find(specials) {
+        out.push_str(&rest[..at]);
+        let here = &rest[at..];
+        let after = &here[1..];
+        // The reference's length, and what replaces it.
+        let (len, value) = match here.as_bytes()[0] {
+            b'\'' => (after.find('\'').map_or(here.len(), |c| c + 2), None),
+            b'%' => match after.find('%') {
+                Some(0) => (2, Some("%".to_owned())),
+                Some(c) => (c + 2, text(&after[..c])),
+                None => (here.len(), None),
+            },
+            _ if windows && after.starts_with('$') => (2, Some("$".to_owned())),
+            _ => match after.strip_prefix('{') {
+                Some(body) => match body.find('}') {
+                    Some(c) => (c + 3, text(&body[..c])),
+                    None => (here.len(), None),
+                },
+                None => {
+                    let name = after
+                        .bytes()
+                        .take_while(|&b| {
+                            b.is_ascii_alphanumeric() || b == b'_' || (windows && b == b'-')
+                        })
+                        .count();
+                    (name + 1, (name > 0).then(|| text(&after[..name])).flatten())
+                }
+            },
+        };
+        out.push_str(value.as_deref().unwrap_or(&here[..len]));
+        rest = &here[len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `Path.home()`, Python's `os.path.expanduser("~")`: `USERPROFILE`, else
+/// `HOMEDRIVE` + `HOMEPATH`, on Windows; `HOME` elsewhere, `/` when it is empty.
+fn python_home(windows: bool, var: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    if windows {
+        if let Some(profile) = var("USERPROFILE") {
+            return Some(profile.into());
+        }
+        let path = var("HOMEPATH")?;
+        let mut home = var("HOMEDRIVE").unwrap_or_default();
+        home.push(path);
+        return Some(home.into());
+    }
+    let home = var("HOME")?;
+    Some(if home.is_empty() {
+        "/".into()
+    } else {
+        home.into()
+    })
 }
 
 const ON_SESSION_START: &str = "on_session_start";
@@ -509,10 +600,9 @@ mod tests {
         });
     }
 
-    /// Pinned against a live probe of hermes 2026.8.3, the STRIP included.
     /// `hermes_home` must read through the TRIMMING twin: upstream applies
-    /// `os.environ.get(K, "").strip()`, so a padded override IS the stripped
-    /// path. Nothing else pins that binding — swap `path_env_trimmed` for
+    /// `os.environ.get(K, "").strip()` (`hermes_constants.py:245` at v0.22.5), so
+    /// a padded override IS the stripped path. Nothing else pins that binding — swap `path_env_trimmed` for
     /// `path_env` in `hermes_home()` and every other test still passes.
     #[test]
     fn hermes_home_strips_a_padded_env_override_like_upstream() {
@@ -521,55 +611,175 @@ mod tests {
         assert_eq!(got, Some(PathBuf::from("/custom/hm")));
     }
 
-    #[test]
-    fn hermes_home_takes_the_env_value_then_falls_back_to_dot_hermes() {
-        let unix = |env: Option<&str>| {
-            resolve_hermes_home(
-                env.map(PathBuf::from),
-                None,
-                false,
-                Some(PathBuf::from("/home/u")),
-            )
-        };
-        let default = Some(PathBuf::from("/home/u").join(".hermes"));
+    /// Each variable an env map names, as `std::env::var_os` would hand it over.
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
 
-        assert_eq!(unix(Some("/custom/hm")), Some(PathBuf::from("/custom/hm")));
-        assert_eq!(unix(None), default);
-        assert_eq!(resolve_hermes_home(None, None, false, None), None);
+    fn home(raw: Option<&str>, windows: bool, pairs: &[(&str, &str)]) -> Option<PathBuf> {
+        resolve_hermes_home(raw.map(PathBuf::from), windows, &env(pairs))
+    }
+
+    /// Each case's expected value is CPython 3.14.8's `posixpath.expanduser(
+    /// posixpath.expandvars(raw))` under the same environment.
+    #[test]
+    fn hermes_home_expands_its_variables_as_posix_python_does() {
+        let vars = [("HOME", "/home/u"), ("A", "/srv/a")];
+        for (raw, want) in [
+            ("$A/h", "/srv/a/h"),
+            ("${A}/h", "/srv/a/h"),
+            ("$NOPE/h", "$NOPE/h"),
+            ("${A/h", "${A/h"),
+            ("${}/h", "${}/h"),
+            ("a$/h", "a$/h"),
+            ("$A-B/h", "/srv/a-B/h"),
+            ("%A%/h", "%A%/h"),
+        ] {
+            assert_eq!(
+                home(Some(raw), false, &vars),
+                Some(PathBuf::from(want)),
+                "{raw}"
+            );
+        }
+    }
+
+    /// As above, against CPython 3.14.8's `ntpath`, which also reads `%NAME%`,
+    /// takes `-` in a `$NAME`, escapes `%%` and `$$`, and expands nothing in quotes.
+    #[test]
+    fn hermes_home_expands_its_variables_as_windows_python_does() {
+        let vars = [
+            ("USERPROFILE", r"C:\Users\ada"),
+            ("A", r"D:\a"),
+            ("A-B", r"D:\ab"),
+        ];
+        for (raw, want) in [
+            (r"%A%\h", r"D:\a\h"),
+            (r"$A\h", r"D:\a\h"),
+            (r"${A}\h", r"D:\a\h"),
+            (r"%NOPE%\h", r"%NOPE%\h"),
+            (r"%NOPE\h", r"%NOPE\h"),
+            (r"100%%\h", r"100%\h"),
+            ("a$$b", "a$b"),
+            (r"'$A'\h", r"'$A'\h"),
+            (r"$A-B\h", r"D:\ab\h"),
+        ] {
+            assert_eq!(
+                home(Some(raw), true, &vars),
+                Some(PathBuf::from(want)),
+                "{raw}"
+            );
+        }
+    }
+
+    /// Only a leading `~` alone is the user's home; a `~user`, and a `~` with no
+    /// `HOME`, need the passwd database core never reads, so they stay as written.
+    #[test]
+    fn hermes_home_expands_a_leading_tilde_as_posix_python_does() {
+        let with =
+            |home_var: &str, raw: &str| home(Some(raw), false, &[("HOME", home_var), ("X", "~/a")]);
+        assert_eq!(with("/home/u", "~/h"), Some(PathBuf::from("/home/u/h")));
+        assert_eq!(with("/home/u/", "~"), Some(PathBuf::from("/home/u")));
+        assert_eq!(with("", "~"), Some(PathBuf::from("/")));
+        assert_eq!(with("", "~/h"), Some(PathBuf::from("/h")));
+        assert_eq!(
+            with("/home/u", "$X/h"),
+            Some(PathBuf::from("/home/u/a/h")),
+            "a variable's leading `~` expands too: expandvars runs first"
+        );
+        assert_eq!(with("/home/u", "/x/~/h"), Some(PathBuf::from("/x/~/h")));
+        assert_eq!(with("/home/u", "~ada/h"), Some(PathBuf::from("~ada/h")));
+        assert_eq!(home(Some("~/h"), false, &[]), Some(PathBuf::from("~/h")));
+    }
+
+    #[test]
+    fn hermes_home_expands_a_leading_tilde_as_windows_python_does() {
+        let profile = [("USERPROFILE", r"C:\Users\ada"), ("USERNAME", "ada")];
+        assert_eq!(
+            home(Some(r"~\h"), true, &profile),
+            Some(PathBuf::from(r"C:\Users\ada\h"))
+        );
+        assert_eq!(
+            home(Some("~/h"), true, &profile),
+            Some(PathBuf::from(r"C:\Users\ada/h"))
+        );
+        assert_eq!(
+            home(
+                Some(r"~\h"),
+                true,
+                &[("HOMEDRIVE", "C:"), ("HOMEPATH", r"\Users\ada")]
+            ),
+            Some(PathBuf::from(r"C:\Users\ada\h")),
+            "with no USERPROFILE, HOMEDRIVE + HOMEPATH"
+        );
+        assert_eq!(home(Some(r"~\h"), true, &[]), Some(PathBuf::from(r"~\h")));
+        assert_eq!(
+            home(Some(r"~bob\h"), true, &profile),
+            Some(PathBuf::from(r"~bob\h"))
+        );
+    }
+
+    /// `<home>/.hermes`, suffixed literally by `HERMES_DATA_DIR_SUFFIX`, which an
+    /// explicit `HERMES_HOME` never takes.
+    #[test]
+    fn hermes_home_off_windows_is_dot_hermes_with_its_data_dir_suffix() {
+        let vars = [
+            ("HOME", "/home/u"),
+            ("HERMES_DATA_DIR_SUFFIX", "-channel-build-canary"),
+        ];
+        assert_eq!(
+            home(None, false, &vars),
+            Some(PathBuf::from("/home/u").join(".hermes-channel-build-canary"))
+        );
+        assert_eq!(
+            home(None, false, &[("HOME", "/home/u")]),
+            Some(PathBuf::from("/home/u").join(".hermes"))
+        );
+        assert_eq!(
+            home(Some("/custom/hm"), false, &vars),
+            Some(PathBuf::from("/custom/hm"))
+        );
+        assert_eq!(home(None, false, &[]), None);
     }
 
     /// `%LOCALAPPDATA%\hermes`, NOT `<home>/.hermes` — the generic answer wrote
     /// hooks into a config.yaml hermes never reads (#880).
     #[test]
-    fn hermes_home_on_windows_is_local_appdata_not_dot_hermes() {
-        let win = |env: Option<&str>, appdata: Option<&str>| {
-            resolve_hermes_home(
-                env.map(PathBuf::from),
-                appdata.map(PathBuf::from),
+    fn hermes_home_on_windows_is_local_appdata_with_its_data_dir_suffix() {
+        let local = [
+            ("LOCALAPPDATA", r" C:\Users\ada\AppData\Local "),
+            ("USERPROFILE", r"C:\Users\ada"),
+        ];
+        assert_eq!(
+            home(None, true, &local),
+            Some(PathBuf::from(r"C:\Users\ada\AppData\Local").join("hermes")),
+            "LOCALAPPDATA is stripped, as upstream strips it"
+        );
+        assert_eq!(
+            home(
+                None,
                 true,
-                Some(PathBuf::from(r"C:\Users\ada")),
-            )
-        };
-
-        assert_eq!(
-            win(None, Some(r"C:\Users\ada\AppData\Local")),
-            Some(PathBuf::from(r"C:\Users\ada\AppData\Local").join("hermes"))
-        );
-        let relative_default = Some(
-            PathBuf::from(r"C:\Users\ada")
-                .join("AppData")
-                .join("Local")
-                .join("hermes"),
-        );
-        assert_eq!(win(None, None), relative_default);
-        assert_eq!(
-            win(
-                Some(r"D:\profiles\work"),
-                Some(r"C:\Users\ada\AppData\Local")
+                &[
+                    ("USERPROFILE", r"C:\Users\ada"),
+                    ("HERMES_DATA_DIR_SUFFIX", "-magic")
+                ]
             ),
+            Some(
+                PathBuf::from(r"C:\Users\ada")
+                    .join("AppData")
+                    .join("Local")
+                    .join("hermes-magic")
+            )
+        );
+        assert_eq!(
+            home(Some(r"D:\profiles\work"), true, &local),
             Some(PathBuf::from(r"D:\profiles\work")),
             "HERMES_HOME still outranks the platform default"
         );
-        assert_eq!(resolve_hermes_home(None, None, true, None), None);
+        assert_eq!(home(None, true, &[]), None);
     }
 }

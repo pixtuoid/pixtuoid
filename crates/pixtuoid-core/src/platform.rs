@@ -30,7 +30,11 @@ pub fn path_env(name: &str) -> Option<PathBuf> {
 /// value that is not UTF-8 cannot be trimmed as text and is taken VERBATIM:
 /// preserving a legal path beats stripping hypothetical padding from one.
 pub fn path_env_trimmed(name: &str) -> Option<PathBuf> {
-    let raw = std::env::var_os(name)?;
+    std::env::var_os(name).and_then(trimmed_path)
+}
+
+/// [`path_env_trimmed`] for a value already read.
+pub(crate) fn trimmed_path(raw: std::ffi::OsString) -> Option<PathBuf> {
     match raw.to_str() {
         Some(s) => (!s.trim().is_empty()).then(|| PathBuf::from(s.trim())),
         None => Some(PathBuf::from(raw)),
