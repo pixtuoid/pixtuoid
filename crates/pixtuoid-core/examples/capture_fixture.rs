@@ -1257,44 +1257,13 @@ mod recorder {
     }
 
     fn today() -> String {
-        let secs = SystemTime::now()
+        SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("clock is after 1970")
-            .as_secs();
-        let days = secs / 86_400;
-        let (mut y, mut d) = (1970i64, days as i64);
-        loop {
-            let len = if leap(y) { 366 } else { 365 };
-            if d < len {
-                break;
-            }
-            d -= len;
-            y += 1;
-        }
-        let months = [
-            31,
-            if leap(y) { 29 } else { 28 },
-            31,
-            30,
-            31,
-            30,
-            31,
-            31,
-            30,
-            31,
-            30,
-            31,
-        ];
-        let mut m = 0;
-        while d >= months[m] {
-            d -= months[m];
-            m += 1;
-        }
-        format!("{y:04}-{:02}-{:02}", m + 1, d + 1)
-    }
-
-    fn leap(y: i64) -> bool {
-        (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+            .ok()
+            .and_then(|d| chrono::DateTime::from_timestamp(i64::try_from(d.as_secs()).ok()?, 0))
+            .expect("clock is after 1970 and in chrono's range")
+            .date_naive()
+            .to_string()
     }
 
     /// Strings this machine would leak into a capture, the git identity included:
