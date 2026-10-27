@@ -6,7 +6,12 @@
   "command": "cursor-agent -p --trust --model auto {prompt}",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 28
+    "blanked": 27
   },
-  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened."
+  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened.",
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "3:/transcript_path"
+    ]
+  }
 }

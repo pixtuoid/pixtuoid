@@ -22,9 +22,9 @@
 //!   the `cursor`-stamped copy carries the whole arc.
 //! - **A child is its own session, linked late.** `subagentStart`/`subagentStop`
 //!   and a child `sessionStart` never fire, so the child registers on its first
-//!   tool event; the wire names its parent only in its posts' `transcript_path`,
-//!   nested under the parent's (`nested_parent`). Getting no `sessionEnd`, a
-//!   child ends with its parent's `Task`.
+//!   tool event; the wire names its parent only in a post's `transcript_path`
+//!   nested under the parent's (`nested_parent`), which a post may also leave
+//!   null. Getting no `sessionEnd`, a child ends with its parent's `Task`.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks

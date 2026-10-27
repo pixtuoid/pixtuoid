@@ -4,10 +4,15 @@
   "version": "2026.10.22-27dcf5f",
   "captured": "2026-10-27",
   "command": "cursor-agent -p --trust --model auto {prompt}",
-  "note": "Redacted: the isolated home's path rewritten to /Users/dev; the account address rewritten to dev@example.com.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 45
+    "blanked": 43
   },
-  "prompt": "Use the Task tool to dispatch one subagent that reads NOTE.txt and reports its text back to you. Do not read NOTE.txt yourself."
+  "prompt": "Use the Task tool to dispatch one subagent that reads NOTE.txt and reports its text back to you. Do not read NOTE.txt yourself.",
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "2:/model",
+      "5:/transcript_path"
+    ]
+  }
 }

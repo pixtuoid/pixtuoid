@@ -6,6 +6,14 @@
   "command": "cursor-agent -p --trust --model auto {prompt}",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 56
+    "blanked": 54
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "4:/cwd",
+      "5:/cwd",
+      "5:/transcript_path",
+      "7:/transcript_path"
+    ]
   }
 }
