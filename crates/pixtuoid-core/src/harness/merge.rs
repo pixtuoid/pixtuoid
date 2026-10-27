@@ -398,14 +398,16 @@ mod tests {
             within,
             events: Vec::new(),
         };
-        let tick = Duration::from_nanos(1);
+        /// Not 1 ns: Windows' `SystemTime` counts 100 ns intervals and drops a
+        /// smaller step (std's `sys/pal/windows/time.rs`, `checked_dur2intervals`).
+        const TICK: Duration = Duration::from_micros(1);
         for (within, last_in) in [
             (Duration::ZERO, Duration::ZERO),
-            (Duration::from_secs(1), tick),
+            (Duration::from_secs(1), TICK),
         ] {
             let line = written(SystemTime::UNIX_EPOCH + Duration::from_secs(1), within);
             let deadline = line.at + within + DEFAULT_POLL_INTERVAL;
-            let hooks = [deadline - last_in, deadline - last_in + tick]
+            let hooks = [deadline - last_in, deadline - last_in + TICK]
                 .map(|at| written(at, Duration::ZERO));
             assert_eq!(bounds(&hooks, &[line]), [(0, 1)], "{within:?}");
         }
