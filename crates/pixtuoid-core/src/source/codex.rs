@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    HookSubject, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_call_key,
-    hook_identity, hook_session_id, make_tool_detail, non_empty,
+    HookSubject, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_identity,
+    hook_session_id, hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
 };
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
@@ -146,21 +146,18 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
     let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
     let turn = turn_of(obj, event);
     let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
-    let call_key = hook_call_key(crate::source::registry::descriptor_for(SOURCE_NAME));
+    let tool_id_key = hook_tool_id_key(crate::source::registry::descriptor_for(SOURCE_NAME));
     let call = || {
-        let call = non_empty(obj, call_key).map(str::to_owned);
+        let call = non_empty(obj, tool_id_key).map(str::to_owned);
         if call.is_none() {
-            crate::source::drift::missing_field(SOURCE_NAME, event, call_key);
+            crate::source::drift::missing_field(SOURCE_NAME, event, tool_id_key);
         }
         call
     };
-    let tool_name = || non_empty(obj, "tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS));
+    let tool_name = || hook_tool_name(obj, SOURCE_NAME, event);
     Ok(match event {
         "PreToolUse" => {
             let tool_name = tool_name();
-            if tool_name.is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
-            }
             let pending = call().map(|tool_use_id| AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id,
@@ -186,7 +183,7 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
                 agent_id,
                 Some("permission".into()),
                 RequestKeys {
-                    call: obj
+                    tool_use_id: obj
                         .get("tool_input")
                         .and_then(Value::as_object)
                         .and_then(|input| non_empty(input, "approval_id"))
@@ -307,10 +304,7 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         // also ENDS that call, answering a request that holds it: a refused
         // call gets no `PostToolUse`, so this is its only end.
         (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
-            let call = payload
-                .and_then(|p| p.get(CALL_ID))
-                .and_then(Value::as_str)
-                .filter(|c| !c.is_empty());
+            let call = payload.and_then(|p| non_empty(p, CALL_ID));
             if call.is_none() && i == RI_CUSTOM_OUTPUT {
                 crate::source::drift::missing_field(SOURCE_NAME, i, CALL_ID);
             }
@@ -964,10 +958,10 @@ mod tests {
 
     /// The call key is the registry row's, read as the shared arms read it.
     #[test]
-    fn the_approval_hooks_read_the_rows_call_key() {
-        let key = crate::source::decoder::hook_call_key(crate::source::registry::descriptor_for(
-            SOURCE_NAME,
-        ));
+    fn the_approval_hooks_read_the_rows_tool_id_key() {
+        let key = crate::source::decoder::hook_tool_id_key(
+            crate::source::registry::descriptor_for(SOURCE_NAME),
+        );
         let evs = hook(
             "PostToolUse",
             false,

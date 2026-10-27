@@ -373,10 +373,24 @@ impl<'a> HookSubject<'a> {
     }
 }
 
+/// A hook's `tool_name`, the key a request binds its pending calls by, so the
+/// pre-use and the prompt derive it alike; its absence is drift.
+pub(crate) fn hook_tool_name(
+    obj: &serde_json::Map<String, Value>,
+    source: &str,
+    event: &str,
+) -> Option<String> {
+    let name = non_empty(obj, "tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS));
+    if name.is_none() {
+        super::drift::missing_field(source, event, "tool_name");
+    }
+    name
+}
+
 /// The per-call id's wire name on `desc`'s hooks: its row's
 /// [`ToolIdKey`](crate::source::registry::ToolIdKey), `tool_use_id` for a row
 /// with no shared arms.
-pub(crate) fn hook_call_key(
+pub(crate) fn hook_tool_id_key(
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
 ) -> &'static str {
     match desc.and_then(|d| d.hook()) {
@@ -501,7 +515,7 @@ pub(crate) fn shared_hook_arms(
         })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
-    let tool_id_key = hook_call_key(desc);
+    let tool_id_key = hook_tool_id_key(desc);
 
     match event {
         "SessionStart" => {
@@ -529,17 +543,14 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         "PreToolUse" => {
-            let tool_name = non_empty(obj, "tool_name");
-            if tool_name.is_none() {
-                super::drift::missing_field(source, "PreToolUse", "tool_name");
-            }
+            let tool_name = hook_tool_name(obj, source, event);
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             // Named ahead of its item: a permission prompt names only the
             // tool, so the request binds the calls pending under that name.
             let pending = tool_use_id.clone().map(|call| AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id: call,
-                tool_name: tool_name.map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
+                tool_name: tool_name.clone(),
                 turn: None,
             });
             let mut evs = vec![hook_identity(agent_id, source, &session_id, obj)];
@@ -549,7 +560,7 @@ pub(crate) fn shared_hook_arms(
                 tool_use_id,
                 detail: Some(make_tool_detail(
                     source,
-                    tool_name.unwrap_or("?"),
+                    tool_name.as_deref().unwrap_or("?"),
                     obj.get("tool_input"),
                 )),
             });
@@ -587,9 +598,8 @@ pub(crate) fn shared_hook_arms(
                 agent_id,
                 Some("permission".into()),
                 RequestKeys {
-                    call: non_empty(obj, tool_id_key).map(String::from),
-                    tool_name: non_empty(obj, "tool_name")
-                        .map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
+                    tool_use_id: non_empty(obj, tool_id_key).map(String::from),
+                    tool_name: hook_tool_name(obj, source, event),
                     ..RequestKeys::default()
                 },
             ),

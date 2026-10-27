@@ -34,7 +34,7 @@ pub(crate) enum End {
     /// ended, when it is not the turn named.
     Applied { implied: Option<TurnKey> },
     /// The turn already closed: a replay that ends nothing.
-    ClosedOnly,
+    Stale,
 }
 
 /// Every agent's open turn and recently closed turns.
@@ -71,7 +71,7 @@ impl TurnLedger {
             return End::Applied { implied };
         };
         if self.is_closed(id, key, now) {
-            return End::ClosedOnly;
+            return End::Stale;
         }
         self.closed.insert((id, key.clone()), now);
         match self.open.remove(&id) {
@@ -196,7 +196,7 @@ mod tests {
             End::Applied { implied: None },
             "the stream's current turn, its start unseen"
         );
-        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::ClosedOnly);
+        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::Stale);
         assert_eq!(turns.start(id(), key("a"), t0()), Start::Stale);
     }
 
@@ -206,7 +206,7 @@ mod tests {
         turns.start(id(), key("a"), t0());
         turns.end(id(), Some(&key("a")), t0());
         turns.start(id(), key("b"), t0());
-        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::ClosedOnly);
+        assert_eq!(turns.end(id(), Some(&key("a")), t0()), End::Stale);
         assert_eq!(turns.open(&id()), Some(&key("b")));
     }
 

@@ -167,10 +167,10 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
     },
-    /// The agent's standing request was answered, a signal that ends no
-    /// item.
+    /// A signal that answers the agent's standing request, if one stands; it
+    /// ends no item.
     UserActionResolved {
-        /// The agent whose request was answered.
+        /// The agent whose request this answers, if one stands.
         agent_id: AgentId,
         /// What answered it.
         by: Resolution,
@@ -267,7 +267,7 @@ pub enum AgentEvent {
 #[non_exhaustive]
 pub struct RequestKeys {
     /// The gated call's id.
-    pub call: Option<String>,
+    pub tool_use_id: Option<String>,
     /// The gated tool's wire name.
     pub tool_name: Option<String>,
     /// The turn the request blocks.
@@ -359,14 +359,14 @@ impl AgentEvent {
         keys: RequestKeys,
     ) -> Self {
         let RequestKeys {
-            call,
+            tool_use_id,
             tool_name,
             turn,
         } = keys;
         AgentEvent::UserActionRequest {
             agent_id,
             reason,
-            tool_use_id: call,
+            tool_use_id,
             tool_name,
             turn,
         }

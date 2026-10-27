@@ -795,8 +795,8 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::PidIdentity
 #[non_exhaustive] pub struct pixtuoid_core::source::RequestKeys
-pub pixtuoid_core::source::RequestKeys::call: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::RequestKeys::tool_name: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::RequestKeys::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::RequestKeys::turn: core::option::Option<pixtuoid_core::state::TurnKey>
 impl core::clone::Clone for pixtuoid_core::source::RequestKeys
 pub fn pixtuoid_core::source::RequestKeys::clone(&self) -> Self

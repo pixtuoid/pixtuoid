@@ -242,7 +242,7 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
             agent_id,
             Some(reason),
             RequestKeys {
-                call: field(data, "source.id").map(str::to_owned),
+                tool_use_id: field(data, "source.id").map(str::to_owned),
                 ..RequestKeys::default()
             },
         ),

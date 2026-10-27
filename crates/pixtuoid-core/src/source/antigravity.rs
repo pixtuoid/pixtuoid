@@ -139,7 +139,7 @@ fn decode_ag_tool_call(
             agent_id,
             Some("asking permission".to_string()),
             RequestKeys {
-                call: tool_use_id,
+                tool_use_id,
                 ..RequestKeys::default()
             },
         );

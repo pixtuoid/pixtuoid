@@ -119,8 +119,7 @@ impl ActionRequest {
     fn binds_by_name(&self, pending: &Pending) -> bool {
         self.tool_name.is_some()
             && pending.tool_name == self.tool_name
-            && pending.turn == self.turn
-            && pending.seen_on.contains(&self.raised_on)
+            && pending.is_in(self.turn.as_ref(), self.raised_on)
     }
 }
 
@@ -180,7 +179,7 @@ impl ActionRequests {
                 starts.push(Pending {
                     call: start.call,
                     tool_name: None,
-                    turn: start.turn,
+                    turn: None,
                     seen_on: Vec::new(),
                 });
                 starts.len() - 1
@@ -189,6 +188,11 @@ impl ActionRequests {
         let pending = &mut starts[at];
         if pending.tool_name.is_none() {
             pending.tool_name = start.tool_name;
+        }
+        // A start seen while no turn was open (an oversized skip, a late
+        // attach) takes the turn a later registration names.
+        if pending.turn.is_none() {
+            pending.turn = start.turn;
         }
         if !pending.seen_on.contains(&start.on) {
             pending.seen_on.push(start.on);
@@ -380,12 +384,16 @@ impl ActionRequests {
     }
 }
 
+impl Pending {
+    /// Whether it is pending on `on` in `turn`.
+    fn is_in(&self, turn: Option<&TurnKey>, on: Transport) -> bool {
+        self.seen_on.contains(&on) && self.turn.as_ref() == turn
+    }
+}
+
 /// The calls pending on `on` in `turn`.
 fn in_scope<'a>(pending: &'a [Pending], turn: Option<&TurnKey>, on: Transport) -> Vec<&'a Pending> {
-    pending
-        .iter()
-        .filter(|p| p.seen_on.contains(&on) && p.turn.as_ref() == turn)
-        .collect()
+    pending.iter().filter(|p| p.is_in(turn, on)).collect()
 }
 
 /// The calls `raise`'s own key binds: the call it names, else every pending

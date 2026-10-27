@@ -135,9 +135,8 @@ pub enum Shape {
     /// A turn that runs one tool: the session registers in the workspace, a
     /// tool starts with a detail naming it, and it ends.
     ToolRun,
-    /// A turn whose tool call needs an approval the run cannot give: the slot
-    /// waits on it, then the refused call ends, or its turn where the call
-    /// never started.
+    /// A turn whose tool call waits on an approval: the slot waits on it, then
+    /// the gated call ends, or its turn where the call never started.
     Permission,
     /// A turn that hands a file read to a child session: the parent delegates,
     /// the child registers as its child and reads, and both end.
@@ -1188,8 +1187,8 @@ mod tests {
     }
 
     #[test]
-    fn a_permission_script_calls_no_tool_after_its_refusal() {
-        // A retried tool raises a second dialog, which the TUI driver never refuses.
+    fn a_permission_script_calls_no_tool_after_its_gated_call() {
+        // A retried tool raises a second dialog in its turn, which the driver never answers.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
                 let script: serde_json::Value = serde_json::from_str(
@@ -1201,7 +1200,7 @@ mod tests {
                         || reply["match"]["toolResultContains"].is_string();
                     assert!(
                         !(after_a_result && reply["response"]["toolCalls"].is_array()),
-                        "{}: a reply to the refused call calls a tool again",
+                        "{}: a reply to the gated call calls a tool again",
                         p.source
                     );
                 }
