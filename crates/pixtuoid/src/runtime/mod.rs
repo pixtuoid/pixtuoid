@@ -10,13 +10,14 @@ pub(crate) use driver::run;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use pixtuoid_core::SceneState;
 use pixtuoid_core::source::manager::SourceDeath;
 use pixtuoid_core::state::{ActivityState, DaemonState, MAX_FLOORS};
 use ratatui::layout::Size as TermSize;
-use tokio::sync::watch;
+use tokio::sync::{Notify, mpsc, watch};
 
 use crate::graphics::Plan;
 
@@ -210,6 +211,69 @@ impl TransitionLog {
             self.last.clone_from(&line);
             line
         })
+    }
+}
+
+/// How many lines headless stdout may fall behind before its reader counts as
+/// stalled and the run ends: far past a live burst (a long transcript's first
+/// sight replays every call), and at about a hundred bytes a line, a few MB.
+pub(crate) const TRANSITION_LOG_CAPACITY: usize = 1 << 16;
+
+/// Headless stdout's bounded queue. Its producers (the reducer's transitions,
+/// headless's health lines) never block: a line that finds it full flags a
+/// stall, which ends the run, since dropping or merging lines would leave the
+/// log silently incomplete.
+#[derive(Clone)]
+pub(crate) struct LogQueue {
+    lines: mpsc::Sender<String>,
+    stall: Arc<Stall>,
+}
+
+#[derive(Default)]
+struct Stall {
+    flagged: Notify,
+    refused: AtomicUsize,
+}
+
+impl LogQueue {
+    /// A queue of `capacity` lines, and the receiver its reader drains.
+    pub(crate) fn bounded(capacity: usize) -> (Self, mpsc::Receiver<String>) {
+        let (lines, rx) = mpsc::channel(capacity);
+        (
+            Self {
+                lines,
+                stall: Arc::default(),
+            },
+            rx,
+        )
+    }
+
+    /// Queue `line`; `false` once the reader has left or stalled.
+    pub(crate) fn push(&self, line: String) -> bool {
+        match self.lines.try_send(line) {
+            Ok(()) => true,
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                self.stall.refused.fetch_add(1, Ordering::Relaxed);
+                self.stall.flagged.notify_one();
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => false,
+        }
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        self.lines.is_closed()
+    }
+
+    /// Resolves once a push found the queue full.
+    pub(crate) async fn stalled(&self) {
+        self.stall.flagged.notified().await;
+    }
+
+    /// Lines a stalled reader leaves unwritten: those queued, and those refused.
+    pub(crate) fn unwritten(&self) -> usize {
+        self.lines.max_capacity() - self.lines.capacity()
+            + self.stall.refused.load(Ordering::Relaxed)
     }
 }
 

@@ -189,6 +189,12 @@ pub(crate) mod test_capture {
 
     #[derive(Clone, Default)]
     pub(crate) struct Buf(Arc<Mutex<Vec<u8>>>);
+    impl Buf {
+        /// Everything written so far.
+        pub(crate) fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
     impl Write for Buf {
         fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
             self.0.lock().unwrap().extend_from_slice(b);
@@ -228,8 +234,7 @@ pub(crate) mod test_capture {
         let buf = Buf::default();
         let sub = tracing_subscriber::registry().with(layer.with_writer(buf.clone()));
         tracing::subscriber::with_default(sub, f);
-        let bytes = buf.0.lock().unwrap().clone();
-        String::from_utf8(bytes).unwrap()
+        buf.text()
     }
 }
 

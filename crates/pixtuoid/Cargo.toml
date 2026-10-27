@@ -164,7 +164,7 @@ snapbox  = { workspace = true, features = ["json"] }
 # Emits the SourceStatus JSON Schema — test/gen only, so the `JsonSchema` derive
 # is `cfg_attr(test)` and this stays a dev-dep. See sources.rs + `just gen-contract`.
 schemars = { workspace = true }
-# test-util: paused-clock signal-arm tests in runtime/driver.rs (headless_loop).
+# test-util: paused-clock tests (tui/mod.rs's frame clock).
 tokio    = { workspace = true, features = ["test-util"] }
 image    = { workspace = true, features = ["gif"] }
 # A decoder our SIXEL encoder's tests did not write.

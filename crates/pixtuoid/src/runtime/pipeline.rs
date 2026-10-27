@@ -29,14 +29,21 @@ use pixtuoid_core::{AgentEvent, SceneState, Transport};
 use tokio::sync::{mpsc, watch};
 
 use super::driver::{build_source_set, reducer_task};
-use super::{ConnectedSources, SceneRx, TransitionLog};
+use super::{ConnectedSources, LogQueue, SceneRx, TransitionLog};
 
 /// Where [`reducer_task`] publishes the scene after each change it applies.
 pub(crate) enum SceneSink {
     /// A painter's: it draws the newest scene, so one it never read is gone.
     Latest(watch::Sender<Arc<SceneState>>),
     /// Headless's: each change, as its [`TransitionLog`] line.
-    Transitions(mpsc::UnboundedSender<String>, TransitionLog),
+    Transitions(LogQueue, TransitionLog),
+}
+
+/// Headless's end of the transition log: the lines to write, and the queue
+/// its own health lines join.
+pub(crate) struct HeadlessLog {
+    pub(crate) lines: mpsc::Receiver<String>,
+    pub(crate) queue: LogQueue,
 }
 
 impl SceneSink {
@@ -47,17 +54,22 @@ impl SceneSink {
         (Self::Latest(tx), rx)
     }
 
-    pub(crate) fn transitions(tx: mpsc::UnboundedSender<String>) -> Self {
-        Self::Transitions(tx, TransitionLog::default())
+    /// Headless's sink, and the log it fills, `capacity` lines deep.
+    pub(crate) fn transitions(capacity: usize) -> (Self, HeadlessLog) {
+        let (queue, lines) = LogQueue::bounded(capacity);
+        (
+            Self::Transitions(queue.clone(), TransitionLog::default()),
+            HeadlessLog { lines, queue },
+        )
     }
 
-    /// `false` once the reader is gone.
+    /// `false` once the reader is gone or stalled.
     pub(super) fn publish(&mut self, scene: &SceneState) -> bool {
         match self {
             Self::Latest(tx) => tx.send(Arc::new(scene.clone())).is_ok(),
-            Self::Transitions(tx, log) => match log.line(scene) {
-                Some(line) => tx.send(line).is_ok(),
-                None => !tx.is_closed(),
+            Self::Transitions(queue, log) => match log.line(scene) {
+                Some(line) => queue.push(line),
+                None => !queue.is_closed(),
             },
         }
     }
