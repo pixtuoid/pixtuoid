@@ -1,0 +1,16 @@
+{"type":"session.start","data":{"sessionId":"e0eaefa7-709b-4a87-8f32-e17a3d66e9f3","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_R_mXduLnROYF6-4c","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}
+{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_R_mXduLnROYF6-4c","fullCommandText":"","shellType":"","intention":"","commands":[],"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"hasWriteFileRedirection":false,"possibleUrls":[]},"promptRequest":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}
+{"type":"permission.completed","data":{"requestId":"","toolCallId":"call_R_mXduLnROYF6-4c","result":{},"decisionSource":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_R_mXduLnROYF6-4c","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{}
+{}
+{}
+{"type":"session.shutdown","data":{},"id":"","timestamp":"","parentId":""}
