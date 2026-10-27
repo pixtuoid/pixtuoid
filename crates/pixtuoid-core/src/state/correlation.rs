@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::AgentId;
-use crate::source::Transport;
+use crate::source::{DEFAULT_POLL_INTERVAL, Transport};
 use crate::state::requests::ActionRequests;
 use crate::state::turns::TurnLedger;
 
@@ -31,20 +31,23 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 
+/// The slack a window sized past the watcher's polls adds to them.
+const HALF_A_POLL: Duration = Duration::from_secs(DEFAULT_POLL_INTERVAL.as_secs() / 2);
+
 /// How long a child's end keeps refusing a transcript re-registration of that
-/// child (#244). Sized past the watcher's poll backstop (`DEFAULT_POLL_INTERVAL`),
-/// the worst case for a late transcript first-sight, the dead child's echo; a
-/// hook past the straggler window is a new life, which
+/// child (#244). Sized past the watcher's poll backstop, the worst case for a
+/// late transcript first-sight, the dead child's echo; a hook past the
+/// straggler window is a new life, which
 /// [`authorizes`](crate::state::reducer::Reducer::authorizes) readmits under a
 /// live parent.
 #[doc(hidden)]
-pub const CHILD_END_GATE_TTL: Duration = Duration::from_secs(90);
+pub const CHILD_END_GATE_TTL: Duration = DEFAULT_POLL_INTERVAL.saturating_add(HALF_A_POLL);
 
 /// How long a child's [`Lifecycle`] is RETAINED after it ended — the
 /// `parent_id` memory the #246 parentless-revival re-link reads.
 ///
 /// Deliberately LONGER than [`CHILD_END_GATE_TTL`]: the GATE is bounded by
-/// the watcher's poll backstop (`DEFAULT_POLL_INTERVAL`), while the MEMORY must span a TURN gap,
+/// the watcher's poll backstop, while the MEMORY must span a TURN gap,
 /// which is unbounded. Sharing one clock meant a child idle past
 /// [`CHILD_END_GATE_TTL`] came back an ORPHAN, the exact phantom #246 exists
 /// to eliminate. The gate is
@@ -57,19 +60,21 @@ pub const CHILD_END_RELINK_TTL: Duration = Duration::from_secs(300);
 /// replay of its Start cannot re-fire `enter_delegating`. After the drain the
 /// transcript's batched Start+End pair replays into an EMPTY set, so the
 /// first-insert gate reads it as a fresh dispatch and would clobber a RequiresAction
-/// the parent raised in the gap. Sized past the `scan_root` poll backstop
-/// (`DEFAULT_POLL_INTERVAL`);
-/// a `tool_use_id` is never legitimately re-dispatched, so generosity costs
-/// only the tombstone's map entry.
-pub(crate) const DRAINED_TASK_TOMBSTONE_TTL: Duration = Duration::from_secs(90);
+/// the parent raised in the gap. Sized past the `scan_root` poll backstop; a
+/// `tool_use_id` is never legitimately re-dispatched, so generosity costs only
+/// the tombstone's map entry.
+pub(crate) const DRAINED_TASK_TOMBSTONE_TTL: Duration =
+    DEFAULT_POLL_INTERVAL.saturating_add(HALF_A_POLL);
 
 /// How long an [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) vouch exempts its slot from the
 /// staleness sweeps (#220). The probe is ground truth that the OWNING PROCESS
 /// is alive, while every `stale_threshold` window only models event silence — so a
-/// vouched slot must not be swept on silence alone. Sized 2.5× the watcher's
-/// poll cadence (`DEFAULT_POLL_INTERVAL`): two missed polls plus slack.
+/// vouched slot must not be swept on silence alone: two missed polls plus
+/// slack.
 #[doc(hidden)]
-pub const PROOF_OF_LIFE_TTL: Duration = Duration::from_secs(150);
+pub const PROOF_OF_LIFE_TTL: Duration = DEFAULT_POLL_INTERVAL
+    .saturating_mul(2)
+    .saturating_add(HALF_A_POLL);
 
 /// The ends and parent link that decide what may create or revive an id.
 #[derive(Debug, Default, Clone, Copy)]

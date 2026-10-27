@@ -63,17 +63,31 @@ impl TurnLedger {
     /// `id`'s turn `key` ended; `None` is an end naming no turn, which ends
     /// whatever is open.
     pub(crate) fn end(&mut self, id: AgentId, key: Option<&TurnKey>, now: SystemTime) -> End {
-        if let Some(key) = key {
-            if self.is_closed(id, key, now) {
-                return End::ClosedOnly;
+        let Some(key) = key else {
+            let implied = self.open.remove(&id);
+            if let Some(open) = &implied {
+                self.closed.insert((id, open.clone()), now);
             }
-            self.closed.insert((id, key.clone()), now);
+            return End::Applied { implied };
+        };
+        if self.is_closed(id, key, now) {
+            return End::ClosedOnly;
         }
-        let implied = self.open.remove(&id).filter(|open| Some(open) != key);
-        if let Some(open) = &implied {
-            self.closed.insert((id, open.clone()), now);
+        self.closed.insert((id, key.clone()), now);
+        match self.open.remove(&id) {
+            Some(open) if open == *key => End::Applied { implied: None },
+            // The stream is in order, so another turn's end proves the open
+            // one ended.
+            Some(open) => {
+                self.closed.insert((id, open.clone()), now);
+                End::Applied {
+                    implied: Some(open),
+                }
+            }
+            // Its start went unseen (an oversized skip, a late attach), and
+            // the one ordered stream proves it was the current turn.
+            None => End::Applied { implied: None },
         }
-        End::Applied { implied }
     }
 
     /// `id`'s open turn.

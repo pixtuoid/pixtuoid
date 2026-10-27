@@ -658,7 +658,8 @@ impl Reducer {
 
     /// The `ToolUseEnd` arm, for an End the pre-pass tracker left to it. It
     /// settles the slot when it answers its request, or ends the call the slot
-    /// shows: the one it names, or any when either side names none.
+    /// shows: the one it names, or any when the slot's names none. An end naming
+    /// no call never ends a named one.
     fn apply_tool_use_end(
         &mut self,
         scene: &mut SceneState,
@@ -673,13 +674,27 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
-        let ends_item = scene.agents.get(&agent_id).is_some_and(|slot| {
-            !matches!(
-                (&slot.state, ended),
-                (ActivityState::Running { tool_use_id: Some(shown), .. }, Ended::Call(call))
-                    if **shown != *call
-            )
-        });
+        let ends_item =
+            scene
+                .agents
+                .get(&agent_id)
+                .is_some_and(|slot| match (&slot.state, ended) {
+                    (
+                        ActivityState::Running {
+                            tool_use_id: Some(shown),
+                            ..
+                        },
+                        Ended::Call(call),
+                    ) => **shown == *call,
+                    (
+                        ActivityState::Running {
+                            tool_use_id: Some(_),
+                            ..
+                        },
+                        _,
+                    ) => false,
+                    _ => true,
+                });
         self.end_item(scene, agent_id, resolved, ends_item, now);
     }
 

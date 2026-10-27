@@ -1881,62 +1881,105 @@ fn a_transcript_turn_end_naming_no_turn_leaves_a_hook_started_call() {
     }
 }
 
+/// One CC hook payload, decoded by the real decoder: a Bash call unless
+/// `extra` says otherwise.
+fn cc_hook(event: &str, extra: serde_json::Value) -> Vec<AgentEvent> {
+    use serde_json::json;
+    let mut v = json!({"hook_event_name": event, "session_id": "sess-cc", "cwd": "/repo",
+                       "tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
+                       "_pixtuoid_source": "claude-code"});
+    v.as_object_mut()
+        .expect("an object")
+        .extend(extra.as_object().expect("an object").clone());
+    pixtuoid_core::source::decoder::decode_hook_payload(v).expect("decodes")
+}
+
+fn feed(r: &mut Reducer, scene: &mut SceneState, evs: Vec<AgentEvent>, at: SystemTime) {
+    for ev in evs {
+        r.apply(scene, ev, at, Transport::Hook);
+    }
+}
+
 /// CC's prompt names its tool but no call: it holds the call pending under that
 /// name, so the approved call's PostToolUse answers it.
 #[test]
 fn a_cc_prompt_holds_its_tools_pending_call() {
-    use pixtuoid_core::source::decoder::decode_hook_payload;
     use serde_json::json;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "sess-cc");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let hook = |event: &str, extra: serde_json::Value| {
-        let mut v = json!({"hook_event_name": event, "session_id": "sess-cc", "cwd": "/repo",
-                           "tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
-                           "_pixtuoid_source": "claude-code"});
-        v.as_object_mut()
-            .expect("an object")
-            .extend(extra.as_object().expect("an object").clone());
-        decode_hook_payload(v).expect("decodes")
-    };
-    let feed = |r: &mut Reducer, scene: &mut SceneState, evs: Vec<AgentEvent>| {
-        for ev in evs {
-            r.apply(scene, ev, t0, Transport::Hook);
-        }
-    };
+    let read = json!({"tool_name": "Read", "tool_use_id": "r1"});
+    let bash = json!({"tool_use_id": "t1"});
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", bash.clone()), t0);
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", read.clone()), t0);
     feed(
         &mut r,
         &mut scene,
-        hook("PreToolUse", json!({"tool_use_id": "t1"})),
+        cc_hook("PermissionRequest", json!({})),
+        t0,
     );
-    feed(
-        &mut r,
-        &mut scene,
-        hook(
-            "PreToolUse",
-            json!({"tool_name": "Read", "tool_use_id": "r1"}),
-        ),
-    );
-    feed(&mut r, &mut scene, hook("PermissionRequest", json!({})));
     assert!(requires_action(&scene, id));
-    feed(
-        &mut r,
-        &mut scene,
-        hook(
-            "PostToolUse",
-            json!({"tool_name": "Read", "tool_use_id": "r1"}),
-        ),
-    );
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", read), t0);
     assert!(
         requires_action(&scene, id),
         "another tool's end answers nothing"
     );
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", bash), t0);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+/// #242: hook deliveries ride per-connection tasks, so CC's PermissionRequest
+/// can land before its call's PreToolUse. The pre-use joins the request, and its
+/// start is no answer.
+#[test]
+fn a_cc_pre_use_delivered_after_its_prompt_joins_it() {
+    use serde_json::json;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("claude-code", "sess-cc");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let bash = json!({"tool_use_id": "t1"});
     feed(
         &mut r,
         &mut scene,
-        hook("PostToolUse", json!({"tool_use_id": "t1"})),
+        cc_hook("PermissionRequest", json!({})),
+        t0,
     );
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", bash.clone()), t0);
+    assert!(requires_action(&scene, id), "its pre-use is no answer");
+    let read = json!({"tool_name": "Read", "tool_use_id": "r1"});
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", read), t0);
+    assert!(requires_action(&scene, id), "nor is another tool's start");
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", bash), t0);
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
+/// Only Reasonix's end names no call, and its starts name none either.
+#[test]
+fn an_end_naming_no_call_ends_only_a_call_named_by_none() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (shown, ends) in [(Some("x"), false), (None, true)] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts("reasonix", "/Users/dev/proj");
+        start_as(&mut r, &mut scene, id, "reasonix");
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            shown,
+            Some("bash"),
+            t0,
+            Transport::Hook,
+        );
+        tool_use_end(&mut r, &mut scene, id, None, t0, Transport::Hook);
+        assert_eq!(
+            scene.agents[&id].state == ActivityState::Idle,
+            ends,
+            "shown {shown:?}"
+        );
+    }
 }

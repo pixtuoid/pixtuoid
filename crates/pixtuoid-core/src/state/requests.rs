@@ -16,7 +16,7 @@ pub(crate) enum Ended<'a> {
     /// A call's own end.
     Call(&'a str),
     /// A tool end naming no call: its wire carries none (Reasonix's
-    /// PostToolUse), or its decoder drops it (Cursor, deliberately).
+    /// PostToolUse).
     Unnamed,
     /// A turn's end: the turn it names, if any, and the open turn it proved
     /// ended, if that is another.
@@ -59,6 +59,16 @@ pub(crate) struct PendingStart {
     /// Its own turn, else the agent's open one.
     pub(crate) turn: Option<TurnKey>,
     pub(crate) on: Transport,
+}
+
+/// A pending call, once per id however many of its starts arrive: a pre-use
+/// and its start, or the two transports' starts of one call.
+#[derive(Debug)]
+struct Pending {
+    call: Arc<str>,
+    tool_name: Option<Arc<str>>,
+    turn: Option<TurnKey>,
+    seen_on: Vec<Transport>,
 }
 
 #[derive(Debug)]
@@ -105,12 +115,12 @@ impl ActionRequest {
         }
     }
 
-    /// Whether `start` is a call this request binds by its tool name.
-    fn binds_by_name(&self, start: &PendingStart) -> bool {
+    /// Whether `pending` is a call this request binds by its tool name.
+    fn binds_by_name(&self, pending: &Pending) -> bool {
         self.tool_name.is_some()
-            && start.tool_name == self.tool_name
-            && start.turn == self.turn
-            && start.on == self.raised_on
+            && pending.tool_name == self.tool_name
+            && pending.turn == self.turn
+            && pending.seen_on.contains(&self.raised_on)
     }
 }
 
@@ -121,7 +131,7 @@ impl ActionRequest {
 #[derive(Debug, Default)]
 pub(crate) struct ActionRequests {
     open: HashMap<AgentId, ActionRequest>,
-    pending: HashMap<AgentId, Vec<PendingStart>>,
+    pending: HashMap<AgentId, Vec<Pending>>,
 }
 
 impl ActionRequests {
@@ -157,22 +167,30 @@ impl ActionRequests {
     /// tool binds it now, so a pre-use delivered after its request still joins
     /// (#242).
     pub(crate) fn register(&mut self, id: AgentId, start: PendingStart) {
-        if let Some(req) = self.open.get_mut(&id)
-            && req.binds_by_name(&start)
-        {
-            req.holds(&start.call, false);
-        }
         let starts = self.pending.entry(id).or_default();
-        match starts
-            .iter_mut()
-            .find(|s| s.call == start.call && s.on == start.on)
-        {
-            Some(seen) => {
-                if seen.tool_name.is_none() {
-                    seen.tool_name = start.tool_name;
-                }
+        let at = match starts.iter().position(|p| p.call == start.call) {
+            Some(at) => at,
+            None => {
+                starts.push(Pending {
+                    call: start.call,
+                    tool_name: None,
+                    turn: start.turn,
+                    seen_on: Vec::new(),
+                });
+                starts.len() - 1
             }
-            None => starts.push(start),
+        };
+        let pending = &mut starts[at];
+        if pending.tool_name.is_none() {
+            pending.tool_name = start.tool_name;
+        }
+        if !pending.seen_on.contains(&start.on) {
+            pending.seen_on.push(start.on);
+        }
+        if let Some(req) = self.open.get_mut(&id)
+            && req.binds_by_name(pending)
+        {
+            req.holds(&pending.call, false);
         }
     }
 
@@ -318,12 +336,20 @@ impl ActionRequests {
         implied: Option<&TurnKey>,
         from: Transport,
     ) {
-        if let Some(starts) = self.pending.get_mut(id) {
-            starts.retain(|s| match &s.turn {
-                Some(t) => Some(t) != turn && Some(t) != implied,
-                None => turn.is_some() || (from == Transport::Jsonl && s.on == Transport::Hook),
-            });
+        let Some(starts) = self.pending.get_mut(id) else {
+            return;
+        };
+        for p in starts.iter_mut() {
+            match &p.turn {
+                Some(t) if Some(t) == turn || Some(t) == implied => p.seen_on.clear(),
+                None if turn.is_none() && from == Transport::Jsonl => {
+                    p.seen_on.retain(|on| *on != Transport::Jsonl);
+                }
+                None if turn.is_none() => p.seen_on.clear(),
+                _ => {}
+            }
         }
+        starts.retain(|p| !p.seen_on.is_empty());
     }
 
     /// The slot went: its request and pending starts with it.
@@ -348,22 +374,18 @@ impl ActionRequests {
     }
 }
 
-/// The pending starts on `on` in `turn`.
-fn in_scope<'a>(
-    pending: &'a [PendingStart],
-    turn: Option<&TurnKey>,
-    on: Transport,
-) -> Vec<&'a PendingStart> {
+/// The calls pending on `on` in `turn`.
+fn in_scope<'a>(pending: &'a [Pending], turn: Option<&TurnKey>, on: Transport) -> Vec<&'a Pending> {
     pending
         .iter()
-        .filter(|s| s.on == on && s.turn.as_ref() == turn)
+        .filter(|p| p.seen_on.contains(&on) && p.turn.as_ref() == turn)
         .collect()
 }
 
 /// The calls `raise`'s own key binds: the call it names, else every pending
 /// start of the tool it names in its turn. Hooks may rewrite a call's input
 /// but never its name, so the name is the key.
-fn bind(req: &mut ActionRequest, pending: &[PendingStart], raise: Raise<'_>) {
+fn bind(req: &mut ActionRequest, pending: &[Pending], raise: Raise<'_>) {
     if let Some(call) = raise.call {
         req.holds(&Arc::from(call), true);
         req.named = true;
@@ -823,14 +845,21 @@ mod tests {
         assert_eq!(calls(&reqs), ["b"]);
     }
 
+    /// A pre-use and its start, or the two transports' starts of one call,
+    /// are one pending call.
     #[test]
-    fn a_registration_on_both_transports_keeps_one_entry_each_and_the_name() {
+    fn a_calls_second_registration_is_idempotent() {
         let mut reqs = ActionRequests::default();
         reqs.register(id(), pending("a", Some("Bash"), HOOK));
         reqs.register(id(), pending("a", None, HOOK));
+        let once = format!("{:?}", reqs.pending[&id()]);
+        reqs.register(id(), pending("a", Some("Bash"), HOOK));
+        assert_eq!(format!("{:?}", reqs.pending[&id()]), once);
         reqs.register(id(), pending("a", None, JSONL));
-        let starts = &reqs.pending[&id()];
-        assert_eq!(starts.len(), 2);
-        assert_eq!(starts[0].tool_name.as_deref(), Some("Bash"));
+        let [a] = &reqs.pending[&id()][..] else {
+            panic!("one entry per call: {:?}", reqs.pending[&id()]);
+        };
+        assert_eq!(a.tool_name.as_deref(), Some("Bash"), "the name is kept");
+        assert_eq!(a.seen_on, [HOOK, JSONL]);
     }
 }
