@@ -641,6 +641,25 @@ mod tests {
         assert_eq!(caps, [FALLBACK_DESKS; MAX_FLOORS]);
     }
 
+    /// A queue nobody drains: the pushes past its capacity are refused and
+    /// counted, the stall is flagged, and the lines it kept are the first ones,
+    /// in order.
+    #[tokio::test]
+    async fn a_full_log_queue_refuses_and_counts_past_its_capacity() {
+        const CAP: usize = 4;
+        const OVER: usize = 3;
+        let (queue, mut lines) = LogQueue::bounded(CAP);
+        let sent: Vec<String> = (0..CAP + OVER).map(|n| format!("line {n}")).collect();
+        let taken: Vec<bool> = sent.iter().map(|line| queue.push(line.clone())).collect();
+        assert_eq!(taken, [[true; CAP].as_slice(), &[false; OVER]].concat());
+        assert_eq!(queue.unwritten(), CAP + OVER);
+        tokio::time::timeout(std::time::Duration::from_secs(5), queue.stalled())
+            .await
+            .expect("a refused push flags the stall");
+        let kept: Vec<String> = std::iter::from_fn(|| lines.try_recv().ok()).collect();
+        assert_eq!(kept, sent[..CAP]);
+    }
+
     #[test]
     fn a_transition_log_writes_a_scene_again_only_once_it_changed() {
         let mut log = TransitionLog::default();
