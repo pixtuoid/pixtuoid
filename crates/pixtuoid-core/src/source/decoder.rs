@@ -1469,7 +1469,7 @@ mod tests {
                 Box::new(|| {
                     hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_tool_call","session_id":"s","cwd":"/r",
-                        "tool_name":name,"tool_input":{"command":tgt}})))
+                        "tool_name":name,"args":{"command":tgt}})))
                     .expect("hermes decodes")
                 }),
             ),
@@ -1680,14 +1680,14 @@ mod tests {
                 }),
             ),
             (
-                // The recorded gate carries its WHY on `extra.description` ("delete
-                // in root path"), so the reason must route through `ellipsize` too.
+                // The recorded gate carries its WHY on `description` ("recursive
+                // delete"), so the reason must route through `ellipsize` too.
                 hermes::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
                     hermes::decode_hermes_hook_payload(test_obj(&json!({
                         "hook_event_name":"pre_approval_request","session_id":"s","cwd":"/r",
-                        "extra":{"description":raw}})))
+                        "description":raw})))
                     .expect("hermes decodes")
                 }),
             ),

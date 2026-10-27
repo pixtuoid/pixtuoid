@@ -369,6 +369,10 @@ pub struct Profile {
     pub live: Option<Live>,
     /// The server its CLI talks to.
     pub daemon: Option<Daemon>,
+    /// The CLI's own command that stops the server it starts for its turns,
+    /// run after each scenario's: their sessions end inside the run, and no
+    /// process outlives it.
+    pub retire: Option<&'static [&'static str]>,
 }
 
 impl Profile {
@@ -953,6 +957,20 @@ mod tests {
                 "{}: the invocation runs a binary the registry does not name",
                 p.source
             );
+        }
+    }
+
+    #[test]
+    fn a_retire_runs_the_registered_binary() {
+        for p in PROFILES {
+            if let Some(words) = p.retire {
+                assert_eq!(
+                    words.first(),
+                    p.invocation.first(),
+                    "{}: the retire runs a binary the registry does not name",
+                    p.source
+                );
+            }
         }
     }
 

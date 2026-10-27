@@ -284,6 +284,7 @@ lint:
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)
+    run hmplugin just hermes-plugin-selftest & pids+=($!)
     run fixpii  just fixture-pii          & pids+=($!)
     run piiself just fixture-pii-selftest & pids+=($!)
     for p in "${pids[@]}"; do wait "$p" || fail=1; done
@@ -1004,6 +1005,13 @@ star-history-selftest:
 [group('meta')]
 bmc-button-selftest:
     python3 scripts/bmc-button.py --selftest
+
+# The bundled Hermes plugin, driven as hermes's loader drives it: the Rust side
+# only greps the template, so this is where its never-block contract runs.
+[doc("Self-test the Hermes plugin's runtime contract")]
+[group('meta')]
+hermes-plugin-selftest:
+    python3 scripts/hermes-plugin.test.py
 
 # The recorder refuses a capture carrying its own identity, but that check runs
 # ONCE, on the capturer's terminal. This re-scans what is actually COMMITTED, so

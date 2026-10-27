@@ -246,6 +246,9 @@ pub struct CaptureRecord {
     /// Its second turn, for a run that had one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_turn: Option<SecondTurn>,
+    /// How the step that stops the CLI's server exited, for a run that had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired: Option<ProcessExit>,
     /// Whether the note the recorder planted was still there, unchanged, once
     /// every turn exited: a refused call that deletes it did not stay refused.
     #[serde(default)]
@@ -453,9 +456,12 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "hermes-session",
-        pattern: r"\d{8}_\d{6}_[0-9a-f]{6}",
+        pattern: r"\blocal-[0-9a-f]{64}\b",
         seen_in: "fixtures/hermes/tool-run-hermetic",
-        renamed: &[("20261020_005102_5e501b", "20261020_005045_5564c8")],
+        renamed: &[(
+            "local-b65b0c6b008cbf991f9bba7c89ed68d89e5aefca3f897033db205cca4ca90bcf",
+            "local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e",
+        )],
     },
     // Codex's and omp's.
     IdFamily {

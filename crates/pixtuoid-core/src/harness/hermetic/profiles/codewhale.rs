@@ -141,4 +141,5 @@ model = "hermetic"
     result_unseen: false,
     live: None,
     daemon: None,
+    retire: None,
 };

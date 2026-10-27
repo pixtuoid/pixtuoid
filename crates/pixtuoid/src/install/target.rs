@@ -440,21 +440,25 @@ pub(crate) const HERMES: Target = Target {
     display_name: "Hermes Agent",
     default_config_path: crate::install::hermes::default_config_path,
     hook_command: crate::install::hermes::hook_command,
-    primary: Primary::Config {
-        merge_install: crate::install::hermes::merge_install,
-        merge_uninstall: crate::install::hermes::merge_uninstall,
+    primary: Primary::Owned {
+        render: crate::install::hermes::render_plugin,
+        installed_shim: crate::install::hermes::installed_shim,
+        uninstall: crate::install::hermes::uninstall,
         verify_schema: crate::install::hermes::verify_schema,
-        beside: None,
+        retired: None,
+        // The gateway discovers plugins once, and again only when told to
+        // (`hermes_cli/plugins_activation.py:118-121` at v0.22.5).
+        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
-    // Hermes OWNS config.yaml (model/provider), so probe the home dir instead.
+    // The plugin is ours, so probe Hermes's own home dir instead.
     presence_probe: crate::install::hermes::detect_installed,
     post_install_hint: None,
-    host: None,
+    host: Some(&crate::install::hermes::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
-    registers: || crate::install::hermes::HERMES_EVENTS.to_vec(),
+    registers: crate::install::hermes::plugin_events,
 };
 
 pub(crate) const OPENCLAW: Target = Target {

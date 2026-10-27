@@ -3,45 +3,42 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     source: hermes
-    session_id: 20261020_005045_5564c8
+    session_id: local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     model: hermetic
     effort: ~
 - Identity:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     source: hermes
-    session_id: 20261020_005045_5564c8
+    session_id: local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 14295621919312884870
-    tool_use_id: call_eBKq3Wx7va_BnsUw
+    agent_id: 13182712091811907449
+    tool_use_id: call_RXvx_mgKrJAbzp6B
     detail:
       Generic:
         display: "read_file: NOTE.txt"
 - Identity:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     source: hermes
-    session_id: 20261020_005045_5564c8
+    session_id: local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 14295621919312884870
-    tool_use_id: call_eBKq3Wx7va_BnsUw
+    agent_id: 13182712091811907449
+    tool_use_id: call_RXvx_mgKrJAbzp6B
 - Identity:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     source: hermes
-    session_id: 20261020_005045_5564c8
+    session_id: local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
 - ModelInfo:
-    agent_id: 14295621919312884870
+    agent_id: 13182712091811907449
     model: hermetic
     effort: ~
-- SessionEnd:
-    agent_id: 14295621919312884870
-    as_child: false
