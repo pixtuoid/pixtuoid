@@ -3,51 +3,41 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     source: opencode
-    session_id: ses_e81f681bfffeKaVhLdRAPOvi8a
+    session_id: ses_e81d5bebaffe73S4fP2urMleO1
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 11643724816386272981
-    model: gpt-5.2
-    effort: ~
-- SessionStart:
-    agent_id: 11643724816386272981
-    source: opencode
-    session_id: ses_e81f681bfffeKaVhLdRAPOvi8a
-    cwd: /private/tmp/pixtuoid-capture/proj
-    parent_id: ~
-- ModelInfo:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     source: opencode
-    session_id: ses_e81f681bfffeKaVhLdRAPOvi8a
+    session_id: ses_e81d5bebaffe73S4fP2urMleO1
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 11643724816386272981
-    tool_use_id: call_tEFfibLwbpKmr9Fy
+    agent_id: 13254073379085008445
+    tool_use_id: call_zGINdHNcoCvuI1KP
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     source: opencode
-    session_id: ses_e81f681bfffeKaVhLdRAPOvi8a
+    session_id: ses_e81d5bebaffe73S4fP2urMleO1
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 11643724816386272981
-    tool_use_id: call_tEFfibLwbpKmr9Fy
+    agent_id: 13254073379085008445
+    tool_use_id: call_zGINdHNcoCvuI1KP
 - Identity:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     source: opencode
-    session_id: ses_e81f681bfffeKaVhLdRAPOvi8a
+    session_id: ses_e81d5bebaffe73S4fP2urMleO1
     cwd: ~
 - TurnEnd:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
 - SessionEnd:
-    agent_id: 11643724816386272981
+    agent_id: 13254073379085008445
     as_child: false

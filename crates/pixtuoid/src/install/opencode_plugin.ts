@@ -27,7 +27,6 @@ const QUIET_MS = 50
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
 const FORWARD = new Set<string>([
-  "session.created",
   "session.deleted",
   "session.execution.started",
   "session.execution.succeeded",
@@ -100,7 +99,7 @@ export default {
           inFlight++
           try {
             // A turn's start carries only `sessionID`; the session's record adds
-            // what `session.created` did, for a session swept since.
+            // the location, parent and model it registers with.
             const data =
               event.type === "session.execution.started"
                 ? { ...(await record(ctx, event.data?.sessionID)), ...event.data }

@@ -6,7 +6,7 @@
   "command": "just hermetic --record opencode",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 4
+    "blanked": 2
   },
   "aimock": "1.47.0",
   "script": "tests/sources/hermetic/opencode/subagent.json",

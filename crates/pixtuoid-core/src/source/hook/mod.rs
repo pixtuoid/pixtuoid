@@ -729,7 +729,7 @@ mod tests {
         ));
         client
             .write_all(
-                b"{\"_pixtuoid_source\":\"opencode\",\"type\":\"session.created\",\
+                b"{\"_pixtuoid_source\":\"opencode\",\"type\":\"session.execution.started\",\
                   \"data\":{\"sessionID\":\"ses_neg\",\"location\":{\"directory\":\"/repo\"}},\
                   \"_pid\":5555}\n",
             )
@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(transport, Transport::Hook);
         assert!(
             matches!(ev, AgentEvent::SessionStart { .. }),
-            "opencode session.created decodes to SessionStart, got {ev:?}"
+            "opencode session.execution.started decodes to SessionStart, got {ev:?}"
         );
         assert!(
             prx.try_recv().is_err(),

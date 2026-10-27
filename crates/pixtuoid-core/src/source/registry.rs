@@ -757,8 +757,8 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
             resurrects_on_prompt: true,
-            // A `subagent` child is parented by its `session.created`'s `parentID`,
-            // so its events keep the parent fresh (`scope::refresh_lineage`).
+            // A `subagent` child is parented by its first start's `parentID`, so
+            // its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
             // A `subagent` call can return while its child runs on
             // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),

@@ -3,57 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
+    session_id: ses_e81d5e052ffePzzjQhhSqxxPg0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 12304687273444219238
-    model: gpt-5.2
-    effort: ~
-- SessionStart:
-    agent_id: 12304687273444219238
-    source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
-    cwd: /private/tmp/pixtuoid-capture/proj
-    parent_id: ~
-- ModelInfo:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     model: gpt-5.2
     effort: ~
 - Identity:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
+    session_id: ses_e81d5e052ffePzzjQhhSqxxPg0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 12304687273444219238
-    tool_use_id: call_8D8TKFTa1rHlRgd2
+    agent_id: 13889768054625016415
+    tool_use_id: call_FX8RbiSPRLnp1Z_L
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
+    session_id: ses_e81d5e052ffePzzjQhhSqxxPg0
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     reason: shell
-    tool_use_id: call_8D8TKFTa1rHlRgd2
+    tool_use_id: call_FX8RbiSPRLnp1Z_L
 - Identity:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
+    session_id: ses_e81d5e052ffePzzjQhhSqxxPg0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 12304687273444219238
-    tool_use_id: call_8D8TKFTa1rHlRgd2
+    agent_id: 13889768054625016415
+    tool_use_id: call_FX8RbiSPRLnp1Z_L
 - Identity:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415
     source: opencode
-    session_id: ses_e81f6a30dffevyFR50GAUog9hR
+    session_id: ses_e81d5e052ffePzzjQhhSqxxPg0
     cwd: ~
 - TurnEnd:
-    agent_id: 12304687273444219238
+    agent_id: 13889768054625016415

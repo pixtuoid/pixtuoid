@@ -1,3 +1,2 @@
-{"type":"session.created","location":{},"data":{"sessionID":"ses_e81f6506fffeDLYCsQezL6WY4m","location":{"directory":"/private/tmp/pixtuoid-capture/proj"},"model":{"id":"gpt-5.2"}},"_pid":46974,"_shim_ts_ms":1793115926427,"_pixtuoid_source":"opencode"}
-{"type":"session.execution.started","data":{"sessionID":"ses_e81f6506fffeDLYCsQezL6WY4m","location":{"directory":"/private/tmp/pixtuoid-capture/proj"},"model":{"id":"gpt-5.2"},"id":""},"_pid":46974,"_shim_ts_ms":1793115926472,"_pixtuoid_source":"opencode"}
-{"type":"session.execution.interrupted","data":{"sessionID":"ses_e81f6506fffeDLYCsQezL6WY4m"},"_pid":46974,"_shim_ts_ms":1793115931865,"_pixtuoid_source":"opencode"}
+{"type":"session.execution.started","data":{"sessionID":"ses_e81d58df4ffeVjm1pZsHhkGfC5","location":{"directory":"/private/tmp/pixtuoid-capture/proj"},"model":{"id":"gpt-5.2"},"id":""},"_pid":58786,"_shim_ts_ms":1793118073415,"_pixtuoid_source":"opencode"}
+{"type":"session.execution.interrupted","data":{"sessionID":"ses_e81d58df4ffeVjm1pZsHhkGfC5"},"_pid":58786,"_shim_ts_ms":1793118078811,"_pixtuoid_source":"opencode"}
