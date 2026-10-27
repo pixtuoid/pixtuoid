@@ -3,62 +3,62 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     fresh_tokens: 19
 - ToolUseStart:
-    agent_id: 10051904835927240821
-    tool_use_id: toolu_kcyI4nuzrotG8OFK
+    agent_id: 3558858727972722355
+    tool_use_id: toolu_Lh4qbxB0IpCQagwG
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ToolUseEnd:
-    agent_id: 10051904835927240821
-    tool_use_id: toolu_kcyI4nuzrotG8OFK
+    agent_id: 3558858727972722355
+    tool_use_id: toolu_Lh4qbxB0IpCQagwG
 - SessionStart:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     source: claude-code
-    session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
+    session_id: 18000b4c-17c1-48ea-b33a-1fdecc1a71cc
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     model: claude-opus-5-5
     effort: ~
 - Identity:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     source: claude-code
-    session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
+    session_id: 18000b4c-17c1-48ea-b33a-1fdecc1a71cc
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 10051904835927240821
-    tool_use_id: toolu_kcyI4nuzrotG8OFK
+    agent_id: 3558858727972722355
+    tool_use_id: toolu_Lh4qbxB0IpCQagwG
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ModelInfo:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     model: ~
     effort: medium
 - Identity:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     source: claude-code
-    session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
+    session_id: 18000b4c-17c1-48ea-b33a-1fdecc1a71cc
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     reason: permission
 - Identity:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     source: claude-code
-    session_id: 29df2221-6e66-4f27-8a0b-dbc834157fe2
+    session_id: 18000b4c-17c1-48ea-b33a-1fdecc1a71cc
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     reason: Claude needs your permission
 - SessionEnd:
-    agent_id: 10051904835927240821
+    agent_id: 3558858727972722355
     as_child: false

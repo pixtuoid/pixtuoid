@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.310 (Claude Code)",
-  "captured": "2026-10-24",
+  "version": "2.1.311 (Claude Code)",
+  "captured": "2026-10-27",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 250
+    "blanked": 251
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/claude-code/permission.json",
@@ -28,6 +28,7 @@
         "mode",
         "permission-mode",
         "system",
+        "tools-used",
         "user"
       ]
     }
