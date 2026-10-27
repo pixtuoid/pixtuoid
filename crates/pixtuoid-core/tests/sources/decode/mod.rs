@@ -1047,7 +1047,7 @@ fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     let cases: [(&str, PathBuf, Option<&str>); 4] = [
         (
             "claude-code",
-            transcript_of("claude-code", "claude-code/permission-recorded"),
+            transcript_of("claude-code", "claude-code/tool-run-hermetic"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (

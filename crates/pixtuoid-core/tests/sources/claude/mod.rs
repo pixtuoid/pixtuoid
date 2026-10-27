@@ -331,6 +331,45 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
     );
 }
 
+/// The child's own transcript names its agent type, which relabels its sprite;
+/// the root's never carries it.
+#[test]
+fn a_recorded_childs_transcript_names_its_agent() {
+    let dir = super::captures::sources_root().join("claude/fixtures/subagent-hermetic");
+    let transcripts = super::captures::transcripts_in(&dir);
+    let stem = |t: &std::path::Path| {
+        t.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let (child, root): (Vec<_>, Vec<_>) = transcripts
+        .iter()
+        .partition(|t| stem(t).starts_with("agent-"));
+    let ([child], [root]) = (&child[..], &root[..]) else {
+        panic!("a root's and a child's transcript: {transcripts:?}");
+    };
+    let lines = super::captures::fixture_lines(child);
+    let named = lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find_map(|v| v["attributionAgent"].as_str().map(str::to_owned))
+        .expect("the child names its agent");
+    let d = pixtuoid_core::harness::Drive::transcript(
+        "claude-code",
+        &format!("/proj/{}/subagents/{}.jsonl", stem(root), stem(child)),
+    )
+    .expect("claude-code has a line decoder")
+    .seeded()
+    .lines(lines);
+    d.assert_clean("claude-code child transcript");
+    let slot = d
+        .scene
+        .agents
+        .get(&AgentId::from_parts("claude-code", &stem(child)))
+        .expect("the child registers");
+    assert_eq!(&*slot.label, named);
+}
+
 /// The background child's own Read lands on the child, never the root, and the
 /// child is the root's (#1701).
 #[test]

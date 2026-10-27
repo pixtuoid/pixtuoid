@@ -3410,17 +3410,15 @@ mod tests {
 
     #[test]
     fn a_not_yet_field_a_run_carries_is_stale() {
+        // tool-run's script gives its reply a cache write.
         let d = recorded("claude-code", "tool-run", CC_SCENE);
-        respell(
-            d.path(),
-            r#""cache_creation_input_tokens":0"#,
-            r#""cache_creation_input_tokens":1"#,
-        );
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        let owing = Profile {
+            not_yet_fields: &[("tx:assistant", "/message/usage/cache_creation_input_tokens")],
+            live: None,
+            daemon: None,
+            ..*profile("claude-code").expect("profile")
+        };
+        let v = verify_source(&owing, &[d.path().to_path_buf()]).expect("verify");
         assert!(
             has(
                 &v,
@@ -3524,7 +3522,7 @@ mod tests {
 
     #[test]
     fn a_committed_hook_the_profile_owes_needs_no_run() {
-        // fixtures/claude-code/permission-recorded fires it; a tool run doesn't.
+        // A permission run fires it; a tool run doesn't.
         let owed = ["hook:Notification"];
         let d = recorded("claude-code", "tool-run", CC_SCENE);
         let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");

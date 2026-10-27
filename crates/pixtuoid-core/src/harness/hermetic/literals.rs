@@ -810,8 +810,6 @@ mod tests {
     const LOSS_NO_EMITTER: &str = "loss list: codex writes it only for a model's tool_search \
          call (`codex-rs/core/src/tools/spec_plan.rs:392-399` at rust-v0.163.0), which no \
          aimock fixture block makes (`src/types.ts:423-435` at v1.45.1)";
-    const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage carries no cache \
-         writes, as claude-code's `cache_creation_input_tokens` row cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -915,7 +913,6 @@ mod tests {
         literal("codex.rs", "web_search_end", LOSS_LEGACY),
         literal("codex.rs", "tool_search_call", LOSS_NO_EMITTER),
         literal("codex.rs", "tool_search_output", LOSS_NO_EMITTER),
-        literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];

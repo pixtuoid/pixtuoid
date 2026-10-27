@@ -521,13 +521,6 @@ fn a_recorded_capture_that_was_edited_says_so() {
 /// comment names. It only shrinks: a listed capture that is current, or gone,
 /// leaves the list.
 const OWED_CURRENT: &[&str] = &[
-    // The only carriers of a non-zero cache or reasoning token count, which
-    // each profile owes in `not_yet_fields` until a scenario scripts that usage
-    // in an aimock reply.
-    "fixtures/claude-code/delegation-recorded",
-    "fixtures/claude-code/permission-recorded",
-    "fixtures/claude-code/subagent-recorded",
-    "fixtures/claude-code/tool-run-recorded",
     // omp rounds no hermetic shape drives yet: an approval, a question, a resume.
     "fixtures/omp/ask-recorded",
     "omp/fixtures/approval-recorded",
