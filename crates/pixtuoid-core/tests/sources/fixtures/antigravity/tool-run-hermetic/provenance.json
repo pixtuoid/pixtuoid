@@ -19,5 +19,15 @@
         "USER_INPUT"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "1:/transcriptPath",
+      "2:/transcriptPath",
+      "3:/transcriptPath",
+      "4:/transcriptPath",
+      "5:/transcriptPath",
+      "6:/transcriptPath"
+    ]
   }
 }

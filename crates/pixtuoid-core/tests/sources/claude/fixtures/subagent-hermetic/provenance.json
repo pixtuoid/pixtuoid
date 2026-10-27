@@ -29,5 +29,10 @@
         "user"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "7:/agent_transcript_path"
+    ]
   }
 }

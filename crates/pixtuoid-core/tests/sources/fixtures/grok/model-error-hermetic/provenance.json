@@ -29,5 +29,11 @@
         "user_message_chunk"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "1:/cwd",
+      "2:/cwd"
+    ]
   }
 }

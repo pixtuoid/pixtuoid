@@ -53,6 +53,10 @@ pub struct Recorded {
     /// What the decoders dropped, the baseline a New finding is judged against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dropped: Option<Dropped>,
+    /// Each file's empty strings the decoders read when it was stripped, by
+    /// path under the capture ([`Strip::sentinel_reads`](super::reads::Strip::sentinel_reads)).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sentinel_reads: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// What the strip did to a recording's bytes.

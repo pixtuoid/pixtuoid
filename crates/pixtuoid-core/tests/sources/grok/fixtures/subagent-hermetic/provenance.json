@@ -39,5 +39,17 @@
         "Read the note"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "10:/cwd",
+      "1:/cwd",
+      "2:/cwd",
+      "3:/cwd",
+      "4:/cwd",
+      "5:/cwd",
+      "6:/cwd",
+      "7:/cwd"
+    ]
   }
 }

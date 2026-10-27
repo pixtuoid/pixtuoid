@@ -620,13 +620,18 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let (deidentified, not_json) = deidentify(&source, &wrote)?;
+        let (deidentified, not_json, sentinel_reads) = deidentify(&source, &wrote, |file| {
+            // A `.new` beside committed bytes is read under the name it replaces.
+            let file = file.with_extension("").with_extension("jsonl");
+            slashed_under(&dest, &file)
+        })?;
         report_not_json(&not_json);
         write_provenance(
             &dest,
             Recorded {
                 prompt: prompt.clone(),
                 seed: plan.seed.clone(),
+                sentinel_reads,
                 ..record(&cli, &version, command.as_str(), deidentified.clone())?
             },
         )?;
@@ -650,14 +655,29 @@ mod recorder {
         Ok(())
     }
 
-    /// What the strip did to `files`, and each it left whole as not JSON.
+    /// [`deidentify`]'s answer.
+    type Stripped = (
+        Deidentified,
+        Vec<(PathBuf, String)>,
+        std::collections::BTreeMap<String, BTreeSet<String>>,
+    );
+
+    /// What the strip did to `files`, each it left whole as not JSON, and each
+    /// stripped file's sentinel reads under the path `named` gives it.
     fn deidentify(
         source: &str,
         files: &[PathBuf],
-    ) -> std::io::Result<(Deidentified, Vec<(PathBuf, String)>)> {
+        named: impl Fn(&Path) -> std::io::Result<String>,
+    ) -> std::io::Result<Stripped> {
         let strip = reads::strip_unread(source, files)?;
         let blanked = strip.blanked;
-        Ok((Deidentified::Stripped { blanked }, strip.not_json))
+        let reads = strip
+            .sentinel_reads
+            .into_iter()
+            .filter(|(_, read)| !read.is_empty())
+            .map(|(file, read)| Ok((named(&file)?, read)))
+            .collect::<std::io::Result<_>>()?;
+        Ok((Deidentified::Stripped { blanked }, strip.not_json, reads))
     }
 
     /// [`promote`] on this host: refused where it may not write the corpus.
@@ -729,7 +749,10 @@ mod recorder {
         }
         // Before the strip: what the decoders drop is what it blanks.
         let dropped = Some(Dropped::of_files(&manifest.source, &fresh)?);
-        let (deidentified, not_json) = deidentify(&manifest.source, &fresh)?;
+        let (deidentified, not_json, sentinel_reads) =
+            deidentify(&manifest.source, &fresh, |file| {
+                slashed_under(staged.path(), file)
+            })?;
         // Named where the fixture keeps it: the staged copy is gone by then.
         for (file, error) in &not_json {
             let kept = dest.join(slashed_under(staged.path(), file)?);
@@ -752,6 +775,7 @@ mod recorder {
             script: Some(filled("script", &script)?),
             seed,
             dropped,
+            sentinel_reads,
             ..record(
                 &manifest.capture.cli,
                 &manifest.capture.version,
@@ -1318,6 +1342,7 @@ mod recorder {
             aimock: None,
             script: None,
             dropped: None,
+            sentinel_reads: std::collections::BTreeMap::new(),
         })
     }
 
