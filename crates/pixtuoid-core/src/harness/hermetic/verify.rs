@@ -1060,7 +1060,7 @@ fn delegated(
                 agent_id,
                 tool_use_id: None,
             }
-            | AgentEvent::TurnEnd { agent_id } => {
+            | AgentEvent::TurnEnd { agent_id, .. } => {
                 untracked_ends.extend(standing.take(agent_id));
             }
             AgentEvent::ToolUseEnd { agent_id, .. } => {
@@ -1081,7 +1081,7 @@ fn delegated(
                     *agent_id == parent && tasks.contains(&(parent, t.as_str()))
                 }
                 // No run deletes a durable child, so its turn's end is the end a run sees.
-                AgentEvent::TurnEnd { agent_id } if durable => *agent_id == child,
+                AgentEvent::TurnEnd { agent_id, .. } if durable => *agent_id == child,
                 _ => false,
             })
     };
@@ -1162,7 +1162,7 @@ fn child_error(
     // the session's own (copilot's plain `-p` writes no `session.task_complete`).
     let ended = |parent: AgentId| {
         events.iter().any(|e| match e {
-            AgentEvent::TurnEnd { agent_id } | AgentEvent::SessionEnd { agent_id, .. } => {
+            AgentEvent::TurnEnd { agent_id, .. } | AgentEvent::SessionEnd { agent_id, .. } => {
                 *agent_id == parent
             }
             _ => false,
@@ -1787,8 +1787,10 @@ mod tests {
                     agent_id,
                     reason: Some("approval".into()),
                     tool_use_id: None,
+                    tool_name: None,
+                    turn: None,
                 },
-                AgentEvent::turn_end(agent_id),
+                AgentEvent::turn_end(agent_id, None),
             ]
         };
         let judged = |read_ends_as| {
@@ -1826,8 +1828,10 @@ mod tests {
             agent_id,
             reason: Some("approval".into()),
             tool_use_id: None,
+            tool_name: None,
+            turn: None,
         };
-        let turn = AgentEvent::turn_end(agent_id);
+        let turn = AgentEvent::turn_end(agent_id, None);
         let judged = |events: Vec<AgentEvent>| {
             let mut findings = Vec::new();
             permission(&events, &[Reach::RequiresAction], true, &mut findings);
@@ -2136,7 +2140,7 @@ mod tests {
             vec![]
         );
         let mut turn_ended = run.clone();
-        turn_ended[6] = AgentEvent::turn_end(parent);
+        turn_ended[6] = AgentEvent::turn_end(parent, None);
         assert_eq!(
             subagent_findings(&turn_ended, ChildEndInference::AnyTaskEnd),
             vec![],
@@ -2228,7 +2232,7 @@ mod tests {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
             },
-            AgentEvent::turn_end(parent),
+            AgentEvent::turn_end(parent, None),
         ];
         let judged = |events: &[AgentEvent], reaches: &[(AgentId, Reach)], inference| {
             let mut findings = Vec::new();
@@ -2276,7 +2280,7 @@ mod tests {
             tool_use_id: Some(id.into()),
             detail: Some(detail),
         };
-        let turn_end = AgentEvent::turn_end;
+        let turn_end = |agent_id| AgentEvent::turn_end(agent_id, None);
         let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
             agent_id,
             source: "opencode".into(),
@@ -2733,7 +2737,7 @@ mod tests {
             findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
         };
         assert_eq!(
-            judged(&[start.clone(), AgentEvent::turn_end(agent_id)]),
+            judged(&[start.clone(), AgentEvent::turn_end(agent_id, None)]),
             Vec::<String>::new()
         );
         assert_eq!(judged(&[start]), ["the tool never ended"]);
@@ -3086,7 +3090,7 @@ mod tests {
             turn_ended(&[end], &mut findings);
             findings
         };
-        assert_eq!(judged(AgentEvent::turn_end(agent_id)), vec![]);
+        assert_eq!(judged(AgentEvent::turn_end(agent_id, None)), vec![]);
         for tool_use_id in [None, Some("call".to_owned())] {
             assert!(
                 judged(AgentEvent::ToolUseEnd {

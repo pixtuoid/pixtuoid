@@ -325,7 +325,8 @@ trust_level = "trusted"
             "/payload/info/last_token_usage/reasoning_output_tokens",
         ),
     ],
-    not_yet_literals: &[],
+    // A code-mode cell, and a `write_stdin` approval, which no shape scripts.
+    not_yet_literals: &["exec", "// @exec:", "approval_id"],
     children_inherit_cwd: false,
     result_unseen: false,
     live: None,

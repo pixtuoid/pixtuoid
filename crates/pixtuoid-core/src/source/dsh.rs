@@ -168,6 +168,8 @@ pub fn decode_dsh_payload(
                     agent_id,
                     reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: call_id(),
+                    tool_name: None,
+                    turn: None,
                 },
             ])
         }

@@ -188,6 +188,8 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                             agent_id,
                             reason: Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
                             tool_use_id: None,
+                            tool_name: None,
+                            turn: None,
                         },
                     ])
                 }
@@ -212,7 +214,9 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`). All three of
         // upstream's turn-end causes land here.
-        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "stop" | "stop_failure" | "stop_cancelled" => {
+            Ok(vec![AgentEvent::turn_end(agent_id, None)])
+        }
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
@@ -390,7 +394,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             }
             // The transcript twin of the `stop` hook: a tool-less turn's only
             // end signal for transcript-only setups.
-            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id)],
+            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id, None)],
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some("session_end") {
                     vec![AgentEvent::SessionEnd {
@@ -868,7 +872,7 @@ mod tests {
             "hookEventName": "stop",
             "cwd": "/Users/dev/proj"
         }));
-        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id }
+        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id, .. }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
     }
 

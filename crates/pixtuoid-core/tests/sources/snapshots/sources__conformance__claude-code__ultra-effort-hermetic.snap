@@ -55,6 +55,10 @@ expression: events
     source: claude-code
     session_id: 7b4355db-b652-4e42-84c3-c921cb7721b7
     cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 10069590440663639286
+    tool_use_id: toolu_gAaRdv_qtLyfIbsd
+    tool_name: Read
 - ToolUseStart:
     agent_id: 10069590440663639286
     tool_use_id: toolu_gAaRdv_qtLyfIbsd

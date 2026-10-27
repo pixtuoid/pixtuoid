@@ -755,7 +755,7 @@ fn hook_synthesized_slot_is_exempt_from_unknown_cwd_reap() {
     let slot = scene.agents.get(&id).expect("still present after 4 min");
     assert!(
         slot.exiting_at.is_none(),
-        "a parked-on-permission synthesized slot must ride the RequiresAction timeout, not the 3-min ghost reap"
+        "a parked-on-permission synthesized slot must ride the blocked timeout, not the 3-min ghost reap"
     );
 }
 

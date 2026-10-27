@@ -730,6 +730,8 @@ mod tests {
                 agent_id: b,
                 reason: Some("permission".into()),
                 tool_use_id: None,
+                tool_name: None,
+                turn: None,
             },
             now,
             Transport::Hook,
@@ -839,6 +841,8 @@ mod tests {
                 agent_id: id,
                 reason: None,
                 tool_use_id: None,
+                tool_name: None,
+                turn: None,
             },
         ] {
             reducer.apply(&mut scene, event, now, Transport::Hook);
@@ -907,6 +911,8 @@ mod tests {
                 agent_id: id,
                 reason: Some("needs \u{1b}[2J approval".to_string()),
                 tool_use_id: None,
+                tool_name: None,
+                turn: None,
             },
             now,
             Transport::Hook,

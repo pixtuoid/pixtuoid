@@ -36,6 +36,10 @@ expression: events
     source: claude-code
     session_id: 400a6c93-2002-4a72-ab14-8714ef4863a4
     cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 14599533307175292653
+    tool_use_id: toolu_k-4tnil51DM2XZjv
+    tool_name: Read
 - ToolUseStart:
     agent_id: 14599533307175292653
     tool_use_id: toolu_k-4tnil51DM2XZjv

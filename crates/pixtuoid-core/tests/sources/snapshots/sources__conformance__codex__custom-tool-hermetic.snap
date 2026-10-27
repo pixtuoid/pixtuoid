@@ -56,14 +56,10 @@ expression: events
     source: codex
     session_id: 01a168f5-13e8-73b3-8e61-118f468023ec
     cwd: /private/tmp/pixtuoid-capture/proj
-- ToolUseStart:
+- ToolUsePending:
     agent_id: 343160842670398086
     tool_use_id: call_pD-dgyzqtxsDGzB8
-    detail:
-      Generic:
-        display: apply_patch
-- TurnEnd:
-    agent_id: 343160842670398086
+    tool_name: apply_patch
 - SessionEnd:
     agent_id: 343160842670398086
     as_child: false

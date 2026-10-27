@@ -194,7 +194,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         }
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,
             // Auto Guard (`internal/session/control/approval_orchestration.go:311`,
@@ -206,6 +206,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     agent_id,
                     reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
+                    tool_name: None,
+                    turn: None,
                 },
             ])
         }
@@ -242,6 +244,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     agent_id,
                     reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
+                    tool_name: None,
+                    turn: None,
                 },
             ])
         }

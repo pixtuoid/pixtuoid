@@ -568,11 +568,13 @@ mod tests {
                 agent_id: id,
                 tool_use_id: None,
             },
-            AgentEvent::turn_end(id),
+            AgentEvent::turn_end(id, None),
             AgentEvent::UserActionRequest {
                 agent_id: id,
                 reason: Some("x".into()),
                 tool_use_id: None,
+                tool_name: None,
+                turn: None,
             },
             AgentEvent::SessionEnd {
                 agent_id: id,
@@ -591,8 +593,8 @@ mod tests {
 
     use crate::test_capture::capture_warns;
 
-    // Decodes to TWO events (Identity + ToolUseStart) — the shape the
-    // mid-payload loss path needs: more than one event per payload.
+    // Decodes to THREE events (Identity + ToolUsePending + ToolUseStart) — the
+    // shape the mid-payload loss path needs: more than one event per payload.
     const PRE_TOOL_USE_LINE: &[u8] = b"{\"hook_event_name\":\"PreToolUse\",\
         \"session_id\":\"ses-abc\",\
         \"transcript_path\":\"/p/ses-abc.jsonl\",\
@@ -773,12 +775,12 @@ mod tests {
         assert!(matches!(ev, AgentEvent::Identity { .. }));
         assert!(
             rx.try_recv().is_err(),
-            "second event must have been dropped"
+            "the later events must have been dropped"
         );
 
         let out = logs.contents();
         assert!(
-            out.contains("events=1"),
+            out.contains("events=2"),
             "loss breadcrumb missing from logs: {out:?}"
         );
         assert!(
@@ -1027,6 +1029,11 @@ mod tests {
         assert!(
             matches!(&ev, AgentEvent::Identity { source, pid: None, .. } if source == "claude-code"),
             "CC Identity must stay pid: None through the socket loop, got {ev:?}"
+        );
+        let (_, ev) = rx.recv().await.expect("the paired pre-use");
+        assert!(
+            matches!(ev, AgentEvent::ToolUsePending { .. }),
+            "got {ev:?}"
         );
         let (_, ev) = rx.recv().await.expect("the paired ToolUseStart");
         assert!(matches!(ev, AgentEvent::ToolUseStart { .. }), "got {ev:?}");

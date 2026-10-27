@@ -128,7 +128,15 @@ fn tool_use_end(
 }
 
 fn turn_end(r: &mut Reducer, scene: &mut SceneState, id: AgentId, at: SystemTime, tp: Transport) {
-    r.apply(scene, AgentEvent::TurnEnd { agent_id: id }, at, tp);
+    r.apply(
+        scene,
+        AgentEvent::TurnEnd {
+            agent_id: id,
+            turn: None,
+        },
+        at,
+        tp,
+    );
 }
 
 fn user_action_request(
@@ -145,6 +153,8 @@ fn user_action_request(
             agent_id: id,
             reason: Some(reason.into()),
             tool_use_id: None,
+            tool_name: None,
+            turn: None,
         },
         at,
         tp,
@@ -167,6 +177,8 @@ fn user_action_request_for(
             agent_id: id,
             reason: Some(reason.into()),
             tool_use_id: tool_use_id.map(Into::into),
+            tool_name: None,
+            turn: None,
         },
         at,
         tp,

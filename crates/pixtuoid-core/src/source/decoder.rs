@@ -350,7 +350,7 @@ fn source_owned_arms(
 /// `as_str` but, for Codex (which keys the AgentId on it), would mint a phantom
 /// agent that never coalesces with any rollout. This and `hook_event_name`
 /// breadcrumb undeduped — the two fields are the whole hook plane's chokepoint.
-fn hook_session_id(
+pub(crate) fn hook_session_id(
     obj: &serde_json::Map<String, Value>,
     source: &str,
     event: &str,
@@ -369,7 +369,7 @@ fn hook_session_id(
 /// event. `cwd` is on the wire for CC tool hooks but absent on e.g. Codex
 /// `PermissionRequest` — absent or empty maps to `None`, so the reducer's cwd-less
 /// registration path (ordinal label, reap-exempt) applies.
-fn hook_identity(
+pub(crate) fn hook_identity(
     agent_id: AgentId,
     source: &str,
     session_id: &str,
@@ -505,14 +505,21 @@ pub(crate) fn shared_hook_arms(
                 .get(tool_id_key)
                 .and_then(|s| s.as_str())
                 .map(String::from);
-            let mut evs = vec![
-                hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::ToolUseStart {
-                    agent_id,
-                    tool_use_id,
-                    detail: Some(make_tool_detail(source, tool_name, obj.get("tool_input"))),
-                },
-            ];
+            // Named ahead of its item: a permission prompt names only the
+            // tool, so the request binds the calls pending under that name.
+            let pending = tool_use_id.clone().map(|call| AgentEvent::ToolUsePending {
+                agent_id,
+                tool_use_id: call,
+                tool_name: ellipsize(tool_name, MAX_DECODED_FIELD_CHARS),
+                turn: None,
+            });
+            let mut evs = vec![hook_identity(agent_id, source, &session_id, obj)];
+            evs.extend(pending);
+            evs.push(AgentEvent::ToolUseStart {
+                agent_id,
+                tool_use_id,
+                detail: Some(make_tool_detail(source, tool_name, obj.get("tool_input"))),
+            });
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
@@ -539,18 +546,30 @@ pub(crate) fn shared_hook_arms(
                     agent_id,
                     reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     tool_use_id: None,
+                    tool_name: None,
+                    turn: None,
                 },
             ])
         }
-        // Codex's permission prompt is the same "requires action" signal.
-        "PermissionRequest" => Ok(vec![
-            hook_identity(agent_id, source, &session_id, obj),
-            AgentEvent::UserActionRequest {
-                agent_id,
-                reason: Some("permission".into()),
-                tool_use_id: None,
-            },
-        ]),
+        // The prompt names its tool, and kimi's its call too; an empty name
+        // binds nothing.
+        "PermissionRequest" => {
+            let named = |key: &str| {
+                obj.get(key)
+                    .and_then(|s| s.as_str())
+                    .filter(|s| !s.is_empty())
+            };
+            Ok(vec![
+                hook_identity(agent_id, source, &session_id, obj),
+                AgentEvent::UserActionRequest {
+                    agent_id,
+                    reason: Some("permission".into()),
+                    tool_use_id: named(tool_id_key).map(String::from),
+                    tool_name: named("tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
+                    turn: None,
+                },
+            ])
+        }
         // The JSONL rollout stays the system of record for Codex tool activity.
         "UserPromptSubmit" => {
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
@@ -563,7 +582,7 @@ pub(crate) fn shared_hook_arms(
             }])
         }
         // Stop must NOT end the session: turns end many times per session.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
@@ -986,6 +1005,31 @@ mod tests {
         let mut evs = decode_hook_payload(v).expect("decodes");
         assert_eq!(evs.len(), 1, "expected exactly one event, got {evs:?}");
         evs.pop().expect("one event")
+    }
+
+    #[test]
+    fn a_permission_request_names_its_tool_and_kimis_its_call() {
+        for (source, extra, call) in [
+            ("claude-code", json!({}), None),
+            ("kimi", json!({"tool_call_id": "call_k"}), Some("call_k")),
+            ("kimi", json!({"tool_call_id": ""}), None),
+        ] {
+            let mut v = json!({
+                "hook_event_name": "PermissionRequest", "session_id": "s",
+                "tool_name": "Bash", "tool_input": {"command": "ls"},
+                "_pixtuoid_source": source,
+            });
+            v.as_object_mut()
+                .expect("an object")
+                .extend(extra.as_object().expect("an object").clone());
+            let evs = decode_hook_payload(v).expect("decodes");
+            assert!(
+                matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::UserActionRequest {
+                    tool_use_id, tool_name: Some(n), turn: None, .. }]
+                    if tool_use_id.as_deref() == call && n == "Bash"),
+                "{source}: {evs:?}"
+            );
+        }
     }
 
     #[test]

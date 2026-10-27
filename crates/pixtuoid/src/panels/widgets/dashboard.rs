@@ -99,11 +99,9 @@ fn dashboard_line(
     let (glyph, text, color) = match &row.state {
         RowState::Running(Some(detail)) => ('●', detail.to_string(), theme.ui.label_running),
         RowState::Running(None) => ('●', "running".to_string(), theme.ui.label_running),
-        RowState::RequiresAction(Some(reason)) => (
-            '◐',
-            format!("requires action: {reason}"),
-            theme.ui.label_requires_action,
-        ),
+        RowState::RequiresAction(Some(reason)) => {
+            ('◐', reason.to_string(), theme.ui.label_requires_action)
+        }
         RowState::RequiresAction(None) => (
             '◐',
             "requires action".to_string(),

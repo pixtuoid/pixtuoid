@@ -62,12 +62,10 @@ expression: events
     source: codex
     session_id: 01a0059b-cb9d-7a92-8821-85ebb7604464
     cwd: /private/tmp/pixtuoid-capture/proj
-- ToolUseStart:
+- ToolUsePending:
     agent_id: 13864919756395911276
     tool_use_id: exec-04a83981-248a-4852-97e2-c07ceab3bbdb
-    detail:
-      Generic:
-        display: "Bash: rm -- NOTE.txt && test ! -e NOTE.txt"
+    tool_name: Bash
 - Identity:
     agent_id: 13864919756395911276
     source: codex
@@ -81,11 +79,10 @@ expression: events
     source: codex
     session_id: 01a0059b-cb9d-7a92-8821-85ebb7604464
     cwd: /private/tmp/pixtuoid-capture/proj
-- ToolUseEnd:
+- UserActionResolved:
     agent_id: 13864919756395911276
-    tool_use_id: exec-04a83981-248a-4852-97e2-c07ceab3bbdb
-- TurnEnd:
-    agent_id: 13864919756395911276
+    by:
+      Call: exec-04a83981-248a-4852-97e2-c07ceab3bbdb
 - SessionEnd:
     agent_id: 13864919756395911276
     as_child: false

@@ -585,6 +585,37 @@ fn dashboard_renders_a_reasonless_requires_action_as_the_bare_state_words() {
 }
 
 #[test]
+fn dashboard_shows_a_long_requires_action_reason_whole_on_an_unselected_row() {
+    let mut r = build(120, 44, vec![]);
+    let mut a = running("/h/a.jsonl", 0, "Edit x", t0());
+    a.label = "cc\u{b7}act".into();
+    let mut w = idle("/h/w.jsonl", 1, t0());
+    w.label = "cc\u{b7}wait".into();
+    w.state = ActivityState::RequiresAction {
+        reason: Some(Arc::from("permission: shell")),
+    };
+    let scene = scene_with(vec![a, w], 16);
+
+    let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+    r.set_frames(
+        RenderFrames {
+            dashboard: DashboardFrame {
+                open: true,
+                rows,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        t0(),
+    );
+    r.render(&scene, t0()).unwrap();
+
+    // The glyph and the tint name the state, so the reason takes the whole cell.
+    let popup = dash_popup(r.frame_buffer());
+    assert!(popup.contains("\u{25d0} permission: shell"), "{popup}");
+}
+
+#[test]
 fn dashboard_renders_requires_action_reason_and_running_without_detail() {
     let mut r = build(120, 44, vec![]);
     let mut w = idle("/h/w.jsonl", 0, t0());
@@ -617,7 +648,7 @@ fn dashboard_renders_requires_action_reason_and_running_without_detail() {
 
     let popup = dash_popup(r.frame_buffer());
     assert!(
-        popup.contains("requires action: permission"),
+        popup.contains("\u{25d0} permission"),
         "requires-action reason missing:\n{popup}"
     );
     assert!(
