@@ -274,8 +274,8 @@ impl<'a> Driver<'a> {
                 self.phase = Phase::Submitted { enter_at: now };
                 Action::Keys(&[Key::Enter])
             }
-            // A turn that raised its dialog was submitted: a prompt shown after
-            // it is the conversation's echo.
+            // A turn already answered was submitted: a prompt shown after its
+            // answer is the conversation's echo.
             Phase::Submitted { enter_at } if !self.answered && self.composer_holds_prompt() => {
                 if now.duration_since(enter_at) < ENTER_RETRY {
                     return Action::Wait;
@@ -511,6 +511,8 @@ mod tests {
     const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
     const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
     const CODEX_CANCEL: &str = include_str!("screens/codex-cancel.txt");
+    const OPENCODE_BOOT: &str = include_str!("screens/opencode-boot.txt");
+    const OPENCODE_CANCEL: &str = include_str!("screens/opencode-cancel.txt");
     const OMP_BOOT: &str = include_str!("screens/omp-boot.txt");
     const OMP_NEW: &str = include_str!("screens/omp-new.txt");
     const CODEWHALE_BOOT: &str = include_str!("screens/codewhale-boot.txt");
@@ -895,6 +897,36 @@ mod tests {
             Action::Fail("the screen stood still with the turn unfinished")
         );
         assert_eq!(d.gave_up(), UNANSWERED);
+    }
+
+    /// The boot screen's input line holds a placeholder; the session's holds
+    /// nothing, under the prompt's echo, which wears the same bar.
+    #[test]
+    fn opencodes_input_line_sits_its_rows_above_the_edge_and_never_on_the_echo() {
+        const PLACEHOLDER: &str = "Ask anything… \"What is the tech stack of this project?\"";
+        let (tui, answer) = tui_scenario("opencode", "cancel");
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        assert_eq!(d.step(OPENCODE_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.composer(), Some(format!("  {PLACEHOLDER}").as_str()));
+        let typed = OPENCODE_BOOT.replacen(PLACEHOLDER, PROMPT, 1);
+        assert_ne!(typed, OPENCODE_BOOT, "the placeholder moved");
+        assert_eq!(d.step(&typed, t0), Action::Keys(&[Key::Enter]));
+        assert_eq!(d.step(&typed, t0), Action::Wait);
+        assert_eq!(
+            d.step(&typed, t0 + ENTER_RETRY),
+            Action::Keys(&[Key::Enter]),
+            "a composer still holding the prompt was never submitted"
+        );
+        let session = OPENCODE_CANCEL.replace(super::super::STREAM_CUE, "");
+        let t1 = t0 + ENTER_RETRY;
+        assert_eq!(d.step(&session, t1), Action::Wait);
+        assert_eq!(d.composer(), Some(""));
+        assert_eq!(
+            d.step(&session, t1 + ENTER_RETRY),
+            Action::Wait,
+            "the echo of the prompt is not the composer"
+        );
     }
 
     #[test]

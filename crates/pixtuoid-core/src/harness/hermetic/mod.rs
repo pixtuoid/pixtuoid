@@ -613,7 +613,7 @@ impl Profile {
 
 /// The first of `scenarios` a leg on `windows` runs whose TUI turn, if it has
 /// one, the driver need not answer: a gate waits on a hook, and a cancel's
-/// reply outlasts the turn.
+/// reply outlasts the run ([`STREAM_LINES`]).
 fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario> {
     scenarios.iter().find(|s| {
         s.not_run_on(windows).is_none()
