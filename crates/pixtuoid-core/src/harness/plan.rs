@@ -303,6 +303,8 @@ pub struct CapturePlan {
     pub daemon: Option<DaemonPlan>,
     /// The first turn.
     pub first_turn: Argv<Resolved>,
+    /// What stops the server the CLI started for its turns, run after them.
+    pub server_stop: Option<Argv<Resolved>>,
 }
 
 impl CapturePlan {
@@ -527,6 +529,7 @@ impl CapturePlan {
             seed: text(SEED_ENV),
             daemon: None,
             first_turn,
+            server_stop: None,
         })
     }
 }
@@ -557,6 +560,7 @@ mod tests {
             seed: None,
             daemon: None,
             first_turn: Argv::resolved(["kimi", "-p", "go"]).expect("resolved"),
+            server_stop: None,
         }
     }
 

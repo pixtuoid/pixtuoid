@@ -118,7 +118,7 @@
     "name": "Hermes Agent",
     "url": "https://hermes-agent.nousresearch.com",
     "status": "supported",
-    "transport": "hooks (~/.hermes/config.yaml hooks, session-id-keyed; approve the hook once in Hermes to activate)",
+    "transport": "hooks (Python plugin → ~/.hermes/plugins/, runs in its gateway, session-id-keyed)",
     "platforms": {
       "macos": "yes",
       "linux": "yes",

@@ -20,7 +20,7 @@ useDefault = true
 # fatal for those rules. They live in `.gitleaks-identity.toml`, which says why.
 
 # Wire identifiers that captured bytes legitimately carry. Without these,
-# `generic-api-key` fires on every hermes session id and copilot message id.
+# `generic-api-key` fires on every copilot message id.
 [[allowlists]]
 description = "Wire identifiers in recorded fixtures — not credentials"
 # `secret`, not `match`, and ANCHORED — the two go together. Unanchored, these
@@ -31,5 +31,4 @@ description = "Wire identifiers in recorded fixtures — not credentials"
 regexTarget = "secret"
 regexes = [
   '''^msg_[0-9A-Za-z]{20,32}$''',
-  '''^\d{8}_\d{6}_[0-9a-f]{6}$''',
 ]

@@ -39,9 +39,9 @@ mod recorder {
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
         DRIVER_DIR_ENV, Drive, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
-        SecondTurn, canonical_capture, capture_base, capture_workspace, capture_workspace_tail,
-        files_under, jsonl_files_under, required_version_probe, slashed_under, version_answer,
-        wait_until,
+        SecondTurn, ServerStop, canonical_capture, capture_base, capture_workspace,
+        capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
+        slashed_under, version_answer, wait_until,
     };
 
     /// The driver's own part of the recorder's scratch, apart from everything the
@@ -497,6 +497,14 @@ mod recorder {
             None => None,
         };
         let second_turn_skipped = plan.second_turn().is_some() && second_outcome.is_none();
+        // Whatever the turns did: a server they left up would outlive the run.
+        let server_stop = match &plan.server_stop {
+            Some(words) => Some(ServerStop {
+                exit: run_turn(wired(&words.strings(), &workspace, &wiring, &env)?, budget)?,
+                outlived: outlived(&tap.payloads(), *DAEMON_STOP_GRACE.here()),
+            }),
+            None => None,
+        };
         let note_survived = note_survived(&workspace);
         let daemon_stop = daemon.map_or(Ok(()), |d| d.stop(*DAEMON_STOP_GRACE.here()));
         tap.settle();
@@ -557,6 +565,7 @@ mod recorder {
                 give_up_reason,
                 incomplete: incomplete.as_ref().map(ToString::to_string),
                 second_turn: second_outcome,
+                server_stop,
                 note_survived,
             };
             std::fs::write(
@@ -1104,9 +1113,9 @@ mod recorder {
         unix: BOOT,
         windows: Duration::from_secs(120),
     };
-    /// How long a daemon may take to exit once its stdin closed: a kill would
-    /// lose its shutdown hooks' last sends, and openclaw's Windows stop,
-    /// `process.exit` included, outlasts the Unix grace.
+    /// How long a daemon may take to exit once its stdin closed, or a server once
+    /// its CLI's stop returned: a kill would lose its shutdown hooks' last sends,
+    /// and openclaw's Windows stop, `process.exit` included, outlasts the Unix grace.
     const DAEMON_STOP_GRACE: PerOs<Duration> = PerOs {
         unix: Duration::from_secs(30),
         windows: Duration::from_secs(150),
@@ -1566,6 +1575,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: "1.43.0".into(),
@@ -1683,6 +1693,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: "1.45.1".into(),
@@ -1877,6 +1888,7 @@ mod recorder {
                     give_up_reason: None,
                     incomplete: None,
                     second_turn: None,
+                    server_stop: None,
                     note_survived: true,
                 },
                 aimock: versions.1.into(),
@@ -3027,6 +3039,7 @@ mod recorder {
                 second_turn: second.map(|code| SecondTurn {
                     end: ProcessExit::Exited(code),
                 }),
+                server_stop: None,
                 note_survived: true,
             };
             assert!(exited_as_scripted(

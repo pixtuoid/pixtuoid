@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
+use crate::install::merge::SentinelPlugin;
 use crate::install::target::MergeOutcome;
 
 /// Marks the extension as ours — absent from the removed-stub, so an uninstall
@@ -30,6 +31,14 @@ pub(crate) const EXTENSION_TEMPLATE: &str = include_str!("omp_extension.ts");
 
 /// A valid empty ES module WITHOUT the sentinel, so a re-uninstall is a no-op.
 const REMOVED_STUB: &str = "// pixtuoid omp extension removed by disconnecting omp in pixtuoid's Sources panel (press s).\nexport default function () {}\n";
+
+const EXTENSION: SentinelPlugin = SentinelPlugin {
+    sentinel: SENTINEL,
+    placeholder: HOOK_PLACEHOLDER,
+    removed_stub: REMOVED_STUB,
+    what: "the omp extension",
+    cli: "omp",
+};
 
 /// The extensions root is core's [`omp_extensions_dir`], never a second copy of
 /// that resolver (#880). A RELATIVE `PI_CODING_AGENT_DIR` is refused rather
@@ -66,42 +75,13 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
     crate::install::merge::hook_path_str(resolved).map(str::to_string)
 }
 
-/// `changed` only when the content is actually ours (carries the sentinel) — a
-/// foreign file, an already-removed stub, or empty content is left untouched.
 pub(crate) fn uninstall(content: &str) -> Result<MergeOutcome> {
-    let ours = content.contains(SENTINEL);
-    Ok(MergeOutcome {
-        changed: ours,
-        content: if ours {
-            REMOVED_STUB.to_string()
-        } else {
-            content.to_string()
-        },
-    })
+    Ok(EXTENSION.uninstall(content))
 }
 
-/// The managed extension is a CODE artifact, so there is no per-event config to
-/// check — only that the sentinel is present, the shim-path placeholder was
-/// substituted, and the baked `HOOK_PATH` is readable for the on-disk stat.
 pub(crate) fn verify_schema(content: &str) -> crate::install::verify::SchemaParse {
-    use crate::install::verify::{SchemaParse, ShimRef};
-    if !content.contains(SENTINEL) {
-        return SchemaParse::broken(
-            "the omp extension is missing or replaced (sentinel absent) — reconnect omp",
-        );
-    }
-    if content.contains(HOOK_PLACEHOLDER) {
-        return SchemaParse::broken(
-            "the omp extension's shim-path placeholder was never substituted",
-        );
-    }
-    let Some(p) = crate::install::verify::baked_hook_path(content) else {
-        return SchemaParse::broken("could not read HOOK_PATH from the omp extension");
-    };
-    SchemaParse {
-        shim: ShimRef::Absolute(p),
-        ..Default::default()
-    }
+    use crate::install::verify::{baked_shim, sentinel_plugin_schema};
+    sentinel_plugin_schema(&EXTENSION, content, baked_shim(content))
 }
 
 pub(crate) fn render_extension(hook_path: &str) -> Result<String> {

@@ -22,12 +22,15 @@ pub enum ShimRef {
 /// Pull the baked shim path back out of a RENDERED code artifact's
 /// `const HOOK_PATH … = "<json string>"` line.
 pub(crate) fn baked_hook_path(content: &str) -> Option<PathBuf> {
+    baked_hook_path_after(content, BAKED_HOOK_MARKER)
+}
+
+/// [`baked_hook_path`] for an artifact whose declaration starts with `decl`.
+pub(crate) fn baked_hook_path_after(content: &str, decl: &str) -> Option<PathBuf> {
     // Anchor on the DECLARATION, not a mention: a line that merely contains
-    // `const HOOK_PATH` would otherwise match first, yield no JSON literal, and
-    // downgrade the moved-shim HARD check to a soft "could not read" note.
-    let line = content
-        .lines()
-        .find(|l| l.trim_start().starts_with(BAKED_HOOK_MARKER))?;
+    // it would otherwise match first, yield no JSON literal, and downgrade the
+    // moved-shim HARD check to a soft "could not read" note.
+    let line = content.lines().find(|l| l.trim_start().starts_with(decl))?;
     let literal = line.split_once('=')?.1.trim().trim_end_matches(';').trim();
     let path: String = serde_json::from_str(literal).ok()?;
     (!path.is_empty()).then(|| PathBuf::from(path))
@@ -35,6 +38,34 @@ pub(crate) fn baked_hook_path(content: &str) -> Option<PathBuf> {
 
 pub(crate) fn baked_shim(content: &str) -> ShimRef {
     baked_hook_path(content).map_or(ShimRef::Unknown, ShimRef::Absolute)
+}
+
+/// All there is to check of a code artifact: its sentinel, a substituted
+/// placeholder, and the `shim` read back from its baked `HOOK_PATH`.
+pub(crate) fn sentinel_plugin_schema(
+    plugin: &crate::install::merge::SentinelPlugin,
+    content: &str,
+    shim: ShimRef,
+) -> SchemaParse {
+    let what = plugin.what;
+    if !content.contains(plugin.sentinel) {
+        return SchemaParse::broken(format!(
+            "{what} is missing or replaced (sentinel absent) — reconnect {}",
+            plugin.cli
+        ));
+    }
+    if content.contains(plugin.placeholder) {
+        return SchemaParse::broken(format!(
+            "{what}'s shim-path placeholder was never substituted"
+        ));
+    }
+    match shim {
+        ShimRef::Unknown => SchemaParse::broken(format!("could not read HOOK_PATH from {what}")),
+        shim => SchemaParse {
+            shim,
+            ..Default::default()
+        },
+    }
 }
 
 /// Marks a rendered artifact that BAKES the shim path. Matched against the
@@ -217,32 +248,10 @@ pub(crate) fn posix_unquote(span: &str) -> String {
     out
 }
 
-/// If `s` is a whole POSIX single-quoted span (`'…'`, length ≥ 2), reverse the
-/// quoting via [`posix_unquote`]; otherwise return it verbatim. The `len() >= 2`
-/// guard is load-bearing: a lone `'` is NOT a quoted span, and slicing it would
-/// strip to nothing.
-pub(crate) fn posix_unquote_if_quoted(s: &str) -> String {
-    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
-        posix_unquote(s)
-    } else {
-        s.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn posix_unquote_if_quoted_guards_len_and_pairing() {
-        assert_eq!(posix_unquote_if_quoted("'/opt/hook'"), "/opt/hook");
-        assert_eq!(posix_unquote_if_quoted(r"'/U/O'\''B/hook'"), "/U/O'B/hook");
-        assert_eq!(posix_unquote_if_quoted("'/opt/hook"), "'/opt/hook");
-        assert_eq!(posix_unquote_if_quoted("'"), "'");
-        assert_eq!(posix_unquote_if_quoted(""), "");
-        assert_eq!(posix_unquote_if_quoted("/plain/path"), "/plain/path");
-    }
 
     #[test]
     fn baked_hook_path_anchors_on_the_declaration_not_a_mention() {
@@ -259,6 +268,13 @@ mod tests {
         );
         assert_eq!(baked_hook_path("const HOOK_PATH = \"\";\n"), None);
         assert_eq!(baked_hook_path("// no binding at all\n"), None);
+        assert_eq!(
+            baked_hook_path_after(
+                "# HOOK_PATH is baked in at install time\nHOOK_PATH = \"/opt/hook\"\n",
+                "HOOK_PATH ="
+            ),
+            Some(PathBuf::from("/opt/hook"))
+        );
     }
 
     #[test]

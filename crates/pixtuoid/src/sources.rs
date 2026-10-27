@@ -13,7 +13,7 @@ use pixtuoid_core::source::registry;
 use crate::config;
 use crate::install::{
     self, InstallReport, UninstallReport,
-    target::{HostRegistration, PluginCopy, Target, by_source},
+    target::{HostRegistration, Pickup, PluginCopy, Target, by_source},
 };
 
 /// The wire-facing outcome token — a CLOSED set, published in the JSON schema
@@ -217,10 +217,11 @@ fn is_on(app: &config::AppConfig, sid: &str, hooked: impl Fn(&str) -> Option<boo
 
 /// Rewrite every target's [`RetiredStub`](install::target::RetiredStub), connected
 /// or not, then bring every connected source's owned plugin files to this build
-/// ([`install::converge`]), and the copy a CLI runs to those files, and return the
-/// targets whose CLI now has a newer plugin to load at its next start. A failure
-/// leaves the install for the boot warning and doctor to report, and the next
-/// launch retries it.
+/// ([`install::converge`]), the copy a CLI runs to those files, and a CLI that can
+/// be told to reload them, and return the targets whose CLI still has a newer
+/// plugin to load: at its next start, or, where a reload failed, by a reconnect.
+/// A failure leaves the install for the boot warning and doctor to report, and the
+/// next launch retries it.
 pub(crate) fn converge_owned(connected: &HashSet<String>) -> Vec<&'static Target> {
     converge_owned_with(
         install::TARGETS,
@@ -256,17 +257,26 @@ fn converge_owned_with(
                 continue;
             }
         };
-        for path in &done.rewritten {
+        for (path, _) in &done.rewritten {
             tracing::info!(cli = t.name, path = ?path, "refreshed a plugin file to this build");
         }
         for (path, error) in &done.failed {
             tracing::warn!(cli = t.name, path = ?path, error = ?error, "could not refresh a plugin file to this build");
         }
-        let loads_new = match t.host.and_then(|h| h.copy.as_ref().map(|c| (h, c))) {
-            Some((host, copy)) => recopy(host, copy, t).unwrap_or_else(|e| {
+        let loads_new = match t.host.and_then(|h| h.pickup.as_ref().map(|p| (h, p))) {
+            Some((host, Pickup::Recopy(copy))) => recopy(host, copy, t).unwrap_or_else(|e| {
                 tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
                 false
             }),
+            Some((host, Pickup::Reload(reload))) => {
+                let failed = !done.rewritten.is_empty() && reload_failed(host, *reload, t);
+                // The disk then says what the CLI runs, so the next launch rewrites
+                // and reloads again.
+                if failed && let Err(e) = install::put_back(&done.rewritten) {
+                    tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+                }
+                failed
+            }
             None => !done.rewritten.is_empty() && !t.primary.reloads_on_change(),
         };
         if loads_new {
@@ -286,13 +296,26 @@ fn recopy(host: &HostRegistration, copy: &PluginCopy, t: &Target) -> Result<bool
     Ok(true)
 }
 
+/// Run `reload` to load `t`'s rewritten plugin into its running CLI, and say
+/// whether that failed, leaving the CLI on the old one. A disabled plugin stays as
+/// the user left it.
+fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target) -> bool {
+    let reloaded = (host.is_registered)().and_then(|on| if on { reload() } else { Ok(()) });
+    if let Err(e) = &reloaded {
+        tracing::warn!(cli = t.name, error = ?e, "could not reload the plugin into its CLI");
+    }
+    reloaded.is_err()
+}
+
 /// The line a launch prints for a target [`converge_owned`] returned: its CLI now
 /// has a newer plugin to load.
 pub(crate) fn refreshed_notice(t: &Target) -> String {
-    let step = t.post_install_hint.map_or_else(
-        || format!("restart {} to load it", t.display_name),
-        str::to_string,
-    );
+    let step = match (t.post_install_hint, t.host.and_then(|h| h.pickup.as_ref())) {
+        (Some(hint), _) => hint.to_string(),
+        // A connect runs the reload.
+        (None, Some(Pickup::Reload(_))) => format!("reconnect {} to load it", t.display_name),
+        (None, _) => format!("restart {} to load it", t.display_name),
+    };
     format!(
         "pixtuoid: refreshed the {} plugin to this build — {step}",
         t.display_name
@@ -728,7 +751,7 @@ mod tests {
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        copy: Some(PluginCopy {
+        pickup: Some(Pickup::Recopy(PluginCopy {
             stale: |_| {
                 use std::sync::atomic::Ordering::SeqCst;
                 if STALE_ERRS.load(SeqCst) {
@@ -740,7 +763,7 @@ mod tests {
                 REFRESHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             },
-        }),
+        })),
         legacy: None,
     };
 
@@ -753,7 +776,7 @@ mod tests {
             host: Some(&COPYING_HOST),
             ..crate::install::target::CLAUDE
         };
-        let copy = COPYING_HOST.copy.as_ref().unwrap();
+        let copy = COPYING_HOST.copy().unwrap();
         REFRESHES.store(0, SeqCst);
         for (enabled, stale, recopied) in [
             (false, true, false),
@@ -785,7 +808,7 @@ mod tests {
         let connected = set(&["claude-code"]);
         let rewrote = || {
             Ok(install::Converged {
-                rewritten: vec![PathBuf::from("/x/hooks.json")],
+                rewritten: vec![(PathBuf::from("/x/hooks.json"), String::new())],
                 failed: Vec::new(),
             })
         };
@@ -808,6 +831,103 @@ mod tests {
         }
     }
 
+    static RELOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static RELOAD_FAILS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// A host that loads the files in place and keeps what it loaded until told.
+    static RELOADING_HOST: HostRegistration = HostRegistration {
+        cli: crate::install::target::HERMES.host.unwrap().cli,
+        register: |_| Ok(()),
+        unregister: |_| Ok(crate::install::target::Unregistered::Absent),
+        is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
+        pickup: Some(Pickup::Reload(|| {
+            use std::sync::atomic::Ordering::SeqCst;
+            if RELOAD_FAILS.load(SeqCst) {
+                anyhow::bail!("no gateway answered");
+            }
+            RELOADS.fetch_add(1, SeqCst);
+            Ok(())
+        })),
+        legacy: None,
+    };
+
+    static RELOADING: Target = Target {
+        host: Some(&RELOADING_HOST),
+        ..crate::install::target::HERMES
+    };
+
+    /// A restart of the CLI would reattach to the process that still holds the old
+    /// plugin, so a launch loads the rewrite itself, and announces only a rewrite
+    /// it could not load.
+    #[test]
+    fn a_launch_reloads_a_rewritten_plugin_where_the_cli_can_be_told() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let connected = set(&["hermes"]);
+        let dir = tempfile::TempDir::new().unwrap();
+        let plugin = dir.path().join("__init__.py");
+        for (enabled, fails, rewrote, reloads, announced) in [
+            (true, false, true, 1, false),
+            (true, true, true, 0, true),
+            (false, false, true, 0, false),
+            (true, false, false, 0, false),
+        ] {
+            ENABLED.store(enabled, SeqCst);
+            RELOAD_FAILS.store(fails, SeqCst);
+            RELOADS.store(0, SeqCst);
+            let refreshed = converge_owned_with(
+                &[&RELOADING],
+                &connected,
+                |_| Ok(false),
+                |_| {
+                    Ok(install::Converged {
+                        rewritten: if rewrote {
+                            vec![(plugin.clone(), "old".to_owned())]
+                        } else {
+                            Vec::new()
+                        },
+                        failed: Vec::new(),
+                    })
+                },
+            );
+            let case = format!("enabled {enabled}, fails {fails}, rewrote {rewrote}");
+            assert_eq!(RELOADS.load(SeqCst), reloads, "{case}");
+            assert_eq!(!refreshed.is_empty(), announced, "{case}");
+        }
+    }
+
+    /// A failed reload leaves the CLI on the old plugin, and the rewrite on disk
+    /// would hide that from every later launch.
+    #[test]
+    fn a_failed_reload_puts_the_old_plugin_back_so_the_next_launch_retries() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let dir = tempfile::TempDir::new().unwrap();
+        let plugin = dir.path().join("__init__.py");
+        std::fs::write(&plugin, "old").unwrap();
+        // Converges the plugin to this build's "new".
+        let converge = |_: &'static Target| -> Result<install::Converged> {
+            let prior = std::fs::read_to_string(&plugin)?;
+            if prior == "new" {
+                return Ok(install::Converged::default());
+            }
+            std::fs::write(&plugin, "new")?;
+            Ok(install::Converged {
+                rewritten: vec![(plugin.clone(), prior)],
+                failed: Vec::new(),
+            })
+        };
+        let connected = set(&["hermes"]);
+        let launch = || converge_owned_with(&[&RELOADING], &connected, |_| Ok(false), converge);
+        ENABLED.store(true, SeqCst);
+        RELOADS.store(0, SeqCst);
+        RELOAD_FAILS.store(true, SeqCst);
+        assert_eq!(launch().len(), 1, "a failed reload is announced");
+        assert_eq!(std::fs::read_to_string(&plugin).unwrap(), "old");
+        RELOAD_FAILS.store(false, SeqCst);
+        assert!(launch().is_empty());
+        assert_eq!(RELOADS.load(SeqCst), 1, "the next launch reloads");
+        assert_eq!(std::fs::read_to_string(&plugin).unwrap(), "new");
+    }
+
     #[test]
     fn converge_owned_reaches_only_connected_targets_and_survives_a_failure() {
         // TARGETS order: claude fails first, so a stop-at-first-error loop would never
@@ -824,7 +944,7 @@ mod tests {
                 match t.name {
                     "claude" => Err(anyhow::anyhow!("no home")),
                     "opencode" | "dsh" => Ok(install::Converged {
-                        rewritten: vec![PathBuf::from("/x/pixtuoid.ts")],
+                        rewritten: vec![(PathBuf::from("/x/pixtuoid.ts"), String::new())],
                         failed: Vec::new(),
                     }),
                     "omp" => Ok(install::Converged {
@@ -870,6 +990,8 @@ mod tests {
     fn a_refreshed_notice_names_the_step_that_loads_the_plugin() {
         let openclaw = refreshed_notice(by_source("openclaw").unwrap());
         assert!(openclaw.contains("openclaw gateway restart"), "{openclaw}");
+        let hermes = refreshed_notice(by_source("hermes").unwrap());
+        assert!(hermes.contains("reconnect Hermes Agent"), "{hermes}");
         let claude = refreshed_notice(by_source("claude-code").unwrap());
         assert!(claude.contains("restart Claude Code"), "{claude}");
     }

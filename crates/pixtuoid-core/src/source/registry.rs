@@ -858,15 +858,14 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
 };
 
 /// HOOK-ONLY: Hermes Agent (Nous Research) has no tailable transcript; the
-/// reachable seam is Hermes shell hooks (the `config.yaml` under
-/// `hermes::hermes_home`, which is NOT `~/.hermes` on Windows). The envelope
+/// reachable seam is a plugin in its gateway (`source/hermes.rs`). The envelope
 /// reuses CC's `hook_event_name` field NAME with snake_case values, so the
 /// custom decoder claims every event and keys on `session_id` — not the
 /// workspace, which would merge a user's concurrent instances.
 const HERMES: SourceDescriptor = SourceDescriptor {
     name: hermes::SOURCE_NAME,
     label_prefix: "hm",
-    verified_version: "0.22.2",
+    verified_version: "0.22.5",
     version_probe: Some(&["hermes", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("HERMES_HOME"),
@@ -874,8 +873,8 @@ const HERMES: SourceDescriptor = SourceDescriptor {
         transcript: None,
         hook: Some(HookDecoding::ClaimsAll(hermes::decode_hermes_hook_payload)),
         caps: SourceCaps {
-            // `on_session_finalize`, fired by upstream's atexit `_run_cleanup` with
-            // `reason="shutdown"`. NOT `on_session_end`, which despite the name is a
+            // `on_session_finalize` when the gateway finalizes a session, else the
+            // gateway's death. NOT `on_session_end`, which despite the name is a
             // TURN boundary (`source/hermes.rs`).
             has_exit_signal: true,
             resurrects_on_prompt: false,
@@ -884,7 +883,9 @@ const HERMES: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
         },
-        focus: FocusChannel::ShimStamp(Corroboration::Twice),
+        // The plugin stamps the gateway's pid, which every session shares and no
+        // window owns (`install/hermes_plugin.py`).
+        focus: FocusChannel::ServerStamp,
     },
 };
 

@@ -133,7 +133,7 @@ pub(crate) fn verify_target(
     }
     if let Some(host) = t.host {
         match (host.is_registered)() {
-            Ok(true) => match host.copy.as_ref().map(|c| (c.stale)(&path)) {
+            Ok(true) => match host.copy().map(|c| (c.stale)(&path)) {
                 Some(Ok(true)) => issues.push(format!(
                     "{} runs an older copy of the plugin (a launch re-copies it; the log \
                      names a re-copy that failed)",
@@ -291,7 +291,8 @@ pub(crate) fn owned_state(
 /// What a convergence did to a target's owned files.
 #[derive(Debug, Default)]
 pub(crate) struct Converged {
-    pub(crate) rewritten: Vec<PathBuf>,
+    /// Each file it rewrote, with the content it replaced.
+    pub(crate) rewritten: Vec<(PathBuf, String)>,
     /// Each file it could not write, the others still converged.
     pub(crate) failed: Vec<(PathBuf, anyhow::Error)>,
 }
@@ -327,12 +328,24 @@ fn converge_files(
             })
         });
         match wrote {
-            Ok(true) => done.rewritten.push(p),
-            Ok(false) => {}
+            Ok(Some(replaced)) => done.rewritten.push((p, replaced)),
+            Ok(None) => {}
             Err(e) => done.failed.push((p, e)),
         }
     }
     Ok(done)
+}
+
+/// Put each file a convergence rewrote back to the content it replaced, which a
+/// CLI that never loaded the rewrite still runs, so the next convergence redoes it.
+pub(crate) fn put_back(rewritten: &[(PathBuf, String)]) -> Result<()> {
+    for (p, replaced) in rewritten {
+        restore(
+            &io::lock_config(p)?,
+            (!replaced.is_empty()).then_some(replaced.as_str()),
+        )?;
+    }
+    Ok(())
 }
 
 /// The hook command this binary writes for an installed shim: an explicit path
@@ -593,9 +606,18 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
 
 /// Put the locked file back as an install found it: `prior`, or no file at all.
 fn restore(lock: &io::ConfigLock, prior: Option<&str>) -> Result<()> {
+    // A host's failed registration may have taken the file's dir with it.
     match prior {
-        Some(content) => lock.write_atomic(content),
-        None => Ok(std::fs::remove_file(lock.target())?),
+        Some(content) => {
+            if let Some(dir) = lock.target().parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            lock.write_atomic(content)
+        }
+        None => match std::fs::remove_file(lock.target()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        },
     }
 }
 
@@ -654,15 +676,16 @@ pub(crate) fn heal_retired_stub(t: &Target, config: Option<PathBuf>) -> Result<b
     write_owned_file(&path, || {
         Ok((io::read_config(&path)? == stub.was).then(|| stub.now.to_owned()))
     })
+    .map(|replaced| replaced.is_some())
 }
 
 /// Write `want()` to `p` under `p`'s own lock when the file holds anything else, and
-/// say whether it did. `want` runs under the lock, so a caller can re-derive the
-/// content there; `None` leaves the file alone.
+/// return what it replaced. `want` runs under the lock, so a caller can re-derive
+/// the content there; `None` leaves the file alone.
 fn write_owned_file(
     p: &std::path::Path,
     want: impl FnOnce() -> Result<Option<String>>,
-) -> Result<bool> {
+) -> Result<Option<String>> {
     // A real write here would be invisible: CI has no such dir, and the shim exits
     // 0 by invariant #5, so nothing downstream would report it.
     #[cfg(test)]
@@ -674,16 +697,17 @@ fn write_owned_file(
     );
     let lock = io::lock_config(p)?;
     let Some(want) = want()? else {
-        return Ok(false);
+        return Ok(None);
     };
-    if lock.read()? == want {
-        return Ok(false);
+    let replaced = lock.read()?;
+    if replaced == want {
+        return Ok(None);
     }
     // Atomic (temp-in-dir → fsync → rename), NOT a plain `fs::write`: a torn write
     // leaves a half-rendered plugin the gateway then fails to load.
     lock.write_atomic(&want)
         .with_context(|| format!("writing {}", p.display()))?;
-    Ok(true)
+    Ok(Some(replaced))
 }
 
 #[derive(Debug)]
@@ -759,12 +783,19 @@ pub(crate) fn assert_event_roster<T: Ord + std::fmt::Debug + Copy>(
 /// than hand-copied beside it.
 #[cfg(test)]
 pub(crate) fn forward_set(template: &'static str) -> std::collections::BTreeSet<&'static str> {
-    let block = template
-        .split_once("const FORWARD = new Set<string>([")
-        .and_then(|(_, rest)| rest.split_once("])"))
+    template_list(template, "const FORWARD = new Set<string>([", "])")
+        .into_iter()
+        .collect()
+}
+
+/// The quoted strings of the list a template writes between `open` and `close`.
+#[cfg(test)]
+pub(crate) fn template_list(template: &'static str, open: &str, close: &str) -> Vec<&'static str> {
+    template
+        .split_once(open)
+        .and_then(|(_, rest)| rest.split_once(close))
         .map(|(inner, _)| inner)
-        .expect("the template defines a FORWARD set");
-    block
+        .unwrap_or_else(|| panic!("the template writes no {open:?} … {close:?} list"))
         .split(',')
         .map(|s| s.trim().trim_matches('"'))
         .filter(|s| !s.is_empty())
