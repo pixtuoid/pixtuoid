@@ -1673,9 +1673,7 @@ pub pixtuoid_core::state::ActivityState::Idle
 pub pixtuoid_core::state::ActivityState::RequiresAction
 pub pixtuoid_core::state::ActivityState::RequiresAction::reason: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::state::ActivityState::Running
-pub pixtuoid_core::state::ActivityState::Running::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
-pub pixtuoid_core::state::ActivityState::Running::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::state::ActivityState::Running::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::state::ActivityState::Running::item: core::option::Option<pixtuoid_core::state::TurnItem>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
@@ -1776,8 +1774,33 @@ impl core::marker::Unpin for pixtuoid_core::state::ToolKind
 impl core::marker::UnsafeUnpin for pixtuoid_core::state::ToolKind
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::ToolKind
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::ToolKind
+pub enum pixtuoid_core::state::TurnItem
+pub pixtuoid_core::state::TurnItem::ToolUse
+pub pixtuoid_core::state::TurnItem::ToolUse::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::state::TurnItem::ToolUse::kind: pixtuoid_core::state::ToolKind
+pub pixtuoid_core::state::TurnItem::ToolUse::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
+impl core::clone::Clone for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::TurnItem
+impl core::cmp::PartialEq for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::TurnItem
+impl serde_core::ser::Serialize for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::state::TurnItem
+impl core::marker::Send for pixtuoid_core::state::TurnItem
+impl core::marker::Sync for pixtuoid_core::state::TurnItem
+impl core::marker::Unpin for pixtuoid_core::state::TurnItem
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::TurnItem
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::TurnItem
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::TurnItem
 pub enum pixtuoid_core::state::TurnKey
 pub pixtuoid_core::state::TurnKey::Id(alloc::rcs::arc::Arc<str>)
+pub pixtuoid_core::state::TurnKey::Seq(u64)
 impl core::clone::Clone for pixtuoid_core::state::TurnKey
 pub fn pixtuoid_core::state::TurnKey::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::TurnKey
@@ -2085,9 +2108,7 @@ pub pixtuoid_core::ActivityState::Idle
 pub pixtuoid_core::ActivityState::RequiresAction
 pub pixtuoid_core::ActivityState::RequiresAction::reason: core::option::Option<alloc::rcs::arc::Arc<str>>
 pub pixtuoid_core::ActivityState::Running
-pub pixtuoid_core::ActivityState::Running::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
-pub pixtuoid_core::ActivityState::Running::kind: pixtuoid_core::state::ToolKind
-pub pixtuoid_core::ActivityState::Running::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::ActivityState::Running::item: core::option::Option<pixtuoid_core::state::TurnItem>
 impl core::clone::Clone for pixtuoid_core::state::ActivityState
 pub fn pixtuoid_core::state::ActivityState::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::ActivityState
@@ -2261,6 +2282,30 @@ impl core::marker::Unpin for pixtuoid_core::source::Transport
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::Transport
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::Transport
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::Transport
+pub enum pixtuoid_core::TurnItem
+pub pixtuoid_core::TurnItem::ToolUse
+pub pixtuoid_core::TurnItem::ToolUse::detail: core::option::Option<alloc::rcs::arc::Arc<str>>
+pub pixtuoid_core::TurnItem::ToolUse::kind: pixtuoid_core::state::ToolKind
+pub pixtuoid_core::TurnItem::ToolUse::tool_use_id: core::option::Option<alloc::rcs::arc::Arc<str>>
+impl core::clone::Clone for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::state::TurnItem
+impl core::cmp::PartialEq for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::state::TurnItem
+impl serde_core::ser::Serialize for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for pixtuoid_core::state::TurnItem
+pub fn pixtuoid_core::state::TurnItem::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for pixtuoid_core::state::TurnItem
+impl core::marker::Send for pixtuoid_core::state::TurnItem
+impl core::marker::Sync for pixtuoid_core::state::TurnItem
+impl core::marker::Unpin for pixtuoid_core::state::TurnItem
+impl core::marker::UnsafeUnpin for pixtuoid_core::state::TurnItem
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::TurnItem
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::TurnItem
 pub struct pixtuoid_core::AgentId(_)
 impl pixtuoid_core::id::AgentId
 pub fn pixtuoid_core::id::AgentId::from_parts(&str, &str) -> Self
