@@ -38,7 +38,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: None,
+    pickup: None,
     legacy: Some(LegacyConfig {
         path: settings_path,
         strip: merge::flat_json_uninstall,
@@ -123,7 +123,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
             return Ok(Unregistered::Unreachable);
         }
         let (_, root) = host_plugin::layout(config, host_plugin::HOOKS_FILE)?;
-        host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+        host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
         return Ok(Unregistered::Absent);
     }
     let listed = CLI.run(&[
@@ -142,7 +142,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
             NAME.as_ref(),
         ])?;
     }
-    host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+    host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
     Ok(if found {
         Unregistered::Removed
     } else {

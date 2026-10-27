@@ -30,7 +30,11 @@ pub fn path_env(name: &str) -> Option<PathBuf> {
 /// value that is not UTF-8 cannot be trimmed as text and is taken VERBATIM:
 /// preserving a legal path beats stripping hypothetical padding from one.
 pub fn path_env_trimmed(name: &str) -> Option<PathBuf> {
-    let raw = std::env::var_os(name)?;
+    std::env::var_os(name).and_then(trimmed_path)
+}
+
+/// [`path_env_trimmed`] for a value already read.
+pub(crate) fn trimmed_path(raw: std::ffi::OsString) -> Option<PathBuf> {
     match raw.to_str() {
         Some(s) => (!s.trim().is_empty()).then(|| PathBuf::from(s.trim())),
         None => Some(PathBuf::from(raw)),
@@ -72,9 +76,7 @@ pub fn user_home_opt() -> Option<PathBuf> {
 
 /// Hand back a CLI's env home override unchanged, warning when it is RELATIVE.
 ///
-/// Of the call sites only omp's is absolutized upstream (`path.resolve`, against
-/// OMP's cwd) and only codewhale expands `~`; the rest take it verbatim. Either
-/// way each process resolves against its OWN cwd — one string, two directories,
+/// Each process resolves it against its OWN cwd — one string, two directories,
 /// and the failure is otherwise mute: an empty office and no error (#880).
 pub(crate) fn warn_if_relative_override(var: &str, dir: PathBuf) -> PathBuf {
     if !dir.is_absolute() {

@@ -6,6 +6,6 @@
   "command": "kimi -p {prompt}",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 22
+    "blanked": 23
   }
 }

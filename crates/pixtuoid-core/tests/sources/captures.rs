@@ -730,73 +730,17 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
     assert!(bad.is_empty(), "{}", bad.join("\n  "));
 }
 
-/// `YYYY-MM-DD`, validated — not a 10-char string that starts "20".
+/// `YYYY-MM-DD`, validated: RFC 3339's `full-date`, which chrono parses only as
+/// a date-time's head.
 fn is_iso_date(s: &str) -> bool {
-    let b = s.as_bytes();
-    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
-        return false;
-    }
-    // `u32::from_str` accepts a leading sign, so "+026-08-15" parsed as year 26.
-    if b.iter()
-        .enumerate()
-        .any(|(i, c)| i != 4 && i != 7 && !c.is_ascii_digit())
-    {
-        return false;
-    }
-    let num = |r: std::ops::Range<usize>| s[r].parse::<u32>().ok();
-    let (Some(y), Some(m), Some(d)) = (num(0..4), num(5..7), num(8..10)) else {
-        return false;
-    };
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let last = match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return false,
-    };
-    (1..=last).contains(&d)
+    chrono::DateTime::parse_from_rfc3339(&format!("{s}T00:00:00Z")).is_ok()
 }
 
-/// The UTC calendar date of a millisecond epoch stamp. Days-from-epoch, because
-/// the shim stamps UTC and `captured` is UTC.
+/// The UTC calendar date of a millisecond epoch stamp: the shim stamps UTC and
+/// `captured` is UTC.
 fn utc_date(ms: i64) -> String {
-    let mut days = ms.div_euclid(86_400_000);
-    let (mut y, mut m) = (1970i64, 1i64);
-    // A pre-epoch stamp is not a real `_shim_ts_ms`, but a corrupt one must still
-    // render a well-formed date — the forward walk alone emitted a malformed one.
-    while days < 0 {
-        y -= 1;
-        days += if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
-            366
-        } else {
-            365
-        };
-    }
-    loop {
-        let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-        let len = if leap { 366 } else { 365 };
-        if days < len {
-            break;
-        }
-        days -= len;
-        y += 1;
-    }
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    loop {
-        let len = match m {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-            4 | 6 | 9 | 11 => 30,
-            2 if leap => 29,
-            _ => 28,
-        };
-        if days < len {
-            break;
-        }
-        days -= len;
-        m += 1;
-    }
-    format!("{y:04}-{m:02}-{:02}", days + 1)
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map_or_else(|| format!("{ms} ms"), |t| t.date_naive().to_string())
 }
 
 /// The `YYYY-MM-DD` a CLI put at the head of a transcript filename, with codex's
@@ -810,9 +754,6 @@ fn date_prefix(name: &str) -> Option<String> {
     Some(date.to_string())
 }
 
-/// `utc_date` and `is_iso_date` are hand-rolled (this crate has no chrono), so
-/// they get the cases that break naive versions: a leap day, the day after, a
-/// non-leap Feb 29, and the epoch itself.
 #[test]
 fn the_date_helpers_handle_the_cases_that_break_naive_ones() {
     assert_eq!(utc_date(0), "1970-01-01");

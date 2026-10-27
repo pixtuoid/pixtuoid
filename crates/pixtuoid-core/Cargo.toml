@@ -78,6 +78,8 @@ enum-map    = { workspace = true }
 vec1        = { workspace = true }
 # A CLI's version and its ordering, prerelease included: `registry::parse_version`.
 semver      = { workspace = true }
+# A wire stamp's instant: `decoder::rfc3339_to_epoch`.
+chrono      = { workspace = true }
 # A download's digest against its sums file or manifest: `hermetic::digest::digest_hex`.
 sha2        = { workspace = true, optional = true }
 # The literal census reads what the decoders compare (`hermetic::literals`).

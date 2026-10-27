@@ -6,4 +6,4 @@
 {"type":"approval_decided","sessionId":"session-b7256937-c5f1-451e-9730-20c8f3d30870","cwd":"/private/tmp/pixtuoid-capture/proj","outcome":"unavailable","callId":"toolu_DJ2HvoSyrOn_fiMW","toolName":"","_pid":92585,"_shim_ts_ms":1792980395153,"_pixtuoid_source":"dsh"}
 {"type":"tool_result","sessionId":"session-b7256937-c5f1-451e-9730-20c8f3d30870","cwd":"/private/tmp/pixtuoid-capture/proj","callId":"toolu_DJ2HvoSyrOn_fiMW","_pid":92585,"_shim_ts_ms":1792980395158,"_pixtuoid_source":"dsh"}
 {"type":"usage","sessionId":"session-b7256937-c5f1-451e-9730-20c8f3d30870","cwd":"/private/tmp/pixtuoid-capture/proj","inputTokens":12,"outputTokens":7,"_pid":92585,"_shim_ts_ms":1792980395171,"_pixtuoid_source":"dsh"}
-{"type":"session_end","sessionId":"session-b7256937-c5f1-451e-9730-20c8f3d30870","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":92585,"_shim_ts_ms":1792980395191,"_pixtuoid_source":"dsh"}
+{"type":"session_end","sessionId":"session-b7256937-c5f1-451e-9730-20c8f3d30870","cwd":"","_pid":92585,"_shim_ts_ms":1792980395191,"_pixtuoid_source":"dsh"}

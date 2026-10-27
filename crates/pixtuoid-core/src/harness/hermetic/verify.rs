@@ -687,6 +687,26 @@ fn judge(
         ));
         return Ok(None);
     }
+    // A server the turns left up ends their sessions only when it dies, outside
+    // the run.
+    if let Some(words) = p.server_stop
+        && let Some(how) = match &manifest.capture.server_stop {
+            None => Some("never ran".to_owned()),
+            Some(stop) if stop.exit != ProcessExit::Exited(0) => Some(stop.exit.to_string()),
+            Some(stop) if !stop.outlived.is_empty() => {
+                Some(format!("left pid {:?} running", stop.outlived))
+            }
+            Some(_) => None,
+        }
+    {
+        findings.push((
+            Label::Fail,
+            format!(
+                "`{}` {how}: the CLI's server outlived the run",
+                words.join(" ")
+            ),
+        ));
+    }
     if p.result_unseen && manifest.results_seen > 0 {
         findings.push((
             Label::Stale,
@@ -1211,10 +1231,10 @@ fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
 
 /// The scene a headless pixtuoid painted, and every drift breadcrumb it logged.
 /// The agent must be seen in the `shown` state its shape is about, and every
-/// agent, a child under its own label included, gone once the CLI has exited:
-/// every profiled CLI's clean exit ends its sprites, whether by an end event,
-/// a drain or its process's death, so one left standing is a session pixtuoid
-/// lost track of.
+/// agent, a child under its own label included, gone once the run's last step
+/// exited: every profiled CLI's clean exit, or its server's stop, ends its
+/// sprites, whether by an end event, a drain or a process's death, so one left
+/// standing is a session pixtuoid lost track of.
 fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
     let prefix = format!("{}\u{b7}", p.descriptor().label_prefix);
     let frames = rosters(scene, "agents");
@@ -1327,7 +1347,7 @@ fn canonical(p: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::{CaptureRecord, ProcessExit};
+    use crate::harness::{CaptureRecord, ProcessExit, ServerStop};
 
     const RECORDED_WORKSPACE: &str = "/private/tmp/pixtuoid-capture/proj";
 
@@ -1392,6 +1412,12 @@ mod tests {
                 give_up_reason: None,
                 incomplete: None,
                 second_turn: None,
+                server_stop: profile(source)
+                    .and_then(|p| p.server_stop)
+                    .map(|_| ServerStop {
+                        exit: ProcessExit::Exited(0),
+                        outlived: Vec::new(),
+                    }),
                 note_survived: true,
             },
             aimock: "test".into(),
@@ -2932,6 +2958,32 @@ mod tests {
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(has(&v, Label::Blocked, WHY), "{:?}", v.findings());
         assert!(!has(&v, Label::Fail, "uninstall"), "{:?}", v.findings());
+    }
+
+    /// A server stop fails the run on a non-zero exit or on a stamped pid it left
+    /// running, whatever else the run shows.
+    #[test]
+    fn a_run_whose_server_was_not_stopped_fails() {
+        let d = recorded("hermes", "tool-run", "agents=[] daemons=[]\n");
+        let outlived = |dir: &Path| {
+            has(
+                &verify(dir).expect("verify"),
+                Label::Fail,
+                "outlived the run",
+            )
+        };
+        assert!(!outlived(d.path()));
+        let stop = |exit, outlived| Some(ServerStop { exit, outlived });
+        for server_stop in [
+            None,
+            stop(ProcessExit::Exited(1), Vec::new()),
+            stop(ProcessExit::Exited(0), vec![4242]),
+        ] {
+            write_manifest(d.path(), "hermes", |m| {
+                m.capture.server_stop = server_stop.clone();
+            });
+            assert!(outlived(d.path()), "{server_stop:?}");
+        }
     }
 
     #[test]

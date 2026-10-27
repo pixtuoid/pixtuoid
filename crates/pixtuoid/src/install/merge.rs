@@ -17,10 +17,10 @@ pub(crate) fn parse_json_or_empty(content: &str) -> anyhow::Result<Value> {
     serde_json::from_str(content).context("not valid JSON — refusing to overwrite")
 }
 
-/// Bake `hook_path` (JSON-escaped) into a plugin `template` at `placeholder` —
-/// the shared renderer for the code-artifact targets (opencode `.ts`, openclaw
-/// `.js`). A JSON string is a JS string literal since ES2019's
-/// [JSON superset](https://github.com/tc39/proposal-json-superset).
+/// Bake `hook_path` (JSON-escaped) into a plugin `template` at `placeholder`. A
+/// JSON string is a string literal in JS since ES2019's
+/// [JSON superset](https://github.com/tc39/proposal-json-superset) and in Python
+/// ([escapes](https://docs.python.org/3/reference/lexical_analysis.html#escape-sequences)).
 pub(crate) fn bake_hook_path(
     template: &str,
     placeholder: &str,
@@ -31,6 +31,29 @@ pub(crate) fn bake_hook_path(
     let json = serde_json::to_string(hook_path)
         .with_context(|| format!("serializing the hook path into the {what} plugin"))?;
     Ok(template.replace(placeholder, &json))
+}
+
+/// A code artifact pixtuoid renders whole, which [`Self::sentinel`] marks as ours.
+pub(crate) struct SentinelPlugin {
+    pub(crate) sentinel: &'static str,
+    pub(crate) placeholder: &'static str,
+    /// What an uninstall leaves: loadable, inert, and no longer ours.
+    pub(crate) removed_stub: &'static str,
+    /// How an issue names it ("the omp extension"), and the CLI a reconnect names.
+    pub(crate) what: &'static str,
+    pub(crate) cli: &'static str,
+}
+
+impl SentinelPlugin {
+    /// `changed` only when the content is ours (carries the sentinel) — a foreign
+    /// file, the removed stub, or empty content is left untouched.
+    pub(crate) fn uninstall(&self, content: &str) -> MergeOutcome {
+        let ours = content.contains(self.sentinel);
+        MergeOutcome {
+            changed: ours,
+            content: if ours { self.removed_stub } else { content }.to_string(),
+        }
+    }
 }
 
 /// The shim path as `&str`. A non-UTF-8 path is rejected rather than

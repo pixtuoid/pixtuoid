@@ -1,5 +1,7 @@
 use super::*;
-use crate::install::target::{CLAUDE, CODEX, MergeOutcome, OPENCLAW, Primary, REASONIX, Target};
+use crate::install::target::{
+    CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
+};
 
 /// Claude's owned hooks file without its plugin registration or presence probe,
 /// for the tests of the primary-write path itself.
@@ -509,7 +511,12 @@ fn install_target_round_trips_every_registered_target() {
             with_fake_hosts(|_| {
                 for t in target::TARGETS {
                     let tmp = tempfile::TempDir::new().unwrap();
-                    let cfg = plugin_hooks_path(tmp.path());
+                    // The path production takes wherever a fake home redirects it:
+                    // hermes's CLI removes the plugin only from there.
+                    let cfg = (t.default_config_path)()
+                        .ok()
+                        .filter(|p| p.starts_with(std::env::temp_dir()))
+                        .unwrap_or_else(|| plugin_hooks_path(tmp.path()));
                     let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
 
                     let r = install_target_from(t, Some(cfg.clone()), hook()).unwrap();
@@ -1310,7 +1317,8 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
     let claude = dir.path().join("claude-config");
     let codex = dir.path().join("codex-home");
     let reasonix = dir.path().join("reasonix-home");
-    for home in [&claude, &codex, &reasonix] {
+    let hermes = dir.path().join("hermes-home");
+    for home in [&claude, &codex, &reasonix, &hermes] {
         std::fs::create_dir_all(home).unwrap();
     }
     temp_env::with_vars(
@@ -1319,6 +1327,7 @@ fn with_fake_hosts_failing<R>(fail: Option<&str>, f: impl FnOnce(&std::path::Pat
             ("CLAUDE_CONFIG_DIR", Some(claude.as_os_str())),
             ("CODEX_HOME", Some(codex.as_os_str())),
             ("REASONIX_HOME", Some(reasonix.as_os_str())),
+            ("HERMES_HOME", Some(hermes.as_os_str())),
             ("FAKE_HOST_FAIL", fail.map(std::ffi::OsStr::new)),
         ],
         || f(dir.path()),
@@ -1330,6 +1339,7 @@ const FAKE_HOSTS: &[(&str, &str, &str)] = &[
     ("claude", FAKE_CLAUDE_SH, FAKE_CLAUDE_CMD),
     ("codex", FAKE_CODEX_SH, FAKE_CODEX_CMD),
     ("reasonix", FAKE_REASONIX_SH, FAKE_REASONIX_CMD),
+    ("hermes", FAKE_HERMES_SH, FAKE_HERMES_CMD),
 ];
 
 const FAKE_CLAUDE_SH: &str = r#"#!/bin/sh
@@ -1413,6 +1423,44 @@ if \"%1 %2\"==\"plugin install\" (>\"%s%\" echo {\"version\":1,\"plugins\":[{\"n
 if \"%1 %2\"==\"plugin remove\" (>\"%s%\" echo {\"version\":1,\"plugins\":[]}& exit /b 0)\r
 exit /b 0\r
 ";
+
+/// Hermes records an enabled plugin in its config.yaml, which [`hermes_config`]
+/// reads; disable and remove both drop it, and remove deletes the plugin's dir.
+const FAKE_HERMES_SH: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+c="$HERMES_HOME/config.yaml"
+echo "hermes $*" >> "$d/calls.log"
+[ "hermes $*" = "${FAKE_HOST_FAIL-}" ] && exit 1
+case "$*" in
+"plugins enable pixtuoid") grep -qxF '  - pixtuoid' "$c" 2>/dev/null || printf '\nplugins:\n  enabled:\n  - pixtuoid\n' >> "$c" ;;
+"plugins disable pixtuoid"|"plugins remove pixtuoid") [ -f "$c" ] && grep -vxF -e 'plugins:' -e '  enabled:' -e '  - pixtuoid' "$c" > "$c.tmp"; [ -f "$c.tmp" ] && mv "$c.tmp" "$c" ;;
+esac
+[ "$*" = "plugins remove pixtuoid" ] && rm -rf "$HERMES_HOME/plugins/pixtuoid"
+exit 0
+"#;
+
+const FAKE_HERMES_CMD: &str = "@echo off\r
+set \"d=%~dp0\"\r
+set \"c=%HERMES_HOME%\\config.yaml\"\r
+>>\"%d%calls.log\" echo hermes %~1 %~2 %~3\r
+if defined FAKE_HOST_FAIL if \"hermes %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
+if \"%1 %2\"==\"plugins enable\" ((findstr /l /x /c:\"  - pixtuoid\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo.& >>\"%c%\" echo plugins:& >>\"%c%\" echo   enabled:& >>\"%c%\" echo   - pixtuoid))& exit /b 0)\r
+if \"%1 %2\"==\"plugins disable\" goto drop\r
+if \"%1 %2\"==\"plugins remove\" if exist \"%HERMES_HOME%\\plugins\\pixtuoid\" rmdir /s /q \"%HERMES_HOME%\\plugins\\pixtuoid\"\r
+if \"%1 %2\"==\"plugins remove\" goto drop\r
+exit /b 0\r
+:drop\r
+if not exist \"%c%\" exit /b 0\r
+findstr /l /v /x /c:\"plugins:\" /c:\"  enabled:\" /c:\"  - pixtuoid\" \"%c%\" >\"%c%.tmp\"\r
+move /y \"%c%.tmp\" \"%c%\" >nul\r
+exit /b 0\r
+";
+
+/// The config.yaml Hermes reads, under the fake's `HERMES_HOME`.
+fn hermes_config() -> PathBuf {
+    PathBuf::from(std::env::var_os("HERMES_HOME").expect("inside with_fake_hosts"))
+        .join("config.yaml")
+}
 
 /// The plugin-packages.json Reasonix keeps, under the fake's `REASONIX_HOME`.
 fn reasonix_packages() -> PathBuf {
@@ -1812,7 +1860,7 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
         let hooks = plugin_hooks_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
         install_target_from(&CODEX, Some(hooks.clone()), hook).unwrap();
-        let copy = CODEX.host.and_then(|h| h.copy.as_ref()).unwrap();
+        let copy = CODEX.host.and_then(target::HostRegistration::copy).unwrap();
         assert!(!(copy.stale)(&hooks).unwrap(), "connect copies the plugin");
 
         let cached =
@@ -1915,6 +1963,7 @@ fn a_host_state_file_absent_reads_unregistered_and_unparsable_errs() {
         for (t, state, unparsable) in [
             (&CODEX, codex_config(), "not = = toml [[["),
             (&REASONIX, reasonix_packages(), "{not json"),
+            (&HERMES, hermes_config(), "plugins: [unclosed\n"),
         ] {
             let is_registered = t.host.unwrap().is_registered;
             assert!(!is_registered().unwrap(), "{}: absent", t.name);
@@ -2240,6 +2289,145 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
     });
 }
 
+/// The plugin where hermes discovers it, under the fake's `HERMES_HOME`: the path
+/// a production connect takes.
+fn hermes_plugin() -> PathBuf {
+    (HERMES.default_config_path)().expect("inside with_fake_hosts")
+}
+
+fn hermes_calls(fake: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(fake.join("calls.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| l.starts_with("hermes "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoid_merged() {
+    with_fake_hosts(|fake| {
+        std::fs::write(
+            hermes_config(),
+            "model: gpt\nhooks:\n  on_session_start:\n    - command: notify\n    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n",
+        )
+        .unwrap();
+        let hook = Some(std::env::current_exe().unwrap());
+        let r = install_target_from(&HERMES, None, hook).unwrap();
+        assert!(matches!(r.outcome, InstallOutcome::Installed));
+
+        assert_eq!(hermes_calls(fake), ["hermes plugins enable pixtuoid"]);
+        let manifest =
+            std::fs::read_to_string(hermes_plugin().with_file_name("plugin.yaml")).unwrap();
+        assert!(manifest.starts_with("name: pixtuoid\n"), "{manifest}");
+        let config = std::fs::read_to_string(hermes_config()).unwrap();
+        assert!(
+            config.contains("notify")
+                && config.contains("model: gpt")
+                && !config.contains(SENTINEL_KEY),
+            "{config}"
+        );
+        assert!(has_hooks(&HERMES, None));
+        let v = verify_target(&HERMES, None);
+        assert!(v.is_sound(), "{:?}", v.issues);
+    });
+}
+
+#[test]
+fn hermes_reconnect_reloads_the_plugin_into_a_running_gateway() {
+    with_fake_hosts(|fake| {
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&HERMES, None, hook()).unwrap();
+        std::fs::remove_file(fake.join("calls.log")).unwrap();
+        let r = install_target_from(&HERMES, None, hook()).unwrap();
+        assert!(matches!(r.outcome, InstallOutcome::AlreadyUpToDate));
+        assert_eq!(
+            hermes_calls(fake),
+            [
+                "hermes plugins disable pixtuoid",
+                "hermes plugins enable pixtuoid"
+            ]
+        );
+        assert!((HERMES.host.unwrap().is_registered)().unwrap());
+    });
+}
+
+/// `remove` leaves a running gateway firing the plugin; `disable` unloads it.
+#[test]
+fn hermes_disconnect_disables_the_plugin_before_removing_it() {
+    with_fake_hosts(|fake| {
+        install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap();
+        std::fs::remove_file(fake.join("calls.log")).unwrap();
+        let u = uninstall_target(&HERMES, None).unwrap();
+        assert!(matches!(u.outcome, UninstallOutcome::Removed));
+        assert!(!hermes_plugin().parent().unwrap().exists());
+        assert!(!(HERMES.host.unwrap().is_registered)().unwrap());
+        assert_eq!(
+            hermes_calls(fake),
+            [
+                "hermes plugins disable pixtuoid",
+                "hermes plugins remove pixtuoid"
+            ]
+        );
+
+        let u2 = uninstall_target(&HERMES, None).unwrap();
+        assert!(matches!(u2.outcome, UninstallOutcome::NothingToRemove));
+        assert_eq!(
+            hermes_calls(fake).len(),
+            2,
+            "nothing registered starts no CLI"
+        );
+    });
+}
+
+#[test]
+fn hermes_disconnect_without_hermes_on_path_leaves_a_registered_plugin_inert() {
+    with_fake_hosts(|fake| {
+        install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap();
+        std::fs::remove_file(fake.join(if cfg!(windows) {
+            "hermes.cmd"
+        } else {
+            "hermes"
+        }))
+        .unwrap();
+        let u = temp_env::with_var("PATH", Some(fake), || {
+            uninstall_target(&HERMES, None).unwrap()
+        });
+        assert!(u.plugin_left_registered.is_some());
+        assert_eq!(
+            std::fs::read_to_string(hermes_plugin()).unwrap(),
+            crate::install::hermes::REMOVED_STUB,
+            "the enabled plugin stays loadable and forwards nothing"
+        );
+    });
+}
+
+#[test]
+fn hermes_connect_fails_when_enabling_fails_and_leaves_the_plugin_dir_as_it_found_it() {
+    for prior in [None, Some(crate::install::hermes::REMOVED_STUB)] {
+        with_fake_hosts_failing(Some("hermes plugins enable pixtuoid"), |_| {
+            let plugin = hermes_plugin();
+            if let Some(prior) = prior {
+                std::fs::create_dir_all(plugin.parent().unwrap()).unwrap();
+                std::fs::write(&plugin, prior).unwrap();
+            }
+            let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+            let e = install_target_from(&HERMES, None, hook).unwrap_err();
+            assert!(!format!("{e:#}").contains("stay in place"), "{e:#}");
+            assert!(!has_hooks(&HERMES, None));
+            assert!(!plugin.with_file_name("plugin.yaml").exists());
+            assert_eq!(std::fs::read_to_string(&plugin).ok().as_deref(), prior);
+            if prior.is_none() {
+                assert!(!plugin.parent().unwrap().exists());
+            }
+        });
+    }
+}
+
+fn rewritten_paths(done: &Converged) -> Vec<PathBuf> {
+    done.rewritten.iter().map(|(p, _)| p.clone()).collect()
+}
+
 /// Redirects every CLI state resolver an owned file renders under (OpenClaw's plugin
 /// dir, dsh's plugin file) at temp dirs for `f`, so no test writes a real plugin.
 fn with_owned_homes<R>(f: impl FnOnce() -> R) -> R {
@@ -2423,7 +2611,12 @@ fn converge_rewrites_only_stale_owned_files_with_the_installed_shim() {
                 let rewritten = temp_env::with_var(io::HOOK_OVERRIDE_ENV, Some(&other), || {
                     converge(t, Some(cfg.clone())).unwrap().rewritten
                 });
-                assert_eq!(rewritten, std::slice::from_ref(&entry), "{}", t.name);
+                assert_eq!(
+                    rewritten,
+                    [(entry.clone(), format!("{installed}\n"))],
+                    "{}: it keeps what it replaced",
+                    t.name
+                );
                 assert_eq!(io::read_config(&entry).unwrap(), installed, "{}", t.name);
                 assert_eq!(
                     host_calls(),
@@ -2470,7 +2663,7 @@ fn converge_never_re_enables_an_openclaw_plugin_the_user_disabled() {
         .unwrap();
 
         assert_eq!(
-            converge(&OPENCLAW, Some(cfg.clone())).unwrap().rewritten,
+            rewritten_paths(&converge(&OPENCLAW, Some(cfg.clone())).unwrap()),
             [entry]
         );
         assert_eq!(io::read_config(&cfg).unwrap(), disabled);
@@ -2503,7 +2696,7 @@ fn converge_skips_a_locked_file_and_still_reports_the_rest() {
 
         let _held = io::lock_config(&locked).unwrap();
         let done = converge(&OPENCLAW, Some(cfg.clone())).unwrap();
-        assert_eq!(done.rewritten, [entry]);
+        assert_eq!(rewritten_paths(&done), [entry]);
         assert_eq!(
             done.failed.iter().map(|(p, _)| p).collect::<Vec<_>>(),
             [&locked]
@@ -2616,7 +2809,7 @@ fn converge_heals_a_missing_sibling_but_not_a_missing_entry() {
 
         std::fs::remove_file(sibling).unwrap();
         assert_eq!(
-            converge(&OPENCLAW, Some(cfg.clone())).unwrap().rewritten,
+            rewritten_paths(&converge(&OPENCLAW, Some(cfg.clone())).unwrap()),
             std::slice::from_ref(sibling)
         );
         assert!(sibling.exists());
@@ -2647,7 +2840,7 @@ fn converge_stamps_a_pre_stamp_claude_hooks_file() {
     .unwrap();
 
     assert_eq!(
-        converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap().rewritten,
+        rewritten_paths(&converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap()),
         std::slice::from_ref(&cfg)
     );
     let stamped = (CLAUDE.hook_command)(std::path::Path::new(io::HOOK_BIN), false).unwrap();
@@ -2677,7 +2870,7 @@ fn converge_stamps_a_pre_source_windows_claude_hooks_file() {
     .unwrap();
 
     assert_eq!(
-        converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap().rewritten,
+        rewritten_paths(&converge(&CLAUDE_FILE, Some(cfg.clone())).unwrap()),
         std::slice::from_ref(&cfg)
     );
     let doc: serde_json::Value = serde_json::from_str(&io::read_config(&cfg).unwrap()).unwrap();

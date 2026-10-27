@@ -7,7 +7,7 @@ use crate::install::SENTINEL_KEY;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::target::{
-    HostRegistration, LegacyConfig, MergeOutcome, PluginCopy, Unregistered,
+    HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
 };
 use crate::install::verify::{SchemaParse, ShimRef};
 
@@ -51,10 +51,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    copy: Some(PluginCopy {
+    pickup: Some(Pickup::Recopy(PluginCopy {
         stale: copy_is_stale,
         refresh: add_plugin,
-    }),
+    })),
     legacy: Some(LegacyConfig {
         path: config_toml,
         strip: merge_uninstall,
@@ -221,7 +221,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     // The table `marketplace_moved_from` reads the source from.
     let listed = doc.get(MARKETPLACES).and_then(|m| m.get(NAME)).is_some();
     if !installed && !listed {
-        host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+        host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
         return Ok(Unregistered::Absent);
     }
     if CLI.locate().is_none() {
@@ -239,7 +239,7 @@ fn unregister(config: &Path) -> Result<Unregistered> {
     if listed {
         remove_marketplace()?;
     }
-    host_plugin::remove_if_ours(root, &marketplace_manifest(root))?;
+    host_plugin::remove_if_ours(root, &marketplace_manifest(root), host_plugin::names_us)?;
     Ok(Unregistered::Removed)
 }
 
