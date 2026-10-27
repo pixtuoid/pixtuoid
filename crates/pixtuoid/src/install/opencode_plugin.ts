@@ -114,7 +114,7 @@ export default {
     // Each session's open execution, by its start's durable seq. A settle
     // carries its own seq, so it is stamped with its start's: the turn it
     // ends. One execution runs per session at a time
-    // (`packages/core/src/session/run-coordinator.ts:6` at v2.2.0), and the
+    // (`packages/core/src/session/run-coordinator.ts:6` at v2.1.4), and the
     // bus delivers in order, so a session's next settle is its start's. A
     // settle whose start this process never saw goes unstamped.
     const openTurns = new Map<Forwarded["data"]["sessionID"], number>()
