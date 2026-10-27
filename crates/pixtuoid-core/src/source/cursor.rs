@@ -41,7 +41,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -130,16 +130,12 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
-                tool_use_id: obj
-                    .get("tool_use_id")
-                    .and_then(|s| s.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(String::from),
+                tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
             },
         ]),
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
-        "stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
+        "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,

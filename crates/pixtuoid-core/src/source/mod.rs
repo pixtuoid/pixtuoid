@@ -114,16 +114,18 @@ pub enum AgentEvent {
         /// The completing tool call's id (pairs with its `ToolUseStart`).
         tool_use_id: Option<String>,
     },
-    /// A tool call is about to run, seen by a channel that does not own the
-    /// agent's items (codex's `PreToolUse`): no item, only a call a request
-    /// can bind to.
+    /// A call about to run, named by its tool: a pending call a request can
+    /// bind by that name, with no item of its own (codex's `PreToolUse`; CC's
+    /// and kimi's beside their start).
     ToolUsePending {
         /// The acting agent.
         agent_id: AgentId,
         /// The call's id.
         tool_use_id: String,
-        /// The tool's wire name, the key a request names it by.
-        tool_name: String,
+        /// The tool's wire name, the key a request names it by; `None` when
+        /// the wire carries none, which binds by no name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
         /// The turn the call runs in, when the wire names it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
@@ -257,6 +259,21 @@ pub enum AgentEvent {
     },
 }
 
+/// What a [`AgentEvent::UserActionRequest`] names on the wire, each `None`
+/// where it names nothing.
+///
+/// `#[non_exhaustive]`: keeps adding a key non-breaking.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RequestKeys {
+    /// The gated call's id.
+    pub call: Option<String>,
+    /// The gated tool's wire name.
+    pub tool_name: Option<String>,
+    /// The turn the request blocks.
+    pub turn: Option<TurnKey>,
+}
+
 /// What answered an agent's request: one call, or the whole turn it blocked.
 ///
 /// `#[non_exhaustive]`: keeps adding a resolution non-breaking.
@@ -315,10 +332,44 @@ impl AgentEvent {
         }
     }
 
-    /// A turn's end. THE constructor every decoder mints one through, so a
-    /// field it gains lands in ONE place.
-    pub(crate) fn turn_end(agent_id: AgentId, turn: Option<TurnKey>) -> Self {
-        AgentEvent::TurnEnd { agent_id, turn }
+    /// A turn end naming no turn: THE constructor every decoder whose wire
+    /// names none mints one through, so a field it gains lands here and in
+    /// [`Self::keyed_turn_end`], never at a decoder.
+    pub(crate) fn turn_end(agent_id: AgentId) -> Self {
+        AgentEvent::TurnEnd {
+            agent_id,
+            turn: None,
+        }
+    }
+
+    /// A bracket stream's turn end, naming its turn.
+    pub(crate) fn keyed_turn_end(agent_id: AgentId, turn: TurnKey) -> Self {
+        AgentEvent::TurnEnd {
+            agent_id,
+            turn: Some(turn),
+        }
+    }
+
+    /// A request for the user's action. THE constructor every site mints one
+    /// through, so a field it gains lands in ONE place: a key in
+    /// [`RequestKeys`], which a keyless site leaves at its default.
+    pub fn user_action_request(
+        agent_id: AgentId,
+        reason: Option<String>,
+        keys: RequestKeys,
+    ) -> Self {
+        let RequestKeys {
+            call,
+            tool_name,
+            turn,
+        } = keys;
+        AgentEvent::UserActionRequest {
+            agent_id,
+            reason,
+            tool_use_id: call,
+            tool_name,
+            turn,
+        }
     }
 
     /// The agent id this event concerns (every variant carries one).

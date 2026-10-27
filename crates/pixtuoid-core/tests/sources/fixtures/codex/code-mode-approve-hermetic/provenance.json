@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 100
+    "blanked": 102
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codex/code-mode-approve.json",

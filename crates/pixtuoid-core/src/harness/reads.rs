@@ -275,19 +275,15 @@ pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
     ("grok", "timestamp", Spelling::EpochSecs),
 ];
 
-/// The ids that join a hook to its transcript line.
-const MERGE_IDS: [&str; 2] = ["turn_id", "call_id"];
-
-/// Whether `key` under `at` is one the strip keeps though no decoder may read
-/// it: the merge test (`tests/sources/merge.rs`) orders a session's two streams
-/// by a `transcript`'s write stamp and joins them on its call and turn ids.
-pub(crate) fn is_merge_key(source: &str, transcript: bool, at: &str, key: &str) -> bool {
-    MERGE_IDS.contains(&key)
-        || transcript
-            && at.is_empty()
-            && WRITE_STAMPS
-                .iter()
-                .any(|&(s, k, _)| s == source && k == key)
+/// Whether `key` under `at` is a `transcript`'s write stamp, which the strip
+/// keeps though no decoder reads it: the merge test (`tests/sources/merge.rs`)
+/// orders a session's two streams by it.
+pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str) -> bool {
+    transcript
+        && at.is_empty()
+        && WRITE_STAMPS
+            .iter()
+            .any(|&(s, k, _)| s == source && k == key)
 }
 
 /// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
@@ -348,7 +344,7 @@ fn probe(
         Value::Object(m) => m
             .keys()
             .filter(|k| {
-                !(stamped && is_shim_stamp(at, k)) && !is_merge_key(source, !stamped, at, k)
+                !(stamped && is_shim_stamp(at, k)) && !is_write_stamp(source, !stamped, at, k)
             })
             .map(|k| child_pointer(at, k))
             .collect(),
@@ -523,34 +519,24 @@ mod tests {
     }
 
     #[test]
-    fn the_merge_keys_survive_the_strip_where_their_line_does() {
+    fn a_transcripts_write_stamp_survives_the_strip_where_its_line_does() {
         const STAMP: &str = "2026-10-27T04:47:02.517Z";
         let (_d, rollout) = stripped_copy_of(&transcript_in(
             "codex",
             &sources_root().join("fixtures/codex/tool-run-hermetic"),
         ));
         let (_e, hooks) = stripped_copy("codex", "tool-run-hermetic", "hook-payloads.jsonl");
-        let ids = |o: &mut serde_json::Map<String, Value>| {
-            o.insert("turn_id".into(), "turn-1".into());
-            o.insert("call_id".into(), "call-1".into());
-        };
         for file in [&rollout, &hooks] {
             let (_, mut lines) = parsed_lines(file).expect("read").expect("json");
             for line in &mut lines {
-                let Some(o) = line.as_object_mut().filter(|o| !o.is_empty()) else {
-                    continue;
-                };
-                o.insert("timestamp".into(), STAMP.into());
-                ids(o);
-                if let Some(payload) = o.get_mut("payload").and_then(Value::as_object_mut) {
-                    ids(payload);
+                if let Some(o) = line.as_object_mut().filter(|o| !o.is_empty()) {
+                    o.insert("timestamp".into(), STAMP.into());
                 }
             }
             let text: Vec<String> = lines.iter().map(Value::to_string).collect();
             std::fs::write(file, text.join("\n") + "\n").expect("write");
         }
         strip_unread("codex", &[rollout.clone(), hooks.clone()]).expect("strip");
-        let has_ids = |v: &Value| v["turn_id"] == "turn-1" && v["call_id"] == "call-1";
         let (_, rollout) = parsed_lines(&rollout).expect("read").expect("json");
         let kept: Vec<&Value> = rollout
             .iter()
@@ -559,16 +545,9 @@ mod tests {
         assert!(!kept.is_empty(), "a read line survives");
         for line in kept {
             assert_eq!(line["timestamp"], STAMP, "{line}");
-            assert!(has_ids(line), "{line}");
-            let payload = &line["payload"];
-            assert!(
-                payload.as_object().is_none_or(serde_json::Map::is_empty) || has_ids(payload),
-                "{line}"
-            );
         }
         let (_, hooks) = parsed_lines(&hooks).expect("read").expect("json");
         for line in &hooks {
-            assert!(has_ids(line), "{line}");
             assert_eq!(
                 line["timestamp"], "",
                 "a hook's own stamp is no transcript's write stamp: {line}"

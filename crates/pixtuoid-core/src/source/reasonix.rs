@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The Reasonix CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "reasonix";
@@ -194,7 +194,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         }
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,
             // Auto Guard (`internal/session/control/approval_orchestration.go:311`,
@@ -202,13 +202,11 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 register(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                    tool_name: None,
-                    turn: None,
-                },
+                    msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
         // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
@@ -240,13 +238,11 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             };
             Ok(vec![
                 register(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                    tool_name: None,
-                    turn: None,
-                },
+                    Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {

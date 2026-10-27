@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -204,17 +204,18 @@ pub(crate) fn decode_copilot_line(
                 // persists in the slot + egresses on the headless summary.
                 .map(|k| ellipsize(&format!("permission: {k}"), MAX_DECODED_FIELD_CHARS))
                 .unwrap_or_else(|| "permission".to_string());
-            vec![AgentEvent::UserActionRequest {
-                agent_id: acting,
-                reason: Some(reason),
-                // The gated call (#951), so its own end resolves the wait.
-                tool_use_id: request
-                    .and_then(|p| str_at(p, "toolCallId"))
-                    .filter(|id| !id.is_empty())
-                    .map(str::to_owned),
-                tool_name: None,
-                turn: None,
-            }]
+            vec![AgentEvent::user_action_request(
+                acting,
+                Some(reason),
+                RequestKeys {
+                    // The gated call (#951), so its own end resolves the wait.
+                    call: request
+                        .and_then(|p| str_at(p, "toolCallId"))
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_owned),
+                    ..RequestKeys::default()
+                },
+            )]
         }
         // A refusal ends the gated call: a denial's `tool.execution_complete`
         // follows, a cancel's (Esc at the prompt) never does, and the second
@@ -271,7 +272,7 @@ pub(crate) fn decode_copilot_line(
         // Only the root's ends its turn: neither listener of it in 1.0.98's
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
-        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root, None)],
+        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
         // Copilot's ONLY usage wire is this shutdown summary — one final delta
         // as the session ends. `tokenDetails.input` already EXCLUDES cache
         // reads, so fresh = input + cache_write + output. `cache_write` is an

@@ -19,7 +19,7 @@ expression: events
     tool_use_id: call_a8ykiB4u2gUFUu7e
     detail:
       Generic:
-        display: "exec: const read = await tools.exec_command({ …"
+        display: "exec: exec_command"
 - ToolUseEnd:
     agent_id: 16410032885730855037
     tool_use_id: call_a8ykiB4u2gUFUu7e

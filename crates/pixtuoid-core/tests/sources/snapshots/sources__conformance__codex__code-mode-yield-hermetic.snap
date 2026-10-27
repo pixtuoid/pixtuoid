@@ -19,7 +19,7 @@ expression: events
     tool_use_id: call_Os0emwLWapdk-nqH
     detail:
       Generic:
-        display: "exec: text(\"HERMETIC-YIELDED\")"
+        display: exec
 - ToolUseEnd:
     agent_id: 9157567666502660018
     tool_use_id: call_Os0emwLWapdk-nqH

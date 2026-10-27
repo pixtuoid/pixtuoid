@@ -568,14 +568,12 @@ mod tests {
                 agent_id: id,
                 tool_use_id: None,
             },
-            AgentEvent::turn_end(id, None),
-            AgentEvent::UserActionRequest {
-                agent_id: id,
-                reason: Some("x".into()),
-                tool_use_id: None,
-                tool_name: None,
-                turn: None,
-            },
+            AgentEvent::turn_end(id),
+            AgentEvent::user_action_request(
+                id,
+                Some("x".into()),
+                crate::source::RequestKeys::default(),
+            ),
             AgentEvent::SessionEnd {
                 agent_id: id,
                 as_child: false,

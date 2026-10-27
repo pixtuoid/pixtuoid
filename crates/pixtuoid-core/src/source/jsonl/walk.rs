@@ -295,10 +295,10 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
             tail.as_deref().map(decoders.activity_recency),
             Some(super::TailActivity::SidecarOnly)
         );
-        // Judged on the window `scan_pending_tasks` reads, wide enough to hold a
-        // tool result's whole line.
+        // Judged on the window `rescan_skipped_tail` reads, wide enough to hold
+        // a tool result's whole line.
         let revives = sight != Some(Sight::Ended)
-            || read_tail(path, TASK_SCAN_BYTES)
+            || read_tail(path, SKIP_RESCAN_BYTES)
                 .await
                 .is_some_and(|t| tail_shows_activity(&t, path, source, decoders.decode_line));
         if sight != Some(Sight::Claimed) && !metadata_only && revives {
@@ -543,27 +543,28 @@ pub(super) async fn check_session_ended(path: &Path, checker: SessionEndChecker)
     }
 }
 
-/// How far back from EOF the oversized-skip Task scan looks.
-pub(super) const TASK_SCAN_BYTES: u64 = 256 * 1024;
+/// How far back from EOF an oversized skip is rescanned for what it buried.
+pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 
-/// #222: tail-scan an oversized skipped span for IN-FLIGHT Task dispatches and
-/// re-emit exactly their `ToolUseStart`s. Mid-attach to a delegating session
-/// whose backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight
-/// dispatch line, leaving the reducer's `tasks_in_flight` empty: the parent never
-/// shows Delegating and the b1 completion cascade never arms. When the window's
-/// last turn bracket is a keyed end, it is re-emitted too: through the ledger's
-/// in-order rule it closes whatever turn the skip buried the end of.
+/// Tail-scan an oversized skipped span and re-emit what the skip buried: its
+/// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), and its last turn bracket
+/// when that is a keyed end. Mid-attach to a delegating session whose backlog
+/// exceeds `MAX_PENDING_BYTES` never decodes the in-flight dispatch line,
+/// leaving the reducer's `tasks_in_flight` empty: the parent never shows
+/// Delegating and the b1 completion cascade never arms. A re-emitted end closes,
+/// through the turn ledger's in-order rule, whatever turn the skip buried the
+/// end of.
 ///
 /// Tail-window geometry guarantees no false leak: a completion is always LATER
 /// in the file than its start, so any windowed start's completion is also in
-/// the window. A dispatch buried deeper than `TASK_SCAN_BYTES` keeps the
+/// the window. A dispatch buried deeper than [`SKIP_RESCAN_BYTES`] keeps the
 /// pre-#222 skip behavior — bounded, documented residual.
 ///
 /// Everything else `decode_line` emits is DISCARDED: this is a seeding scan,
-/// not a replay — replaying 256 KiB of activity would animate a burst of stale
-/// tools.
+/// not a replay — replaying the window's activity would animate a burst of
+/// stale tools.
 async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
-    let Some(buf) = read_tail(path, TASK_SCAN_BYTES).await else {
+    let Some(buf) = read_tail(path, SKIP_RESCAN_BYTES).await else {
         return;
     };
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());

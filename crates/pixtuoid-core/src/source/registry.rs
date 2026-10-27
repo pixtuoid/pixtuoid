@@ -579,8 +579,10 @@ const CODEX: SourceDescriptor = SourceDescriptor {
         }),
         hook: Some(HookDecoding::Shared {
             tool_id_key: ToolIdKey::ToolUse,
-            // A child's events change their SUBJECT, and a root's `spawn_agent`
-            // is a Task: neither is expressible in the shared arms.
+            // The tool, prompt and Stop hooks carry only the approval's
+            // signals (the rollout owns the turns and items), and
+            // SubagentStart/Stop change their SUBJECT to the child: neither is
+            // the shared arms'.
             extend: codex::decode_codex_hook_custom,
         }),
         caps: SourceCaps {

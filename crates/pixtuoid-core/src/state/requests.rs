@@ -81,8 +81,8 @@ struct Member {
 
 #[derive(Debug)]
 struct ActionRequest {
-    /// The calls it holds on. A member's end means the prompt was answered; a
-    /// parallel call's end is no member's, so it cannot.
+    /// The calls it holds on. The last member's end means the prompt was
+    /// answered; a parallel call's end is no member's, so it cannot.
     members: Vec<Member>,
     /// A raise named its call on the wire.
     named: bool,
@@ -137,10 +137,16 @@ pub(crate) struct ActionRequests {
 impl ActionRequests {
     /// `id` raised a request. `requires_action` is whether one already
     /// stands: a second raise keeps the first one's members and identity, and
-    /// adds only the calls its own key binds.
+    /// adds only the calls its own key binds. A raise for another turn replaces
+    /// it: a thread runs one turn at a time, so the standing request's turn is
+    /// over, and its lagging ends must not answer this one.
     pub(crate) fn raise(&mut self, id: AgentId, raise: Raise<'_>, requires_action: bool) {
         let pending = self.pending.get(&id).map_or(&[][..], Vec::as_slice);
-        if !requires_action || !self.open.contains_key(&id) {
+        let standing = self.open.get(&id).filter(|req| {
+            requires_action
+                && !matches!((&req.turn, raise.turn), (Some(standing), Some(new)) if standing != new)
+        });
+        if standing.is_none() {
             let mut fresh = ActionRequest {
                 members: Vec::new(),
                 named: false,
@@ -757,6 +763,23 @@ mod tests {
             !ActionRequests::default().resolves(&id(), Seen::End(turn_end(None)), HOOK),
             "no request, nothing to answer"
         );
+    }
+
+    #[test]
+    fn a_raise_for_another_turn_replaces_the_standing_request() {
+        let (n, m) = (turn("n"), turn("m"));
+        let scoped = |call, t| Raise {
+            turn: Some(t),
+            ..raise(Some(call), None, HOOK)
+        };
+        let mut reqs = ActionRequests::default();
+        reqs.raise(id(), scoped("xn", &n), false);
+        reqs.raise(id(), scoped("xn2", &n), true);
+        assert_eq!(members(&reqs), ["xn", "xn2"], "the same turn's raise joins");
+        reqs.raise(id(), scoped("xm", &m), true);
+        assert_eq!(members(&reqs), ["xm"]);
+        assert!(!reqs.resolves(&id(), Seen::End(turn_end(Some(&n))), JSONL));
+        assert!(reqs.resolves(&id(), Seen::End(turn_end(Some(&m))), JSONL));
     }
 
     #[test]

@@ -19,7 +19,7 @@ expression: events
     tool_use_id: call_jK1dlTMwd6hQ-_uu
     detail:
       Generic:
-        display: "exec: text(await tools.exec_command({ cmd: \"rm…"
+        display: "exec: exec_command"
 - ToolUseEnd:
     agent_id: 4171115577320907914
     tool_use_id: call_jK1dlTMwd6hQ-_uu

@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -706,13 +706,14 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             detail: Some(omp_tool_detail(name, b.get("arguments"))),
                         });
                         if name == TOOL_ASK {
-                            out.push(AgentEvent::UserActionRequest {
-                                agent_id: acting,
-                                reason: Some(omp_ask_reason(b.get("arguments"))),
-                                tool_use_id: Some(id.to_string()),
-                                tool_name: None,
-                                turn: None,
-                            });
+                            out.push(AgentEvent::user_action_request(
+                                acting,
+                                Some(omp_ask_reason(b.get("arguments"))),
+                                RequestKeys {
+                                    call: Some(id.to_string()),
+                                    ..RequestKeys::default()
+                                },
+                            ));
                         }
                     }
                     out
@@ -914,13 +915,14 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             };
             let tool = obj.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
             let event = if ty == HOOK_APPROVAL_REQUESTED {
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(omp_approval_reason(obj, tool)),
-                    tool_use_id: Some(tool_call_id.to_string()),
-                    tool_name: None,
-                    turn: None,
-                }
+                    Some(omp_approval_reason(obj, tool)),
+                    RequestKeys {
+                        call: Some(tool_call_id.to_string()),
+                        ..RequestKeys::default()
+                    },
+                )
             } else if obj.get("approved").and_then(|a| a.as_bool()) == Some(true) {
                 // The resume. copilot's approve-emits-nothing shape doesn't fit
                 // omp: the transcript wrote this call BEFORE the request, so

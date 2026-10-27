@@ -1780,14 +1780,12 @@ mod tests {
                     detail: None,
                 },
                 end(read_ends_as),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some("approval".into()),
-                    tool_use_id: None,
-                    tool_name: None,
-                    turn: None,
-                },
-                AgentEvent::turn_end(agent_id, None),
+                    Some("approval".into()),
+                    crate::source::RequestKeys::default(),
+                ),
+                AgentEvent::turn_end(agent_id),
             ]
         };
         let judged = |read_ends_as| {
@@ -1821,14 +1819,12 @@ mod tests {
             agent_id,
             tool_use_id: None,
         };
-        let wait = AgentEvent::UserActionRequest {
+        let wait = AgentEvent::user_action_request(
             agent_id,
-            reason: Some("approval".into()),
-            tool_use_id: None,
-            tool_name: None,
-            turn: None,
-        };
-        let turn = AgentEvent::turn_end(agent_id, None);
+            Some("approval".into()),
+            crate::source::RequestKeys::default(),
+        );
+        let turn = AgentEvent::turn_end(agent_id);
         let judged = |events: Vec<AgentEvent>| {
             let mut findings = Vec::new();
             permission(&events, &[Reach::RequiresAction], true, &mut findings);
@@ -2137,7 +2133,7 @@ mod tests {
             vec![]
         );
         let mut turn_ended = run.clone();
-        turn_ended[6] = AgentEvent::turn_end(parent, None);
+        turn_ended[6] = AgentEvent::turn_end(parent);
         assert_eq!(
             subagent_findings(&turn_ended, ChildEndInference::AnyTaskEnd),
             vec![],
@@ -2229,7 +2225,7 @@ mod tests {
                 agent_id: parent,
                 tool_use_id: Some("call_1".into()),
             },
-            AgentEvent::turn_end(parent, None),
+            AgentEvent::turn_end(parent),
         ];
         let judged = |events: &[AgentEvent], reaches: &[(AgentId, Reach)], inference| {
             let mut findings = Vec::new();
@@ -2277,7 +2273,7 @@ mod tests {
             tool_use_id: Some(id.into()),
             detail: Some(detail),
         };
-        let turn_end = |agent_id| AgentEvent::turn_end(agent_id, None);
+        let turn_end = AgentEvent::turn_end;
         let session = |agent_id, id: &str, parent_id| AgentEvent::SessionStart {
             agent_id,
             source: "opencode".into(),
@@ -2734,7 +2730,7 @@ mod tests {
             findings.into_iter().map(|f| f.1).collect::<Vec<_>>()
         };
         assert_eq!(
-            judged(&[start.clone(), AgentEvent::turn_end(agent_id, None)]),
+            judged(&[start.clone(), AgentEvent::turn_end(agent_id)]),
             Vec::<String>::new()
         );
         assert_eq!(judged(&[start]), ["the tool never ended"]);
@@ -3087,7 +3083,7 @@ mod tests {
             turn_ended(&[end], &mut findings);
             findings
         };
-        assert_eq!(judged(AgentEvent::turn_end(agent_id, None)), vec![]);
+        assert_eq!(judged(AgentEvent::turn_end(agent_id)), vec![]);
         for tool_use_id in [None, Some("call".to_owned())] {
             assert!(
                 judged(AgentEvent::ToolUseEnd {

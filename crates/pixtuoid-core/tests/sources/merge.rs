@@ -78,11 +78,12 @@ fn text<'v>(v: &'v Value, pointer: &str) -> Option<&'v str> {
 }
 
 /// A codex approval request: its hook line, its turn, and the call it gates,
-/// which the wire names by the same turn's `PreToolUse` of the same command.
+/// the one `PreToolUse` before it of its turn and tool. The strip keeps no
+/// input, so turn and tool name are the whole join, and an ambiguous one fails.
 struct Request {
     line: usize,
     turn: String,
-    call: Option<String>,
+    call: String,
 }
 
 fn codex_requests(run: &Run) -> Vec<Request> {
@@ -94,41 +95,50 @@ fn codex_requests(run: &Run) -> Vec<Request> {
         .filter(|(_, v)| event(v) == "PermissionRequest")
         .map(|(line, raise)| {
             let turn = text(raise, "/turn_id").expect("a request names its turn");
-            let command = text(raise, "/tool_input/command");
-            let call = hooks[..line]
+            let tool = text(raise, "/tool_name");
+            let pre_uses: Vec<&Value> = hooks[..line]
                 .iter()
-                .rev()
-                .find(|v| {
+                .filter(|v| {
                     event(v) == "PreToolUse"
                         && text(v, "/turn_id") == Some(turn)
-                        && text(v, "/tool_input/command") == command
+                        && text(v, "/tool_name") == tool
                 })
-                .and_then(|v| text(v, "/tool_use_id"))
-                .map(str::to_owned);
+                .collect();
+            let [pre_use] = pre_uses[..] else {
+                panic!(
+                    "{}: the request at hook line {line} joins {} PreToolUses of {tool:?} in its turn",
+                    run.name,
+                    pre_uses.len()
+                );
+            };
             Request {
                 line,
                 turn: turn.to_owned(),
-                call,
+                call: text(pre_use, "/tool_use_id")
+                    .expect("a PreToolUse names its call")
+                    .to_owned(),
             }
         })
         .collect()
 }
 
 /// Whether `step`'s line is one the spec resolves `req` by: its call's end
-/// on either channel, its turn's Stop or end, or the session's.
+/// on either channel, its turn's Stop or end, the session's, or another
+/// turn's request, which replaces it.
 fn resolves(run: &Run, req: &Request, step: &Step) -> bool {
     let v = run.line(step);
-    let call = req.call.as_deref();
+    let call = req.call.as_str();
     match step.transport {
         Transport::Hook => match text(v, "/hook_event_name") {
-            Some("PostToolUse") => call.is_some() && text(v, "/tool_use_id") == call,
+            Some("PostToolUse") => text(v, "/tool_use_id") == Some(call),
             Some("Stop") => text(v, "/turn_id") == Some(req.turn.as_str()),
+            Some("PermissionRequest") => text(v, "/turn_id") != Some(req.turn.as_str()),
             Some("SessionEnd") => true,
             _ => false,
         },
         _ => match text(v, "/payload/type") {
             Some("function_call_output" | "custom_tool_call_output") => {
-                call.is_some() && text(v, "/payload/call_id") == call
+                text(v, "/payload/call_id") == Some(call)
             }
             Some("task_complete" | "turn_aborted") => {
                 text(v, "/payload/turn_id") == Some(req.turn.as_str())
@@ -179,12 +189,19 @@ fn a_request_stands_until_its_resolution(run: &Run) {
 }
 
 /// A top-level request is resolved once its call's rollout output applied,
-/// in every order.
+/// in every order, unless a later request already stands in its place.
 fn a_top_level_request_resolves_by_its_calls_output(run: &Run) {
     let requests = codex_requests(run);
     run.each(|m| {
+        let raised = |line: usize| {
+            m.steps.iter().position(|s| {
+                s.transport == Transport::Hook
+                    && s.line == line
+                    && matches!(s.event, AgentEvent::UserActionRequest { .. })
+            })
+        };
         for req in &requests {
-            let call = req.call.as_deref().expect("a top-level request's call");
+            let call = req.call.as_str();
             let output = |s: &Step| {
                 s.transport == Transport::Jsonl
                     && matches!(
@@ -198,6 +215,14 @@ fn a_top_level_request_resolves_by_its_calls_output(run: &Run) {
                 .iter()
                 .rposition(output)
                 .unwrap_or_else(|| panic!("{}: no rollout output of {call}", run.name));
+            let replaced = requests
+                .iter()
+                .filter(|later| later.line > req.line)
+                .filter_map(|later| raised(later.line))
+                .any(|at| at < last);
+            if replaced {
+                continue;
+            }
             assert!(
                 !requires_action(&m.steps[last]),
                 "{}: the request of hook line {} still stood once {call}'s output applied",
@@ -264,6 +289,15 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
 #[test]
 fn a_codex_request_refused_in_the_tui_stands_until_its_resolution() {
     let run = Run::of("codex", "permission-hermetic");
+    a_request_stands_until_its_resolution(&run);
+    a_top_level_request_resolves_by_its_calls_output(&run);
+}
+
+/// A refused turn's end can lag past the next turn's raise: it answers its
+/// own turn's request, never the next one's.
+#[test]
+fn a_refused_turn_s_lagging_end_leaves_the_next_turn_s_request_standing() {
+    let run = Run::of("codex", "refuse-then-prompt-hermetic");
     a_request_stands_until_its_resolution(&run);
     a_top_level_request_resolves_by_its_calls_output(&run);
 }

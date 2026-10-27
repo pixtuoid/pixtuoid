@@ -653,7 +653,7 @@ pub pixtuoid_core::source::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::
 pub pixtuoid_core::source::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::ToolUsePending
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_name: alloc::string::String
+pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
 pub pixtuoid_core::source::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
 pub pixtuoid_core::source::AgentEvent::ToolUseStart
@@ -680,6 +680,7 @@ pub pixtuoid_core::source::AgentEvent::UserActionResolved::agent_id: pixtuoid_co
 pub pixtuoid_core::source::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent
@@ -793,6 +794,27 @@ impl core::marker::Unpin for pixtuoid_core::source::PidIdentity
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::PidIdentity
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::PidIdentity
+#[non_exhaustive] pub struct pixtuoid_core::source::RequestKeys
+pub pixtuoid_core::source::RequestKeys::call: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::RequestKeys::tool_name: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::RequestKeys::turn: core::option::Option<pixtuoid_core::state::TurnKey>
+impl core::clone::Clone for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_core::source::RequestKeys
+impl core::cmp::PartialEq for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::eq(&self, &Self) -> bool
+impl core::default::Default for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::default() -> Self
+impl core::fmt::Debug for pixtuoid_core::source::RequestKeys
+pub fn pixtuoid_core::source::RequestKeys::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::RequestKeys
+impl core::marker::Freeze for pixtuoid_core::source::RequestKeys
+impl core::marker::Send for pixtuoid_core::source::RequestKeys
+impl core::marker::Sync for pixtuoid_core::source::RequestKeys
+impl core::marker::Unpin for pixtuoid_core::source::RequestKeys
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::RequestKeys
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::RequestKeys
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::RequestKeys
 pub const pixtuoid_core::source::EVENT_CHANNEL_CAPACITY: usize
 pub trait pixtuoid_core::source::DynSource: core::marker::Send + 'static
 pub fn pixtuoid_core::source::DynSource::name(&self) -> &str
@@ -2115,7 +2137,7 @@ pub pixtuoid_core::AgentEvent::ToolUseEnd::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ToolUseEnd::tool_use_id: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::ToolUsePending
 pub pixtuoid_core::AgentEvent::ToolUsePending::agent_id: pixtuoid_core::id::AgentId
-pub pixtuoid_core::AgentEvent::ToolUsePending::tool_name: alloc::string::String
+pub pixtuoid_core::AgentEvent::ToolUsePending::tool_name: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::ToolUsePending::tool_use_id: alloc::string::String
 pub pixtuoid_core::AgentEvent::ToolUsePending::turn: core::option::Option<pixtuoid_core::state::TurnKey>
 pub pixtuoid_core::AgentEvent::ToolUseStart
@@ -2142,6 +2164,7 @@ pub pixtuoid_core::AgentEvent::UserActionResolved::agent_id: pixtuoid_core::id::
 pub pixtuoid_core::AgentEvent::UserActionResolved::by: pixtuoid_core::source::Resolution
 impl pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::agent_id(&self) -> pixtuoid_core::id::AgentId
+pub fn pixtuoid_core::source::AgentEvent::user_action_request(pixtuoid_core::id::AgentId, core::option::Option<alloc::string::String>, pixtuoid_core::source::RequestKeys) -> Self
 impl core::clone::Clone for pixtuoid_core::source::AgentEvent
 pub fn pixtuoid_core::source::AgentEvent::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::source::AgentEvent

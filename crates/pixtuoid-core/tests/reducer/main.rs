@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::{AgentEvent, Transport};
+use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 
@@ -149,13 +149,7 @@ fn user_action_request(
 ) {
     r.apply(
         scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some(reason.into()),
-            tool_use_id: None,
-            tool_name: None,
-            turn: None,
-        },
+        AgentEvent::user_action_request(id, Some(reason.into()), RequestKeys::default()),
         at,
         tp,
     );
@@ -171,15 +165,11 @@ fn user_action_request_for(
     at: SystemTime,
     tp: Transport,
 ) {
+    let mut keys = RequestKeys::default();
+    keys.call = tool_use_id.map(Into::into);
     r.apply(
         scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some(reason.into()),
-            tool_use_id: tool_use_id.map(Into::into),
-            tool_name: None,
-            turn: None,
-        },
+        AgentEvent::user_action_request(id, Some(reason.into()), keys),
         at,
         tp,
     );

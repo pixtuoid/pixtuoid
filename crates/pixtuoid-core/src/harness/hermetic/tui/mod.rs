@@ -68,7 +68,7 @@ pub(crate) struct Gate {
 
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
+pub(crate) enum Answer {
     /// Answer its dialog with its gate's `answer` keys; the turn is over once
     /// answered and the screen settles.
     Gate,
@@ -132,7 +132,7 @@ pub struct Tui {
     /// included; no prompt.
     pub(crate) args: &'static [&'static str],
     pub(crate) composer: Composer,
-    /// Every dialog the turn may raise; one per run, since its script calls no
+    /// Every dialog the turn may raise; one per turn, since its script calls no
     /// tool after the refusal (`a_permission_script_calls_no_tool_after_its_refusal`).
     /// One the table doesn't name stalls the run.
     pub(crate) gates: &'static [Gate],
@@ -215,7 +215,7 @@ struct Open {
     since: Instant,
 }
 
-/// The state machine one run steps through, its turn over once [`Answer`]
+/// The state machine one run steps through, its turn over once its `Answer`
 /// says.
 #[derive(Debug)]
 pub struct Driver<'a> {
@@ -305,6 +305,7 @@ impl<'a> Driver<'a> {
                 if let Some(next) = self.then.take() {
                     self.prompt = next;
                     self.phase = Phase::Typed;
+                    (self.answered, self.open) = (false, None);
                     return Action::Type(self.prompt.clone());
                 }
                 self.phase = Phase::Quit;
@@ -351,7 +352,7 @@ impl<'a> Driver<'a> {
     }
 
     /// Its answer, once its cue has stood its dwell after the prompt was
-    /// submitted; a cue before that stalls the run. Once per run: a frame
+    /// submitted; a cue before that stalls the run. Once per turn: a frame
     /// drawn before the answer landed still shows its cue, and a second key
     /// would land on the turn.
     fn answer(&mut self, now: Instant) -> Option<Action> {
@@ -382,7 +383,7 @@ impl<'a> Driver<'a> {
 
     /// Whether a dialog its row lists stands ([`Tui::gates`]): nothing else is
     /// sent then, so no Enter can land on it and pick its first choice, and
-    /// one a run that answers no gate stalls the run like any dialog nobody
+    /// one its answer leaves standing stalls the run like any dialog nobody
     /// planned for.
     fn dialog_open(&self) -> bool {
         self.tui.gates.iter().any(|g| self.screen.contains(g.shows))
@@ -675,7 +676,7 @@ mod tests {
     #[test]
     fn hermes_enters_nothing_into_its_working_turn_nor_onto_its_echo() {
         let (tui, answer) = tui_scenario("hermes", "permission");
-        let [refused] = tui.gates else {
+        let [gate] = tui.gates else {
             panic!("one gate");
         };
         let t0 = Instant::now();
@@ -691,7 +692,7 @@ mod tests {
         assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
         assert_eq!(
             next(include_str!("screens/hermes-gate.txt")),
-            Action::Keys(refused.answer)
+            Action::Keys(gate.answer)
         );
         assert_eq!(
             next(include_str!("screens/hermes-echo.txt")),
@@ -764,6 +765,42 @@ mod tests {
         let t2 = t1 + SETTLE * 2 + Duration::from_millis(1);
         assert_eq!(d.step(OMP_BOOT, t2), Action::Wait);
         assert_eq!(d.step(OMP_BOOT, t2 + SETTLE), Action::Quit(tui.quit));
+    }
+
+    #[test]
+    fn a_second_turn_answers_its_own_gate() {
+        const SECOND: &str = "Second turn.";
+        let (tui, answer) = tui_scenario("codex", "permission");
+        let [gate] = tui.gates else {
+            panic!("one gate");
+        };
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0).then(SECOND);
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(d.step(CODEX_BOOT, t0), Action::Keys(&[Key::Enter]));
+        let mut t = t0;
+        for turn in ["first", "second"] {
+            t += Duration::from_millis(1);
+            assert_eq!(
+                d.step(CODEX_GATE, t),
+                Action::Wait,
+                "{turn}: inside its dwell"
+            );
+            t += gate.dwell;
+            assert_eq!(d.step(CODEX_GATE, t), Action::Keys(gate.answer), "{turn}");
+            t += Duration::from_millis(1);
+            assert_eq!(
+                d.step(CODEX_BOOT, t),
+                Action::Wait,
+                "{turn}: the screen moved"
+            );
+            t += SETTLE;
+            if turn == "first" {
+                assert_eq!(d.step(CODEX_BOOT, t), Action::Type(SECOND.to_owned()));
+                assert_eq!(d.step(CODEX_BOOT, t), Action::Keys(&[Key::Enter]));
+            }
+        }
+        assert_eq!(d.step(CODEX_BOOT, t), Action::Quit(tui.quit));
     }
 
     #[test]
@@ -999,7 +1036,7 @@ mod tests {
     }
 
     /// Each row over its run's recorded boot screen and the screen its turn
-    /// ended at: the gate it refused or the reply it cancelled, where it
+    /// ended at: the gate it answered or the reply it cancelled, where it
     /// answers one.
     #[test]
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
@@ -1007,7 +1044,7 @@ mod tests {
         const GROK_TURN_ONE: &str = include_str!("screens/grok-turn-one.txt");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
-        let recorded: [(&str, &str, &str, &[&str]); 18] = [
+        let recorded: [(&str, &str, &str, &[&str]); 19] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
@@ -1016,6 +1053,17 @@ mod tests {
                 "two-turn",
                 CODEX_BOOT,
                 &[CODEX_TURN_ONE, include_str!("screens/codex-turn-two.txt")],
+            ),
+            (
+                "codex",
+                "refuse-then-prompt",
+                CODEX_BOOT,
+                &[
+                    CODEX_GATE,
+                    include_str!("screens/codex-refused.txt"),
+                    include_str!("screens/codex-gate-again.txt"),
+                    include_str!("screens/codex-refused-again.txt"),
+                ],
             ),
             // The same dialog as the refused one's, answered otherwise.
             ("codex", "approve", CODEX_BOOT, &[CODEX_GATE]),
@@ -1123,22 +1171,49 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             let (first, then) = match scenario.answer() {
                 Answer::Gate => {
-                    let [refused] = tui.gates else {
+                    let [gate] = tui.gates else {
                         panic!("{source}: one gate per row");
                     };
-                    let [end] = ends else {
-                        panic!("{source}/{name}: one turn");
-                    };
-                    let answers: Vec<Action> = [t0, t0 + refused.dwell]
+                    let (end, rest) = ends.split_first().expect("a gate");
+                    let answers: Vec<Action> = [t0, t0 + gate.dwell]
                         .map(|t| d.step(end, t))
                         .into_iter()
                         .filter(|a| *a != Action::Wait)
                         .collect();
-                    assert_eq!(answers, [Action::Keys(refused.answer)], "{source}/{name}");
+                    assert_eq!(answers, [Action::Keys(gate.answer)], "{source}/{name}");
+                    let mut t = t0 + gate.dwell + SETTLE;
                     assert_eq!(
-                        d.step(end, t0 + refused.dwell + SETTLE),
+                        d.step(end, t),
                         Action::Wait,
                         "{source}/{name}: a repeat would land on the turn"
+                    );
+                    let Some(Second::Prompt(second)) = scenario.turn.second else {
+                        assert!(rest.is_empty(), "{source}/{name}: one turn");
+                        continue;
+                    };
+                    // The screen each gate left, and the second turn's gate.
+                    let [after, again, last] = rest else {
+                        panic!("{source}/{name}: two turns' gates and what each left");
+                    };
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(after, t), Action::Wait, "{source}/{name}");
+                    t += SETTLE;
+                    assert_eq!(d.step(after, t), Action::Type(second.to_owned()));
+                    assert_eq!(d.step(after, t), Action::Keys(&[Key::Enter]));
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(again, t), Action::Wait, "{source}/{name}: its dwell");
+                    t += gate.dwell;
+                    assert_eq!(
+                        d.step(again, t),
+                        Action::Keys(gate.answer),
+                        "{source}/{name}"
+                    );
+                    t += Duration::from_millis(1);
+                    assert_eq!(d.step(last, t), Action::Wait, "{source}/{name}");
+                    assert_eq!(
+                        d.step(last, t + SETTLE),
+                        Action::Quit(tui.quit),
+                        "{source}/{name}"
                     );
                     continue;
                 }

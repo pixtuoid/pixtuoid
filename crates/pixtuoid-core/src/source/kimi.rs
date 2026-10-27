@@ -64,7 +64,7 @@ pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<Age
         }
         Some("StopFailure") => {
             let agent_id = AgentId::from_parts(SOURCE_NAME, &kimi_session_id(obj)?);
-            Ok(Some(vec![AgentEvent::turn_end(agent_id, None)]))
+            Ok(Some(vec![AgentEvent::turn_end(agent_id)]))
         }
         _ => Ok(None),
     }

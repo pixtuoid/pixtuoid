@@ -372,7 +372,7 @@ impl Reducer {
                 turn,
             } => {
                 if scene.agents.contains_key(&agent_id) {
-                    self.register_pending(agent_id, &tool_use_id, Some(&tool_name), turn, from);
+                    self.register_pending(agent_id, &tool_use_id, tool_name.as_deref(), turn, from);
                 }
             }
             AgentEvent::TurnStart { agent_id, turn } => {
@@ -765,7 +765,8 @@ impl Reducer {
     }
 
     /// Settle the slot when its request was answered or the call it shows
-    /// ended; a dispatch the ledger never tracked ends its subtree with it.
+    /// ended; a dispatch `tasks_in_flight` never tracked ends its subtree with
+    /// it.
     fn end_item(
         &mut self,
         scene: &mut SceneState,
@@ -1289,10 +1290,10 @@ impl Reducer {
     }
 
     /// Hook transport only, on a source whose child hooks arrive unnamed under
-    /// the parent's key: with any Task in flight, a hook ToolUseStart/End or
-    /// TurnEnd for this AgentId is the child's work, so it is dropped. Two
-    /// exemptions: the Task's own PostToolUse (its tool_use_id matches), and a
-    /// request member's Start/End — the parent's own approval round (#951),
+    /// the parent's key: with any Task in flight, a hook ToolUseStart/End, its
+    /// pre-use or a turn bracket for this AgentId is the child's work, so it is
+    /// dropped. Two exemptions: the Task's own PostToolUse (its tool_use_id
+    /// matches), and a request member's — the parent's own approval round (#951),
     /// which eating would strand in RequiresAction until the parent's next own event
     /// or the stale sweep.
     fn suppress_subagent_leak(
@@ -1304,18 +1305,20 @@ impl Reducer {
     ) -> bool {
         let tasks = self.corr.tasks_in_flight.get(&id);
         let in_task = tasks.is_some_and(|s| !s.is_empty());
-        let is_member = |tool_use_id: &Option<String>| {
-            tool_use_id
-                .as_deref()
-                .is_some_and(|t| self.corr.action_requests.is_member(&id, t))
-        };
+        let is_member =
+            |call: Option<&str>| call.is_some_and(|t| self.corr.action_requests.is_member(&id, t));
         let suppress = match event {
-            AgentEvent::ToolUseStart { tool_use_id, .. } => in_task && !is_member(tool_use_id),
+            AgentEvent::ToolUseStart { tool_use_id, .. } => {
+                in_task && !is_member(tool_use_id.as_deref())
+            }
+            AgentEvent::ToolUsePending { tool_use_id, .. } => {
+                in_task && !is_member(Some(tool_use_id))
+            }
             AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 let is_task_self_end = tool_use_id
                     .as_ref()
                     .is_some_and(|t| tasks.is_some_and(|s| s.contains(t)));
-                in_task && !is_task_self_end && !is_member(tool_use_id)
+                in_task && !is_task_self_end && !is_member(tool_use_id.as_deref())
             }
             AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { .. } => in_task,
             _ => false,

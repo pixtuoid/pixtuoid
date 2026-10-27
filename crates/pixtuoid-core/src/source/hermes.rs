@@ -26,7 +26,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "hermes";
@@ -181,13 +181,14 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 .unwrap_or_else(|| "permission".to_string());
             Ok(vec![
                 identity(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(reason),
-                    tool_use_id: tool_use_id(),
-                    tool_name: None,
-                    turn: None,
-                },
+                    Some(reason),
+                    RequestKeys {
+                        call: tool_use_id(),
+                        ..RequestKeys::default()
+                    },
+                ),
             ])
         }
         // THE session end, as `on_session_end` is not: `lifecycle.py::finalize_session`
@@ -211,7 +212,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // tool-less chat turn this is the ONLY event the session emits, and a
         // daemon attaching mid-session would otherwise get the blank `#N` ghost
         // the module doc names, until the next tool call.
-        "on_session_end" => Ok(vec![identity(), AgentEvent::turn_end(agent_id, None)]),
+        "on_session_end" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))

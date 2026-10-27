@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::id::normalize_path_key;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The JSONL line-decoder fn pointer: `(transcript_path, source, raw_line) ->
 /// events`. Defined HERE, NOT in the `native`-gated `jsonl` module, so the
@@ -346,6 +346,46 @@ fn source_owned_arms(
     }
 }
 
+/// `obj`'s string field `key`, `None` when absent or EMPTY: an empty id or
+/// name keys nothing.
+pub(crate) fn non_empty<'a>(obj: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+/// Whose session a hook speaks for: a subagent names itself in [`SUBAGENT_ID`]
+/// beside its root's `session_id`, a root in `session_id` alone.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HookSubject<'a> {
+    /// The subagent's own id, when a subagent fired it.
+    pub(crate) child: Option<&'a str>,
+    /// The root session's id.
+    pub(crate) root: Option<&'a str>,
+}
+
+impl<'a> HookSubject<'a> {
+    pub(crate) fn of(obj: &'a serde_json::Map<String, Value>) -> Self {
+        Self {
+            child: non_empty(obj, SUBAGENT_ID),
+            root: non_empty(obj, "session_id"),
+        }
+    }
+}
+
+/// The per-call id's wire name on `desc`'s hooks: its row's
+/// [`ToolIdKey`](crate::source::registry::ToolIdKey), `tool_use_id` for a row
+/// with no shared arms.
+pub(crate) fn hook_call_key(
+    desc: Option<&'static crate::source::registry::SourceDescriptor>,
+) -> &'static str {
+    match desc.and_then(|d| d.hook()) {
+        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
+        _ => crate::source::registry::ToolIdKey::ToolUse,
+    }
+    .wire_name()
+}
+
 /// The payload's `session_id`, rejected when missing or EMPTY: an empty one passes
 /// `as_str` but, for Codex (which keys the AgentId on it), would mint a phantom
 /// agent that never coalesces with any rollout. This and `hook_event_name`
@@ -355,9 +395,8 @@ pub(crate) fn hook_session_id(
     source: &str,
     event: &str,
 ) -> DecodeResult<String> {
-    obj.get("session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
+    HookSubject::of(obj)
+        .root
         .ok_or_else(|| {
             super::drift::missing_field(source, event, "session_id");
             DecodeError::missing_in(source, event, "session_id")
@@ -462,11 +501,7 @@ pub(crate) fn shared_hook_arms(
         })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
-    let tool_id_key = match desc.and_then(|d| d.hook()) {
-        Some(crate::source::registry::HookDecoding::Shared { tool_id_key, .. }) => *tool_id_key,
-        _ => crate::source::registry::ToolIdKey::ToolUse,
-    }
-    .wire_name();
+    let tool_id_key = hook_call_key(desc);
 
     match event {
         "SessionStart" => {
@@ -494,23 +529,17 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         "PreToolUse" => {
-            let tool_name = obj
-                .get("tool_name")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    super::drift::missing_field(source, "PreToolUse", "tool_name");
-                    "?"
-                });
-            let tool_use_id = obj
-                .get(tool_id_key)
-                .and_then(|s| s.as_str())
-                .map(String::from);
+            let tool_name = non_empty(obj, "tool_name");
+            if tool_name.is_none() {
+                super::drift::missing_field(source, "PreToolUse", "tool_name");
+            }
+            let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             // Named ahead of its item: a permission prompt names only the
             // tool, so the request binds the calls pending under that name.
             let pending = tool_use_id.clone().map(|call| AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id: call,
-                tool_name: ellipsize(tool_name, MAX_DECODED_FIELD_CHARS),
+                tool_name: tool_name.map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
                 turn: None,
             });
             let mut evs = vec![hook_identity(agent_id, source, &session_id, obj)];
@@ -518,16 +547,17 @@ pub(crate) fn shared_hook_arms(
             evs.push(AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id,
-                detail: Some(make_tool_detail(source, tool_name, obj.get("tool_input"))),
+                detail: Some(make_tool_detail(
+                    source,
+                    tool_name.unwrap_or("?"),
+                    obj.get("tool_input"),
+                )),
             });
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
         "PostToolUse" => {
-            let tool_use_id = obj
-                .get(tool_id_key)
-                .and_then(|s| s.as_str())
-                .map(String::from);
+            let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             let mut evs = vec![
                 hook_identity(agent_id, source, &session_id, obj),
                 AgentEvent::ToolUseEnd {
@@ -542,34 +572,28 @@ pub(crate) fn shared_hook_arms(
             let msg = obj.get("message").and_then(|s| s.as_str());
             Ok(vec![
                 hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: None,
-                    tool_name: None,
-                    turn: None,
-                },
+                    msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys::default(),
+                ),
             ])
         }
         // The prompt names its tool, and kimi's its call too; an empty name
         // binds nothing.
-        "PermissionRequest" => {
-            let named = |key: &str| {
-                obj.get(key)
-                    .and_then(|s| s.as_str())
-                    .filter(|s| !s.is_empty())
-            };
-            Ok(vec![
-                hook_identity(agent_id, source, &session_id, obj),
-                AgentEvent::UserActionRequest {
-                    agent_id,
-                    reason: Some("permission".into()),
-                    tool_use_id: named(tool_id_key).map(String::from),
-                    tool_name: named("tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
-                    turn: None,
+        "PermissionRequest" => Ok(vec![
+            hook_identity(agent_id, source, &session_id, obj),
+            AgentEvent::user_action_request(
+                agent_id,
+                Some("permission".into()),
+                RequestKeys {
+                    call: non_empty(obj, tool_id_key).map(String::from),
+                    tool_name: non_empty(obj, "tool_name")
+                        .map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
+                    ..RequestKeys::default()
                 },
-            ])
-        }
+            ),
+        ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
         "UserPromptSubmit" => {
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
@@ -582,7 +606,7 @@ pub(crate) fn shared_hook_arms(
             }])
         }
         // Stop must NOT end the session: turns end many times per session.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
@@ -608,19 +632,12 @@ pub(crate) fn subagent_fired(
     source: &str,
     session: fn(&str) -> String,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    let Some(agent) = obj
-        .get(SUBAGENT_ID)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-    else {
+    let subject = HookSubject::of(obj);
+    let Some(agent) = subject.child else {
         return Ok(None);
     };
     let desc = crate::source::registry::descriptor_for(source);
-    let root = obj
-        .get("session_id")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(|root| AgentId::from_parts(source, root));
+    let root = subject.root.map(|root| AgentId::from_parts(source, root));
     let mut own = obj.clone();
     own.insert("session_id".into(), Value::from(session(agent)));
     let mut evs = shared_hook_arms(&own, source, desc)?;

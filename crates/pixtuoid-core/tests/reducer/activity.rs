@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
-use pixtuoid_core::source::{AgentEvent, Transport};
+use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{ActivityState, SceneState};
 
@@ -173,13 +173,7 @@ fn a_user_action_request_without_a_reason_leaves_the_state_bare() {
 
     r.apply(
         &mut scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: None,
-            tool_use_id: None,
-            tool_name: None,
-            turn: None,
-        },
+        AgentEvent::user_action_request(id, None, RequestKeys::default()),
         SystemTime::now(),
         Transport::Hook,
     );
@@ -418,7 +412,7 @@ fn a_keyless_second_raise_keeps_the_calls_the_first_bound() {
         AgentEvent::ToolUsePending {
             agent_id: id,
             tool_use_id: "t1".into(),
-            tool_name: "Bash".into(),
+            tool_name: Some("Bash".into()),
             turn: None,
         },
         t0,
@@ -435,13 +429,11 @@ fn a_keyless_second_raise_keeps_the_calls_the_first_bound() {
     );
     r.apply(
         &mut scene,
-        AgentEvent::UserActionRequest {
-            agent_id: id,
-            reason: Some("permission".into()),
-            tool_use_id: None,
-            tool_name: Some("Bash".into()),
-            turn: None,
-        },
+        AgentEvent::user_action_request(id, Some("permission".into()), {
+            let mut keys = RequestKeys::default();
+            keys.tool_name = Some("Bash".into());
+            keys
+        }),
         t0 + Duration::from_millis(500),
         Transport::Hook,
     );
@@ -1563,19 +1555,16 @@ fn pending(id: AgentId, call: &str, tool: &str, k: &str) -> AgentEvent {
     AgentEvent::ToolUsePending {
         agent_id: id,
         tool_use_id: call.into(),
-        tool_name: tool.into(),
+        tool_name: Some(tool.into()),
         turn: Some(turn(k)),
     }
 }
 
 fn asked(id: AgentId, tool: &str, k: &str) -> AgentEvent {
-    AgentEvent::UserActionRequest {
-        agent_id: id,
-        reason: Some("permission".into()),
-        tool_use_id: None,
-        tool_name: Some(tool.into()),
-        turn: Some(turn(k)),
-    }
+    let mut keys = RequestKeys::default();
+    keys.tool_name = Some(tool.into());
+    keys.turn = Some(turn(k));
+    AgentEvent::user_action_request(id, Some("permission".into()), keys)
 }
 
 fn resolved(id: AgentId, by: Resolution) -> AgentEvent {
@@ -1980,6 +1969,146 @@ fn an_end_naming_no_call_ends_only_a_call_named_by_none() {
             scene.agents[&id].state == ActivityState::Idle,
             ends,
             "shown {shown:?}"
+        );
+    }
+}
+
+/// A thread runs one turn at a time, so a raise for turn m proves turn n is
+/// over: n's lagging rollout lines (a refused call's output, `turn_aborted`)
+/// must not clear m's prompt.
+#[test]
+fn a_lagging_end_of_a_refused_turn_keeps_the_next_turns_prompt() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "n"),
+        t0,
+        Transport::Jsonl,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        pending(id, "xn", "Bash", "n"),
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        asked(id, "Bash", "n"),
+        t0,
+        Transport::Hook,
+    );
+    assert!(requires_action(&scene, id));
+    // Esc: codex writes xn's output and turn_aborted(n), unread yet.
+    let t1 = t0 + Duration::from_secs(5);
+    apply(
+        &mut r,
+        &mut scene,
+        pending(id, "xm", "Bash", "m"),
+        t1,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        asked(id, "Bash", "m"),
+        t1,
+        Transport::Hook,
+    );
+    let t2 = t1 + Duration::from_secs(5);
+    tool_use_end(&mut r, &mut scene, id, Some("xn"), t2, Transport::Jsonl);
+    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "n"),
+        t2,
+        Transport::Jsonl,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "m"),
+        t2,
+        Transport::Jsonl,
+    );
+    tool_use_start(&mut r, &mut scene, id, None, None, t2, Transport::Jsonl);
+    assert!(
+        requires_action(&scene, id),
+        "m's prompt still waits on the human: {:?}",
+        scene.agents[&id].state
+    );
+    tool_use_end(&mut r, &mut scene, id, Some("xm"), t2, Transport::Jsonl);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "m's own call answers it"
+    );
+}
+
+/// One kimi hook payload, decoded by the real decoder.
+fn kimi_hook(event: &str, tool: &str, call: &str) -> Vec<AgentEvent> {
+    pixtuoid_core::source::decoder::decode_hook_payload(serde_json::json!({
+        "hook_event_name": event, "session_id": "sess-k", "cwd": "/repo",
+        "tool_name": tool, "tool_input": {"command": "ls"}, "tool_call_id": call,
+        "_pixtuoid_source": UNNAMED_CHILD_HOOKS}))
+    .expect("decodes")
+}
+
+/// kimi's subagent fires its hooks under its parent's key: its pre-use is the
+/// child's, so it must not become a call the parent's prompt binds, whether
+/// the prompt names its tool with no call or names nothing.
+#[test]
+fn an_unnamed_childs_pre_use_stays_out_of_its_parents_request() {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (child_call, prompt) in [
+        (true, "PermissionRequest"),
+        (true, "Notification"),
+        (false, "PermissionRequest"),
+        (false, "Notification"),
+    ] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "sess-k");
+        start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
+        feed(
+            &mut r,
+            &mut scene,
+            kimi_hook("PreToolUse", "Agent", "T"),
+            t0,
+        );
+        if child_call {
+            feed(&mut r, &mut scene, kimi_hook("PreToolUse", "Bash", "C"), t0);
+            feed(
+                &mut r,
+                &mut scene,
+                kimi_hook("PostToolUse", "Bash", "C"),
+                t0,
+            );
+        }
+        feed(
+            &mut r,
+            &mut scene,
+            kimi_hook("PostToolUse", "Agent", "T"),
+            t0,
+        );
+        feed(&mut r, &mut scene, kimi_hook("PreToolUse", "Bash", "D"), t0);
+        feed(&mut r, &mut scene, kimi_hook(prompt, "Bash", ""), t0);
+        assert!(requires_action(&scene, id), "{prompt}");
+        feed(
+            &mut r,
+            &mut scene,
+            kimi_hook("PostToolUse", "Bash", "D"),
+            t0,
+        );
+        assert!(
+            !requires_action(&scene, id),
+            "child call {child_call}, {prompt}: the parent's own call ended, got {:?}",
+            scene.agents[&id].state
         );
     }
 }

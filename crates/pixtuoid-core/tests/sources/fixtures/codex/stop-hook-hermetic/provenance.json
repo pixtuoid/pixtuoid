@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 116
+    "blanked": 118
   },
   "seed": "tests/sources/hermetic/codex/stop-hook",
   "aimock": "1.45.1",

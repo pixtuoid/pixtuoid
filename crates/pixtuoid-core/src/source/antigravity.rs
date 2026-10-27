@@ -3,9 +3,9 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::AgentId;
-use crate::source::AgentEvent;
 use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
 use crate::source::registry::HookObject;
+use crate::source::{AgentEvent, RequestKeys};
 
 #[cfg(feature = "native")]
 mod native;
@@ -135,13 +135,14 @@ fn decode_ag_tool_call(
 ) -> AgentEvent {
     // The tools that wait on the human (hooks.md, "Supported tools").
     if name == "ask_permission" || name == "ask_question" {
-        return AgentEvent::UserActionRequest {
+        return AgentEvent::user_action_request(
             agent_id,
-            reason: Some("asking permission".to_string()),
-            tool_use_id,
-            tool_name: None,
-            turn: None,
-        };
+            Some("asking permission".to_string()),
+            RequestKeys {
+                call: tool_use_id,
+                ..RequestKeys::default()
+            },
+        );
     }
     let target = ag_tool_target(args);
     AgentEvent::ToolUseStart {
@@ -247,7 +248,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             },
         ]),
         // Turn end: the session lives on to the next prompt.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))

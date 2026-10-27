@@ -3,7 +3,7 @@
 {}
 {}
 {}
-{"timestamp":"2026-10-27T06:41:08.891Z","ordinal":0,"type":"turn_context","payload":{"turn_id":"01a17c17-5ee5-7b52-b42a-6f1c8a0d253c","root_turn_id":"","disabled_plugin_ids":[],"cwd":"/private/tmp/pixtuoid-capture/proj","approval_policy":"","approvals_reviewer":"","sandbox_policy":{},"permission_profile":{},"model":"gpt-5.5","comp_hash":"","collaboration_mode":{},"multi_agent_version":"","realtime_active":false,"effort":"high","summary":""}}
+{"timestamp":"2026-10-27T06:41:08.891Z","ordinal":0,"type":"turn_context","payload":{"turn_id":"","root_turn_id":"","disabled_plugin_ids":[],"cwd":"/private/tmp/pixtuoid-capture/proj","approval_policy":"","approvals_reviewer":"","sandbox_policy":{},"permission_profile":{},"model":"gpt-5.5","comp_hash":"","collaboration_mode":{},"multi_agent_version":"","realtime_active":false,"effort":"high","summary":""}}
 {}
 {}
 {}

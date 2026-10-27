@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -184,13 +184,11 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                         .unwrap_or(kind);
                     Ok(vec![
                         identity(),
-                        AgentEvent::UserActionRequest {
+                        AgentEvent::user_action_request(
                             agent_id,
-                            reason: Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
-                            tool_use_id: None,
-                            tool_name: None,
-                            turn: None,
-                        },
+                            Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
+                            RequestKeys::default(),
+                        ),
                     ])
                 }
                 // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
@@ -214,9 +212,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`). All three of
         // upstream's turn-end causes land here.
-        "stop" | "stop_failure" | "stop_cancelled" => {
-            Ok(vec![AgentEvent::turn_end(agent_id, None)])
-        }
+        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
@@ -394,7 +390,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             }
             // The transcript twin of the `stop` hook: a tool-less turn's only
             // end signal for transcript-only setups.
-            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id, None)],
+            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id)],
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some("session_end") {
                     vec![AgentEvent::SessionEnd {

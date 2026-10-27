@@ -19,7 +19,7 @@ expression: events
     tool_use_id: call_dxdTtHqfe89gHq4H
     detail:
       Generic:
-        display: "exec: try {"
+        display: "exec: exec_command"
 - ToolUseEnd:
     agent_id: 12809657047946264848
     tool_use_id: call_dxdTtHqfe89gHq4H

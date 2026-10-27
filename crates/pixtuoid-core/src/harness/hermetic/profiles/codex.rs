@@ -4,15 +4,17 @@ use crate::harness::hermetic::{
 };
 use crate::harness::plan::Placeholder;
 
-/// codex's TUI, its cites at `rust-v0.163.0`. On-request lets the model ask
-/// (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call asks
-/// to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
+/// codex's TUI flags, its cites at `rust-v0.163.0`. On-request lets the model
+/// ask (`codex-rs/protocol/src/protocol.rs:1099-1102`), and the script's call
+/// asks to run unsandboxed (`core/src/tools/handlers/shell_spec.rs:239-243`).
+const TUI_ARGS: [&str; 3] = [
+    "--dangerously-bypass-hook-trust",
+    "--ask-for-approval",
+    "on-request",
+];
+
 const TUI: tui::Tui = tui::Tui {
-    args: &[
-        "--dangerously-bypass-hook-trust",
-        "--ask-for-approval",
-        "on-request",
-    ],
+    args: &TUI_ARGS,
     composer: tui::Composer {
         marker: "›",
         border: tui::Border::Nothing,
@@ -62,9 +64,9 @@ const CODE_MODE: [&str; 2] = ["-c", "features.code_mode=true"];
 /// [`TUI`] in code mode.
 const TUI_CODE_MODE: tui::Tui = tui::Tui {
     args: &[
-        "--dangerously-bypass-hook-trust",
-        "--ask-for-approval",
-        "on-request",
+        TUI_ARGS[0],
+        TUI_ARGS[1],
+        TUI_ARGS[2],
         CODE_MODE[0],
         CODE_MODE[1],
     ],
@@ -229,6 +231,26 @@ trust_level = "trusted"
                 "SessionEnd",
             ],
             fixture: "fixtures/codex/two-turn-hermetic",
+            turn: Turn {
+                second: Some(Second::Prompt(SECOND_TURN)),
+                ..Turn::PROFILE
+            },
+        },
+        // A turn refused, then the next prompt's own call gated before the
+        // refused turn's rollout lines are read: its lagging end must not
+        // answer the new request.
+        Scenario {
+            name: "refuse-then-prompt",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI },
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "SessionEnd",
+            ],
+            fixture: "fixtures/codex/refuse-then-prompt-hermetic",
             turn: Turn {
                 second: Some(Second::Prompt(SECOND_TURN)),
                 ..Turn::PROFILE

@@ -69,7 +69,7 @@ fn a_codex_child_works_under_its_root_and_its_stop_ends_it_alone() {
                     agent_id,
                     tool_name,
                     ..
-                } if *agent_id == id => Some(tool_name.as_str()),
+                } if *agent_id == id => tool_name.as_deref(),
                 _ => None,
             })
             .collect()

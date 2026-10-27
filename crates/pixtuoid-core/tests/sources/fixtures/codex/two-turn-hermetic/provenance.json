@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 173
+    "blanked": 177
   },
   "aimock": "1.45.1",
   "script": "tests/sources/hermetic/codex/two-turn.json",

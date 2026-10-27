@@ -29,7 +29,7 @@ use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
@@ -117,9 +117,7 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             as_child: false,
         }]),
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, |agent_id| {
-                AgentEvent::turn_end(agent_id, None)
-            })
+            ended(data, at, event, AgentEvent::turn_end)
         }
         TOOL_STARTED => tool_started(data, at),
         TOOL_SUCCESS | TOOL_FAILED => {
@@ -240,13 +238,14 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
     );
     Ok(vec![
         identity(agent_id, session_id, at),
-        AgentEvent::UserActionRequest {
+        AgentEvent::user_action_request(
             agent_id,
-            reason: Some(reason),
-            tool_use_id: field(data, "source.id").map(str::to_owned),
-            tool_name: None,
-            turn: None,
-        },
+            Some(reason),
+            RequestKeys {
+                call: field(data, "source.id").map(str::to_owned),
+                ..RequestKeys::default()
+            },
+        ),
     ])
 }
 

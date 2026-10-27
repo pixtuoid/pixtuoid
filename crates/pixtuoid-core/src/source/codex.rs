@@ -14,11 +14,11 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_identity, hook_session_id,
-    make_tool_detail,
+    HookSubject, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_call_key,
+    hook_identity, hook_session_id, make_tool_detail, non_empty,
 };
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, Resolution, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
 use crate::state::TurnKey;
 
 #[cfg(feature = "native")]
@@ -78,18 +78,11 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
     // the real rollout.
     let guards = |obj: &Map<String, Value>| -> Result<(String, Option<String>)> {
-        let session_id = obj
-            .get("session_id")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?
-            .to_string();
-        let child = obj
-            .get(crate::source::decoder::SUBAGENT_ID)
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from);
-        Ok((session_id, child))
+        let subject = HookSubject::of(obj);
+        let session_id = subject
+            .root
+            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?;
+        Ok((session_id.to_owned(), subject.child.map(String::from)))
     };
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
@@ -141,36 +134,37 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     }
 }
 
-/// The approval's hooks, which the rollout lacks, on their subject: a child names itself in
-/// `agent_id`, a root in `session_id`. `PostToolUse` fires only on success and
-/// `PreToolUse` only for a tool with a pre-use payload
-/// (`codex-rs/core/src/tools/registry.rs` at rust-v0.164.0), so neither is an
-/// item: the rollout's call and output are.
+/// The approval's hooks, which the rollout lacks, on their [`HookSubject`].
+/// `PostToolUse` fires only on success and `PreToolUse` only for a tool with a
+/// pre-use payload (`codex-rs/core/src/tools/registry.rs` at rust-v0.164.0), so
+/// neither is an item: the rollout's call and output are.
 fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
-    let session_id = match non_empty(obj, crate::source::decoder::SUBAGENT_ID) {
+    let session_id = match HookSubject::of(obj).child {
         Some(child) => child.to_owned(),
         None => hook_session_id(obj, SOURCE_NAME, event)?,
     };
     let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
     let turn = turn_of(obj, event);
     let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
+    let call_key = hook_call_key(crate::source::registry::descriptor_for(SOURCE_NAME));
     let call = || {
-        let call = non_empty(obj, "tool_use_id").map(str::to_owned);
+        let call = non_empty(obj, call_key).map(str::to_owned);
         if call.is_none() {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "tool_use_id");
+            crate::source::drift::missing_field(SOURCE_NAME, event, call_key);
         }
         call
     };
+    let tool_name = || non_empty(obj, "tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS));
     Ok(match event {
         "PreToolUse" => {
-            let tool_name = non_empty(obj, "tool_name").unwrap_or_else(|| {
+            let tool_name = tool_name();
+            if tool_name.is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
-                "?"
-            });
+            }
             let pending = call().map(|tool_use_id| AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id,
-                tool_name: ellipsize(tool_name, MAX_DECODED_FIELD_CHARS),
+                tool_name,
                 turn,
             });
             [identity()].into_iter().chain(pending).collect()
@@ -188,19 +182,19 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
         // which no `PreToolUse` announces.
         "PermissionRequest" => vec![
             identity(),
-            AgentEvent::UserActionRequest {
+            AgentEvent::user_action_request(
                 agent_id,
-                reason: Some("permission".into()),
-                tool_use_id: obj
-                    .get("tool_input")
-                    .and_then(|i| i.get("approval_id"))
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned),
-                tool_name: non_empty(obj, "tool_name")
-                    .map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS)),
-                turn,
-            },
+                Some("permission".into()),
+                RequestKeys {
+                    call: obj
+                        .get("tool_input")
+                        .and_then(Value::as_object)
+                        .and_then(|input| non_empty(input, "approval_id"))
+                        .map(str::to_owned),
+                    tool_name: tool_name(),
+                    turn,
+                },
+            ),
         ],
         // Stop runs only with no follow-up pending, yet a blocking Stop hook
         // continues the turn (`core/src/session/turn.rs:722-759` at
@@ -213,13 +207,6 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
             .into_iter()
             .collect(),
     })
-}
-
-/// A non-empty string field of `obj`.
-fn non_empty<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    obj.get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
 }
 
 /// The turn a hook or rollout payload names; codex stamps every one
@@ -341,7 +328,10 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         // never permission-prompted — no UserActionRequest branch.
         (RESPONSE_ITEM, i) if RI_SEARCH.contains(&i) => vec![start()],
         (EVENT_MSG, i) if EM_SEARCH.contains(&i) => vec![start()],
-        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![AgentEvent::turn_end(agent_id, turn())],
+        (EVENT_MSG, i) if EM_TURN_END.contains(&i) => vec![match turn() {
+            Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
+            None => AgentEvent::turn_end(agent_id),
+        }],
         // `last_token_usage` is that turn's reading; the cumulative twin
         // `total_token_usage` must NOT be read — the reducer accumulates
         // deltas, so summing a running total would double-count. codex's
@@ -401,10 +391,10 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
 /// rust-v0.164.0).
 const CODE_MODE_TOOL: &str = "exec";
 
-/// The optional first line of a code-mode cell, which configures the cell
-/// rather than doing its work (`codex-rs/core/src/tools/code_mode/execute_spec.rs:11`
-/// at rust-v0.164.0).
-const CELL_PRAGMA: &str = "// @exec:";
+/// Where a code-mode cell finds its nested tools, each named by a JavaScript
+/// identifier (`codex-rs/code-mode-protocol/src/description.rs:25` at
+/// rust-v0.164.0).
+const CELL_TOOLS: &str = "tools.";
 
 fn codex_tool_start(
     agent_id: AgentId,
@@ -416,7 +406,9 @@ fn codex_tool_start(
         crate::source::drift::missing_field(SOURCE_NAME, "tool call", "name");
         "tool"
     });
-    let tool_use_id = field(CALL_ID).filter(|c| !c.is_empty()).map(str::to_owned);
+    let tool_use_id = payload
+        .and_then(|p| non_empty(p, CALL_ID))
+        .map(str::to_owned);
     if tool_use_id.is_none() {
         crate::source::drift::missing_field(SOURCE_NAME, inner, CALL_ID);
     }
@@ -425,23 +417,26 @@ fn codex_tool_start(
         tool_use_id,
         detail: Some(match name {
             DISPATCH_TOOL => ToolDetail::Task,
-            CODE_MODE_TOOL => generic_tool_display(name, field("input").and_then(cell_statement)),
+            CODE_MODE_TOOL => generic_tool_display(name, field("input").and_then(cell_tool)),
             _ => make_tool_detail(SOURCE_NAME, name, None),
         }),
     }
 }
 
-/// A code-mode cell's first statement past its pragma line.
-fn cell_statement(source: &str) -> Option<&str> {
-    source
-        .lines()
-        .enumerate()
-        .filter(|(i, line)| !(*i == 0 && line.trim_start().starts_with(CELL_PRAGMA)))
-        .map(|(_, line)| line.trim())
-        .find(|line| !line.is_empty())
-        .and_then(|line| line.split(';').next())
-        .map(str::trim)
-        .filter(|statement| !statement.is_empty())
+/// The first nested tool a code-mode cell calls by name, the informative part
+/// of its source.
+fn cell_tool(source: &str) -> Option<&str> {
+    let mut rest = source;
+    while let Some((_, after)) = rest.split_once(CELL_TOOLS) {
+        let end = after
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+            .unwrap_or(after.len());
+        if let Some(name) = after.get(..end).filter(|n| !n.is_empty()) {
+            return Some(name);
+        }
+        rest = after;
+    }
+    None
 }
 
 /// The Codex home dir, matching codex's own precedence (`codex-rs`
@@ -690,7 +685,8 @@ mod tests {
             let evs = hook("PreToolUse", child, spawn.clone());
             assert!(
                 matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUsePending {
-                    tool_use_id, tool_name, .. }] if tool_use_id == CALL && tool_name == DISPATCH_TOOL),
+                    tool_use_id, tool_name, .. }]
+                    if tool_use_id == CALL && tool_name.as_deref() == Some(DISPATCH_TOOL)),
                 "child={child}: {evs:?}"
             );
         }
@@ -715,7 +711,7 @@ mod tests {
         assert!(
             matches!(&pre[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUsePending {
                 tool_use_id, tool_name, turn: t, .. }]
-                if tool_use_id == "call_P60" && tool_name == "Bash" && *t == turn),
+                if tool_use_id == "call_P60" && tool_name.as_deref() == Some("Bash") && *t == turn),
             "{pre:?}"
         );
         let post = hook("PostToolUse", false, tool);
@@ -933,29 +929,74 @@ mod tests {
         }
     }
 
-    /// A cell's nested calls run inside it, so its detail is its own first
-    /// statement.
+    /// A cell's nested calls run inside it, so its detail is the first tool
+    /// it calls: slicing JS for a "first statement" has no answer without a
+    /// parser (a cell opening `try {`, a comment, a `;` inside a string).
     #[test]
-    fn a_code_mode_cell_shows_its_first_statement() {
+    fn a_code_mode_cell_shows_the_first_tool_it_calls() {
         for (input, want) in [
             (
-                "const r = await tools.exec_command({});\ntext(r);",
-                Some("const r = await tools.exec_command({})"),
+                "// @exec: {}\ntry {\n  text(await tools.exec_command({ cmd: \"cd src; ls\" }));\n} catch (e) {}",
+                Some("exec_command"),
             ),
             (
-                "// @exec: {\"yield_time_ms\": 1000}\n\n  text(1); text(2)",
-                Some("text(1)"),
+                "// read the note\nconst r = await tools.mcp__fs__read_file$2({});",
+                Some("mcp__fs__read_file$2"),
             ),
-            ("// @exec: {}", None),
+            ("text(\"tools. alone\"); yield_control();", None),
+            ("const t = tools[name];", None),
         ] {
-            assert_eq!(cell_statement(input), want, "{input:?}");
+            assert_eq!(cell_tool(input), want, "{input:?}");
         }
-        let out = ev(json!({"type":"response_item","payload":{
-            "type":"custom_tool_call","call_id":"call_x","name":CODE_MODE_TOOL,"input":"text(1)"}}));
+        for (input, want) in [
+            ("text(await tools.apply_patch(p))", Some("apply_patch")),
+            ("text(1)", None),
+        ] {
+            let out = ev(json!({"type":"response_item","payload":{
+                "type":"custom_tool_call","call_id":"call_x","name":CODE_MODE_TOOL,"input":input}}));
+            assert!(
+                matches!(out.as_slice(), [AgentEvent::ToolUseStart { detail: Some(d), .. }]
+                    if *d == generic_tool_display(CODE_MODE_TOOL, want)),
+                "{input:?}: {out:?}"
+            );
+        }
+    }
+
+    /// The call key is the registry row's, read as the shared arms read it.
+    #[test]
+    fn the_approval_hooks_read_the_rows_call_key() {
+        let key = crate::source::decoder::hook_call_key(crate::source::registry::descriptor_for(
+            SOURCE_NAME,
+        ));
+        let evs = hook(
+            "PostToolUse",
+            false,
+            json!({"tool_name": "Bash", key: "call_k"}),
+        );
         assert!(
-            matches!(out.as_slice(), [AgentEvent::ToolUseStart { detail: Some(d), .. }]
-                if *d == generic_tool_display(CODE_MODE_TOOL, Some("text(1)"))),
-            "{out:?}"
+            matches!(&evs[..], [_, AgentEvent::UserActionResolved {
+                by: Resolution::Call(c), .. }] if c == "call_k"),
+            "{evs:?}"
+        );
+    }
+
+    /// No name on the wire is no binding key: the pending call still counts
+    /// for the sole-pending rule.
+    #[test]
+    fn a_pre_use_naming_no_tool_binds_by_no_name() {
+        let evs = hook("PreToolUse", false, json!({"tool_use_id": "c"}));
+        assert!(
+            matches!(
+                &evs[..],
+                [
+                    _,
+                    AgentEvent::ToolUsePending {
+                        tool_name: None,
+                        ..
+                    }
+                ]
+            ),
+            "{evs:?}"
         );
     }
 

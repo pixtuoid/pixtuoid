@@ -16,7 +16,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
 use crate::source::registry::HookObject;
-use crate::source::{AgentEvent, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// Stable source id; MUST equal the registry row's `name`.
 pub const SOURCE_NAME: &str = "dsh";
@@ -164,13 +164,14 @@ pub fn decode_dsh_payload(
             };
             Ok(vec![
                 identity(),
-                AgentEvent::UserActionRequest {
+                AgentEvent::user_action_request(
                     agent_id,
-                    reason: Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
-                    tool_use_id: call_id(),
-                    tool_name: None,
-                    turn: None,
-                },
+                    Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
+                    RequestKeys {
+                        call: call_id(),
+                        ..RequestKeys::default()
+                    },
+                ),
             ])
         }
         APPROVAL_DECIDED => {

@@ -5,7 +5,7 @@ use super::health::FailureLatch;
 use super::liveness::{ProbeLadder, ProbeSnapshot, emit_session_exit, revouch_gated_files};
 use super::unclaim::drain_child_end_unclaims;
 use super::walk::{
-    TASK_SCAN_BYTES, detect_parent_id, park_if_truncated_below_cursor, scan_root, walk_jsonl,
+    SKIP_RESCAN_BYTES, detect_parent_id, park_if_truncated_below_cursor, scan_root, walk_jsonl,
 };
 use super::*;
 use crate::AgentId;
@@ -2806,7 +2806,7 @@ async fn oversized_attach_dispatch_outside_window_is_missed() {
         full.push_str(FILLER_LINE);
     }
     assert!(
-        (full.len() - dispatch_end) as u64 > TASK_SCAN_BYTES,
+        (full.len() - dispatch_end) as u64 > SKIP_RESCAN_BYTES,
         "the dispatch must sit deeper than the scan window"
     );
     tokio::fs::write(&path, &full).await.unwrap();
@@ -2842,14 +2842,14 @@ async fn task_scan_handles_partial_first_line() {
     full.push_str(&task_a);
     full.push_str(&task_b);
     let delta = task_a.len() / 2;
-    let target_len = offset_a + delta + TASK_SCAN_BYTES as usize;
+    let target_len = offset_a + delta + SKIP_RESCAN_BYTES as usize;
     let pad = target_len - full.len();
     assert!(pad > FILLER_LINE.len(), "padding must fit one JSON line");
     full.push_str("{\"type\":\"assistant\"}");
     full.push_str(&" ".repeat(pad - FILLER_LINE.len()));
     full.push('\n');
     assert_eq!(full.len(), target_len);
-    let boundary = full.len() - TASK_SCAN_BYTES as usize;
+    let boundary = full.len() - SKIP_RESCAN_BYTES as usize;
     assert!(
         boundary > offset_a && boundary < offset_a + task_a.len(),
         "the window boundary must split the straddled dispatch mid-line"
