@@ -240,7 +240,7 @@ impl ToolGlowColors {
 pub struct UiColors {
     /// Name-badge tone for a running agent.
     pub label_running: Rgb,
-    /// Connection-panel tone for a connected CLI: the \"ok\" hue, not a slot state.
+    /// The `ok` tone, not a slot state: a connected CLI, a checked checkbox.
     pub label_ok: Rgb,
     /// Name-badge tone for a requires-action agent.
     pub label_requires_action: Rgb,
