@@ -227,9 +227,9 @@ pub enum TailActivity {
     Unknown,
 }
 
-/// Minimal RFC3339 → epoch seconds (`YYYY-MM-DDTHH:MM:SS[.frac](Z|±HH:MM)`).
-/// Core deliberately carries no date dependency for the handful of wire
-/// timestamps it reads; every caller treats `None` as "no information".
+/// Minimal [RFC 3339 §5.6](https://www.rfc-editor.org/rfc/rfc3339#section-5.6) → epoch
+/// seconds. Core deliberately carries no date dependency for the handful of
+/// wire timestamps it reads; every caller treats `None` as "no information".
 pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
@@ -240,10 +240,18 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' && b[10] != b't' {
         return None;
     }
-    let num = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    // Every field is all `DIGIT`s, never the sign `parse` would take.
+    let num = |r: std::ops::Range<usize>| {
+        s.get(r)
+            .filter(|f| f.bytes().all(|c| c.is_ascii_digit()))?
+            .parse::<i64>()
+            .ok()
+    };
+    let hour = |at: usize| num(at..at + 2).filter(|h| *h <= 23);
+    let minute = |at: usize| num(at..at + 2).filter(|m| *m <= 59);
     let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
-    let (h, mi, sec) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+    let (h, mi, sec) = (hour(11)?, minute(14)?, num(17..19)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || sec > 60 {
         return None;
     }
     let mut i = 19;
@@ -261,9 +269,7 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     let offset_secs: i64 = match b.get(i) {
         Some(b'Z') | Some(b'z') if i + 1 == b.len() => 0,
         Some(sign @ (b'+' | b'-')) if i + 6 == b.len() && b.get(i + 3) == Some(&b':') => {
-            let oh = num(i + 1..i + 3)?;
-            let om = num(i + 4..i + 6)?;
-            let mag = oh * 3600 + om * 60;
+            let mag = hour(i + 1)? * 3600 + minute(i + 4)? * 60;
             if *sign == b'+' { mag } else { -mag }
         }
         _ => return None,
@@ -862,11 +868,20 @@ mod tests {
             ("2026-07-16T12:59:05Z", "2026-07-16T12:60:05Z"),
             // 60 is the LEAP second, still in range; 61 never is.
             ("2026-07-16T12:00:60Z", "2026-07-16T12:00:61Z"),
+            ("2026-07-16T12:00:05+23:00", "2026-07-16T12:00:05+24:00"),
+            ("2026-07-16T12:00:05-00:59", "2026-07-16T12:00:05-00:60"),
         ] {
             assert!(rfc3339_to_epoch_secs(ok).is_some(), "{ok:?} must parse");
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?} must not");
         }
-        assert_eq!(rfc3339_to_epoch_secs("2026-07-00T12:00:05Z"), None);
+        for bad in [
+            "2026-07-00T12:00:05Z",
+            "2026-07-16T-1:00:05Z",
+            "2026-07-16T+1:00:05Z",
+            "2026-07-16T12:00:05+-1:00",
+        ] {
+            assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
+        }
     }
 
     #[test]
