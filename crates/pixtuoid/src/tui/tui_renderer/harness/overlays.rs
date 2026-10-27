@@ -607,6 +607,31 @@ fn hovered_subagent_tooltip_shows_lineage() {
 }
 
 #[test]
+fn hovered_requires_action_agent_without_a_reason_shows_the_bare_state() {
+    let hovered = |reason: Option<&str>| {
+        let mut a = idle("/ttB/0.jsonl", 0, t0() - Duration::from_secs(60));
+        a.state = ActivityState::RequiresAction {
+            reason: reason.map(Arc::from),
+        };
+        let id = a.agent_id;
+        let scene = scene_with(vec![a], 16);
+        let mut r = build(120, 44, vec![]);
+        r.render(&scene, t0()).unwrap();
+        super::hover_agent(&mut r, id);
+        r.render(&scene, t0()).unwrap();
+        frame_text(r.frame_buffer())
+    };
+    let bare = hovered(None);
+    assert!(bare.contains("Requires action"), "state arm: {bare}");
+    // The reason row is the `?`-flagged line: one more `?` than the bare card.
+    assert_eq!(
+        hovered(Some("x")).matches('?').count(),
+        bare.matches('?').count() + 1,
+        "no reason line: {bare}"
+    );
+}
+
+#[test]
 fn hovered_requires_action_agent_tooltip_shows_reason() {
     let mut a = idle("/ttW/0.jsonl", 0, t0() - Duration::from_secs(60));
     a.state = ActivityState::RequiresAction {

@@ -151,7 +151,7 @@ fn connection_line(
         (
             '\u{26a0}',
             "transport died".to_string(),
-            theme.ui.label_requires_action,
+            theme.ui.label_warn,
         )
     } else {
         match &live.facet {
@@ -168,7 +168,7 @@ fn connection_line(
                 (
                     '\u{25cf}',
                     format!("{agents} agent{plural} \u{00b7} {age} ago"),
-                    theme.ui.label_running,
+                    theme.ui.label_ok,
                 )
             }
             // Zero instances reports the OBSERVATION, not a verdict: presence is
@@ -221,7 +221,7 @@ fn connection_line(
         Span::styled(conn_cell, base.fg(to_color(c_color))),
         Span::styled(
             health_flag.to_string(),
-            base.fg(to_color(theme.ui.label_requires_action)),
+            base.fg(to_color(theme.ui.label_warn)),
         ),
         Span::styled(format!("{l_glyph} {l_text}"), base.fg(to_color(l_color))),
     ])

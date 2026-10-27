@@ -93,7 +93,7 @@ impl GlobalDeskIndex {
     }
 }
 
-/// Semantic category of the tool an `Running` slot is running, derived ONCE at
+/// Semantic category of the tool a `Running` slot is running, derived ONCE at
 /// slot entry ([`ToolKind::from_detail`]) so downstream deciders — the
 /// reducer's stale-window policy and the painter's monitor-glow tint — match on
 /// a typed kind instead of re-parsing the human-facing `detail` string.

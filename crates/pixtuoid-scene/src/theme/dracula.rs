@@ -358,6 +358,11 @@ pub(crate) static DRACULA: Theme = Theme {
             g: 250,
             b: 140,
         },
+        label_warn: Rgb {
+            r: 241,
+            g: 250,
+            b: 140,
+        },
         label_idle: Rgb {
             r: 150,
             g: 162,

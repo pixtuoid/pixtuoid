@@ -33,7 +33,7 @@ fn gateway_scene_turns(
             in_flight_turns: turns
                 .iter()
                 // Stamped at the scene's own clock so the turn lease is fresh —
-                // these fixtures assert the BUSY render, not the decay.
+                // these fixtures assert the running render, not the decay.
                 .map(|r| {
                     (
                         pixtuoid_core::state::TurnKey::Id(r.to_string().into()),

@@ -152,12 +152,13 @@ fn summarize(scene: &SceneState) -> String {
         .map(|a| {
             let state = match &a.state {
                 ActivityState::Idle => "idle".to_string(),
-                ActivityState::Running { detail, .. } => {
-                    format!(
-                        "running({})",
-                        sanitize_line(detail.as_deref().unwrap_or("?"))
-                    )
+                ActivityState::Running {
+                    detail: Some(detail),
+                    ..
+                } => {
+                    format!("running({})", sanitize_line(detail))
                 }
+                ActivityState::Running { detail: None, .. } => "running".to_string(),
                 ActivityState::RequiresAction {
                     reason: Some(reason),
                 } => {
@@ -845,6 +846,36 @@ mod tests {
 
         let out = summarize(&scene);
         assert!(out.contains(":requires_action]"), "{out}");
+    }
+
+    #[test]
+    fn summarize_names_a_detailless_running_bare() {
+        use pixtuoid_core::AgentId;
+        use pixtuoid_core::source::AgentEvent;
+
+        let mut scene = SceneState::new([8; MAX_FLOORS]);
+        let mut reducer = Reducer::new();
+        let now = SystemTime::now();
+        let id = AgentId::from_parts("cc", "plain");
+        for event in [
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "claude-code".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/r"),
+                parent_id: None,
+            },
+            AgentEvent::ToolUseStart {
+                agent_id: id,
+                tool_use_id: Some("t".into()),
+                detail: None,
+            },
+        ] {
+            reducer.apply(&mut scene, event, now, Transport::Hook);
+        }
+
+        let out = summarize(&scene);
+        assert!(out.contains(":running]"), "{out}");
     }
 
     #[test]

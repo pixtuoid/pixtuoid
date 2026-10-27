@@ -109,7 +109,7 @@ pub(crate) fn inject_openclaw_presence(
     ports: &[String],
 ) -> Result<()> {
     use pixtuoid_core::state::{DaemonLiveness, DaemonPresence};
-    // Running is DERIVED from the turn set: "busy" = UP + in-flight turns, never a
+    // Running is DERIVED from the turn set: "running" = UP + in-flight turns, never a
     // stored state.
     let (liveness, active_sessions, turns) = match state {
         GatewayState::Idle => (DaemonLiveness::UP, 1, Vec::new()),
@@ -145,7 +145,7 @@ pub(crate) fn inject_openclaw_presence(
                 entered_at,
                 in_flight_turns: turns
                     .iter()
-                    // Fresh leases at `now` so the snapshot renders the BUSY mascot.
+                    // Fresh leases at `now` so the snapshot renders the running mascot.
                     .map(|r| (pixtuoid_core::state::TurnKey::Id(r.as_str().into()), now))
                     .collect(),
                 // Distinct per instance: a shared pid would make one exit receipt
@@ -183,7 +183,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
             D::from_secs(90),
         ),
         (
-            "requires_action",
+            "asking",
             ActivityState::RequiresAction {
                 reason: Some("permission?".into()),
             },

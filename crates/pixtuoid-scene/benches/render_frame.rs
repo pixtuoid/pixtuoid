@@ -1,5 +1,5 @@
 //! Whole-frame render benchmarks. `render_floor` runs two axes: the SIZES #900
-//! measured (12 agents, busy and idle), and OCCUPANCY at the larger of them.
+//! measured (12 agents, running and idle), and OCCUPANCY at the larger of them.
 //! Size is the near-linear axis — #900 measured frame cost tracking pixel
 //! count — so occupancy is the one that still teaches something: the per-agent
 //! work is the part that isn't linear in pixels. The largest crowd carries an
@@ -59,7 +59,7 @@ const RICH_SIZES: [Size; 4] = [
     Size { w: 768, h: 640 },
     Size { w: 1536, h: 1280 },
 ];
-/// Crowds above the 12 the size axis fixes — a busy pod-farm and a near-full floor.
+/// Crowds above the 12 the size axis fixes — a running pod-farm and a near-full floor.
 const OCCUPANCY: [usize; 2] = [32, 64];
 /// The extent the cutaway's own paint tests lay out. Nothing ships a cutaway
 /// extent yet — a painter will size it from its terminal or window.
@@ -237,7 +237,7 @@ fn render_floor_scaling(c: &mut Criterion) {
         group.throughput(Throughput::Elements(u64::from(w) * u64::from(h)));
         let mut frame = floor_frames(&pack, theme, &running, size, base);
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("busy12_{w}x{h}")),
+            BenchmarkId::from_parameter(format!("running12_{w}x{h}")),
             &size,
             |b, _| b.iter(&mut frame),
         );

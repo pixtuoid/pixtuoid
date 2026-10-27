@@ -358,6 +358,11 @@ pub(crate) static TOKYO_NIGHT: Theme = Theme {
             g: 175,
             b: 104,
         },
+        label_warn: Rgb {
+            r: 224,
+            g: 175,
+            b: 104,
+        },
         label_idle: Rgb {
             r: 150,
             g: 158,

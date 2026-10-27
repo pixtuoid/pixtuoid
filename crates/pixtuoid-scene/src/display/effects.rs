@@ -1,6 +1,6 @@
 //! The [effects](crate::effects) riding on the display list's figures, drawn on the
 //! figure's own art grid: a look authored at [`LOOK_DENSITY`] where the figure
-//! is drawn there with a head to stand it on, the base art's z and waiting
+//! is drawn there with a head to stand it on, the base art's z and requires-action
 //! mark beside its head, else its [shared look](crate::effects::look), a
 //! layout cell per art cell block. A look stays whole down to [`LOOK_SOLID`].
 

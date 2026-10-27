@@ -1442,6 +1442,7 @@ pub pixtuoid_scene::theme::UiColors::label_idle: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::label_ok: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::label_requires_action: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::label_running: pixtuoid_core::sprite::Rgb
+pub pixtuoid_scene::theme::UiColors::label_warn: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::neon_brand: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_bg: pixtuoid_core::sprite::Rgb
 pub pixtuoid_scene::theme::UiColors::tooltip_dim: pixtuoid_core::sprite::Rgb

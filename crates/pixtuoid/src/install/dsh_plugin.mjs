@@ -20,7 +20,7 @@ export const inject = ["agents"]
 // tool call, a prompt, or shutdown.
 export function apply(ctx) {
   // One shim at a time, in emit order: shims spawned together race to the
-  // socket, and a decision that lands before its ask strands the slot waiting.
+  // socket, and a decision that lands before its ask strands the slot requiring action.
   // The shim's own write watchdog bounds each turn of the queue.
   let queue = Promise.resolve()
   const send = (payload) => {

@@ -47,7 +47,7 @@ pub enum DaemonPresenceUpdate {
     SessionStarted,
     /// `session_end` — a session ended.
     SessionEnded,
-    /// `before_agent_run` — a turn entered flight, keyed for self-healing running.
+    /// `before_agent_run` — a turn entered flight, keyed so a turn's Running state self-heals.
     TurnStarted {
         /// Correlates this turn with its later `TurnEnded`/`TurnFailed`.
         turn: TurnKey,

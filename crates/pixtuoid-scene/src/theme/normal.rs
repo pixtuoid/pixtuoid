@@ -358,6 +358,11 @@ pub static NORMAL: Theme = Theme {
             g: 200,
             b: 50,
         },
+        label_warn: Rgb {
+            r: 220,
+            g: 200,
+            b: 50,
+        },
         label_idle: Rgb {
             r: 160,
             g: 160,

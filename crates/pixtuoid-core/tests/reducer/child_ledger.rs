@@ -1493,6 +1493,6 @@ fn a_parent_waits_with_its_subagent_on_a_permission_prompt() {
     assert!(cc.live(&scene), "the requires-action subagent was swept");
     assert!(
         scene.agents[&cc.root].exiting_at.is_none(),
-        "the parent requires-action on its subagent's prompt was swept"
+        "the parent waiting with its subagent on the prompt was swept"
     );
 }

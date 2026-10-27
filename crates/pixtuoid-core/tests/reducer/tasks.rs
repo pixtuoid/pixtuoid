@@ -1746,7 +1746,7 @@ fn parent_requires_action_on_subagent_permission_resolves_when_the_subagent_resu
             scene.agents.get(&parent).unwrap().state,
             ActivityState::RequiresAction { .. }
         ),
-        "parent goes RequiresAction on the subagent's permission"
+        "the parent requires action on the subagent's permission"
     );
 
     tool_use_start(
@@ -1822,7 +1822,7 @@ fn parent_requires_action_on_subagent_permission_resolves_when_the_subagent_ends
             scene.agents.get(&parent).unwrap().state,
             ActivityState::RequiresAction { .. }
         ),
-        "parent goes RequiresAction on the subagent's permission"
+        "the parent requires action on the subagent's permission"
     );
     tool_use_end(
         &mut r,

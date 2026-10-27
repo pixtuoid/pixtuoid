@@ -1174,10 +1174,10 @@ mod tests {
             total: 3,
             ..crate::tally::StateCounts::default()
         };
-        let running =
+        let busy =
             crate::neon_sign::build_board(counts, 60, None, None, Motion::Full, Hovering::now());
-        let running = Showing {
-            board: &running,
+        let busy = Showing {
+            board: &busy,
             ..quiet
         };
         let board = |showing| -> Vec<(Span, u64)> {
@@ -1221,7 +1221,7 @@ mod tests {
                 &stepped,
                 normal(),
                 h.scale,
-                running,
+                busy,
                 crate::look::WorldText::Baked,
                 (&mut cache, &mut outside),
             )
@@ -1230,7 +1230,7 @@ mod tests {
             h.scale.to_buffer(h.layout.buf_w),
             h.scale.to_buffer(h.layout.buf_h),
         );
-        let (was, now) = (board(quiet), board(running));
+        let (was, now) = (board(quiet), board(busy));
         let only = |a: &[(Span, u64)], b: &[(Span, u64)]| -> Vec<Span> {
             a.iter()
                 .filter(|line| !b.contains(line))
@@ -1457,7 +1457,7 @@ mod tests {
             )
             .expect("lays out");
         let lively = Arc::new(lively_office());
-        let running = SimFrame {
+        let busy = SimFrame {
             door_frame: 2,
             neon: crate::floor::NeonLevels {
                 alert: 1.0,
@@ -1474,7 +1474,7 @@ mod tests {
                 frames.last().expect("a seated frame"),
             ),
             ("office", &office.layout, &office.frame),
-            ("lively", &lively, &running),
+            ("lively", &lively, &busy),
         ];
         let moments = [
             ("normal", Weather::Clear, 12),

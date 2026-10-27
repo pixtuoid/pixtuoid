@@ -340,6 +340,11 @@ pub static CYBERPUNK: Theme = Theme {
             g: 60,
             b: 180,
         },
+        label_warn: Rgb {
+            r: 255,
+            g: 60,
+            b: 180,
+        },
         label_idle: Rgb {
             r: 150,
             g: 135,

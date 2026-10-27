@@ -4302,7 +4302,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
         occupied_waypoints: [printer_idx].into(),
         ..empty_frame(&layout)
     };
-    let running_flag = queued(&layout, &frame)
+    let busy_flag = queued(&layout, &frame)
         .sorted
         .iter()
         .find_map(|d| match d.kind {
@@ -4315,7 +4315,7 @@ fn sim_reports_occupied_waypoints_and_enqueue_marks_them_busy() {
         })
         .expect("printer drawable enqueued");
     assert!(
-        running_flag,
+        busy_flag,
         "occupied printer waypoint must enqueue busy=true"
     );
 }

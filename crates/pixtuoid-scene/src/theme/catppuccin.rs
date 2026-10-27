@@ -358,6 +358,11 @@ pub(crate) static CATPPUCCIN: Theme = Theme {
             g: 226,
             b: 175,
         },
+        label_warn: Rgb {
+            r: 249,
+            g: 226,
+            b: 175,
+        },
         label_idle: Rgb {
             r: 147,
             g: 153,

@@ -97,8 +97,7 @@ pub enum FooterTone {
     Tool(ToolKind),
     /// The gateway `⬢gw` chip — hue by daemon liveness.
     Gateway(DaemonState),
-    /// Source-death / decode-drift warning — reuses the RequiresAction attention color,
-    /// no dedicated theme key.
+    /// Source-death / decode-drift warning — uses the `label_warn` alarm hue.
     Warning,
 }
 
@@ -116,10 +115,8 @@ impl FooterTone {
             FooterTone::Tool(kind) => theme.tool_glow.for_kind(kind),
             FooterTone::Gateway(DaemonState::Idle) => theme.ui.label_idle,
             FooterTone::Gateway(DaemonState::Running) => theme.ui.label_running,
-            FooterTone::Gateway(DaemonState::Degraded | DaemonState::Down) => {
-                theme.ui.label_requires_action
-            }
-            FooterTone::Warning => theme.ui.label_requires_action,
+            FooterTone::Gateway(DaemonState::Degraded | DaemonState::Down) => theme.ui.label_warn,
+            FooterTone::Warning => theme.ui.label_warn,
         }
     }
 }
@@ -678,16 +675,16 @@ mod tests {
 
     #[test]
     fn every_footer_path_is_exactly_budget_wide() {
-        let mut running = SceneState::uniform(16);
+        let mut office = SceneState::uniform(16);
         let slot = requires_action_slot("/p/wait.jsonl");
-        running.agents.insert(slot.agent_id, slot);
-        let tools = footer_tool_tally(&running);
+        office.agents.insert(slot.agent_id, slot);
+        let tools = footer_tool_tally(&office);
         let empty = SceneState::uniform(16);
         for w in 0..=64u16 {
             for (label, model) in [
                 (
                     "stats",
-                    build_footer(&inputs(&running, &tools, false, None, None), w),
+                    build_footer(&inputs(&office, &tools, false, None, None), w),
                 ),
                 (
                     "empty",
@@ -696,7 +693,7 @@ mod tests {
                 (
                     "death",
                     build_footer(
-                        &inputs(&running, &[], false, None, Some("transport died")),
+                        &inputs(&office, &[], false, None, Some("transport died")),
                         w,
                     ),
                 ),

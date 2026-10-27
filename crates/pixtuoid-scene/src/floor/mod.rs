@@ -476,7 +476,7 @@ impl AudioObserver {
 pub struct PerOffice {
     /// Every agent's desk cup + fetch time — survives floor navigation.
     pub coffee: CoffeeState,
-    /// Running speech bubbles keyed by venue (the `VenueKey` carries `floor_idx`).
+    /// In-progress speech bubbles keyed by venue (the `VenueKey` carries `floor_idx`).
     pub(crate) chitchat: HashMap<VenueKey, ActiveChitchat>,
     /// The office-wide [`AudioObserver`] — one cue tracker + reprime latch,
     /// shared across floors.

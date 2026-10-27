@@ -54,8 +54,10 @@ pub enum BoardTone {
     Star,
     /// A running count — `label_running`.
     Running,
-    /// A waiting "needs-you" count — `label_requires_action`.
+    /// A requires-action "needs-you" count — `label_requires_action`.
     RequiresAction,
+    /// A fault (a degraded or down gateway) — `label_warn`.
+    Warn,
     /// An idle count — `label_idle`.
     Idle,
     /// Muted context/separator text, and a flap mid-roll — `tooltip_dim`.
@@ -71,6 +73,7 @@ impl BoardTone {
             BoardTone::Star => theme.ui.neon_star,
             BoardTone::Running => theme.ui.label_running,
             BoardTone::RequiresAction => theme.ui.label_requires_action,
+            BoardTone::Warn => theme.ui.label_warn,
             BoardTone::Idle => theme.ui.label_idle,
             BoardTone::Dim => theme.ui.tooltip_dim,
         }
@@ -178,7 +181,7 @@ pub fn gateway_tone(state: DaemonState) -> BoardTone {
     match state {
         DaemonState::Idle => BoardTone::Idle,
         DaemonState::Running => BoardTone::Running,
-        DaemonState::Degraded | DaemonState::Down => BoardTone::RequiresAction,
+        DaemonState::Degraded | DaemonState::Down => BoardTone::Warn,
     }
 }
 
@@ -189,12 +192,12 @@ pub fn gateway_tone(state: DaemonState) -> BoardTone {
 pub(crate) enum OfficeMood {
     /// `requires_action` agents are blocked on the user — outranks everything.
     Alert {
-        /// How many agents wait.
+        /// How many agents require action.
         requires_action: usize,
     },
-    /// Nobody waits and `running` agents work.
+    /// Nobody requires action and `running` agents are running.
     Running {
-        /// How many agents work.
+        /// How many agents are running.
         running: usize,
     },
     /// Everyone present is idle.
@@ -395,7 +398,7 @@ fn flap_roll(
             let settle = flap_settle_ms(col);
             // A blank's tone is invisible, so blank-to-blank is "not changing" too.
             let unchanged = old == new || (blank(old) && blank(new));
-            // An icon only re-inked takes its new tone at once, so the waiting
+            // An icon only re-inked takes its new tone at once, so the requires-action
             // lamp blinks through a roll.
             let reinked = matches!(old.0, Flap::Icon(_)) && old.0 == new.0;
             if since_ms >= settle || unchanged || reinked {
@@ -1061,11 +1064,8 @@ mod tests {
     fn gateway_tone_mirrors_the_footer_severity_map() {
         assert_eq!(gateway_tone(DaemonState::Idle), BoardTone::Idle);
         assert_eq!(gateway_tone(DaemonState::Running), BoardTone::Running);
-        assert_eq!(
-            gateway_tone(DaemonState::Degraded),
-            BoardTone::RequiresAction
-        );
-        assert_eq!(gateway_tone(DaemonState::Down), BoardTone::RequiresAction);
+        assert_eq!(gateway_tone(DaemonState::Degraded), BoardTone::Warn);
+        assert_eq!(gateway_tone(DaemonState::Down), BoardTone::Warn);
         assert_eq!(gateway_label(DaemonState::Idle), "ok");
         assert_eq!(gateway_label(DaemonState::Down), "down");
         let theme = crate::theme::theme_by_name("normal").expect("normal theme");

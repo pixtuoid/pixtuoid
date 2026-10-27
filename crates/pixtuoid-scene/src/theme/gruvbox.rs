@@ -361,6 +361,11 @@ pub(crate) static GRUVBOX: Theme = Theme {
             g: 189,
             b: 47,
         },
+        label_warn: Rgb {
+            r: 250,
+            g: 189,
+            b: 47,
+        },
         label_idle: Rgb {
             r: 168,
             g: 153,

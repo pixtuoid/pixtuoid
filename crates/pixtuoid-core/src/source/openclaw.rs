@@ -37,7 +37,7 @@ pub const SOURCE_NAME: &str = "openclaw";
 /// (many per gateway).
 const GATEWAY_PORT_FIELD: &str = "gatewayPort";
 
-/// The running pairing key: a non-empty `runId`, else `sessionId`, else `"_"`. The
+/// The turn's pairing key: a non-empty `runId`, else `sessionId`, else `"_"`. The
 /// `!is_empty` filter sits AFTER the pick, so a present-but-EMPTY `runId`
 /// short-circuits to `"_"` rather than falling through to `sessionId`. Coarse BY
 /// DESIGN — the last-seen TTL decay is the real backstop, so the key only affects

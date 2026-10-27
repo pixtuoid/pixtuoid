@@ -987,6 +987,27 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_notification_without_a_message_carries_no_reason() {
+        let evs = decode_hook_payload(json!({
+            "hook_event_name": "Notification",
+            "session_id": "s",
+            "cwd": "/r",
+            "_pixtuoid_source": "kimi"
+        }))
+        .expect("decodes");
+        assert!(
+            matches!(
+                evs.as_slice(),
+                [
+                    AgentEvent::Identity { .. },
+                    AgentEvent::UserActionRequest { reason: None, .. }
+                ]
+            ),
+            "{evs:?}"
+        );
+    }
+
+    #[test]
     fn post_tool_use_without_cwd_decodes_to_identity_with_none_cwd() {
         // Real CC PostToolUse payloads can omit cwd.
         let evs = decode_hook_payload(json!({
@@ -1519,7 +1540,7 @@ mod tests {
         /// a later switch to a wire field cannot slip past uncapped.
         Fixed,
         /// No [`AgentEvent::UserActionRequest`] reason on the wire today. The row exists so adding one forces a visit.
-        NoUserActionRequest,
+        NoReason,
     }
 
     #[test]
@@ -1641,7 +1662,7 @@ mod tests {
             ),
             (
                 codewhale::SOURCE_NAME,
-                ReasonKind::NoUserActionRequest,
+                ReasonKind::NoReason,
                 Box::new(|| {
                     codewhale::decode_cw_hook_payload(test_obj(&json!({
                         "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw})))
@@ -1650,7 +1671,7 @@ mod tests {
             ),
             (
                 cursor::SOURCE_NAME,
-                ReasonKind::NoUserActionRequest,
+                ReasonKind::NoReason,
                 Box::new(|| {
                     cursor::decode_cursor_hook_payload(test_obj(&json!({
                         "hook_event_name":"preToolUse","session_id":"s",
@@ -1693,7 +1714,7 @@ mod tests {
             match kind {
                 ReasonKind::Wire => {
                     let reason = reason.unwrap_or_else(|| {
-                        panic!("{src}: expected a UserActionRequest, got {evs:?}");
+                        panic!("{src}: expected a reason, got {evs:?}");
                     });
                     assert!(
                         reason.chars().count() <= bound,
@@ -1708,7 +1729,7 @@ mod tests {
                 }
                 ReasonKind::Fixed => {
                     let reason = reason.unwrap_or_else(|| {
-                        panic!("{src}: expected a UserActionRequest, got {evs:?}");
+                        panic!("{src}: expected a reason, got {evs:?}");
                     });
                     assert!(
                         !reason.contains(marker) && reason.chars().count() <= bound,
@@ -1716,9 +1737,9 @@ mod tests {
                          the wire value through `ellipsize` and move this row to Wire"
                     );
                 }
-                ReasonKind::NoUserActionRequest => assert!(
+                ReasonKind::NoReason => assert!(
                     reason.is_none(),
-                    "{src}: grew a UserActionRequest wire ({reason:?}) — classify it in this table"
+                    "{src}: grew a reason ({reason:?}) — classify it in this table"
                 ),
             }
         }

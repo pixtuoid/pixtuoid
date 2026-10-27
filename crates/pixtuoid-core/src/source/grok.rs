@@ -775,7 +775,7 @@ mod tests {
             });
             assert!(
                 !logs.contains("unknown_event"),
-                "{known} is a KNOWN non-waiting type — it must not breadcrumb, got:\n{logs}"
+                "{known} is a KNOWN non-requires-action type — it must not breadcrumb, got:\n{logs}"
             );
         }
         // Control: the breadcrumb still fires for a genuinely new type, so the
