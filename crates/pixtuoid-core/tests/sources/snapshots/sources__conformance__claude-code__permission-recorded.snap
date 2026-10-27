@@ -86,6 +86,10 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 79741326933634710
+    tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
+    tool_name: Bash
 - ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01ExTXf2amwZovJCecSWQFhy
@@ -121,6 +125,10 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 79741326933634710
+    tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
+    tool_name: Read
 - ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01TP8W3FREsEjicLq5aMnNMy
@@ -148,6 +156,10 @@ expression: events
     source: claude-code
     session_id: 947851e2-a15a-4de8-8375-46e9cddb5c8f
     cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 79741326933634710
+    tool_use_id: toolu_01Defyp8XhSn3u9FgmXoBFJi
+    tool_name: Bash
 - ToolUseStart:
     agent_id: 79741326933634710
     tool_use_id: toolu_01Defyp8XhSn3u9FgmXoBFJi

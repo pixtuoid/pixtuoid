@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 use crate::AgentId;
 use crate::source::Transport;
 use crate::state::requests::ActionRequests;
+use crate::state::turns::TurnLedger;
 
 /// Window in which a Hook event suppresses a later Jsonl event with the same
 /// tool_use_id. The suppression is asymmetric by event kind — see
@@ -150,6 +151,10 @@ pub(super) struct Correlation {
     /// `sweep_stale`'s candidate collection.
     pub(super) recent_proof_of_life: HashMap<AgentId, SystemTime>,
     pub(super) action_requests: ActionRequests,
+    pub(super) turns: TurnLedger,
+    /// The transport whose start set the call each slot shows: a transcript's
+    /// turn end naming no turn can lag its hooks' next call (grok).
+    pub(super) item_started_on: HashMap<AgentId, Transport>,
     /// Tool calls already counted into `tool_call_count`, so the SAME logical
     /// call re-observed on the other transport counts once (#951). Not
     /// [`HOOK_WINS_WINDOW`]'s job: omp's transcript writes the call BEFORE the
@@ -177,7 +182,7 @@ const COUNTED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// `Err` when `ts` is in the future, which folds to NOT-fresh. The ONE
 /// spelling of the `elapsed < ttl` policy every correlation map and predicate
 /// routes through, so the strict-`<` boundary can't drift across the sites.
-fn is_fresh(now: SystemTime, ts: SystemTime, ttl: Duration) -> bool {
+pub(super) fn is_fresh(now: SystemTime, ts: SystemTime, ttl: Duration) -> bool {
     now.duration_since(ts).is_ok_and(|d| d < ttl)
 }
 
@@ -208,13 +213,6 @@ impl Correlation {
     /// [`any_task`] of `id`'s Tasks in flight.
     pub(super) fn any_task_in_flight(&self, id: &AgentId) -> Option<Arc<str>> {
         self.tasks_in_flight.get(id).and_then(any_task)
-    }
-
-    /// Whether `call` was already counted into `id`'s `tool_call_count`.
-    pub(super) fn is_counted(&self, id: &AgentId, call: &str) -> bool {
-        self.counted_calls
-            .get(id)
-            .is_some_and(|calls| calls.contains_key(call))
     }
 
     /// Whether a child end of `id` landed after `since`, however old.
@@ -322,6 +320,7 @@ impl Correlation {
             .retain(|_, ts| is_fresh(now, *ts, PROOF_OF_LIFE_TTL));
         self.recent_task_drains
             .retain(|_, ts| is_fresh(now, *ts, DRAINED_TASK_TOMBSTONE_TTL));
+        self.turns.gc(now);
         self.lifecycles.retain(|_, l| {
             let child = match l.child_end {
                 None => l.parent_id.is_some(),

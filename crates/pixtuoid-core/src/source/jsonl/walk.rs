@@ -315,10 +315,11 @@ pub(super) async fn walk_jsonl(path: &Path, decoders: SourceDecoders, ctx: &Watc
             };
             emit_first_sight(path, source, decoders, seen, tx, head).await;
         }
-        // #222: the skipped span may bury an IN-FLIGHT Task dispatch. Only when
-        // registered — JSONL events for an unknown id are reducer no-ops.
+        // #222: the skipped span may bury an IN-FLIGHT Task dispatch, or its
+        // turn's end. Only when registered — JSONL events for an unknown id are
+        // reducer no-ops.
         if seen.lock().await.get(path) == Some(&Sight::Claimed) {
-            scan_pending_tasks(path, decoders, ctx).await;
+            rescan_skipped_tail(path, decoders, ctx).await;
         }
         return;
     }
@@ -549,22 +550,25 @@ pub(super) const TASK_SCAN_BYTES: u64 = 256 * 1024;
 /// re-emit exactly their `ToolUseStart`s. Mid-attach to a delegating session
 /// whose backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight
 /// dispatch line, leaving the reducer's `tasks_in_flight` empty: the parent never
-/// shows Delegating and the b1 completion cascade never arms.
+/// shows Delegating and the b1 completion cascade never arms. When the window's
+/// last turn bracket is a keyed end, it is re-emitted too: through the ledger's
+/// in-order rule it closes whatever turn the skip buried the end of.
 ///
 /// Tail-window geometry guarantees no false leak: a completion is always LATER
 /// in the file than its start, so any windowed start's completion is also in
 /// the window. A dispatch buried deeper than `TASK_SCAN_BYTES` keeps the
 /// pre-#222 skip behavior — bounded, documented residual.
 ///
-/// Everything `decode_line` emits EXCEPT the unmatched Task starts is
-/// DISCARDED: this is a Task-seeding scan, not a replay — replaying 256 KiB of
-/// activity would animate a burst of stale tools.
-async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
+/// Everything else `decode_line` emits is DISCARDED: this is a seeding scan,
+/// not a replay — replaying 256 KiB of activity would animate a burst of stale
+/// tools.
+async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
     let Some(buf) = read_tail(path, TASK_SCAN_BYTES).await else {
         return;
     };
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
+    let mut last_bracket = None;
     let parsed = crate::source::admit::window_lines(&buf)
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
     for v in parsed {
@@ -585,6 +589,9 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
                 } => {
                     pending.retain(|(t, _)| t != tuid);
                 }
+                AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { turn: Some(_), .. } => {
+                    last_bracket = Some(ev);
+                }
                 _ => {}
             }
         }
@@ -598,6 +605,10 @@ async fn scan_pending_tasks(path: &Path, decoders: SourceDecoders, ctx: &WatchCt
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
             return;
         }
+    }
+    if let Some(end @ AgentEvent::TurnEnd { .. }) = last_bracket {
+        debug!(path = ?path, "re-emitting the turn end of the oversized tail");
+        let _ = ctx.tx.send((Transport::Jsonl, end)).await;
     }
 }
 

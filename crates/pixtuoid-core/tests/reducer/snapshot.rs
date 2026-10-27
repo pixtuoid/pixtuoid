@@ -93,6 +93,8 @@ fn full_scene_serialization_is_stable() {
             agent_id: solo,
             reason: Some("permission: Bash".into()),
             tool_use_id: None,
+            tool_name: None,
+            turn: None,
         },
         at(4),
         Transport::Hook,

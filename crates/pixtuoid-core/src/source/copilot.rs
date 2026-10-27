@@ -212,6 +212,8 @@ pub(crate) fn decode_copilot_line(
                     .and_then(|p| str_at(p, "toolCallId"))
                     .filter(|id| !id.is_empty())
                     .map(str::to_owned),
+                tool_name: None,
+                turn: None,
             }]
         }
         // A refusal ends the gated call: a denial's `tool.execution_complete`
@@ -269,7 +271,7 @@ pub(crate) fn decode_copilot_line(
         // Only the root's ends its turn: neither listener of it in 1.0.98's
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
-        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
+        SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root, None)],
         // Copilot's ONLY usage wire is this shutdown summary — one final delta
         // as the session ends. `tokenDetails.input` already EXCLUDES cache
         // reads, so fresh = input + cache_write + output. `cache_write` is an
@@ -701,6 +703,7 @@ mod tests {
                     agent_id,
                     reason: Some(reason),
                     tool_use_id,
+                    ..
                 },
             ] => {
                 assert_eq!(*agent_id, root());
@@ -907,7 +910,7 @@ mod tests {
     fn session_task_complete_ends_the_roots_turn() {
         let line = r#"{"type":"session.task_complete","data":{},"id":"x","timestamp":"t","parentId":null}"#;
         match &decode(line)[..] {
-            [AgentEvent::TurnEnd { agent_id }] => assert_eq!(*agent_id, root()),
+            [AgentEvent::TurnEnd { agent_id, .. }] => assert_eq!(*agent_id, root()),
             other => panic!("expected one root TurnEnd, got {other:?}"),
         }
     }

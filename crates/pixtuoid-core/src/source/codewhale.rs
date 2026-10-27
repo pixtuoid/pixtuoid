@@ -144,9 +144,11 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 agent_id,
                 reason: None,
                 tool_use_id: None,
+                tool_name: None,
+                turn: None,
             },
         ]),
-        "session_idle" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
+        "session_idle" => Ok(vec![identity(), AgentEvent::turn_end(agent_id, None)]),
         "session_end" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,

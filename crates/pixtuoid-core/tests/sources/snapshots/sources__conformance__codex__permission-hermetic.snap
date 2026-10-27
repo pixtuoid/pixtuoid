@@ -10,9 +10,12 @@ expression: events
     agent_id: 13515510818775613026
     model: gpt-5.5
     effort: high
-- UserActionRequest:
+- ToolUseStart:
     agent_id: 13515510818775613026
-    reason: permission
+    tool_use_id: ~
+    detail:
+      Generic:
+        display: ""
 - ToolUseEnd:
     agent_id: 13515510818775613026
     tool_use_id: call_P60_vrQUoD4p4-o-
@@ -46,12 +49,10 @@ expression: events
     source: codex
     session_id: 01a168f5-f727-70e0-8c7b-d379406e6fc4
     cwd: /private/tmp/pixtuoid-capture/proj
-- ToolUseStart:
+- ToolUsePending:
     agent_id: 13515510818775613026
     tool_use_id: call_P60_vrQUoD4p4-o-
-    detail:
-      Generic:
-        display: "Bash: rm NOTE.txt"
+    tool_name: Bash
 - Identity:
     agent_id: 13515510818775613026
     source: codex

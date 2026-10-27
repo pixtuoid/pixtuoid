@@ -185,6 +185,8 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     agent_id,
                     reason: Some(reason),
                     tool_use_id: tool_use_id(),
+                    tool_name: None,
+                    turn: None,
                 },
             ])
         }
@@ -209,7 +211,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // tool-less chat turn this is the ONLY event the session emits, and a
         // daemon attaching mid-session would otherwise get the blank `#N` ghost
         // the module doc names, until the next tool call.
-        "on_session_end" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
+        "on_session_end" => Ok(vec![identity(), AgentEvent::turn_end(agent_id, None)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))

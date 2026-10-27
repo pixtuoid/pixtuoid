@@ -19,7 +19,12 @@ fn decode_single(v: serde_json::Value) -> AgentEvent {
 
 fn decode_activity(v: serde_json::Value) -> AgentEvent {
     let mut evs = decode_hook_payload(v).expect("decodes");
-    assert_eq!(evs.len(), 2, "expected Identity + activity, got {evs:?}");
+    let pre_use = matches!(evs.get(1), Some(AgentEvent::ToolUsePending { .. }));
+    assert_eq!(
+        evs.len(),
+        2 + usize::from(pre_use),
+        "expected Identity + (a pre-use's pending call) + activity, got {evs:?}"
+    );
     assert!(
         matches!(evs[0], AgentEvent::Identity { .. }),
         "tool/permission arms must lead with Identity, got {evs:?}"

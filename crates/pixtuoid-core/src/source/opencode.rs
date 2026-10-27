@@ -117,7 +117,9 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             as_child: false,
         }]),
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, AgentEvent::turn_end)
+            ended(data, at, event, |agent_id| {
+                AgentEvent::turn_end(agent_id, None)
+            })
         }
         TOOL_STARTED => tool_started(data, at),
         TOOL_SUCCESS | TOOL_FAILED => {
@@ -242,6 +244,8 @@ fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<A
             agent_id,
             reason: Some(reason),
             tool_use_id: field(data, "source.id").map(str::to_owned),
+            tool_name: None,
+            turn: None,
         },
     ])
 }

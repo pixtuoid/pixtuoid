@@ -139,6 +139,8 @@ fn decode_ag_tool_call(
             agent_id,
             reason: Some("asking permission".to_string()),
             tool_use_id,
+            tool_name: None,
+            turn: None,
         };
     }
     let target = ag_tool_target(args);
@@ -245,7 +247,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             },
         ]),
         // Turn end: the session lives on to the next prompt.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
         other => {
             crate::source::drift::unknown_event(SOURCE_NAME, other);
             Err(DecodeError::unsupported(SOURCE_NAME, other))

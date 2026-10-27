@@ -134,7 +134,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         ]),
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
-        "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "stop" => Ok(vec![AgentEvent::turn_end(agent_id, None)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,

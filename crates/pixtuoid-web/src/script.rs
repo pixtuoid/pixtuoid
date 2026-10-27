@@ -373,6 +373,8 @@ pub(crate) fn hero_script() -> Vec<Beat> {
             agent_id: cast_id(6),
             reason: Some("permission".to_string()),
             tool_use_id: None,
+            tool_name: None,
+            turn: None,
         },
     });
     b.push(Beat {
