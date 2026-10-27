@@ -24,7 +24,7 @@ fn assert_delegating(scene: &SceneState, id: AgentId, msg: &str) {
 }
 
 #[test]
-fn hook_activity_during_active_task_is_suppressed() {
+fn hook_activity_during_a_task_in_flight_is_suppressed() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let parent = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "parent");
@@ -125,7 +125,7 @@ fn a_hook_turn_end_during_a_task_is_suppressed() {
 }
 
 #[test]
-fn active_tasks_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
+fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
     use pixtuoid_core::source::ToolDetail;
 
     let mut scene = SceneState::uniform(4);
@@ -172,7 +172,7 @@ fn active_tasks_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
             assert_eq!(
                 detail.as_deref(),
                 Some("Bash: ls"),
-                "active_tasks must drain so subsequent hook events apply"
+                "tasks_in_flight must drain so subsequent hook events apply"
             );
         }
         other => panic!("expected Active(Bash: ls), got {other:?}"),
@@ -644,7 +644,7 @@ fn oversized_attach_synthesized_task_start_arms_b1() {
     assert_delegating(
         &scene,
         parent,
-        "the synthesized Jsonl Task start must seed active_tasks — no hook record exists at mid-attach to dedup-eat it",
+        "the synthesized Jsonl Task start must seed tasks_in_flight — no hook record exists at mid-attach to dedup-eat it",
     );
 
     act_end(
@@ -847,12 +847,12 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_waiting() {
             scene.agents.get(&parent).unwrap().state,
             ActivityState::Waiting { .. }
         ),
-        "a late JSONL replay of the drained Task END must not match the stale gate and false-resolve a still-pending permission Waiting"
+        "a late JSONL replay of the drained Task END must not match a stale member and false-resolve a still-pending permission Waiting"
     );
 }
 
 #[test]
-fn task_drain_keeps_parallel_ordinary_tool_gate() {
+fn task_drain_keeps_parallel_ordinary_tool_member() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -904,12 +904,12 @@ fn task_drain_keeps_parallel_ordinary_tool_gate() {
     assert_eq!(
         scene.agents.get(&parent).unwrap().state,
         ActivityState::Idle,
-        "the kept gate must let the ordinary tool's END resolve the Waiting"
+        "the kept member must let the ordinary tool's END resolve the Waiting"
     );
 }
 
 #[test]
-fn suppressed_child_event_keeps_parents_own_parallel_tool_gate() {
+fn suppressed_child_event_keeps_parents_own_parallel_tool_member() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -972,7 +972,7 @@ fn suppressed_child_event_keeps_parents_own_parallel_tool_gate() {
             scene.agents.get(&parent).unwrap().state,
             ActivityState::Waiting { .. }
         ),
-        "the kept gate must let the own tool's END resolve the Waiting"
+        "the kept member must let the own tool's END resolve the Waiting"
     );
 }
 
@@ -1178,6 +1178,132 @@ fn a_drain_of_the_shown_task_shows_one_still_in_flight() {
         other => panic!("expected Delegating on task-a, got {other:?}"),
     }
     assert_eq!(slot.state_started_at, since);
+}
+
+/// A Task dispatched while a prompt holds another call only counts: the slot
+/// keeps Waiting with the Task tracked, and the prompt's answer lands on
+/// Delegating.
+#[test]
+fn a_task_dispatch_over_a_prompt_holding_another_call_keeps_waiting() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/dispatch-held.jsonl");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("bash-1"),
+        Some("Bash: rm"),
+        t0,
+        Transport::Hook,
+    );
+    waiting(
+        &mut r,
+        &mut scene,
+        id,
+        "permission",
+        t0 + Duration::from_millis(100),
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("task-T"),
+        Some("Agent"),
+        t0 + Duration::from_millis(200),
+        Transport::Hook,
+    );
+    assert!(
+        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+        "got {:?}",
+        scene.agents[&id].state
+    );
+    act_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("bash-1"),
+        t0 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, id, "the answered prompt lands on the tracked Task");
+}
+
+/// A Task dispatched while a prompt holds no call answers it.
+#[test]
+fn a_task_dispatch_answers_a_prompt_holding_no_call() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/dispatch-bare.jsonl");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("task-T"),
+        Some("Agent"),
+        t0 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, id, "the dispatch is the agent working again");
+}
+
+/// Outside a wait, a Task dispatch is a fresh start like any other: it moots
+/// the request's queued members, so a later transcript start of one runs.
+#[test]
+fn a_task_dispatch_outside_a_wait_moots_queued_members() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/dispatch-moot.jsonl");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for call in ["x1", "x2"] {
+        waiting_for(
+            &mut r,
+            &mut scene,
+            id,
+            "bash",
+            Some(call),
+            t0,
+            Transport::Hook,
+        );
+    }
+    act_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("x1"),
+        t0 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("task-T"),
+        Some("Agent"),
+        t0 + Duration::from_secs(2),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, id, "the dispatch runs");
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("x2"),
+        Some("bash: b"),
+        t0 + Duration::from_secs(3),
+        Transport::Jsonl,
+    );
+    match &scene.agents[&id].state {
+        ActivityState::Active { detail, .. } => assert_eq!(detail.as_deref(), Some("bash: b")),
+        other => panic!("x2's start was held as a queued member: {other:?}"),
+    }
 }
 
 #[test]
@@ -1536,7 +1662,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
     );
     assert!(
         scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "the JSONL Task self-END must drain active_tasks and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
+        "the JSONL Task self-END must drain tasks_in_flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
     );
     act_start(
         &mut r,

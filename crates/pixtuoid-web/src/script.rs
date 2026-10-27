@@ -353,8 +353,8 @@ pub(crate) fn hero_script() -> Vec<Beat> {
     b.push(usage(1, 25_000, 90_000));
     b.push(usage(1, 70_000, 160_000));
 
-    // A permission park: agent 6 hits a gate mid-loop, resolved by the gated
-    // tool's completion (a member of the reducer's action request).
+    // A permission park: agent 6 raises a request mid-loop, answered by its
+    // member call's completion.
     b.push(Beat {
         at_ms: 58_000,
         transport: Transport::Hook,

@@ -6,9 +6,11 @@ use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, Transport};
-use crate::state::correlation::{Correlation, ToolEventKind, elapsed_at_least, elapsed_past};
+use crate::state::correlation::{
+    Correlation, ToolEventKind, any_task, elapsed_at_least, elapsed_past,
+};
 use crate::state::fsm::SettleCtx;
-use crate::state::requests::{Ended, Seen};
+use crate::state::requests::Ended;
 use crate::state::{ActivityState, AgentSlot, SceneState, ToolKind, fsm, scope};
 
 #[doc(hidden)]
@@ -246,7 +248,7 @@ pub struct Reducer {
     /// Parents whose last Task drained on a source that infers child ends from
     /// one, or whose id-less Task ended on an [`ChildEndInference::AnyTaskEnd`]
     /// one, awaiting the deferred b1 cascade
-    /// ([`B1_CASCADE_GRACE`]) — fired only if `active_tasks` is STILL empty at
+    /// ([`B1_CASCADE_GRACE`]) — fired only if `tasks_in_flight` is STILL empty at
     /// fire time, which is how a Task insert inside the grace defuses it
     /// (#151).
     pending_b1_cascades: HashMap<AgentId, SystemTime>,
@@ -272,7 +274,7 @@ impl Reducer {
         // Reap entries for agents that never got a SessionStart — a Task event
         // can arrive before JSONL creates the slot.
         self.corr
-            .active_tasks
+            .tasks_in_flight
             .retain(|id, _| scene.agents.contains_key(id));
         self.corr
             .action_requests
@@ -512,7 +514,7 @@ impl Reducer {
                 .insert((id, tuid.to_string()), (now, kind));
         }
 
-        let tracking = self.track_active_tasks(scene, event, now, from);
+        let tracking = self.track_tasks_in_flight(scene, event, now, from);
 
         self.fire_pending_b1_cascades(scene, now);
 
@@ -534,12 +536,9 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let counted = tool_use_id.as_deref().is_some_and(|t| {
-            self.corr
-                .counted_calls
-                .get(&agent_id)
-                .is_some_and(|calls| calls.contains_key(t))
-        });
+        let counted = tool_use_id
+            .as_deref()
+            .is_some_and(|t| self.corr.is_counted(&agent_id, t));
         let runs = self.corr.action_requests.start(
             agent_id,
             tool_use_id.as_deref(),
@@ -597,7 +596,8 @@ impl Reducer {
 
     /// The `ActivityEnd` arm, for an End the pre-pass tracker left to it, and
     /// the `TurnEnd` arm. It settles the slot when it answers its request, or
-    /// ends the item it runs: the call it names, or any when it names none.
+    /// ends the item it runs: the call it names, or any when either side names
+    /// none.
     fn apply_end(
         &mut self,
         scene: &mut SceneState,
@@ -610,7 +610,7 @@ impl Reducer {
             self.corr
                 .action_requests
                 .end(agent_id, ended, from, is_waiting(scene, agent_id));
-        let task_in_flight = self.corr.any_active_task(&agent_id);
+        let task_in_flight = self.corr.any_task_in_flight(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let untracked_task = matches!(
                 slot.state,
@@ -1128,7 +1128,7 @@ impl Reducer {
         id: AgentId,
         now: SystemTime,
     ) -> bool {
-        let tasks = self.corr.active_tasks.get(&id);
+        let tasks = self.corr.tasks_in_flight.get(&id);
         let in_task = tasks.is_some_and(|s| !s.is_empty());
         let is_member = |tool_use_id: &Option<String>| {
             tool_use_id
@@ -1149,15 +1149,19 @@ impl Reducer {
         if suppress
             && let Some(tasks) = tasks
             && let Some(slot) = scene.agents.get_mut(&id)
-            && matches!(slot.state, ActivityState::Waiting { .. })
-            && self
-                .corr
-                .action_requests
-                .resolves(&id, Seen::ChildResumed(tasks), Transport::Hook)
+            && self.corr.action_requests.child_resumed(
+                id,
+                tasks,
+                matches!(slot.state, ActivityState::Waiting { .. }),
+            )
         {
-            let task_in_flight = self.corr.any_active_task(&id);
-            fsm::settle(slot, SettleCtx { task_in_flight }, now);
-            self.corr.action_requests.close(&id);
+            fsm::settle(
+                slot,
+                SettleCtx {
+                    task_in_flight: any_task(tasks),
+                },
+                now,
+            );
         }
         suppress
     }
@@ -1167,7 +1171,7 @@ impl Reducer {
     /// work. b1 subagent-completion inference, where [`ChildEndInference`] says
     /// so: a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before [`STALE_IDLE_TIMEOUT`].
-    fn track_active_tasks(
+    fn track_tasks_in_flight(
         &mut self,
         scene: &mut SceneState,
         event: &AgentEvent,
@@ -1188,7 +1192,7 @@ impl Reducer {
                 // out-of-window replay would clobber a since-Waiting parent.
                 if self
                     .corr
-                    .active_tasks
+                    .tasks_in_flight
                     .entry(*agent_id)
                     .or_default()
                     .insert(tuid.clone())
@@ -1197,26 +1201,22 @@ impl Reducer {
                         .recent_task_drains
                         .contains_key(&(*agent_id, tuid.clone()))
                     && let Some(slot) = scene.agents.get_mut(agent_id)
+                    && self.corr.action_requests.start(
+                        *agent_id,
+                        Some(tuid),
+                        from,
+                        matches!(slot.state, ActivityState::Waiting { .. }),
+                        self.corr.is_counted(agent_id, tuid),
+                    )
                 {
-                    let waiting = matches!(slot.state, ActivityState::Waiting { .. });
-                    if !waiting
-                        || self.corr.action_requests.start(
-                            *agent_id,
-                            Some(tuid),
-                            from,
-                            waiting,
-                            false,
-                        )
-                    {
-                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
-                    }
+                    fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
                 }
             }
             AgentEvent::ActivityEnd {
                 agent_id,
                 tool_use_id: Some(tuid),
             } => {
-                if let Some(set) = self.corr.active_tasks.get_mut(agent_id)
+                if let Some(set) = self.corr.tasks_in_flight.get_mut(agent_id)
                     && set.remove(tuid)
                 {
                     handled_by_task_tracking = true;
@@ -1246,8 +1246,7 @@ impl Reducer {
                             }
                         ) && (set.is_empty() || shown_drained)
                         {
-                            let task_in_flight =
-                                set.iter().next().map(|t| Arc::<str>::from(t.as_str()));
+                            let task_in_flight = any_task(set);
                             fsm::settle(slot, SettleCtx { task_in_flight }, now);
                         }
                     }
@@ -1264,7 +1263,7 @@ impl Reducer {
 
     /// Fire deferred b1 cascades whose [`B1_CASCADE_GRACE`] elapsed (#151). The
     /// fire-time emptiness check IS the cancel mechanism: a Task insert inside
-    /// the grace re-populates `active_tasks`, so the due entry is discarded
+    /// the grace re-populates `tasks_in_flight`, so the due entry is discarded
     /// instead of fired — no separate cancel-on-insert bookkeeping that could
     /// drift out of sync with the ledger.
     fn fire_pending_b1_cascades(&mut self, scene: &mut SceneState, now: SystemTime) {
@@ -1278,7 +1277,7 @@ impl Reducer {
             self.pending_b1_cascades.remove(&id);
             if self
                 .corr
-                .active_tasks
+                .tasks_in_flight
                 .get(&id)
                 .is_some_and(|s| !s.is_empty())
             {
@@ -1321,7 +1320,7 @@ impl Reducer {
                     self.corr.vouch_fresh(&a.agent_id, now)
                         && self
                             .corr
-                            .active_tasks
+                            .tasks_in_flight
                             .get(&a.agent_id)
                             .is_some_and(|t| !t.is_empty())
                 }) {
@@ -1363,7 +1362,7 @@ impl Reducer {
     /// (`recent_proof_of_life`, [`Correlation::note_removed`]) deliberately stays at
     /// the sweep site — it must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
-        self.corr.active_tasks.remove(id);
+        self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.close(id);
         self.corr.counted_calls.remove(id);
         self.pending_b1_cascades.remove(id);

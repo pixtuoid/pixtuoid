@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
@@ -84,14 +85,14 @@ fn an_end_of_a_call_not_shown_keeps_the_shown_one() {
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
-/// A request naming no call leaves on a start from the transport that raised
-/// it; a start from the other transport only counts.
+/// A request holding no call leaves on the agent's next start; one holding a
+/// call leaves on that call, and another call's start only counts.
 #[test]
-fn a_notification_leaves_on_a_start_from_its_own_transport() {
+fn a_start_answers_only_a_request_holding_no_other_call() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/note.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    start(&mut r, &mut scene, id);
     let t0 = SystemTime::now();
     waiting(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     act_start(
@@ -101,29 +102,40 @@ fn a_notification_leaves_on_a_start_from_its_own_transport() {
         Some("t1"),
         Some("Bash: ls"),
         t0 + Duration::from_secs(1),
-        Transport::Jsonl,
-    );
-    let slot = &scene.agents[&id];
-    assert!(
-        matches!(slot.state, ActivityState::Waiting { .. }),
-        "a transcript start must not answer a hook's prompt, got {:?}",
-        slot.state
-    );
-    assert_eq!(slot.tool_call_count, 1, "it still counts");
-
-    act_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t2"),
-        Some("Bash: pwd"),
-        t0 + Duration::from_secs(2),
         Transport::Hook,
     );
     assert!(matches!(
         scene.agents[&id].state,
         ActivityState::Active { .. }
     ));
+
+    let t2 = t0 + Duration::from_secs(2);
+    waiting(&mut r, &mut scene, id, "permission", t2, Transport::Hook);
+    act_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t2"),
+        Some("Bash: pwd"),
+        t2 + Duration::from_secs(1),
+        Transport::Hook,
+    );
+    let slot = &scene.agents[&id];
+    assert!(
+        matches!(slot.state, ActivityState::Waiting { .. }),
+        "t1 holds the request, got {:?}",
+        slot.state
+    );
+    assert_eq!(slot.tool_call_count, 2, "t2 still counts");
+    act_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        t2 + Duration::from_secs(2),
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 /// The transcript ends a turn it may have read before a hook's fresh prompt,
@@ -325,11 +337,11 @@ fn active_ms_preserved_when_waiting_interrupts_active() {
 }
 
 // CC wire fact (captured live): when a permission Notification fires mid-tool
-// (PreToolUse(t1) → Notification → PostToolUse(t1)), the gated tool's
+// (PreToolUse(t1) → Notification → PostToolUse(t1)), the member call's
 // ActivityEnd carries the same tool_use_id that was Active when Waiting began —
 // so PostToolUse(t1) means the permission was granted and the Waiting resolved.
 #[test]
-fn gated_tool_end_while_waiting_resolves_to_idle() {
+fn a_member_end_while_waiting_resolves_to_idle() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/wait.jsonl");
@@ -363,12 +375,12 @@ fn gated_tool_end_while_waiting_resolves_to_idle() {
     );
 }
 
-/// CC's recorded gate fires PermissionRequest (no tool_use_id) and then, if the
+/// CC's recorded prompt fires PermissionRequest (no tool_use_id) and then, if the
 /// prompt sits, the idle Notification — both decode to Waiting. The second one
 /// must not erase the tool the first remembered, or the approved tool's
 /// PostToolUse resolves nothing and the slot never leaves Waiting.
 #[test]
-fn a_second_waiting_keeps_the_gate_the_first_one_remembered() {
+fn a_second_waiting_keeps_the_member_the_first_one_remembered() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/gate.jsonl");
@@ -506,7 +518,7 @@ fn a_hook_tool_end_naming_no_call_resolves_a_wait_naming_none() {
 fn a_turn_end_settles_a_call_whose_own_end_never_came() {
     use crate::waiting_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for gated in [false, true] {
+    for requested in [false, true] {
         let mut scene = SceneState::uniform(4);
         let mut r = Reducer::new();
         let id = AgentId::from_parts("kimi", "session_abc");
@@ -520,7 +532,7 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
             t0,
             Transport::Hook,
         );
-        if gated {
+        if requested {
             waiting_for(
                 &mut r,
                 &mut scene,
@@ -536,7 +548,7 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
         assert_eq!(
             scene.agents.get(&id).unwrap().state,
             ActivityState::Idle,
-            "gated: {gated}"
+            "requested: {requested}"
         );
     }
 }
@@ -569,11 +581,61 @@ fn jsonl_none_id_end_while_waiting_keeps_waiting() {
     );
 }
 
-// An end naming no call that answers a wait leaves no gate behind, so the gated
-// call's late transcript Start is plain work, not a re-observed approval. A
+#[test]
+fn codex_permission_then_jsonl_output_resumes_to_active() {
+    // The hook Waiting and the JSONL resume coalesce on the session UUID.
+    let mut reducer = Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+    let uuid = "019e7762-9ded-7e33-be41-946ecf105bf4";
+    let id = AgentId::from_parts("codex", uuid);
+
+    reducer.apply(
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: id,
+            source: "codex".into(),
+            session_id: uuid.into(),
+            cwd: PathBuf::from("/Users/me/dotfiles"),
+            parent_id: None,
+        },
+        now,
+        Transport::Hook,
+    );
+
+    waiting(
+        &mut reducer,
+        &mut scene,
+        id,
+        "permission",
+        now,
+        Transport::Hook,
+    );
+    assert!(
+        matches!(scene.agents[&id].state, ActivityState::Waiting { .. }),
+        "should be Waiting on permission"
+    );
+
+    act_start(
+        &mut reducer,
+        &mut scene,
+        id,
+        None,
+        Some("exec_command"),
+        now,
+        Transport::Jsonl,
+    );
+    assert!(
+        matches!(scene.agents[&id].state, ActivityState::Active { .. }),
+        "resume must return to Active"
+    );
+}
+
+// An end naming no call that answers a wait leaves no request behind, so its
+// member call's late transcript Start is plain work, not a re-observed approval. A
 // tool end naming no call answers only a wait that named none either.
 #[test]
-fn an_end_naming_no_call_that_answers_a_wait_clears_its_gates() {
+fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
     use crate::waiting_for;
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     for turn in [true, false] {
@@ -773,7 +835,7 @@ fn an_answered_agy_question_clears_waiting_on_either_transport() {
 // ---------------------------------------------------------------------------
 // omp extension-bridge approval rounds (#951): the interleavings human approval
 // latency makes reachable past `HOOK_WINS_WINDOW` (`counted_calls`' own doc) —
-// each must bind the wait to the gated call id and count it ONCE.
+// each must bind the wait to the member call id and count it ONCE.
 // ---------------------------------------------------------------------------
 
 use crate::waiting_for;
@@ -858,7 +920,7 @@ fn approval_hook_waiting_first_survives_a_late_transcript_start() {
         ActivityState::Waiting { .. }
     ));
 
-    // The transcript's Start for the SAME gated call, while the human decides.
+    // The transcript's Start for the SAME member call, while the human decides.
     let t1 = beyond_dedup(t0);
     act_start(
         &mut r,
@@ -872,7 +934,7 @@ fn approval_hook_waiting_first_survives_a_late_transcript_start() {
     let slot = scene.agents.get(&id).unwrap();
     assert!(
         matches!(slot.state, ActivityState::Waiting { .. }),
-        "a gated call's own transcript Start must not fake an approval"
+        "a member call's own transcript Start must not fake an approval"
     );
     assert_eq!(slot.tool_call_count, 1);
 
@@ -968,7 +1030,6 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
 
     let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
     act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
-    // The resolved wait settles through the ordinary Active→Idle debounce.
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -990,7 +1051,7 @@ fn denied_approval_clears_waiting_via_the_hook_end() {
 }
 
 #[test]
-fn parallel_gated_approvals_resolve_member_by_member() {
+fn parallel_approvals_resolve_member_by_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/e.jsonl");
@@ -1037,7 +1098,7 @@ fn parallel_gated_approvals_resolve_member_by_member() {
         Transport::Hook,
     );
 
-    // Resolving x1 resumes work; x2's gate must survive it.
+    // Resolving x1 resumes work; x2's membership must survive it.
     let t2 = beyond_dedup(t1) + Duration::from_secs(2);
     act_start(
         &mut r,
@@ -1053,7 +1114,7 @@ fn parallel_gated_approvals_resolve_member_by_member() {
         ActivityState::Active { .. }
     ));
 
-    // omp re-raises the still-pending gate; its resolve must work identically.
+    // omp re-raises the still-pending request; its resolve must work identically.
     let t3 = t2 + Duration::from_secs(1);
     waiting_for(
         &mut r,
@@ -1105,7 +1166,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         Transport::Jsonl,
     );
 
-    // The parent's OWN gated tool (parallel to the Task), then its approval.
+    // The parent's OWN member tool (parallel to the Task), then its approval.
     act_start(
         &mut r,
         &mut scene,
@@ -1149,7 +1210,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     );
     let count_after_resume = scene.agents.get(&id).unwrap().tool_call_count;
 
-    // Denial path on a second gated call: the hook End must clear the wait too.
+    // Denial path on a second member call: the hook End must clear the wait too.
     let t3 = beyond_dedup(t2);
     act_start(
         &mut r,
@@ -1186,7 +1247,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
 }
 
 #[test]
-fn a_denial_resolving_one_gate_keeps_the_queued_siblings() {
+fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/g.jsonl");
@@ -1231,7 +1292,7 @@ fn a_denial_resolving_one_gate_keeps_the_queued_siblings() {
         Transport::Hook,
     );
 
-    // Denying x1 must not forget x2's still-pending gate.
+    // Denying x1 must not forget x2's still-pending membership.
     let t2 = beyond_dedup(t1) + Duration::from_secs(3);
     act_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
     let t3 = t2 + Duration::from_secs(1);
@@ -1257,7 +1318,7 @@ fn a_denial_resolving_one_gate_keeps_the_queued_siblings() {
     let slot = scene.agents.get(&id).unwrap();
     assert!(
         matches!(slot.state, ActivityState::Active { .. }),
-        "x2's resume must still read as the gated approval round"
+        "x2's resume must still read as its approval round"
     );
     assert_eq!(
         slot.tool_call_count, 2,
@@ -1266,7 +1327,7 @@ fn a_denial_resolving_one_gate_keeps_the_queued_siblings() {
 }
 
 #[test]
-fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_gate() {
+fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/h.jsonl");
@@ -1315,7 +1376,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_gate() {
         t3,
         Transport::Jsonl,
     );
-    // The straggler must not have wiped x2's gate.
+    // The straggler must not have wiped x2's membership.
     let t4 = beyond_dedup(t3) + Duration::from_secs(2);
     act_start(
         &mut r,
@@ -1335,7 +1396,7 @@ fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_gate() {
 }
 
 #[test]
-fn an_auto_approved_parallel_tool_does_not_strip_a_pending_gate() {
+fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/i.jsonl");
@@ -1362,7 +1423,7 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_gate() {
         t1,
         Transport::Jsonl,
     );
-    // x1's denial must still resolve the (re-raised) wait as a gated End.
+    // x1's denial must still resolve the (re-raised) wait as a member's End.
     let t2 = beyond_dedup(t1);
     waiting_for(
         &mut r,
@@ -1380,13 +1441,13 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_gate() {
             scene.agents.get(&id).unwrap().state,
             ActivityState::Waiting { .. }
         ),
-        "y's start stripped x1's gate — the denial could no longer resolve it"
+        "y's start stripped x1's membership — the denial could no longer resolve it"
     );
 }
 
 /// Hook-first ordering: the transcript's richer detail lands while the slot
 /// Waits and is deliberately dropped, so the resume re-labels from the wire's
-/// toolName — the gated-Jsonl arm's documented label-only cost.
+/// toolName — a held transcript start's documented label-only cost.
 #[test]
 fn the_approval_resume_labels_from_the_wire_tool_name() {
     let mut scene = SceneState::uniform(4);

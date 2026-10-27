@@ -11,6 +11,8 @@
 //! - **socket resolution + `ConnectedSources`**: both values outlive the boot (the
 //!   Sources panel displays the path and mutates the live set), so the callers own
 //!   them and hand in a clone.
+//! - **the [`SceneSink`]**: a painter's latest-value watch, or headless's
+//!   transition log.
 //!
 //! Requires an ambient tokio runtime context — `run_async` executes inside
 //! `block_on`, floating holds an `rt.enter()` guard — so the `tokio::spawn`s here
@@ -27,7 +29,7 @@ use pixtuoid_core::{AgentEvent, SceneState, Transport};
 use tokio::sync::{mpsc, watch};
 
 use super::driver::{build_source_set, reducer_task};
-use super::{ConnectedSources, TransitionLog};
+use super::{ConnectedSources, SceneRx, TransitionLog};
 
 /// Where [`reducer_task`] publishes the scene after each change it applies.
 pub(crate) enum SceneSink {
@@ -38,6 +40,13 @@ pub(crate) enum SceneSink {
 }
 
 impl SceneSink {
+    /// A painter's sink, and the watch it draws from, seeded with the empty
+    /// boot scene.
+    pub(crate) fn latest(boot_caps: [usize; MAX_FLOORS]) -> (Self, SceneRx) {
+        let (tx, rx) = watch::channel(Arc::new(SceneState::new(boot_caps)));
+        (Self::Latest(tx), rx)
+    }
+
     pub(crate) fn transitions(tx: mpsc::UnboundedSender<String>) -> Self {
         Self::Transitions(tx, TransitionLog::default())
     }

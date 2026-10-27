@@ -251,9 +251,9 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
             }
         }
         // Resume signals: a command/patch finished, or a call was refused. Each
-        // is an ActivityStart so the reducer clears any Waiting set by the
-        // permission gate. A call's output also ENDS that call: a refused call
-        // gets no `PostToolUse`, so this is its only end.
+        // is an ActivityStart, which answers a permission request holding no
+        // call. A call's output also ENDS that call, answering a request that
+        // holds it: a refused call gets no `PostToolUse`, so this is its only end.
         (RESPONSE_ITEM, i) if RI_RESUME.contains(&i) => {
             let call = payload
                 .and_then(|p| p.get(CALL_ID))

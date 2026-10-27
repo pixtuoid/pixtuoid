@@ -16,7 +16,7 @@
 //!
 //! - **`tool_use_id` IS on the wire and DROPPED deliberately — do not "fix"
 //!   that.** `Task` fires `preToolUse` and NEVER a post (capture-verified), so
-//!   passing the id through would satisfy `track_active_tasks`' `Some(tuid)` arm,
+//!   passing the id through would satisfy `track_tasks_in_flight`' `Some(tuid)` arm,
 //!   insert a tuid nothing drains, and strand the parent Delegating for the rest
 //!   of the session. Pinned by
 //!   `tool_use_id_is_dropped_even_though_the_wire_has_one`.
@@ -229,7 +229,7 @@ mod tests {
     }
 
     /// The wire HAS a `tool_use_id` and it pairs; we drop it on purpose. Wiring
-    /// it would let `track_active_tasks` claim cursor's `Task` — which never
+    /// it would let `track_tasks_in_flight` claim cursor's `Task` — which never
     /// gets a `postToolUse` — and strand the parent Delegating. See the module
     /// doc before changing this.
     #[test]

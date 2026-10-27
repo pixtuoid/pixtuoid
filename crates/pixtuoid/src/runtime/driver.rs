@@ -27,7 +27,7 @@ use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_core::{Reducer, SceneState, TaggedReceiver};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 use super::gate;
 use super::pipeline::SceneSink;
@@ -113,7 +113,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
             headless_loop(log, pipeline.health_rx).await
         }
         Some((pack, plan, motion)) => {
-            let (scene_tx, scene_rx) = watch::channel(Arc::new(SceneState::new(boot_caps)));
+            let (sink, scene_rx) = SceneSink::latest(boot_caps);
             let super::pipeline::Pipeline {
                 health_rx,
                 floor_caps,
@@ -121,7 +121,7 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
                 socket_path.clone(),
                 connected.clone(),
                 boot_caps,
-                SceneSink::Latest(scene_tx),
+                sink,
             );
             crate::tui::run_tui(crate::tui::TuiSession {
                 scene_rx,
@@ -336,6 +336,7 @@ mod tests {
     use super::*;
     use crate::runtime::FALLBACK_DESKS;
     use pixtuoid_core::source::manager::SourceDeath;
+    use tokio::sync::watch;
 
     type HealthPair = (
         watch::Sender<Vec<SourceDeath>>,

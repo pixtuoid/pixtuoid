@@ -455,7 +455,7 @@ fn proof_of_life_on_delegating_parent_shields_its_active_subtree() {
         t0 + Duration::from_millis(150),
         Transport::Jsonl,
     );
-    // Dispatching a Task is what makes active_tasks[parent] non-empty.
+    // Dispatching a Task is what makes tasks_in_flight[parent] non-empty.
     act_start(
         &mut r,
         &mut scene,
@@ -554,7 +554,7 @@ fn vouched_idle_parent_without_tasks_does_not_shield_idle_child() {
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let (parent, child) = delegating_pair(&mut r, &mut scene, "pol-backstop", t0);
-    // NO Task dispatch: active_tasks[parent] stays empty; both slots sit Idle.
+    // NO Task dispatch: tasks_in_flight[parent] stays empty; both slots sit Idle.
 
     let vouch_at = t0 + STALE_IDLE_TIMEOUT + Duration::from_secs(60);
     proof_of_life(&mut r, &mut scene, parent, vouch_at, Transport::Jsonl);

@@ -608,7 +608,7 @@ pub(crate) fn subagent_fired(
 
 /// The dispatch tool's current NAME, renamed from `Task` in CC v2.1.63 with no
 /// announcement. `Workflow` (CC's fleet dispatcher) is DELIBERATELY not a second
-/// entry: its children fire no per-agent tool_use, so one months-long `active_tasks`
+/// entry: its children fire no per-agent tool_use, so one months-long `tasks_in_flight`
 /// entry would sweep-EXEMPT every FINISHED fleet subagent until the workflow ends —
 /// worse desk starvation than the gap. Fleet lifecycle rides the Subagent hooks.
 const DISPATCH_TOOL: &str = "Agent";
@@ -617,7 +617,7 @@ const DISPATCH_TOOL: &str = "Agent";
 /// the PRESENCE of a `subagent_type` input field — presence, not value, so a renamed
 /// tool emitting `subagent_type: null` is still caught AND still breadcrumbs the
 /// drift. The reducer keys Delegating and an unnamed child's suppression
-/// (`active_tasks`) and Task-drain completion on `is_task()`, so a missed dispatch
+/// (`tasks_in_flight`) and Task-drain completion on `is_task()`, so a missed dispatch
 /// silently disables them.
 pub(crate) fn make_tool_detail(source: &str, tool_name: &str, input: Option<&Value>) -> ToolDetail {
     let has_subagent_type = input.and_then(|v| v.get("subagent_type")).is_some();

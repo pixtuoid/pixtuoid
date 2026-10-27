@@ -187,9 +187,7 @@ impl PipelineBoot {
             floor0_desks = boot_caps[0],
             "pixtuoid floating: seeding desk capacity from the real window"
         );
-        let (scene_tx, scene_rx) = tokio::sync::watch::channel(std::sync::Arc::new(
-            pixtuoid_core::SceneState::new(boot_caps),
-        ));
+        let (sink, scene_rx) = crate::runtime::pipeline::SceneSink::latest(boot_caps);
         let crate::runtime::pipeline::Pipeline {
             health_rx,
             floor_caps,
@@ -197,7 +195,7 @@ impl PipelineBoot {
             self.socket_path,
             self.connected,
             boot_caps,
-            crate::runtime::pipeline::SceneSink::Latest(scene_tx),
+            sink,
         );
 
         {

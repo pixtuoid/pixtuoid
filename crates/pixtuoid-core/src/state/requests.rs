@@ -1,5 +1,5 @@
-//! The agents' open user-action requests (a slot's `Waiting`): the calls each
-//! is gated on, the transport that raised it, and [`ActionRequests::resolves`],
+//! The agents' open user-action requests (a slot's `Waiting`): each one's
+//! member calls, the transport that raised it, and `ActionRequests::resolves`,
 //! the one rule deciding which event answers it.
 
 use std::collections::{HashMap, HashSet};
@@ -22,7 +22,7 @@ pub(crate) enum Ended<'a> {
 
 /// An event as a request's resolution reads it.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Seen<'a> {
+enum Seen<'a> {
     /// A call started; its id when the wire names one.
     Start(Option<&'a str>),
     End(Ended<'a>),
@@ -33,7 +33,7 @@ pub(crate) enum Seen<'a> {
 
 #[derive(Debug)]
 struct ActionRequest {
-    /// The calls it is gated on: named by the wire, which can queue several
+    /// The calls it holds on: named by the wire, which can queue several
     /// (#951), or the one in flight when it was raised (a CC permission
     /// Notification fires mid-tool). A member's end means the prompt was
     /// answered; a parallel call's end is no member's, so it cannot.
@@ -57,9 +57,9 @@ impl ActionRequest {
     }
 }
 
-/// Every agent's open request. An entry outlives its `Waiting` while queued
-/// members remain: a member's answer resolves the wait, and the CLI re-raises
-/// for its siblings.
+/// Every agent's open request. An entry lives until a fresh start outside a
+/// wait, an answer naming no call, or the slot's removal; whether it stands is
+/// the slot's `Waiting`.
 #[derive(Debug, Default)]
 pub(crate) struct ActionRequests(HashMap<AgentId, ActionRequest>);
 
@@ -105,7 +105,7 @@ impl ActionRequests {
     }
 
     /// Whether `seen`, arriving on `from`, answers `id`'s standing request.
-    pub(crate) fn resolves(&self, id: &AgentId, seen: Seen<'_>, from: Transport) -> bool {
+    fn resolves(&self, id: &AgentId, seen: Seen<'_>, from: Transport) -> bool {
         let Some(req) = self.0.get(id) else {
             return false;
         };
@@ -113,16 +113,17 @@ impl ActionRequests {
             // On a hook it is the approval's resume. The transcript's start of
             // the same call lands while the human still decides (#951).
             Seen::Start(Some(c)) if req.is_member(c) => from == Transport::Hook,
-            // A request naming no call is answered once its raising transport
-            // shows the agent working again; any other start only counts.
-            Seen::Start(_) => req.members.is_empty() && from == req.raised_on,
+            // A request with no member is answered once the agent works again
+            // (codex's rollout resume answers its hook's prompt); a start of a
+            // call that is no member only counts.
+            Seen::Start(_) => req.members.is_empty(),
             Seen::End(Ended::Call(c)) => req.is_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed) => from == Transport::Hook && !req.named,
             // A pending request blocks the turn. The transcript may read a
             // turn's end past a hook's fresh raise, so it answers only its own.
             Seen::End(Ended::Turn) => from == Transport::Hook || req.raised_on == Transport::Jsonl,
-            // Unless a member is the agent's own call, not a Task's.
+            // The child resumed, unless a member is the parent's own call.
             Seen::ChildResumed(tasks) => req.members.iter().all(|m| tasks.contains(&**m)),
         }
     }
@@ -157,8 +158,8 @@ impl ActionRequests {
 
     /// An end on `from`: whether it answers the standing request. A call's
     /// end retires that call whether or not it answered (a denial, or a
-    /// parallel call past its own gate); an end naming no call that answers
-    /// closes the whole request.
+    /// parallel call that was a member too); an end naming no call that
+    /// answers closes the whole request.
     pub(crate) fn end(
         &mut self,
         id: AgentId,
@@ -171,6 +172,21 @@ impl ActionRequests {
             Ended::Call(c) => self.retire(&id, c),
             _ if resolved => self.close(&id),
             _ => {}
+        }
+        resolved
+    }
+
+    /// An unnamed child's event dropped while `tasks` are in flight: whether
+    /// it answers the standing request, which it then closes.
+    pub(crate) fn child_resumed(
+        &mut self,
+        id: AgentId,
+        tasks: &HashSet<String>,
+        waiting: bool,
+    ) -> bool {
+        let resolved = waiting && self.resolves(&id, Seen::ChildResumed(tasks), Transport::Hook);
+        if resolved {
+            self.close(&id);
         }
         resolved
     }
@@ -257,18 +273,18 @@ mod tests {
                 false,
             ),
             (
-                "a bare request's own transport",
+                "a bare request, its own transport",
                 bare(HOOK),
                 Seen::Start(Some("y")),
                 HOOK,
                 true,
             ),
             (
-                "a bare request's other transport",
+                "a bare request, the other transport",
                 bare(HOOK),
                 Seen::Start(None),
                 JSONL,
-                false,
+                true,
             ),
             (
                 "a member's end, either channel",
@@ -376,8 +392,18 @@ mod tests {
     fn a_drained_last_member_answers_nothing() {
         let mut reqs = raised(None, Some("task"), HOOK);
         reqs.retire(&id(), "task");
-        assert!(reqs.contains(&id()), "#152: the request stands");
+        assert!(reqs.contains(&id()), "#152: the request is kept");
         assert!(!reqs.resolves(&id(), Seen::End(Ended::Call("task")), HOOK));
+    }
+
+    #[test]
+    fn a_resumed_child_closes_its_parents_request_only_while_it_waits() {
+        let tasks: HashSet<String> = ["task".to_string()].into();
+        let mut reqs = raised(None, Some("task"), HOOK);
+        assert!(!reqs.child_resumed(id(), &tasks, false), "no wait stood");
+        assert!(reqs.contains(&id()));
+        assert!(reqs.child_resumed(id(), &tasks, true));
+        assert!(!reqs.contains(&id()));
     }
 
     #[test]

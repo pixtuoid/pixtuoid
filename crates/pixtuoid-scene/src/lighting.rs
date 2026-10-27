@@ -451,10 +451,10 @@ impl DeskLights {
 }
 
 /// The tool lighting the screen of a desk facing `facing`, whose occupant
-/// `agent` sits there right now (`seated`, so not mid-walk during the Active
-/// grace window): `None` where the screen is dark, or shows us the monitor's
-/// back — a glow there would be light leaking out of a case. The one rule the
-/// screen glow and its halo share.
+/// `agent` sits there right now (`seated`, so not mid-walk): `None` where the
+/// screen is dark, or shows us the monitor's back — a glow there would be
+/// light leaking out of a case. The one rule the screen glow and its halo
+/// share.
 pub(crate) fn lit_screen(agent: &AgentSlot, facing: Facing, seated: bool) -> Option<ToolKind> {
     match agent.state {
         ActivityState::Active { kind, .. } if seated && facing == Facing::North => Some(kind),

@@ -77,8 +77,8 @@ pub(crate) enum Cmd {
         #[arg(long, hide = true, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
         max_desks: Option<usize>,
         /// Skip the TUI entirely — useful for CI / scripting.
-        /// Prints a one-line `agents=[label@desk:state, ...]` summary every
-        /// 200ms when it changes.
+        /// Prints a one-line `agents=[label@desk:state, ...]` summary on each
+        /// change of the scene.
         #[arg(long, default_value_t = false)]
         headless: bool,
         #[command(flatten)]

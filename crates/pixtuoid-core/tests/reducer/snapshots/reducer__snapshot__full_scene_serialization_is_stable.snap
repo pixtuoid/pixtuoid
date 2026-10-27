@@ -50,7 +50,9 @@ agents:
     created_at:
       secs_since_epoch: 5
       nanos_since_epoch: 0
-    exiting_at: ~
+    exiting_at:
+      secs_since_epoch: 8
+      nanos_since_epoch: 0
     desk_index: 4
     floor_idx: 0
     tool_call_count: 1

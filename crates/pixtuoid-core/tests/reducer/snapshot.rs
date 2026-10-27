@@ -109,7 +109,7 @@ fn full_scene_serialization_is_stable() {
         at(5),
         Transport::Hook,
     );
-    // The trailing ActivityEnd settles it at once.
+    // Its SessionEnd populates `exiting_at`, the scene's Option<SystemTime>.
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -141,6 +141,15 @@ fn full_scene_serialization_is_stable() {
             tool_use_id: Some("w-1".into()),
         },
         at(7),
+        Transport::Hook,
+    );
+    r.apply(
+        &mut scene,
+        AgentEvent::SessionEnd {
+            agent_id: winding,
+            as_child: false,
+        },
+        at(8),
         Transport::Hook,
     );
 

@@ -49,7 +49,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
     assert!(scene.agents.contains_key(&parent_id()), "parent created");
 
     // Real CC names the dispatch tool "Agent", not "Task" — Task-detection
-    // must still fire so the reducer records an active_task.
+    // must still fire so the reducer records a task in flight.
     for ev in decode_hook_payload(json!({
         "hook_event_name": "PreToolUse",
         "session_id": "parent",

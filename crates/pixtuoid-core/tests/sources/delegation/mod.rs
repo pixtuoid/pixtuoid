@@ -2,7 +2,7 @@
 //! tool literally called `task` — `subagent` for dsh and opencode. They claim the Task detail by tool NAME and
 //! deliberately NOT by the presence of a `subagent_type` key, so a
 //! model-authored argument on an ordinary tool cannot spoof a delegation, seed
-//! `active_tasks`, and cascade a real child out on drain.
+//! `tasks_in_flight`, and cascade a real child out on drain.
 
 use std::path::PathBuf;
 
