@@ -1106,6 +1106,12 @@ fn a_desk_screen_glows_only_for_a_seated_tool_user_facing_north() {
     );
     assert_eq!(glow(Some(&idle), Facing::North, true), None, "no tool");
     assert_eq!(glow(None, Facing::North, true), None, "nobody");
+    let between_items = make_slot(id, ActivityState::Running { item: None });
+    assert_eq!(
+        glow(Some(&between_items), Facing::North, true),
+        Some(theme.tool_glow.default),
+        "an open turn works its screen, untinted"
+    );
 }
 
 fn drawable(sort_row: u16) -> Drawable<'static> {
@@ -2280,7 +2286,7 @@ fn a_top_burning_placement_carries_its_crown_on_its_top_left() {
     slot.model = Some("claude-fable-5".into());
     let crowns = |scene: &SceneState| {
         let agents: Vec<AgentSlot> = scene.agents.values().cloned().collect();
-        let poses = HashMap::from([(id, Some(Pose::SeatedThinking))]);
+        let poses = HashMap::from([(id, Some(Pose::SeatedTyping))]);
         let (placements, ..) = crate::sim::resolve_characters(
             &agents,
             &poses,
@@ -2761,7 +2767,7 @@ fn seat_desk_is_set_exactly_when_the_sim_seats_someone_at_a_desk() {
                     "a WALKING agent is not seated at a desk (t={ms}ms)"
                 );
             }
-            Some(Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)) => {
+            Some(Some(Pose::SeatedIdle | Pose::SeatedTyping)) => {
                 seated_seen = true;
                 let desk = c.seat_desk.expect("a seated agent carries its desk");
                 assert!(
@@ -4438,7 +4444,7 @@ fn a_placement_is_seated_exactly_when_its_figure_sits_on_furniture() {
         for c in &frame.characters {
             let id = frame.agents[c.agent_idx].agent_id;
             let sits = match frame.poses.get(&id) {
-                Some(Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)) => true,
+                Some(Some(Pose::SeatedIdle | Pose::SeatedTyping)) => true,
                 Some(Some(Pose::AtWaypoint { kind, .. })) => matches!(
                     kind,
                     WaypointKind::Couch | WaypointKind::MeetingSofa | WaypointKind::MeetingChair
@@ -5304,7 +5310,7 @@ fn only_a_placement_that_breathes_takes_the_breath() {
         .straight(),
     );
     let idler = place(Pose::AimlessAt { dest: mid });
-    let sitter = place(Pose::SeatedThinking);
+    let sitter = place(Pose::SeatedTyping);
     assert!(!walker.breathes && idler.breathes && sitter.breathes);
     // Neither stands at a desk, so the badge row IS the fitted top.
     assert_eq!(
@@ -5720,9 +5726,10 @@ fn a_pose_is_its_placements_frame_facing_and_glow() {
         (Piece::Typing, 3, true)
     );
     assert_eq!(pose.glow_tint, tool_glow_tint(&typing, &theme.tool_glow));
-    let thinking =
-        crate::character::SpritePose::of(&placement(CharacterGlow::Thinking), &typing, theme);
-    assert_eq!(thinking.glow_tint, Some(theme.tool_glow.default));
+    let between_items = make_slot(id, ActivityState::Running { item: None });
+    let turn =
+        crate::character::SpritePose::of(&placement(CharacterGlow::Tool), &between_items, theme);
+    assert_eq!(turn.glow_tint, Some(theme.tool_glow.default));
     let unlit = crate::character::SpritePose::of(&placement(CharacterGlow::None), &typing, theme);
     assert_eq!(unlit.glow_tint, None);
 }

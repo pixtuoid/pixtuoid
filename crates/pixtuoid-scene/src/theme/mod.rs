@@ -233,6 +233,15 @@ impl ToolGlowColors {
             ToolKind::Other => self.default,
         }
     }
+
+    /// The hue of a screen's work: its tool's, or `default` for a turn
+    /// between items.
+    pub(crate) fn for_work(&self, work: crate::lighting::ScreenWork) -> Rgb {
+        match work {
+            crate::lighting::ScreenWork::ToolUse(kind) => self.for_kind(kind),
+            crate::lighting::ScreenWork::Turn => self.default,
+        }
+    }
 }
 
 /// Name-badge, tooltip, and neon-brand UI colors.
@@ -519,8 +528,8 @@ mod tests {
     }
 
     // Two glow roles too close to tell apart is a CORRECTNESS bug, not taste:
-    // `CharacterGlow::Thinking` also resolves to `default`, so an aliased
-    // `default` makes a thinking agent read as an editing one.
+    // an open turn showing no item also glows `default`, so an aliased
+    // `default` makes it read as an editing one.
     #[test]
     fn tool_glow_hues_are_distinct_for_every_theme() {
         /// Deliberately looser than `MIN_SOURCE_HUE_DIST`: six glow roles share

@@ -68,9 +68,7 @@ pub(crate) struct SimStores<'a> {
 pub(crate) enum CharacterGlow {
     /// No glow.
     None,
-    /// `SeatedThinking` — paint uses the theme's default tool-glow color.
-    Thinking,
-    /// `SeatedTyping` — paint resolves the per-tool tint (`tool_glow_tint`).
+    /// `SeatedTyping` — paint resolves the work's tint (`tool_glow_tint`).
     Tool,
 }
 
@@ -397,10 +395,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
                 && a.exiting_at.is_none()
         })
         .map(|a| {
-            let seated = matches!(
-                poses.get(&a.agent_id),
-                Some(Some(Pose::SeatedTyping | Pose::SeatedThinking))
-            );
+            let seated = matches!(poses.get(&a.agent_id), Some(Some(Pose::SeatedTyping)));
             (a.desk_index.single_floor_local(), seated)
         })
         .collect();
@@ -938,9 +933,6 @@ pub(crate) fn resolve_characters(
                     CharacterGlow::None,
                     Some(agent.agent_id.raw()),
                 ));
-            }
-            Pose::SeatedThinking => {
-                placements.push(seated(SEATED, CharacterGlow::Thinking, None));
             }
             Pose::SeatedTyping => {
                 let (mut placement, cues) = seated(TYPING, CharacterGlow::Tool, None);

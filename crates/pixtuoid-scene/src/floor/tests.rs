@@ -2332,10 +2332,9 @@ fn a_drop_and_the_next_lift_between_two_steps_both_land() {
         let later = (3..).map(|tenth| step(&mut session, 100 * tenth));
         match first {
             Figure::Agent(_) => assert!(
-                later.take(300).any(|f| matches!(
-                    f.poses[&a],
-                    Some(Pose::SeatedIdle | Pose::SeatedThinking | Pose::SeatedTyping)
-                )),
+                later
+                    .take(300)
+                    .any(|f| matches!(f.poses[&a], Some(Pose::SeatedIdle | Pose::SeatedTyping))),
                 "the agent set down walks home and sits"
             ),
             _ => {

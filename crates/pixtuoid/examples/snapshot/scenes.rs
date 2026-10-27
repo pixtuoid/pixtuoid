@@ -171,14 +171,15 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
         "gallery exemplars must span all four tiers"
     );
     use std::time::Duration as D;
-    // (label, state, since_event, since_entry) — the two must DIFFER, or
-    // `in_thinking_window` and `ENTRY_ANIMATION_MS` between them bar both seated poses.
+    // (label, state, since_event, since_entry): a seated pose needs
+    // `since_entry` past `ENTRY_ANIMATION_MS`.
     let agents: [(&str, ActivityState, D, D); 12] = [
-        // Desk 0 is a FAR-seated desk, so this one also demonstrates the
-        // screen staying dark behind a monitor the room only sees the back of.
+        // An open turn between its items. Desk 0 is a FAR-seated desk, so this
+        // one also demonstrates the screen staying dark behind a monitor the
+        // room only sees the back of.
         (
-            "thinking",
-            ActivityState::Idle,
+            "turn",
+            ActivityState::Running { item: None },
             D::from_secs(5),
             D::from_secs(90),
         ),
@@ -845,7 +846,7 @@ mod tests {
                 .as_millis() as u64;
             // Mirror `advance_wander`'s bootstrap fast-forward exactly.
             let cycle_n = elapsed_ms / est_wander_cycle_ms(id);
-            assert!(cycle_n >= 1, "cycle 0 back-dates under the thinking window");
+            assert!(cycle_n >= 1, "cycle 0 back-dates inside the entry walk");
             assert!(takes_trip(id, cycle_n), "staged cycle must be a trip");
             assert!(!is_aimless_cycle(id, cycle_n), "trip must be directed");
             let wp_idx = waypoint_index_for_cycle(id, cycle_n, layout.waypoints.len());

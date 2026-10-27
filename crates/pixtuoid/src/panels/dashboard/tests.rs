@@ -329,3 +329,13 @@ fn build_dashboard_rows_empty_scene_is_empty() {
     let scene = SceneState::uniform(8);
     assert!(build_dashboard_rows(&scene, &DashboardFolds::default()).is_empty());
 }
+
+/// An open turn between items is a running row with no tool: the row then
+/// reads "running".
+#[test]
+fn an_open_turn_with_no_item_is_a_running_row_with_no_tool() {
+    assert_eq!(
+        row_state(&ActivityState::Running { item: None }),
+        RowState::Running(None)
+    );
+}

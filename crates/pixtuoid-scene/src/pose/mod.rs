@@ -406,11 +406,6 @@ pub(crate) fn derive_with_routing(
     // near-desk agent in `idle_pose` for seconds, then snapped it to physics wander.
     let is_idle = matches!(slot.state, pixtuoid_core::state::ActivityState::Idle);
     if is_idle && slot.exiting_at.is_none() {
-        // Before `advance_wander`, so the routed render and the pure overlay share
-        // the ONE `pure::in_thinking_window` gate and can't drift.
-        if pure::in_thinking_window(slot, now) {
-            return Some(Pose::SeatedThinking);
-        }
         if !rctx.wanders {
             return Some(Pose::SeatedIdle);
         }

@@ -354,19 +354,13 @@ pub(crate) fn agent_overrides(
     ]
 }
 
-/// The monitor glow color for an agent's running tool, or `None` when the agent
-/// is not Running.
+/// The monitor glow color for an agent's work, or `None` when the agent is not
+/// Running.
 pub(crate) fn tool_glow_tint(
     agent: &AgentSlot,
     glow: &crate::theme::ToolGlowColors,
 ) -> Option<Rgb> {
-    use pixtuoid_core::state::{ActivityState, TurnItem};
-    match &agent.state {
-        ActivityState::Running {
-            item: Some(TurnItem::ToolUse { kind, .. }),
-        } => Some(glow.for_kind(*kind)),
-        _ => None,
-    }
+    crate::lighting::screen_work(agent).map(|work| glow.for_work(work))
 }
 
 #[cfg(test)]
@@ -491,7 +485,19 @@ mod tests {
         );
         assert_eq!(tool_glow_tint(&edit, glow), Some(glow.edit));
         assert_eq!(
+            tool_glow_tint(&make_slot(id, ActivityState::Running { item: None }), glow),
+            Some(glow.default),
+            "an open turn between items glows untinted"
+        );
+        assert_eq!(
             tool_glow_tint(&make_slot(id, ActivityState::Idle), glow),
+            None
+        );
+        assert_eq!(
+            tool_glow_tint(
+                &make_slot(id, ActivityState::RequiresAction { reason: None }),
+                glow
+            ),
             None
         );
     }

@@ -335,7 +335,7 @@ pub(crate) static DRACULA: Theme = Theme {
             b: 123,
         },
         // The palette's one unclaimed accent: it must not collide with `edit`,
-        // or `ToolKind::Other` and a THINKING agent glow like an editing one.
+        // or `ToolKind::Other` and a turn between items glow like an edit.
         default: Rgb {
             r: 241,
             g: 250,

@@ -37,7 +37,7 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/cutaway/a{i}.jsonl"));
-        let state = match i % 3 {
+        let state = match i % 4 {
             0 => ActivityState::Running {
                 item: Some(TurnItem::ToolUse {
                     tool_use_id: Some(format!("tu_{i}").into()),
@@ -46,9 +46,10 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
                 }),
             },
             1 => ActivityState::Idle,
-            _ => ActivityState::RequiresAction {
+            2 => ActivityState::RequiresAction {
                 reason: Some("permission?".into()),
             },
+            _ => ActivityState::Running { item: None },
         };
         scene.agents.insert(
             id,
