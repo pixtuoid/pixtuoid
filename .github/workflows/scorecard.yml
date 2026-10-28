@@ -1,0 +1,50 @@
+name: scorecard
+
+# OpenSSF Scorecard, published to api.scorecard.dev (the README badge) and to
+# code scanning, on the triggers of scorecard-action's own example
+# (https://github.com/ossf/scorecard-action/blob/main/examples/scorecard.yml).
+# None is a PR's, so no PR push waits on it for a runner.
+on:
+  # Re-scores Branch-Protection when a rule changes.
+  branch_protection_rule:
+  # Keeps the Maintained check current through a quiet week.
+  schedule:
+    - cron: "15 14 * * 0" # weekly, Sunday 14:15 UTC
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Publishing holds this workflow to scorecard-action's restrictions
+# (https://github.com/ossf/scorecard-action#workflow-restrictions).
+permissions: {}
+# Nothing here restores a cache; this keeps the third-party steps from saving
+# one into main's scope, which every ref restores.
+cache-mode: none
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      security-events: write # the SARIF upload to code scanning
+      id-token: write # signs the results published to api.scorecard.dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      # A failed publish fails the step after the SARIF is written
+      # (ossf/scorecard-action v2.5.0 main.go:47-88).
+      - if: always()
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: results.sarif
