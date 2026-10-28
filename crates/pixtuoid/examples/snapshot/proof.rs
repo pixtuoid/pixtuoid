@@ -462,6 +462,15 @@ fn panel_body(
     }
 }
 
+/// The centre of the callout's dot for a desk whose top-left is `desk`; its
+/// row is the connector's and the label's anchor.
+fn callout_dot(desk: (i32, i32)) -> (i32, i32) {
+    // Clears the halo `paint_ceiling_halos` burns over a lit monitor, with a
+    // margin, so the connector/dot never sits inside the glow.
+    const GLOW_CLEARANCE: i32 = 24;
+    (desk.0 - 6, desk.1 - GLOW_CLEARANCE)
+}
+
 pub(crate) fn compose_frame(
     layout: &ProofLayout,
     office: &RgbaImage,
@@ -511,10 +520,7 @@ pub(crate) fn compose_frame(
             (office_origin.0 + desk_px.0) as i32,
             (office_origin.1 + desk_px.1) as i32,
         );
-        // Clears the halo `paint_ceiling_halos` burns over a lit monitor, with a
-        // margin, so the connector/dot never sits inside the glow.
-        const GLOW_CLEARANCE: i32 = 24;
-        let anchor_y = desk.1 - GLOW_CLEARANCE;
+        let (dot_x, anchor_y) = callout_dot(desk);
         let left_edge = match layout {
             ProofLayout::Wide => {
                 dashed_h(
@@ -533,7 +539,7 @@ pub(crate) fn compose_frame(
         // Its halo keeps it legible over the office it is drawn on.
         let shade = Some(Rgba([0, 0, 0, 255]));
         draw_text(&mut img, label, (label_x, anchor_y - 22), ANNOT, shade);
-        dot(&mut img, (desk.0 - 6, anchor_y), ANNOT_DOT_R, ANNOT);
+        dot(&mut img, (dot_x, anchor_y), ANNOT_DOT_R, ANNOT);
     }
 
     let ch = coda_height(w);
@@ -613,12 +619,9 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             }
             None => {
                 let desk = hits.as_ref().and_then(|h| h.layout().home_desks.first());
-                // A half-block cell is one layout unit across and two down.
                 desk.map(|desk| {
-                    (
-                        u32::from(desk.at.x) * CELL_W,
-                        (u32::from(desk.at.y) / 2) * CELL_H,
-                    )
+                    let cell_y = desk.at.y / pixtuoid_scene::layout::CELL_ROWS;
+                    (u32::from(desk.at.x) * CELL_W, u32::from(cell_y) * CELL_H)
                 })
             }
         }
@@ -777,9 +780,10 @@ mod tests {
     fn last_wide_frame(cols: u16, rows: u16, cutaway: bool) -> RgbaImage {
         let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let frames = tempfile::tempdir().unwrap();
+        // The last of two frames, a second in: its first callout is burned in.
         let timeline = Timeline {
-            fps: 2,
-            secs: 1,
+            fps: 1,
+            secs: 2,
             start: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000),
         };
         render_proof(&ProofJob {
@@ -799,8 +803,9 @@ mod tests {
         image::open(last).unwrap().to_rgba8()
     }
 
-    /// `--proof --cutaway`: the office side is the cutaway's, and the typed
-    /// panel beside it is the classic proof's, pixel for pixel.
+    /// `--proof --cutaway`: the office side is the cutaway's, its callout on
+    /// the cutaway's desk 0, and the typed panel beside it is the classic
+    /// proof's, pixel for pixel.
     #[test]
     fn the_proof_draws_its_office_side_in_the_cutaway() {
         let (cols, rows) = (120, 52);
@@ -833,6 +838,27 @@ mod tests {
             changed * 2 > ours.len(),
             "only {changed} of {} office pixels are the cutaway's",
             ours.len()
+        );
+
+        let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let mut office = crate::cutaway::CutawayOffice::of_draw_scene(&pack, cols, rows).unwrap();
+        let scene = SceneState::uniform(12);
+        let world = pixtuoid_scene::floor::FloorInputs {
+            scene: &scene,
+            now: std::time::UNIX_EPOCH,
+            floor: pixtuoid_scene::floor::FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        office
+            .render(world, &pixtuoid_scene::theme::NORMAL)
+            .unwrap();
+        let desk = office.layout().unwrap().home_desks[0].at;
+        let (x, y) = office.frame_px(desk);
+        let dot = callout_dot(((PANEL_W + x) as i32, (HEADER_H + y) as i32));
+        assert_eq!(
+            *cutaway.get_pixel(dot.0 as u32, dot.1 as u32),
+            ANNOT,
+            "the callout is not on the cutaway's desk 0"
         );
     }
 }
