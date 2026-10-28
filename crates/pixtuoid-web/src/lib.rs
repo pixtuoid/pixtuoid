@@ -1163,19 +1163,17 @@ mod tests {
         assert_eq!(office().scale(), u32::from(density));
     }
 
-    /// `hero_still` sizes its PNG by `frame_size`, past the clamp too.
+    /// `hero_still` sizes its PNG by `frame_size`: each axis the units `step`
+    /// lays out, at most what the buffer's u16 holds and at least one.
     #[test]
     fn frame_size_is_the_frame_step_renders() {
         let mut o = office();
-        for (w, h) in [(160, 96), (u32::MAX, 1)] {
-            o.step(T0_MS, w, h);
-            let (fw, fh) = o.frame_size(w, h);
-            assert_eq!(
-                o.frame_len(),
-                usize::from(fw) * usize::from(fh) * 4,
-                "{w}x{h}"
-            );
-        }
+        let s = u16::try_from(o.scale()).expect("a u16 scale");
+        assert_eq!(o.frame_size(160, 96), (160 * s, 96 * s));
+        assert_eq!(o.frame_size(u32::MAX, 0), ((u16::MAX / s) * s, s));
+        o.step(T0_MS, 160, 96);
+        let (fw, fh) = o.frame_size(160, 96);
+        assert_eq!(o.frame_len(), usize::from(fw) * usize::from(fh) * 4);
     }
 
     #[test]
