@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "reasonix",
-  "version": "reasonix v2.53.1",
+  "version": "reasonix v2.54.0",
   "captured": "2026-10-28",
   "command": "just hermetic --record reasonix",
   "deidentified": {
