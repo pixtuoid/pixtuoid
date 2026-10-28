@@ -7,7 +7,7 @@
     "@deepseek-ai/dsh-session": "0.2.1-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
     "@oh-my-pi/pi-coding-agent": "18.13.1",
-    "@opencode/plugin": "2.1.4",
+    "@opencode/plugin": "2.2.0",
     "@types/bun": "^1.4.4",
     "openclaw": "2026.10.8"
   }

@@ -214,7 +214,7 @@ pub(crate) const PROFILE: Profile = Profile {
     }),
     server_stop: None,
     // A session's execution settles on every exit as one of three
-    // (`packages/core/src/session/execution.ts:116-145` at v2.1.4).
+    // (`packages/core/src/session/execution.ts:116-145` at v2.2.0).
     turn_exits: &[
         TurnExit {
             exit: "session.execution.succeeded",
