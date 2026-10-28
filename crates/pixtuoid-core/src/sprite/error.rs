@@ -18,7 +18,7 @@ pub enum PackError {
         #[source]
         source: toml::de::Error,
     },
-    /// A build's JSON transcode of `pack.toml` does not match the manifest schema.
+    /// A manifest's JSON transcode is not valid JSON, or does not match the manifest schema.
     #[error("parsing the JSON transcode of {PACK_MANIFEST}: {message}")]
     #[non_exhaustive]
     JsonManifest {
