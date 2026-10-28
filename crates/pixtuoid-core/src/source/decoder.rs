@@ -157,9 +157,8 @@ pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
     v.get("cwd").and_then(Value::as_str).map(PathBuf::from)
 }
 
-/// The directory a CC subagent transcript sits under: `<parent>/subagents/
-/// agent-*.jsonl`. Single source of truth for both `is_subagent_path` and the
-/// watcher's `detect_parent_id` so they cannot diverge.
+/// The directory a subagent's transcript nests in under its parent's:
+/// `<parent>/subagents/<child>.jsonl`.
 pub(crate) const SUBAGENTS_DIR: &str = "subagents";
 
 /// Whether a transcript path is a CC subagent transcript. Matched as a whole
