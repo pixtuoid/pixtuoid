@@ -541,7 +541,7 @@ const officeDriverUrl = asset('office-driver.js');
 
     // Step the office to `nowMs` and draw what the reveal lets through, then lay its captions and play its sound.
     function paint(nowMs) {
-      if (!hero) return;
+      if (!hero || unitsW < 1) return;
       if (hero.busy) {
         queuedPaint = nowMs;
         return;
@@ -565,8 +565,7 @@ const officeDriverUrl = asset('office-driver.js');
             }
             // As the page stands when the frame lands: a pause or reduced motion may have come in meanwhile. Caption
             // the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
-            // A reply reads `live`, never `mq.matches`: read from a reply's task, Chromium dropped mq's next change
-            // event (the 'un-reducing motion' e2e, under CI's load).
+            // `live` already folds in reduced motion: the mq listener clears it.
             if (r.overlay && captionFace && live) {
               updateOverlay(JSON.parse(r.overlay));
               overlayEl.classList.add('is-on');

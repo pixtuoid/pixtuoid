@@ -67,8 +67,8 @@ async function officeGrounds(
   nth = 0
 ): Promise<[number, number, number][] | null> {
   if ((await page.locator('#office-live').count()) === 0) return null;
-  // The covered canvas is blank until the office host's frames land: grade the settled office, or the poster once the
-  // office is uncovered.
+  // The covered canvas is blank until the office host's frames land: wait for the settled office, or for the canvas to
+  // be uncovered (no office to grade).
   await page.waitForFunction(
     () =>
       document.getElementById('office-overlay')!.classList.contains('is-on') ||
@@ -275,14 +275,29 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   expect(errors()).toEqual([]);
 });
 
-test('without OffscreenCanvas the page thread hosts the office, which still goes live', async ({
+test('without OffscreenCanvas the page thread hosts the office, which goes live once drawn', async ({
   page,
 }) => {
   const errors = watchErrors(page);
   await page.addInitScript(() => {
     delete (HTMLCanvasElement.prototype as Partial<HTMLCanvasElement>).transferControlToOffscreen;
+    // This host draws in its own task before it replies, so the canvas `is-live` meets is the frame that earned it.
+    const w = window as unknown as { __atLive?: { size: number[]; painted: boolean } };
+    const seen = new MutationObserver(() => {
+      if (!document.querySelector('.backdrop.is-live')) return;
+      seen.disconnect();
+      const c = document.getElementById('office-live') as HTMLCanvasElement;
+      const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      w.__atLive = { size: [c.width, c.height], painted: px.some((v) => v !== 0) };
+    });
+    seen.observe(document, { subtree: true, attributes: true, attributeFilter: ['class'] });
   });
   await gotoLive(page);
+  const atLive = await page.evaluate(
+    () => (window as unknown as { __atLive?: { size: number[]; painted: boolean } }).__atLive
+  );
+  expect(atLive?.size, 'is-live met the unsized default canvas').not.toEqual([300, 150]);
+  expect(atLive?.painted, 'is-live met a blank canvas').toBe(true);
   await expect(page.locator('#office-overlay .ov-label').first()).toHaveText(/\S/, {
     timeout: 10_000,
   });
@@ -659,6 +674,40 @@ test('background playback: a hidden tab keeps ticking, reduced-motion stops it c
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.waitForTimeout(2500);
   expect(await liveFires()).toBe(baseline);
+  expect(errors()).toEqual([]);
+});
+
+test('the ♩ falls silent under reduced motion and plays again once the office is back', async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  await page.addInitScript(() => {
+    const w = window as unknown as { __ctxCalls: string[] };
+    w.__ctxCalls = [];
+    for (const m of ['resume', 'suspend'] as const) {
+      const real = AudioContext.prototype[m];
+      AudioContext.prototype[m] = function (this: AudioContext, ...args: []) {
+        w.__ctxCalls.push(m);
+        return Reflect.apply(real, this, args);
+      };
+    }
+  });
+  await gotoLive(page);
+  await page.locator('#office-audio').click();
+  await page.waitForFunction(
+    () => (window as unknown as { __pixAudioReadyAt?: number }).__pixAudioReadyAt !== undefined,
+    undefined,
+    { timeout: 60_000 }
+  );
+  const lastCall = () =>
+    page.evaluate(() => (window as unknown as { __ctxCalls: string[] }).__ctxCalls.at(-1));
+  await expect.poll(lastCall).toBe('resume');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('.backdrop')).not.toHaveClass(/\bis-live\b/, { timeout: 5_000 });
+  expect(await lastCall()).toBe('suspend');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(page.locator('.backdrop')).toHaveClass(/\bis-live\b/, { timeout: 15_000 });
+  await expect.poll(lastCall).toBe('resume');
   expect(errors()).toEqual([]);
 });
 
