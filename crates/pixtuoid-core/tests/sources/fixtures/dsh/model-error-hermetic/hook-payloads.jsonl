@@ -1,4 +1,4 @@
-{"type":"session_start","sessionId":"session-276ca454-e6b6-4e56-8a74-5c8bc6085548","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":28503,"_shim_ts_ms":1793144196749,"_pixtuoid_source":"dsh"}
-{"type":"model","sessionId":"session-276ca454-e6b6-4e56-8a74-5c8bc6085548","cwd":"/private/tmp/pixtuoid-capture/proj","model":"deepseek-flash","reasoningEffort":"high","_pid":28503,"_shim_ts_ms":1793144196793,"_pixtuoid_source":"dsh"}
-{"type":"turn_end","sessionId":"session-276ca454-e6b6-4e56-8a74-5c8bc6085548","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":28503,"_shim_ts_ms":1793144196833,"_pixtuoid_source":"dsh"}
-{"type":"session_end","sessionId":"session-276ca454-e6b6-4e56-8a74-5c8bc6085548","cwd":"","_pid":28503,"_shim_ts_ms":1793144196859,"_pixtuoid_source":"dsh"}
+{"type":"session_start","sessionId":"session-0254093b-fd5b-4c82-a1c8-9102ffddfb10","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":12305,"_shim_ts_ms":1793146342329,"_pixtuoid_source":"dsh"}
+{"type":"model","sessionId":"session-0254093b-fd5b-4c82-a1c8-9102ffddfb10","cwd":"/private/tmp/pixtuoid-capture/proj","model":"deepseek-flash","reasoningEffort":"high","_pid":12305,"_shim_ts_ms":1793146342380,"_pixtuoid_source":"dsh"}
+{"type":"turn_end","sessionId":"session-0254093b-fd5b-4c82-a1c8-9102ffddfb10","cwd":"/private/tmp/pixtuoid-capture/proj","_pid":12305,"_shim_ts_ms":1793146342423,"_pixtuoid_source":"dsh"}
+{"type":"session_end","sessionId":"session-0254093b-fd5b-4c82-a1c8-9102ffddfb10","cwd":"","_pid":12305,"_shim_ts_ms":1793146342449,"_pixtuoid_source":"dsh"}

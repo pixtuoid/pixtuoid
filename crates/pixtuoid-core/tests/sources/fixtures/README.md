@@ -23,7 +23,7 @@ redacted cwd and an invented one look alike. `origin` is `recorded`, and no othe
 
 | origin | required | means |
 | --- | --- | --- |
-| `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
+| `recorded` | `cli`, `version`, `captured`, `command`, `sentinel_reads` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
 `deidentified` in the provenance says how many subtrees went. A plugin roster, a

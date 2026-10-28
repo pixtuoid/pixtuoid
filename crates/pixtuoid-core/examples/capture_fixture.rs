@@ -783,12 +783,14 @@ mod recorder {
                 deidentified,
             )?
         };
+        // Its text, not its parse: a key the record lacks parses to its default.
         if let Some(old) = committed.as_ref().map(Provenance::recorded)
-            && *old
-                == (Recorded {
+            && std::fs::read_to_string(dest.join(PROVENANCE))?
+                == Provenance::Recorded(Box::new(Recorded {
                     captured: old.captured.clone(),
                     ..fresh_record.clone()
-                })
+                }))
+                .text()?
             && let Some(bytes) = canonical_capture(&dest)?
             && canonical_capture(staged.path())?.as_ref() == Some(&bytes)
         {
@@ -1633,6 +1635,7 @@ mod recorder {
                 "version": "0.2.0-rc.1",
                 "captured": "2026-01-01",
                 "command": "just hermetic --record dsh",
+                "sentinel_reads": {},
             });
             if let (Some(base), Some(over)) = (record.as_object_mut(), over.as_object()) {
                 base.extend(over.clone());

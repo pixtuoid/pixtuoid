@@ -3,50 +3,50 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     source: kimi
-    session_id: session_ea9d079f-b7ca-4378-9a09-78284eafb8ff
+    session_id: session_1ac997aa-4966-4fb0-88a2-7f376bcdbe51
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     source: kimi
-    session_id: session_ea9d079f-b7ca-4378-9a09-78284eafb8ff
+    session_id: session_1ac997aa-4966-4fb0-88a2-7f376bcdbe51
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 9141559453732836695
-    tool_use_id: call_q7z7i3rk07tXcpFj
+    agent_id: 17682102300837161714
+    tool_use_id: call_5pIZFbaouNpAtHRC
     tool_name: Bash
 - ToolUseStart:
-    agent_id: 9141559453732836695
-    tool_use_id: call_q7z7i3rk07tXcpFj
+    agent_id: 17682102300837161714
+    tool_use_id: call_5pIZFbaouNpAtHRC
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     source: kimi
-    session_id: session_ea9d079f-b7ca-4378-9a09-78284eafb8ff
+    session_id: session_1ac997aa-4966-4fb0-88a2-7f376bcdbe51
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     reason: permission
-    tool_use_id: call_q7z7i3rk07tXcpFj
+    tool_use_id: call_5pIZFbaouNpAtHRC
     tool_name: Bash
 - Identity:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     source: kimi
-    session_id: session_ea9d079f-b7ca-4378-9a09-78284eafb8ff
+    session_id: session_1ac997aa-4966-4fb0-88a2-7f376bcdbe51
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 9141559453732836695
-    tool_use_id: call_q7z7i3rk07tXcpFj
+    agent_id: 17682102300837161714
+    tool_use_id: call_5pIZFbaouNpAtHRC
 - TurnEnd:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
 - SessionEnd:
-    agent_id: 9141559453732836695
+    agent_id: 17682102300837161714
     as_child: false

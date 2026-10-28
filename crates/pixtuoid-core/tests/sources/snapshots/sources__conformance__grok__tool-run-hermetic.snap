@@ -3,58 +3,58 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 16356419966803522819
-    tool_use_id: call_06P_SFMSMhP7L1jM
+    agent_id: 5394803314781133871
+    tool_use_id: call_U1RXHILdQxhJ8mxn
     detail:
       Generic:
         display: read_file
 - ToolUseEnd:
-    agent_id: 16356419966803522819
-    tool_use_id: call_06P_SFMSMhP7L1jM
+    agent_id: 5394803314781133871
+    tool_use_id: call_U1RXHILdQxhJ8mxn
 - TurnEnd:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
 - SessionEnd:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     as_child: false
 - SessionStart:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     source: grok
-    session_id: 01a17f20-3bfa-78f1-9a2e-21a4d9b8ceb2
+    session_id: 01a17fe4-80c8-7860-a1f1-8c7faba854c0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     source: grok
-    session_id: 01a17f20-3bfa-78f1-9a2e-21a4d9b8ceb2
+    session_id: 01a17fe4-80c8-7860-a1f1-8c7faba854c0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     source: grok
-    session_id: 01a17f20-3bfa-78f1-9a2e-21a4d9b8ceb2
+    session_id: 01a17fe4-80c8-7860-a1f1-8c7faba854c0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 16356419966803522819
-    tool_use_id: call_06P_SFMSMhP7L1jM
+    agent_id: 5394803314781133871
+    tool_use_id: call_U1RXHILdQxhJ8mxn
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     source: grok
-    session_id: 01a17f20-3bfa-78f1-9a2e-21a4d9b8ceb2
+    session_id: 01a17fe4-80c8-7860-a1f1-8c7faba854c0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 16356419966803522819
-    tool_use_id: call_06P_SFMSMhP7L1jM
+    agent_id: 5394803314781133871
+    tool_use_id: call_U1RXHILdQxhJ8mxn
 - TurnEnd:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
 - SessionEnd:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871
     as_child: false
 - TurnEnd:
-    agent_id: 16356419966803522819
+    agent_id: 5394803314781133871

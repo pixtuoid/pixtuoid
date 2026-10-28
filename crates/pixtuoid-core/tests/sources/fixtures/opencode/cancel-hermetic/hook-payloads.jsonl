@@ -1,2 +1,2 @@
-{"type":"session.execution.started","turn":2,"data":{"sessionID":"ses_e8045de88ffeBrNR7cPj5d69NN","location":{"directory":"/private/tmp/pixtuoid-capture/proj"},"model":{"id":"gpt-5.2"},"id":""},"_pid":29606,"_shim_ts_ms":1793144267192,"_pixtuoid_source":"opencode"}
-{"type":"session.execution.interrupted","turn":2,"data":{"sessionID":"ses_e8045de88ffeBrNR7cPj5d69NN"},"_pid":29606,"_shim_ts_ms":1793144272631,"_pixtuoid_source":"opencode"}
+{"type":"session.execution.started","turn":2,"data":{"sessionID":"ses_e80211a6cffehGUsybj1LHftGb","location":{"directory":"/private/tmp/pixtuoid-capture/proj"},"model":{"id":"gpt-5.2"},"id":""},"_pid":20732,"_shim_ts_ms":1793146676690,"_pixtuoid_source":"opencode"}
+{"type":"session.execution.interrupted","turn":2,"data":{"sessionID":"ses_e80211a6cffehGUsybj1LHftGb"},"_pid":20732,"_shim_ts_ms":1793146682088,"_pixtuoid_source":"opencode"}

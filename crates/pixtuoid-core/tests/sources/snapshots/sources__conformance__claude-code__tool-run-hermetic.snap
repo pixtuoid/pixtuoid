@@ -3,65 +3,65 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     fresh_tokens: 19
 - ToolUseStart:
-    agent_id: 2561069558778360717
-    tool_use_id: toolu_tf3o5-PPNFbzNYpg
+    agent_id: 14268975170494213523
+    tool_use_id: toolu_w8mkCvlWB223Pke1
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 2561069558778360717
-    tool_use_id: toolu_tf3o5-PPNFbzNYpg
+    agent_id: 14268975170494213523
+    tool_use_id: toolu_w8mkCvlWB223Pke1
 - ModelInfo:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     fresh_tokens: 241
 - SessionStart:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     source: claude-code
-    session_id: f4b2f88b-24ee-4082-b830-931ffc4c1ce2
+    session_id: 059226ff-78cd-4438-a1eb-82602421c9dd
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     source: claude-code
-    session_id: f4b2f88b-24ee-4082-b830-931ffc4c1ce2
+    session_id: 059226ff-78cd-4438-a1eb-82602421c9dd
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 2561069558778360717
-    tool_use_id: toolu_tf3o5-PPNFbzNYpg
+    agent_id: 14268975170494213523
+    tool_use_id: toolu_w8mkCvlWB223Pke1
     tool_name: Read
 - ToolUseStart:
-    agent_id: 2561069558778360717
-    tool_use_id: toolu_tf3o5-PPNFbzNYpg
+    agent_id: 14268975170494213523
+    tool_use_id: toolu_w8mkCvlWB223Pke1
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ModelInfo:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     model: ~
     effort: medium
 - Identity:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     source: claude-code
-    session_id: f4b2f88b-24ee-4082-b830-931ffc4c1ce2
+    session_id: 059226ff-78cd-4438-a1eb-82602421c9dd
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 2561069558778360717
-    tool_use_id: toolu_tf3o5-PPNFbzNYpg
+    agent_id: 14268975170494213523
+    tool_use_id: toolu_w8mkCvlWB223Pke1
 - ModelInfo:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     model: ~
     effort: medium
 - SessionEnd:
-    agent_id: 2561069558778360717
+    agent_id: 14268975170494213523
     as_child: false

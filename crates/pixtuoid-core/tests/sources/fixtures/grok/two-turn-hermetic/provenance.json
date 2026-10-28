@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.70 (f50904eaee6c)",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 185
+    "blanked": 183
   },
   "aimock": "1.47.0",
   "script": "tests/sources/hermetic/grok/two-turn.json",

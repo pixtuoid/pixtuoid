@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "codex",
   "version": "codex-cli 0.164.0",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -25,5 +25,6 @@
         "world_state"
       ]
     }
-  }
+  },
+  "sentinel_reads": {}
 }

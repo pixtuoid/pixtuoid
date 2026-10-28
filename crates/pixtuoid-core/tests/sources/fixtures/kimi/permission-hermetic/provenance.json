@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "kimi",
   "version": "2.3.3",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record kimi",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -13,5 +13,6 @@
   "dropped": {
     "os": "macos",
     "at": {}
-  }
+  },
+  "sentinel_reads": {}
 }

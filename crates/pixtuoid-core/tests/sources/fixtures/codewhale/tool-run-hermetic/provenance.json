@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "codewhale",
   "version": "codewhale 0.10.2 (ff466b2ed0bf)",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record codewhale",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -13,5 +13,6 @@
   "dropped": {
     "os": "macos",
     "at": {}
-  }
+  },
+  "sentinel_reads": {}
 }

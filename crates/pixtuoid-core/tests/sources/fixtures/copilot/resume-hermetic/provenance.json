@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "copilot",
   "version": "GitHub Copilot CLI 1.0.104.",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -22,5 +22,6 @@
         "user.message"
       ]
     }
-  }
+  },
+  "sentinel_reads": {}
 }

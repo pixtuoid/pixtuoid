@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "agy",
   "version": "1.4.8",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record antigravity",
   "deidentified": {
     "method": "decoder-allowlist",

@@ -55,7 +55,7 @@ pub struct Recorded {
     pub dropped: Option<Dropped>,
     /// Each file's empty strings the decoders read when it was stripped, by
     /// path under the capture ([`Strip::sentinel_reads`](super::reads::Strip::sentinel_reads)).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// Required: a baseline only a recording writes cannot default.
     pub sentinel_reads: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -148,13 +148,22 @@ impl Provenance {
         }
     }
 
-    /// Write it to `path`, pretty and newline-terminated.
+    /// Write it to `path` as [`Provenance::text`].
     ///
     /// # Errors
     ///
     /// If it cannot be written.
     pub fn write_to(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::write(path, format!("{}\n", serde_json::to_string_pretty(self)?))
+        std::fs::write(path, self.text()?)
+    }
+
+    /// Its file's text, pretty and newline-terminated.
+    ///
+    /// # Errors
+    ///
+    /// If it cannot be serialized.
+    pub fn text(&self) -> std::io::Result<String> {
+        Ok(format!("{}\n", serde_json::to_string_pretty(self)?))
     }
 
     /// Its recording's record.
@@ -178,8 +187,7 @@ mod tests {
         serde_json::from_str(json)
     }
 
-    const RECORDED: &str =
-        r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x"}"#;
+    const RECORDED: &str = r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x","sentinel_reads":{}}"#;
 
     /// serde's docs (https://serde.rs/container-attrs.html) say nothing of
     /// `deny_unknown_fields` inside an internally tagged newtype variant; the
@@ -205,7 +213,7 @@ mod tests {
     /// README's row follows.
     #[test]
     fn a_record_missing_a_required_key_fails_to_parse() {
-        for key in ["cli", "version", "captured", "command"] {
+        for key in ["cli", "version", "captured", "command", "sentinel_reads"] {
             let without: serde_json::Map<String, serde_json::Value> =
                 serde_json::from_str::<serde_json::Map<_, _>>(RECORDED)
                     .expect("json")
@@ -250,6 +258,11 @@ mod tests {
         "assistant.turn_start"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "2:/cwd"
+    ]
   }
 }
 "#;
