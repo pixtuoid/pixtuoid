@@ -2928,9 +2928,9 @@ dependencies = [
 
 [[package]]
 name = "pixtuoid-lofi"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ddf10c4160ae4a0848a67b8b71236c67255c1067437a9a435f1b77866bdcdcd"
+checksum = "80530eb1c5851ce478034ca1ca2a11d478ef4b2ceda1fa435e4151312dd21735"
 
 [[package]]
 name = "pixtuoid-scene"

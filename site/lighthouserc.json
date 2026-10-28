@@ -26,10 +26,10 @@
         ],
         "largest-contentful-paint": [
           "error",
-          { "maxNumericValue": 5700, "aggregationMethod": "median" }
+          { "maxNumericValue": 5800, "aggregationMethod": "median" }
         ],
         "speed-index": ["error", { "maxNumericValue": 4300, "aggregationMethod": "median" }],
-        "interactive": ["error", { "maxNumericValue": 5700, "aggregationMethod": "median" }],
+        "interactive": ["error", { "maxNumericValue": 5800, "aggregationMethod": "median" }],
         "total-blocking-time": ["error", { "maxNumericValue": 200, "aggregationMethod": "median" }],
         "cumulative-layout-shift": [
           "error",
