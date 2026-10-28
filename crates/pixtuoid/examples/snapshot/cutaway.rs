@@ -245,7 +245,7 @@ mod tests {
     ) -> RgbaImage {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let frames = tempfile::tempdir().unwrap();
-        // The last of two frames, half a second in: mid-slide from a navigation at 0.
+        // Its last frame is mid-slide from a navigation at 0.
         let timeline = Timeline {
             fps: 2,
             secs: 1,
