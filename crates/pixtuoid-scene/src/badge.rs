@@ -283,6 +283,21 @@ mod tests {
         assert_ne!(want_a, want_b);
     }
 
+    /// The snapshot casts share each team's label, so every team badge is suffixed.
+    #[test]
+    fn every_demo_teams_suffixed_badge_fits() {
+        use pixtuoid_core::source::claude_code::{SOURCE_NAME, cc_derive_label};
+        for repo in &crate::DEMO_REPOS[..crate::DEMO_TEAMS] {
+            let cwd = PathBuf::from("/demo").join(repo);
+            let label = cc_derive_label(std::path::Path::new(""), SOURCE_NAME, &cwd);
+            let a = slot(&label, "session-aaaa", 0, running());
+            let b = slot(&label, "session-bbbb", 1, running());
+            let s = scene_of(vec![a.clone(), b]);
+            let want = format!("{label}\u{00b7}{}", disambig_suffix(&a.session_id));
+            assert_eq!(Namesakes::of(s.agents.values()).text(&a), want, "{repo}");
+        }
+    }
+
     #[test]
     fn tone_maps_state_and_exiting_overrides_running() {
         let requires_action = slot(
