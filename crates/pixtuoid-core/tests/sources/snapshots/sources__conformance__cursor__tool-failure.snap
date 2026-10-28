@@ -3,46 +3,46 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     source: cursor
-    session_id: 343dee85-a5e4-4679-94f4-566da0c00c25
+    session_id: ff740776-ffca-4a8f-8224-719c362e0665
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     model: default
     effort: ~
 - Identity:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     source: cursor
-    session_id: 343dee85-a5e4-4679-94f4-566da0c00c25
+    session_id: ff740776-ffca-4a8f-8224-719c362e0665
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 10285308829264663492
-    tool_use_id: ~
+    agent_id: 14583226451153653581
+    tool_use_id: "call-e2c81508-ebc2-47e0-96b1-a4d375038e99-0\nfc_d5b570dd-26d8-9e4c-8a90-47331e1e5071_0"
     detail:
       Generic:
         display: "Read: /private/tmp/pixtuoid-capture/proj/does-…"
 - ModelInfo:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     model: default
     effort: ~
 - Identity:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     source: cursor
-    session_id: 343dee85-a5e4-4679-94f4-566da0c00c25
+    session_id: ff740776-ffca-4a8f-8224-719c362e0665
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 10285308829264663492
-    tool_use_id: "call-618cb540-c734-460d-8ebb-f51b006ebc03-0\nfc_11f19562-9e0e-9a8b-be3e-5fab9a28b543_0"
+    agent_id: 14583226451153653581
+    tool_use_id: "call-e2c81508-ebc2-47e0-96b1-a4d375038e99-0\nfc_d5b570dd-26d8-9e4c-8a90-47331e1e5071_0"
 - ModelInfo:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     model: default
     effort: ~
 - SessionEnd:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     as_child: false
 - ModelInfo:
-    agent_id: 10285308829264663492
+    agent_id: 14583226451153653581
     model: default
     effort: ~

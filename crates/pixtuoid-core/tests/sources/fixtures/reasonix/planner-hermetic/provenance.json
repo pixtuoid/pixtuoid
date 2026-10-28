@@ -2,13 +2,13 @@
   "origin": "recorded",
   "cli": "reasonix",
   "version": "reasonix v2.53.1",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record reasonix",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 9
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/reasonix/planner.json",
   "dropped": {
     "os": "macos",

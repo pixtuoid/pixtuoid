@@ -1,9 +1,5 @@
-//! Claude Code subagent lifecycle (parallels the sibling `codex` module).
-//!
-//! `fixtures/lifecycle-recorded/` holds REAL SubagentStart/Stop wire payloads,
-//! sanitized to synthetic ids and a generic cwd;
-//! `last_assistant_message`/`background_tasks` are truncated but KEPT so the
-//! decoder's tolerance of fields we don't consume stays pinned.
+//! Claude Code subagent lifecycle (parallels the sibling `codex` module), its
+//! wire the hermetic tier's recording, `fixtures/subagent-hermetic/`.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -122,85 +118,96 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
     );
 }
 
-// The fixture's `agent_id` is BARE hex; these keys carry the `agent-` prefix
-// because the transcript filename stem — the watcher's id space — does.
-const HOOK_PARENT: &str = "01000000-0000-7000-8000-0000000000cc";
-const HOOK_CHILD_GP: &str = "agent-a0000000000000001";
-const HOOK_CHILD_WF: &str = "agent-a0000000000000002";
+/// The recording's hook payloads, which every re-record re-keys, so each id
+/// below is read off them.
+const RECORDED_HOOKS: &str = "claude/fixtures/subagent-hermetic/hook-payloads.jsonl";
 
-fn hook_parent_id() -> AgentId {
-    AgentId::from_parts("claude-code", HOOK_PARENT)
+fn recorded_hooks() -> Vec<serde_json::Value> {
+    super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS))
+        .iter()
+        .map(|l| serde_json::from_str(l).expect("valid hook json"))
+        .collect()
 }
 
-/// Decode the captured hook payloads in file order. The records carry NO
-/// `_pixtuoid_source` — exactly like production, where CC's hook entry is the
-/// bare shim with no env, so the decoder's claude-code default applies.
-fn captured_hook_events() -> Vec<AgentEvent> {
-    super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("claude/fixtures/lifecycle-recorded/hook-payloads.jsonl"),
-    )
-    .iter()
-    .flat_map(|l| {
-        let v: serde_json::Value = serde_json::from_str(l).expect("valid hook json");
-        decode_hook_payload(v).expect("captured CC subagent hook payload must decode")
-    })
-    .collect()
+/// The recording's `events` payloads, decoded in file order.
+fn recorded_events(events: &[&str]) -> Vec<AgentEvent> {
+    recorded_hooks()
+        .into_iter()
+        .filter(|v| {
+            v["hook_event_name"]
+                .as_str()
+                .is_some_and(|e| events.contains(&e))
+        })
+        .flat_map(|v| decode_hook_payload(v).expect("a recorded CC hook payload decodes"))
+        .collect()
 }
 
-fn start_parent(r: &mut Reducer, scene: &mut SceneState, now: SystemTime) {
-    for ev in decode_hook_payload(json!({
-        "hook_event_name": "SessionStart",
-        "session_id": HOOK_PARENT,
-        "transcript_path": format!(
-            "/home/user/.claude/projects/-home-user-demo-project/{HOOK_PARENT}.jsonl"
-        ),
-        "cwd": "/home/user/demo-project"
-    }))
-    .unwrap()
-    {
+/// Its SubagentStart/Stop pair alone: hooks carry the child's whole lifecycle.
+fn lifecycle_events() -> Vec<AgentEvent> {
+    recorded_events(&["SubagentStart", "SubagentStop"])
+}
+
+/// The child's registration as its SubagentStart decodes it: its id, the
+/// session it names, and the parent it links.
+fn recorded_child() -> (AgentId, String, AgentId) {
+    lifecycle_events()
+        .into_iter()
+        .find_map(|e| match e {
+            AgentEvent::SessionStart {
+                agent_id,
+                session_id,
+                parent_id: Some(parent),
+                ..
+            } => Some((agent_id, session_id, parent)),
+            _ => None,
+        })
+        .expect("SubagentStart registers a linked child")
+}
+
+/// Registers the recorded root through its own SessionStart, returning its id.
+fn start_parent(r: &mut Reducer, scene: &mut SceneState, now: SystemTime) -> AgentId {
+    let start = recorded_events(&["SessionStart"]);
+    let root = start
+        .first()
+        .expect("the recording starts a session")
+        .agent_id();
+    for ev in start {
         r.apply(scene, ev, now, Transport::Hook);
     }
+    root
 }
 
-// The Workflow-fleet scenario: no `Agent` tool_use and no JSONL, so hooks
-// alone carry the whole lifecycle.
 #[test]
-fn cc_subagent_hook_pairs_register_link_and_exit_both_agent_types() {
+fn cc_subagent_hook_pair_registers_links_and_exits_its_child() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
-    start_parent(&mut r, &mut scene, now);
+    let root = start_parent(&mut r, &mut scene, now);
+    let (child, _, linked) = recorded_child();
+    assert_eq!(linked, root, "SubagentStart links the recorded root");
 
-    for ev in captured_hook_events() {
+    for ev in lifecycle_events() {
         r.apply(&mut scene, ev, now, Transport::Hook);
     }
 
-    for child_key in [HOOK_CHILD_GP, HOOK_CHILD_WF] {
-        let child = AgentId::from_parts("claude-code", child_key);
-        let slot = scene
-            .agents
-            .get(&child)
-            .unwrap_or_else(|| panic!("SubagentStart must register {child_key}"));
-        assert_eq!(
-            slot.parent_id,
-            Some(hook_parent_id()),
-            "{child_key} must link to the parent session"
-        );
-        assert!(
-            slot.exiting_at.is_some(),
-            "SubagentStop must mark {child_key} exiting (the Workflow-fleet \
-             desk-starvation fix — no b1, no stale-sweep wait)"
-        );
-    }
+    let slot = scene
+        .agents
+        .get(&child)
+        .expect("SubagentStart must register the child");
+    assert_eq!(slot.parent_id, Some(root), "the child links to its parent");
+    assert!(
+        slot.exiting_at.is_some(),
+        "SubagentStop must mark the child exiting (the Workflow-fleet \
+         desk-starvation fix — no b1, no stale-sweep wait)"
+    );
     assert!(
         scene
             .agents
-            .get(&hook_parent_id())
+            .get(&root)
             .expect("parent still present")
             .exiting_at
             .is_none(),
-        "parent must keep running after its subagents stop"
+        "parent must keep running after its subagent stops"
     );
 }
 
@@ -209,24 +216,23 @@ fn cc_jsonl_registered_subagent_exits_cleanly_on_hook_subagent_stop() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
-    start_parent(&mut r, &mut scene, now);
-
-    let child = AgentId::from_parts("claude-code", HOOK_CHILD_GP);
+    let root = start_parent(&mut r, &mut scene, now);
+    let (child, session_id, _) = recorded_child();
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
             agent_id: child,
             source: "claude-code".into(),
-            session_id: HOOK_CHILD_GP.into(),
+            session_id,
             cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: Some(hook_parent_id()),
+            parent_id: Some(root),
         },
         now,
         Transport::Jsonl,
     );
     assert!(scene.agents.contains_key(&child), "JSONL registered it");
 
-    for ev in captured_hook_events() {
+    for ev in lifecycle_events() {
         r.apply(&mut scene, ev, now, Transport::Hook);
     }
     assert!(
@@ -238,10 +244,15 @@ fn cc_jsonl_registered_subagent_exits_cleanly_on_hook_subagent_stop() {
             .is_some(),
         "hook SubagentStop must exit the JSONL-registered subagent slot"
     );
+    let bare = recorded_hooks()
+        .into_iter()
+        .find_map(|v| (v["hook_event_name"] == "SubagentStart").then(|| v["agent_id"].clone()))
+        .and_then(|id| id.as_str().map(str::to_owned))
+        .expect("SubagentStart names its agent");
     assert!(
         !scene
             .agents
-            .contains_key(&AgentId::from_parts("claude-code", "a0000000000000001")),
+            .contains_key(&AgentId::from_parts("claude-code", &bare)),
         "no bare-keyed phantom twin"
     );
 }
@@ -251,9 +262,9 @@ fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
-    start_parent(&mut r, &mut scene, now);
+    let root = start_parent(&mut r, &mut scene, now);
 
-    let (stops, starts): (Vec<_>, Vec<_>) = captured_hook_events()
+    let (stops, starts): (Vec<_>, Vec<_>) = lifecycle_events()
         .into_iter()
         .partition(|ev| matches!(ev, AgentEvent::SessionEnd { .. }));
     for ev in stops {
@@ -269,21 +280,14 @@ fn cc_reordered_subagent_stop_before_start_does_not_mint_a_phantom() {
         );
     }
 
-    for child_key in [HOOK_CHILD_GP, HOOK_CHILD_WF] {
-        assert!(
-            !scene
-                .agents
-                .contains_key(&AgentId::from_parts("claude-code", child_key)),
-            "{child_key}: a SubagentStart reordered after its own Stop must not register"
-        );
-    }
-    let parent = scene
-        .agents
-        .get(&hook_parent_id())
-        .expect("parent untouched");
+    assert!(
+        !scene.agents.contains_key(&recorded_child().0),
+        "a SubagentStart reordered after its own Stop must not register"
+    );
+    let parent = scene.agents.get(&root).expect("parent untouched");
     assert!(
         parent.exiting_at.is_none(),
-        "the children's tombstones must not affect the parent"
+        "the child's tombstone must not affect the parent"
     );
 }
 
@@ -292,14 +296,14 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let now = SystemTime::now();
-    start_parent(&mut r, &mut scene, now);
+    let root = start_parent(&mut r, &mut scene, now);
 
-    for ev in captured_hook_events() {
+    for ev in lifecycle_events() {
         if matches!(ev, AgentEvent::SessionStart { .. }) {
             r.apply(&mut scene, ev, now, Transport::Hook);
         }
     }
-    let child = AgentId::from_parts("claude-code", HOOK_CHILD_GP);
+    let (child, session_id, _) = recorded_child();
     assert!(scene.agents.contains_key(&child), "hook registered it");
     let count_before = scene.agents.len();
 
@@ -308,9 +312,9 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
         AgentEvent::SessionStart {
             agent_id: child,
             source: "claude-code".into(),
-            session_id: HOOK_CHILD_GP.into(),
+            session_id,
             cwd: PathBuf::from("/home/user/demo-project"),
-            parent_id: Some(hook_parent_id()),
+            parent_id: Some(root),
         },
         now,
         Transport::Jsonl,
@@ -322,20 +326,56 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
     );
     assert_eq!(
         scene.agents.get(&child).unwrap().parent_id,
-        Some(hook_parent_id()),
+        Some(root),
         "parent link survives the duplicate"
     );
 }
 
-/// The hermetic tier's recorded background delegation (`fixtures/subagent-hermetic`):
-/// the child's own Read lands on the child, never the root, and the child is
-/// the root's (#1701).
+/// The child's own transcript names its agent type, which relabels its sprite;
+/// the root's never carries it.
+#[test]
+fn a_recorded_childs_transcript_names_its_agent() {
+    let dir = super::captures::sources_root().join("claude/fixtures/subagent-hermetic");
+    let transcripts = super::captures::transcripts_in(&dir);
+    let stem = |t: &std::path::Path| {
+        t.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let (child, root): (Vec<_>, Vec<_>) = transcripts
+        .iter()
+        .partition(|t| stem(t).starts_with("agent-"));
+    let ([child], [root]) = (&child[..], &root[..]) else {
+        panic!("a root's and a child's transcript: {transcripts:?}");
+    };
+    let lines = super::captures::fixture_lines(child);
+    let named = lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find_map(|v| v["attributionAgent"].as_str().map(str::to_owned))
+        .expect("the child names its agent");
+    let d = pixtuoid_core::harness::Drive::transcript(
+        "claude-code",
+        &format!("/proj/{}/subagents/{}.jsonl", stem(root), stem(child)),
+    )
+    .expect("claude-code has a line decoder")
+    .seeded()
+    .lines(lines);
+    d.assert_clean("claude-code child transcript");
+    let slot = d
+        .scene
+        .agents
+        .get(&AgentId::from_parts("claude-code", &stem(child)))
+        .expect("the child registers");
+    assert_eq!(&*slot.label, named);
+}
+
+/// The background child's own Read lands on the child, never the root, and the
+/// child is the root's (#1701).
 #[test]
 fn a_recorded_background_childs_tools_land_on_the_child() {
-    let lines = super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("claude/fixtures/subagent-hermetic/hook-payloads.jsonl"),
-    );
+    let lines =
+        super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS));
     let d = pixtuoid_core::harness::Drive::hooks().lines(lines);
     d.assert_clean("claude-code delegation hooks");
     let (child, root) = d

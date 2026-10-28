@@ -304,7 +304,8 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
         // deltas, so summing a running total would double-count. codex's
         // `input_tokens` INCLUDES the cached share (verified), so fresh input
         // = input − cached, saturating because upstream reporting quirks must
-        // not wrap; `reasoning_output_tokens` is additive alongside `output`.
+        // not wrap. `output_tokens` already holds `reasoning_output_tokens`
+        // (codex-rs/codex-api/src/sse/responses.rs `parses_cache_write_token_usage`).
         (EVENT_MSG, i) if EM_TOKENS.contains(&i) => {
             let last = payload
                 .and_then(|p| p.get("info"))
@@ -315,7 +316,6 @@ pub fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -> Vec<A
                 field("input_tokens")
                     .saturating_sub(field("cached_input_tokens"))
                     .saturating_add(field("output_tokens"))
-                    .saturating_add(field("reasoning_output_tokens"))
             });
             if fresh > 0 {
                 vec![AgentEvent::Usage {
@@ -975,7 +975,7 @@ mod tests {
 
     #[test]
     fn token_count_emits_fresh_usage_from_last_reading() {
-        // fresh = (11480−9088) + 87 + 15.
+        // fresh = (11480−9088) + 87: the 15 reasoning tokens are part of the 87.
         let out = ev(
             json!({"type":"event_msg","payload":{"type":"token_count","info":{
             "total_token_usage":{"input_tokens":999999,"cached_input_tokens":0,"output_tokens":999999},
@@ -986,11 +986,11 @@ mod tests {
             matches!(
                 out.as_slice(),
                 [AgentEvent::Usage {
-                    fresh_tokens: 2494,
+                    fresh_tokens: 2479,
                     ..
                 }]
             ),
-            "expected fresh=2494 from last_token_usage (never the totals), got {out:?}"
+            "expected fresh=2479 from last_token_usage (never the totals), got {out:?}"
         );
     }
 

@@ -26,7 +26,6 @@ exclude                = [
     "tests/shim_stamp_parity.rs",
     "tests/socket_path_parity.rs",
     "tests/supported_sources_manifest.rs",
-    "tests/proof_fixture_disjointness.rs",
 ]
 
 [lints]

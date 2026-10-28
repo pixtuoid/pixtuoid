@@ -9,7 +9,7 @@ use crate::harness::host::Hive;
 use crate::harness::plan::Placeholder;
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "copilot",
+    source: crate::source::copilot::SOURCE_NAME,
     package: Package::Npm("@github/copilot"),
     plugin_types: &[],
     invocation: &["copilot", "-p", Placeholder::Prompt.as_str()],
@@ -126,19 +126,7 @@ pub(crate) const PROFILE: Profile = Profile {
     )],
     not_yet: &[],
     event_name: |_| None,
-    // GitHub's billing response carries them (1.0.98's bundled
-    // `cli-main.js` reads `copilotUsage.tokenDetails`); a BYOK run has none.
-    not_yet_fields: &[
-        (
-            "tx:session.shutdown",
-            "/data/tokenDetails/cache_write/tokenCount",
-        ),
-        ("tx:session.shutdown", "/data/tokenDetails/input/tokenCount"),
-        (
-            "tx:session.shutdown",
-            "/data/tokenDetails/output/tokenCount",
-        ),
-    ],
+    not_yet_fields: &[],
     not_yet_literals: &[],
     // A `subagent.started` child runs in-process, in the parent's transcript,
     // and no event of it names a cwd.

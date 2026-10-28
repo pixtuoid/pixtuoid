@@ -15,8 +15,8 @@ only carries what no gate can.
 
 Notes no gate carries:
 
-- The §3 proof media (`demos/proof*`) renders over the committed proof-session
-  fixture — retime the fixture, not the component.
+- The §3 proof media (`demos/proof*`) renders over the session in
+  `crates/pixtuoid/examples/snapshot/proof-session/` — retime it, not the component.
 
 ## Manifest seams (build-guarded)
 

@@ -2,6 +2,6 @@
   "private": true,
   "description": "The scripted model the hermetic tier runs every CLI against.",
   "dependencies": {
-    "@copilotkit/aimock": "1.45.1"
+    "@copilotkit/aimock": "1.47.0"
   }
 }

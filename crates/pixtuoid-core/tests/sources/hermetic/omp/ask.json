@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You name coding-agent sessions"},
+      "response": {"content": "<title>Hermetic</title>"}
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "ask", "arguments": {"questions": [{"id": "file", "question": "Which file should I read?", "options": [{"label": "NOTE.txt"}, {"label": "README.md"}]}]}}]},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": true},
+      "response": {"content": "pong"},
+      "latency": 300
+    }
+  ]
+}

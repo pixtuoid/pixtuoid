@@ -26,13 +26,17 @@ mod recorder {
         Deidentified, Dropped, NonEmpty, Provenance, Recorded,
     };
     use pixtuoid_core::harness::reads;
+    use pixtuoid_core::source::decoder::SOURCE_STAMP;
     use pixtuoid_core::source::{AgentEvent, registry, resolved_source_root};
 
     use pixtuoid_core::harness::hermetic::{self, MANIFEST, Manifest, PerOs, TURN_BUDGET};
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, create_private_dir, hold_lock, owned_by_us, remove_once_released,
+        RELEASE_PATIENCE, SandboxEnv, built, connect, create_private_dir, hold_lock, owned_by_us,
+        remove_once_released, warmed_shim_dir,
     };
-    use pixtuoid_core::harness::plan::{CapturePlan, DaemonPlan, Invocation, Sink};
+    use pixtuoid_core::harness::plan::{
+        AbsPath, CapturePlan, DaemonPlan, Invocation, KEYCHAINS, Operator, Sink,
+    };
     use pixtuoid_core::harness::tap::{Endpoint, Tap};
     use pixtuoid_core::harness::{
         BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, CaptureRecord, DRIVER_COPY,
@@ -41,14 +45,6 @@ mod recorder {
         capture_workspace_tail, files_under, jsonl_files_under, outlived, required_version_probe,
         slashed_under, version_answer, wait_until,
     };
-
-    /// Where a driver names the CLI it drives, a command or the path to its
-    /// binary, for the recorder to ask its `--version`.
-    const CLI_ENV: &str = "PIXTUOID_CAPTURE_CLI";
-
-    /// Where the recorder names the source's registry `verified_version`, for a
-    /// driver that installs its CLI: a capture must anchor that version.
-    const VERSION_ENV: &str = "PIXTUOID_CAPTURE_VERSION";
 
     /// The driver's own part of the recorder's scratch, apart from everything the
     /// recorder and its listener create there: what it names at [`DRIVER_DIR_ENV`].
@@ -80,15 +76,16 @@ mod recorder {
     /// a valid file name on every OS, which `<redacted>` is not on Windows.
     const REDACTED: &str = "REDACTED";
 
-    /// Where `plan`'s failed run copies its [`driver_dir`], if it may: only a sandboxed
-    /// raw capture. An operator's billed capture may hold real credentials in
-    /// its driver's logs. A sandboxed run's logs hold the operator's identity
-    /// through the account variables the sandbox inherits (`hermetic.rs`'s
-    /// `PLATFORM_INHERITED`) and their git identity; its `HOME` is the sandbox's
-    /// own. [`copy_driver_dir`] redacts those.
+    /// Where `plan`'s failed run copies its [`driver_dir`], if it may: only a
+    /// [scripted](CapturePlan::scripted) raw capture. An operator's billed
+    /// capture may hold real credentials in its driver's logs. A sandboxed
+    /// run's logs hold the operator's identity through the account variables
+    /// the sandbox inherits ([`inherited`](pixtuoid_core::harness::host::inherited))
+    /// and their git identity; its `HOME` is the sandbox's own.
+    /// [`copy_driver_dir`] redacts those.
     fn driver_destination(plan: &CapturePlan) -> Option<PathBuf> {
         match &plan.sink {
-            Sink::Raw { out, .. } if plan.sandboxed() => Some(out.as_path().join(DRIVER_COPY)),
+            Sink::Raw { out, .. } if plan.scripted() => Some(out.as_path().join(DRIVER_COPY)),
             _ => None,
         }
     }
@@ -232,11 +229,18 @@ mod recorder {
         CORPUS_REFUSAL.filter(|_| committed)
     }
 
+    /// Why a committed capture with no [`Operator`] is refused: its bytes are
+    /// scanned for theirs.
+    const NO_OPERATOR: &str = "a committed capture names the operator it scans for";
+
     /// Why this host may not run `plan`, if it may not: a committed write off
-    /// Unix, or a workspace whose parent the recorder may not clear.
+    /// Unix, or with no operator, or a workspace whose parent the recorder may
+    /// not clear.
     fn plan_refusal(plan: &CapturePlan) -> Option<String> {
-        corpus_refusal(matches!(plan.sink, Sink::Committed { .. }))
+        let committed = matches!(plan.sink, Sink::Committed { .. });
+        corpus_refusal(committed)
             .map(str::to_owned)
+            .or_else(|| (committed && plan.operator.is_none()).then(|| NO_OPERATOR.to_owned()))
             .or_else(|| {
                 plan.workspace
                     .as_ref()
@@ -311,8 +315,100 @@ mod recorder {
                 }
             },
             Invocation::Plan(file) => run(&CapturePlan::read(&file)?),
-            Invocation::Capture(plan) => run(&plan),
+            Invocation::Capture(plan) => isolated(&plan, operator(git_config)),
         }
+    }
+
+    /// An operator's capture, run in a sandbox as a hermetic one is
+    /// ([`SandboxEnv`]): it holds only pixtuoid's own hook for the source, so
+    /// no hook the operator installed reaches the tap; Cursor also runs Claude
+    /// Code's user hooks (cursor.com/docs/reference/third-party-hooks). The CLI
+    /// authenticates from the operator's keychain, which alone of their home it
+    /// reaches.
+    fn isolated(plan: &CapturePlan, operator: Operator) -> std::io::Result<()> {
+        let (pixtuoid, shim) = (built("pixtuoid")?, built("pixtuoid-hook")?);
+        let dir = tempfile::tempdir()?;
+        let bin = dir.path().join("bin");
+        warmed_shim_dir(&bin, &shim)?;
+        let env = SandboxEnv::new(dir.path(), hermetic::home_vars(&plan.source), &[&bin])?;
+        link_keychains(&env, operator.keychains.as_ref())?;
+        connect(&env, &pixtuoid, &plan.source, &mut std::io::sink())?;
+        let abs = |p: PathBuf| AbsPath::try_from(p).map_err(std::io::Error::other);
+        let plan = isolated_plan(
+            plan,
+            abs(dir.path().to_path_buf())?,
+            abs(capture_workspace()?)?,
+            operator,
+        );
+        let status = env
+            .command(std::env::current_exe()?)
+            .args(Invocation::plan_args(&plan.write_to(dir.path())?))
+            .status()?;
+        drop(dir);
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    /// `plan` as its sandboxed run reads it: every home inside `within`, the
+    /// workspace and the operator read on the host, before the homes moved.
+    fn isolated_plan(
+        plan: &CapturePlan,
+        within: AbsPath,
+        workspace: AbsPath,
+        operator: Operator,
+    ) -> CapturePlan {
+        CapturePlan {
+            within: Some(within),
+            workspace: Some(workspace),
+            operator: Some(operator),
+            ..plan.clone()
+        }
+    }
+
+    /// The sandbox's `HOME` linking the operator's `keychains`, where they exist.
+    fn link_keychains(env: &SandboxEnv, keychains: Option<&AbsPath>) -> std::io::Result<()> {
+        let (Some(keychains), Some(home)) = (
+            keychains.map(AbsPath::as_path).filter(|k| k.is_dir()),
+            env.var_os("HOME"),
+        ) else {
+            return Ok(());
+        };
+        let link = Path::new(home).join(KEYCHAINS);
+        if let Some(parent) = link.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(keychains, link)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(keychains, link)?;
+        Ok(())
+    }
+
+    /// Why `payloads` are not all `source`'s own, if they are not: a hook outside
+    /// pixtuoid's install for it ran the shim, so its bytes are another wire. A
+    /// line that is not JSON is the strip's to name, not this.
+    fn foreign_hooks(source: &str, payloads: &[String]) -> Option<String> {
+        let foreign: BTreeSet<String> = payloads
+            .iter()
+            .filter_map(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+            .filter_map(|v| {
+                let tag = v.get(SOURCE_STAMP).and_then(|s| s.as_str());
+                (tag != Some(source)).then(|| tag.unwrap_or("untagged").to_owned())
+            })
+            .collect();
+        (!foreign.is_empty()).then(|| {
+            format!(
+                "the tap heard hooks tagged {foreign:?} beside {source}'s: a hook outside \
+                 pixtuoid's own install ran the shim, so nothing is recorded"
+            )
+        })
+    }
+
+    /// [`foreign_hooks`] for a `sink` that commits: a raw capture is evidence
+    /// of whatever ran.
+    fn committed_foreign_hooks(sink: &Sink, source: &str, payloads: &[String]) -> Option<String> {
+        matches!(sink, Sink::Committed { .. })
+            .then(|| foreign_hooks(source, payloads))
+            .flatten()
     }
 
     /// One capture, as `plan` spells it.
@@ -347,8 +443,10 @@ mod recorder {
             eprintln!("{why}");
             std::process::exit(2);
         }
-        // Before the billed turn: a record that does not parse fails here.
-        let exempt = exemption(&dest)?;
+        // Before the billed turn: a record that does not parse fails here, and
+        // so does a CLI that tells no version.
+        Provenance::read_if_any(&dest.join(PROVENANCE))?;
+        let (cli, version) = cli_identity(plan, descriptor, probe_version)?;
 
         let ws = match &plan.workspace {
             Some(ws) => ws.as_path().to_path_buf(),
@@ -375,7 +473,6 @@ mod recorder {
             *DAEMON_BOOT.here(),
             &workspace,
             &wiring,
-            descriptor.verified_version,
             &env,
         ) {
             Ok(daemon) => daemon,
@@ -390,10 +487,7 @@ mod recorder {
             }
         };
         let budget = turn_budget(plan);
-        let end = run_turn(
-            wired(&cmd, &workspace, &wiring, descriptor.verified_version, &env)?,
-            budget,
-        )?;
+        let end = run_turn(wired(&cmd, &workspace, &wiring, &env)?, budget)?;
         let give_up_reason = give_up_reason(sandbox.path());
         let second_outcome = match plan.second_turn() {
             Some(_) if end == ProcessExit::OutOfTime => {
@@ -409,13 +503,7 @@ mod recorder {
                     Some(session) => {
                         let turn: Vec<String> =
                             words.words().iter().map(|w| w.filled(&session)).collect();
-                        let second = wired(
-                            &turn,
-                            &workspace,
-                            &wiring,
-                            descriptor.verified_version,
-                            &env,
-                        )?;
+                        let second = wired(&turn, &workspace, &wiring, &env)?;
                         Some(SecondTurn {
                             end: run_turn(second, budget)?,
                         })
@@ -432,16 +520,7 @@ mod recorder {
         // Whatever the turns did: a server they left up would outlive the run.
         let server_stop = match &plan.server_stop {
             Some(words) => Some(ServerStop {
-                exit: run_turn(
-                    wired(
-                        &words.strings(),
-                        &workspace,
-                        &wiring,
-                        descriptor.verified_version,
-                        &env,
-                    )?,
-                    budget,
-                )?,
+                exit: run_turn(wired(&words.strings(), &workspace, &wiring, &env)?, budget)?,
                 outlived: outlived(&tap.payloads(), *DAEMON_STOP_GRACE.here()),
             }),
             None => None,
@@ -465,6 +544,15 @@ mod recorder {
             }
             kept => kept,
         };
+        if let Some(why) = committed_foreign_hooks(&plan.sink, &source, &payloads) {
+            keep_scratch(
+                sandbox,
+                run_copy.as_deref(),
+                operator_identity,
+                &mut std::io::stderr(),
+            );
+            return Err(std::io::Error::other(why));
+        }
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
 
@@ -479,13 +567,6 @@ mod recorder {
             wrote.push(write_payloads(&payloads, &dest)?);
         }
 
-        let (cli, version) = match &plan.cli_version {
-            Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
-            None => {
-                let named = std::fs::read_to_string(named_cli(sandbox.path())).ok();
-                identity(&cmd[0], named.as_deref(), probe_version)
-            }
-        };
         let Sink::Committed { command, prompt } = &plan.sink else {
             // An empty raw capture is still recorded: a hook that never fired
             // is evidence about the run, which a missing record would hide.
@@ -535,26 +616,30 @@ mod recorder {
             std::process::exit(1);
         }
 
-        let (deidentified, not_json) = deidentify(&source, &wrote, exempt)?;
+        let (deidentified, not_json, sentinel_reads) = deidentify(&source, &wrote, |file| {
+            // A `.new` beside committed bytes is read under the name it replaces.
+            let file = file.with_extension("").with_extension("jsonl");
+            slashed_under(&dest, &file)
+        })?;
         report_not_json(&not_json);
         write_provenance(
             &dest,
             Recorded {
                 prompt: prompt.clone(),
                 seed: plan.seed.clone(),
+                sentinel_reads,
                 ..record(&cli, &version, command.as_str(), deidentified.clone())?
             },
         )?;
         for p in &wrote {
             println!("wrote {} ({} lines)", p.display(), count_lines(p));
         }
-        match &deidentified {
-            Deidentified::Stripped { blanked } => {
-                println!("blanked {blanked} subtrees no decoder reads");
-            }
-            Deidentified::Exempt { why } => println!("not stripped, as the record declares: {why}"),
-        }
-        let pii = refuse_on_pii(&wrote, &identity_needles(git_config, true));
+        let Deidentified::Stripped { blanked } = &deidentified;
+        println!("blanked {blanked} subtrees no decoder reads");
+        let pii = match &plan.operator {
+            Some(operator) => refuse_on_pii(&wrote, &operator.identity),
+            None => Err(std::io::Error::other(NO_OPERATOR)),
+        };
         if end != ProcessExit::Exited(0) {
             eprintln!("WARNING: the CLI exited ({end}) — this capture may be truncated");
             keep_scratch(
@@ -569,25 +654,29 @@ mod recorder {
         Ok(())
     }
 
-    /// What the strip did to `files`, and each it left whole as not JSON.
+    /// [`deidentify`]'s answer.
+    type Stripped = (
+        Deidentified,
+        Vec<(PathBuf, String)>,
+        std::collections::BTreeMap<String, BTreeSet<String>>,
+    );
+
+    /// What the strip did to `files`, each it left whole as not JSON, and each
+    /// stripped file's sentinel reads under the path `named` gives it.
     fn deidentify(
         source: &str,
         files: &[PathBuf],
-        exemption: Option<NonEmpty>,
-    ) -> std::io::Result<(Deidentified, Vec<(PathBuf, String)>)> {
-        Ok(match exemption {
-            Some(why) => (Deidentified::Exempt { why }, Vec::new()),
-            None => {
-                let strip = reads::strip_unread(source, files)?;
-                let blanked = strip.blanked;
-                (Deidentified::Stripped { blanked }, strip.not_json)
-            }
-        })
-    }
-
-    /// The exemption the record in `dest` declares, if it holds one.
-    fn exemption(dest: &Path) -> std::io::Result<Option<NonEmpty>> {
-        Ok(Provenance::read_if_any(&dest.join(PROVENANCE))?.and_then(|p| p.exemption().cloned()))
+        named: impl Fn(&Path) -> std::io::Result<String>,
+    ) -> std::io::Result<Stripped> {
+        let strip = reads::strip_unread(source, files)?;
+        let blanked = strip.blanked;
+        let reads = strip
+            .sentinel_reads
+            .into_iter()
+            .filter(|(_, read)| !read.is_empty())
+            .map(|(file, read)| Ok((named(&file)?, read)))
+            .collect::<std::io::Result<_>>()?;
+        Ok((Deidentified::Stripped { blanked }, strip.not_json, reads))
     }
 
     /// [`promote`] on this host: refused where it may not write the corpus.
@@ -617,7 +706,8 @@ mod recorder {
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
     /// beside them: the old ones are git's. A run whose record equals theirs but
-    /// for `captured`, and whose bytes match theirs up to ids, leaves both be.
+    /// for `captured`, and whose bytes and reads match theirs up to ids, leaves
+    /// both be.
     fn promote(
         run: &Path,
         root: &Path,
@@ -630,9 +720,20 @@ mod recorder {
         let scenario = hermetic::profile(&manifest.source)
             .and_then(|p| p.scenario(&manifest.scenario))
             .ok_or_else(|| std::io::Error::other(format!("{named}: no profiled scenario")))?;
+        let payloads: Vec<String> = match std::fs::read_to_string(run.join(HOOK_PAYLOADS)) {
+            Ok(text) => text
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(str::to_owned)
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e),
+        };
+        if let Some(why) = foreign_hooks(&manifest.source, &payloads) {
+            return Err(std::io::Error::other(format!("{named}: {why}")));
+        }
         let dest = root.join(scenario.fixture);
         let committed = Provenance::read_if_any(&dest.join(PROVENANCE))?;
-        let exempt = committed.as_ref().and_then(|p| p.exemption().cloned());
         // Stripped apart from the fixture, which it replaces only if it differs.
         let staged = tempfile::tempdir()?;
         let mut fresh = Vec::new();
@@ -647,11 +748,11 @@ mod recorder {
             fresh.push(to);
         }
         // Before the strip: what the decoders drop is what it blanks.
-        let dropped = match exempt {
-            None => Some(Dropped::of_files(&manifest.source, &fresh)?),
-            Some(_) => None,
-        };
-        let (deidentified, not_json) = deidentify(&manifest.source, &fresh, exempt)?;
+        let dropped = Some(Dropped::of_files(&manifest.source, &fresh)?);
+        let (deidentified, not_json, sentinel_reads) =
+            deidentify(&manifest.source, &fresh, |file| {
+                slashed_under(staged.path(), file)
+            })?;
         // Named where the fixture keeps it: the staged copy is gone by then.
         for (file, error) in &not_json {
             let kept = dest.join(slashed_under(staged.path(), file)?);
@@ -674,6 +775,7 @@ mod recorder {
             script: Some(filled("script", &script)?),
             seed,
             dropped,
+            sentinel_reads,
             ..record(
                 &manifest.capture.cli,
                 &manifest.capture.version,
@@ -681,14 +783,16 @@ mod recorder {
                 deidentified,
             )?
         };
-        if let Some(old) = committed.as_ref().and_then(Provenance::recorded)
+        if let Some(old) = committed.as_ref().map(Provenance::recorded)
             && *old
                 == (Recorded {
                     captured: old.captured.clone(),
+                    sentinel_reads: old.sentinel_reads.clone(),
                     ..fresh_record.clone()
                 })
-            && let Some(bytes) = canonical_capture(&dest)?
-            && canonical_capture(staged.path())?.as_ref() == Some(&bytes)
+            && let Some(bytes) = canonical_capture(&dest, &old.sentinel_reads)?
+            && canonical_capture(staged.path(), &fresh_record.sentinel_reads)?.as_ref()
+                == Some(&bytes)
         {
             println!("kept {named}: the run renamed only its ids");
             return Ok(());
@@ -987,13 +1091,12 @@ mod recorder {
         scratch: &'a Path,
     }
 
-    /// `cmd` with the CLI's wiring: the tap's endpoint, the driver's dir and
-    /// the CLI it names, the pin, the agent-env scrub, then `env`.
+    /// `cmd` with the CLI's wiring: the tap's endpoint, the driver's dir, the
+    /// agent-env scrub, then `env`.
     fn wired(
         cmd: &[String],
         ws: &Path,
         wiring: &CliWiring<'_>,
-        verified: &str,
         env: &[(String, String)],
     ) -> std::io::Result<std::process::Command> {
         let mut c = std::process::Command::new(&cmd[0]);
@@ -1003,8 +1106,6 @@ mod recorder {
         let own = driver_dir(wiring.scratch);
         std::fs::create_dir_all(&own)?;
         c.env(DRIVER_DIR_ENV, own);
-        c.env(CLI_ENV, named_cli(wiring.scratch))
-            .env(VERSION_ENV, verified);
         for k in agent_env_names(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok())) {
             c.env_remove(k);
         }
@@ -1014,7 +1115,7 @@ mod recorder {
 
     /// `plan`'s turn budget: measured on hermetic turns, so a billed one has none.
     fn turn_budget(plan: &CapturePlan) -> Option<Duration> {
-        plan.sandboxed().then(|| *TURN_BUDGET.here())
+        plan.scripted().then(|| *TURN_BUDGET.here())
     }
 
     /// How `turn` ended: killed once it outran `budget`, when it has one.
@@ -1069,7 +1170,6 @@ mod recorder {
             boot: Duration,
             ws: &Path,
             wiring: &CliWiring<'_>,
-            verified: &str,
             env: &[(String, String)],
         ) -> std::io::Result<Option<Self>> {
             let Some(daemon) = daemon else {
@@ -1080,7 +1180,7 @@ mod recorder {
             let log_path = own.join(DAEMON_LOG);
             let log = std::fs::File::create(&log_path)?;
             let (start, ready) = (daemon.start.strings(), daemon.ready.strings());
-            let mut child = wired(&start, ws, wiring, verified, env)?
+            let mut child = wired(&start, ws, wiring, env)?
                 .envs(daemon.env.iter())
                 .stdin(std::process::Stdio::piped())
                 .stdout(log.try_clone()?)
@@ -1096,7 +1196,7 @@ mod recorder {
             let mut probes = std::fs::File::create(&probe_log)?;
             let deadline = std::time::Instant::now() + boot;
             wait_until("the daemon", boot, || {
-                let mut probe = wired(&ready, ws, wiring, verified, env)?;
+                let mut probe = wired(&ready, ws, wiring, env)?;
                 probe
                     .stdout(probes.try_clone()?)
                     .stderr(probes.try_clone()?);
@@ -1182,9 +1282,25 @@ mod recorder {
         Ok(out)
     }
 
-    /// In this run's private scratch.
-    fn named_cli(scratch: &Path) -> PathBuf {
-        scratch.join("cli")
+    /// The CLI `plan` runs and its version, refused for a committed capture
+    /// whose CLI tells none: a record of one cannot sit at its source's pin,
+    /// and nothing else can tell it.
+    fn cli_identity(
+        plan: &CapturePlan,
+        descriptor: &registry::SourceDescriptor,
+        probe: impl FnOnce(&str) -> Option<String>,
+    ) -> std::io::Result<(String, String)> {
+        let (cli, version) = match &plan.cli_version {
+            Some(version) => (registered_cli(descriptor)?, version.as_str().to_owned()),
+            None => identity(&plan.first_turn.strings(), probe),
+        };
+        if matches!(plan.sink, Sink::Committed { .. }) && version == "unknown" {
+            return Err(std::io::Error::other(format!(
+                "`{cli} --version` did not answer, or a driver named no CLI after `--` \
+                 in its command line, so nothing is recorded"
+            )));
+        }
+        Ok((cli, version))
     }
 
     /// The CLI's own name, as its registry row asks it its version.
@@ -1199,18 +1315,18 @@ mod recorder {
 
     /// The CLI a capture ran, and its version, asked of that CLI alone: a
     /// command named by a path is a driver, which `--version` would run whole,
-    /// billed and outside the sandbox, so only the CLI it names at [`CLI_ENV`]
-    /// is asked.
-    fn identity(
-        cmd0: &str,
-        named: Option<&str>,
-        probe: impl FnOnce(&str) -> Option<String>,
-    ) -> (String, String) {
-        let cli = named
-            .and_then(|n| n.lines().next())
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-            .or_else(|| (!cmd0.contains('/')).then_some(cmd0));
+    /// billed and outside the sandbox, so only the CLI it names after `--` in
+    /// its own command line (`tui_drive`'s) is asked.
+    fn identity(cmd: &[String], probe: impl FnOnce(&str) -> Option<String>) -> (String, String) {
+        let cmd0 = cmd.first().map_or("", String::as_str);
+        let cli = if cmd0.contains('/') {
+            cmd.iter()
+                .position(|w| w == "--")
+                .and_then(|at| cmd.get(at + 1))
+                .map(String::as_str)
+        } else {
+            Some(cmd0)
+        };
         let name = Path::new(cli.unwrap_or(cmd0))
             .file_name()
             .and_then(|s| s.to_str())
@@ -1243,12 +1359,13 @@ mod recorder {
             captured: filled("captured", &today())?,
             command: filled("command", command)?,
             note: None,
-            deidentified: Some(deidentified),
+            deidentified,
             prompt: None,
             seed: None,
             aimock: None,
             script: None,
             dropped: None,
+            sentinel_reads: std::collections::BTreeMap::new(),
         })
     }
 
@@ -1258,20 +1375,7 @@ mod recorder {
     }
 
     fn write_provenance(dest: &Path, record: Recorded) -> std::io::Result<()> {
-        let out = no_clobber(dest.join(PROVENANCE));
-        let unknown = record.version.as_str() == "unknown";
-        let cli = record.cli.clone();
-        Provenance::Recorded(Box::new(record)).write_to(&out)?;
-        // Loud, because the record just written is unusable.
-        if unknown {
-            eprintln!(
-                "WARNING: {} records version \"unknown\" — `{cli} --version` did not \
-                 answer, or a driver named no CLI at ${CLI_ENV}. Fix `cli` and `version` \
-                 by hand before committing, or the anchor gate skips this source.",
-                out.display()
-            );
-        }
-        Ok(())
+        Provenance::Recorded(Box::new(record)).write_to(&no_clobber(dest.join(PROVENANCE)))
     }
 
     fn today() -> String {
@@ -1315,6 +1419,15 @@ mod recorder {
     /// for the `HOME`, which is the run's own there.
     fn operator_identity() -> BTreeSet<String> {
         identity_needles(git_config, false)
+    }
+
+    /// The operator a billed capture runs for, read in their own env: its
+    /// sandbox moves every home.
+    fn operator(git: impl Fn(&str) -> Option<String>) -> Operator {
+        Operator::new(
+            identity_needles(git, true),
+            pixtuoid_core::platform::text_env("HOME").as_deref(),
+        )
     }
 
     fn git_config(key: &str) -> Option<String> {
@@ -1540,6 +1653,7 @@ mod recorder {
                 "version": "0.2.0-rc.1",
                 "captured": "2026-01-01",
                 "command": "just hermetic --record dsh",
+                "deidentified": {"method": "decoder-allowlist", "blanked": 0},
             });
             if let (Some(base), Some(over)) = (record.as_object_mut(), over.as_object()) {
                 base.extend(over.clone());
@@ -1554,7 +1668,7 @@ mod recorder {
         fn written(dest: &Path) -> (String, Recorded) {
             let bytes = std::fs::read_to_string(dest.join(HOOK_PAYLOADS)).expect("bytes");
             let record = Provenance::read(&dest.join(PROVENANCE)).expect("record");
-            (bytes, record.recorded().expect("a recording").clone())
+            (bytes, record.recorded().clone())
         }
 
         #[test]
@@ -1571,7 +1685,7 @@ mod recorder {
             let (bytes, record) = written(&p.dest);
             assert!(!bytes.contains("unread"), "the planted key is stripped");
             assert!(
-                matches!(record.deidentified, Some(Deidentified::Stripped { blanked }) if blanked > 0),
+                matches!(record.deidentified, Deidentified::Stripped { blanked } if blanked > 0),
                 "{record:?}"
             );
             assert_eq!(record.aimock.as_ref().map(NonEmpty::as_str), Some("1.43.0"));
@@ -1685,31 +1799,25 @@ mod recorder {
         }
 
         #[test]
-        fn a_promoted_run_keeps_its_fixtures_exemption() {
-            let why = "a test reads the raw bytes";
-            let p = promotable(
-                serde_json::json!({
-                    "origin": "recorded",
-                    "deidentified": {"method": "none", "why": why},
-                }),
-                |_| {},
-            );
-            promote(&p.run, &p.root, &needles(), &mut std::io::sink()).expect("promote");
-            let (bytes, record) = written(&p.dest);
-            assert!(
-                bytes.contains("unread"),
-                "an exempt capture is not stripped"
-            );
-            assert_eq!(
-                record.deidentified,
-                Some(Deidentified::Exempt {
-                    why: why.try_into().expect("a reason")
-                })
-            );
-            assert_eq!(
-                record.dropped, None,
-                "an unstripped capture drops nothing it could baseline"
-            );
+        fn a_promoted_run_holding_a_hook_not_its_sources_is_refused() {
+            let edits: [fn(&mut serde_json::Value); 2] = [
+                |line| line[SOURCE_STAMP] = "claude-code".into(),
+                |line| {
+                    line.as_object_mut().map(|o| o.remove(SOURCE_STAMP));
+                },
+            ];
+            for edit in edits {
+                let p = promotable(serde_json::json!({"origin": "recorded"}), |lines| {
+                    edit(&mut lines[0]);
+                });
+                let refused = promote(&p.run, &p.root, &needles(), &mut std::io::sink());
+                assert!(refused.is_err_and(|e| e.to_string().contains("tap heard")));
+                assert!(
+                    p.dest.join("old").join("old.jsonl").is_file()
+                        && !p.dest.join(HOOK_PAYLOADS).exists(),
+                    "the fixture is left whole"
+                );
+            }
         }
 
         const AIMOCK: &str = "1.45.1";
@@ -1856,8 +1964,8 @@ mod recorder {
             if after != before {
                 let record = Provenance::read(&p.dest.join(PROVENANCE)).expect("record");
                 assert_eq!(
-                    record.recorded().map(|r| r.captured.as_str()),
-                    Some(today().as_str()),
+                    record.recorded().captured.as_str(),
+                    today().as_str(),
                     "a rewrite is the run's own record"
                 );
             }
@@ -1866,6 +1974,121 @@ mod recorder {
 
         fn unchanged(text: String) -> String {
             text
+        }
+
+        /// `text` with each uuid and call id a run mints moved `n` steps by
+        /// [`rotated`], as an `n`th run of the same scenario mints them.
+        fn reminted(text: &str, n: usize) -> String {
+            let ids = regex::Regex::new(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|call_[0-9A-Za-z]{16,}",
+            )
+            .expect("the id pattern compiles");
+            ids.replace_all(text, |c: &regex::Captures<'_>| {
+                let id = &c[0];
+                let (prefix, minted) = id.split_at(if id.starts_with("call_") { 5 } else { 0 });
+                let minted: String = minted
+                    .chars()
+                    .map(|ch| (0..n).fold(ch, |ch, _| rotated(ch)))
+                    .collect();
+                format!("{prefix}{minted}")
+            })
+            .into_owned()
+        }
+
+        /// A scenario's sources `root`, its fixture `dest` under it, and `run`,
+        /// which makes its `n`th run with every id reminted `n` steps.
+        struct Reruns<F: Fn(usize) -> PathBuf> {
+            root: PathBuf,
+            dest: PathBuf,
+            run: F,
+        }
+
+        /// [`Reruns`] of codex's tool-run, in `d`.
+        fn codex_reruns(d: &Path) -> Reruns<impl Fn(usize) -> PathBuf + '_> {
+            let s = hermetic::profile("codex")
+                .and_then(|p| p.scenario("tool-run"))
+                .expect("codex's tool-run");
+            let committed = sources_root().join(s.fixture);
+            let record = Provenance::read(&committed.join(PROVENANCE)).expect("its record");
+            let record = record.recorded().clone();
+            assert!(
+                record.sentinel_reads.keys().any(|k| k != HOOK_PAYLOADS),
+                "a read keyed by a transcript: {:?}",
+                record.sentinel_reads
+            );
+            let run = move |n: usize| -> PathBuf {
+                let dir = d.join(format!("run-{n}"));
+                for from in jsonl_files_under(&committed) {
+                    let rel = slashed_under(&committed, &from).expect("under");
+                    let to = dir.join(reminted(&rel, n));
+                    std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                    let text = std::fs::read_to_string(&from).expect("read");
+                    std::fs::write(to, reminted(&text, n)).expect("write");
+                }
+                let manifest = Manifest {
+                    source: "codex".into(),
+                    scenario: "tool-run".into(),
+                    capture: CaptureRecord {
+                        workspace: capture_workspace().expect("the workspace"),
+                        cli: "codex".into(),
+                        version: record.version.as_str().into(),
+                        end: ProcessExit::Exited(0),
+                        give_up_reason: None,
+                        incomplete: None,
+                        second_turn: None,
+                        server_stop: None,
+                        note_survived: true,
+                    },
+                    aimock: record.aimock.as_ref().expect("an aimock").as_str().into(),
+                    requests: 2,
+                    unmatched: 0,
+                    results_seen: 1,
+                };
+                std::fs::write(
+                    dir.join(MANIFEST),
+                    serde_json::to_string(&manifest).expect("json"),
+                )
+                .expect("manifest");
+                dir
+            };
+            let root = d.join("sources");
+            Reruns {
+                dest: root.join(s.fixture),
+                root,
+                run,
+            }
+        }
+
+        /// A transcript's name carries the ids its run minted, and so does its
+        /// key in the record's `sentinel_reads`.
+        #[test]
+        fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let r = codex_reruns(d.path());
+            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            let before = snapshot(&r.dest);
+            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
+                .expect("recorded again");
+            assert_eq!(snapshot(&r.dest), before, "only ids differ");
+        }
+
+        #[test]
+        fn a_re_record_that_makes_a_read_its_record_lacks_is_rewritten() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let r = codex_reruns(d.path());
+            let prov = r.dest.join(PROVENANCE);
+            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            let mut record = Provenance::read(&prov).expect("its record");
+            let Provenance::Recorded(recorded) = &mut record;
+            recorded.sentinel_reads.clear();
+            record.write_to(&prov).expect("write");
+            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
+                .expect("recorded again");
+            let record = Provenance::read(&prov).expect("its record");
+            assert!(
+                !record.recorded().sentinel_reads.is_empty(),
+                "rewritten with the run's reads"
+            );
         }
 
         #[test]
@@ -1903,6 +2126,17 @@ mod recorder {
         #[test]
         fn a_re_record_under_another_cli_version_is_rewritten() {
             let p = rerun("tool-run", ("0.2.0-rc.3", AIMOCK), |_| {}, unchanged);
+            assert!(!kept(&p));
+        }
+
+        #[test]
+        fn a_re_record_that_no_longer_makes_a_recorded_read_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                (dsh_version(), AIMOCK),
+                |r| r["sentinel_reads"] = serde_json::json!({"hook-payloads.jsonl": ["1:/cwd"]}),
+                unchanged,
+            );
             assert!(!kept(&p));
         }
 
@@ -2020,24 +2254,44 @@ mod recorder {
             }
         }
 
+        /// `args`' capture as [`isolated`] hands it to its sandboxed run.
+        fn isolated_operator_plan(args: &[&str]) -> CapturePlan {
+            let abs = |p: PathBuf| AbsPath::try_from(p).expect("absolute");
+            isolated_plan(
+                &operator_plan(args),
+                abs(std::env::temp_dir()),
+                abs(std::env::temp_dir().join(capture_workspace_tail())),
+                Operator::new(BTreeSet::from(["ada".to_owned()]), None),
+            )
+        }
+
         #[test]
         fn only_a_hermetic_turn_has_a_budget() {
-            let mut raw = operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
+            let raw = isolated_operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
+            assert!(raw.sandboxed(), "every transcript born in it is the run's");
             assert_eq!(turn_budget(&raw), None, "an operator's billed raw capture");
             assert_eq!(
-                turn_budget(&operator_plan(&["kimi", "tool-run", "kimi"])),
+                turn_budget(&isolated_operator_plan(&["kimi", "tool-run", "kimi"])),
                 None
             );
-            raw.within = Some(
-                pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir()).expect("abs"),
-            );
-            assert_eq!(turn_budget(&raw), Some(*TURN_BUDGET.here()));
+            let hermetic = CapturePlan {
+                operator: None,
+                ..raw
+            };
+            assert_eq!(turn_budget(&hermetic), Some(*TURN_BUDGET.here()));
         }
 
         #[test]
         fn a_plan_the_host_may_not_run_is_refused_before_it_starts() {
-            let committed = operator_plan(&["kimi", "tool-run", "kimi"]);
+            let committed = isolated_operator_plan(&["kimi", "tool-run", "kimi"]);
             assert_eq!(plan_refusal(&committed).is_some(), !cfg!(unix));
+            if cfg!(unix) {
+                let unscanned = CapturePlan {
+                    operator: None,
+                    ..committed
+                };
+                assert_eq!(plan_refusal(&unscanned).as_deref(), Some(NO_OPERATOR));
+            }
             let mut raw = operator_plan(&["--out", "x", "kimi", "tool-run", "kimi"]);
             assert_eq!(plan_refusal(&raw), None, "a raw capture is any host's");
             let abs = |p: PathBuf| pixtuoid_core::harness::plan::AbsPath::try_from(p).expect("abs");
@@ -2419,46 +2673,75 @@ mod recorder {
                 asked.borrow_mut().push(c.to_owned());
                 Some(format!("{c} 1.0"))
             };
-            let driver = "scripts/lib/capture-x.sh";
+            let argv = |words: &[&str]| words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
             assert_eq!(
-                identity(driver, Some("dsh\n"), probe),
-                ("dsh".into(), "dsh 1.0".into())
-            );
-            assert_eq!(
-                identity(driver, Some("/tmp/oc/package/bin/opencode\n"), probe),
-                ("opencode".into(), "/tmp/oc/package/bin/opencode 1.0".into())
-            );
-            assert_eq!(
-                identity(driver, None, probe),
+                identity(&argv(&["scripts/capture-x.sh"]), probe),
                 ("capture-x.sh".into(), "unknown".into())
             );
+            let tui = argv(&[
+                "target/release/examples/tui_drive",
+                "claude-code",
+                "permission",
+                "tui.log",
+                "{prompt}",
+                "--",
+                "claude",
+                "--permission-mode",
+                "manual",
+            ]);
             assert_eq!(
-                identity("claude", None, probe),
+                identity(&tui, probe),
                 ("claude".into(), "claude 1.0".into())
             );
             assert_eq!(
-                identity("grok", None, |_| None),
-                ("grok".into(), "unknown".into())
+                identity(&argv(&["claude"]), probe),
+                ("claude".into(), "claude 1.0".into())
             );
             assert_eq!(
-                *asked.borrow(),
-                ["dsh", "/tmp/oc/package/bin/opencode", "claude"]
+                identity(&argv(&["codex", "exec", "--", "{prompt}"]), probe),
+                ("codex".into(), "codex 1.0".into()),
+                "a CLI's own `--` names no other CLI"
+            );
+            assert_eq!(
+                identity(&argv(&["grok"]), |_| None),
+                ("grok".into(), "unknown".into())
+            );
+            assert_eq!(*asked.borrow(), ["claude", "claude", "codex"]);
+        }
+
+        /// Before its turn, which a refusal after it had already paid for.
+        #[test]
+        fn a_committed_capture_of_a_cli_that_tells_no_version_is_refused() {
+            let cursor = registry::descriptor_for("cursor").expect("cursor");
+            let driven = operator_plan(&["cursor", "tool-run", "/bin/driver", "-p", "{prompt}"]);
+            let why = cli_identity(&driven, cursor, |_| panic!("a driver is never asked"))
+                .expect_err("a driver named no CLI after `--`");
+            assert!(why.to_string().contains("nothing is recorded"), "{why}");
+            let silent = operator_plan(&["cursor", "tool-run", "cursor-agent"]);
+            assert!(cli_identity(&silent, cursor, |_| None).is_err());
+            assert_eq!(
+                cli_identity(&silent, cursor, |_| Some("2026.10.22".into())).expect("told"),
+                ("cursor-agent".into(), "2026.10.22".into())
+            );
+            let raw = operator_plan(&["--out", "x", "cursor", "tool-run", "/bin/driver"]);
+            assert_eq!(
+                cli_identity(&raw, cursor, |_| None).expect("a raw capture is evidence"),
+                ("driver".into(), "unknown".into())
             );
         }
 
         /// A driver is a Unix shell script.
         #[cfg(unix)]
         #[test]
-        fn a_driver_gets_the_verified_version_and_its_callers_env_and_names_its_cli() {
+        fn a_driver_gets_its_dir_and_its_callers_env() {
             let sandbox = tempfile::tempdir().expect("sandbox");
             let ws = tempfile::tempdir().expect("workspace");
             let endpoint = Endpoint::in_dir(sandbox.path(), "capture");
             // An inherited agent var is scrubbed; a caller's `CLAUDE_CODE_*`
             // opt-out outlives the scrub.
             let script = format!(
-                r#"test "${VERSION_ENV}" = 1.0.0 && test -z "$CLAUDE_CODE_CHILD_SESSION" \
-                   && test "$CLAUDE_CODE_PROBE" = 1 && test "${DRIVER_DIR_ENV}" = "{}" \
-                   && test -d "${DRIVER_DIR_ENV}" && echo dsh >"${CLI_ENV}""#,
+                r#"test -z "$CLAUDE_CODE_CHILD_SESSION" && test "$CLAUDE_CODE_PROBE" = 1 \
+                   && test "${DRIVER_DIR_ENV}" = "{}" && test -d "${DRIVER_DIR_ENV}""#,
                 driver_dir(sandbox.path()).display()
             );
             let cmd = ["sh", "-c", &script].map(String::from);
@@ -2474,18 +2757,12 @@ mod recorder {
                         endpoint: &endpoint,
                         scratch: sandbox.path(),
                     };
-                    wired(&cmd, ws.path(), &wiring, "1.0.0", &env)
+                    wired(&cmd, ws.path(), &wiring, &env)
                         .and_then(|mut c| c.status())
                         .expect("runs")
                 },
             );
             assert!(ran.success());
-            assert_eq!(
-                std::fs::read_to_string(named_cli(sandbox.path()))
-                    .ok()
-                    .as_deref(),
-                Some("dsh\n")
-            );
         }
 
         #[cfg(unix)]
@@ -2506,16 +2783,10 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let running = RunningDaemon::start(
-                Some(&daemon),
-                *DAEMON_BOOT.here(),
-                ws.path(),
-                &wiring,
-                "1.0.0",
-                &[],
-            )
-            .expect("starts")
-            .expect("a daemon");
+            let running =
+                RunningDaemon::start(Some(&daemon), *DAEMON_BOOT.here(), ws.path(), &wiring, &[])
+                    .expect("starts")
+                    .expect("a daemon");
             assert!(ready.exists(), "returned before it served");
             running.stop(*DAEMON_STOP_GRACE.here()).expect("it stops");
         }
@@ -2587,7 +2858,7 @@ mod recorder {
                 scratch: dir,
             };
             let env = [(FAKE_DAEMON.to_owned(), dir.display().to_string())];
-            RunningDaemon::start(Some(&fake_daemon(test)), boot, dir, &wiring, "1.0.0", &env)
+            RunningDaemon::start(Some(&fake_daemon(test)), boot, dir, &wiring, &env)
                 .map(|d| d.expect("a daemon"))
         }
 
@@ -2654,7 +2925,6 @@ mod recorder {
                 *DAEMON_BOOT.here(),
                 dir.path(),
                 &wiring,
-                "1.0.0",
                 &env,
             )
             .expect("it serves")
@@ -2753,16 +3023,10 @@ mod recorder {
                 endpoint: &endpoint,
                 scratch: sandbox.path(),
             };
-            let why = RunningDaemon::start(
-                Some(&daemon),
-                *DAEMON_BOOT.here(),
-                ws.path(),
-                &wiring,
-                "1.0.0",
-                &[],
-            )
-            .map(|_| ())
-            .expect_err("its probe answered for someone else");
+            let why =
+                RunningDaemon::start(Some(&daemon), *DAEMON_BOOT.here(), ws.path(), &wiring, &[])
+                    .map(|_| ())
+                    .expect_err("its probe answered for someone else");
             assert!(why.to_string().contains("exited"), "{why}");
             assert!(why.to_string().contains("out of disk"), "its log: {why}");
         }
@@ -2931,7 +3195,7 @@ mod recorder {
             };
             let script = format!("printf '{WHY}\\n' >\"${DRIVER_DIR_ENV}/{GAVE_UP_NOTE}\"; exit 3");
             let cmd = ["sh", "-c", &script].map(String::from);
-            let turn = wired(&cmd, ws.path(), &wiring, "1.0.0", &[]).expect("wired");
+            let turn = wired(&cmd, ws.path(), &wiring, &[]).expect("wired");
             assert_eq!(
                 run_turn(turn, Some(*TURN_BUDGET.here())).expect("it ran"),
                 ProcessExit::Exited(3)
@@ -3015,7 +3279,6 @@ mod recorder {
         #[test]
         fn a_failed_capture_keeps_only_a_scratch_a_driver_wrote_in() {
             let top_level = |scratch: &Path| {
-                std::fs::write(named_cli(scratch), "openclaw\n").expect("cli");
                 std::fs::write(scratch.join("capture.sock.lock"), "").expect("lock");
                 std::fs::create_dir_all(driver_dir(scratch)).expect("driver dir");
             };
@@ -3060,7 +3323,7 @@ mod recorder {
                 }
             };
             let out_arg = out.display().to_string();
-            let mut raw = line(&["--out", &out_arg, "kimi", "tool-run", "kimi"]);
+            let raw = isolated_operator_plan(&["--out", &out_arg, "kimi", "tool-run", "kimi"]);
             assert_eq!(
                 driver_destination(&raw),
                 None,
@@ -3070,12 +3333,12 @@ mod recorder {
                 driver_destination(&line(&["kimi", "tool-run", "kimi"])),
                 None
             );
-            raw.within = Some(
-                pixtuoid_core::harness::plan::AbsPath::try_from(std::env::temp_dir())
-                    .expect("absolute"),
-            );
+            let hermetic = CapturePlan {
+                operator: None,
+                ..raw
+            };
             assert_eq!(
-                driver_destination(&raw),
+                driver_destination(&hermetic),
                 Some(std::path::absolute(&out).expect("abs").join(DRIVER_COPY))
             );
         }
@@ -3350,33 +3613,73 @@ mod recorder {
         }
 
         #[test]
-        fn every_driver_reads_only_env_the_recorder_sets() {
-            let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/lib");
-            let mut drivers = 0;
-            for entry in std::fs::read_dir(&lib).expect("scripts/lib") {
-                let path = entry.expect("an entry").path();
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or_default();
-                if name.starts_with("capture-") {
-                    drivers += 1;
-                    let text = std::fs::read_to_string(&path).expect("a driver");
-                    assert!(text.contains(CLI_ENV), "{name} names no CLI at ${CLI_ENV}");
-                    for named in text.split("PIXTUOID_CAPTURE_").skip(1) {
-                        let tail: String = named
-                            .chars()
-                            .take_while(|c| c.is_ascii_uppercase() || *c == '_')
-                            .collect();
-                        let var = format!("PIXTUOID_CAPTURE_{tail}");
-                        assert!(
-                            [CLI_ENV, VERSION_ENV, DRIVER_DIR_ENV].contains(&var.as_str()),
-                            "{name} reads ${var}, which the recorder never sets"
-                        );
-                    }
-                }
+        fn a_tap_line_tagged_for_another_source_or_none_refuses_the_capture() {
+            let tagged = |source: &str| format!(r#"{{"{SOURCE_STAMP}":"{source}"}}"#);
+            assert_eq!(
+                foreign_hooks("cursor", &[tagged("cursor"), tagged("cursor")]),
+                None
+            );
+            let why = foreign_hooks(
+                "cursor",
+                &[
+                    tagged("cursor"),
+                    tagged("claude-code"),
+                    r#"{"x":1}"#.to_owned(),
+                    "not json".to_owned(),
+                ],
+            )
+            .expect("refused");
+            assert!(
+                why.contains("claude-code") && why.contains("untagged"),
+                "{why}"
+            );
+        }
+
+        #[test]
+        fn only_a_committed_run_refuses_a_hook_not_its_sources() {
+            let tagged = |source: &str| format!(r#"{{"{SOURCE_STAMP}":"{source}"}}"#);
+            let committed = operator_plan(&["cursor", "tool-run", "cursor-agent"]).sink;
+            let raw = operator_plan(&["--out", "x", "cursor", "tool-run", "cursor-agent"]).sink;
+            for foreign in [tagged("claude-code"), r#"{"x":1}"#.to_owned()] {
+                let payloads = [tagged("cursor"), foreign];
+                assert!(committed_foreign_hooks(&committed, "cursor", &payloads).is_some());
+                assert_eq!(
+                    committed_foreign_hooks(&raw, "cursor", &payloads),
+                    None,
+                    "a raw capture is evidence"
+                );
             }
-            assert!(drivers > 0, "scripts/lib holds the drivers");
+            assert_eq!(
+                committed_foreign_hooks(&committed, "cursor", &[tagged("cursor")]),
+                None
+            );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn an_isolated_home_reaches_only_the_operators_keychains() {
+            let operator = tempfile::tempdir().expect("operator");
+            let keychains = AbsPath::try_from(operator.path().join(KEYCHAINS)).expect("absolute");
+            std::fs::create_dir_all(keychains.as_path()).expect("keychains");
+            std::fs::create_dir_all(operator.path().join(".claude")).expect("hooks");
+            let d = tempfile::tempdir().expect("tempdir");
+            let env = SandboxEnv::new(d.path(), [], &[]).expect("env");
+            link_keychains(&env, Some(&keychains)).expect("linked");
+            let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
+            assert_eq!(
+                std::fs::read_link(home.join(KEYCHAINS)).expect("linked"),
+                keychains.as_path()
+            );
+            assert!(
+                !home.join(".claude").exists(),
+                "nothing else of the operator's"
+            );
+            let missing = tempfile::tempdir().expect("tempdir");
+            let env = SandboxEnv::new(missing.path(), [], &[]).expect("env");
+            let gone = AbsPath::try_from(operator.path().join("gone")).expect("absolute");
+            link_keychains(&env, Some(&gone)).expect("a keychain-less operator still isolates");
+            let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
+            assert!(!home.join(KEYCHAINS).exists());
         }
 
         #[test]

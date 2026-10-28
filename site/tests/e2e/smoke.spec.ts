@@ -445,7 +445,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
 }) => {
   const errors = watchErrors(page);
   await gotoLive(page);
-  const { peak, stereoIsMono } = await page.evaluate(async () => {
+  const { peaks, sidesDiffer } = await page.evaluate(async () => {
     const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWorkletUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
@@ -470,12 +470,14 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     music.stop();
     const [left, right] = [out.getChannelData(0), out.getChannelData(1)];
     return {
-      peak: left.reduce((a, v) => Math.max(a, Math.abs(v)), 0),
-      stereoIsMono: left.every((v, i) => v === right[i]),
+      peaks: [left, right].map((side) => side.reduce((a, v) => Math.max(a, Math.abs(v)), 0)),
+      sidesDiffer: left.some((v, i) => v !== right[i]),
     };
   });
-  expect(peak, 'the worklet played no music').toBeGreaterThan(0.001);
-  expect(stereoIsMono, 'lofi renders L == R, and the worklet keeps both').toBe(true);
+  expect(Math.min(...peaks), 'a side of the worklet played no music').toBeGreaterThan(0.001);
+  expect(sidesDiffer, "lofi's plate is stereo, and the worklet copied one side into both").toBe(
+    true
+  );
   expect(errors()).toEqual([]);
 });
 

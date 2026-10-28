@@ -3,57 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     source: opencode
-    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
+    session_id: ses_e80214b51ffe27Jr5IIiFCd7VI
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7509638496550593894
-    model: gpt-5.2
-    effort: ~
-- SessionStart:
-    agent_id: 7509638496550593894
-    source: opencode
-    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
-    cwd: /private/tmp/pixtuoid-capture/proj
-    parent_id: ~
-- ModelInfo:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     model: gpt-5.2
     effort: ~
 - TurnStart:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     turn:
       Seq: 2
 - Identity:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     source: opencode
-    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
+    session_id: ses_e80214b51ffe27Jr5IIiFCd7VI
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 7509638496550593894
-    tool_use_id: call_xQcaxD330eRRACoB
+    agent_id: 760784485500261414
+    tool_use_id: call_MQN5YiEaF_slg-8M
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     source: opencode
-    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
+    session_id: ses_e80214b51ffe27Jr5IIiFCd7VI
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 7509638496550593894
-    tool_use_id: call_xQcaxD330eRRACoB
+    agent_id: 760784485500261414
+    tool_use_id: call_MQN5YiEaF_slg-8M
 - Identity:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     source: opencode
-    session_id: ses_e81876aefffej0ZVX0Bw86Ele0
+    session_id: ses_e80214b51ffe27Jr5IIiFCd7VI
     cwd: ~
 - TurnEnd:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     turn:
       Seq: 2
 - SessionEnd:
-    agent_id: 7509638496550593894
+    agent_id: 760784485500261414
     as_child: false

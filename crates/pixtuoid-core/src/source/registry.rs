@@ -26,7 +26,7 @@ pub enum ToolIdKey {
     /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
     /// but Kimi's.
     ToolUse,
-    /// `tool_call_id` — Kimi's (capture-verified: `fixtures/kimi/tool-run` never
+    /// `tool_call_id` — Kimi's (capture-verified: `fixtures/kimi/tool-run-hermetic` never
     /// carries `tool_use_id`).
     ToolCall,
 }
@@ -159,13 +159,8 @@ pub struct SourceDescriptor {
     pub label_prefix: &'static str,
     /// The CLI version this build's decoder + fixtures were last verified
     /// against: the release, prerelease included (`0.2.0-rc.2`), never a
-    /// build id.
-    /// `"unknown"`, NOT `""`, where we have no fixed anchor — `pixtuoid doctor`
-    /// only flags SKEW when [`parse_version`] reads one, with this row's
-    /// [`Self::version_hyphen`].
-    /// Pinned to the highest recorded capture's `version` banner by
-    /// `a_recorded_capture_anchors_its_sources_verified_version`, so a
-    /// re-record bumps it.
+    /// build id. Every capture of the source is recorded at it
+    /// (`every_capture_is_recorded_at_its_sources_pin`).
     pub verified_version: &'static str,
     /// argv to probe the installed CLI version. `None` = no stable CLI binary;
     /// `doctor` runs it best-effort and degrades to "version: unknown".
@@ -609,7 +604,7 @@ const CODEX: SourceDescriptor = SourceDescriptor {
 const ANTIGRAVITY: SourceDescriptor = SourceDescriptor {
     name: antigravity::SOURCE_NAME,
     label_prefix: "ag",
-    verified_version: "1.4.2",
+    verified_version: "1.4.8",
     version_probe: Some(&["agy", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
@@ -762,7 +757,7 @@ const CODEWHALE: SourceDescriptor = SourceDescriptor {
 const OPENCODE: SourceDescriptor = SourceDescriptor {
     name: opencode::SOURCE_NAME,
     label_prefix: "oc",
-    verified_version: "2.1.4",
+    verified_version: "2.2.0",
     version_probe: Some(&["opencode", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
@@ -775,8 +770,8 @@ const OPENCODE: SourceDescriptor = SourceDescriptor {
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
             resurrects_on_prompt: true,
-            // A `subagent` child is parented by its `session.created`'s `parentID`,
-            // so its events keep the parent fresh (`scope::refresh_lineage`).
+            // A `subagent` child is parented by its first start's `parentID`, so
+            // its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
             // A `subagent` call can return while its child runs on
             // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),
@@ -848,8 +843,8 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
 /// sessions are SQLite. The reachable seam is Cursor Hooks
 /// (`~/.cursor/hooks.json`), whose envelope reuses CC's `hook_event_name` field
 /// NAME with camelCase values, so the custom decoder claims every event and keys
-/// on `session_id`. Subagents render FLAT: children run as independent sessions
-/// with no parent-link on the wire.
+/// on `session_id`. A child links to its parent only through a nested
+/// `transcript_path` (`cursor.rs`'s module doc).
 const CURSOR: SourceDescriptor = SourceDescriptor {
     name: cursor::SOURCE_NAME,
     label_prefix: "cu",
@@ -868,8 +863,8 @@ const CURSOR: SourceDescriptor = SourceDescriptor {
             // Each `cursor-agent` invocation is a NEW session_id, so a swept
             // session never walks back in.
             resurrects_on_prompt: false,
-            // A `Task` dispatch gets NO `postToolUse`, and its children are separate
-            // unlinkable sessions.
+            // A child's events ride its own session, so the parent's goes quiet
+            // until its `Task` post.
             delegations_are_hook_silent: true,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
@@ -915,7 +910,7 @@ const HERMES: SourceDescriptor = SourceDescriptor {
 /// Grok Build (`grok`, xai-org/grok-build). TRANSCRIPT-BEARING **with** a hook
 /// target. The decoder reads the camelCase envelope (`hookEventName`, `toolUseId`)
 /// — the only spelling pre-1.0 sent, hence the claims-all custom decoder; 1.0.x
-/// mirrors every key in CC's snake_case as well (`grok/tool-run-recorded`).
+/// mirrors every key in CC's snake_case as well (`grok/tool-run-hermetic`).
 /// Coalescing rests on `sessionId == the transcript's parent-dir name` (upstream
 /// joins the id into `session_dir`), mirrored by `grok_id_from_path`. Transcript
 /// = `{grok_home}/sessions/<enc-cwd>/<session-id>/updates.jsonl`, append-only.
@@ -999,7 +994,7 @@ const OMP: SourceDescriptor = SourceDescriptor {
             has_exit_signal: true,
             // The header `SessionStart` decodes once per transcript life. A
             // `--resume` fires the bridge's `session_start` on the SAME id
-            // (`omp/fixtures/resume-recorded`), so an ended
+            // (`omp/fixtures/resume-hermetic`), so an ended
             // session CAN walk back in — through the SessionStart arm's
             // ordinary parentless re-registration, not this prompt-resurrect
             // flag.

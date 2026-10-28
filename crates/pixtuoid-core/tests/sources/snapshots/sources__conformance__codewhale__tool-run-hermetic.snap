@@ -3,43 +3,43 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     source: codewhale
-    session_id: sess_deb38b44
+    session_id: sess_1600bb64
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     source: codewhale
-    session_id: sess_deb38b44
+    session_id: sess_1600bb64
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     source: codewhale
-    session_id: sess_deb38b44
+    session_id: sess_1600bb64
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 2696241138168164515
-    tool_use_id: 45c9b55c-e270-45e4-9f60-06acc6da71d0
+    agent_id: 15388884371844306760
+    tool_use_id: a12321e2-43e9-473b-8e05-2c6576925572
     detail:
       Generic:
         display: "read: NOTE.txt"
 - Identity:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     source: codewhale
-    session_id: sess_deb38b44
+    session_id: sess_1600bb64
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 2696241138168164515
-    tool_use_id: 45c9b55c-e270-45e4-9f60-06acc6da71d0
+    agent_id: 15388884371844306760
+    tool_use_id: a12321e2-43e9-473b-8e05-2c6576925572
 - Identity:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     source: codewhale
-    session_id: sess_deb38b44
+    session_id: sess_1600bb64
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
 - SessionEnd:
-    agent_id: 2696241138168164515
+    agent_id: 15388884371844306760
     as_child: false

@@ -3,63 +3,53 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
+    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 1302934501337372223
-    model: gpt-5.2
-    effort: ~
-- SessionStart:
-    agent_id: 1302934501337372223
-    source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
-    cwd: /private/tmp/pixtuoid-capture/proj
-    parent_id: ~
-- ModelInfo:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     model: gpt-5.2
     effort: ~
 - TurnStart:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     turn:
       Seq: 2
 - Identity:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
+    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 1302934501337372223
-    tool_use_id: call_2iQ9P6sR27UxpFxh
+    agent_id: 1252541633213959664
+    tool_use_id: call_OzYVcv2G3vbWhKsY
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
+    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     reason: shell
-    tool_use_id: call_2iQ9P6sR27UxpFxh
+    tool_use_id: call_OzYVcv2G3vbWhKsY
 - Identity:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
+    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 1302934501337372223
-    tool_use_id: call_2iQ9P6sR27UxpFxh
+    agent_id: 1252541633213959664
+    tool_use_id: call_OzYVcv2G3vbWhKsY
 - Identity:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     source: opencode
-    session_id: ses_e81878c86ffexmEWxH4CNzBHve
+    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
     cwd: ~
 - TurnEnd:
-    agent_id: 1302934501337372223
+    agent_id: 1252541633213959664
     turn:
       Seq: 2

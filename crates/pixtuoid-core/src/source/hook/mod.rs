@@ -659,8 +659,11 @@ mod tests {
         ));
         client
             .write_all(
-                b"{\"_pixtuoid_source\":\"openclaw\",\"type\":\"gateway_start\",\
-                  \"gatewayPort\":18789,\"_pid\":4242}\n",
+                format!(
+                    "{{\"{SOURCE_STAMP}\":\"openclaw\",\"type\":\"gateway_start\",\
+                     \"gatewayPort\":18789,\"_pid\":4242}}\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -722,9 +725,12 @@ mod tests {
         ));
         client
             .write_all(
-                b"{\"_pixtuoid_source\":\"opencode\",\"type\":\"session.created\",\
-                  \"data\":{\"sessionID\":\"ses_neg\",\"location\":{\"directory\":\"/repo\"}},\
-                  \"_pid\":5555}\n",
+                format!(
+                    "{{\"{SOURCE_STAMP}\":\"opencode\",\"type\":\"session.execution.started\",\
+                     \"data\":{{\"sessionID\":\"ses_neg\",\"location\":{{\"directory\":\"/repo\"}}}},\
+                     \"_pid\":5555}}\n"
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -734,7 +740,7 @@ mod tests {
         assert_eq!(transport, Transport::Hook);
         assert!(
             matches!(ev, AgentEvent::SessionStart { .. }),
-            "opencode session.created decodes to SessionStart, got {ev:?}"
+            "opencode session.execution.started decodes to SessionStart, got {ev:?}"
         );
         assert!(
             prx.try_recv().is_err(),
@@ -827,9 +833,9 @@ mod tests {
         // TWO payloads: the CLI's own pid rides every hook event, and that
         // repeat is what arms the watch (#896).
         let line = format!(
-            "{{\"_pixtuoid_source\":\"codewhale\",\"event\":\"session_start\",\
+            "{{\"{SOURCE_STAMP}\":\"codewhale\",\"event\":\"session_start\",\
              \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
-             {{\"_pixtuoid_source\":\"codewhale\",\"event\":\"tool_call_before\",\
+             {{\"{SOURCE_STAMP}\":\"codewhale\",\"event\":\"tool_call_before\",\
              \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"tool\":\"read_file\",\"_pid\":{pid}}}\n"
         );
         client.write_all(line.as_bytes()).await.unwrap();
@@ -881,9 +887,9 @@ mod tests {
                 None,
             ));
             let line = format!(
-                "{{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
+                "{{\"{SOURCE_STAMP}\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
                  \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
-                 {{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"{end}\",\
+                 {{\"{SOURCE_STAMP}\":\"kimi\",\"hook_event_name\":\"{end}\",\
                  \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
             );
             client.write_all(line.as_bytes()).await.unwrap();
@@ -931,7 +937,7 @@ mod tests {
             None,
         ));
         let line = format!(
-            "{{\"_pixtuoid_source\":\"cursor\",\"hook_event_name\":\"preToolUse\",\
+            "{{\"{SOURCE_STAMP}\":\"cursor\",\"hook_event_name\":\"preToolUse\",\
              \"session_id\":\"sess-A\",\"workspace_roots\":[\"/repo\"],\
              \"tool_name\":\"Read\",\"_pid\":{pid}}}\n"
         );
@@ -976,7 +982,7 @@ mod tests {
             None,
         ));
         let line = format!(
-            "{{\"_pixtuoid_source\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
+            "{{\"{SOURCE_STAMP}\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
              \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
         );
         client.write_all(line.as_bytes()).await.unwrap();
@@ -1038,7 +1044,7 @@ mod tests {
         let task = tokio::spawn(handle_conn(server.take(MAX_CONN_BYTES), tx, None, None));
         for event in ["SessionStart", "Stop"] {
             let line = serde_json::json!({
-                "_pixtuoid_source": "antigravity",
+                SOURCE_STAMP: "antigravity",
                 EVENT_STAMP: event,
                 "conversationId": "c1",
                 "workspacePaths": ["/repo"],
@@ -1072,7 +1078,7 @@ mod tests {
         // and an allocatable pid can be a live process on a busy CI host — an
         // unallocatable one guarantees `started: None`.
         let line = format!(
-            "{{\"_pixtuoid_source\":\"codewhale\",\"event\":\"tool_call_before\",\
+            "{{\"{SOURCE_STAMP}\":\"codewhale\",\"event\":\"tool_call_before\",\
              \"session_id\":\"sess_t\",\"cwd\":\"/repo\",\"tool\":\"exec_shell\",\"_pid\":{}}}\n",
             i32::MAX
         );
@@ -1172,7 +1178,7 @@ mod tests {
         ));
         // An object without `type` — the openclaw decoder errs on it.
         client
-            .write_all(b"{\"_pixtuoid_source\":\"openclaw\"}\n")
+            .write_all(format!("{{\"{SOURCE_STAMP}\":\"openclaw\"}}\n").as_bytes())
             .await
             .unwrap();
         client

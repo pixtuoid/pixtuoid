@@ -3,39 +3,39 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - UserActionRequest:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     reason: asking permission
     tool_use_id: ag-2
 - ToolUseEnd:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     tool_use_id: ag-2
 - SessionStart:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     source: antigravity
-    session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
+    session_id: f5c1203c-c17b-4bc7-aa18-0110e1c6bf49
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     source: antigravity
-    session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
+    session_id: f5c1203c-c17b-4bc7-aa18-0110e1c6bf49
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     source: antigravity
-    session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
+    session_id: f5c1203c-c17b-4bc7-aa18-0110e1c6bf49
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     reason: asking permission
     tool_use_id: ag-2
 - Identity:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     source: antigravity
-    session_id: fd0a9948-3831-4565-88f0-3ca2396a30ad
+    session_id: f5c1203c-c17b-4bc7-aa18-0110e1c6bf49
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499
     tool_use_id: ag-2
 - TurnEnd:
-    agent_id: 8763791353543374442
+    agent_id: 18322502670622595499

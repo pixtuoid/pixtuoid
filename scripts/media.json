@@ -286,6 +286,6 @@
   "duration": 26,
   "fps": 12,
   "poster": 10.0,
-  "fixture": "crates/pixtuoid-core/tests/sources/fixtures/claude-code/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl"
+  "session": "crates/pixtuoid/examples/snapshot/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl"
  }
 ]

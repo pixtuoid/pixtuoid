@@ -42,7 +42,6 @@ const SETTLES = new Set<string>(SETTLED)
 // Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
 // anything else anyway.
 const FORWARDED = [
-  "session.created",
   "session.deleted",
   "session.execution.started",
   ...SETTLED,
@@ -144,7 +143,7 @@ export default {
           try {
             const turn = turnOf(event)
             // A turn's start carries only `sessionID`; the session's record adds
-            // what `session.created` did, for a session swept since.
+            // the location, parent and model it registers with.
             const data: Data =
               event.type === "session.execution.started"
                 ? { ...(await record(ctx, event.data.sessionID)), ...event.data }

@@ -119,7 +119,7 @@ thiserror          = "2"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify             = "8"
-pixtuoid-lofi      = "0.2"
+pixtuoid-lofi      = "0.3"
 ratatui            = "0.30"
 crossterm          = "0.29"
 # Terminal display-column width — the authority ratatui itself uses, so wide

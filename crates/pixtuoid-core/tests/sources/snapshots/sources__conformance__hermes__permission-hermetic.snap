@@ -3,54 +3,54 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     source: hermes
-    session_id: local-0b4eca2d045e837992bb7386b8ba1c27168ee4481b044cfbbbe04498c6b3044b
+    session_id: local-db2092c727031e803f656ac1d86c7e6ad26f53ac604e96b41efaca7cd5e57f91
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     model: hermetic
     effort: ~
 - Identity:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     source: hermes
-    session_id: local-0b4eca2d045e837992bb7386b8ba1c27168ee4481b044cfbbbe04498c6b3044b
+    session_id: local-db2092c727031e803f656ac1d86c7e6ad26f53ac604e96b41efaca7cd5e57f91
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 7619597592546727462
-    tool_use_id: call_VmjO8SHhHHV4TlCU
+    agent_id: 13782701174347522937
+    tool_use_id: call_pLTW0uxj11eXrIR-
     detail:
       Generic:
         display: "terminal: rm -rf NOTE.txt"
 - Identity:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     source: hermes
-    session_id: local-0b4eca2d045e837992bb7386b8ba1c27168ee4481b044cfbbbe04498c6b3044b
+    session_id: local-db2092c727031e803f656ac1d86c7e6ad26f53ac604e96b41efaca7cd5e57f91
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     reason: recursive delete
-    tool_use_id: call_VmjO8SHhHHV4TlCU
+    tool_use_id: call_pLTW0uxj11eXrIR-
 - Identity:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     source: hermes
-    session_id: local-0b4eca2d045e837992bb7386b8ba1c27168ee4481b044cfbbbe04498c6b3044b
+    session_id: local-db2092c727031e803f656ac1d86c7e6ad26f53ac604e96b41efaca7cd5e57f91
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 7619597592546727462
-    tool_use_id: call_VmjO8SHhHHV4TlCU
+    agent_id: 13782701174347522937
+    tool_use_id: call_pLTW0uxj11eXrIR-
 - Identity:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     source: hermes
-    session_id: local-0b4eca2d045e837992bb7386b8ba1c27168ee4481b044cfbbbe04498c6b3044b
+    session_id: local-db2092c727031e803f656ac1d86c7e6ad26f53ac604e96b41efaca7cd5e57f91
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
 - ModelInfo:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     model: hermetic
     effort: ~
 - SessionEnd:
-    agent_id: 7619597592546727462
+    agent_id: 13782701174347522937
     as_child: false

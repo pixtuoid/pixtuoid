@@ -83,7 +83,6 @@
       "source": "opencode",
       "file": "opencode_plugin.ts",
       "registers": [
-        "session.created",
         "session.deleted",
         "session.execution.started",
         "session.execution.succeeded",

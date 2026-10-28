@@ -19,7 +19,7 @@ use super::{
     Surface, TURN_BUDGET, literals, profile, tui,
 };
 use crate::harness::captures::{json_lines, jsonl_files_under};
-use crate::harness::provenance::{Dropped, Provenance};
+use crate::harness::provenance::Dropped;
 use crate::harness::reads::{
     blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
 };
@@ -489,15 +489,11 @@ const HOOK: &str = "hook:";
 /// recording is `reads::strip_unread`'s fixed point, so its non-blank leaves
 /// are the read fields it recorded with a value, the shim's stamps aside; one
 /// read but recorded blank is not seen.
-/// A capture the strip skips proves nothing about reads.
 pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
     let corpus = crate::harness::sources_root();
     let mut reads = Fields::default();
     for capture in captures(&corpus) {
         if capture.source != p.source {
-            continue;
-        }
-        if !Provenance::read(&capture.provenance_path())?.strips() {
             continue;
         }
         for file in capture.jsonl_files() {
@@ -2587,7 +2583,7 @@ mod tests {
 
     #[test]
     fn a_recorded_claude_code_tool_run_passes() {
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
     }
@@ -2776,7 +2772,7 @@ mod tests {
     #[test]
     fn a_run_with_no_session_start_fails() {
         // Not codex: its UserPromptSubmit decodes to a SessionStart too.
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         edit_hooks(d.path(), |v| {
             (v["hook_event_name"] != "SessionStart").then_some(v)
         });
@@ -2792,7 +2788,7 @@ mod tests {
     #[test]
     fn a_tool_that_never_ends_fails() {
         // Not codex: its Stop ends the activity too.
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         edit_hooks(d.path(), |v| {
             (v["hook_event_name"] != "PostToolUse").then_some(v)
         });
@@ -2827,7 +2823,7 @@ mod tests {
 
     #[test]
     fn a_tool_start_with_no_name_fails_and_a_slot_with_no_tool_never_goes_running() {
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         // Both transports name the tool, so both lose it.
         edit_hooks(d.path(), |mut v| {
             if v.get("tool_name").is_some() {
@@ -3312,7 +3308,7 @@ mod tests {
 
     #[test]
     fn a_not_yet_hook_any_run_fires_is_stale() {
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         let mut first = true;
         edit_hooks(d.path(), |mut v| {
             if std::mem::take(&mut first) {
@@ -3326,7 +3322,7 @@ mod tests {
 
     #[test]
     fn a_read_field_no_run_carries_fails_the_census() {
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         edit_hooks(d.path(), |mut v| {
             if let Some(name) = v.as_object_mut().and_then(|o| o.remove("tool_name")) {
                 v["toolName"] = name;
@@ -3525,13 +3521,15 @@ mod tests {
 
     #[test]
     fn a_not_yet_field_a_run_carries_is_stale() {
-        // A billed capture's usage carries the cache tokens aimock's never does.
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
-        let v = verify_source(
-            profile("claude-code").expect("profile"),
-            &[d.path().to_path_buf()],
-        )
-        .expect("verify");
+        // tool-run's script gives its reply a cache write.
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
+        let owing = Profile {
+            not_yet_fields: &[("tx:assistant", "/message/usage/cache_creation_input_tokens")],
+            live: None,
+            daemon: None,
+            ..*profile("claude-code").expect("profile")
+        };
+        let v = verify_source(&owing, &[d.path().to_path_buf()]).expect("verify");
         assert!(
             has(
                 &v,
@@ -3635,9 +3633,9 @@ mod tests {
 
     #[test]
     fn a_committed_hook_the_profile_owes_needs_no_run() {
-        // fixtures/claude-code/permission-recorded fires it; a tool run doesn't.
+        // A permission run fires it; a tool run doesn't.
         let owed = ["hook:Notification"];
-        let d = run_from("claude-code", "tool-run-recorded", CC_SCENE);
+        let d = recorded("claude-code", "tool-run", CC_SCENE);
         let v = verify_source(&owing_notification(), &[d.path().to_path_buf()]).expect("verify");
         assert!(
             !v.findings()

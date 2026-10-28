@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "agy",
-  "version": "1.4.2",
-  "captured": "2026-10-20",
+  "version": "1.4.8",
+  "captured": "2026-10-28",
   "command": "just hermetic --record antigravity",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 28
+    "blanked": 32
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/antigravity/ask-question.json",
   "dropped": {
     "os": "macos",
@@ -20,5 +20,13 @@
         "USER_INPUT"
       ]
     }
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "1:/transcriptPath",
+      "2:/transcriptPath",
+      "3:/transcriptPath",
+      "4:/transcriptPath"
+    ]
   }
 }

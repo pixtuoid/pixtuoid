@@ -284,7 +284,7 @@ step 10 by the theme guards; steps 1–3 are on you.
    derives from the flags; you do **not** edit the reducer.
 5. The descriptor's `name` **is the roster** — `registered_source_names()`
    projects `REGISTRY`; the conformance suite then requires a fixture, and
-   `harness/hermetic/mod.rs` a `PROFILES` row or a `NOT_HERMETIC` reason. The
+   `harness/hermetic/mod.rs` a `PROFILES` row or a `NOT_HERMETIC` reason and feed. The
    `sources --json` golden (`crates/pixtuoid/tests/snapshots/cli/sources.json`)
    must list it: `SNAPSHOTS=overwrite just test -p pixtuoid --test cli_json`.
 6. **Record the fixture** — the test steps in

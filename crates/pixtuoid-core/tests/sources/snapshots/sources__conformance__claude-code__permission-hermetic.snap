@@ -3,67 +3,67 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     fresh_tokens: 19
 - ToolUseStart:
-    agent_id: 8110127012739803864
-    tool_use_id: toolu_KW-I1GnhvT9Q8Rar
+    agent_id: 1577104830125400146
+    tool_use_id: toolu_bmZiFh5PVYKX6XOp
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ToolUseEnd:
-    agent_id: 8110127012739803864
-    tool_use_id: toolu_KW-I1GnhvT9Q8Rar
+    agent_id: 1577104830125400146
+    tool_use_id: toolu_bmZiFh5PVYKX6XOp
 - SessionStart:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     source: claude-code
-    session_id: a3dfedb8-881e-49a3-abd4-defaa7a5f122
+    session_id: 4aa0494b-a64f-4b5c-a6a0-3731b03c659d
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     model: claude-opus-5-5
     effort: ~
 - Identity:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     source: claude-code
-    session_id: a3dfedb8-881e-49a3-abd4-defaa7a5f122
+    session_id: 4aa0494b-a64f-4b5c-a6a0-3731b03c659d
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 8110127012739803864
-    tool_use_id: toolu_KW-I1GnhvT9Q8Rar
+    agent_id: 1577104830125400146
+    tool_use_id: toolu_bmZiFh5PVYKX6XOp
     tool_name: Bash
 - ToolUseStart:
-    agent_id: 8110127012739803864
-    tool_use_id: toolu_KW-I1GnhvT9Q8Rar
+    agent_id: 1577104830125400146
+    tool_use_id: toolu_bmZiFh5PVYKX6XOp
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ModelInfo:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     model: ~
     effort: medium
 - Identity:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     source: claude-code
-    session_id: a3dfedb8-881e-49a3-abd4-defaa7a5f122
+    session_id: 4aa0494b-a64f-4b5c-a6a0-3731b03c659d
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     reason: permission
     tool_name: Bash
 - Identity:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     source: claude-code
-    session_id: a3dfedb8-881e-49a3-abd4-defaa7a5f122
+    session_id: 4aa0494b-a64f-4b5c-a6a0-3731b03c659d
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     reason: Claude needs your permission
 - SessionEnd:
-    agent_id: 8110127012739803864
+    agent_id: 1577104830125400146
     as_child: false

@@ -2,13 +2,13 @@
   "origin": "recorded",
   "cli": "codewhale",
   "version": "codewhale 0.10.2 (ff466b2ed0bf)",
-  "captured": "2026-10-26",
+  "captured": "2026-10-28",
   "command": "just hermetic --record codewhale",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 2
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/codewhale/permission.json",
   "dropped": {
     "os": "macos",

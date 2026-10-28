@@ -574,15 +574,15 @@ mutants *args:
     fi
     TZ={{ TEST_TZ }} cargo mutants --in-diff target/mutants.diff "$@"
 
-# Record a conformance fixture from bytes a real CLI actually sent. Hook-only
-# sources have no persistent corpus — hook events are transient — so their
-# fixtures are the ONLY wire evidence they have, and the ones this tree has not
-# re-recorded yet were composed by hand. One BILLED model turn per run.
-# `{prompt}` expands to the shared scenario prompt; a custom one is a quoted arg.
+# Record a conformance fixture from bytes a real CLI actually sent, the CLI run
+# under a throwaway home holding only the built pixtuoid's hook for it and a
+# link to the operator's login keychain. One BILLED model turn per run. `{prompt}` expands to the shared scenario prompt; a
+# custom one is a quoted arg.
 #   just capture-fixture cursor tool-run cursor-agent -p --trust '{prompt}'
 [doc('Record a conformance fixture from a real CLI run (BILLED — one model turn)')]
 [group('rust')]
 capture-fixture source scenario *cmd:
+    cargo build --release -q -p pixtuoid -p pixtuoid-hook
     cargo run --release -q -p pixtuoid-core --example capture_fixture -- "$@"
 
 [doc('Strip every committed fixture of what no decoder reads, in place (local, unbilled)')]
@@ -1105,9 +1105,8 @@ fixture-pii-selftest:
     # The RESIDUAL, pinned so it is visible rather than assumed closed: a secret
     # that lands INSIDE the wire-id allowlist's own length window (`.gitleaks.toml`) still rides the
     # allowlist. Any shape-based waiver admits a secret wearing that shape; what
-    # stops this class is `no_identity_key_holds_a_value_outside_a_pinned_exemption`,
-    # which reads the committed bytes — and an exempt capture, being outside it, is
-    # the one place a human read is still the only check.
+    # stops this class is `no_identity_key_holds_a_value`, which reads the
+    # committed bytes.
     printf '{"api_key":"msg_%s"}\n' "Kd8sQm2zXv6bTn4wRj9c" > "$d/quiet/cred-residual.txt"
     printf '/Users/dev/x\n/home/runner/work\n/home/ubuntu\n/home/linuxbrew\n/Users/Shared\nmcp__exampleThing\nC:\\Users\\Me\n/Users/dev.\n' \
         > "$d/quiet/identity.txt"
