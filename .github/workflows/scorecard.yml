@@ -1,0 +1,64 @@
+name: scorecard
+
+# OpenSSF Scorecard, published to api.scorecard.dev for the README badge, on
+# the triggers of scorecard-action's own example
+# (https://github.com/ossf/scorecard-action/blob/main/examples/scorecard.yml).
+# None is a PR's, so no PR push waits on it for a runner.
+on:
+  # Re-scores Branch-Protection when a rule changes.
+  branch_protection_rule:
+  # Keeps the Maintained check current through a quiet week.
+  schedule:
+    - cron: "15 14 * * 0" # weekly, Sunday 14:15 UTC
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Publishing holds this workflow to scorecard-action's restrictions
+# (https://github.com/ossf/scorecard-action#workflow-restrictions).
+permissions: {}
+# Nothing here restores a cache; this keeps the third-party steps from saving
+# one into main's scope, which every ref restores.
+cache-mode: none
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write # signs the results published to api.scorecard.dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.json
+          results_format: json
+          publish_results: true
+
+  # A rejected publish only warns (scorecard-action v2.5.0
+  # signing/signing.go:166-171), leaving the badge stale on a green run. Its
+  # own job: the API rejects a `run:` step in the scorecard job
+  # (ossf/scorecard-infra api/app/server/verify_workflow.go, errEmptyStepUses).
+  published:
+    needs: analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # the publishing analysis job's start, which its result's date follows
+    steps:
+      # A re-score of an already published commit finds the old result too.
+      # The job's start, not the run's: a re-run of only this job resets
+      # run_started_at but keeps analysis's earlier publish.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: https://api.scorecard.dev/projects/github.com/${{ github.repository }}?commit=${{ github.sha }}
+        run: |
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all" \
+            --jq '[.jobs[] | select(.name == "analysis" and .conclusion == "success")] | max_by(.started_at) | .started_at')
+          curl -fsS "$RESULT" | jq -e --arg started "$started" '.date >= $started'
