@@ -378,10 +378,10 @@ const officeDriverUrl = asset('office-driver.js');
     // A device that never sustains the budget must still get its office: the gate is a courtesy, never a precondition.
     const REVEAL_READY_MAX_WAIT = Math.round(1000 / FRAME_MS);
 
-    // The office's handle on the office host (office-driver.js's officeHost), which steps and draws it off this
-    // thread; one frame is in flight at a time, and a paint asked for meanwhile waits for it.
+    // The office's handle on the office host (office-driver.js's officeHost); a paint asked for while a frame is in
+    // the host waits for it.
     let hero = null;
-    let heroBusy = false;
+    let hostOffThread = false;
     let queuedPaint = null;
     let officeDriver = null;
     let unitsW = 0;
@@ -542,20 +542,21 @@ const officeDriverUrl = asset('office-driver.js');
     // Step the office to `nowMs` and draw what the reveal lets through, then lay its captions and play its sound.
     function paint(nowMs) {
       if (!hero) return;
-      if (heroBusy) {
+      if (hero.busy) {
         queuedPaint = nowMs;
         return;
       }
       const draw = revealAt(nowMs);
-      // Caption the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
-      const caption = draw === 1 && captionFace;
-      heroBusy = true;
+      // A paused repaint leaves the sound's clock where the pause froze it.
+      const audio = audioReady && !paused;
       hero
-        .frame({ now: nowMs, w: unitsW, h: UNITS_H, draw, overlay: caption, audio: audioReady })
+        .frame({ now: nowMs, w: unitsW, h: UNITS_H, draw, overlay: draw === 1, audio })
         .then(
           function (r) {
             markEngineResolved();
-            if (caption) {
+            // As the page stands when the frame lands: a pause or reduced motion may have come in meanwhile. Caption
+            // the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
+            if (r.overlay && captionFace && live && !mq.matches) {
               updateOverlay(JSON.parse(r.overlay));
               overlayEl.classList.add('is-on');
             }
@@ -566,7 +567,6 @@ const officeDriverUrl = asset('office-driver.js');
           }
         )
         .finally(function () {
-          heroBusy = false;
           if (queuedPaint === null) return;
           const queued = queuedPaint;
           queuedPaint = null;
@@ -604,7 +604,7 @@ const officeDriverUrl = asset('office-driver.js');
       raf = 0;
       if (document.hidden) return;
       // A frame still in the host skips this tick rather than queueing behind it.
-      if (t - last >= FRAME_MS && !heroBusy) {
+      if (t - last >= FRAME_MS && !hero.busy) {
         last = t;
         // Date.now(), NOT the rAF timestamp: the engine decodes now_ms as calendar time (browser-local day/night).
         paint(Date.now() - pauseOffset);
@@ -626,10 +626,7 @@ const officeDriverUrl = asset('office-driver.js');
       pauseBtn.setAttribute('aria-pressed', String(p));
       // WCAG 2.2.2 covers the page, not just this canvas — ONE control fans out to every other auto-motion surface.
       document.dispatchEvent(new CustomEvent('pix:paused', { detail: { paused: p } }));
-      if (audioCtx && audioPlaying) {
-        if (p) audioCtx.suspend();
-        else audioCtx.resume();
-      }
+      syncAudioCtx();
       if (p) {
         pausedAt = Date.now();
         stop();
@@ -740,8 +737,7 @@ const officeDriverUrl = asset('office-driver.js');
     function audioCommands(cmd) {
       if (!audioCtx) return;
       if (cmd.music) musicTick(cmd.music.controls);
-      // Muted = a suspended AudioContext: nodes queued against one all fire at once on resume, so schedule nothing.
-      if (!audioPlaying) return;
+      if (!audible()) return;
       // A node op can still throw if the context died mid-session — degrade rather than spam the console every frame.
       try {
         const now = audioCtx.currentTime;
@@ -767,6 +763,16 @@ const officeDriverUrl = asset('office-driver.js');
         audioDisable();
       }
     }
+    // The AudioContext runs only while the ♩ plays an office in motion. A suspended one fires every node queued against
+    // it at once on resume, so nothing is scheduled while it is.
+    function audible() {
+      return audioPlaying && !paused && !mq.matches;
+    }
+    function syncAudioCtx() {
+      if (!audioCtx) return;
+      if (audible()) audioCtx.resume();
+      else audioCtx.suspend();
+    }
     // WebAudio can fail outright (headless CI, locked-down browser, no output device): hide the ♩ and stop
     // re-trying, so no "playing" button is left making no sound.
     function audioDisable() {
@@ -788,30 +794,24 @@ const officeDriverUrl = asset('office-driver.js');
       audioBtn.setAttribute('aria-pressed', 'false');
       audioBtn.hidden = true;
     }
-    // The ♩'s buffers, synthesized in the office host once: at idle after boot, or on a ♩ click that beats it.
-    let audioTake = null;
     // rIC-less Safari never idles the callback and a never-idle page never fires it — both bounds are fallbacks, not schedules.
     const PREWARM_IDLE_FALLBACK_MS = 1500;
     const PREWARM_IDLE_TIMEOUT_MS = 4000;
     window.__pixAudioPrewarm = 'idle'; // e2e observability (polled global, like __pixLights): idle → running → ready, or failed
-    function warmAudio() {
-      if (!audioTake) {
-        window.__pixAudioPrewarm = 'running';
-        audioTake = hero.warmAudio();
-        audioTake.then(
-          function () {
-            window.__pixAudioPrewarm = 'ready';
-          },
-          function () {
-            window.__pixAudioPrewarm = 'failed';
-          }
-        );
-      }
-      return audioTake;
-    }
-    // reduced-motion is a low-power signal: those visitors synthesize on their ♩ click instead.
+    // Synthesize the ♩'s buffers at idle, so its click only uploads them. A host on this thread synthesizes on the
+    // click instead — an idle synthesis here starved clicks on slow hardware — and so does reduced motion, a
+    // low-power signal.
     function prewarm() {
-      if (!audioUnavailable && !mq.matches) warmAudio();
+      if (!hostOffThread || audioUnavailable || audioReady || audioBooting || mq.matches) return;
+      window.__pixAudioPrewarm = 'running';
+      hero.warmAudio(false).then(
+        function () {
+          window.__pixAudioPrewarm = 'ready';
+        },
+        function () {
+          window.__pixAudioPrewarm = 'failed';
+        }
+      );
     }
     function audioStart() {
       if (audioBooting || audioUnavailable || !hero) return;
@@ -829,7 +829,7 @@ const officeDriverUrl = asset('office-driver.js');
         audioDisable();
         return;
       }
-      warmAudio().then(function (take) {
+      hero.warmAudio(true).then(function (take) {
         if (audioUnavailable) return;
         try {
           audioUploadBuffers(take); // createBuffer here — the usual failure point
@@ -849,9 +849,7 @@ const officeDriverUrl = asset('office-driver.js');
       } catch (e) {
         /* private mode: fine, just don't remember */
       }
-      if (!audioCtx) return;
-      if (on && !paused) audioCtx.resume();
-      else audioCtx.suspend();
+      syncAudioCtx();
     }
     audioBtn.addEventListener('click', function () {
       if (audioUnavailable) return;
@@ -944,6 +942,7 @@ const officeDriverUrl = asset('office-driver.js');
           return drv.officeHost(officeHostUrl, wasmJsUrl);
         })
         .then(function (host) {
+          hostOffThread = host.offThread;
           return host.open(SEED, canvas);
         })
         .then(function (o) {
@@ -1000,10 +999,10 @@ const officeDriverUrl = asset('office-driver.js');
         stop();
         // Background PLAYBACK (owner decision): the office is a radio first, so switching tabs must not stop the music. The
         // SAME full tick as frame() at 1 Hz keeps the sim advancing, so the cue tracker sees real edges, not a return-burst volley.
-        if (audioCtx && audioPlaying && !paused && !bgTimer) {
+        if (audioCtx && audible() && !bgTimer) {
           bgTimer = setInterval(function () {
             // reduced-motion may engage while hidden: paint() would re-live the poster-still office
-            if (paused || !audioPlaying || mq.matches) return;
+            if (!audible()) return;
             paint(Date.now() - pauseOffset);
           }, 1000);
         }
@@ -1011,10 +1010,7 @@ const officeDriverUrl = asset('office-driver.js');
         stopBgTicks();
         start();
       }
-      if (audioCtx && audioPlaying) {
-        if (paused) audioCtx.suspend();
-        else audioCtx.resume();
-      }
+      syncAudioCtx();
     });
     if (mq.addEventListener) {
       mq.addEventListener('change', function () {
@@ -1033,14 +1029,14 @@ const officeDriverUrl = asset('office-driver.js');
           document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: false } }));
           // Reduced motion stops the rAF loop, so the sound loops would drone unfed behind the poster — suspend, keeping the
           // flag on so an un-reduce resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
-          if (audioCtx && audioPlaying) audioCtx.suspend();
+          syncAudioCtx();
           audioBtn.hidden = true;
           audioBtnShown = false;
         } else if (hasWasm) {
           cover();
           boot();
           start();
-          if (audioCtx && audioPlaying) audioCtx.resume();
+          syncAudioCtx();
         }
         syncPauseBtn();
       });

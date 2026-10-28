@@ -1,14 +1,16 @@
 // The live offices' host: it owns the office wasm and every `Office` the page opens, and steps and draws one when the
-// page asks. office-driver.js's `officeHost` runs it as a module worker drawing into the page's transferred canvases,
-// so the wasm's boot and frames never block the page's thread; a browser without OffscreenCanvas imports it and
-// serves it on the page's own thread.
+// page asks. office-driver.js's `officeHost` decides where it runs.
 'use strict';
 
 import { loadWasm } from './office-driver.js';
 
-// The boot roll: how many floors scroll past before the office settles, and how far its colour channels split.
+// The boot roll: how many floors scroll past before the office settles, how far its colour channels split, its
+// ease-out's power, the share of it spent fading in, and how much of a floor divider's office shows.
 const FLOORS_PAST = 3.2;
 const CHROMA_SPLIT_UNITS = 3;
+const ROLL_EASE_POWER = 4;
+const ROLL_FADE_IN = 0.15;
+const SEAM_ALPHA = 0.3;
 
 // Answer the page's requests on `port` (a worker's own scope, or a page-thread port), one reply per request by `seq`:
 // `{ seq, value }`, or `{ seq, error }` when the op threw.
@@ -40,7 +42,8 @@ export function serve(port) {
       ];
     },
     // Step to `now` at `w`×`h` layout units, then draw: `draw` null leaves the canvas as it is, 1 blits the frame, and
-    // under 1 is the boot roll's progress. `overlay` and `audio` ask for the step's captions and sound commands.
+    // under 1 is the boot roll's progress. `overlay` and `audio` ask for the step's captions and a tick's sound
+    // commands, which the page applies or drops as it stands when the reply lands.
     frame({ id, now, w, h, draw, overlay, audio }) {
       const o = offices.get(id);
       o.office.step(now, w, h);
@@ -55,15 +58,16 @@ export function serve(port) {
     call({ id, method, args }) {
       return [offices.get(id).office[method](...args)];
     },
-    // Synthesize the ♩'s buffers one piece per task, so the frames between pieces still run, then hand copies over.
-    warmAudio({ id }) {
+    // Synthesize the ♩'s buffers one piece per task, so the frames between pieces still run; with `take`, hand copies
+    // over once they're built.
+    warmAudio({ id, take }) {
       const office = offices.get(id).office;
       office.audio_begin();
       return new Promise(function (resolve, reject) {
         (function pump() {
           try {
             if (office.audio_warmup_step() > 0) setTimeout(pump, 0);
-            else resolve(audioTake(office));
+            else resolve(take ? audioTake(office) : [null]);
           } catch (err) {
             reject(err);
           }
@@ -138,13 +142,13 @@ function roll(img, view, rt, scale) {
   const w = img.width;
   const h = img.height;
   const d = img.data;
-  const e = 1 - Math.pow(1 - rt, 4);
+  const e = 1 - Math.pow(1 - rt, ROLL_EASE_POWER);
   const shift = Math.round((1 - e) * h * FLOORS_PAST);
-  const alpha = Math.min(1, rt / 0.15);
+  const alpha = Math.min(1, rt / ROLL_FADE_IN);
   const split = Math.round((1 - e) * CHROMA_SPLIT_UNITS * scale);
   for (let y = 0; y < h; y++) {
     const sy = (y + shift) % h;
-    const seam = sy < scale || sy >= h - scale ? 0.3 : 1; // floor divider: more background shows
+    const seam = sy < scale || sy >= h - scale ? SEAM_ALPHA : 1;
     const a = alpha * seam * 255;
     const row = sy * w;
     for (let x = 0; x < w; x++) {

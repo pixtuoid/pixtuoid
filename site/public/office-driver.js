@@ -9,10 +9,10 @@ const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 
 // The page's ONE office host (office-host.js), which both live-office consumers open their `Office` on, so one wasm
-// instance serves the page. A module worker runs it wherever a canvas can hand its drawing to one, else the page's
-// thread does. A host whose wasm never loaded clears the memo, so a later consumer starts a fresh one (#671).
-// Resolves to `{ open(seed, canvas) }`, which resolves to the office's handle: its `audio` constants, `frame(req)`,
-// `call(method, ...args)` and `warmAudio()`, each office-host.js's op of that name.
+// instance serves the page. A module worker runs it wherever a canvas can hand its drawing to one, so the wasm's boot
+// and frames never block the page's thread (Lighthouse's TBT); else the page's thread does. A host whose wasm never
+// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to `{ offThread, open(seed, canvas) }`;
+// `open` resolves to the office's handle, whose `frame`, `call` and `warmAudio` are office-host.js's ops of those names.
 export function officeHost(hostUrl, wasmJsUrl) {
   if (!window.__pixOfficeHost) {
     const host = startHost(hostUrl, wasmJsUrl);
@@ -66,21 +66,30 @@ async function startHost(hostUrl, wasmJsUrl) {
     throw err;
   }
   return {
+    offThread: !!worker,
     open(seed, canvas) {
       const id = ++ids;
       const target = worker ? canvas.transferControlToOffscreen() : canvas;
       return rpc('open', { id, seed, canvas: target }, worker ? [target] : []).then(
         function (info) {
+          let busy = false;
           return {
             audio: info.audio,
+            // A frame is in the host: its caller holds the next one rather than queue frames behind it.
+            get busy() {
+              return busy;
+            },
             frame(req) {
-              return rpc('frame', Object.assign({ id }, req));
+              busy = true;
+              return rpc('frame', Object.assign({ id }, req)).finally(function () {
+                busy = false;
+              });
             },
             call(method, ...args) {
               return rpc('call', { id, method, args });
             },
-            warmAudio() {
-              return rpc('warmAudio', { id });
+            warmAudio(take) {
+              return rpc('warmAudio', { id, take });
             },
           };
         }

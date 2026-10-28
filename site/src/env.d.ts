@@ -21,9 +21,7 @@ interface Window {
   __pixRevealed?: boolean;
   /** Office boot RESOLVED (live / failed / unsupported) — set by OfficeBackdrop. */
   __pixEngineReady?: boolean;
-  /** The ONE office host both live-office consumers open their office on
-   * (office-driver.js's officeHost). Nulled when its wasm never loads, so a
-   * later-booting consumer re-attempts (#671). */
+  /** office-driver.js's officeHost memo. */
   __pixOfficeHost?: Promise<unknown> | null;
   /** THE theme registry + fallback, seeded parse-first in Base.astro's head. */
   __pixTheme?: {

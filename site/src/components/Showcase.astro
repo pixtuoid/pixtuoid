@@ -236,7 +236,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       : [0, 0];
     let vOffice = null; // its handle on the office host
     let vDriver = null; // office-driver.js
-    let vBusy = false; // one frame in the host at a time
     let vRaf = 0;
     let vBooted = false;
     let scrubHour = vibingTime ? parseFloat(vibingTime.value) : 18;
@@ -270,17 +269,15 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
       return d.getTime();
     }
-    function vPainted() {
-      vBusy = false;
-    }
     function vFrame() {
       vRaf = 0;
-      if (!vBusy) {
-        vBusy = true;
+      if (!vOffice.busy) {
         const now = vBase + (Date.now() - vStart);
         vOffice
           .frame({ now, w: vUnits[0], h: vUnits[1], draw: 1, overlay: false, audio: false })
-          .then(vPainted, vPainted);
+          .catch(function () {
+            /* a host that died leaves the last frame up */
+          });
       }
       vRaf = requestAnimationFrame(vFrame);
     }
