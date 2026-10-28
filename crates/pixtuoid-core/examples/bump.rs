@@ -168,7 +168,6 @@ fn check(proposals: &Path, patches: &Path) -> Result<(), String> {
     if !git(&["status", "--porcelain"])?.is_empty() {
         return Err("check needs a clean tree".into());
     }
-    let registry = std::fs::read_to_string(pin::registry_path()).map_err(|e| e.to_string())?;
     let mut admitted = Vec::new();
     for proposal in read_json::<Vec<Proposal>>(proposals).map_err(|e| e.to_string())? {
         let file = patches.join(bump::patch_name(&proposal.source));
@@ -182,13 +181,15 @@ fn check(proposals: &Path, patches: &Path) -> Result<(), String> {
         let file = file
             .to_str()
             .ok_or_else(|| format!("{file:?} is not UTF-8"))?;
+        let before =
+            std::fs::read_to_string(pin::descriptor_path(p.source)).map_err(|e| e.to_string())?;
         git(&["apply", file])?;
         let judged = git(&["add", "--intent-to-add", "--all"])
             .and_then(|_| changed())
             .and_then(|changed| {
-                let after =
-                    std::fs::read_to_string(pin::registry_path()).map_err(|e| e.to_string())?;
-                bump::judge(p, &version, &registry, &after, &changed)?;
+                let after = std::fs::read_to_string(pin::descriptor_path(p.source))
+                    .map_err(|e| e.to_string())?;
+                bump::judge(p, &version, &before, &after, &changed)?;
                 Ok(changed)
             });
         git(&["reset", "-q", "--hard", "HEAD"])?;

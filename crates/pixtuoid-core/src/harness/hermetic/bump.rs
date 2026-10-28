@@ -132,12 +132,12 @@ fn relative(abs: &Path) -> PathBuf {
     abs.strip_prefix(repo_root()).unwrap_or(abs).to_path_buf()
 }
 
-fn registry_relative() -> PathBuf {
-    relative(&pin::registry_path())
+fn descriptor_relative(source: &str) -> PathBuf {
+    relative(&pin::descriptor_path(source))
 }
 
 /// Whether a bump of `p` may change `path`, relative to the repository: the
-/// registry, its manifest lock, a file under one of its scenarios' fixtures,
+/// pin's module, its manifest lock, a file under one of its scenarios' fixtures,
 /// or one of their conformance snapshots, named as insta derives it
 /// (`conformance.rs`).
 pub fn admits(p: &Profile, path: &Path) -> bool {
@@ -145,7 +145,7 @@ pub fn admits(p: &Profile, path: &Path) -> bool {
         return false;
     }
     let sources = relative(&sources_root());
-    path == registry_relative()
+    path == descriptor_relative(p.source)
         || p.manifest_lock()
             .is_some_and(|lock| path == relative(&lock))
         || p.scenarios.iter().any(|s| {
@@ -162,7 +162,7 @@ pub fn admits(p: &Profile, path: &Path) -> bool {
 }
 
 /// Whether the tree a patch left is a bump of `p` to `version` and nothing
-/// else: every path git says `changed` [`admits`], and the registry `after`
+/// else: every path git says `changed` [`admits`], and its pin's module `after`
 /// exactly as [`pin::repinned`] writes `before`.
 ///
 /// # Errors
@@ -180,7 +180,8 @@ pub fn judge(
     };
     if after != expected {
         return Err(format!(
-            "the registry is not {}'s pin moving to {version}, and nothing else",
+            "{:?} is not {}'s pin moving to {version}, and nothing else",
+            descriptor_relative(p.source),
             p.source
         ));
     }
@@ -204,8 +205,8 @@ mod tests {
         profile("codex").expect("codex's profile")
     }
 
-    fn registry() -> String {
-        std::fs::read_to_string(pin::registry_path()).expect("registry.rs")
+    fn codex_module() -> String {
+        std::fs::read_to_string(pin::descriptor_path("codex")).expect("codex.rs")
     }
 
     fn above(p: &Profile) -> Version {
@@ -365,14 +366,18 @@ mod tests {
     }
 
     #[test]
-    fn a_bump_admits_its_registry_fixtures_and_snapshots_alone() {
+    fn a_bump_admits_its_pin_fixtures_and_snapshots_alone() {
         let p = codex();
         let sources = relative(&sources_root());
         let fixture = sources.join(p.scenarios[0].fixture);
         let name = fixture.file_name().expect("a name").to_string_lossy();
-        assert!(registry_relative().is_relative());
-        assert_eq!(repo_root().join(registry_relative()), pin::registry_path());
-        assert!(admits(p, &registry_relative()));
+        assert!(descriptor_relative(p.source).is_relative());
+        assert_eq!(
+            repo_root().join(descriptor_relative(p.source)),
+            pin::descriptor_path(p.source)
+        );
+        assert!(admits(p, &descriptor_relative(p.source)));
+        assert!(!admits(p, &descriptor_relative("claude-code")));
         assert!(admits(p, &fixture.join("provenance.json")));
         let snap = format!("sources__conformance__codex__{name}.snap");
         assert!(admits(p, &sources.join("snapshots").join(&snap)));
@@ -466,13 +471,13 @@ mod tests {
 
     #[test]
     fn a_bump_is_judged_by_the_tree_it_left() {
-        let before = registry();
+        let before = codex_module();
         let up = above(codex());
         let after = pin::repinned(&before, codex().descriptor(), &up)
             .expect("a repin")
             .expect("a move");
         let ok = [
-            registry_relative(),
+            descriptor_relative("codex"),
             fixture_path("hook-payloads.jsonl"),
             fixture_path("new.jsonl"),
         ];
@@ -492,7 +497,7 @@ mod tests {
             judge(codex(), &up, &before, &injected, &ok).is_err(),
             "the pin, and code"
         );
-        let stray = [registry_relative(), PathBuf::from("justfile")];
+        let stray = [descriptor_relative("codex"), PathBuf::from("justfile")];
         assert!(
             judge(codex(), &up, &before, &after, &stray).is_err(),
             "a path no bump owns"

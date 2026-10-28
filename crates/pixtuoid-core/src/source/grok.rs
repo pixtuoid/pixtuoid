@@ -13,7 +13,8 @@
 //!   dispatch SEQUENTIALLY inline on the session actor, so the shim's
 //!   `WRITE_TIMEOUT` bound matters here.
 //! - **Keying**: `sessionId` is consistent across every event of a session, ==
-//!   the transcript's parent-DIR name, == a subagent's `subagentId`. Hook and
+//!   the transcript's parent-DIR name (upstream joins the id into
+//!   `session_dir`; `grok_id_from_path` mirrors it), == a subagent's `subagentId`. Hook and
 //!   watcher keys therefore coalesce, and a child's tool hooks carry the
 //!   CHILD's `sessionId`.
 //! - **Subagents**: in-process children persisted as FLAT siblings in the
@@ -33,7 +34,10 @@ use std::path::{Path, PathBuf};
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, Transcript,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -45,6 +49,48 @@ pub(crate) use native::live_grok_session_ids;
 
 /// The Grok Build source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "grok";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "gk",
+    verified_version: "1.0.70",
+    version_probe: Some(&["grok", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("GROK_HOME"),
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_grok_line,
+            id_from_path: grok_id_from_path,
+            // Session dirs carry rewrite-on-resume siblings (chat_history /
+            // rewind_points / events.jsonl) that must never be tailed.
+            path_filter: is_updates_jsonl,
+            // Always-None: grok lines carry no cwd — the URL-encoded group dir
+            // does, applied via the watcher's cwd deriver.
+            cwd_extractor: extract_grok_cwd,
+            parent_extractor: None,
+        }),
+        hook: Some(HookDecoding::ClaimsAll(decode_grok_hook_payload)),
+        caps: SourceCaps {
+            // `session_end` does NOT fire on a plain TUI quit (the loop breaks without
+            // draining the session actor), so the DOMINANT exit is signal-less; the
+            // authority is the liveness probe over grok's `active_sessions.json`.
+            has_exit_signal: false,
+            // Every prompt fires `user_prompt_submit` (→ SessionStart), so a swept
+            // LIVE session walks back in — which is what makes the short idle reap
+            // safe for grok's untracked headless one-shots.
+            resurrects_on_prompt: true,
+            // A BLOCKING spawn's Task detail gets its post_tool_use at
+            // completion, and a background spawn never mints a Task at all.
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        // `active_sessions.json` maps session_id → pid with an `opened_at` recycle
+        // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
+        focus: FocusChannel::TranscriptProbe,
+    },
+};
 
 /// xAI's private JSON-RPC method namespace, named once so the decode arm and
 /// the session-end scan cannot drift apart.

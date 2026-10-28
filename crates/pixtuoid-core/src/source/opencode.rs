@@ -31,12 +31,47 @@ use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
 };
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 use crate::state::TurnKey;
 
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "oc",
+    verified_version: "2.2.0",
+    version_probe: Some(&["opencode", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_oc_hook_payload)),
+        caps: SourceCaps {
+            // A TUI quit ends nothing: the session lives on in the server.
+            has_exit_signal: false,
+            // The next prompt's `session.execution.started` decodes to
+            // `SessionStart`.
+            resurrects_on_prompt: true,
+            // A `subagent` child is parented by its first start's `parentID`, so
+            // its events keep the parent fresh (`scope::refresh_lineage`).
+            delegations_are_hook_silent: false,
+            // A `subagent` call can return while its child runs on
+            // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),
+            // and a session ends only by `session.deleted`.
+            child_end_inference: ChildEndInference::Durable,
+            child_hooks_unnamed: false,
+            brackets_turns: true,
+        },
+        // The plugin runs in the background server every TUI attaches to
+        // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
+        focus: FocusChannel::ServerStamp,
+    },
+};
 
 const SESSION_DELETED: &str = "session.deleted";
 const EXECUTION_STARTED: &str = "session.execution.started";

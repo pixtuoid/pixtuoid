@@ -8,7 +8,7 @@ fn every_registered_source_has_two_char_label_prefix() {
         assert_eq!(
             prefix.chars().count(),
             2,
-            "source {src:?} has no 2-char label prefix (got {prefix:?}) — fix its SourceDescriptor row in source/registry.rs"
+            "source {src:?} has no 2-char label prefix (got {prefix:?}) — fix its module's `DESCRIPTOR`"
         );
     }
 }

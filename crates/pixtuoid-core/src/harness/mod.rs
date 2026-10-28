@@ -53,6 +53,17 @@ pub(crate) fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
+/// A registered id as the modules for its CLI spell it (`claude-code` →
+/// `claude_code`): its decoder and its profile.
+pub(crate) fn module_of(source: &str) -> String {
+    source.replace('-', "_")
+}
+
+/// The registered id a module name spells, the inverse of [`module_of`].
+pub(crate) fn source_of(module: &str) -> String {
+    module.replace('_', "-")
+}
+
 /// The `T` the JSON file at `path` holds.
 ///
 /// # Errors

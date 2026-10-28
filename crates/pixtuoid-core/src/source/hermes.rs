@@ -25,11 +25,42 @@ use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
 };
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, RequestKeys};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "hermes";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "hm",
+    verified_version: "0.22.5",
+    version_probe: Some(&["hermes", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("HERMES_HOME"),
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_hermes_hook_payload)),
+        caps: SourceCaps {
+            // `on_session_finalize` when the gateway finalizes a session, else the
+            // gateway's death. NOT `on_session_end`, which despite the name is a
+            // TURN boundary.
+            has_exit_signal: true,
+            resurrects_on_prompt: false,
+            // No subagent nesting on the wire — sessions render flat.
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        // The plugin stamps the gateway's pid, which every session shares and no
+        // window owns (`install/hermes_plugin.py`).
+        focus: FocusChannel::ServerStamp,
+    },
+};
 
 /// The Hermes home dir (`config.yaml` lives directly in it), mirroring hermes's
 /// own `get_process_hermes_home` (`hermes_constants.py:237-246`, `:46-58` at

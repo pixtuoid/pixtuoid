@@ -3,8 +3,13 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::AgentId;
-use crate::source::decoder::{DecodeError, EVENT_STAMP, first_present_str, generic_tool_display};
-use crate::source::registry::HookObject;
+use crate::source::decoder::{
+    DecodeError, EVENT_STAMP, extract_top_level_cwd, first_present_str, generic_tool_display,
+};
+use crate::source::registry::{
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, Transcript,
+};
 use crate::source::{AgentEvent, RequestKeys};
 
 #[cfg(feature = "native")]
@@ -14,6 +19,40 @@ pub use native::AntigravitySource;
 
 /// The Antigravity CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "antigravity";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "ag",
+    verified_version: "1.4.8",
+    version_probe: Some(&["agy", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_ag_line,
+            id_from_path: ag_id_from_path,
+            path_filter: admits_transcript,
+            // AG step lines carry no cwd field at all; the cwd rides the
+            // `SessionStart` hook.
+            cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
+        }),
+        hook: Some(HookDecoding::ClaimsAll(decode_ag_hook_payload)),
+        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
+        // and no end hook, and no prompt-time hook re-registers a swept session.
+        // Flipping `resurrects_on_prompt` for the 5-min reaper strands a live idle
+        // session. An exit rides the shim-stamped pid.
+        caps: SourceCaps {
+            has_exit_signal: false,
+            resurrects_on_prompt: false,
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
+    },
+};
 
 /// The CLI's app data dir, under [`gemini_dir`]: NOT `antigravity`, the App's,
 /// which shares the global hooks file but is not this source.

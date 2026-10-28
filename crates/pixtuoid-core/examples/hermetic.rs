@@ -352,9 +352,9 @@ mod run {
         // Once per source, so every scenario runs, and records, one release.
         let installed = resolve(p, &args.versions);
         // Worked out before any CLI runs, so a refusal writes nothing.
-        let registry = match (&installed, args.record) {
+        let repinned = match (&installed, args.record) {
             (Ok(v), true) => {
-                let src = std::fs::read_to_string(pin::registry_path())?;
+                let src = std::fs::read_to_string(pin::descriptor_path(p.source))?;
                 pin::repinned(&src, p.descriptor(), v).map_err(std::io::Error::other)?
             }
             _ => None,
@@ -443,8 +443,8 @@ mod run {
                 Ok(()) => {
                     if args.record {
                         record(ctx, p, runs)?;
-                        if let Some(text) = registry {
-                            std::fs::write(pin::registry_path(), text)?;
+                        if let Some(text) = repinned {
+                            std::fs::write(pin::descriptor_path(p.source), text)?;
                         }
                         if let (Some(lock), Some(path)) = (&lock, p.manifest_lock()) {
                             std::fs::write(path, serde_json::to_string_pretty(lock)? + "\n")?;

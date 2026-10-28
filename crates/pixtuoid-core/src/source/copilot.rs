@@ -21,7 +21,10 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize};
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, Hyphen, SourceCaps, SourceDescriptor, SourceKind, Transcript,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -31,6 +34,39 @@ pub use native::CopilotSource;
 
 /// The GitHub Copilot CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "copilot";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "cp",
+    verified_version: "1.0.104",
+    version_probe: Some(&["copilot", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("COPILOT_HOME"),
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_copilot_line,
+            id_from_path: copilot_id_from_path,
+            path_filter: accept_all_paths,
+            cwd_extractor: extract_copilot_cwd,
+            parent_extractor: None,
+        }),
+        hook: None,
+        caps: SourceCaps {
+            // `session.shutdown` is a real persisted exit marker.
+            has_exit_signal: true,
+            // sessionId is constant across `--resume`, so a swept session does
+            // not silently walk back in.
+            resurrects_on_prompt: false,
+            // The `task` dispatch emits `tool.execution_start`/`complete` AND
+            // explicit `subagent.started`/`completed` events.
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::Unsupported,
+    },
+};
 
 /// `$COPILOT_HOME` if set, else `~/.copilot` — mirroring copilot 1.0.78's
 /// `resolveCopilotHome` (in the `runtime.node` addon, probed directly): empty

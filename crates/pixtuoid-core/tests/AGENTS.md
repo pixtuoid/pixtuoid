@@ -61,7 +61,7 @@ feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,d
 `pixtuoid/tests/wire_to_pixels.rs`, and the on-demand
 `corpus_check`. A shell supplies bytes and asserts;
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
-`AgentId` (that comes from the source's row in `source/registry.rs`; a driver
+`AgentId` (that comes from the source's `DESCRIPTOR`; a driver
 keyed off anything else registers NOTHING).
 `benches/decode_reduce.rs` SYNTHESIZES its lines — a bench-shaped fixture
 under `sources/fixtures/` would be mis-scanned.

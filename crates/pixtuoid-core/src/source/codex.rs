@@ -14,10 +14,13 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    HookSubject, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, hook_identity,
-    hook_session_id, hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
+    HookSubject, MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, generic_tool_display,
+    hook_identity, hook_session_id, hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
 };
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+};
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
 use crate::state::TurnKey;
 
@@ -30,6 +33,43 @@ pub(crate) use native::live_codex_rollout_ids;
 
 /// The Codex source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "codex";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "cx",
+    verified_version: "0.164.0",
+    version_probe: Some(&["codex", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("CODEX_HOME"),
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_codex_line,
+            // The rollout filename's trailing UUID (the stem also has a timestamp).
+            id_from_path: codex_id_from_path,
+            path_filter: accept_all_paths,
+            cwd_extractor: extract_codex_cwd,
+            parent_extractor: Some(extract_codex_parent),
+        }),
+        hook: Some(HookDecoding::Shared {
+            tool_id_key: ToolIdKey::ToolUse,
+            // Its arms and why: `decode_codex_hook_custom`.
+            extend: decode_codex_hook_custom,
+        }),
+        caps: SourceCaps {
+            // Still false after #710 registered Codex's SessionEnd hook: it is
+            // teardown-only, so flipping this regresses abrupt exits to a 30-min reap.
+            has_exit_signal: false,
+            resurrects_on_prompt: true,
+            delegations_are_hook_silent: false,
+            // `spawn_agent` returns at launch, and a child's SubagentStop ends
+            // it (`codex-rs/core/src/hook_runtime.rs:401-437` at rust-v0.163.0).
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
+            brackets_turns: true,
+        },
+        focus: FocusChannel::TranscriptProbe,
+    },
+};
 
 /// Trailing canonical UUID (`8-4-4-4-12`) of a `rollout-<ts>-<UUID>.jsonl`
 /// filename. Equals the hook payload's `session_id`, so hook and JSONL events

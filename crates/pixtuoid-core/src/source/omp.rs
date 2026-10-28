@@ -1,13 +1,19 @@
-//! Oh My Pi (`omp`, omp.sh) source. Watches the omp session transcripts
-//! (`<sessions-root>/<encoded-cwd>/<ts>_<uuid>.jsonl`) via one `JsonlWatcher`
-//! per root: [`omp_sessions_dir`] owns every axis of the primary root,
-//! [`omp_profile_sessions_dirs`] adds every other profile's. omp has no shell-hook
-//! seam — its hooks are in-process TS extension modules — so the hook plane
-//! is a pixtuoid-owned bridge extension
-//! (`pixtuoid/src/install/omp_extension.ts`) whose payloads
-//! `decode_omp_hook_payload` claims (#951). Wire shape: upstream
-//! `packages/coding-agent/src/session/` (transcript) and `src/extensibility/`
-//! (extension events).
+//! Oh My Pi (`omp`, omp.sh) source. HYBRID: the durable authority is the
+//! session transcript (`<sessions-root>/<encoded-cwd>/<ts>_<uuid>.jsonl`), read
+//! by one `JsonlWatcher` per root: [`omp_sessions_dir`] owns every axis of the
+//! primary root, [`omp_profile_sessions_dirs`] adds every other profile's.
+//! Subagents persist as SEPARATE nested files (`<parent-stem>/<taskId>.jsonl`),
+//! parent-linked by path. omp has no shell-hook seam — its hooks are in-process
+//! TS extension modules — so the hook plane is a pixtuoid-owned bridge
+//! extension (`pixtuoid/src/install/omp_extension.ts`, auto-discovered from the
+//! agent dir's `extensions/`) whose payloads `decode_omp_hook_payload` claims
+//! (#951). It forwards what the transcript can never carry: pre-persist
+//! presence, empty-session shutdown, the approval wait, and the process's own
+//! `_pid`. Both transports key on the sessionFile stem chain
+//! ([`omp_id_from_path`]), so they mint ONE AgentId per session, as grok's do;
+//! under `omp --no-extensions`, or with the bridge broken, the transcript alone
+//! carries the session. Wire shape: upstream `packages/coding-agent/src/session/`
+//! (transcript) and `src/extensibility/` (extension events).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,8 +22,13 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-use crate::source::registry::HookObject;
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
+};
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, Transcript,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 #[cfg(feature = "native")]
@@ -29,6 +40,58 @@ pub(crate) use native::live_omp_session_ids;
 
 /// The Oh My Pi (omp) source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "omp";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "om",
+    verified_version: "18.13.1",
+    version_probe: Some(&["omp", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("PI_CODING_AGENT_DIR"),
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_omp_line,
+            // The nested stem CHAIN, so a subagent task id can't collide across
+            // sessions.
+            id_from_path: omp_id_from_path,
+            path_filter: accept_all_paths,
+            cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
+        }),
+        hook: Some(HookDecoding::ClaimsAll(decode_omp_hook_payload)),
+        caps: SourceCaps {
+            // The `session_exit` entry is appended + flushed on every clean
+            // teardown incl. SIGINT/SIGTERM (and the bridge fires
+            // `session_shutdown` even for empty sessions the entry skips).
+            // SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
+            // sessions promptly; without it, the stale-sweep.
+            has_exit_signal: true,
+            // The header `SessionStart` decodes once per transcript life. A
+            // `--resume` fires the bridge's `session_start` on the SAME id
+            // (`omp/fixtures/resume-hermetic`), so an ended
+            // session CAN walk back in — through the SessionStart arm's
+            // ordinary parentless re-registration, not this prompt-resurrect
+            // flag.
+            resurrects_on_prompt: false,
+            // The `task` dispatch emits a toolCall/toolResult pair on the parent
+            // AND the child persists its own parent-linked transcript.
+            delegations_are_hook_silent: false,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        // The bridge extension runs IN-PROCESS (upstream: extensions share
+        // the runtime), so its stamped `process.pid` IS omp's own —
+        // PluginStamp trust. The router stamps the kernel start marker; the
+        // click-time compare refuses a recycled pid (#527). The flip also
+        // puts omp on `HookPidWatch` (prompt exits) and makes a bridge-only,
+        // never-persisted session focusable from birth. Stamp-less shapes —
+        // `--no-extensions`, a session predating the bridge install — still
+        // focus through the append-fd probe: `resolve_pid` dispatches by
+        // source name and reads no channel.
+        focus: FocusChannel::PluginStamp,
+    },
+};
 
 /// omp's SESSIONS root, mirroring `dirs.ts` — deliberately NOT
 /// `omp_agent_dir().join("sessions")`, because the XDG redirect FLATTENS the

@@ -277,7 +277,7 @@ step 10 by the theme guards; steps 1–3 are on you.
    decoding until the session universe ends). **Hook-only CLI?** Skip the
    decoder, trait, and step 7: `transcript: None` in the registry row, format
    knowledge in a `HookDecoding::ClaimsAll` decoder, and do step 8 instead.
-4. **Add ONE `SourceDescriptor` row** in `source/registry.rs` — label prefix,
+4. **Add the module's `DESCRIPTOR`**, listed in `source/registry.rs`'s `REGISTRY` — label prefix,
    decoder, `HookDecoding` (a `Shared` row's `tool_id_key` verified against a
    CAPTURED tool call — kimi's `ToolCall` cost a source its tool ids), truthful
    capability flags, `verified_version` + `version_probe`. Lifecycle policy

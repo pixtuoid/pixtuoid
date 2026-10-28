@@ -1,4 +1,4 @@
-//! Kimi Code CLI source — HOOK-ONLY (no transcript watcher).
+//! Kimi Code CLI (`kimi`, MoonshotAI) source — HOOK-ONLY (no transcript watcher).
 //!
 //! Session transcripts DO exist (`<KIMI_CODE_HOME>/sessions/<workDirKey>/
 //! <sessionId>/agents/main/wire.jsonl`, default home `~/.kimi-code`) but the wire
@@ -30,11 +30,54 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::{Map, Value};
 
 use crate::AgentId;
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, ToolIdKey,
+};
 use crate::source::{AgentEvent, registry};
 
 /// The Kimi CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "kimi";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "km",
+    verified_version: "2.3.3",
+    version_probe: Some(&["kimi", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::Shared {
+            // The ONE source that does not spell the per-call id `tool_use_id`.
+            tool_id_key: ToolIdKey::ToolCall,
+            extend: decode_kimi_hook_custom,
+        }),
+        caps: SourceCaps {
+            // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
+            // to the stale-sweep.
+            has_exit_signal: true,
+            // SessionStart is the registration carrier, not UserPromptSubmit, so
+            // a swept session does not walk back in.
+            resurrects_on_prompt: false,
+            // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
+            // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
+            // mints Task. `AgentSwarm` has NO such injection, so an omitting swarm
+            // call mints Generic instead; `true` can only over-retain a dead slot.
+            delegations_are_hook_silent: true,
+            child_end_inference: ChildEndInference::TaskDrain,
+            // A subagent's tool hooks carry the session's id alone
+            // (kimi-code@2.2.0 `agentExternalHooksService.ts:301-313`).
+            child_hooks_unnamed: true,
+            brackets_turns: false,
+        },
+        // kimi-code 2.2.0 spawns every hook with `shell: true`, which Node runs as
+        // `/bin/sh -c` on Unix and `%ComSpec%` on Windows
+        // (`packages/agent-core-v2/src/features/externalHooks/internal/runHook.ts:66-67`,
+        // https://nodejs.org/api/child_process.html): re-check both if either changes.
+        focus: FocusChannel::ShimStamp(Corroboration::OnceViaShell),
+    },
+};
 
 /// Decode Kimi's two failure-variant hook events (no CC equivalent) and DECLINE
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to

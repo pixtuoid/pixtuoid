@@ -4,13 +4,16 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, TailActivity, cwd_basename_label, ellipsize, make_tool_detail,
-    parsed_tail_lines,
+    MAX_DECODED_FIELD_CHARS, TailActivity, cwd_basename_label, ellipsize, extract_top_level_cwd,
+    make_tool_detail, parsed_tail_lines,
 };
 
 use crate::AgentId;
 use crate::source::AgentEvent;
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+};
 
 #[cfg(feature = "native")]
 mod native;
@@ -23,6 +26,47 @@ pub use native::{ClaudeCodeSource, cc_watcher, live_cc_session_ids};
 /// with no agent CLI installed, so a rename owes a test update there right after
 /// the release that ships it (CONTRIBUTING.md#releasing).
 pub const SOURCE_NAME: &str = "claude-code";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "cc",
+    verified_version: "2.1.311",
+    version_probe: Some(&["claude", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: Some("CLAUDE_CONFIG_DIR"),
+    kind: SourceKind::Agent {
+        transcript: Some(Transcript {
+            line_decoder: decode_cc_line,
+            // The filename stem IS the session UUID the hook keys on.
+            id_from_path: cc_id_from_path,
+            // The workflow orchestrator's foreign-schema `journal.jsonl` lives
+            // in the SAME projects tree.
+            path_filter: admits_transcript,
+            cwd_extractor: extract_top_level_cwd,
+            parent_extractor: None,
+        }),
+        hook: Some(HookDecoding::Shared {
+            tool_id_key: ToolIdKey::ToolUse,
+            // They swap the event's SUBJECT (child AgentId ≠ session AgentId), which
+            // the shared arms can't express; Stop is a fleet subagent's ONLY end (#241).
+            extend: decode_cc_hook_custom,
+        }),
+        caps: SourceCaps {
+            has_exit_signal: true,
+            // CC's JSONL SessionStart is first-sight-only, so a swept slot
+            // would not walk back in — moot with a real exit signal anyway.
+            resurrects_on_prompt: false,
+            delegations_are_hook_silent: false,
+            // A subagent turn fires SubagentStart, and SubagentStop once it has
+            // finished responding; an Agent call that backgrounds its subagent
+            // returns `async_launched` at launch (hooks.md).
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::TranscriptProbe,
+    },
+};
 
 /// The label the attachment decoder synthesizes for the `ultra_effort_exit`
 /// marker — deliberately NOT a real effort word, so last-seen-wins kills the

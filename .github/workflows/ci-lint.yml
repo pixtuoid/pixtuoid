@@ -111,12 +111,12 @@ jobs:
       - run: just tsc
       - run: just lang-census
       # The host install is the cost, so a PR that leaves every input of the
-      # verdict alone skips it; path-changed treats a push as unchanged. The
-      # registry holds each host's pin, which a bump PR moves.
+      # verdict alone skips it; path-changed treats a push as unchanged. Each
+      # host's pin sits in its source module, which a bump PR moves.
       - uses: ./.github/actions/path-changed
         id: plugin-types
         with:
-          paths: crates/pixtuoid/src/install crates/pixtuoid-core/src/source/registry.rs crates/pixtuoid-core/src/harness/hermetic/profiles crates/pixtuoid-core/examples/bump.rs package.json package-lock.json justfile .github/workflows/ci-lint.yml .github/actions/setup-npm site/package.json
+          paths: crates/pixtuoid/src/install crates/pixtuoid-core/src/source crates/pixtuoid-core/src/harness/hermetic/profiles crates/pixtuoid-core/examples/bump.rs package.json package-lock.json justfile .github/workflows/ci-lint.yml .github/actions/setup-npm site/package.json
       - if: steps.plugin-types.outputs.changed == 'true'
         uses: ./.github/actions/setup-npm
         with:

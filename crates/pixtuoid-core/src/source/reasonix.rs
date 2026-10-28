@@ -28,11 +28,47 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The Reasonix CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "reasonix";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "rx",
+    verified_version: "2.53.1",
+    version_probe: Some(&["reasonix", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_rx_hook_payload)),
+        caps: SourceCaps {
+            // SessionEnd fires on clean exit — best-effort counts.
+            has_exit_signal: true,
+            // UserPromptSubmit re-emits SessionStart, so a swept-but-live
+            // session walks back in on the next prompt.
+            resurrects_on_prompt: true,
+            // A subagent's hooks carry its own session id, the parent's
+            // suffixed with its role (`internal/ext/hook/runner.go:57-66` at
+            // v2.39.0), so the parent's slot emits NOTHING until the dispatch
+            // tool's PostToolUse.
+            delegations_are_hook_silent: true,
+            // A child's session fires no end; a skill tool's child is keyed
+            // by a call id its parent's tool hooks don't carry
+            // (`internal/assembly/boot/delegation.go:127-133`,
+            // `internal/ext/hook/hook.go:827-847` at v2.39.0).
+            child_end_inference: ChildEndInference::AnyTaskEnd,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
+    },
+};
 
 /// Reasonix tools that spawn a subagent, so the slot reads "Delegating" while
 /// it works (`internal/ext/hook/hook_claude_agent.go:7-10`). `task` is not
