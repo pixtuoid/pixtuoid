@@ -166,11 +166,14 @@ for (const job of captioned) {
     errors.push(`media.json "${job.id}" has a caption but ${file} isn't committed yet — wait for media-regen.yml.`);
     continue;
   }
-  // `alt=""`: the caption beside it describes it, which a second reading
-  // would only repeat (https://www.w3.org/WAI/tutorials/images/decorative/,
-  // Example 3).
-  const img = `<img src="${file}" alt="" width="${README_IMAGE_WIDTH}" />`;
-  const linked = 'href' in job ? `<a href="${esc(new URL(String(job.href), SITE))}">${img}</a>` : img;
+  // A linked image names where it goes
+  // (https://www.w3.org/WAI/tutorials/images/functional/, Example 1); an
+  // unlinked one takes `alt=""`, its caption already describing it
+  // (https://www.w3.org/WAI/tutorials/images/decorative/, Example 3).
+  const href = 'href' in job ? new URL(String(job.href), SITE) : null;
+  const alt = href ? `${href.host}${href.pathname}`.replace(/\/$/, '') : '';
+  const img = `<img src="${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
+  const linked = href ? `<a href="${esc(href)}">${img}</a>` : img;
   regenSection(
     `${job.id} image`,
     `<!-- media:${job.id}:start · generated from scripts/media.json by \`just gen-readme\` — edit the JSON, not this block -->`,

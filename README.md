@@ -24,7 +24,7 @@
 </p>
 
 <!-- media:demo:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
-<p align="center"><a href="https://pixtuoid.dev/"><img src="docs/images/demo.gif" alt="" width="768" /></a><br /><sub>Agents walk in, get to work and doze off as the day turns into a snowy night.</sub></p>
+<p align="center"><a href="https://pixtuoid.dev/"><img src="docs/images/demo.gif" alt="pixtuoid.dev" width="768" /></a><br /><sub>Agents walk in, get to work and doze off as the day turns into a snowy night.</sub></p>
 <!-- media:demo:end -->
 
 <p align="center">
@@ -83,7 +83,7 @@ Then:
 <!-- features:start · generated from site/src/features.json by `just gen-readme` — edit the JSON, not this table -->
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Feature | Description |
 |---|---|---|
-| <img src="docs/images/pix-icons/cutaway.svg" alt="" width="20" height="20"> | **Cutaway office** | Terminals that can show images (kitty, iTerm2, or SIXEL) can draw the cutaway, a detailed pixel view of the office; others get a simpler text-art version |
+| <img src="docs/images/pix-icons/cutaway.svg" alt="" width="20" height="20"> | **Cutaway office** | Terminals that can show images (kitty, iTerm2, or SIXEL) can draw the cutaway, a detailed pixel view of the office; others get the classic look, drawn with text blocks |
 | <img src="docs/images/pix-icons/multiagent.svg" alt="" width="20" height="20"> | **Multi-agent office** | Every agent session gets its own desk — when a floor fills up, a new floor opens automatically |
 | <img src="docs/images/pix-icons/spaces.svg" alt="" width="20" height="20"> | **Office spaces** | Cubicles, a meeting lounge, and a pantry — the office is laid out in distinct furnished zones, not just a grid of identical desks |
 | <img src="docs/images/pix-icons/walk.svg" alt="" width="16" height="24"> | **Animated characters** | Coworkers type, raise a `?` when they need you, nap under little z's, and walk between desks |
@@ -98,7 +98,7 @@ Then:
 <!-- features:end -->
 
 <!-- media:looks-composite:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
-<p align="center"><img src="docs/images/looks-composite.png" alt="" width="768" /><br /><sub>The same moment as the detailed cutaway (left) and the simpler text-art view (right).</sub></p>
+<p align="center"><img src="docs/images/looks-composite.png" alt="" width="768" /><br /><sub>The same moment as the detailed cutaway (left) and the simpler classic look (right).</sub></p>
 <!-- media:looks-composite:end -->
 
 <p align="center">
@@ -131,7 +131,7 @@ Press <kbd>t</kbd> to preview every theme live; your pick is saved.
 <p align="center"><img src="docs/images/themes-composite.png" alt="" width="768" /><br /><sub>Every built-in theme, one slice each.</sub></p>
 <!-- media:themes-composite:end -->
 
-Every other setting — desks per floor, pet names, cutaway or text-art — lives in `~/.config/pixtuoid/config.toml`: see **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+Every other setting — desks per floor, pet names, cutaway or classic — lives in `~/.config/pixtuoid/config.toml` by default: see **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
 ## How It Works
 

@@ -2,7 +2,7 @@
   {
     "icon": "🖼️",
     "name": "Cutaway office",
-    "desc": "Terminals that can show images ({protocols}) can draw the cutaway, a detailed pixel view of the office; others get a simpler text-art version",
+    "desc": "Terminals that can show images ({protocols}) can draw the cutaway, a detailed pixel view of the office; others get the classic look, drawn with text blocks",
     "protocols": ["kitty", "iTerm2", "SIXEL"],
     "pix": "cutaway"
   },

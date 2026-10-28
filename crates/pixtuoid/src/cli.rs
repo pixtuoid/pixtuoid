@@ -47,8 +47,8 @@ pub(crate) struct LookArgs {
     /// this terminal supports.
     #[arg(long, value_enum)]
     pub(crate) look: Option<crate::graphics::LookMode>,
-    /// Draw the cutaway in this protocol whatever the terminal answers; it
-    /// implies `--look cutaway`.
+    /// Draw the cutaway in this protocol whatever protocol the terminal
+    /// reports; it implies `--look cutaway`.
     #[arg(long, value_enum, conflicts_with = "look")]
     pub(crate) protocol: Option<crate::graphics::ImageProtocol>,
 }
