@@ -198,15 +198,15 @@ pub(crate) fn compute_crop_rect(
 /// The `--crop-*` window, in cells.
 const CROP_WINDOW: ratatui::layout::Size = ratatui::layout::Size::new(40, 24);
 
-/// A [`CROP_WINDOW`] centered on `target`, clamped to stay inside the cols x rows
-/// terminal (shrinks only when the terminal itself is smaller).
+/// A [`CROP_WINDOW`] centered on `target`, a half-block buffer pixel, clamped
+/// to stay inside the cols x rows terminal (shrinks only when the terminal
+/// itself is smaller).
 pub(crate) fn centered_crop(
     target: pixtuoid_scene::layout::Point,
     cols: u16,
     rows: u16,
 ) -> ratatui::layout::Rect {
-    // `target` is a half-block buffer pixel: one per cell across, two per cell down.
-    let (cell_x, cell_y) = (target.x, target.y / 2);
+    let (cell_x, cell_y) = (target.x, target.y / pixtuoid_scene::layout::CELL_ROWS);
     let crop_w = CROP_WINDOW.width.min(cols);
     let crop_h = CROP_WINDOW.height.min(rows);
 

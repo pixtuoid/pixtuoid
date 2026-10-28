@@ -179,7 +179,7 @@ mod tests {
 
     /// The first pixel row of a [`COLS`]×[`ROWS`] frame's footer.
     fn footer_top() -> u32 {
-        u32::from(scene_buf_size(COLS, ROWS).1 / 2) * CELL_H
+        u32::from(scene_buf_size(COLS, ROWS).1 / pixtuoid_scene::layout::CELL_ROWS) * CELL_H
     }
 
     /// `img`'s office, above its footer.
