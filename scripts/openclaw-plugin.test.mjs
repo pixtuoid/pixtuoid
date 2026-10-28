@@ -14,10 +14,19 @@ const FORWARDED = registers.filter((hook) => !consumes.includes(hook));
 const DEFAULT_GATEWAY_PORT = 18789;
 
 /**
+ * `register` reads `OPENCLAW_GATEWAY_PORT` before the config, so each test owns
+ * it: unset unless `envPort` names it, and restored once `t` ends.
  * @param {import("node:test").TestContext} t
- * @param {{ shim?: "recorder" | "missing" }} [options]
+ * @param {{ shim?: "recorder" | "missing", envPort?: string }} [options]
  */
-async function renderPlugin(t, options) {
+async function renderPlugin(t, { envPort, ...options } = {}) {
+  const original = process.env.OPENCLAW_GATEWAY_PORT;
+  t.after(() => {
+    if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
+    else process.env.OPENCLAW_GATEWAY_PORT = original;
+  });
+  if (envPort === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
+  else process.env.OPENCLAW_GATEWAY_PORT = envPort;
   const rendered = await render(t, SOURCE, options);
   return { ...rendered, plugin: rendered.module.default };
 }
@@ -144,18 +153,9 @@ test("the port observed on a hook outranks the config fallback", { skip: !POSIX 
 });
 
 test("port resolution defaults when neither env nor config names one", { skip: !POSIX }, async (t) => {
-  const original = process.env.OPENCLAW_GATEWAY_PORT;
-  t.after(() => {
-    if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
-    else process.env.OPENCLAW_GATEWAY_PORT = original;
-  });
-
-  delete process.env.OPENCLAW_GATEWAY_PORT;
-  {
-    const { outFile, plugin } = await renderPlugin(t);
-    register(plugin)["session_start"]({ sessionId: "s" }, {});
-    assert.deepEqual((await recorded(outFile)).map((l) => l.gatewayPort), [DEFAULT_GATEWAY_PORT]);
-  }
+  const { outFile, plugin } = await renderPlugin(t);
+  register(plugin)["session_start"]({ sessionId: "s" }, {});
+  assert.deepEqual((await recorded(outFile)).map((l) => l.gatewayPort), [DEFAULT_GATEWAY_PORT]);
 });
 
 // A bare `Number.parseInt` matches upstream's parser on plain digits and diverges on
@@ -175,13 +175,7 @@ for (const [raw, want, why] of /** @type {[string, number, string][]} */ ([
   ["", CONFIG_PORT, "empty"],
 ])) {
   test(`env port form: ${JSON.stringify(raw)} ⇒ ${want} (${why})`, { skip: !POSIX }, async (t) => {
-    const original = process.env.OPENCLAW_GATEWAY_PORT;
-    t.after(() => {
-      if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
-      else process.env.OPENCLAW_GATEWAY_PORT = original;
-    });
-    process.env.OPENCLAW_GATEWAY_PORT = raw;
-    const { outFile, plugin } = await renderPlugin(t);
+    const { outFile, plugin } = await renderPlugin(t, { envPort: raw });
     register(plugin, { config: { gateway: { port: CONFIG_PORT } } })["session_start"](
       { sessionId: "s" },
       {},

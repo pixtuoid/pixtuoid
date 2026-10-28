@@ -3,11 +3,15 @@
 // stream and a real recorder.
 
 import assert from "node:assert/strict";
+import { appendFile } from "node:fs/promises";
 import test from "node:test";
-import { POSIX, assertShimContract, recorded, render, row } from "./lib/plugin-harness.mjs";
+import { POSIX, assertShimContract, lines, recorded, render, row } from "./lib/plugin-harness.mjs";
 
 const SOURCE = "opencode";
 const { registers, data_fields: dataFields = [], turn_key: turnKey = "" } = row(SOURCE);
+// Well past the drain's `QUIET_MS`, so a cleanup that stops waiting on a held
+// shim resolves before it ends.
+const HOLD_MS = 250;
 
 // Every field the decoder reads, nested as opencode nests it, beside content
 // that must never leave.
@@ -129,6 +133,13 @@ test("a turn's start carries what its session's record adds", { skip: !POSIX }, 
     (await recorded(outFile)).map((p) => p.data),
     [{ sessionID: "ses_1", parentID: "ses_0", id: "ses_1" }],
   );
+});
+
+test("cleanup waits for a shim already in flight", { skip: !POSIX }, async (t) => {
+  const { module, traceFile } = await render(t, SOURCE, { holdMs: HOLD_MS });
+  await run(module, host([{ type: "session.tool.success", data: { sessionID: "ses_1" } }]));
+  await appendFile(traceFile, "cleaned\n");
+  assert.deepEqual(await lines(traceFile), ["begin", "end", "cleaned"]);
 });
 
 test("an unspawnable shim or an unreadable session never rejects into opencode", async (t) => {

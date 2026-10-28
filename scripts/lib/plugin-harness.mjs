@@ -90,8 +90,9 @@ export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) 
 }
 
 /**
- * `file`'s non-empty lines once every shim spawned so far has closed, so a
- * count or set read from them includes whatever extra a plugin sent.
+ * `file`'s non-empty lines once no shim is left open, including any a queue
+ * spawns while it waits, so a count or set read from them includes whatever
+ * extra a plugin sent.
  * @param {string} file
  */
 export async function lines(file) {
