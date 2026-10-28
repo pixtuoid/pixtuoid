@@ -64,8 +64,11 @@ export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) 
   const root = await mkdtemp(join(tmpdir(), `pixtuoid-${source}-plugin-`));
   // A shim still writing into `root` races the removal (ENOTEMPTY).
   t.after(async () => {
-    await settled();
-    await rm(root, { recursive: true, force: true });
+    try {
+      await settled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
   const { file } = row(source);
   const template = await readFile(join(INSTALL_DIR, file), "utf8");
