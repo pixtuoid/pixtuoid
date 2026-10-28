@@ -268,7 +268,7 @@ fn agent_cases() -> Vec<WireCase> {
             source: "cursor",
             // The DELEGATING capture, not the tool-run one: `Delegating` needs a
             // Task dispatch, and a real cursor turn only delegates when asked.
-            // Two sessions, so it cannot live under `fixtures/`.
+            // Two sessions, so `harness::OUTSIDE_CONFORMANCE` keeps it out of conformance.
             fixture: "cursor/fixtures/delegation/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::Delegating],
@@ -296,9 +296,9 @@ fn agent_cases() -> Vec<WireCase> {
             must_reach: &[Reach::Running],
         },
         WireCase {
-            // The delegation capture: two sessions (so it lives outside
-            // `fixtures/`, like cursor's), pinning the parent's Delegating
-            // through the `subagent` dispatch.
+            // The delegation capture: two sessions (so, like cursor's,
+            // `harness::OUTSIDE_CONFORMANCE` keeps it out of conformance),
+            // pinning the parent's Delegating through the `subagent` dispatch.
             name: "dsh-delegation",
             source: "dsh",
             fixture: "dsh/fixtures/subagent-hermetic/hook-payloads.jsonl",

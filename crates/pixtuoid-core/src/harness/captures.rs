@@ -325,10 +325,10 @@ pub struct SecondTurn {
     pub end: ProcessExit,
 }
 
-/// The captures a module test drives itself, as `(source, scenario)`, which the
-/// conformance golden's one-AgentId rule cannot hold: omp's fold their hook keys
-/// per platform, and every other row is a delegation, a child with a sprite of
-/// its own. Exact, so a capture leaves conformance only by a reviewed line here.
+/// The captures a module test drives itself, as `(source, scenario)`, which no
+/// conformance golden can hold: omp's hook keys fold per platform, and every
+/// other row is a delegation, a second sprite the one-AgentId rule refuses.
+/// Exact, so a capture leaves conformance only by a reviewed line here.
 pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
     ("claude-code", "subagent-hermetic"),
     ("codewhale", "child-error-hermetic"),
