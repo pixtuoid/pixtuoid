@@ -30,15 +30,9 @@ const DEFAULT_LOGICAL: (u16, u16) = (160, 96);
 
 /// The agents drawn unless `--agents` names another count.
 const DEFAULT_AGENTS: usize = 10;
-
-/// How many of [`pixtuoid_scene::DEMO_REPOS`] the cast cycles through, unless
-/// `--repos` names others. Fewer than [`DEFAULT_AGENTS`] on purpose: two
-/// agents sharing a repo share an outfit, which is the grouping Team Palette
-/// exists to show.
-const TEAMS: usize = 4;
 const _: () = assert!(
-    TEAMS < DEFAULT_AGENTS && TEAMS <= pixtuoid_scene::DEMO_REPOS.len(),
-    "the default cast must share a repo"
+    pixtuoid_scene::DEMO_TEAMS < DEFAULT_AGENTS,
+    "the default cast must share a working directory"
 );
 
 fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
@@ -106,7 +100,7 @@ fn main() -> Result<()> {
     let mut now_day = 1u32;
     let mut weather = None::<String>;
     let mut flame = None::<usize>;
-    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..TEAMS]
+    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS]
         .iter()
         .map(|&r| r.to_string())
         .collect();

@@ -223,21 +223,20 @@ pub fn renderer(
     Ok((r, wire))
 }
 
-/// The cutaway's office in logical units, and its scale, on a `cols`×`rows`
-/// terminal of `cell_px` cells: `None` where the cell fits no cutaway.
+/// The cutaway the TUI fits to a `cols`×`rows` terminal of `cell_px` cells:
+/// `None` where the cell fits no cutaway.
 pub fn cutaway_office(
     cols: u16,
     rows: u16,
     cell_px: (u16, u16),
     pack: &OfficeArt,
-) -> Option<(u16, u16, u16)> {
+) -> Option<pixtuoid_scene::render_scale::PixelFit> {
     let cell = CellSize {
         w: cell_px.0,
         h: cell_px.1,
     };
     let area = crate::tui::renderer::scene_rect(Rect::new(0, 0, cols, rows)).as_size();
-    let fit = cutaway_fit(cell, area, pack.max_density_variant())?;
-    Some((fit.logical().w, fit.logical().h, fit.scale().get()))
+    cutaway_fit(cell, area, pack.max_density_variant())
 }
 
 /// Warm `r`'s caches on `scene` at `now`, as the TUI does at boot.

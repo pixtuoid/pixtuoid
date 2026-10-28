@@ -121,6 +121,7 @@ def run_render(job, out_dirs, work, intermediates):
                     day=job.get("day"),
                     theme=f.get("theme"),
                     weather=f.get("weather"),
+                    look=job.get("look", "classic"),
                 )
         return
 
@@ -133,6 +134,7 @@ def run_render(job, out_dirs, work, intermediates):
         day=job.get("day"),
         theme=job.get("theme"),
         weather=job.get("weather"),
+        look=job.get("look", "classic"),
         extra=job.get("extra", ()),
     )
     intermediates[job["id"]] = raw  # crops read the unscaled render
@@ -329,6 +331,7 @@ def run_clip(job, out_dirs, work, intermediates):
         cols=job["cols"],
         rows=job["rows"],
         hour=job["hour"],
+        look=job.get("look", "classic"),
         extra=job.get("extra", ()),
         gif={"duration": job["duration"], "fps": fps},
         frames_dir=frames,

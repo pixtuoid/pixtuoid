@@ -7,10 +7,9 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession};
-use pixtuoid_scene::layout::Size;
-use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
+use pixtuoid_scene::look::{Dim, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
-use pixtuoid_scene::render_scale::RenderScale;
+use pixtuoid_scene::render_scale::PixelFit;
 use pixtuoid_scene::theme::Theme;
 
 use crate::encode::{ImageCanvas, terminal_cell};
@@ -19,38 +18,29 @@ use crate::encode::{ImageCanvas, terminal_cell};
 /// the classic frame's inputs.
 pub(crate) struct CutawayOffice {
     session: FloorSession,
-    look: Look,
-    size: Size,
-    /// Image pixels per buffer pixel.
-    upscale: u32,
+    fit: PixelFit,
 }
 
 impl CutawayOffice {
     /// The cutaway the TUI fits to a `cols`×`rows` terminal.
     pub(crate) fn new(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
         let cell = terminal_cell();
-        let (w, h, scale) = pixtuoid::dev::cutaway_office(cols, rows, (cell.w, cell.h), pack)
-            .context("the TUI paints a terminal this small classic")?;
-        let density = pack.max_density_variant();
+        let fit = pixtuoid::dev::cutaway_office(cols, rows, (cell.w, cell.h), pack)
+            .with_context(|| format!("a {}x{} px cell fits no cutaway", cell.w, cell.h))?;
         Ok(Self {
             session: FloorSession::new(Arc::clone(pack)),
-            look: Look::Cutaway {
-                scale: RenderScale::from(density),
-                text: WorldText::Baked,
-            },
-            size: Size { w, h },
-            upscale: u32::from(scale / density.get()),
+            fit,
         })
     }
 
     /// Step and draw `world`'s office.
     pub(crate) fn render(&mut self, world: FloorInputs<'_>, theme: &'static Theme) -> Result<()> {
         self.session.render(
-            self.look,
+            self.fit.look(WorldText::Baked),
             RenderInputs {
                 world,
                 theme,
-                size: self.size,
+                size: self.fit.logical(),
                 place: Place {
                     gateway: pixtuoid_scene::tally::office_gateway(world.scene),
                     floor: None,
@@ -75,7 +65,7 @@ impl CutawayOffice {
         };
         let buf = picture.pixels;
         let w = u32::from(buf.width());
-        let up = self.upscale;
+        let up = u32::from(self.fit.upscale());
         let mut canvas = ImageCanvas(img);
         for (i, &px) in buf.as_slice().iter().enumerate() {
             let (x, y) = (i as u32 % w * up, i as u32 / w * up);

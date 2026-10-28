@@ -91,11 +91,11 @@ pub(crate) fn sample_scene(now: SystemTime, max_desks: usize, n_agents: usize) -
     s
 }
 
-/// Where the demo agent at `desk` works, [`pixtuoid_scene::DEMO_REPOS`]
-/// cycled, and the label `source`'s decoder gives a session there.
-fn demo_home(desk: usize, source: &str) -> (Arc<Path>, String) {
-    let repos = pixtuoid_scene::DEMO_REPOS;
-    let cwd = PathBuf::from("/demo").join(repos[desk % repos.len()]);
+/// Where team `team` works, cycled over [`pixtuoid_scene::DEMO_TEAMS`], and
+/// the label `source`'s decoder gives a session there.
+fn demo_repo(team: usize, source: &str) -> (Arc<Path>, String) {
+    let repo = pixtuoid_scene::DEMO_REPOS[team % pixtuoid_scene::DEMO_TEAMS];
+    let cwd = PathBuf::from("/demo").join(repo);
     // No transcript path: only a subagent's would name the label.
     let label = claude_code::cc_derive_label(Path::new(""), source, &cwd);
     (Arc::from(cwd.as_path()), label)
@@ -182,7 +182,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
     );
     use std::time::Duration as D;
     // (role, state, since_event, since_entry): the role keys the agent's
-    // identity, never its name (`demo_home`'s); a seated pose needs
+    // identity, never its name (`demo_repo`'s); a seated pose needs
     // `since_entry` past `ENTRY_ANIMATION_MS`.
     let agents: [(&str, ActivityState, D, D); 12] = [
         // An open turn between its items. Desk 0 is a FAR-seated desk, so this
@@ -299,7 +299,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
             format!("{role}-{i}")
         };
         let id = AgentId::from_transcript_path(&format!("/demo/{unique_key}.jsonl"));
-        let (cwd, label) = demo_home(i, claude_code::SOURCE_NAME);
+        let (cwd, label) = demo_repo(i, claude_code::SOURCE_NAME);
         s.agents.insert(
             id,
             AgentSlot {
@@ -497,7 +497,8 @@ pub(crate) fn meeting_scene(
         // Back-date past `cycle_n` whole estimated cycles, plus a hair so the
         // integer division can't land on the boundary.
         let back_date = Duration::from_millis(c.cycle_n * est_wander_cycle_ms(c.id) + 400);
-        let (cwd, label) = demo_home(i, claude_code::SOURCE_NAME);
+        // One team meets: one working directory, one outfit.
+        let (cwd, label) = demo_repo(0, claude_code::SOURCE_NAME);
         s.agents.insert(
             c.id,
             AgentSlot {
@@ -616,7 +617,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
         // A subagent works in its parent's repo, named for its type.
         let (cwd, label) = match (subagent, parent_id.and_then(|p| s.agents.get(&p))) {
             (Some(name), Some(parent)) => (Arc::clone(&parent.cwd), name.to_string()),
-            _ => demo_home(*desk_index, source),
+            _ => demo_repo(*desk_index, source),
         };
         s.agents.insert(
             id,
@@ -797,7 +798,7 @@ pub(crate) fn anim_scene(
         id,
         AgentSlot {
             agent_id: id,
-            source: std::sync::Arc::from("claude-code"),
+            source: std::sync::Arc::from(claude_code::SOURCE_NAME),
             session_id: std::sync::Arc::from("anim"),
             cwd: std::sync::Arc::from(PathBuf::from("/anim").as_path()),
             label: target.into(),
@@ -826,10 +827,10 @@ pub(crate) fn anim_scene(
 mod tests {
     use super::*;
 
-    /// Every sample agent is named from the one demo list, by desk, as the CC
-    /// decoder names a session there, and no two of the default twelve match.
+    /// Every sample agent works in its desk's demo team, under the label the
+    /// CC decoder gives a session there, and the default twelve share teams.
     #[test]
-    fn sample_agents_wear_the_decoder_label_of_their_demo_repo() {
+    fn sample_agents_wear_the_decoder_label_of_their_demo_team() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let scene = sample_scene(now, 12, 12);
         let mut got: Vec<_> = scene
@@ -838,11 +839,11 @@ mod tests {
             .map(|a| (a.desk_index.0, a.label.to_string()))
             .collect();
         got.sort();
-        let repos = pixtuoid_scene::DEMO_REPOS;
-        let want: Vec<_> = (0..12).map(|i| (i, format!("cc·{}", repos[i]))).collect();
+        let team = |i| pixtuoid_scene::DEMO_REPOS[i % pixtuoid_scene::DEMO_TEAMS];
+        let want: Vec<_> = (0..12).map(|i| (i, format!("cc·{}", team(i)))).collect();
         assert_eq!(got, want);
-        let distinct: std::collections::HashSet<_> = got.iter().map(|(_, l)| l).collect();
-        assert_eq!(distinct.len(), got.len(), "two sample agents share a label");
+        let teams: std::collections::HashSet<_> = got.iter().map(|(_, l)| l).collect();
+        assert!(teams.len() < got.len(), "no two sample agents share a team");
     }
 
     #[test]

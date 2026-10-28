@@ -102,37 +102,20 @@ pub mod token_meter;
 pub mod tooltip;
 pub mod walk;
 
-/// The repos (cwd basenames) the demo agents work in, the one list every demo
-/// names its agents from: the web hero's cast in order and the snapshot
-/// examples' agents by desk, so every README and site image. As long as the
-/// most agents a `scripts/media.json` job stages, or two would share a label.
+/// The repos (cwd basenames) the demo agents work in: pixtuoid-web's hero
+/// cast takes one each, in order, and the `snapshot` and `cutaway_snapshot`
+/// examples' casts cycle the first [`DEMO_TEAMS`].
 #[doc(hidden)]
 pub const DEMO_REPOS: &[&str] = &[
-    "api",
-    "webapp",
-    "infra",
-    "data",
-    "cli",
-    "docs",
-    "etl",
-    "tests",
-    "ml",
-    "research",
-    "embedded",
-    "mobile",
-    "billing",
-    "auth",
-    "search",
-    "payments",
-    "gateway",
-    "analytics",
-    "ios",
-    "android",
-    "sdk",
-    "storage",
-    "deploy",
-    "design",
+    "api", "webapp", "infra", "data", "cli", "docs", "etl", "tests", "ml", "research", "embedded",
 ];
+
+/// How many of [`DEMO_REPOS`] the snapshot examples' casts cycle through:
+/// fewer than their agents, so agents share a working directory and so an
+/// outfit, the grouping Team Palette exists to show.
+#[doc(hidden)]
+pub const DEMO_TEAMS: usize = 4;
+const _: () = assert!(DEMO_TEAMS > 0 && DEMO_TEAMS <= DEMO_REPOS.len());
 
 /// ⌊2⁶⁴/φ⌋, φ the golden ratio: the Fibonacci-hashing multiplier and splitmix64's increment.
 pub(crate) const GOLDEN_GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;

@@ -1091,4 +1091,38 @@ mod tests {
             SnapshotArgs::try_parse_from(["snapshot", "out.png", "--dashboard", "--gif"]).is_err()
         );
     }
+
+    #[test]
+    fn cutaway_conflicts_with_what_it_covers() {
+        let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
+        for flags in [
+            &["--dashboard"][..],
+            &["--connection"],
+            &["--onboarding"],
+            &["--help-open"],
+            &["--theme-picker", "0"],
+            &["--popup"],
+            &["--hover", "1,1"],
+            &["--debug-walkable"],
+            &["--empty"],
+            &["--crop-agent", "x"],
+            &["--crop-furniture", "pantry"],
+            &["--crop-mascot", "--openclaw", "idle"],
+            &["--proof", "session.jsonl"],
+            &["--gif", "--pets", "cat"],
+            &["--gif", "--navigate-at", "3:1"],
+        ] {
+            let alone = [&["snapshot"][..], flags].concat();
+            assert!(parses(&alone), "rejected {alone:?}");
+            let with = [&alone[..], &["--cutaway"]].concat();
+            assert!(!parses(&with), "accepted {with:?}");
+        }
+        for argv in [
+            &["snapshot", "--cutaway"][..],
+            &["snapshot", "--cutaway", "--gif"],
+            &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
+        ] {
+            assert!(parses(argv), "rejected {argv:?}");
+        }
+    }
 }
