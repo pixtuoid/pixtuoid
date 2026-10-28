@@ -13,7 +13,9 @@ use std::num::NonZeroU16;
 use enum_map::EnumMap;
 use pixtuoid_core::sprite::Sprite;
 use pixtuoid_core::sprite::error::PackError;
-use pixtuoid_core::sprite::format::{Density, Pack, Piece, load_pack_from_strings};
+#[cfg(test)]
+use pixtuoid_core::sprite::format::load_pack_from_strings;
+use pixtuoid_core::sprite::format::{Density, Pack, Piece, load_pack_from_json};
 use strum::VariantArray as _;
 
 use crate::display::Icon;
@@ -393,7 +395,11 @@ pub(crate) fn test_default_pack() -> Pack {
 }
 
 /// The default pack's manifest, as `build.rs` embeds it.
+#[cfg(test)]
 const BUNDLED_PACK_TOML: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.toml"));
+
+/// [`BUNDLED_PACK_TOML`]'s JSON transcode, which `build.rs` writes beside it.
+const BUNDLED_PACK_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.json"));
 
 /// The compiled-in default pack, parsed: all a build without `native` can load.
 ///
@@ -402,8 +408,8 @@ const BUNDLED_PACK_TOML: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_
 /// If the embedded manifest or a bundled sprite fails to load, or the pack
 /// can't draw the office ([`ArtError`]).
 pub fn load_bundled_pack() -> Result<OfficeArt, ArtError> {
-    OfficeArt::parse(load_pack_from_strings(
-        BUNDLED_PACK_TOML,
+    OfficeArt::parse(load_pack_from_json(
+        BUNDLED_PACK_JSON,
         &bundled_sprite_srcs(),
     )?)
 }

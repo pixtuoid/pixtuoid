@@ -46,7 +46,9 @@ enum-map      = { workspace = true }
 thiserror     = { workspace = true }
 
 [build-dependencies]
-toml_edit = { workspace = true }
+toml_edit  = { workspace = true }
+toml       = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # `harness` is dev-only (see core's manifest), so `examples/corpus_check.rs`

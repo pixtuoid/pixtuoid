@@ -1406,6 +1406,19 @@ pub fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Resul
     load_from_strings(pack_toml, frames, &mut |_| {})
 }
 
+/// [`load_pack_from_strings`] of a manifest a build script transcoded from
+/// TOML to JSON, so a build that loads only its bundled pack links no TOML
+/// parser.
+///
+/// # Errors
+///
+/// As [`load_pack_from_strings`].
+pub fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
+    let parsed: PackToml =
+        serde_json::from_str(pack_json).map_err(|source| PackError::JsonManifest { source })?;
+    build_from_strings(parsed, frames, &mut |_| {})
+}
+
 /// The one-frame sprite [`fill_pack_manifest`] draws every piece it adds in.
 pub(crate) const FILLER_SPRITE: (&str, &str) = ("filler.sprite", "@frame 0\n~");
 
@@ -1500,6 +1513,14 @@ fn load_from_strings(
 ) -> Result<Pack> {
     let parsed: PackToml =
         toml::from_str(pack_toml).map_err(|source| PackError::Manifest { source })?;
+    build_from_strings(parsed, frames, on_read)
+}
+
+fn build_from_strings(
+    parsed: PackToml,
+    frames: &[(&str, &str)],
+    on_read: &mut dyn FnMut(&str),
+) -> Result<Pack> {
     let frame_lookup: HashMap<&str, &str> = frames.iter().copied().collect();
 
     build_pack(parsed, &mut |fname| {
