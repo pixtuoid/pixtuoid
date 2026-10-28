@@ -65,7 +65,7 @@
   "targets": [
    "docs"
   ],
-  "caption": "One office, one moment: the pixel-art cutaway (left) in a graphics terminal, the half-block classic (right) anywhere else or with `look = \"classic\"`.",
+  "caption": "One office, one moment: the cutaway (left) and the classic (right).",
   "axis": "look",
   "over": [
    "cutaway",
@@ -109,6 +109,7 @@
    "docs"
   ],
   "caption": "New sessions walk in from the elevator, each monitor glows with the tool in use, idle agents doze off, and the clock runs from afternoon through sunset into a snowy night.",
+  "href": "/",
   "look": "cutaway",
   "cols": 192,
   "rows": 64,

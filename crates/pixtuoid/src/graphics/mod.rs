@@ -648,7 +648,14 @@ impl ClassicReason {
                 .to_string(),
             Self::NoAnswer => "the terminal did not answer the capability query".to_string(),
             Self::NoProtocol => {
-                "terminal reports no graphics protocol (kitty/iterm2/sixel)".to_string()
+                let names: Vec<&str> = <ImageProtocol as clap::ValueEnum>::value_variants()
+                    .iter()
+                    .map(|p| p.name())
+                    .collect();
+                format!(
+                    "terminal reports no graphics protocol ({})",
+                    names.join("/")
+                )
             }
             Self::TmuxPassthroughOff => "inside tmux with allow-passthrough off — \
                  `set -g allow-passthrough on` lets kitty graphics through"
@@ -855,12 +862,13 @@ mod tests {
     /// reaches the site, so this test is the only bridge to the code's.
     #[test]
     fn the_site_names_every_image_protocol() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/features.json");
-        let Ok(json) = std::fs::read_to_string(path) else {
-            // crates.io-packaged test runs don't ship the repo's site/ tree.
-            eprintln!("skipping: {path} not present (packaged build)");
+        // crates.io-packaged test runs don't ship the repo's site/ tree.
+        let site = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site");
+        if !std::path::Path::new(site).is_dir() {
             return;
-        };
+        }
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/features.json");
+        let json = std::fs::read_to_string(path).expect("features.json moved or was renamed");
         let features: Vec<serde_json::Value> =
             serde_json::from_str(&json).expect("features.json parses");
         let rows: Vec<_> = features
@@ -1672,7 +1680,7 @@ mod tests {
                 look(LookMode::Auto),
                 answered(None, CELL_8X16, false),
                 BUNDLED,
-                "terminal reports no graphics protocol (kitty/iterm2/sixel)",
+                "terminal reports no graphics protocol (kitty/sixel/iterm2)",
             ),
             (
                 LOCAL,

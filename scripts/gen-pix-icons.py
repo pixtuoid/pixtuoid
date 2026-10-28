@@ -294,7 +294,7 @@ ICONS = {
             "K K K K K K K K K K",
         ]
     },
-    # the pixel-art office: a terminal framing sky, sun, skyline and floor, so
+    # the cutaway office: a terminal framing sky, sun, skyline and floor, so
     # it reads as a picture where `window` reads as text
     "cutaway": {
         "grid": [

@@ -2,7 +2,7 @@
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
 // Showcase/SupportedTools/Install read, so README and site can't drift — and
-// its images from scripts/media.json, which renders them.
+// its captioned images from scripts/media.json's jobs.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -152,29 +152,37 @@ regenSection(
   ].join('\n')
 );
 
-// A docs image with a `caption`: centred at half its pixel width, so a 2x
-// screen draws each pixel, its caption under it. Its file must be committed:
-// media-regen.yml renders docs/images from main, so a new image's README PR
-// follows the PR that adds its job.
-/** @param {string} file */
-const pixelWidth = (file) => {
-  const b = readFileSync(join(root, file));
-  return file.endsWith('.gif') ? b.readUInt16LE(6) : b.readUInt32BE(16);
-};
+// Half the docs jobs' render width, so a 2x screen draws each pixel.
+const README_IMAGE_WIDTH = 768;
+// A docs image with a `caption`, the caption under it and an `href` (a site
+// path) around it. Its file must be committed: media-regen.yml renders
+// docs/images from main, so a new image's README PR follows the bot PR that
+// commits it.
 const codeSpans = (/** @type {string} */ s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
-for (const job of media.filter((j) => 'caption' in j && j.targets.includes('docs'))) {
+const captioned = media.filter((j) => 'caption' in j && j.targets.includes('docs'));
+for (const job of captioned) {
   const file = `docs/images/${job.id}.${job.kind === 'gif' ? 'gif' : 'png'}`;
   if (!existsSync(join(root, file))) {
     errors.push(`media.json "${job.id}" has a caption but ${file} isn't committed yet — wait for media-regen.yml.`);
     continue;
   }
-  const caption = String(job.caption);
+  // `alt=""`: the caption beside it describes it, which a second reading
+  // would only repeat (https://www.w3.org/WAI/tutorials/images/decorative/,
+  // Example 3).
+  const img = `<img src="${file}" alt="" width="${README_IMAGE_WIDTH}" />`;
+  const linked = 'href' in job ? `<a href="${esc(new URL(String(job.href), SITE))}">${img}</a>` : img;
   regenSection(
     `${job.id} image`,
     `<!-- media:${job.id}:start · generated from scripts/media.json by \`just gen-readme\` — edit the JSON, not this block -->`,
     `<!-- media:${job.id}:end -->`,
-    `<p align="center"><img src="${file}" alt="${esc(caption.replace(/`/g, ''))}" width="${pixelWidth(file) / 2}" /><br /><sub>${codeSpans(caption)}</sub></p>`
+    `<p align="center">${linked}<br /><sub>${codeSpans(String(job.caption))}</sub></p>`
   );
+}
+// A block no captioned job renders would go stale unseen.
+for (const [, id] of readme.matchAll(/<!-- media:(\S+):start/g)) {
+  if (!captioned.some((j) => j.id === id)) {
+    errors.push(`README.md has a media:${id} block but scripts/media.json has no captioned docs job "${id}".`);
+  }
 }
 
 const installBody = install

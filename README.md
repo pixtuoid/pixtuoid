@@ -24,7 +24,7 @@
 </p>
 
 <!-- media:demo:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
-<p align="center"><img src="docs/images/demo.gif" alt="New sessions walk in from the elevator, each monitor glows with the tool in use, idle agents doze off, and the clock runs from afternoon through sunset into a snowy night." width="768" /><br /><sub>New sessions walk in from the elevator, each monitor glows with the tool in use, idle agents doze off, and the clock runs from afternoon through sunset into a snowy night.</sub></p>
+<p align="center"><a href="https://pixtuoid.dev/"><img src="docs/images/demo.gif" alt="" width="768" /></a><br /><sub>New sessions walk in from the elevator, each monitor glows with the tool in use, idle agents doze off, and the clock runs from afternoon through sunset into a snowy night.</sub></p>
 <!-- media:demo:end -->
 
 <p align="center">
@@ -83,7 +83,7 @@ Then:
 <!-- features:start · generated from site/src/features.json by `just gen-readme` — edit the JSON, not this table -->
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Feature | Description |
 |---|---|---|
-| <img src="docs/images/pix-icons/cutaway.svg" alt="" width="20" height="20"> | **Pixel-art office** | Where the terminal speaks kitty, iTerm2, or SIXEL graphics, the office is drawn in real pixels; anywhere else, or with `look = "classic"`, it falls back to half-block cells |
+| <img src="docs/images/pix-icons/cutaway.svg" alt="" width="20" height="20"> | **Cutaway office** | A terminal that speaks kitty, iTerm2, or SIXEL graphics can draw the office in real pixels; otherwise, or with `look = "classic"`, it falls back to half-block cells |
 | <img src="docs/images/pix-icons/multiagent.svg" alt="" width="20" height="20"> | **Multi-agent office** | Every agent session gets its own desk — when a floor fills up, a new floor opens automatically |
 | <img src="docs/images/pix-icons/spaces.svg" alt="" width="20" height="20"> | **Office spaces** | Cubicles, a meeting lounge, and a pantry — the office is laid out in distinct furnished zones, not just a grid of identical desks |
 | <img src="docs/images/pix-icons/walk.svg" alt="" width="16" height="24"> | **Animated characters** | Coworkers type, wait with a `?`, sleep under little z's, and walk A\*-routed paths between desks |
@@ -98,7 +98,7 @@ Then:
 <!-- features:end -->
 
 <!-- media:looks-composite:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
-<p align="center"><img src="docs/images/looks-composite.png" alt="One office, one moment: the pixel-art cutaway (left) in a graphics terminal, the half-block classic (right) anywhere else or with look = &quot;classic&quot;." width="768" /><br /><sub>One office, one moment: the pixel-art cutaway (left) in a graphics terminal, the half-block classic (right) anywhere else or with <code>look = &quot;classic&quot;</code>.</sub></p>
+<p align="center"><img src="docs/images/looks-composite.png" alt="" width="768" /><br /><sub>One office, one moment: the cutaway (left) and the classic (right).</sub></p>
 <!-- media:looks-composite:end -->
 
 <p align="center">
@@ -133,7 +133,7 @@ The setting you'll reach for most is the **theme** — press `t` in the TUI for 
 live-preview picker across the built-in palettes; your pick persists across sessions.
 
 <!-- media:themes-composite:start · generated from scripts/media.json by `just gen-readme` — edit the JSON, not this block -->
-<p align="center"><img src="docs/images/themes-composite.png" alt="Every built-in theme, one diagonal slice each." width="768" /><br /><sub>Every built-in theme, one diagonal slice each.</sub></p>
+<p align="center"><img src="docs/images/themes-composite.png" alt="" width="768" /><br /><sub>Every built-in theme, one diagonal slice each.</sub></p>
 <!-- media:themes-composite:end -->
 
 See **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** for the full key reference
