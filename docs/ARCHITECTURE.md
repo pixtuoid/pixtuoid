@@ -24,9 +24,9 @@ pixtuoid is a Cargo workspace of **six crates** wired as a strict
   window.
 - **`pixtuoid-web`** — the third painter: a publish-excluded wasm crate
   rendering the same engine into a browser `<canvas>` (the site's live hero),
-  with `native` (core's async runtime) disabled so the pure
-  decode/reduce core compiles to wasm32.
-- **`pixtuoid-web-music`** — the ♩ lofi, a wasm only the music worker loads.
+  with `native` (core's async runtime) off so core compiles to wasm32.
+- **`pixtuoid-web-music`** — the site's ♩ lofi stream, in a publish-excluded
+  wasm of its own that only the site's music worker loads.
 - **`pixtuoid-hook`** — a tiny shim your coding agent invokes per hook event:
   stdin JSON → a local IPC endpoint (Unix socket / named pipe), and it
   **always exits 0** so it can never block your agent.
