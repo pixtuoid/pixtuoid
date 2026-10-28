@@ -1,0 +1,14 @@
+{"type":"session.start","data":{"sessionId":"cac66caa-e2fa-44fd-89dc-d294bdfc64db","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_bUe2srBmx8YYbSeL","toolName":"view","arguments":{"path":"/private/tmp/pixtuoid-capture/proj/NOTE.txt"},"turnId":"","model":"","toolTitle":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_bUe2srBmx8YYbSeL","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"result":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{}
+{}
+{}
+{"type":"session.shutdown","data":{"accountingSnapshot":{},"providerModelMetrics":[],"usageAccountingWatermarks":{},"shutdownType":"","totalPremiumRequests":0,"totalNanoAiu":0,"totalApiDurationMs":0,"sessionStartTime":0,"eventsFileSizeBytes":0,"codeChanges":{},"modelMetrics":{"gpt-4.1":{"requests":{},"usage":{"inputTokens":6587,"outputTokens":92,"cacheReadTokens":300,"cacheWriteTokens":0},"totalNanoAiu":0}},"agentMetrics":{},"currentModel":"","currentTokens":0,"systemTokens":0,"conversationTokens":0,"toolDefinitionsTokens":0},"id":"","timestamp":"","parentId":""}
