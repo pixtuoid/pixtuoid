@@ -2,7 +2,7 @@
 import { asset, DIM_RESTING } from '../consts';
 
 const wasmJsUrl = asset('wasm/pixtuoid_web.js');
-const audioWorkerUrl = asset('audio-worker.js');
+const officeHostUrl = asset('office-host.js');
 const musicWorkerUrl = asset('music-worker.js');
 const musicWasmJsUrl = asset('wasm/pixtuoid_web_music.js');
 const musicWorkletUrl = asset('music-worklet.js');
@@ -317,7 +317,7 @@ const officeDriverUrl = asset('office-driver.js');
 <script
   is:inline
   data-wasm-js-url={wasmJsUrl}
-  data-audio-worker-url={audioWorkerUrl}
+  data-office-host-url={officeHostUrl}
   data-music-worker-url={musicWorkerUrl}
   data-music-wasm-js-url={musicWasmJsUrl}
   data-music-worklet-url={musicWorkletUrl}
@@ -327,7 +327,7 @@ const officeDriverUrl = asset('office-driver.js');
     const script = document.currentScript;
     const {
       wasmJsUrl,
-      audioWorkerUrl,
+      officeHostUrl,
       musicWorkerUrl,
       musicWasmJsUrl,
       musicWorkletUrl,
@@ -371,8 +371,6 @@ const officeDriverUrl = asset('office-driver.js');
     // ONE office for the whole page (user-pinned): seed 0 is the app's 1F Standard look.
     const SEED = 0;
     const REVEAL_MS = 1600;
-    const FLOORS_PAST = 3.2;
-    const CHROMA_SPLIT_UNITS = 3;
     // DERIVED from FRAME_MS, never a second literal: a budget the paint gate could later rise to meet
     // puts EVERY frame over budget, so every reveal takes the MAX_WAIT fallback — green, and untestable.
     const REVEAL_MAX_STEP_MS = Math.round(FRAME_MS * 1.5);
@@ -380,13 +378,13 @@ const officeDriverUrl = asset('office-driver.js');
     // A device that never sustains the budget must still get its office: the gate is a courtesy, never a precondition.
     const REVEAL_READY_MAX_WAIT = Math.round(1000 / FRAME_MS);
 
-    let office = null;
-    let wasm = null;
+    // The office's handle on the office host (office-driver.js's officeHost); a paint asked for while a frame is in
+    // the host waits for it.
+    let hero = null;
+    let hostOffThread = false;
+    let queuedPaint = null;
     let officeDriver = null;
-    let ctx2d = null;
-    let img = null;
     let unitsW = 0;
-    let scale = 1;
     let raf = 0;
     let last = 0;
     let live = false;
@@ -396,16 +394,13 @@ const officeDriverUrl = asset('office-driver.js');
     let pauseOffset = 0;
     let pausedAt = 0;
 
-    // Sprites are fixed-size, so a smaller office IS zoom — deliberately a closer camera than the app's.
+    // Sprites are fixed-size, so a smaller office IS zoom — deliberately a closer camera than the app's. The host
+    // sizes the canvas to the units of the frame it draws.
     function sizeCanvas() {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      if (w < 1 || h < 1 || !office) return;
+      if (w < 1 || h < 1) return;
       unitsW = Math.min(640, Math.max(64, Math.round((w / h) * UNITS_H)));
-      scale = office.scale();
-      canvas.width = unitsW * scale;
-      canvas.height = UNITS_H * scale;
-      img = new ImageData(canvas.width, canvas.height);
     }
 
     const overlayEl = document.getElementById('office-overlay');
@@ -472,9 +467,7 @@ const officeDriverUrl = asset('office-driver.js');
       return ems < 1 ? px : PIXEL_EM * ems;
     }
 
-    function updateOverlay() {
-      if (unitsW < 1) return;
-      const data = JSON.parse(office.overlay_json());
+    function updateOverlay(data) {
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
       // reflow every frame.
@@ -546,14 +539,55 @@ const officeDriverUrl = asset('office-driver.js');
       setSegments(boardCtx, b.context);
     }
 
+    // Step the office to `nowMs` and draw what the reveal lets through, then lay its captions and play its sound.
     function paint(nowMs) {
-      if (!img) return;
-      office.step(nowMs, unitsW, UNITS_H);
-      // Re-read ptr/len every frame — resize and memory.grow move the frame view.
-      const view = officeDriver.officeFrameView(office, wasm);
-      markEngineResolved();
+      if (!hero || unitsW < 1) return;
+      if (hero.busy) {
+        queuedPaint = nowMs;
+        return;
+      }
+      const wasLive = live;
+      const draw = revealAt(nowMs);
+      const goesLive = live && !wasLive;
+      // A paused repaint leaves the sound's clock where the pause froze it.
+      const audio = audioReady && !paused;
+      hero
+        .frame({ now: nowMs, w: unitsW, h: UNITS_H, draw, overlay: draw === 1, audio })
+        .then(
+          function (r) {
+            markEngineResolved();
+            // The office announces itself live with its first frame on the canvas, unless reduced motion came first.
+            if (goesLive && live) {
+              wrap.classList.add('is-live');
+              document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: true } }));
+              showAudioBtn();
+              syncAudioCtx();
+            }
+            // As the page stands when the frame lands: a pause or reduced motion may have come in meanwhile. Caption
+            // the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
+            // `live` already folds in reduced motion: the mq listener clears it.
+            if (r.overlay && captionFace && live) {
+              updateOverlay(JSON.parse(r.overlay));
+              overlayEl.classList.add('is-on');
+            }
+            if (r.audio) audioCommands(JSON.parse(r.audio));
+          },
+          function () {
+            /* a host that died leaves the last frame up */
+          }
+        )
+        .finally(function () {
+          if (queuedPaint === null) return;
+          const queued = queuedPaint;
+          queuedPaint = null;
+          paint(queued);
+        });
+    }
+    // What the frame at `nowMs` draws: null holds the canvas on its bg-tone cover, else the roll's progress, 1 once
+    // the office has settled.
+    function revealAt(nowMs) {
       // Hold on the bg-tone cover until the boot splash lifts: the roll is never played hidden behind the overlay.
-      if (!splashCleared) return;
+      if (!splashCleared) return null;
       const step = reveal.lastSim ? nowMs - reveal.lastSim : 0;
       reveal.lastSim = nowMs;
       const onBudget = step > 0 && step <= REVEAL_MAX_STEP_MS;
@@ -562,71 +596,30 @@ const officeDriverUrl = asset('office-driver.js');
         // Frames must flow before the roll starts: a stall holds on the flat bg tone, and `is-live` / pix:onair / the ♩ button are deferred, so an office about to freeze never announces itself live.
         reveal.ready = onBudget ? reveal.ready + 1 : 0;
         reveal.waited++;
-        if (reveal.ready < REVEAL_READY_FRAMES && reveal.waited < REVEAL_READY_MAX_WAIT) return;
+        if (reveal.ready < REVEAL_READY_FRAMES && reveal.waited < REVEAL_READY_MAX_WAIT)
+          return null;
         live = true;
-        wrap.classList.add('is-live');
-        document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: true } }));
-        showAudioBtn();
       }
       // Safari blocks the main thread for over a second inside its tab-snapshot IPC, so the roll rides PAINTED
       // frames: the clamp makes a hitch PAUSE it, and Date.now()'s backward jumps hold it rather than rewind.
       reveal.elapsed += Math.max(0, Math.min(step, REVEAL_MAX_STEP_MS));
       const rt = mq.matches ? 1 : reveal.elapsed / REVEAL_MS;
-      if (rt < 1) {
-        drawRevealFrame(view, rt < 0 ? 0 : rt);
-      } else {
-        img.data.set(view);
-        ctx2d.putImageData(img, 0, 0);
-        // Caption the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
-        if (captionFace) {
-          updateOverlay();
-          overlayEl.classList.add('is-on');
-        }
-      }
-    }
-    // putImageData writes the sub-1 alpha straight to the canvas, so the
-    // element's own bg (var(--bg)) shows through the transparent pixels.
-    function drawRevealFrame(view, rt) {
-      const w = img.width;
-      const h = img.height;
-      const d = img.data;
-      const e = 1 - Math.pow(1 - rt, 4);
-      const roll = Math.round((1 - e) * h * FLOORS_PAST);
-      const alpha = Math.min(1, rt / 0.15);
-      const split = Math.round((1 - e) * CHROMA_SPLIT_UNITS * scale);
-      for (let y = 0; y < h; y++) {
-        const sy = (y + roll) % h;
-        const seam = sy < scale || sy >= h - scale ? 0.3 : 1; // floor divider: more bg shows
-        const a = alpha * seam * 255;
-        const row = sy * w;
-        for (let x = 0; x < w; x++) {
-          const o = (y * w + x) * 4;
-          const xr = split ? (x + split < w ? x + split : w - 1) : x;
-          const xb = split ? (x - split >= 0 ? x - split : 0) : x;
-          d[o] = view[(row + xr) * 4];
-          d[o + 1] = view[(row + x) * 4 + 1];
-          d[o + 2] = view[(row + xb) * 4 + 2];
-          d[o + 3] = a;
-        }
-      }
-      ctx2d.putImageData(img, 0, 0);
+      return Math.min(1, Math.max(0, rt));
     }
 
     function frame(t) {
       raf = 0;
       if (document.hidden) return;
-      if (t - last >= FRAME_MS) {
+      // A frame still in the host skips this tick rather than queueing behind it.
+      if (t - last >= FRAME_MS && !hero.busy) {
         last = t;
         // Date.now(), NOT the rAF timestamp: the engine decodes now_ms as calendar time (browser-local day/night).
-        const nowMs = Date.now() - pauseOffset;
-        paint(nowMs);
-        // Ticks AFTER paint, on the same sim clock: office.step has set the frame's clock the AudioFrame reads.
-        audioTick(nowMs);
+        paint(Date.now() - pauseOffset);
       }
       raf = requestAnimationFrame(frame);
     }
     function start() {
-      if (!raf && office && !document.hidden && !mq.matches && !paused) {
+      if (!raf && hero && !document.hidden && !mq.matches && !paused) {
         raf = requestAnimationFrame(frame);
       }
     }
@@ -640,10 +633,7 @@ const officeDriverUrl = asset('office-driver.js');
       pauseBtn.setAttribute('aria-pressed', String(p));
       // WCAG 2.2.2 covers the page, not just this canvas — ONE control fans out to every other auto-motion surface.
       document.dispatchEvent(new CustomEvent('pix:paused', { detail: { paused: p } }));
-      if (audioCtx && audioPlaying) {
-        if (p) audioCtx.suspend();
-        else audioCtx.resume();
-      }
+      syncAudioCtx();
       if (p) {
         pausedAt = Date.now();
         stop();
@@ -661,7 +651,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
     syncPauseBtn();
 
-    // The engine records per-tick gain/play commands (office.audio_tick) and JS is dumb glue — the mixing decisions all live in Rust.
+    // The engine records per-tick gain/play commands (office.audio_tick, in each frame's reply) and JS is dumb glue — the mixing decisions all live in Rust.
     const audioBtn = document.getElementById('office-audio');
     const AUDIO_PREF = 'pix:audio';
     let audioCtx = null;
@@ -673,49 +663,32 @@ const officeDriverUrl = asset('office-driver.js');
     let restoreArmed = false;
     let loopGains = [];
     let oneShotBufs = {};
-    let audioSR = 44100;
-    let gainDezipperS = 0;
 
-    // Copy OUT of wasm memory before the next memory.grow detaches the view — audioSR is a param so no wasm call splits the view from the copy.
-    function audioMakeBuffer(ptr, len) {
-      if (!len) return null;
-      const view = new Float32Array(wasm.memory.buffer, ptr, len);
-      const buf = audioCtx.createBuffer(1, len, audioSR);
-      buf.getChannelData(0).set(view);
+    function audioBuffer(samples) {
+      if (!samples.length) return null;
+      const buf = audioCtx.createBuffer(1, samples.length, hero.audio.sampleRate);
+      buf.getChannelData(0).set(samples);
       return buf;
     }
-    function audioLoopBuffer(i) {
-      return audioMakeBuffer(office.audio_loop_ptr(i), office.audio_loop_len(i));
-    }
-    function audioUploadBuffers() {
-      audioSR = office.audio_sample_rate(); // read once, before any view is taken
-      gainDezipperS = office.audio_gain_dezipper_s();
-      loopGains = [];
-      for (let i = 0; i < office.audio_loop_count(); i++) {
+    // `take` is the host's warmed buffers: the loop stems in their wire order, the one-shots by pool wire.
+    function audioUploadBuffers(take) {
+      loopGains = take.loops.map(function (samples) {
         const g = audioCtx.createGain();
         g.gain.value = 0;
         g.connect(audioBus);
         const s = audioCtx.createBufferSource();
-        s.buffer = audioLoopBuffer(i);
+        s.buffer = audioBuffer(samples);
         s.loop = true;
         s.connect(g);
         s.start();
-        loopGains[i] = g;
-      }
+        return g;
+      });
       // The music's worklet plays into it once it starts (musicTick).
       musicGain = audioCtx.createGain();
       musicGain.gain.value = 0;
       musicGain.connect(audioBus);
       oneShotBufs = {};
-      for (const wire of office.audio_oneshot_wires()) {
-        oneShotBufs[wire] = [];
-        // Grow until the engine reports an empty slot, so the Rust-side pool size is never duplicated across the wire.
-        for (let j = 0; office.audio_oneshot_len(wire, j) > 0; j++) {
-          oneShotBufs[wire].push(
-            audioMakeBuffer(office.audio_oneshot_ptr(wire, j), office.audio_oneshot_len(wire, j))
-          );
-        }
-      }
+      for (const wire in take.oneshots) oneShotBufs[wire] = take.oneshots[wire].map(audioBuffer);
     }
     // The ♩ music (officeDriver.startMusic): 'idle', 'starting', the startMusic handle once it runs, or 'silent'.
     let music = 'idle';
@@ -740,7 +713,7 @@ const officeDriverUrl = asset('office-driver.js');
           musicWasm: musicWasmJsUrl,
         };
         officeDriver
-          .startMusic(audioCtx, urls, office.audio_music_ahead_s(), Date.now(), controls)
+          .startMusic(audioCtx, urls, hero.audio.musicAheadS, Date.now(), controls)
           .then(function (m) {
             if (music !== 'starting') {
               m.stop(); // audio went away while the worklet loaded
@@ -766,21 +739,21 @@ const officeDriverUrl = asset('office-driver.js');
         music.setControls(controls);
       }
     }
-    function audioTick(nowMs) {
-      if (!audioReady || !audioCtx) return;
-      // ALWAYS advance the engine even while MUTED: skipping the tick freezes the cue tracker, which then replays a stacked one-shot volley on unmute.
-      const cmd = JSON.parse(office.audio_tick(nowMs));
+    // A frame's sound commands. The frame ticks the engine whenever the ♩ is ready, even MUTED: skipping the tick
+    // freezes the cue tracker, which then replays a stacked one-shot volley on unmute.
+    function audioCommands(cmd) {
+      if (!audioCtx) return;
       if (cmd.music) musicTick(cmd.music.controls);
-      // Muted = a suspended AudioContext: nodes queued against one all fire at once on resume, so schedule nothing.
-      if (!audioPlaying) return;
+      if (!audible()) return;
       // A node op can still throw if the context died mid-session — degrade rather than spam the console every frame.
       try {
         const now = audioCtx.currentTime;
+        const dezipper = hero.audio.dezipperS;
         // The wire itself is the width authority here.
         for (let i = 0; i < cmd.gains.length; i++) {
-          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, gainDezipperS);
+          loopGains[i].gain.setTargetAtTime(cmd.gains[i], now, dezipper);
         }
-        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, gainDezipperS);
+        if (cmd.music) musicGain.gain.setTargetAtTime(cmd.music.gain, now, dezipper);
         for (const p of cmd.plays) {
           const bank = oneShotBufs[p[0]];
           const buf = bank && bank[p[1]];
@@ -797,6 +770,16 @@ const officeDriverUrl = asset('office-driver.js');
         audioDisable();
       }
     }
+    // The AudioContext runs only while the ♩ plays a live, unpaused office. A suspended one fires every node queued
+    // against it at once on resume, so nothing is scheduled while it is.
+    function audible() {
+      return audioPlaying && !paused && live;
+    }
+    function syncAudioCtx() {
+      if (!audioCtx) return;
+      if (audible()) audioCtx.resume();
+      else audioCtx.suspend();
+    }
     // WebAudio can fail outright (headless CI, locked-down browser, no output device): hide the ♩ and stop
     // re-trying, so no "playing" button is left making no sound.
     function audioDisable() {
@@ -804,20 +787,6 @@ const officeDriverUrl = asset('office-driver.js');
       audioPlaying = false;
       audioBooting = false;
       audioUnavailable = true;
-      // Tear down any in-flight prewarm by field, NOT via prewarmSettle — its deferred-click resume would re-enter audio.
-      prewarmClickPending = false;
-      if (prewarmWorker) {
-        prewarmWorker.terminate();
-        prewarmWorker = null;
-      }
-      if (prewarmTimer) {
-        clearTimeout(prewarmTimer);
-        prewarmTimer = 0;
-      }
-      if (prewarm === 'running') {
-        prewarm = 'failed';
-        window.__pixAudioPrewarm = 'failed';
-      }
       musicSilence();
       if (audioCtx) {
         try {
@@ -832,156 +801,52 @@ const officeDriverUrl = asset('office-driver.js');
       audioBtn.setAttribute('aria-pressed', 'false');
       audioBtn.hidden = true;
     }
-    let prewarm = 'idle';
-    let prewarmWorker = null;
-    let prewarmTimer = 0;
-    let prewarmClickPending = false;
-    const PREWARM_TIMEOUT_MS = 15000;
     // rIC-less Safari never idles the callback and a never-idle page never fires it — both bounds are fallbacks, not schedules.
     const PREWARM_IDLE_FALLBACK_MS = 1500;
     const PREWARM_IDLE_TIMEOUT_MS = 4000;
-    window.__pixAudioPrewarm = 'idle'; // e2e observability (polled global, like __pixLights)
-    function prewarmSettle(state) {
-      prewarm = state;
-      window.__pixAudioPrewarm = state;
-      if (prewarmTimer) {
-        clearTimeout(prewarmTimer);
-        prewarmTimer = 0;
-      }
-      if (prewarmWorker) {
-        prewarmWorker.terminate();
-        prewarmWorker = null;
-      }
-      if (prewarmClickPending) {
-        prewarmClickPending = false;
-        // the deferred ♩ click resumes on whichever path settled: adopted →
-        // upload-only, failed → the normal chunked warmup
-        try {
-          office.audio_begin();
-          audioPumpWarmup();
-        } catch (e) {
-          audioDisable();
-        }
-      }
-    }
-    // Copy the transferred take into the driver one piece per tick, so no single main-thread block is bigger than one buffer.
-    function prewarmAdopt(data) {
-      try {
-        office.audio_adopt_begin();
-      } catch (e) {
-        prewarmSettle('failed');
-        return;
-      }
-      const pieces = [];
-      // The worker's loop list is sized by the Rust-side loop_count() authority — adopt whatever it sent; audio_adopt_loop validates.
-      for (let i = 0; i < data.loops.length; i++) pieces.push({ loop: i, buf: data.loops[i] });
-      for (const wire of office.audio_oneshot_wires()) {
-        for (const buf of data.oneshots[wire] || []) pieces.push({ wire: wire, buf: buf });
-      }
-      let at = 0;
-      function pump() {
-        try {
-          if (at < pieces.length) {
-            const p = pieces[at++];
-            const ok =
-              p.loop === undefined
-                ? office.audio_adopt_oneshot(p.wire, p.buf)
-                : office.audio_adopt_loop(p.loop, p.buf);
-            if (!ok) {
-              office.audio_adopt_finish(); // consume the partial stage (frees the staged MBs)
-              prewarmSettle('failed'); // torn handoff → click-time warmup
-              return;
-            }
-            setTimeout(pump, 0);
-            return;
-          }
-          prewarmSettle(office.audio_adopt_finish() ? 'adopted' : 'failed');
-        } catch (e) {
-          try {
-            office.audio_adopt_finish();
-          } catch (e2) {
-            /* wasm gone — nothing left to free */
-          }
-          prewarmSettle('failed');
-        }
-      }
-      pump();
-    }
-    // Synthesis runs OFF the main thread — a main-thread idle pump starved clicks/UI on slow hardware. A module worker
-    // loads its OWN wasm instance and transfers the take back; the click-time chunked pump stays as the fallback.
-    function prewarmSpawn() {
-      // reduced-motion is a low-power signal: those visitors keep the click-time chunked path. audioReady/Booting:
-      // a ♩ click that landed BEFORE this idle callback already warms on the main thread.
-      if (
-        prewarm !== 'idle' ||
-        !office ||
-        !wasm ||
-        audioUnavailable ||
-        audioReady ||
-        audioBooting ||
-        mq.matches
-      )
-        return;
-      prewarm = 'running';
+    window.__pixAudioPrewarm = 'idle'; // e2e observability (polled global, like __pixLights): idle → running → ready, or failed
+    // Synthesize the ♩'s buffers at idle, so its click only uploads them. A host on this thread synthesizes on the
+    // click instead — an idle synthesis here starved clicks on slow hardware — and so does reduced motion, a
+    // low-power signal.
+    function prewarm() {
+      if (!hostOffThread || audioUnavailable || audioReady || audioBooting || mq.matches) return;
       window.__pixAudioPrewarm = 'running';
-      try {
-        prewarmWorker = new Worker(audioWorkerUrl, { type: 'module' });
-      } catch (e) {
-        prewarmSettle('failed'); // classic-worker-only browsers: fallback path
-        return;
-      }
-      prewarmTimer = setTimeout(function () {
-        prewarmTimer = 0;
-        prewarmSettle('failed');
-      }, PREWARM_TIMEOUT_MS); // a hung worker must never strand a deferred click
-      prewarmWorker.onmessage = function (e) {
-        prewarmWorker = null; // it closes itself after its one message
-        if (!e.data || !e.data.ok) prewarmSettle('failed');
-        else prewarmAdopt(e.data);
-      };
-      prewarmWorker.onerror = function () {
-        prewarmSettle('failed');
-      };
-      prewarmWorker.postMessage({ wasmJsUrl: wasmJsUrl });
-    }
-    // Pump the chunked synthesis off setTimeout(0), so the main thread never blocks on the bank/rain build in one go.
-    function audioPumpWarmup() {
-      try {
-        if (office.audio_warmup_step() > 0) {
-          setTimeout(audioPumpWarmup, 0);
-          return;
+      hero.warmAudio(false).then(
+        function () {
+          window.__pixAudioPrewarm = 'ready';
+        },
+        function () {
+          window.__pixAudioPrewarm = 'failed';
         }
-        audioUploadBuffers(); // createBuffer here — the usual failure point
-        audioReady = true;
-        audioBooting = false;
-        window.__pixAudioReadyAt = performance.now(); // e2e: click→sound latency
-      } catch (e) {
-        audioDisable();
-      }
+      );
     }
     function audioStart() {
-      if (audioBooting || audioUnavailable || !office || !wasm) return;
+      if (audioBooting || audioUnavailable || !hero) return;
       audioBooting = true;
       try {
         // iOS mutes default WebAudio on the Ring/Silent switch; 'playback' routes to the media channel so the deliberate ♩ tap plays even on silent.
         if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
         // At the engine's rate, so the music's worklet plays its frames unresampled; a rate the browser can't run
         // throws here, into audioDisable.
-        audioCtx = new AudioContext({ sampleRate: office.audio_sample_rate() });
-        audioBus = officeDriver.audioBus(audioCtx, office);
+        audioCtx = new AudioContext({ sampleRate: hero.audio.sampleRate });
+        audioBus = officeDriver.audioBus(audioCtx, hero.audio);
       } catch (e) {
         // WebAudio unavailable (Tor / hardened Firefox / enterprise lockdown): HIDE the ♩ too, not just a flag-set —
         // a visible button lets the click handler flip to a silent "playing" state and persist AUDIO_PREF=1.
         audioDisable();
         return;
       }
-      // The worker is mid-synthesis: defer to prewarmSettle (audioBooting blocks re-clicks) rather than race a second driver against the adoption.
-      if (prewarm === 'running') {
-        prewarmClickPending = true;
-        return;
-      }
-      office.audio_begin();
-      audioPumpWarmup();
+      hero.warmAudio(true).then(function (take) {
+        if (audioUnavailable) return;
+        try {
+          audioUploadBuffers(take); // createBuffer here — the usual failure point
+          audioReady = true;
+          audioBooting = false;
+          window.__pixAudioReadyAt = performance.now(); // e2e: click→sound latency
+        } catch (e) {
+          audioDisable();
+        }
+      }, audioDisable);
     }
     function setAudioPlaying(on) {
       audioPlaying = on;
@@ -991,9 +856,7 @@ const officeDriverUrl = asset('office-driver.js');
       } catch (e) {
         /* private mode: fine, just don't remember */
       }
-      if (!audioCtx) return;
-      if (on && !paused) audioCtx.resume();
-      else audioCtx.suspend();
+      syncAudioCtx();
     }
     audioBtn.addEventListener('click', function () {
       if (audioUnavailable) return;
@@ -1063,8 +926,11 @@ const officeDriverUrl = asset('office-driver.js');
 
     document.addEventListener('pix:install-copy', function () {
       if (!window.__pixHire) return;
-      if (!window.__pixHire()) return; // the engine's return IS the admission signal — never mirror the cap here
-      document.dispatchEvent(new CustomEvent('pix:hired', { detail: { name: 'cc·yours' } }));
+      window.__pixHire().then(function (admitted) {
+        // the engine's answer IS the admission signal — never mirror the cap here
+        if (admitted)
+          document.dispatchEvent(new CustomEvent('pix:hired', { detail: { name: 'cc·yours' } }));
+      });
     });
 
     let booted = false;
@@ -1077,34 +943,29 @@ const officeDriverUrl = asset('office-driver.js');
         captionFace = true;
       };
       document.fonts.load('8px "Fusion Pixel 8px"').then(faceIn, faceIn);
-      // Showcase.astro's VIBING channel boots a SECOND Office off the SAME wasm module, and __wbg_init memoizes only the RESOLVED
-      // instance — two racing `mod.default()` calls each instantiate and stomp the one module-global `wasm`, so drv.sharedWasm memoizes ONE init promise.
       import(officeDriverUrl)
         .then(function (drv) {
           officeDriver = drv;
-          return drv.sharedWasm(wasmJsUrl);
+          return drv.officeHost(officeHostUrl, wasmJsUrl);
         })
-        .then(function (mod) {
-          // __wbg_init is idempotent once resolved: this hands back the already-instantiated exports, with no second fetch.
-          return mod.default().then(function (w) {
-            wasm = w;
-            office = new mod.Office(SEED);
-            ctx2d = canvas.getContext('2d');
-            sizeCanvas();
-            start();
-            if (window.requestIdleCallback) {
-              window.requestIdleCallback(prewarmSpawn, { timeout: PREWARM_IDLE_TIMEOUT_MS });
-            } else {
-              setTimeout(prewarmSpawn, PREWARM_IDLE_FALLBACK_MS);
-            }
-            window.__pixHire = function () {
-              return office.hire();
-            };
-          });
+        .then(function (host) {
+          hostOffThread = host.offThread;
+          return host.open(SEED, canvas);
+        })
+        .then(function (o) {
+          hero = o;
+          sizeCanvas();
+          start();
+          if (window.requestIdleCallback) {
+            window.requestIdleCallback(prewarm, { timeout: PREWARM_IDLE_TIMEOUT_MS });
+          } else {
+            setTimeout(prewarm, PREWARM_IDLE_FALLBACK_MS);
+          }
+          window.__pixHire = function () {
+            return hero.call('hire');
+          };
         })
         .catch(function () {
-          // Null the shared promise so a LATER-booting consumer (VIBING, scrolled in once the network recovers) retries instead of inheriting this rejection.
-          window.__pixWasm = null;
           uncover();
           markEngineResolved();
         });
@@ -1130,8 +991,8 @@ const officeDriverUrl = asset('office-driver.js');
       rraf = requestAnimationFrame(function () {
         rraf = 0;
         sizeCanvas();
-        // Setting canvas.width WIPES the bitmap: while paused no loop will
-        // repaint it, so re-render the ONE frozen frame at its frozen time.
+        // While paused no loop draws the new units, so re-render the ONE frozen
+        // frame at its frozen time.
         if (paused && live) paint(pausedAt - pauseOffset);
       });
     });
@@ -1145,23 +1006,18 @@ const officeDriverUrl = asset('office-driver.js');
         stop();
         // Background PLAYBACK (owner decision): the office is a radio first, so switching tabs must not stop the music. The
         // SAME full tick as frame() at 1 Hz keeps the sim advancing, so the cue tracker sees real edges, not a return-burst volley.
-        if (audioCtx && audioPlaying && !paused && !bgTimer) {
+        if (audioCtx && audible() && !bgTimer) {
           bgTimer = setInterval(function () {
             // reduced-motion may engage while hidden: paint() would re-live the poster-still office
-            if (paused || !audioPlaying || mq.matches) return;
-            const nowMs = Date.now() - pauseOffset;
-            paint(nowMs);
-            audioTick(nowMs);
+            if (!audible()) return;
+            paint(Date.now() - pauseOffset);
           }, 1000);
         }
       } else {
         stopBgTicks();
         start();
       }
-      if (audioCtx && audioPlaying) {
-        if (paused) audioCtx.suspend();
-        else audioCtx.resume();
-      }
+      syncAudioCtx();
     });
     if (mq.addEventListener) {
       mq.addEventListener('change', function () {
@@ -1179,15 +1035,14 @@ const officeDriverUrl = asset('office-driver.js');
           reveal = freshReveal();
           document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: false } }));
           // Reduced motion stops the rAF loop, so the sound loops would drone unfed behind the poster — suspend, keeping the
-          // flag on so an un-reduce resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
-          if (audioCtx && audioPlaying) audioCtx.suspend();
+          // flag on so the office going live again resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
+          syncAudioCtx();
           audioBtn.hidden = true;
           audioBtnShown = false;
         } else if (hasWasm) {
           cover();
           boot();
           start();
-          if (audioCtx && audioPlaying) audioCtx.resume();
         }
         syncPauseBtn();
       });

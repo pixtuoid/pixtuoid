@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       full:
-        description: 'False on a PR outside the merge queue: only the jobs without `if: inputs.full` run'
+        description: 'False on a PR outside the merge queue: `check` then runs only when `scope` finds the site runtime changed'
         type: boolean
         required: true
 
@@ -39,9 +39,30 @@ jobs:
       - if: steps.lockfile.outputs.changed == 'true'
         run: npm run audit
 
+  # A PR that changes the page or its web crates runs `check` on the light
+  # tier too: the queue can merge it on that tier alone, which is how #1978
+  # reached main past the landing page's Lighthouse budget.
+  scope:
+    name: site runtime in scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # path-changed reads a push as unchanged; the full tier runs `check` anyway.
+      changed: ${{ inputs.full || steps.scope.outputs.changed == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: ./.github/actions/path-changed
+        id: scope
+        with:
+          paths: site crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
+
   check:
     name: demos · build · e2e
-    if: ${{ inputs.full }}
+    needs: scope
+    if: needs.scope.outputs.changed == 'true'
     runs-on: ubuntu-latest
     # A cold gen-demos (release build plus encodes) on top of a cold gen-wasm.
     timeout-minutes: 45

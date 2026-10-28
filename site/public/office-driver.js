@@ -1,22 +1,121 @@
-// The shared wasm-`Office` driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
+// The shared live-office driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
 // music. Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so they can't static-import a
-// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. music-worker.js static-imports
-// `loadWasm` into a module worker, which has no `window`: module scope touches no page global.
+// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. office-host.js and
+// music-worker.js static-import `loadWasm` into module workers, which have no `window`: module scope touches no page
+// global.
 'use strict';
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 
-// The ONE memoized wasm-glue init both live-office consumers share. The generated
-// glue's `__wbg_init` memoizes only the RESOLVED instance, not an in-flight promise,
-// so two boots racing before either resolves would instantiate two wasm instances
-// and stomp the module-global `wasm` — whichever Office built against the loser then
-// reads the wrong linear memory forever. The bounded retry MUST stay INSIDE this one
-// shared promise: a per-consumer retry would reintroduce that race.
-export function sharedWasm(wasmJsUrl) {
-  if (window.__pixWasm) return window.__pixWasm;
-  window.__pixWasm = loadWasm(wasmJsUrl);
-  return window.__pixWasm;
+// The page's ONE office host (office-host.js), which both live-office consumers open their `Office` on, so one wasm
+// instance serves the page. A module worker runs it wherever a canvas can hand its drawing to one, so the wasm's boot
+// and frames never block the page's thread (Lighthouse's TBT); else the page's thread does. A host whose wasm never
+// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to `{ offThread, open(seed, canvas) }`;
+// `open` resolves to the office's handle, whose `frame`, `call` and `warmAudio` are office-host.js's ops of those names.
+export function officeHost(hostUrl, wasmJsUrl) {
+  if (!window.__pixOfficeHost) {
+    const host = startHost(hostUrl, wasmJsUrl);
+    window.__pixOfficeHost = host;
+    host.catch(function () {
+      if (window.__pixOfficeHost === host) window.__pixOfficeHost = null;
+    });
+  }
+  return window.__pixOfficeHost;
+}
+
+async function startHost(hostUrl, wasmJsUrl) {
+  let worker = null;
+  if ('transferControlToOffscreen' in HTMLCanvasElement.prototype) {
+    try {
+      worker = new Worker(hostUrl, { type: 'module' });
+    } catch (err) {
+      // a browser without module workers keeps the host on this thread
+    }
+  }
+  const port = worker || (await pageThreadPort(hostUrl));
+  const pending = new Map();
+  let seq = 0;
+  let ids = 0;
+  port.onmessage = function (e) {
+    const p = pending.get(e.data.seq);
+    if (!p) return; // a reply the worker's error already rejected
+    pending.delete(e.data.seq);
+    if ('error' in e.data) p.reject(new Error(e.data.error));
+    else p.resolve(e.data.value);
+  };
+  if (worker) {
+    worker.onerror = function (e) {
+      pending.forEach(function (p) {
+        p.reject(e);
+      });
+      pending.clear();
+    };
+  }
+  function rpc(op, args, transfer) {
+    return new Promise(function (resolve, reject) {
+      seq += 1;
+      pending.set(seq, { resolve, reject });
+      port.postMessage(Object.assign({ seq, op }, args), transfer || []);
+    });
+  }
+  try {
+    await rpc('init', { wasmJsUrl });
+  } catch (err) {
+    if (worker) worker.terminate();
+    throw err;
+  }
+  return {
+    offThread: !!worker,
+    open(seed, canvas) {
+      const id = ++ids;
+      const target = worker ? canvas.transferControlToOffscreen() : canvas;
+      return rpc('open', { id, seed, canvas: target }, worker ? [target] : []).then(
+        function (info) {
+          let busy = false;
+          return {
+            audio: info.audio,
+            // A frame is in the host: its caller holds the next one rather than queue frames behind it.
+            get busy() {
+              return busy;
+            },
+            frame(req) {
+              busy = true;
+              return rpc('frame', Object.assign({ id }, req)).finally(function () {
+                busy = false;
+              });
+            },
+            call(method, ...args) {
+              return rpc('call', { id, method, args });
+            },
+            warmAudio(take) {
+              return rpc('warmAudio', { id, take });
+            },
+          };
+        }
+      );
+    },
+  };
+}
+
+// The host on this thread, behind a port pair that hands each message over a task later, in order, as a worker's
+// would — by reference, since a canvas element can't be cloned.
+async function pageThreadPort(hostUrl) {
+  const { serve } = await import(hostUrl);
+  const page = {};
+  const host = {};
+  page.postMessage = function (data) {
+    setTimeout(function () {
+      host.onmessage({ data });
+    }, 0);
+  };
+  host.postMessage = function (data) {
+    setTimeout(function () {
+      page.onmessage({ data });
+    }, 0);
+  };
+  serve(host);
+  return page;
 }
 
 // A wasm glue module once its wasm instantiates, retried a bounded number of times: one dropped fetch must not
@@ -53,12 +152,6 @@ export function quietInstant(t) {
   return bucket + LIGHTNING_PERIOD_MS - STRIKE_GAP_MS;
 }
 
-// A fresh view over the office's RGBA frame buffer. Re-read ptr AND len on EVERY
-// frame — a resize / `memory.grow` reallocates and invalidates any retained view.
-export function officeFrameView(office, wasm) {
-  return new Uint8ClampedArray(wasm.memory.buffer, office.frame_ptr(), office.frame_len());
-}
-
 // W3C Web Audio, § DynamicsCompressorNode Processing: "Compute reduction gain to be compressor gain multiplied by the
 // return value of computing the makeup gain", (1 / curve(1.0)) to this power — a lift even under the threshold.
 const MAKEUP_EXPONENT = 0.6;
@@ -66,17 +159,17 @@ const MAKEUP_EXPONENT = 0.6;
 const dbToAmplitude = (db) => 10 ** (db / 20);
 
 // The bus every ♩ lane and one-shot sums into, built once per AudioContext: a limiter at the native sink's ceiling,
-// so no sum of them clips. Returns the node they connect to.
-export function audioBus(ctx, office) {
-  const ceilingDbfs = office.audio_ceiling_dbfs();
+// so no sum of them clips. `audio` is an office handle's constants. Returns the node they connect to.
+export function audioBus(ctx, audio) {
+  const ceilingDbfs = audio.ceilingDbfs;
   const ceiling = dbToAmplitude(ceilingDbfs);
   // The spec's attack is the time to cut the gain by 10 dB, rodio's a one-pole time constant: one value sets both
   // limiters' speed, not their curve.
   const limiter = new DynamicsCompressorNode(ctx, {
     threshold: ceilingDbfs,
     knee: 0,
-    attack: office.audio_limiter_attack_s(),
-    release: office.audio_limiter_release_s(),
+    attack: audio.attackS,
+    release: audio.releaseS,
   });
   limiter.ratio.value = limiter.ratio.maxValue;
   // curve(1.0) in dB, on the ratio segment a zero knee leaves above the threshold.

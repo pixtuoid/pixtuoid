@@ -14,17 +14,15 @@ interface Window {
   /** Per-frame dimmer opacity — written by OfficeBackdrop's controller. */
   __pixLights?: number;
   /** Hire a coworker into the live office — set once the wasm office boots.
-   * Returns whether the engine admitted the hire (`Office::hire`'s contract). */
-  __pixHire?: () => boolean;
+   * Resolves to whether the engine admitted the hire (`Office::hire`'s contract). */
+  __pixHire?: () => Promise<boolean>;
   /** Boot splash lifted (mirrors the one-shot pix:revealed for a late listener);
    * set by Base.astro. Gates OfficeBackdrop's office-reveal roll. */
   __pixRevealed?: boolean;
   /** Office boot RESOLVED (live / failed / unsupported) — set by OfficeBackdrop. */
   __pixEngineReady?: boolean;
-  /** The ONE shared wasm-init promise, memoized across the two live-office
-   * consumers. Nulled on final retry exhaustion so a later-booting consumer
-   * re-attempts (#671). */
-  __pixWasm?: Promise<unknown> | null;
+  /** office-driver.js's officeHost memo. */
+  __pixOfficeHost?: Promise<unknown> | null;
   /** THE theme registry + fallback, seeded parse-first in Base.astro's head. */
   __pixTheme?: {
     KEY: string;

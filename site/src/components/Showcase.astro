@@ -125,6 +125,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
   is:inline
   define:vars={{
     wasmJsUrl: asset('wasm/pixtuoid_web.js'),
+    officeHostUrl: asset('office-host.js'),
     officeDriverUrl: asset('office-driver.js'),
   }}
 >
@@ -219,9 +220,8 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     syncVideos();
 
     // VIBING demo: a live pixtuoid office (wasm) driven by the time slider +
-    // weather/theme chips. Its Office is a SEPARATE instance from OfficeBackdrop's
-    // page-wide one, but the wasm module is browser-cached by URL, so booting here
-    // costs no second fetch/compile. `syncCanvas` mirrors syncVideos' gate.
+    // weather/theme chips. Its Office is a SEPARATE one from OfficeBackdrop's
+    // page-wide one, on the same office host. `syncCanvas` mirrors syncVideos' gate.
     const vibingStage = studio.querySelector('[data-stage="vibing"]');
     const vibingCanvas = vibingStage && vibingStage.querySelector('[data-vibing-canvas]');
     const vibingTime = vibingStage && vibingStage.querySelector('[data-vibing-time]');
@@ -234,11 +234,8 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     const vUnits = vibingCanvas
       ? [Number(vibingCanvas.dataset.unitsW), Number(vibingCanvas.dataset.unitsH)]
       : [0, 0];
-    let vWasm = null;
-    let vOffice = null;
-    let vDriver = null; // { sharedWasm, officeFrameView } from office-driver.js
-    let vCtx = null;
-    let vImg = null;
+    let vOffice = null; // its handle on the office host
+    let vDriver = null; // office-driver.js
     let vRaf = 0;
     let vBooted = false;
     let scrubHour = vibingTime ? parseFloat(vibingTime.value) : 18;
@@ -261,9 +258,10 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     // not a second copy in JS, so the sun/moon can't drift from the office it
     // previews. The SSR `data-phase` holds until boot.
     function setSliderPhase(h) {
-      if (vibingTimeWrap && vOffice) {
-        vibingTimeWrap.dataset.phase = vOffice.is_day(h) ? 'day' : 'night';
-      }
+      if (!vibingTimeWrap || !vOffice) return;
+      vOffice.call('is_day', h).then(function (day) {
+        if (h === scrubHour) vibingTimeWrap.dataset.phase = day ? 'day' : 'night'; // a later scrub's answer wins
+      });
     }
 
     function anchorForHour(h) {
@@ -271,16 +269,16 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0);
       return d.getTime();
     }
-    function vPaint() {
-      const now = vBase + (Date.now() - vStart);
-      vOffice.step(now, vUnits[0], vUnits[1]);
-      const view = vDriver.officeFrameView(vOffice, vWasm);
-      vImg.data.set(view);
-      vCtx.putImageData(vImg, 0, 0);
-    }
     function vFrame() {
       vRaf = 0;
-      vPaint();
+      if (!vOffice.busy) {
+        const now = vBase + (Date.now() - vStart);
+        vOffice
+          .frame({ now, w: vUnits[0], h: vUnits[1], draw: 1, overlay: false, audio: false })
+          .catch(function () {
+            /* a host that died leaves the last frame up */
+          });
+      }
       vRaf = requestAnimationFrame(vFrame);
     }
     function startCanvas() {
@@ -293,41 +291,30 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     function bootCanvas() {
       if (vBooted) return;
       vBooted = true;
-      // Drive the ONE shared __pixWasm promise through office-driver.js's
-      // sharedWasm: two boots racing before either resolves would instantiate two
-      // wasm instances and stomp the glue's module-global `wasm`. The driver is
-      // dynamic-imported because this is an is:inline script.
+      // The driver is dynamic-imported because this is an is:inline script.
       import(officeDriverUrl)
         .then(function (drv) {
           vDriver = drv;
-          return drv.sharedWasm(wasmJsUrl);
+          return drv.officeHost(officeHostUrl, wasmJsUrl);
         })
-        .then(function (mod) {
-          // idempotent once resolved — hands back the shared exports/memory
-          return mod.default().then(function (w) {
-            vWasm = w;
-            vOffice = new mod.Office(VIBING_SEED);
-            // Re-apply the active chips so the booted office matches what the OSD
-            // reports: a fresh Office follows the clock (WeatherPolicy::Clock) while the `clear`
-            // chip renders is-active, and a chip clicked DURING this async boot
-            // skipped its `if (vOffice)` setter yet still set aria-pressed.
-            const w0 = vibingStage.querySelector('.osd__chip[data-weather].is-active');
-            if (w0) vOffice.set_weather(w0.dataset.weather);
-            const t0 = vibingStage.querySelector('.osd__chip[data-theme].is-active');
-            if (t0) vOffice.set_theme(t0.dataset.theme);
-            setSliderPhase(scrubHour);
-            const s = vOffice.scale();
-            vibingCanvas.width = vUnits[0] * s;
-            vibingCanvas.height = vUnits[1] * s;
-            vCtx = vibingCanvas.getContext('2d');
-            vImg = vCtx.createImageData(vibingCanvas.width, vibingCanvas.height);
-            syncCanvas(); // gating may have moved on while the fetch was in flight
-          });
+        .then(function (host) {
+          return host.open(VIBING_SEED, vibingCanvas);
+        })
+        .then(function (o) {
+          vOffice = o;
+          // Re-apply the active chips so the booted office matches what the OSD
+          // reports: a fresh Office follows the clock (WeatherPolicy::Clock) while the `clear`
+          // chip renders is-active, and a chip clicked DURING this async boot
+          // skipped its `if (vOffice)` setter yet still set aria-pressed.
+          const w0 = vibingStage.querySelector('.osd__chip[data-weather].is-active');
+          if (w0) vOffice.call('set_weather', w0.dataset.weather);
+          const t0 = vibingStage.querySelector('.osd__chip[data-theme].is-active');
+          if (t0) vOffice.call('set_theme', t0.dataset.theme);
+          setSliderPhase(scrubHour);
+          syncCanvas(); // gating may have moved on while the boot was in flight
         })
         .catch(function () {
-          // wasm never loaded after the bounded retry: null the shared promise so a
-          // later-booting consumer can retry after a recovered outage.
-          window.__pixWasm = null;
+          /* the stage stays blank; officeHost lets a later consumer retry */
         });
     }
     function syncCanvas() {
@@ -356,7 +343,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       vibingWeather.addEventListener('click', function (e) {
         const chip = e.target.closest('.osd__chip[data-weather]');
         if (!chip) return;
-        if (vOffice) vOffice.set_weather(chip.dataset.weather);
+        if (vOffice) vOffice.call('set_weather', chip.dataset.weather);
         vibingWeather.querySelectorAll('.osd__chip').forEach(function (x) {
           const on = x === chip;
           x.classList.toggle('is-active', on);
@@ -368,7 +355,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       vibingTheme.addEventListener('click', function (e) {
         const chip = e.target.closest('.osd__chip[data-theme]');
         if (!chip) return;
-        if (vOffice) vOffice.set_theme(chip.dataset.theme);
+        if (vOffice) vOffice.call('set_theme', chip.dataset.theme);
         vibingTheme.querySelectorAll('.osd__chip').forEach(function (x) {
           const on = x === chip;
           x.classList.toggle('is-active', on);

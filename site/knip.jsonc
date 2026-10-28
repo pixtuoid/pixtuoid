@@ -7,10 +7,10 @@
   // blanket knip loosening) so a genuinely dead interface elsewhere still trips.
   "ignoreExportsUsedInFile": { "interface": true },
   "ignore": [
-    // The #705 audio module worker and the music's worker and worklet: loaded
-    // at runtime via `new Worker(…)` and `audioWorklet.addModule(…)` from
-    // office-driver.js and OfficeBackdrop.astro — no static import to trace.
-    "public/audio-worker.js",
+    // The office host and the music's worker and worklet: loaded at runtime via
+    // `new Worker(…)`, `import(…)` and `audioWorklet.addModule(…)` from
+    // office-driver.js — no static import to trace.
+    "public/office-host.js",
     "public/music-worker.js",
     "public/music-worklet.js",
     // The #721 shared wasm-Office driver: dynamic-`import()`ed at runtime from
