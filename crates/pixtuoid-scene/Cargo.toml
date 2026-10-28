@@ -32,7 +32,7 @@ native         = ["pixtuoid-core/native"]
 cutaway-assets = []
 
 [dependencies]
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.20.0", default-features = false }
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", default-features = false }
 pixtuoid-lofi = { workspace = true }
 tracing       = { workspace = true }
 lru           = { workspace = true }
@@ -51,7 +51,7 @@ toml_edit = { workspace = true }
 [dev-dependencies]
 # `harness` is dev-only (see core's manifest), so `examples/corpus_check.rs`
 # requests it here rather than in [dependencies].
-pixtuoid-core = { path = "../pixtuoid-core", version = "0.20.0", default-features = false, features = ["harness"] }
+pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", default-features = false, features = ["harness"] }
 serde_json = { workspace = true }
 proptest   = { workspace = true }
 tempfile   = { workspace = true }

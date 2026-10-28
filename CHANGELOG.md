@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0](https://github.com/pixtuoid/pixtuoid/compare/v0.20.0...v0.21.0) - 2026-10-28
+
+### Bug Fixes
+
+- *(hermes)* [**breaking**] hermes 0.22.5's gateway: an in-process plugin reads each session's real cwd ([#1943](https://github.com/pixtuoid/pixtuoid/pull/1943))
+- *(tui)* Ctrl-L repaints without asking the terminal where its cursor is ([#1890](https://github.com/pixtuoid/pixtuoid/pull/1890))
+- *(core)* RFC 3339 stamps parse with chrono, and the poll deadline is inclusive ([#1942](https://github.com/pixtuoid/pixtuoid/pull/1942))
+- *(watcher)* an append to a held-open transcript decodes on macOS ([#1923](https://github.com/pixtuoid/pixtuoid/pull/1923))
+- *(hermetic)* a turn that hangs is killed at its budget, and its source runs no more turns that leg ([#1908](https://github.com/pixtuoid/pixtuoid/pull/1908))
+- *(core)* Turn::PROFILE is crate-visible, as hawk requires ([#1913](https://github.com/pixtuoid/pixtuoid/pull/1913))
+- *(omp)* a profile created mid-run is watched at once ([#1906](https://github.com/pixtuoid/pixtuoid/pull/1906))
+- *(watcher)* a transcript root is watched whenever it exists ([#1905](https://github.com/pixtuoid/pixtuoid/pull/1905))
+- *(hermetic)* the TUI driver finds hermes 0.22.5's framed composer ([#1900](https://github.com/pixtuoid/pixtuoid/pull/1900))
+- *(hermetic)* dsh's async delegation settles the parent turn ([#1897](https://github.com/pixtuoid/pixtuoid/pull/1897))
+- *(hermetic)* grok's TUI starts in a trusted workspace ([#1839](https://github.com/pixtuoid/pixtuoid/pull/1839)) ([#1899](https://github.com/pixtuoid/pixtuoid/pull/1899))
+- *(hook)* a panic in the shim exits 0 silently under either panic strategy ([#1889](https://github.com/pixtuoid/pixtuoid/pull/1889))
+
+### Documentation
+
+- *(install)* cursor's subagent hooks are unregistered on evidence ([#1950](https://github.com/pixtuoid/pixtuoid/pull/1950))
+
+### Features
+
+- [**breaking**] an open turn is Running, drawn typing at the desk ([#1944](https://github.com/pixtuoid/pixtuoid/pull/1944))
+- *(core)* [**breaking**] turn keys, one channel per signal kind ([#1940](https://github.com/pixtuoid/pixtuoid/pull/1940))
+- *(hermetic)* codewhale runs in the hermetic tier, keyed on v0.10.2's session id ([#1902](https://github.com/pixtuoid/pixtuoid/pull/1902))
+- *(scene)* [**breaking**] one pixel face, Fusion Pixel 8px, for every text pixtuoid draws ([#1894](https://github.com/pixtuoid/pixtuoid/pull/1894))
+- *(tui)* [**breaking**] pixtuoid draws the cutaway by default, and --look picks the office ([#1835](https://github.com/pixtuoid/pixtuoid/pull/1835))
+- *(hermetic)* the nightly files one issue per failing source ([#1909](https://github.com/pixtuoid/pixtuoid/pull/1909))
+- *(audio)* pixtuoid-lofi 0.3: a stereo plate, hats, and songs that open and close ([#1946](https://github.com/pixtuoid/pixtuoid/pull/1946))
+
+### Miscellaneous
+
+- type-check the JS and Python, each plugin against its host's published API ([#1952](https://github.com/pixtuoid/pixtuoid/pull/1952))
+- *(scripts)* gate the Python on ruff, its selftests on unittest ([#1951](https://github.com/pixtuoid/pixtuoid/pull/1951))
+- *(ci)* delete guards against failures that never occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1883](https://github.com/pixtuoid/pixtuoid/pull/1883))
+- *(hermetic)* pin omp at 18.13.1 ([#1936](https://github.com/pixtuoid/pixtuoid/pull/1936))
+- *(hermetic)* pin openclaw at 2026.10.8 ([#1935](https://github.com/pixtuoid/pixtuoid/pull/1935))
+- *(hermetic)* pin claude-code at 2.1.311 ([#1937](https://github.com/pixtuoid/pixtuoid/pull/1937))
+- *(hermetic)* pin copilot at 1.0.104 ([#1938](https://github.com/pixtuoid/pixtuoid/pull/1938))
+- *(hermetic)* pin reasonix at 2.53.1 ([#1939](https://github.com/pixtuoid/pixtuoid/pull/1939))
+- *(hermetic)* pin omp at 18.12.6 ([#1919](https://github.com/pixtuoid/pixtuoid/pull/1919))
+- *(hermetic)* pin openclaw at 2026.10.7 ([#1918](https://github.com/pixtuoid/pixtuoid/pull/1918))
+- *(hermetic)* pin reasonix at 2.52.0 ([#1916](https://github.com/pixtuoid/pixtuoid/pull/1916))
+- *(hermetic)* pin kimi at 2.3.3 ([#1917](https://github.com/pixtuoid/pixtuoid/pull/1917))
+- *(hermetic)* pin reasonix at 2.51.0 ([#1882](https://github.com/pixtuoid/pixtuoid/pull/1882))
+- *(hermetic)* pin kimi at 2.3.2 ([#1881](https://github.com/pixtuoid/pixtuoid/pull/1881))
+- *(hermetic)* pin reasonix at 2.50.0 ([#1878](https://github.com/pixtuoid/pixtuoid/pull/1878))
+- *(hermetic)* pin claude-code at 2.1.310 ([#1879](https://github.com/pixtuoid/pixtuoid/pull/1879))
+- *(hermetic)* pin copilot at 1.0.103 ([#1880](https://github.com/pixtuoid/pixtuoid/pull/1880))
+- *(hermetic)* pin claude-code at 2.1.309 ([#1859](https://github.com/pixtuoid/pixtuoid/pull/1859))
+- *(hermetic)* pin kimi at 2.3.1 ([#1857](https://github.com/pixtuoid/pixtuoid/pull/1857))
+- *(hermetic)* pin opencode at 2.1.4 ([#1858](https://github.com/pixtuoid/pixtuoid/pull/1858))
+- *(hermetic)* pin codex at 0.164.0 ([#1860](https://github.com/pixtuoid/pixtuoid/pull/1860))
+- *(ci)* delete safeguards that name no reachable failure ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1855](https://github.com/pixtuoid/pixtuoid/pull/1855))
+- *(deps)* take vt100 0.18; hold lru to ratatui-core's copy ([#1848](https://github.com/pixtuoid/pixtuoid/pull/1848))
+- *(hermetic)* pin opencode at 2.1.3 ([#1840](https://github.com/pixtuoid/pixtuoid/pull/1840))
+- *(hermetic)* pin claude-code at 2.1.308 ([#1842](https://github.com/pixtuoid/pixtuoid/pull/1842))
+- *(hermetic)* pin openclaw at 2026.10.6 ([#1841](https://github.com/pixtuoid/pixtuoid/pull/1841))
+- *(lints)* require #[must_use] on exported methods that return Self ([#1838](https://github.com/pixtuoid/pixtuoid/pull/1838))
+- *(hermetic)* pin kimi at 2.3.0 ([#1832](https://github.com/pixtuoid/pixtuoid/pull/1832))
+- *(hermetic)* pin opencode at 2.1.2 ([#1833](https://github.com/pixtuoid/pixtuoid/pull/1833))
+- *(hermetic)* pin claude-code at 2.1.306 ([#1834](https://github.com/pixtuoid/pixtuoid/pull/1834))
+
+### Performance
+
+- *(hermetic)* rebalance the shards on measured per-source run time ([#1861](https://github.com/pixtuoid/pixtuoid/pull/1861))
+
+### Refactoring
+
+- *(core)* [**breaking**] each source's native half owns its focus probe ([#1959](https://github.com/pixtuoid/pixtuoid/pull/1959))
+- *(tests)* one fixture home per CLI, tests/sources/<module>/ ([#1958](https://github.com/pixtuoid/pixtuoid/pull/1958))
+- [**breaking**] the slot states take the industry's names, Running and RequiresAction ([#1929](https://github.com/pixtuoid/pixtuoid/pull/1929))
+- [**breaking**] tool and request events take the industry's names ([#1928](https://github.com/pixtuoid/pixtuoid/pull/1928))
+- *(core)* [**breaking**] the activity state settles at once, with no presentation debounce ([#1927](https://github.com/pixtuoid/pixtuoid/pull/1927))
+- *(core)* [**breaking**] a turn's end is a typed TurnEnd, not an id-less tool end ([#1925](https://github.com/pixtuoid/pixtuoid/pull/1925))
+- *(core)* [**breaking**] a transcript line decoder cannot fail ([#1907](https://github.com/pixtuoid/pixtuoid/pull/1907))
+- *(scene)* [**breaking**] delete guards against failures that never occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1886](https://github.com/pixtuoid/pixtuoid/pull/1886))
+- *(pixtuoid)* delete guards against failures that never occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1885](https://github.com/pixtuoid/pixtuoid/pull/1885))
+- *(core)* delete safeguards for states that cannot occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1864](https://github.com/pixtuoid/pixtuoid/pull/1864))
+- *(pixtuoid)* delete safeguards for states that cannot occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1866](https://github.com/pixtuoid/pixtuoid/pull/1866))
+- *(core)* each source module owns its DESCRIPTOR ([#1957](https://github.com/pixtuoid/pixtuoid/pull/1957))
+- *(core)* one kqueue wake slot for the crate's kqueue threads ([#1904](https://github.com/pixtuoid/pixtuoid/pull/1904))
+- *(core)* delete guards against failures that never occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1884](https://github.com/pixtuoid/pixtuoid/pull/1884))
+- *(scene)* delete safeguards for states that cannot occur ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1865](https://github.com/pixtuoid/pixtuoid/pull/1865))
+
+### Testing
+
+- *(fixtures)* every capture is recorded at its source's pin, and the stale ones go ([#1949](https://github.com/pixtuoid/pixtuoid/pull/1949))
+- *(pixtuoid)* delete tests another test already fails for ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1872](https://github.com/pixtuoid/pixtuoid/pull/1872))
+- *(hermetic)* a scenario can cancel its turn mid-stream ([#1926](https://github.com/pixtuoid/pixtuoid/pull/1926))
+- *(core)* delete tests another test already fails for ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1871](https://github.com/pixtuoid/pixtuoid/pull/1871))
+- *(scene)* delete tests another test already fails for ([#1673](https://github.com/pixtuoid/pixtuoid/pull/1673)) ([#1873](https://github.com/pixtuoid/pixtuoid/pull/1873))
+
+### Build
+
+- one newest toolchain from rust-toolchain.toml; like-for-like CodSpeed runs ([#1843](https://github.com/pixtuoid/pixtuoid/pull/1843))
+
+### Ci
+
+- *(packaging)* replay the formula's connect failure path ([#1836](https://github.com/pixtuoid/pixtuoid/pull/1836))
+
 ## [0.20.0](https://github.com/pixtuoid/pixtuoid/compare/v0.19.0...v0.20.0) - 2026-10-21
 
 ### Upgrading
