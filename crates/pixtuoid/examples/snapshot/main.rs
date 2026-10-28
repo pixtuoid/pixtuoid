@@ -908,17 +908,16 @@ mod tests {
             .values()
             .find(|a| a.floor_idx > 0)
             .expect("a scene with 9 agents over 4 desks must reach an upper floor");
-        let session = upper.session_id.to_string();
-        let floor = upper.floor_idx;
+        let (floor, desk) = (upper.floor_idx, upper.desk_index.0);
 
         let history = pixtuoid_scene::pose::PoseHistory::new();
-        let args = crop_args(&["--crop-agent", &session]);
+        let args = crop_args(&["--crop-agent", &upper.session_id]);
         let rect = compute_crop_rect(&args, &scene, &history, 192, 64, now)
-            .unwrap_or_else(|e| panic!("floor {floor} agent {session:?} must crop: {e}"))
+            .unwrap_or_else(|e| panic!("floor {floor} agent at desk {desk} must crop: {e}"))
             .expect("a seated agent crops");
         assert!(
             rect.width > 0 && rect.height > 0,
-            "empty crop for {session:?}"
+            "empty crop for desk {desk}"
         );
     }
 
