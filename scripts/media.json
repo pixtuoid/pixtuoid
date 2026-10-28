@@ -1,50 +1,5 @@
 [
  {
-  "id": "screenshot",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2
- },
- {
-  "id": "dashboard",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2,
-  "extra": [
-   "--dashboard"
-  ]
- },
- {
-  "id": "connection",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2,
-  "extra": [
-   "--connection"
-  ]
- },
- {
   "id": "themes-composite",
   "kind": "composite",
   "targets": [
@@ -77,30 +32,6 @@
   "hour": 19,
   "day": 1,
   "theme": "normal"
- },
- {
-  "id": "reference",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "day": 1,
-  "frames": [
-   {
-    "name": "reference-screenshot",
-    "theme": "normal",
-    "hour": 19,
-    "weather": "clear"
-   },
-   {
-    "name": "reference-night",
-    "theme": "cyberpunk",
-    "hour": 1,
-    "weather": "clear"
-   }
-  ]
  },
  {
   "id": "demo",
