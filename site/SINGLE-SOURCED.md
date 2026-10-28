@@ -39,7 +39,7 @@ Notes no gate carries:
 
 - **`OfficeBackdrop`'s reveal roll is FRAME-driven, never clock-driven.**
   Safari can stall the whole main thread ~1.4s in tab-snapshot IPC right as
-  the roll starts; a wall-clock ramp froze mid-roll and SNAPPED. So `paint()`
+  the roll starts; a wall-clock ramp froze mid-roll and SNAPPED. So `revealAt()`
   accumulates `reveal.elapsed` per PAINTED frame (step clamped to
   `REVEAL_MAX_STEP_MS`, DERIVED from `FRAME_MS` — a hardcoded twin silently
   disarms the clamp), holds the start for `REVEAL_READY_FRAMES` on-budget

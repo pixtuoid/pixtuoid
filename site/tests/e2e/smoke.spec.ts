@@ -260,7 +260,7 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
       const c = document.getElementById('office-live') as HTMLCanvasElement;
       return (c.width * 130) / c.height;
     });
-  expect(await unitsW()).toBe(231);
+  await expect.poll(unitsW).toBe(231);
   await page.setViewportSize({ width: 500, height: 900 });
   await expect.poll(unitsW).toBe(72);
   expect(errors()).toEqual([]);

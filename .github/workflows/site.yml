@@ -39,9 +39,11 @@ jobs:
       - if: steps.lockfile.outputs.changed == 'true'
         run: npm run audit
 
-  # A PR that changes the page or a wasm crate it loads runs `check` on the
-  # light tier too: the queue can merge it on that tier alone, which is how
-  # #1978 reached main past the landing page's Lighthouse budget.
+  # A PR that changes the page or its web crates runs `check` on the light
+  # tier too: the queue can merge it on that tier alone, which is how #1978
+  # reached main past the landing page's Lighthouse budget. The engine crates
+  # stay out: the page runs them off its thread (office-host.js), wasm-check
+  # caps their size on every PR, and most PRs touch them.
   scope:
     name: site runtime in scope
     runs-on: ubuntu-latest
