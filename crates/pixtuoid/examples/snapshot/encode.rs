@@ -7,13 +7,13 @@ use image::{Delay, Frame as GifFrame, Rgba, RgbaImage};
 use pixtuoid::dev::{DrawCtx, draw_scene};
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, paint_grid};
-use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PerFloor};
+use pixtuoid_scene::floor::{FloorMeta, FloorSession, PerFloor};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::theme::Theme;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-use crate::cutaway::{CutawayOffice, Office, Session};
+use crate::cutaway::{CutawayOffice, CutawaySession};
 use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 
 /// Print a connectedness report for the walkable mask: a BFS from the door threshold,
@@ -240,7 +240,7 @@ pub(crate) fn save_backend_as_png(
 
 /// [`cells_to_rgba`], `cutaway`'s office over its scene cells where there is
 /// one: the frame every still and `--gif` capture writes.
-pub(crate) fn compose<S: Session>(
+pub(crate) fn compose<S: CutawaySession>(
     term_buf: &ratatui::buffer::Buffer,
     area: ratatui::layout::Rect,
     cutaway: Option<&CutawayOffice<S>>,
@@ -360,9 +360,9 @@ impl FrameSink {
         })
     }
 
-    /// Frame `n`'s file in a [`Self::Pngs`] `dir`, `f%04d.png` from 1, as
-    /// gen-media.py's `poster_frame` reads.
-    pub(crate) fn png(dir: &Path, n: usize) -> PathBuf {
+    /// Frame `n`'s file in a [`Self::Pngs`] `dir`, counted from 1: the name
+    /// gen-media.py's `FRAME_PATTERN` matches.
+    pub(crate) fn frame_path(dir: &Path, n: usize) -> PathBuf {
         dir.join(format!("f{n:04}.png"))
     }
 
@@ -373,7 +373,7 @@ impl FrameSink {
             }
             Self::Pngs { dir, written } => {
                 *written += 1;
-                rgba.save(Self::png(dir, *written))?;
+                rgba.save(Self::frame_path(dir, *written))?;
             }
         }
         Ok(())
@@ -426,15 +426,19 @@ impl AnimJob<'_> {
 }
 
 /// Drive the real TuiRenderer (slide transition, footer floor chip, pet motion) frame by
-/// frame, `cutaway`'s office over its TestBackend cell buffer where there is
-/// one, and encode it.
+/// frame and encode its TestBackend cell buffer; with `cutaway`, a second
+/// office navigated as the renderer's is painted over its office cells.
 pub(crate) fn save_renderer_animation(
     job: &AnimJob,
     term: Terminal<TestBackend>,
     navigations: &[(u64, usize)],
     pets: Vec<pixtuoid_scene::pet::Pet>,
-    cutaway: Option<CutawayOffice<Office>>,
+    cutaway: bool,
 ) -> Result<()> {
+    let size = term.size()?;
+    let cutaway = cutaway
+        .then(|| CutawayOffice::of_renderer(job.pack, size.width, size.height, pets.clone()))
+        .transpose()?;
     let mut r =
         pixtuoid::dev::TuiRenderer::new(term, job.theme, pets, std::sync::Arc::clone(job.pack));
     r.set_weather(job.weather);
@@ -454,14 +458,7 @@ pub(crate) fn save_renderer_animation(
             }
             r.render(job.scene, now)?;
             if let Some(cutaway) = cutaway {
-                // The office the renderer steps, as `TuiRenderer::render` hands it.
-                let world = FloorInputs {
-                    scene: job.scene,
-                    now,
-                    floor: FloorMeta::ground().with_weather(job.weather),
-                    pets: Default::default(),
-                };
-                cutaway.render(world, job.theme)?;
+                cutaway.render(r.office_world(job.scene, now), job.theme)?;
             }
             Ok(())
         },

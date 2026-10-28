@@ -522,18 +522,14 @@ fn main() -> Result<()> {
     };
     let anim_dest = args.frames_dir.as_deref().unwrap_or(&args.out);
     if !navigations.is_empty() || !pet_vec.is_empty() {
-        let cutaway = args
-            .cutaway
-            .then(|| CutawayOffice::office(&pack, cols, rows, pet_vec.clone()))
-            .transpose()?;
-        save_renderer_animation(&anim_job, term, &navigations, pet_vec, cutaway)?;
+        save_renderer_animation(&anim_job, term, &navigations, pet_vec, args.cutaway)?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
 
     let mut cutaway = args
         .cutaway
-        .then(|| CutawayOffice::floor(&pack, cols, rows))
+        .then(|| CutawayOffice::of_draw_scene(&pack, cols, rows))
         .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;

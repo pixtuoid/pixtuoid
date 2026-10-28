@@ -554,6 +554,12 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         self.chrome.motion = motion;
     }
 
+    /// The office's inputs over `scene` at `now`, as [`Self::render`] steps
+    /// its floors with them.
+    pub fn office_world<'a>(&'a self, scene: &'a SceneState, now: SystemTime) -> FloorInputs<'a> {
+        self.chrome.office_world(scene, now)
+    }
+
     /// The loop's panels for the next frames, the version popup animating
     /// toward theirs.
     pub fn set_frames(&mut self, frames: crate::panels::ui_state::RenderFrames, now: SystemTime) {

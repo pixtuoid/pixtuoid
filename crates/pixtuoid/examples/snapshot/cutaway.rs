@@ -26,7 +26,7 @@ pub(crate) struct CutawayOffice<S> {
 
 /// What a cutaway steps: what the classic frame beside it steps, so both show
 /// one office.
-pub(crate) trait Session {
+pub(crate) trait CutawaySession {
     /// Step and draw one frame of `inputs` in `look`.
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>);
 
@@ -36,7 +36,7 @@ pub(crate) trait Session {
 }
 
 /// `draw_scene`'s one floor, under the `FloorMeta` it is handed (`--floor-seed`).
-impl Session for FloorSession {
+impl CutawaySession for FloorSession {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
         self.render(look, inputs);
     }
@@ -46,14 +46,14 @@ impl Session for FloorSession {
     }
 }
 
-/// A `TuiRenderer`'s office: every floor its scene fills, the pet each picks
-/// of `pets`, and the slide between two.
-pub(crate) struct Office {
+/// A second office stepped beside a `TuiRenderer`'s: every floor its scene
+/// fills, the pet each picks of `pets`, and the slide between two.
+pub(crate) struct RendererOffice {
     session: OfficeSession,
     pets: Vec<Pet>,
 }
 
-impl Session for Office {
+impl CutawaySession for RendererOffice {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
         // Nothing here plays its audio or reports its pacing.
         let _ = self
@@ -68,20 +68,20 @@ impl Session for Office {
 
 impl CutawayOffice<FloorSession> {
     /// The cutaway of `draw_scene`'s floor on a `cols`×`rows` terminal.
-    pub(crate) fn floor(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
+    pub(crate) fn of_draw_scene(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
         Self::fitted(FloorSession::new(Arc::clone(pack)), pack, cols, rows)
     }
 }
 
-impl CutawayOffice<Office> {
+impl CutawayOffice<RendererOffice> {
     /// The cutaway of a `TuiRenderer` with `pets` on a `cols`×`rows` terminal.
-    pub(crate) fn office(
+    pub(crate) fn of_renderer(
         pack: &Arc<OfficeArt>,
         cols: u16,
         rows: u16,
         pets: Vec<Pet>,
     ) -> Result<Self> {
-        let office = Office {
+        let office = RendererOffice {
             session: OfficeSession::new(Arc::clone(pack)),
             pets,
         };
@@ -94,7 +94,7 @@ impl CutawayOffice<Office> {
     }
 }
 
-impl<S: Session> CutawayOffice<S> {
+impl<S: CutawaySession> CutawayOffice<S> {
     /// `session`, drawn as the cutaway the TUI fits to a `cols`×`rows` terminal.
     fn fitted(session: S, pack: &OfficeArt, cols: u16, rows: u16) -> Result<Self> {
         let cell = terminal_cell();
@@ -178,7 +178,7 @@ mod tests {
     }
 
     /// `img`'s office, above its footer.
-    fn office(img: &RgbaImage) -> Vec<Rgba<u8>> {
+    fn office_band(img: &RgbaImage) -> Vec<Rgba<u8>> {
         band(img, 0..footer_top())
     }
 
@@ -190,10 +190,10 @@ mod tests {
             band(classic, footer_top()..classic.height()),
             "the footer moved"
         );
-        let ours = office(composed);
+        let ours = office_band(composed);
         let changed = ours
             .iter()
-            .zip(office(classic))
+            .zip(office_band(classic))
             .filter(|(a, b)| **a != *b)
             .count();
         assert!(
@@ -219,7 +219,7 @@ mod tests {
         let cells = term.backend().buffer();
         let classic = cells_to_rgba(cells, cells.area);
 
-        let mut cutaway = CutawayOffice::floor(&pack, COLS, ROWS).unwrap();
+        let mut cutaway = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
         let world = FloorInputs {
             scene: &scene,
             now,
@@ -255,11 +255,9 @@ mod tests {
             theme: &NORMAL,
             weather: Default::default(),
         };
-        let cutaway =
-            cutaway.then(|| CutawayOffice::office(&pack, COLS, ROWS, pets.to_vec()).unwrap());
         let term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         save_renderer_animation(&job, term, navigations, pets.to_vec(), cutaway).unwrap();
-        let last = FrameSink::png(frames.path(), timeline.frame_count());
+        let last = FrameSink::frame_path(frames.path(), timeline.frame_count());
         image::open(last).unwrap().to_rgba8()
     }
 
@@ -274,11 +272,11 @@ mod tests {
         let frame = renderer_frame(&scene, true, &cat, &up);
         assert_cutaway_over(&frame, &renderer_frame(&scene, false, &cat, &up));
         assert!(
-            office(&frame) != office(&renderer_frame(&scene, true, &[], &up)),
+            office_band(&frame) != office_band(&renderer_frame(&scene, true, &[], &up)),
             "the cutaway drew no pet"
         );
         assert!(
-            office(&frame) != office(&renderer_frame(&scene, true, &cat, &[])),
+            office_band(&frame) != office_band(&renderer_frame(&scene, true, &cat, &[])),
             "the cutaway stayed on its floor"
         );
     }
