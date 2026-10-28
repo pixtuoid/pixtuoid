@@ -2971,6 +2971,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixtuoid-web-music"
+version = "0.21.0"
+dependencies = [
+ "pixtuoid-scene",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

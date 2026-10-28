@@ -26,8 +26,8 @@ use crate::script::{
     Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
 };
 
+use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::audio::{Frame, OneShotPool, Performance};
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{Look, Place, RenderInputs};
@@ -216,7 +216,7 @@ impl Office {
     /// `performance.now()` and NOT a `requestAnimationFrame` timestamp: those are
     /// ms-since-page-load, which pins the day/night cycle and wall clock at 1970.
     pub fn step(&mut self, now_ms: f64, w: u32, h: u32) {
-        let now = from_epoch_ms(now_ms);
+        let now = pixtuoid_scene::anim::from_epoch_ms(now_ms);
         self.last_now = Some(now);
         let buf_w = w.clamp(1, u32::from(u16::MAX)) as u16;
         let buf_h = h.clamp(1, u32::from(u16::MAX)) as u16;
@@ -535,12 +535,6 @@ pub struct SynthTake {
     driver: audio::WebAudioDriver,
 }
 
-/// JS's UNIX-epoch milliseconds as a `SystemTime`. `f64 as u64` saturates
-/// (negatives and NaN to 0), so no input needs a pre-clamp.
-fn from_epoch_ms(ms: f64) -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_millis(ms as u64)
-}
-
 #[wasm_bindgen]
 impl SynthTake {
     #[wasm_bindgen(constructor)]
@@ -595,52 +589,6 @@ fn oneshot_wires() -> Vec<u8> {
 /// with: it de-zippers the ticks' steps, well inside the mixer's own slew,
 /// which already crossfades.
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
-
-/// The music worker's lofi `Performance`, rendered in the chunks the worklet
-/// asks for.
-#[wasm_bindgen]
-#[derive(Debug)]
-pub struct MusicStream {
-    performance: Performance,
-    frames: Vec<Frame>,
-}
-
-#[wasm_bindgen]
-impl MusicStream {
-    /// A stream starting at `now_ms` (UNIX-epoch milliseconds, the
-    /// `Office::step` contract) under the office's first `controls`, a tick's
-    /// `music.controls` as `audio_tick` wrote them, which pick its first song.
-    ///
-    /// # Errors
-    ///
-    /// When `controls` isn't the wire's.
-    #[wasm_bindgen(constructor)]
-    pub fn new(now_ms: f64, controls: &[f32]) -> Result<MusicStream, JsError> {
-        let controls = audio::controls_from_wire(controls)
-            .ok_or_else(|| JsError::new("not the music's controls"))?;
-        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
-        Ok(MusicStream {
-            performance: Performance::new(seed, controls),
-            frames: Vec::new(),
-        })
-    }
-
-    /// The office's latest `controls`, as `audio_tick` wrote them, which the
-    /// next bar latches; `false` when they aren't the wire's.
-    pub fn set_controls(&mut self, controls: &[f32]) -> bool {
-        audio::controls_from_wire(controls)
-            .map(|c| self.performance.set_controls(c))
-            .is_some()
-    }
-
-    /// Render the next `frames` frames and return where their `2 × frames`
-    /// interleaved samples sit, valid until the next wasm call.
-    pub fn render(&mut self, frames: usize) -> *const f32 {
-        self.frames.resize(frames, Frame::default());
-        self.performance.render(&mut self.frames);
-        self.frames.as_flattened().as_ptr()
-    }
-}
 
 impl Office {
     /// The rendered RGBA frame (`w*h*4`, opaque alpha) — the safe NATIVE accessor
@@ -834,7 +782,6 @@ fn push_board_segments(
 mod tests {
     use super::*;
     use crate::script::cast_id;
-    use pixtuoid_scene::audio::Controls;
     use pixtuoid_scene::screen::{Flashes, ManualClock};
 
     /// `Office::new`'s error arm constructs a `JsError`, so unwrap via match.
@@ -908,49 +855,6 @@ mod tests {
         assert_eq!(o.audio_loop_ptr(rain), baseline, "live driver untouched");
         assert!(!o.audio_adopt_loop(0, &[0.1]));
         assert!(!o.audio_adopt_oneshot(0, &[0.1]));
-    }
-
-    /// The worker's stream plays the song its first controls pick, chunk
-    /// after chunk with no seam.
-    #[test]
-    fn a_music_stream_renders_the_performance_its_first_controls_pick() {
-        let now_ms = 1_753_000_000_000.0;
-        let night = Controls::default().with_daylight(0.0).with_intensity(1.0);
-        let tick = pixtuoid_scene::audio::TickCommands {
-            music: Some(pixtuoid_scene::audio::MusicCmd {
-                controls: night,
-                gain: 1.0,
-            }),
-            ..Default::default()
-        };
-        // The wire as the worker gets it: the tick's JSON, its controls unread.
-        let json: serde_json::Value =
-            serde_json::from_str(&audio::commands_json(&tick)).expect("valid JSON");
-        let wire: Vec<f32> =
-            serde_json::from_value(json["music"]["controls"].clone()).expect("floats");
-        let Ok(mut stream) = MusicStream::new(now_ms, &wire) else {
-            panic!("the wire's controls start a stream");
-        };
-        assert!(stream.set_controls(&wire));
-        assert!(!stream.set_controls(&wire[..1]), "a torn wire is refused");
-        let mut heard = Vec::new();
-        for n in [1000, 3000] {
-            let ptr = stream.render(n);
-            assert_eq!(ptr, stream.frames.as_flattened().as_ptr());
-            heard.extend_from_slice(&stream.frames);
-        }
-        let seed = pixtuoid_scene::audio::music_seed(from_epoch_ms(now_ms));
-        let performed = |c| {
-            let mut want = vec![Frame::default(); heard.len()];
-            Performance::new(seed, c).render(&mut want);
-            want
-        };
-        assert_eq!(heard, performed(night));
-        assert_ne!(
-            heard,
-            performed(Controls::default()),
-            "premise: a day start differs"
-        );
     }
 
     /// Anchor sim time well past 0 so `exiting_at`-style guards never see the

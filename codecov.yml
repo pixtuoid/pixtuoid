@@ -41,6 +41,9 @@ component_management:
     - component_id: web
       name: pixtuoid-web
       paths: ["crates/pixtuoid-web/**"]
+    - component_id: web-music
+      name: pixtuoid-web-music
+      paths: ["crates/pixtuoid-web-music/**"]
 
 comment:
   layout: "condensed_header, diff, components, files"

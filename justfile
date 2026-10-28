@@ -502,7 +502,7 @@ _api-toolchain:
 _install-public-api:
     cargo binstall -y cargo-public-api@{{ API_PUBLIC_API }}
 
-# `pixtuoid_web`'s `pub` surface is the wasm exports the site's JS calls,
+# The web crates' `pub` surface is the wasm exports the site's JS calls,
 # outside the workspace: hawk's `--exclude-crate` case.
 [doc('Fail on a `pub` item no other workspace crate needs (cargo-hawk; the full tier gates on it); forwards args, e.g. --fix')]
 [group('rust')]
@@ -521,7 +521,7 @@ hawk *args: _hawk-toolchain
     fi
     # The `-A`: AGENTS.md's Visibility rule stops at `pub(crate)`, never private.
     PATH="$bin:$PATH" cargo +{{ HAWK_RUST }} hawk check --target-dir target/hawk \
-        --exclude-crate pixtuoid_web -D warnings -A hawk::unnecessary_restricted_visibility "$@"
+        --exclude-crate pixtuoid_web --exclude-crate pixtuoid_web_music -D warnings -A hawk::unnecessary_restricted_visibility "$@"
 
 [private]
 _hawk-toolchain:
@@ -881,15 +881,17 @@ _wasm-bindgen-version:
     @awk '$0 == "name = \"wasm-bindgen\"" { getline; gsub(/"/, "", $3); print $3; found = 1 } END { exit !found }' Cargo.lock
 
 # The output is gitignored; CI builds it through .github/actions/gen-wasm.
-[doc('Build pixtuoid-web (wasm) + JS glue into site/public/wasm/')]
+[doc('Build pixtuoid-web and pixtuoid-web-music (wasm) + JS glue into site/public/wasm/')]
 [group('site')]
 gen-wasm: (_targets "wasm32-unknown-unknown")
     #!/usr/bin/env bash
     set -eu
-    cargo build -p pixtuoid-web --target wasm32-unknown-unknown --profile wasm-release
-    wasm-bindgen --target web --out-dir site/public/wasm \
-        target/wasm32-unknown-unknown/wasm-release/pixtuoid_web.wasm
-    wasm-opt -Oz -o site/public/wasm/pixtuoid_web_bg.wasm site/public/wasm/pixtuoid_web_bg.wasm
+    cargo build -p pixtuoid-web -p pixtuoid-web-music --target wasm32-unknown-unknown --profile wasm-release
+    for lib in pixtuoid_web pixtuoid_web_music; do
+        wasm-bindgen --target web --out-dir site/public/wasm \
+            "target/wasm32-unknown-unknown/wasm-release/$lib.wasm"
+        wasm-opt -Oz -o "site/public/wasm/${lib}_bg.wasm" "site/public/wasm/${lib}_bg.wasm"
+    done
 
 # Bloat gate for the wasm the site ships. Size: the hero must stay
 # a lazy-load behind the poster, so a silent size regression (a dep pulling in

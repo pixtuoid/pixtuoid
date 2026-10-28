@@ -6,6 +6,7 @@ members  = [
     "crates/pixtuoid",
     "crates/pixtuoid-hook",
     "crates/pixtuoid-web",
+    "crates/pixtuoid-web-music",
 ]
 
 [workspace.package]

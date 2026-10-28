@@ -1,8 +1,8 @@
-// The ♩ music OFF the main thread: this worker loads its OWN instance of the
-// site's wasm build (memories can't be shared with the page's instance) and
-// owns the office's lofi stream for the page's life, rendering each chunk the
-// music worklet asks for over the port it was handed. Any message back to the
-// main thread means the music failed.
+// The ♩ music OFF the main thread: this worker loads the music's own wasm build
+// (pixtuoid-web-music, which the office's wasm leaves out) and owns the
+// office's lofi stream for the page's life, rendering each chunk the music
+// worklet asks for over the port it was handed. Any message back to the main
+// thread means the music failed.
 'use strict';
 
 // The stream once built, and the controls that arrived while it was building.

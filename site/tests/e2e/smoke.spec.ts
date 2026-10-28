@@ -446,7 +446,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWorkletUrl } = (
+    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
@@ -460,7 +460,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     const { controls } = JSON.parse(office.audio_tick(0)).music;
     const rate = office.audio_sample_rate();
     const ctx = new OfflineAudioContext(2, rate, rate);
-    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
+    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: musicWasmJsUrl };
     const ahead = office.audio_music_ahead_s();
     const music = await drv.startMusic(ctx, urls, ahead, Date.now(), controls);
     music.node.connect(ctx.destination);

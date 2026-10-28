@@ -4,6 +4,7 @@ import { asset, DIM_RESTING } from '../consts';
 const wasmJsUrl = asset('wasm/pixtuoid_web.js');
 const audioWorkerUrl = asset('audio-worker.js');
 const musicWorkerUrl = asset('music-worker.js');
+const musicWasmJsUrl = asset('wasm/pixtuoid_web_music.js');
 const musicWorkletUrl = asset('music-worklet.js');
 const officeDriverUrl = asset('office-driver.js');
 ---
@@ -318,13 +319,20 @@ const officeDriverUrl = asset('office-driver.js');
   data-wasm-js-url={wasmJsUrl}
   data-audio-worker-url={audioWorkerUrl}
   data-music-worker-url={musicWorkerUrl}
+  data-music-wasm-js-url={musicWasmJsUrl}
   data-music-worklet-url={musicWorkletUrl}
   data-office-driver-url={officeDriverUrl}
 >
   (function () {
     const script = document.currentScript;
-    const { wasmJsUrl, audioWorkerUrl, musicWorkerUrl, musicWorkletUrl, officeDriverUrl } =
-      script.dataset;
+    const {
+      wasmJsUrl,
+      audioWorkerUrl,
+      musicWorkerUrl,
+      musicWasmJsUrl,
+      musicWorkletUrl,
+      officeDriverUrl,
+    } = script.dataset;
 
     const wrap = document.querySelector('.backdrop');
     const canvas = document.getElementById('office-live');
@@ -720,7 +728,7 @@ const officeDriverUrl = asset('office-driver.js');
       if (music === 'idle') {
         music = 'starting';
         window.__pixMusic = 'starting';
-        const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
+        const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: musicWasmJsUrl };
         officeDriver
           .startMusic(audioCtx, urls, office.audio_music_ahead_s(), Date.now(), controls)
           .then(function (m) {

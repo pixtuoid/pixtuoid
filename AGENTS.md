@@ -30,12 +30,12 @@ in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#releasing).
 
 Terminal-native, multi-agent pixel-art visualizer for AI coding agents: each
 running CC session is an animated sprite in an ASCII office. Rust workspace,
-five crates. Overview: [`README.md`](README.md).
+six crates. Overview: [`README.md`](README.md).
 
 ## Layout
 
 ```
-crates/   DAG: pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web}  (+ standalone pixtuoid-hook)
+crates/   DAG: pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web, pixtuoid-web-music}  (+ standalone pixtuoid-hook)
 ├── pixtuoid-core/   headless lib — no terminal deps; `native` feature gates the async
 │                    source runtime (off = wasm32-clean decode/reduce)
 ├── pixtuoid-scene/  render+sim engine — terminal- AND window-free BY CRATE BOUNDARY
@@ -43,6 +43,7 @@ crates/   DAG: pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web}  (+
 ├── pixtuoid/        binary — two thin painters over pixtuoid-scene: `tui/`, `floating/`
 ├── pixtuoid-web/    third painter — wasm canvas, publish=false; a SITE BUILD INPUT
 │                    (`just gen-wasm` → gitignored site/public/wasm/, built in CI)
+├── pixtuoid-web-music/ the site's ♩ lofi in its own wasm, so the office's carries none
 └── pixtuoid-hook/   tiny shim CC invokes — stdin JSON → socket/named pipe
 scripts/  gen-media.py (the ONE driver for the README's committed media and the site's CI-rendered demos), gen-art.py (the generated sprites: every @Nx + the 1x pieces it owns), each shipped plugin's selftest, and in lib/ its harness and the openclaw tier
 policy/   CI contracts no linter sees (jq over yq) + behavior tests of workflow shell
