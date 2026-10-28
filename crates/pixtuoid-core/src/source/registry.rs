@@ -843,8 +843,8 @@ const COPILOT: SourceDescriptor = SourceDescriptor {
 /// sessions are SQLite. The reachable seam is Cursor Hooks
 /// (`~/.cursor/hooks.json`), whose envelope reuses CC's `hook_event_name` field
 /// NAME with camelCase values, so the custom decoder claims every event and keys
-/// on `session_id`. Subagents render FLAT: children run as independent sessions
-/// with no parent-link on the wire.
+/// on `session_id`. A child links to its parent only through a nested
+/// `transcript_path` (`cursor.rs`'s module doc).
 const CURSOR: SourceDescriptor = SourceDescriptor {
     name: cursor::SOURCE_NAME,
     label_prefix: "cu",

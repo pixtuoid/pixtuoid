@@ -20,11 +20,16 @@
 //!   stamped `claude-code`, or unstamped by an install without the env prefix.
 //!   `decoder`'s cross-fire guard drops every one on `cursor_version`. Lossless —
 //!   the `cursor`-stamped copy carries the whole arc.
-//! - **A child is its own session, linked late.** `subagentStart`/`subagentStop`
-//!   and a child `sessionStart` never fire, so the child registers on its first
-//!   tool event; the wire names its parent only in a post's `transcript_path`
-//!   nested under the parent's (`nested_parent`), which a post may also leave
-//!   null. Getting no `sessionEnd`, a child ends with its parent's `Task`.
+//! - **A child is its own session, linked late.** pixtuoid registers no
+//!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`
+//!   (`cursor/fixtures/delegation`), so it registers on its first tool event.
+//!   A hook's `transcript_path` is the first of the child's transcripts that
+//!   exists when the hook runs, else null; once the child's parent is
+//!   registered, the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
+//!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
+//!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
+//!   child (`nested_parent`), and its parent's `Task` post then ends it; the
+//!   committed delegation's child posts carry null, so its child ages out.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
@@ -168,9 +173,9 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
 
 fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     // Cursor's `Task` tool carries a `subagent_type` (capture-verified) — the
-    // SAME stable semantic signal CC's `make_tool_detail` keys on. The children
-    // run as INDEPENDENT sessions with no parent-link in the stream (module
-    // doc), so this is the only delegation signal pixtuoid can render.
+    // SAME stable semantic signal CC's `make_tool_detail` keys on. A child links
+    // to its parent late if at all (module doc), so the parent's `Task` is what
+    // renders the delegation.
     let has_subagent_type = args.and_then(|a| a.get("subagent_type")).is_some();
     if tool == "Task" || has_subagent_type {
         return ToolDetail::Task;
@@ -179,9 +184,8 @@ fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
 }
 
-/// The session a subagent's transcript nests under,
-/// `<parent>/subagents/<child>.jsonl`: the wire names a child's parent nowhere
-/// else, and only on the child's own posts.
+/// The session a subagent's `transcript_path` nests under,
+/// `<parent>/subagents/<child>.jsonl` (module doc).
 fn nested_parent(obj: &HookObject) -> Option<&str> {
     let dir = std::path::Path::new(obj.get("transcript_path")?.as_str()?).parent()?;
     if dir.file_name()? != SUBAGENTS_DIR {

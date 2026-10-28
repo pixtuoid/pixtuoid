@@ -3,8 +3,7 @@
 //! `sources/fixtures/omp/` because the hook decoder derives its keys through
 //! the watcher's `normalize_path_key` FOLD — platform-dependent on Windows,
 //! where omp's stems carry case — while the conformance goldens are
-//! deliberately platform-invariant. (A resume's round also breaks
-//! conformance's shape anyway: its file predates the run.)
+//! deliberately platform-invariant.
 
 use std::time::{Duration, SystemTime};
 

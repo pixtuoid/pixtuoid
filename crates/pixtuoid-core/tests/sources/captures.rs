@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
+use pixtuoid_core::source::decoder::SOURCE_STAMP;
 use pixtuoid_core::source::registry;
 
 /// A committed capture: the bytes, the record of where they came from, and the
@@ -529,14 +530,14 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
         // A `version` holding the INVOCATION reports a drift of nothing for as long
         // as it sits there — the live instance was `"grok --permission-mode default"`.
         let version = r.version.as_str();
-        if version != "unknown" && !version.chars().any(|ch| ch.is_ascii_digit()) {
+        if !version.chars().any(|ch| ch.is_ascii_digit()) {
             bad.push(format!(
                 "{at}: `version` carries no version number: {version:?}"
             ));
         }
 
         let captured = r.captured.as_str();
-        if captured != "unknown" && !is_iso_date(captured) {
+        if !is_iso_date(captured) {
             bad.push(format!("{at}: `captured` is not an ISO date: {captured:?}"));
         }
 
@@ -547,7 +548,7 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                     continue;
                 };
-                if let Some(src) = v.get("_pixtuoid_source").and_then(|s| s.as_str()) {
+                if let Some(src) = v.get(SOURCE_STAMP).and_then(|s| s.as_str()) {
                     stamps.insert(src.to_string());
                 }
                 if let Some(ms) = v.get("_shim_ts_ms").and_then(serde_json::Value::as_i64) {
@@ -577,7 +578,7 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
                 ));
             }
         }
-        if !dates.is_empty() && captured != "unknown" && !dates.contains(captured) {
+        if !dates.is_empty() && !dates.contains(captured) {
             bad.push(format!(
                 "{at}: `captured` {captured} contradicts the stamps in the bytes \
                  ({dates:?}) — the recorder dates in UTC"

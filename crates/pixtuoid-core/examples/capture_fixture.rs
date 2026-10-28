@@ -706,7 +706,8 @@ mod recorder {
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
     /// beside them: the old ones are git's. A run whose record equals theirs but
-    /// for `captured`, and whose bytes match theirs up to ids, leaves both be.
+    /// for `captured`, and whose bytes and reads match theirs up to ids, leaves
+    /// both be.
     fn promote(
         run: &Path,
         root: &Path,
@@ -786,10 +787,12 @@ mod recorder {
             && *old
                 == (Recorded {
                     captured: old.captured.clone(),
+                    sentinel_reads: old.sentinel_reads.clone(),
                     ..fresh_record.clone()
                 })
-            && let Some(bytes) = canonical_capture(&dest)?
-            && canonical_capture(staged.path())?.as_ref() == Some(&bytes)
+            && let Some(bytes) = canonical_capture(&dest, &old.sentinel_reads)?
+            && canonical_capture(staged.path(), &fresh_record.sentinel_reads)?.as_ref()
+                == Some(&bytes)
         {
             println!("kept {named}: the run renamed only its ids");
             return Ok(());
@@ -1971,6 +1974,84 @@ mod recorder {
 
         fn unchanged(text: String) -> String {
             text
+        }
+
+        /// `text` with each uuid and call id a run mints moved `n` steps by
+        /// [`rotated`], as an `n`th run of the same scenario mints them.
+        fn reminted(text: &str, n: usize) -> String {
+            let ids = regex::Regex::new(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|call_[0-9A-Za-z]{16,}",
+            )
+            .expect("the id pattern compiles");
+            ids.replace_all(text, |c: &regex::Captures<'_>| {
+                let id = &c[0];
+                let (prefix, minted) = id.split_at(if id.starts_with("call_") { 5 } else { 0 });
+                let minted: String = minted
+                    .chars()
+                    .map(|ch| (0..n).fold(ch, |ch, _| rotated(ch)))
+                    .collect();
+                format!("{prefix}{minted}")
+            })
+            .into_owned()
+        }
+
+        /// A transcript's name carries the ids its run minted, and so does its
+        /// key in the record's `sentinel_reads`.
+        #[test]
+        fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let root = d.path().join("sources");
+            let s = hermetic::profile("codex")
+                .and_then(|p| p.scenario("tool-run"))
+                .expect("codex's tool-run");
+            let committed = sources_root().join(s.fixture);
+            let record = Provenance::read(&committed.join(PROVENANCE)).expect("its record");
+            let record = record.recorded();
+            assert!(
+                record.sentinel_reads.keys().any(|k| k != HOOK_PAYLOADS),
+                "a read keyed by a transcript: {:?}",
+                record.sentinel_reads
+            );
+            let run = |n: usize| -> PathBuf {
+                let dir = d.path().join(format!("run-{n}"));
+                for from in jsonl_files_under(&committed) {
+                    let rel = slashed_under(&committed, &from).expect("under");
+                    let to = dir.join(reminted(&rel, n));
+                    std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
+                    let text = std::fs::read_to_string(&from).expect("read");
+                    std::fs::write(to, reminted(&text, n)).expect("write");
+                }
+                let manifest = Manifest {
+                    source: "codex".into(),
+                    scenario: "tool-run".into(),
+                    capture: CaptureRecord {
+                        workspace: capture_workspace().expect("the workspace"),
+                        cli: "codex".into(),
+                        version: record.version.as_str().into(),
+                        end: ProcessExit::Exited(0),
+                        give_up_reason: None,
+                        incomplete: None,
+                        second_turn: None,
+                        server_stop: None,
+                        note_survived: true,
+                    },
+                    aimock: record.aimock.as_ref().expect("an aimock").as_str().into(),
+                    requests: 2,
+                    unmatched: 0,
+                    results_seen: 1,
+                };
+                std::fs::write(
+                    dir.join(MANIFEST),
+                    serde_json::to_string(&manifest).expect("json"),
+                )
+                .expect("manifest");
+                dir
+            };
+            promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
+            let dest = root.join(s.fixture);
+            let before = snapshot(&dest);
+            promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
+            assert_eq!(snapshot(&dest), before, "only ids differ");
         }
 
         #[test]

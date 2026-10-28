@@ -41,9 +41,9 @@ pub mod tap;
 #[cfg(feature = "native")]
 pub use captures::outlived;
 pub use captures::{
-    BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, Capture, CaptureRecord, DRIVER_COPY,
-    DRIVER_DIR_ENV, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit, SecondTurn,
-    ServerStop, canonical_capture, capture_base, capture_root, capture_workspace,
+    BOOT, CAPTURE_NOTE, CAPTURE_RECORD, CORPUS_REFUSAL, Canonical, Capture, CaptureRecord,
+    DRIVER_COPY, DRIVER_DIR_ENV, GAVE_UP_NOTE, HOOK_PAYLOADS, NOTE_FILE, PROVENANCE, ProcessExit,
+    SecondTurn, ServerStop, canonical_capture, capture_base, capture_root, capture_workspace,
     capture_workspace_tail, captures, files_under, jsonl_files_under, required_version_probe,
     slashed_under, transcript_in, transcripts_under, version_answer, wait_until,
 };

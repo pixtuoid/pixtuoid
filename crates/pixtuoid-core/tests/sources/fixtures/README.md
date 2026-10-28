@@ -11,10 +11,10 @@ just capture-fixture kimi tool-run kimi -p '{prompt}'
 ```
 
 A hand-written fixture pins whatever its author believed the wire looked like, and that belief is what the fixture then teaches every later reader.
-The composed `cursor/tool-run` this replaced carried no `tool_use_id` and
-strictly sequential tools; the capture that replaced it shows an id on every
-`preToolUse` and tools that INTERLEAVE (#901 discovered the same gap the
-expensive way). kimi's composed fixture went further and asserted the decoder's
+The composed `cursor/tool-run` this replaced carried no `tool_use_id`; the
+capture that replaced it shows an id on every `preToolUse`, and
+`cursor/fixtures/delegation` shows tools that INTERLEAVE (#901 discovered the
+same gap the expensive way). kimi's composed fixture went further and asserted the decoder's
 own wrong field name back at it.
 
 **Every scenario declares its own provenance**, in `provenance.json` beside the
