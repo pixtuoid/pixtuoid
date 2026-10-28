@@ -330,8 +330,8 @@ fn a_standing_fixture_casts_its_shadow_under_its_whole_box() {
 }
 
 /// The sizes the roster invariants sweep, each at [`CENSUS_SEEDS`]: the layout
-/// floor, a spread of window-grid widths, the committed heroes' buffers
-/// (`scripts/media.json`) and two mid sizes that place a lounge and an island.
+/// floor, a spread of window-grid widths, the committed heroes' layout units
+/// (`scripts/media.json`'s `w`/`h`) and two mid sizes that place a lounge and an island.
 pub(crate) const CENSUS_SIZES: &[(u16, u16)] = &[
     (
         super::super::compute::MIN_LAYOUT_W,

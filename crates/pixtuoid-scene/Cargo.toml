@@ -26,8 +26,8 @@ default        = ["native", "pixel-font"]
 # WebAssembly office hero.
 native         = ["pixtuoid-core/native"]
 # The Fusion Pixel face the cutaway sets baked world text and the floating
-# window's screen text (`paint_grid`) in; a painter that sets the world text
-# itself (`WorldText::Host`) draws none of it.
+# window's screen text (`paint_grid`) in. A painter that sets the world text
+# itself (`WorldText::Host`) still bakes it during a floor slide.
 pixel-font     = []
 
 [dependencies]

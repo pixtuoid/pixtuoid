@@ -120,7 +120,8 @@ fn main() -> ExitCode {
     office.step(t0_ms + advance_ms as f64, width, height);
 
     let px = office.frame().to_vec();
-    let (width, height) = (width * office.scale(), height * office.scale());
+    let (width, height) = office.frame_size(width, height);
+    let (width, height) = (u32::from(width), u32::from(height));
     let Some(img) = image::RgbaImage::from_raw(width, height, px) else {
         eprintln!("frame length didn't match {width}x{height}*4");
         return ExitCode::FAILURE;

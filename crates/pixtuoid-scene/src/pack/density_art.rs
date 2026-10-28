@@ -1,16 +1,8 @@
 //! Drop the bundled pack's density art — its `@Nx` animations, the hairstyles
-//! that dress them and its buildings' `@Nx` variants — for the base
-//! [`test_pack_with`](super::test_pack_with) swaps sprites into, where a
-//! swapped base would orphan the variants drawn over it.
+//! that dress them and its buildings' `@Nx` variants — for the test base
+//! [`base_pack_srcs`](super::base_pack_srcs).
 
 use std::collections::BTreeSet;
-
-/// `pack_toml` without its density art ([`strip_density_art`]), then without
-/// its comments, and the files it no longer draws.
-pub(crate) fn bundled_without_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
-    let (toml, dropped) = strip_density_art(pack_toml);
-    (super::comments::strip_comments(&toml), dropped)
-}
 
 /// `pack_toml` without its density-variant animations, its hairstyles (which
 /// only ever dress density art) and its buildings' density variants, and the
@@ -21,7 +13,7 @@ pub(crate) fn bundled_without_density_art(pack_toml: &str) -> (String, BTreeSet<
 /// `Piece`, and a building base named with one. So core's
 /// `DENSITY_VARIANT_SEP` alone identifies them here, where its
 /// `split_density_variant` is crate-private.
-fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
+pub(crate) fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
     let mut doc: toml_edit::DocumentMut = pack_toml.parse().expect("the bundled pack.toml parses");
     let mut dropped: BTreeSet<String> = BTreeSet::new();
     if let Some(styles) = doc.remove("hairstyles") {

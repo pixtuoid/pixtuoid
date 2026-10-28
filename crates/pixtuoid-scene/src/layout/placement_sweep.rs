@@ -10,9 +10,9 @@ use super::placement::rects_overlap;
 use super::*;
 
 /// The sweep's size axis: the forced-single-pod widths (floored by
-/// `MIN_LAYOUT_W`), the SHORT band the derived height floor opened (46-58 buffer
-/// px = 24-30 rows, which the old hand-written floor refused sight-unseen), the
-/// decor-vs-wall and Y-overflow corners, the golden and live wasm hero buffers,
+/// `MIN_LAYOUT_W`), the SHORT band the derived height floor opened (46-58
+/// units = 24-30 rows, which the old hand-written floor refused sight-unseen), the
+/// decor-vs-wall and Y-overflow corners, the golden and live wasm heroes' units,
 /// and a spread wide enough that the appliance kinds appear.
 const SWEEP_SIZES: &[(u16, u16)] = &[
     (super::compute::MIN_LAYOUT_W, super::compute::MIN_LAYOUT_H),

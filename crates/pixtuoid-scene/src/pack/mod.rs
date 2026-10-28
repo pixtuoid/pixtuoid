@@ -444,7 +444,7 @@ pub(crate) fn test_pack_with(overrides: &[(&str, &'static str)]) -> Pack {
 #[cfg(test)]
 fn base_pack_srcs() -> (String, Vec<(&'static str, &'static str)>) {
     let (toml, dropped) =
-        density_art::bundled_without_density_art(include_str!("../../sprites/default/pack.toml"));
+        density_art::strip_density_art(include_str!("../../sprites/default/pack.toml"));
     let srcs = bundled_sprite_srcs()
         .into_iter()
         .filter(|(name, _)| !dropped.contains(*name))
@@ -680,9 +680,8 @@ mod tests {
     /// The base [`test_pack_with`] swaps sprites into, which no build ships.
     #[test]
     fn the_pack_without_density_art_loads_whole() {
-        let (_, dropped) = density_art::bundled_without_density_art(include_str!(
-            "../../sprites/default/pack.toml"
-        ));
+        let (_, dropped) =
+            density_art::strip_density_art(include_str!("../../sprites/default/pack.toml"));
         assert!(!dropped.is_empty(), "the bundled pack ships density art");
         let (toml, srcs) = base_pack_srcs();
         let pack = load_pack_from_strings(&toml, &srcs).expect("loads without density art");

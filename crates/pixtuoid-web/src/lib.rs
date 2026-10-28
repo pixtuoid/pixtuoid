@@ -226,15 +226,8 @@ impl Office {
     pub fn step(&mut self, now_ms: f64, w: u32, h: u32) {
         let now = pixtuoid_scene::anim::from_epoch_ms(now_ms);
         self.last_now = Some(now);
-        let scale = self.fit.scale();
-        // The frame's pixels, not just its units, must fit the buffer's u16.
-        let units = |n: u32| {
-            u16::try_from(n)
-                .unwrap_or(u16::MAX)
-                .clamp(1, scale.logical(u16::MAX))
-        };
-        let (units_w, units_h) = (units(w), units(h));
-        let px = (scale.to_buffer(units_w), scale.to_buffer(units_h));
+        let (units_w, units_h) = self.units(w, h);
+        let px = self.frame_size(w, h);
         // Capacity BEFORE the script advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(units_w, units_h);
@@ -619,6 +612,22 @@ impl Office {
         &self.rgba
     }
 
+    /// The frame `step(_, w, h)` renders, in pixels: the units it lays out
+    /// at [`Office::scale`].
+    pub fn frame_size(&self, w: u32, h: u32) -> (u16, u16) {
+        let scale = self.fit.scale();
+        let (w, h) = self.units(w, h);
+        (scale.to_buffer(w), scale.to_buffer(h))
+    }
+
+    /// The layout units `step(_, w, h)` lays out: at least one each, and few
+    /// enough that the frame's pixels fit the buffer's u16.
+    fn units(&self, w: u32, h: u32) -> (u16, u16) {
+        let max = self.fit.scale().logical(u16::MAX);
+        let units = |n: u32| u16::try_from(n).unwrap_or(u16::MAX).clamp(1, max);
+        (units(w), units(h))
+    }
+
     /// Keep the reducer's desk capacity in lockstep with the office actually
     /// rendered at these units. Without it an admitted agent's desk index
     /// can exceed the canvas layout's desk count, so it paints NOWHERE (its
@@ -699,7 +708,7 @@ impl Office {
     }
 
     fn render(&mut self, now: SystemTime, units_w: u16, units_h: u16) {
-        // Too-small layouts leave the cleared buffer; never panics.
+        // Too small to lay out: draws nothing, and `step` fills the frame; never panics.
         let floor_meta = self.floor_meta();
         self.session.render(
             self.fit.look(WorldText::Host),
@@ -1154,6 +1163,21 @@ mod tests {
         assert_eq!(office().scale(), u32::from(density));
     }
 
+    /// `hero_still` sizes its PNG by `frame_size`, past the clamp too.
+    #[test]
+    fn frame_size_is_the_frame_step_renders() {
+        let mut o = office();
+        for (w, h) in [(160, 96), (u32::MAX, 1)] {
+            o.step(T0_MS, w, h);
+            let (fw, fh) = o.frame_size(w, h);
+            assert_eq!(
+                o.frame_len(),
+                usize::from(fw) * usize::from(fh) * 4,
+                "{w}x{h}"
+            );
+        }
+    }
+
     #[test]
     fn beats_fire_once_at_scheduled_times_across_a_wrap() {
         let mut o = office();
@@ -1427,9 +1451,9 @@ mod tests {
     #[test]
     fn capacity_tracks_the_canvas_layout_so_no_agent_is_stranded_unpainted() {
         use pixtuoid_scene::layout::SceneLayout;
-        // The site renders `BUF_H` rows; this width seats the full cast plus at
-        // least one spare. The free-desk count is DERIVED, not a size literal —
-        // the density pass re-tunes desks-per-buffer out from under a literal.
+        // The site renders `UNITS_H` units tall; this width seats the full cast
+        // plus at least one spare. The free-desk count is DERIVED, not a size
+        // literal — the density pass re-tunes desks-per-floor out from under a literal.
         let (w, h) = (192u32, 130u32);
         let mut o = office();
         let mut t = 0u64;
