@@ -103,7 +103,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -120,7 +119,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/subagent-hermetic",
             turn: Turn::PROFILE,
         },
         // A skill tool's child fires no SubagentStart or SubagentStop.
@@ -136,7 +134,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/explore-hermetic",
             turn: Turn::PROFILE,
         },
         // The marker routes the turn through the planner
@@ -153,7 +150,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/planner-hermetic",
             turn: Turn {
                 prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
                 ..Turn::PROFILE
@@ -171,7 +167,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/bash-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -189,7 +184,6 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "reasonix/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
     ],

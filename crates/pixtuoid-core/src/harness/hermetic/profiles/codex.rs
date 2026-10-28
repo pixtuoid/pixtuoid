@@ -161,7 +161,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -177,7 +176,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/custom-tool-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -194,7 +192,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/subagent-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -208,7 +205,6 @@ trust_level = "trusted"
                 "PermissionRequest",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -216,7 +212,6 @@ trust_level = "trusted"
             shape: Shape::Cancel,
             surface: Surface::Tui { row: &TUI },
             expects: &["SessionStart", "UserPromptSubmit", "SessionEnd"],
-            fixture: "codex/fixtures/cancel-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -224,7 +219,6 @@ trust_level = "trusted"
             shape: Shape::ModelError,
             surface: Surface::Headless,
             expects: &["SessionStart", "UserPromptSubmit", "SessionEnd"],
-            fixture: "codex/fixtures/model-error-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -239,7 +233,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/two-turn-hermetic",
             turn: Turn {
                 second: Some(Second::Prompt(SECOND_TURN)),
                 ..Turn::PROFILE
@@ -259,7 +252,6 @@ trust_level = "trusted"
                 "PermissionRequest",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/refuse-then-prompt-hermetic",
             turn: Turn {
                 second: Some(Second::Prompt(SECOND_TURN)),
                 ..Turn::PROFILE
@@ -278,7 +270,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/approve-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -292,7 +283,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/code-mode-failure-hermetic",
             turn: Turn {
                 args: &CODE_MODE,
                 ..Turn::PROFILE
@@ -313,7 +303,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/policy-deny-hermetic",
             turn: Turn {
                 seed: Some("policy-deny"),
                 ..Turn::PROFILE
@@ -336,7 +325,6 @@ trust_level = "trusted"
                 "PermissionRequest",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/code-mode-gate-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -354,7 +342,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/code-mode-approve-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -362,7 +349,6 @@ trust_level = "trusted"
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"],
-            fixture: "codex/fixtures/code-mode-yield-hermetic",
             turn: Turn {
                 args: &CODE_MODE,
                 ..Turn::PROFILE
@@ -384,7 +370,6 @@ trust_level = "trusted"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "codex/fixtures/stop-hook-hermetic",
             turn: Turn {
                 seed: Some("stop-hook"),
                 ..Turn::PROFILE

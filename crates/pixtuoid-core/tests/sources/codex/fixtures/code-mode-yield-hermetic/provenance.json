@@ -9,7 +9,7 @@
     "blanked": 107
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codex/code-mode-yield.json",
+  "script": "tests/sources/codex/hermetic/code-mode-yield.json",
   "dropped": {
     "os": "macos",
     "at": {

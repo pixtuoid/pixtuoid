@@ -296,9 +296,6 @@ pub struct Scenario {
     pub surface: Surface,
     /// The hook events this run must fire, as `Profile::event_name` reads them.
     pub expects: &'static [&'static str],
-    /// The committed recording `--record` rewrites, under `tests/sources`: the
-    /// tier's own, beside any capture still carrying a field the profile owes.
-    pub fixture: &'static str,
     /// What its turn asks of the CLI beyond the profile's invocation.
     pub turn: Turn,
 }
@@ -728,10 +725,15 @@ pub(crate) fn shard_of(source: &str) -> Option<usize> {
         .map(|i| i + 1)
 }
 
-/// Where each profile's scenario scripts live, as `<source>/<name>.json`, and
-/// the scripted model's npm lockfile, under `aimock/`.
-pub fn scripts_dir() -> PathBuf {
-    crate::harness::sources_root().join("hermetic")
+/// The scripted model's npm project, whose lockfile every run installs.
+pub fn aimock_dir() -> PathBuf {
+    crate::harness::sources_root().join("hermetic/aimock")
+}
+
+/// Where `source`'s profile keeps its scenario scripts, their seeds and its
+/// manifest lock: its home's `hermetic/`.
+fn scripts_dir(source: &str) -> PathBuf {
+    crate::harness::source_home(source).join("hermetic")
 }
 
 impl Profile {
@@ -739,7 +741,7 @@ impl Profile {
     /// for a [`Package::UpdaterManifest`] profile.
     pub fn manifest_lock(&self) -> Option<PathBuf> {
         matches!(self.package, Package::UpdaterManifest { .. })
-            .then(|| scripts_dir().join(self.source).join("manifest.lock.json"))
+            .then(|| scripts_dir(self.source).join("manifest.lock.json"))
     }
 
     /// The scenario its install lifecycle turns under its last uninstall on a
@@ -763,18 +765,22 @@ fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario>
 }
 
 impl Scenario {
+    /// The committed recording `--record` rewrites, under `tests/sources`: the
+    /// tier's own, beside any capture still carrying a field the profile owes.
+    pub fn fixture(&self, source: &str) -> PathBuf {
+        PathBuf::from(crate::harness::module_of(source))
+            .join("fixtures")
+            .join(format!("{}-hermetic", self.name))
+    }
+
     /// `source`'s script for this scenario.
     pub fn script(&self, source: &str) -> PathBuf {
-        scripts_dir()
-            .join(source)
-            .join(format!("{}.json", self.name))
+        scripts_dir(source).join(format!("{}.json", self.name))
     }
 
     /// `source`'s seed for this scenario, if its turn names one.
     pub fn seed(&self, source: &str) -> Option<PathBuf> {
-        self.turn
-            .seed
-            .map(|dir| scripts_dir().join(source).join(dir))
+        self.turn.seed.map(|dir| scripts_dir(source).join(dir))
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
@@ -1036,7 +1042,6 @@ mod tests {
             shape,
             surface,
             expects: &[],
-            fixture: name,
             turn: Turn::PROFILE,
         };
         let scenarios = [
@@ -1195,16 +1200,20 @@ mod tests {
         let mut fixtures = BTreeSet::new();
         for p in PROFILES {
             for s in p.scenarios {
-                assert!(fixtures.insert(s.fixture), "{} recorded twice", s.fixture);
+                let fixture = s.fixture(p.source);
+                assert!(
+                    fixtures.insert(fixture.clone()),
+                    "{fixture:?} recorded twice"
+                );
                 let path = crate::harness::sources_root()
-                    .join(s.fixture)
+                    .join(&fixture)
                     .join(crate::harness::PROVENANCE);
                 let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
                     prov.recorded().aimock.is_some(),
-                    "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",
+                    "{0}: {1:?} holds no recording of the tier; `just hermetic --record {0}` writes one",
                     p.source,
-                    s.fixture
+                    fixture
                 );
             }
         }
@@ -1647,7 +1656,7 @@ mod tests {
                 let scenario = profile(source)
                     .and_then(|p| p.scenario(exit.scenario))
                     .unwrap_or_else(|| panic!("{source}: no scenario {}", exit.scenario));
-                let dir = crate::harness::sources_root().join(scenario.fixture);
+                let dir = crate::harness::sources_root().join(scenario.fixture(source));
                 let events = captured_events(source, &dir);
                 assert!(
                     events

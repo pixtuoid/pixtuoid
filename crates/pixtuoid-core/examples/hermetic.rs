@@ -373,7 +373,7 @@ mod run {
         };
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
         let mut scenarios = selected;
-        if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.fixture == s.fixture)) {
+        if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.name == s.name)) {
             scenarios.insert(0, s);
         }
         let mut release = Release {
@@ -403,7 +403,7 @@ mod run {
             }
             banners.extend(banner.clone());
             entries.push(Entry::new(p.source, key, banner, verdict));
-            if lifecycle.is_none_or(|l| l.fixture != scenario.fixture) {
+            if lifecycle.is_none_or(|l| l.name != scenario.name) {
                 continue;
             }
             let dir = runs.join(p.source).join(LIFECYCLE);
@@ -867,7 +867,7 @@ mod run {
 
     impl Aimock {
         fn install(tier: &Path) -> std::io::Result<Self> {
-            let src = hermetic::scripts_dir().join("aimock");
+            let src = hermetic::aimock_dir();
             let lock: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(src.join("package-lock.json"))?)?;
             let version = lock["packages"][format!("node_modules/{AIMOCK_PACKAGE}")]["version"]

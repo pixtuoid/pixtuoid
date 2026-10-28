@@ -5,7 +5,7 @@
 //! asks [`Driver::step`] what to do with the screen it now shows; everything
 //! that differs between CLIs is its [`Tui`] row, never code here. A new CLI's
 //! edge case is that row plus a test over a screen its run recorded
-//! (`screens/`).
+//! (`tests/sources/<module>/screens/`).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -520,20 +520,34 @@ mod tests {
     use super::super::{Second, Surface, profile};
     use super::*;
 
-    const BOOT: &str = include_str!("screens/claude-code-boot.txt");
-    const READY: &str = include_str!("screens/claude-code-ready.txt");
-    const GATE: &str = include_str!("screens/claude-code-gate.txt");
-    const DONE: &str = include_str!("screens/claude-code-done.txt");
+    /// A screen a CLI's TUI run recorded, beside its captures.
+    macro_rules! screen {
+        ($module:literal, $name:literal) => {
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/sources/",
+                $module,
+                "/screens/",
+                $name,
+                ".txt"
+            ))
+        };
+    }
+
+    const BOOT: &str = screen!("claude_code", "boot");
+    const READY: &str = screen!("claude_code", "ready");
+    const GATE: &str = screen!("claude_code", "gate");
+    const DONE: &str = screen!("claude_code", "done");
     /// What every recorded screen's run typed.
     const PROMPT: &str = crate::harness::plan::DEFAULT_PROMPT;
-    const CODEX_BOOT: &str = include_str!("screens/codex-boot.txt");
-    const CODEX_GATE: &str = include_str!("screens/codex-gate.txt");
-    const CODEX_CANCEL: &str = include_str!("screens/codex-cancel.txt");
-    const OPENCODE_BOOT: &str = include_str!("screens/opencode-boot.txt");
-    const OPENCODE_CANCEL: &str = include_str!("screens/opencode-cancel.txt");
-    const OMP_BOOT: &str = include_str!("screens/omp-boot.txt");
-    const OMP_NEW: &str = include_str!("screens/omp-new.txt");
-    const CODEWHALE_BOOT: &str = include_str!("screens/codewhale-boot.txt");
+    const CODEX_BOOT: &str = screen!("codex", "boot");
+    const CODEX_GATE: &str = screen!("codex", "gate");
+    const CODEX_CANCEL: &str = screen!("codex", "cancel");
+    const OPENCODE_BOOT: &str = screen!("opencode", "boot");
+    const OPENCODE_CANCEL: &str = screen!("opencode", "cancel");
+    const OMP_BOOT: &str = screen!("omp", "boot");
+    const OMP_NEW: &str = screen!("omp", "new");
+    const CODEWHALE_BOOT: &str = screen!("codewhale", "boot");
     /// Claude Code's blank input line, which it opens with a no-break space.
     const READY_INPUT: &str = "❯\u{a0} ";
     const OMP_INPUT: &str = "╰─";
@@ -681,7 +695,7 @@ mod tests {
         };
         let t0 = Instant::now();
         let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        let boot = include_str!("screens/hermes-boot.txt");
+        let boot = screen!("hermes", "boot");
         assert_eq!(d.step(boot, t0), Action::Type(PROMPT.to_owned()));
         assert_eq!(d.step(boot, t0), Action::Keys(&[Key::Enter]));
         let mut t = t0;
@@ -689,17 +703,14 @@ mod tests {
             t += ENTER_RETRY;
             d.step(screen, t)
         };
-        assert_eq!(next(include_str!("screens/hermes-turn.txt")), Action::Wait);
+        assert_eq!(next(screen!("hermes", "turn")), Action::Wait);
+        assert_eq!(next(screen!("hermes", "gate")), Action::Keys(gate.keys));
         assert_eq!(
-            next(include_str!("screens/hermes-gate.txt")),
-            Action::Keys(gate.keys)
-        );
-        assert_eq!(
-            next(include_str!("screens/hermes-echo.txt")),
+            next(screen!("hermes", "echo")),
             Action::Wait,
             "a frame showing only the echo"
         );
-        let done = include_str!("screens/hermes-done.txt");
+        let done = screen!("hermes", "done");
         assert_eq!(next(done), Action::Wait, "the screen just changed");
         assert_eq!(d.step(done, t + SETTLE), Action::Quit(tui.quit));
         assert_eq!(
@@ -1040,8 +1051,8 @@ mod tests {
     /// answers one.
     #[test]
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
-        const CODEX_TURN_ONE: &str = include_str!("screens/codex-turn-one.txt");
-        const GROK_TURN_ONE: &str = include_str!("screens/grok-turn-one.txt");
+        const CODEX_TURN_ONE: &str = screen!("codex", "turn-one");
+        const GROK_TURN_ONE: &str = screen!("grok", "turn-one");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
         let recorded: [(&str, &str, &str, &[&str]); 21] = [
@@ -1052,7 +1063,7 @@ mod tests {
                 "codex",
                 "two-turn",
                 CODEX_BOOT,
-                &[CODEX_TURN_ONE, include_str!("screens/codex-turn-two.txt")],
+                &[CODEX_TURN_ONE, screen!("codex", "turn-two")],
             ),
             (
                 "codex",
@@ -1060,9 +1071,9 @@ mod tests {
                 CODEX_BOOT,
                 &[
                     CODEX_GATE,
-                    include_str!("screens/codex-refused.txt"),
-                    include_str!("screens/codex-gate-again.txt"),
-                    include_str!("screens/codex-refused-again.txt"),
+                    screen!("codex", "refused"),
+                    screen!("codex", "gate-again"),
+                    screen!("codex", "refused-again"),
                 ],
             ),
             // The same dialog as the refused one's, answered otherwise.
@@ -1071,76 +1082,71 @@ mod tests {
                 "codex",
                 "policy-deny",
                 CODEX_BOOT,
-                &[include_str!("screens/codex-policy-denied.txt")],
+                &[screen!("codex", "policy-denied")],
             ),
             ("codex", "code-mode-gate", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "code-mode-approve", CODEX_BOOT, &[CODEX_GATE]),
             (
                 "opencode",
                 "cancel",
-                include_str!("screens/opencode-boot.txt"),
-                &[include_str!("screens/opencode-cancel.txt")],
+                screen!("opencode", "boot"),
+                &[screen!("opencode", "cancel")],
             ),
             (
                 "kimi",
                 "permission",
-                include_str!("screens/kimi-boot.txt"),
-                &[include_str!("screens/kimi-gate.txt")],
+                screen!("kimi", "boot"),
+                &[screen!("kimi", "gate")],
             ),
             (
                 "grok",
                 "permission",
-                include_str!("screens/grok-boot.txt"),
-                &[include_str!("screens/grok-gate.txt")],
+                screen!("grok", "boot"),
+                &[screen!("grok", "gate")],
             ),
             (
                 "grok",
                 "two-turn",
-                include_str!("screens/grok-boot.txt"),
-                &[GROK_TURN_ONE, include_str!("screens/grok-turn-two.txt")],
+                screen!("grok", "boot"),
+                &[GROK_TURN_ONE, screen!("grok", "turn-two")],
             ),
             (
                 "reasonix",
                 "permission",
-                include_str!("screens/reasonix-boot.txt"),
-                &[include_str!("screens/reasonix-gate.txt")],
+                screen!("reasonix", "boot"),
+                &[screen!("reasonix", "gate")],
             ),
             (
                 "omp",
                 "approve",
                 OMP_BOOT,
-                &[include_str!("screens/omp-approve-gate.txt")],
+                &[screen!("omp", "approve-gate")],
             ),
-            (
-                "omp",
-                "ask",
-                OMP_BOOT,
-                &[include_str!("screens/omp-ask-gate.txt")],
-            ),
+            ("omp", "ask", OMP_BOOT, &[screen!("omp", "ask-gate")]),
             ("omp", "new-session", OMP_BOOT, &[OMP_NEW]),
             (
                 "hermes",
                 "permission",
-                include_str!("screens/hermes-boot.txt"),
-                &[include_str!("screens/hermes-gate.txt")],
+                screen!("hermes", "boot"),
+                &[screen!("hermes", "gate")],
             ),
             (
                 "codewhale",
                 "tool-run",
                 CODEWHALE_BOOT,
-                &[include_str!("screens/codewhale-done.txt")],
+                &[screen!("codewhale", "done")],
             ),
             (
                 "codewhale",
                 "permission",
                 CODEWHALE_BOOT,
-                &[include_str!("screens/codewhale-gate.txt")],
+                &[screen!("codewhale", "gate")],
             ),
             (
                 "codewhale",
                 "child-error",
                 CODEWHALE_BOOT,
-                &[include_str!("screens/codewhale-child-failed.txt")],
+                &[screen!("codewhale", "child-failed")],
             ),
         ];
         let scenarios: Vec<(&str, &str)> = super::super::PROFILES

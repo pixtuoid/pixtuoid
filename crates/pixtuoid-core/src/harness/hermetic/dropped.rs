@@ -5,11 +5,11 @@
 //! decoder reads.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{Scenario, literals};
+use super::{Profile, Scenario, literals};
 use crate::harness::PROVENANCE;
 use crate::harness::captures::json_lines;
 use crate::harness::provenance::{Dropped, Provenance};
@@ -96,11 +96,11 @@ pub enum Unjudged {
 /// # Errors
 ///
 /// If its provenance cannot be read or does not parse.
-pub(crate) fn baseline_of(s: &Scenario) -> std::io::Result<Option<Dropped>> {
-    baseline_at(s.fixture)
+pub(crate) fn baseline_of(p: &Profile, s: &Scenario) -> std::io::Result<Option<Dropped>> {
+    baseline_at(&s.fixture(p.source))
 }
 
-fn baseline_at(fixture: &str) -> std::io::Result<Option<Dropped>> {
+fn baseline_at(fixture: &Path) -> std::io::Result<Option<Dropped>> {
     let path = crate::harness::sources_root()
         .join(fixture)
         .join(PROVENANCE);
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn a_scenario_not_yet_recorded_has_no_baseline() {
         assert_eq!(
-            baseline_at("copilot/fixtures/never-recorded-hermetic")
+            baseline_at(Path::new("copilot/fixtures/never-recorded-hermetic"))
                 .expect("a missing record is no error"),
             None
         );

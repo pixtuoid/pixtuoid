@@ -9,7 +9,7 @@
     "blanked": 2
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codewhale/permission.json",
+  "script": "tests/sources/codewhale/hermetic/permission.json",
   "dropped": {
     "os": "macos",
     "at": {}

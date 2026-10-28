@@ -9,7 +9,7 @@
     "blanked": 32
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/antigravity/ask-question.json",
+  "script": "tests/sources/antigravity/hermetic/ask-question.json",
   "dropped": {
     "os": "macos",
     "at": {

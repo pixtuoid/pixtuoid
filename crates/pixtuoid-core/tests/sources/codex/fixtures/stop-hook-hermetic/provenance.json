@@ -8,9 +8,9 @@
     "method": "decoder-allowlist",
     "blanked": 118
   },
-  "seed": "tests/sources/hermetic/codex/stop-hook",
+  "seed": "tests/sources/codex/hermetic/stop-hook",
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codex/stop-hook.json",
+  "script": "tests/sources/codex/hermetic/stop-hook.json",
   "dropped": {
     "os": "macos",
     "at": {

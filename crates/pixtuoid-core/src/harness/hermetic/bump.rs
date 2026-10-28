@@ -149,7 +149,7 @@ pub fn admits(p: &Profile, path: &Path) -> bool {
         || p.manifest_lock()
             .is_some_and(|lock| path == relative(&lock))
         || p.scenarios.iter().any(|s| {
-            let fixture = sources.join(s.fixture);
+            let fixture = sources.join(s.fixture(p.source));
             let snapshot = fixture.file_name().map(|scenario| {
                 relative(&crate::harness::source_home(p.source))
                     .join("snapshots")
@@ -371,7 +371,7 @@ mod tests {
     fn a_bump_admits_its_pin_fixtures_and_snapshots_alone() {
         let p = codex();
         let sources = relative(&sources_root());
-        let fixture = sources.join(p.scenarios[0].fixture);
+        let fixture = sources.join(p.scenarios[0].fixture(p.source));
         let name = fixture.file_name().expect("a name").to_string_lossy();
         assert!(descriptor_relative(p.source).is_relative());
         assert_eq!(
@@ -388,7 +388,7 @@ mod tests {
         assert!(!admits(
             p,
             &sources
-                .join(other.scenarios[0].fixture)
+                .join(other.scenarios[0].fixture(other.source))
                 .join("provenance.json")
         ));
         let theirs = format!("sources__conformance__claude-code__{name}.snap");
@@ -424,7 +424,8 @@ mod tests {
             .collect();
         let scanned = |p: &&Profile| {
             p.scenarios.iter().any(|s| {
-                let scenario = Path::new(s.fixture).file_name().unwrap_or_default();
+                let fixture = s.fixture(p.source);
+                let scenario = fixture.file_name().unwrap_or_default();
                 !crate::harness::OUTSIDE_CONFORMANCE
                     .contains(&(p.source, scenario.to_string_lossy().as_ref()))
             })
@@ -475,7 +476,11 @@ mod tests {
     }
 
     fn fixture_path(name: &str) -> PathBuf {
-        relative(&sources_root().join(codex().scenarios[0].fixture).join(name))
+        relative(
+            &sources_root()
+                .join(codex().scenarios[0].fixture("codex"))
+                .join(name),
+        )
     }
 
     #[test]

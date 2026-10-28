@@ -239,7 +239,7 @@ mod tests {
   "prompt": "p",
   "seed": "s",
   "aimock": "1.45.1",
-  "script": "tests/sources/hermetic/copilot/tool-run.json",
+  "script": "tests/sources/copilot/hermetic/tool-run.json",
   "dropped": {
     "os": "macos",
     "at": {

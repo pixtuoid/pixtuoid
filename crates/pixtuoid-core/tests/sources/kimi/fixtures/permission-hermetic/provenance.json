@@ -9,7 +9,7 @@
     "blanked": 24
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/kimi/permission.json",
+  "script": "tests/sources/kimi/hermetic/permission.json",
   "dropped": {
     "os": "macos",
     "at": {}

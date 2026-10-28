@@ -9,7 +9,7 @@
     "blanked": 11
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/reasonix/permission.json",
+  "script": "tests/sources/reasonix/hermetic/permission.json",
   "dropped": {
     "os": "macos",
     "at": {}

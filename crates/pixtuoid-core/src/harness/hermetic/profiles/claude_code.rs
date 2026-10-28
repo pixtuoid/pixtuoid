@@ -90,7 +90,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
-            fixture: "claude_code/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         // Ultracode on enters, a prompt naming ultrathink adds its effort,
@@ -101,7 +100,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
-            fixture: "claude_code/fixtures/ultra-effort-hermetic",
             turn: Turn {
                 args: &["--effort", "ultracode"],
                 prompt: Some("ultrathink: read NOTE.txt."),
@@ -121,7 +119,6 @@ pub(crate) const PROFILE: Profile = Profile {
                 "SubagentStop",
                 "SessionEnd",
             ],
-            fixture: "claude_code/fixtures/subagent-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -135,7 +132,6 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Notification",
                 "SessionEnd",
             ],
-            fixture: "claude_code/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
     ],

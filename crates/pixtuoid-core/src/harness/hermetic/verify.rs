@@ -580,7 +580,7 @@ pub(crate) fn scenario_reads<'a>(
 ) -> std::io::Result<Fields> {
     let mut reads = Fields::default();
     for s in scenarios {
-        for file in jsonl_files_under(&crate::harness::sources_root().join(s.fixture)) {
+        for file in jsonl_files_under(&crate::harness::sources_root().join(s.fixture(p.source))) {
             for line in json_lines(&file)? {
                 reads.add(p, &file, &line, false);
             }
@@ -813,7 +813,12 @@ fn judge(
         Shape::ModelError | Shape::Succession | Shape::Cancel => "idle",
     };
     judge_scene(p, scene, shown, findings);
-    new_types(p, dir, dropped::baseline_of(scenario)?.as_ref(), findings)
+    new_types(
+        p,
+        dir,
+        dropped::baseline_of(p, scenario)?.as_ref(),
+        findings,
+    )
 }
 
 /// Each type a run in `dir` left unread that `baseline`, its recording's,
@@ -1413,7 +1418,7 @@ mod tests {
         let scenario = profile(source)
             .and_then(|p| p.scenario(name))
             .expect("a profiled scenario");
-        let src = crate::harness::sources_root().join(scenario.fixture);
+        let src = crate::harness::sources_root().join(scenario.fixture(source));
         let d = run_of(&src, source, name, scene);
         if scenario.headless_second().is_some() {
             write_manifest(d.path(), source, |m| {
@@ -3456,10 +3461,13 @@ mod tests {
     fn a_verdict_says_why_its_run_judged_no_new_types() {
         let d = recorded("codex", "tool-run", CX_SCENE);
         let v = verify(d.path()).expect("verify");
-        let scenario = profile("codex")
-            .and_then(|p| p.scenarios.iter().find(|s| s.shape == Shape::ToolRun))
+        let codex = profile("codex").expect("codex's profile");
+        let scenario = codex
+            .scenarios
+            .iter()
+            .find(|s| s.shape == Shape::ToolRun)
             .expect("codex's tool-run");
-        let want = match dropped::baseline_of(scenario).expect("baseline") {
+        let want = match dropped::baseline_of(codex, scenario).expect("baseline") {
             None => Some(Unjudged::NoBaseline),
             Some(b) if !b.judges_here() => Some(Unjudged::RecordedOn(b.os.to_string())),
             Some(_) => None,

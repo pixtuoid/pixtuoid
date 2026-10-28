@@ -21,14 +21,15 @@ tests/
 │   ├── manager.rs       SourceManager spawn/health
 │   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`)
 │   ├── <module>/        ONE home per registered source, named as its `source/` module:
-│   │                    fixtures/<scenario>/ (provenance.json REQUIRED, README.md) and
-│   │                    snapshots/; conformance skips only `harness::OUTSIDE_CONFORMANCE`
+│   │                    fixtures/<scenario>/ (provenance.json REQUIRED, README.md),
+│   │                    snapshots/, hermetic/ (its aimock scripts and seeds), screens/
+│   │                    (its TUI runs); conformance skips `harness::OUTSIDE_CONFORMANCE`
 │   ├── <module>.rs      a source's unique behavior: claude_code codex codewhale cursor grok
 │   │                    opencode reasonix (DELEGATING runs, two sprites), copilot (refusal
 │   │                    endings), omp (bridge rounds whose hook keys FOLD per OS, #951)
 │   ├── delegation.rs    the NAME-KEYED family (a tool literally called `task` — `subagent`
 │   │                    for dsh and opencode): copilot, omp, dsh, opencode — one rule, one table
-│   └── hermetic/        `harness::hermetic`'s aimock lock and per-CLI scripts: data, no module
+│   └── hermetic/aimock/ the scripted model's npm lock, shared by every profile
 ├── reducer/main.rs      state-machine behavior; shared builders + apply-DSL in main.rs
 │                        (lifecycle · activity · tasks · liveness · display ·
 │                        child_ledger · snapshot.rs, the full-scene insta golden #279)

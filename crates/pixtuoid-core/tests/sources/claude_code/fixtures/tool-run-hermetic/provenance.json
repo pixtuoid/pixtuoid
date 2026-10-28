@@ -9,7 +9,7 @@
     "blanked": 242
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/claude-code/tool-run.json",
+  "script": "tests/sources/claude_code/hermetic/tool-run.json",
   "dropped": {
     "os": "macos",
     "at": {

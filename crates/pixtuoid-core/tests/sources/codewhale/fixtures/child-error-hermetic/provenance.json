@@ -9,7 +9,7 @@
     "blanked": 15
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codewhale/child-error.json",
+  "script": "tests/sources/codewhale/hermetic/child-error.json",
   "dropped": {
     "os": "macos",
     "at": {}

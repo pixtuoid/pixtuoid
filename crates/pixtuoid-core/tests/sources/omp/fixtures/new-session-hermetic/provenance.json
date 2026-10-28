@@ -9,7 +9,7 @@
     "blanked": 14
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/omp/new-session.json",
+  "script": "tests/sources/omp/hermetic/new-session.json",
   "dropped": {
     "os": "macos",
     "at": {

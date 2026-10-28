@@ -732,7 +732,7 @@ mod recorder {
         if let Some(why) = foreign_hooks(&manifest.source, &payloads) {
             return Err(std::io::Error::other(format!("{named}: {why}")));
         }
-        let dest = root.join(scenario.fixture);
+        let dest = root.join(scenario.fixture(&manifest.source));
         let committed = Provenance::read_if_any(&dest.join(PROVENANCE))?;
         // Stripped apart from the fixture, which it replaces only if it differs.
         let staged = tempfile::tempdir()?;
@@ -1586,10 +1586,10 @@ mod recorder {
             let (run, root) = (d.path().join("run"), d.path().join("sources"));
             let fixture = hermetic::profile("dsh")
                 .and_then(|p| p.scenario("tool-run"))
-                .map(|s| s.fixture)
+                .map(|s| s.fixture("dsh"))
                 .expect("dsh's tool-run");
             let committed =
-                std::fs::read_to_string(sources_root().join(fixture).join(HOOK_PAYLOADS))
+                std::fs::read_to_string(sources_root().join(&fixture).join(HOOK_PAYLOADS))
                     .expect("the committed recording");
             let mut lines: Vec<serde_json::Value> = committed
                 .lines()
@@ -1684,7 +1684,7 @@ mod recorder {
             assert_eq!(record.aimock.as_ref().map(NonEmpty::as_str), Some("1.43.0"));
             assert_eq!(
                 record.script.as_ref().map(NonEmpty::as_str),
-                Some("tests/sources/hermetic/dsh/tool-run.json")
+                Some("tests/sources/dsh/hermetic/tool-run.json")
             );
             assert_eq!(record.version.as_str(), "0.2.0-rc.2");
             assert_eq!(
@@ -1705,11 +1705,11 @@ mod recorder {
             let (run, root) = (d.path().join("run"), d.path().join("sources"));
             let fixture = hermetic::profile("copilot")
                 .and_then(|p| p.scenario("tool-run"))
-                .map(|s| s.fixture)
+                .map(|s| s.fixture("copilot"))
                 .expect("copilot's tool-run");
-            for from in jsonl_files_under(&sources_root().join(fixture)) {
+            for from in jsonl_files_under(&sources_root().join(&fixture)) {
                 let rel = from
-                    .strip_prefix(sources_root().join(fixture))
+                    .strip_prefix(sources_root().join(&fixture))
                     .expect("under");
                 let to = run.join(rel);
                 std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
@@ -1880,10 +1880,11 @@ mod recorder {
             let s = hermetic::profile("dsh")
                 .and_then(|p| p.scenario(scenario))
                 .expect("dsh's scenario");
-            let dest = root.join(s.fixture);
-            for from in jsonl_files_under(&sources_root().join(s.fixture)) {
+            let fixture = s.fixture("dsh");
+            let dest = root.join(&fixture);
+            for from in jsonl_files_under(&sources_root().join(&fixture)) {
                 let rel = from
-                    .strip_prefix(sources_root().join(s.fixture))
+                    .strip_prefix(sources_root().join(&fixture))
                     .expect("under");
                 let text = std::fs::read_to_string(&from).expect("read");
                 for (to, text) in [
@@ -1899,7 +1900,7 @@ mod recorder {
                 "version": dsh_version(),
                 "deidentified": {"method": "decoder-allowlist", "blanked": 0},
                 "aimock": AIMOCK,
-                "script": format!("tests/sources/hermetic/dsh/{scenario}.json"),
+                "script": format!("tests/sources/dsh/hermetic/{scenario}.json"),
                 "dropped": {"os": std::env::consts::OS, "at": {}},
             });
             record(&mut over);
@@ -2001,7 +2002,7 @@ mod recorder {
             let s = hermetic::profile("codex")
                 .and_then(|p| p.scenario("tool-run"))
                 .expect("codex's tool-run");
-            let committed = sources_root().join(s.fixture);
+            let committed = sources_root().join(s.fixture("codex"));
             let record = Provenance::read(&committed.join(PROVENANCE)).expect("its record");
             let record = record.recorded().clone();
             assert!(
@@ -2046,7 +2047,7 @@ mod recorder {
             };
             let root = d.join("sources");
             Reruns {
-                dest: root.join(s.fixture),
+                dest: root.join(s.fixture("codex")),
                 root,
                 run,
             }
@@ -2144,7 +2145,7 @@ mod recorder {
             let p = rerun(
                 "tool-run",
                 (dsh_version(), AIMOCK),
-                |r| r["script"] = "tests/sources/hermetic/dsh/moved.json".into(),
+                |r| r["script"] = "tests/sources/dsh/hermetic/moved.json".into(),
                 unchanged,
             );
             assert!(!kept(&p), "a kept record would name a script that is gone");
@@ -2169,7 +2170,7 @@ mod recorder {
                     std::fs::read_to_string(p.dest.join(HOOK_PAYLOADS)).expect("bytes"),
                     std::fs::read_to_string(
                         sources_root()
-                            .join("dsh/fixtures/tool-run-recorded")
+                            .join("dsh/fixtures/tool-run-hermetic")
                             .join(HOOK_PAYLOADS)
                     )
                     .expect("committed"),

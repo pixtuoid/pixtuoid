@@ -9,7 +9,7 @@
     "blanked": 1
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/dsh/model-error.json",
+  "script": "tests/sources/dsh/hermetic/model-error.json",
   "dropped": {
     "os": "macos",
     "at": {}

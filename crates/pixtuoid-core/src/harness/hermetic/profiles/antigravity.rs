@@ -65,7 +65,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "antigravity/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         // `-p` answers the question itself: "Auto-answering ask_question at
@@ -75,7 +74,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::Permission,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "antigravity/fixtures/ask-question-hermetic",
             turn: Turn::PROFILE,
         },
     ],

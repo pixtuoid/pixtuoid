@@ -291,7 +291,7 @@ fn agent_cases() -> Vec<WireCase> {
             // The recorded tool run pins Running on real wire.
             name: "dsh",
             source: "dsh",
-            fixture: "dsh/fixtures/tool-run-recorded/hook-payloads.jsonl",
+            fixture: "dsh/fixtures/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running],
         },

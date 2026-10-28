@@ -9,7 +9,7 @@
     "blanked": 364
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/claude-code/ultra-effort.json",
+  "script": "tests/sources/claude_code/hermetic/ultra-effort.json",
   "dropped": {
     "os": "macos",
     "at": {

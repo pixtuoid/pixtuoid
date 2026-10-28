@@ -9,7 +9,7 @@
     "blanked": 141
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codex/refuse-then-prompt.json",
+  "script": "tests/sources/codex/hermetic/refuse-then-prompt.json",
   "dropped": {
     "os": "macos",
     "at": {

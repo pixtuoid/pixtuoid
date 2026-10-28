@@ -9,7 +9,7 @@
     "blanked": 117
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/grok/ask-user.json",
+  "script": "tests/sources/grok/hermetic/ask-user.json",
   "dropped": {
     "os": "macos",
     "at": {

@@ -9,7 +9,7 @@
     "blanked": 183
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/grok/two-turn.json",
+  "script": "tests/sources/grok/hermetic/two-turn.json",
   "dropped": {
     "os": "macos",
     "at": {

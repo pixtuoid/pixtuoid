@@ -8,9 +8,9 @@
     "method": "decoder-allowlist",
     "blanked": 97
   },
-  "seed": "tests/sources/hermetic/codex/policy-deny",
+  "seed": "tests/sources/codex/hermetic/policy-deny",
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codex/policy-deny.json",
+  "script": "tests/sources/codex/hermetic/policy-deny.json",
   "dropped": {
     "os": "macos",
     "at": {

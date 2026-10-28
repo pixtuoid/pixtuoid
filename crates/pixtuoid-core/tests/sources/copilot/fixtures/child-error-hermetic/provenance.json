@@ -9,7 +9,7 @@
     "blanked": 74
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/copilot/child-error.json",
+  "script": "tests/sources/copilot/hermetic/child-error.json",
   "dropped": {
     "os": "macos",
     "at": {

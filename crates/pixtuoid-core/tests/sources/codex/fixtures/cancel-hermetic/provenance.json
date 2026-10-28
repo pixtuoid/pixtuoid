@@ -9,7 +9,7 @@
     "blanked": 58
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/codex/cancel.json",
+  "script": "tests/sources/codex/hermetic/cancel.json",
   "dropped": {
     "os": "macos",
     "at": {

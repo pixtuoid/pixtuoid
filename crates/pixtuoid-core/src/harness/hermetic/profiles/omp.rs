@@ -134,7 +134,6 @@ startup:
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["session_start", "session_shutdown"],
-            fixture: "omp/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -147,7 +146,6 @@ startup:
                 "tool_approval_resolved",
                 "session_shutdown",
             ],
-            fixture: "omp/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -160,7 +158,6 @@ startup:
                 "tool_approval_resolved",
                 "session_shutdown",
             ],
-            fixture: "omp/fixtures/approve-hermetic",
             turn: Turn::PROFILE,
         },
         // omp's question is a tool the model calls, which only a UI answers
@@ -170,7 +167,6 @@ startup:
             shape: Shape::Permission,
             surface: Surface::Tui { row: &TUI_ASK },
             expects: &["session_start", "session_shutdown"],
-            fixture: "omp/fixtures/ask-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -178,7 +174,6 @@ startup:
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["session_start", "session_shutdown"],
-            fixture: "omp/fixtures/resume-hermetic",
             turn: Turn {
                 second: Some(Second::Prompt("Say done.")),
                 ..Turn::PROFILE
@@ -189,7 +184,6 @@ startup:
             shape: Shape::Subagent,
             surface: Surface::Headless,
             expects: &["session_start", "session_shutdown"],
-            fixture: "omp/fixtures/subagent-hermetic",
             turn: Turn::PROFILE,
         },
         // `/new` is a TUI builtin, which `-p` never runs
@@ -201,7 +195,6 @@ startup:
             shape: Shape::Succession,
             surface: Surface::Tui { row: &TUI },
             expects: &["session_start", "session_switch", "session_shutdown"],
-            fixture: "omp/fixtures/new-session-hermetic",
             turn: Turn {
                 prompt: Some("/new"),
                 ..Turn::PROFILE

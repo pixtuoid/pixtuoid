@@ -94,7 +94,6 @@ model = "hermetic"
                 "session_idle",
                 "session_end",
             ],
-            fixture: "codewhale/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -110,7 +109,6 @@ model = "hermetic"
                 "session_idle",
                 "session_end",
             ],
-            fixture: "codewhale/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
         // Not a `Subagent`: a child's own tools fire no hook
@@ -129,7 +127,6 @@ model = "hermetic"
                 "session_idle",
                 "session_end",
             ],
-            fixture: "codewhale/fixtures/child-error-hermetic",
             turn: Turn::PROFILE,
         },
     ],

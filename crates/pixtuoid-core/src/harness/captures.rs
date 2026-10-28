@@ -554,13 +554,13 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "shim-pid",
         pattern: r#""_pid":(\d+)"#,
-        seen_in: "dsh/fixtures/tool-run-recorded",
+        seen_in: "dsh/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"_pid":56875}"#, r#"{"_pid":42895}"#)],
     },
     IdFamily {
         name: "shim-clock",
         pattern: r#""_shim_ts_ms":(\d+)"#,
-        seen_in: "dsh/fixtures/tool-run-recorded",
+        seen_in: "dsh/fixtures/tool-run-hermetic",
         renamed: &[(
             r#"{"_shim_ts_ms":1792464600287}"#,
             r#"{"_shim_ts_ms":1792482405228}"#,

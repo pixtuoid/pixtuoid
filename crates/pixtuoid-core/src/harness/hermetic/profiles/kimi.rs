@@ -66,7 +66,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "Stop"],
-            fixture: "kimi/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -81,7 +80,6 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "kimi/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -89,7 +87,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ModelError,
             surface: Surface::Headless,
             expects: &["SessionStart", "StopFailure"],
-            fixture: "kimi/fixtures/model-error-hermetic",
             turn: Turn::PROFILE,
         },
     ],

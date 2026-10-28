@@ -9,7 +9,7 @@
     "blanked": 2
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/opencode/subagent.json",
+  "script": "tests/sources/opencode/hermetic/subagent.json",
   "dropped": {
     "os": "macos",
     "at": {}

@@ -9,7 +9,7 @@
     "blanked": 11
   },
   "aimock": "1.47.0",
-  "script": "tests/sources/hermetic/kimi/tool-run.json",
+  "script": "tests/sources/kimi/hermetic/tool-run.json",
   "dropped": {
     "os": "macos",
     "at": {}

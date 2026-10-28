@@ -9,5 +9,5 @@
     "target": "esnext",
     "types": ["node"]
   },
-  "include": ["scripts", "npm", "crates/pixtuoid-core/tests/sources/hermetic/codex/*/.codex/*.js"]
+  "include": ["scripts", "npm", "crates/pixtuoid-core/tests/sources/codex/hermetic/*/.codex/*.js"]
 }
