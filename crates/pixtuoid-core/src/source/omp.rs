@@ -42,7 +42,7 @@ pub const SOURCE_NAME: &str = "omp";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "om",
-    verified_version: "18.13.1",
+    verified_version: "18.13.3",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
