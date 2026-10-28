@@ -3,11 +3,15 @@
 // stream and a real recorder.
 
 import assert from "node:assert/strict";
+import { appendFile } from "node:fs/promises";
 import test from "node:test";
-import { POSIX, assertShimContract, recorded, render, row } from "./lib/plugin-harness.mjs";
+import { POSIX, assertShimContract, lines, recorded, render, row } from "./lib/plugin-harness.mjs";
 
 const SOURCE = "opencode";
 const { registers, data_fields: dataFields = [], turn_key: turnKey = "" } = row(SOURCE);
+// Well past the drain's `QUIET_MS`, so a cleanup that stops waiting on a held
+// shim resolves before it ends.
+const HOLD_MS = 250;
 
 // Every field the decoder reads, nested as opencode nests it, beside content
 // that must never leave.
@@ -35,8 +39,11 @@ function host(events, sessions = {}) {
     event: {
       /** @param {{ signal: AbortSignal }} options */
       async *subscribe({ signal }) {
-        yield* events;
-        await new Promise((resolve) => signal.addEventListener("abort", resolve));
+        for (const event of events) {
+          if (signal.aborted) return;
+          yield event;
+        }
+        if (!signal.aborted) await new Promise((resolve) => signal.addEventListener("abort", resolve));
       },
     },
     session: {
@@ -47,12 +54,14 @@ function host(events, sessions = {}) {
 }
 
 /**
+ * The plugin set up over `ctx` and unloaded at once, so only its drain keeps the
+ * stream open for what is still queued.
  * @param {any} module
  * @param {ReturnType<typeof host>} ctx
  */
 async function run(module, ctx) {
   const cleanup = await module.default.setup(ctx);
-  return /** @type {() => Promise<void>} */ (cleanup);
+  await /** @type {() => Promise<void>} */ (cleanup)();
 }
 
 /**
@@ -76,9 +85,8 @@ test("forwards each event of the contract once, copying exactly the decoded fiel
     { type: "message.part.updated", data: FULL },
     ...registers.map((type) => ({ type, location: { directory: "/r", secret: "SECRET_PATH" }, data: FULL })),
   ];
-  const cleanup = await run(module, host(events));
-  const payloads = await recorded(outFile, registers.length);
-  await cleanup();
+  await run(module, host(events));
+  const payloads = await recorded(outFile);
 
   assert.deepEqual(
     payloads.map((p) => p.type),
@@ -110,27 +118,28 @@ function everyField(prefix = "") {
 
 test("copies the decoded fields and nothing more, whatever an event carries", { skip: !POSIX }, async (t) => {
   const { module, outFile } = await render(t, SOURCE);
-  const cleanup = await run(module, host([{ type: "session.tool.success", data: everyField() }]));
-  const [payload] = await recorded(outFile, 1);
-  await cleanup();
-  assert.deepEqual(paths(payload.data).sort(), [...dataFields].sort());
+  await run(module, host([{ type: "session.tool.success", data: everyField() }]));
+  assert.deepEqual(
+    (await recorded(outFile)).map((p) => paths(p.data).sort()),
+    [[...dataFields].sort()],
+  );
 });
 
 test("a turn's start carries what its session's record adds", { skip: !POSIX }, async (t) => {
   const { module, outFile } = await render(t, SOURCE);
   const events = [{ type: "session.execution.started", data: { sessionID: "ses_1" } }];
-  const cleanup = await run(module, host(events, { ses_1: { id: "ses_1", parentID: "ses_0", title: "SECRET_TITLE" } }));
-  const [start] = await recorded(outFile, 1);
-  await cleanup();
-  assert.deepEqual(start.data, { sessionID: "ses_1", parentID: "ses_0", id: "ses_1" });
+  await run(module, host(events, { ses_1: { id: "ses_1", parentID: "ses_0", title: "SECRET_TITLE" } }));
+  assert.deepEqual(
+    (await recorded(outFile)).map((p) => p.data),
+    [{ sessionID: "ses_1", parentID: "ses_0", id: "ses_1" }],
+  );
 });
 
-test("cleanup waits for what is in flight before it aborts the stream", { skip: !POSIX }, async (t) => {
-  const { module, outFile } = await render(t, SOURCE);
-  const events = registers.map((type) => ({ type, data: { sessionID: "ses_1" } }));
-  const cleanup = await run(module, host(events));
-  await cleanup();
-  assert.equal((await recorded(outFile, registers.length)).length, registers.length);
+test("cleanup waits for a shim already in flight", { skip: !POSIX }, async (t) => {
+  const { module, traceFile } = await render(t, SOURCE, { holdMs: HOLD_MS });
+  await run(module, host([{ type: "session.tool.success", data: { sessionID: "ses_1" } }]));
+  await appendFile(traceFile, "cleaned\n");
+  assert.deepEqual(await lines(traceFile), ["begin", "end", "cleaned"]);
 });
 
 test("an unspawnable shim or an unreadable session never rejects into opencode", async (t) => {
@@ -139,8 +148,7 @@ test("an unspawnable shim or an unreadable session never rejects into opencode",
   ctx.session.get = async () => {
     throw new Error("gone");
   };
-  const cleanup = await run(module, ctx);
-  await cleanup();
+  await run(module, ctx);
 });
 
 /**
@@ -165,7 +173,7 @@ const settled = (type, sessionID, seq) => ({
 
 test("each settle names its start's seq, and one whose start went unseen names none", { skip: !POSIX }, async (t) => {
   const { module, outFile } = await render(t, SOURCE);
-  const cleanup = await run(
+  await run(
     module,
     host([
       settled("failed", "ses_a", 2),
@@ -177,8 +185,7 @@ test("each settle names its start's seq, and one whose start went unseen names n
       settled("succeeded", "ses_b", 12),
     ]),
   );
-  const got = (await recorded(outFile, 7)).map((p) => [p.type, p.data.sessionID, p[turnKey]]);
-  await cleanup();
+  const got = (await recorded(outFile)).map((p) => [p.type, p.data.sessionID, p[turnKey]]);
   assert.deepEqual(got, [
     ["session.execution.failed", "ses_a", undefined],
     ["session.execution.started", "ses_a", 4],
@@ -192,11 +199,10 @@ test("each settle names its start's seq, and one whose start went unseen names n
 
 test("a start with no durable seq names no turn, nor does its settle", { skip: !POSIX }, async (t) => {
   const { module, outFile } = await render(t, SOURCE);
-  const cleanup = await run(
+  await run(
     module,
     host([started("ses_a", 3), started("ses_a", undefined), settled("succeeded", "ses_a", 5)]),
   );
-  const got = (await recorded(outFile, 3)).map((p) => p[turnKey]);
-  await cleanup();
+  const got = (await recorded(outFile)).map((p) => p[turnKey]);
   assert.deepEqual(got, [3, undefined, undefined]);
 });

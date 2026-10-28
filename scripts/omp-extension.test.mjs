@@ -74,7 +74,7 @@ test("each event reaches the shim as its own type, with only the allowlist", { s
       ctx,
     );
   }
-  const payloads = await recorded(outFile, Object.keys(handlers).length);
+  const payloads = await recorded(outFile);
   assert.deepEqual(
     payloads.map((p) => p.type),
     Object.keys(handlers),
