@@ -44,14 +44,11 @@ impl Capture {
         p.is_file().then_some(p)
     }
 
-    /// Its directory under `tests/sources`, slash-joined on every platform: the
-    /// spelling the pinned lists below use.
+    /// Its directory under `tests/sources`, as the recorder and the issues
+    /// spell it ([`slashed_under`](pixtuoid_core::harness::slashed_under)).
     pub(crate) fn label(&self) -> String {
-        self.dir
-            .strip_prefix(sources_root())
+        pixtuoid_core::harness::slashed_under(&sources_root(), &self.dir)
             .expect("every capture is under tests/sources")
-            .to_string_lossy()
-            .replace('\\', "/")
     }
 
     /// Every committed byte of this capture, for the rules that read content
@@ -371,10 +368,7 @@ fn no_identity_key_holds_a_value() {
 fn a_stripped_record_does_not_call_its_bytes_verbatim() {
     for c in every_capture() {
         let prov = &c.provenance_path;
-        let blanked = match c.recorded().deidentified {
-            Some(Deidentified::Stripped { blanked }) => blanked,
-            None => 0,
-        };
+        let Deidentified::Stripped { blanked } = c.recorded().deidentified;
         let note = c.note().unwrap_or("");
         assert!(
             blanked == 0 || !note.to_ascii_lowercase().contains("verbatim"),

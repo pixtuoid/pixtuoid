@@ -32,5 +32,10 @@
         "user"
       ]
     }
+  },
+  "sentinel_reads": {
+    "4aa0494b-a64f-4b5c-a6a0-3731b03c659d.jsonl": [
+      "21:/message/usage/cache_creation_input_tokens"
+    ]
   }
 }

@@ -12,7 +12,8 @@ use serde_json::{Map, Value};
 
 use super::verify::Label;
 use super::{Leg, NOT_HERMETIC, OSES, Unprofiled, legs, shard_of};
-use crate::harness::provenance::Provenance;
+use crate::harness::plan::{PROMPT_ENV, SEED_ENV};
+use crate::harness::provenance::{NonEmpty, Provenance, Recorded};
 use crate::source::registry;
 
 /// The file beside a leg's report holding its [`Verdicts`].
@@ -434,11 +435,11 @@ fn freshness_note(
             {
                 let at = crate::harness::slashed_under(&root, &c.dir)
                     .unwrap_or_else(|_| c.dir.display().to_string());
-                let command = Provenance::read(&c.provenance_path())
-                    .ok()
-                    .map(|p| p.recorded().command.to_string())
-                    .unwrap_or_else(|| "nothing recorded".to_owned());
-                note += &format!("- `{at}`, recorded by `{command}`\n");
+                let line = Provenance::read(&c.provenance_path()).ok().map_or_else(
+                    || "nothing recorded".to_owned(),
+                    |p| recapture_line(u.source, &c.dir, p.recorded()),
+                );
+                note += &format!("- `{at}`: `{line}`\n");
             }
             Some(note)
         }
@@ -446,6 +447,21 @@ fn freshness_note(
             "**Blocked** in {run_url}: its feed's latest, {release}, is below its pin, {pin}\n"
         )),
     }
+}
+
+/// The line that records `source`'s capture in `dir` again as `record` says it
+/// was recorded, its prompt and seed in the env the recorder reads them from.
+fn recapture_line(source: &str, dir: &std::path::Path, record: &Recorded) -> String {
+    let quoted = |v: &NonEmpty| format!("'{}'", v.as_str().replace('\'', r"'\''"));
+    let env: String = [(PROMPT_ENV, &record.prompt), (SEED_ENV, &record.seed)]
+        .into_iter()
+        .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}={} ", quoted(v))))
+        .collect();
+    let scenario = dir.file_name().unwrap_or_default().to_string_lossy();
+    format!(
+        "{env}just capture-fixture {source} {scenario} {}",
+        record.command.as_str()
+    )
 }
 
 /// Whether every leg of [`OSES`] on the shard that runs `source` reported its runs.
@@ -909,23 +925,56 @@ mod tests {
             )),
             "{body}"
         );
-        let owed: Vec<String> = crate::harness::captures(&crate::harness::sources_root())
+        let owed = crate::harness::captures(&crate::harness::sources_root())
             .into_iter()
             .filter(|c| c.source == "cursor")
-            .map(|c| {
-                crate::harness::slashed_under(&crate::harness::sources_root(), &c.dir)
-                    .expect("under the corpus")
-            })
-            .collect();
+            .collect::<Vec<_>>();
         assert!(!owed.is_empty());
-        for at in owed {
+        for c in owed {
+            let at = crate::harness::slashed_under(&crate::harness::sources_root(), &c.dir)
+                .expect("under the corpus");
+            let record = Provenance::read(&c.provenance_path()).expect("a record");
+            let r = record.recorded();
+            let scenario = c.dir.file_name().expect("a dir").to_string_lossy();
+            let row = body
+                .lines()
+                .find(|l| l.starts_with(&format!("- `{at}`: `")))
+                .unwrap_or_else(|| panic!("no `{at}` row in:\n{body}"));
             assert!(
-                body.lines()
-                    .any(|l| l.starts_with(&format!("- `{at}`, recorded by `"))),
-                "no `{at}` row in:\n{body}"
+                row.contains(&format!(
+                    "just capture-fixture cursor {scenario} {}`",
+                    r.command.as_str()
+                )),
+                "{row}"
+            );
+            assert_eq!(
+                row.contains(&format!("{PROMPT_ENV}='")),
+                r.prompt.is_some(),
+                "a scenario's own prompt rides its line: {row}"
             );
         }
         assert!(plan.lost.is_empty(), "{:?}", plan.lost);
+    }
+
+    #[test]
+    fn a_recapture_line_quotes_its_prompt_for_the_shell() {
+        let record: Recorded = serde_json::from_value(serde_json::json!({
+            "cli": "cursor-agent",
+            "version": "1",
+            "captured": "2026-10-27",
+            "command": "cursor-agent -p {prompt}",
+            "deidentified": {"method": "decoder-allowlist", "blanked": 0},
+            "prompt": "Don't read it",
+        }))
+        .expect("a record");
+        assert_eq!(
+            recapture_line(
+                "cursor",
+                std::path::Path::new("/s/fixtures/cursor/x"),
+                &record
+            ),
+            r"CAPTURE_PROMPT='Don'\''t read it' just capture-fixture cursor x cursor-agent -p {prompt}"
+        );
     }
 
     #[test]

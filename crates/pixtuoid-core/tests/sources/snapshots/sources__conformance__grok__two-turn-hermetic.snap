@@ -3,100 +3,100 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 6570517036322427343
-    tool_use_id: call_NHR7-7bEwc1-S1Vx
+    agent_id: 10545780290673153339
+    tool_use_id: call_imOlJ1WP9iN96Qep
     detail:
       Generic:
         display: read_file
 - ToolUseEnd:
-    agent_id: 6570517036322427343
-    tool_use_id: call_NHR7-7bEwc1-S1Vx
+    agent_id: 10545780290673153339
+    tool_use_id: call_imOlJ1WP9iN96Qep
 - TurnEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
 - ModelInfo:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 6570517036322427343
-    tool_use_id: call_SIEpeE5yoxzDf9d0
+    agent_id: 10545780290673153339
+    tool_use_id: call_0tkQEvQAl2DgCl-z
     detail:
       Generic:
         display: read_file
 - ToolUseEnd:
-    agent_id: 6570517036322427343
-    tool_use_id: call_SIEpeE5yoxzDf9d0
+    agent_id: 10545780290673153339
+    tool_use_id: call_0tkQEvQAl2DgCl-z
 - TurnEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
 - SessionEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     as_child: false
 - SessionStart:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 6570517036322427343
-    tool_use_id: call_NHR7-7bEwc1-S1Vx
+    agent_id: 10545780290673153339
+    tool_use_id: call_imOlJ1WP9iN96Qep
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 6570517036322427343
-    tool_use_id: call_NHR7-7bEwc1-S1Vx
+    agent_id: 10545780290673153339
+    tool_use_id: call_imOlJ1WP9iN96Qep
 - TurnEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
 - SessionStart:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 6570517036322427343
-    tool_use_id: call_SIEpeE5yoxzDf9d0
+    agent_id: 10545780290673153339
+    tool_use_id: call_0tkQEvQAl2DgCl-z
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     source: grok
-    session_id: 01a17fe5-4e82-7c70-9db5-7ff3c8385d0a
+    session_id: 01a1803b-6523-7313-9310-75d63c824425
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 6570517036322427343
-    tool_use_id: call_SIEpeE5yoxzDf9d0
+    agent_id: 10545780290673153339
+    tool_use_id: call_0tkQEvQAl2DgCl-z
 - TurnEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
 - SessionEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339
     as_child: false
 - TurnEnd:
-    agent_id: 6570517036322427343
+    agent_id: 10545780290673153339

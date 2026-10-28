@@ -13,5 +13,10 @@
   "dropped": {
     "os": "macos",
     "at": {}
+  },
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "4:/errored"
+    ]
   }
 }

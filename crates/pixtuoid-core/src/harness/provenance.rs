@@ -36,8 +36,7 @@ pub struct Recorded {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<NonEmpty>,
     /// What the strip did to the bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deidentified: Option<Deidentified>,
+    pub deidentified: Deidentified,
     /// The prompt, when it was not the recorder's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<NonEmpty>,
@@ -53,7 +52,7 @@ pub struct Recorded {
     /// What the decoders dropped, the baseline a New finding is judged against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dropped: Option<Dropped>,
-    /// Each file's empty strings the decoders read when it was stripped, by
+    /// Each file's blank leaves the decoders read when it was stripped, by
     /// path under the capture ([`Strip::sentinel_reads`](super::reads::Strip::sentinel_reads)).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sentinel_reads: BTreeMap<String, BTreeSet<String>>,
@@ -178,8 +177,8 @@ mod tests {
         serde_json::from_str(json)
     }
 
-    const RECORDED: &str =
-        r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x"}"#;
+    const STRIPPED: &str = r#""deidentified":{"method":"decoder-allowlist","blanked":0}"#;
+    const RECORDED: &str = r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x","deidentified":{"method":"decoder-allowlist","blanked":0}}"#;
 
     /// serde's docs (https://serde.rs/container-attrs.html) say nothing of
     /// `deny_unknown_fields` inside an internally tagged newtype variant; the
@@ -190,14 +189,12 @@ mod tests {
         let stray = RECORDED.replace(r#""command":"x""#, r#""command":"x","droped":{}"#);
         assert!(parse(&stray).is_err(), "a recording's stray key");
         let method = RECORDED.replace(
-            r#""command":"x""#,
-            r#""command":"x","deidentified":{"method":"decoder-allowlist","blanked":1,"why":"w"}"#,
+            STRIPPED,
+            r#""deidentified":{"method":"decoder-allowlist","blanked":1,"why":"w"}"#,
         );
         assert!(parse(&method).is_err(), "a stray key inside `deidentified`");
-        let unstripped = RECORDED.replace(
-            r#""command":"x""#,
-            r#""command":"x","deidentified":{"method":"none","why":"w"}"#,
-        );
+        let unstripped =
+            RECORDED.replace(STRIPPED, r#""deidentified":{"method":"none","why":"w"}"#);
         assert!(parse(&unstripped).is_err(), "every capture is stripped");
     }
 
@@ -205,7 +202,7 @@ mod tests {
     /// README's row follows.
     #[test]
     fn a_record_missing_a_required_key_fails_to_parse() {
-        for key in ["cli", "version", "captured", "command"] {
+        for key in ["cli", "version", "captured", "command", "deidentified"] {
             let without: serde_json::Map<String, serde_json::Value> =
                 serde_json::from_str::<serde_json::Map<_, _>>(RECORDED)
                     .expect("json")

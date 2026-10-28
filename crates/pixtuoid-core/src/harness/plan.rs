@@ -8,7 +8,7 @@
 //! refuses a placeholder, and [`Word::Session`] is the one hole, filled after the
 //! first turn.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -310,18 +310,46 @@ pub struct CapturePlan {
     pub first_turn: Argv<Resolved>,
     /// What stops the server the CLI started for its turns, run after them.
     pub server_stop: Option<Argv<Resolved>>,
-    /// The operator's [`KEYCHAINS`], which an isolated capture links into its
-    /// throwaway home.
+    /// The operator a billed capture runs for: none for the hermetic tier's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator: Option<Operator>,
+}
+
+/// The operator a billed capture runs for, read in their own env before the
+/// recorder moves every home into its sandbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Operator {
+    /// Their identity, which no capture may hold.
+    pub identity: BTreeSet<String>,
+    /// Their [`KEYCHAINS`], which the sandbox's home links.
     pub keychains: Option<AbsPath>,
 }
 
+impl Operator {
+    /// The operator whose identity is `identity` and whose home, if any, is
+    /// `home`.
+    pub fn new(identity: BTreeSet<String>, home: Option<&str>) -> Self {
+        Self {
+            identity,
+            keychains: home
+                .and_then(|home| AbsPath::try_from(Path::new(home).join(KEYCHAINS)).ok()),
+        }
+    }
+}
+
 impl CapturePlan {
-    /// Whether this capture runs inside a sandbox the caller built around every
-    /// home, so nothing it writes can hold the operator's own credentials: the
-    /// hermetic tier's, never an operator's billed one.
+    /// Whether every home the CLI resolves points into [`CapturePlan::within`],
+    /// so every transcript born there is the run's.
     pub fn sandboxed(&self) -> bool {
         self.within.is_some()
+    }
+
+    /// Whether the CLI talks to the hermetic tier's scripted model, never an
+    /// operator's account: its logs hold no credential, and its turn has the
+    /// budget measured on such turns.
+    pub fn scripted(&self) -> bool {
+        self.sandboxed() && self.operator.is_none()
     }
 
     /// The second turn, for a raw capture that has one.
@@ -539,8 +567,7 @@ impl CapturePlan {
             daemon: None,
             first_turn,
             server_stop: None,
-            keychains: env("HOME")
-                .and_then(|home| AbsPath::try_from(Path::new(&home).join(KEYCHAINS)).ok()),
+            operator: None,
         })
     }
 }
@@ -572,7 +599,7 @@ mod tests {
             daemon: None,
             first_turn: Argv::resolved(["kimi", "-p", "go"]).expect("resolved"),
             server_stop: None,
-            keychains: None,
+            operator: None,
         }
     }
 
@@ -723,12 +750,27 @@ mod tests {
 
     #[test]
     fn an_operators_keychains_are_their_homes() {
-        let line = args(&["cursor", "delegation", "cursor-agent", "-p", "{prompt}"]);
-        let plan =
-            CapturePlan::from_operator(&line, &env_of(&[("HOME", "/Users/ada")])).expect("plan");
-        assert_eq!(plan.keychains, Some(abs("/Users/ada/Library/Keychains")));
-        let homeless = CapturePlan::from_operator(&line, &env_of(&[])).expect("plan");
-        assert_eq!(homeless.keychains, None);
+        let operator = Operator::new(BTreeSet::new(), Some("/Users/ada"));
+        assert_eq!(
+            operator.keychains,
+            Some(abs("/Users/ada/Library/Keychains"))
+        );
+        assert_eq!(Operator::new(BTreeSet::new(), None).keychains, None);
+    }
+
+    #[test]
+    fn only_a_sandboxed_run_no_operator_reaches_is_scripted() {
+        let sandboxed = CapturePlan {
+            within: Some(abs("/sandbox")),
+            ..plan()
+        };
+        assert!(sandboxed.scripted());
+        let billed = CapturePlan {
+            operator: Some(Operator::new(BTreeSet::new(), None)),
+            ..sandboxed.clone()
+        };
+        assert!(billed.sandboxed() && !billed.scripted());
+        assert!(!plan().scripted(), "a home outside any sandbox");
     }
 
     #[test]
@@ -899,7 +941,11 @@ mod tests {
             "split_paths",
             "EXE_SUFFIX",
         ];
-        const EXEMPT: [(&str, &str); 2] = [("wired", "vars_os"), ("identity_needles", "text_env")];
+        const EXEMPT: [(&str, &str); 3] = [
+            ("wired", "vars_os"),
+            ("identity_needles", "text_env"),
+            ("operator", "text_env"),
+        ];
         /// The names a `use` brings in from `std::env` or `platform`, which a bare
         /// call then reads the env by.
         #[derive(Default)]

@@ -29,5 +29,11 @@
         "model_change"
       ]
     }
+  },
+  "sentinel_reads": {
+    "2026-10-28T01-59-49-138Z_01a1803c-2a92-7651-a5ac-8b033358f96a.jsonl": [
+      "10:/message/usage/cacheWrite",
+      "7:/message/usage/cacheWrite"
+    ]
   }
 }

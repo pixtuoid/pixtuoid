@@ -23,7 +23,7 @@ redacted cwd and an invented one look alike. `origin` is `recorded`, and no othe
 
 | origin | required | means |
 | --- | --- | --- |
-| `recorded` | `cli`, `version`, `captured`, `command` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
+| `recorded` | `cli`, `version`, `captured`, `command`, `deidentified` | Real wire bytes, a real CLI's against a scripted model where `aimock` and `script` name it, stripped of every subtree no decoder reads; the recorder writes this file itself. |
 
 **The recorder blanks what no decoder reads before the bytes land**, and
 `deidentified` in the provenance says how many subtrees went. A plugin roster, a
@@ -36,7 +36,9 @@ without it a reader cannot tell an edited capture from an untouched one, which i
 the distinction the whole mechanism exists to make. A field blanked today stays
 blank in that fixture: a decoder later extended to read it meets the neutral value
 there and its golden encodes "absent", so `no_capture_blanked_a_field_a_decoder_now_reads`
-reds until the scenario is re-recorded. The other direction is cheap: `just restrip-fixtures` runs the same
+reds until the scenario is re-recorded. It probes each blank leaf with one value of
+its type, so re-record by hand for a read inside a container the strip collapsed
+whole, or of one value only. The other direction is cheap: `just restrip-fixtures` runs the same
 strip over the committed corpus, offline and unbilled, so a field a decoder
 STOPPED reading is one pass from gone.
 
@@ -99,23 +101,15 @@ legitimate copilot lines run to 39 KB, wider than the `world_state` dump that ha
 to go. Redacting a READ field is the expensive case — re-run the golden;
 byte-identical means the redaction cost no evidence.
 
-**Capture only what pixtuoid's OWN hook registration receives.** A machine can
-carry other tools' hooks on the same events — a debug tee, another integration —
-and a capture that scoops those up is a recording of somebody else's wire. Scope
-it to the source's install-side list (`CURSOR_EVENTS` in `install/cursor.rs`, and
-its siblings); an event outside that list never reaches the shim in production, so
-a decoder that bails on it is correct and a fixture containing it is fiction.
-Learned by getting it wrong: a capture off a 12-event debug tee looked like proof
-that the decoder mishandled three events pixtuoid never even subscribes to.
-
-The same trap has a second door: a CLI that SPAWNS another CLI. The OpenClaw
+A CLI that SPAWNS another CLI can send somebody else's wire. The OpenClaw
 gateway runs its agent turn on a Claude Code backend, which inherits
 `PIXTUOID_SOCKET` and sends its own unstamped CC hooks to the recorder — six of
 the eight payloads in that capture were Claude Code's. The recorder now refuses
 a capture holding any payload not stamped with its source.
 
 One list describes each CLI — `*_EVENTS` in `install/<cli>.rs`: which hooks we
-register, and so what the CLI sends us.
+register, and so what the CLI sends us. An event outside it never reaches the
+shim in production, so a decoder that bails on it is correct.
 
 An event the decoder handles but `*_EVENTS` never registers is a SHIPPING bug no
 test can see, because every test asserts our own belief about the wire: CC's

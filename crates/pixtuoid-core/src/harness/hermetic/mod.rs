@@ -551,7 +551,7 @@ impl Step {
 
     /// The `outcome` its row must report, a token of the `--json` contract
     /// (`integrations/raycast/contract/outcome-row.schema.json`).
-    pub fn outcome(self) -> &'static str {
+    pub(crate) fn outcome(self) -> &'static str {
         match self {
             Self::Connect => "connected",
             Self::Disconnect => "disconnected",
@@ -656,6 +656,19 @@ pub const NOT_HERMETIC: &[Unprofiled] = &[Unprofiled {
 /// The profile for `source`, if it has one.
 pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
+}
+
+/// Every home variable `source`'s CLI reads that a sandbox points into its
+/// own directories: its profile's ([`Profile::home_vars`]), else its registry
+/// row's.
+pub fn home_vars(source: &str) -> Vec<&'static str> {
+    match profile(source) {
+        Some(p) => p.home_vars().collect(),
+        None => crate::source::registry::descriptor_for(source)
+            .and_then(|d| d.home_env)
+            .into_iter()
+            .collect(),
+    }
 }
 
 /// The matrix's `os` axis, as `hermetic.yml` names it.

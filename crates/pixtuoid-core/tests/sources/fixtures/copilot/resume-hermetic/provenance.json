@@ -22,5 +22,11 @@
         "user.message"
       ]
     }
+  },
+  "sentinel_reads": {
+    "3239924b-2dac-436c-b104-73bc2ba5d5a8/events.jsonl": [
+      "14:/data/modelMetrics/gpt-4.1/usage/cacheReadTokens",
+      "21:/data/modelMetrics/gpt-4.1/usage/cacheReadTokens"
+    ]
   }
 }

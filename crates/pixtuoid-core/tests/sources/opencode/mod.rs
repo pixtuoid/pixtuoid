@@ -49,14 +49,14 @@ fn the_child_registers_under_its_parent() {
             } => Some(*agent_id),
             _ => None,
         })
-        .expect("the root's session.created registers it");
+        .expect("the root's first start registers it");
     let (child, linked) = child_of(&d);
     assert_eq!(linked, root, "the child names the root as its parent");
     assert_eq!(
         d.scene
             .agents
             .get(&child)
-            .expect("the child's session.created registers it")
+            .expect("the child's first start registers it")
             .parent_id,
         Some(root)
     );

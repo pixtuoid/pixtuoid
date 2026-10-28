@@ -31,6 +31,15 @@
     }
   },
   "sentinel_reads": {
+    "85163636-153c-409e-9335-164f97091710.jsonl": [
+      "20:/message/usage/cache_creation_input_tokens",
+      "26:/message/usage/cache_creation_input_tokens",
+      "36:/message/usage/cache_creation_input_tokens"
+    ],
+    "agent-a08fff1bd81fa66ce.jsonl": [
+      "14:/message/usage/cache_creation_input_tokens",
+      "21:/message/usage/cache_creation_input_tokens"
+    ],
     "hook-payloads.jsonl": [
       "7:/agent_transcript_path"
     ]

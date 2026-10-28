@@ -41,11 +41,15 @@
     }
   },
   "sentinel_reads": {
+    "01a1803a-d54d-71c1-9353-82519ef50b0b/updates.jsonl": [
+      "4:/params/update/rawInput/background"
+    ],
     "hook-payloads.jsonl": [
       "10:/cwd",
       "1:/cwd",
       "2:/cwd",
       "3:/cwd",
+      "3:/toolInput/background",
       "4:/cwd",
       "5:/cwd",
       "6:/cwd",

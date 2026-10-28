@@ -28,5 +28,10 @@
         "world_state"
       ]
     }
+  },
+  "sentinel_reads": {
+    "rollout-2026-10-27T18-55-22-01a18038-1a41-7a03-a2c4-8cc302972b10.jsonl": [
+      "15:/payload/info/last_token_usage/cached_input_tokens"
+    ]
   }
 }

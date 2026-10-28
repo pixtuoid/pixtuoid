@@ -48,7 +48,8 @@ mod run {
         STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
     };
     use pixtuoid_core::harness::host::{
-        RELEASE_PATIENCE, SANDBOX_HOMES, hold_lock, remove_once_released,
+        RELEASE_PATIENCE, SandboxEnv, built, connect, hold_lock, inherited, remove_once_released,
+        warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
         AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
@@ -72,31 +73,6 @@ mod run {
     const AIMOCK_LOG: &str = "aimock.log";
     /// The scripted model's npm package.
     const AIMOCK_PACKAGE: &str = "@copilotkit/aimock";
-    /// The variables a CLI may inherit from the host, with each platform's own
-    /// in [`PLATFORM_INHERITED`]: everything else is cleared, so an operator's
-    /// provider keys can never reach a CLI whose base-URL wiring slipped and bill
-    /// a real provider.
-    const INHERITED_EVERYWHERE: &[&str] = &["PATH"];
-    const PLATFORM_INHERITED: PerOs<&[&str]> = PerOs {
-        unix: &[
-            "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "USER", "LOGNAME",
-        ],
-        windows: &[
-            // `connect` finds a CLI's `.cmd` through `which`, which reads it
-            // (`which-8.0.6/src/finder.rs:277`).
-            "PATHEXT",
-            // "In order to run a side-by-side assembly the specified env must
-            // include a valid %SystemRoot%" (docs.python.org, subprocess).
-            "SystemRoot",
-            // A CLI's shell: Node falls back to `cmd.exe` without it
-            // (nodejs.org/api/child_process.html, "Default Windows shell").
-            "ComSpec",
-            // TMPDIR's twins: GetTempPath reads TMP, then TEMP, then
-            // USERPROFILE, a sandbox home (learn.microsoft.com, GetTempPath2W).
-            "TMP",
-            "TEMP",
-        ],
-    };
     /// What the tier's tools inherit beyond [`inherited`]: network settings,
     /// with their homes in [`PLATFORM_TOOL_INHERITED`]. A CLI's install scripts
     /// and the npm-installed aimock are untrusted code, so no provider key
@@ -137,14 +113,6 @@ mod run {
                 *k == name
             }
         })
-    }
-
-    /// Every variable a CLI inherits on this platform.
-    fn inherited() -> impl Iterator<Item = &'static str> {
-        INHERITED_EVERYWHERE
-            .iter()
-            .chain(PLATFORM_INHERITED.here().iter())
-            .copied()
     }
 
     /// `program` with the host env cleared to what [`inherited`],
@@ -330,8 +298,10 @@ mod run {
         }
         std::fs::create_dir_all(&runs)?;
         let built = Built::find()?;
+        let shim_dir = tier.join("bin");
+        warmed_shim_dir(&shim_dir, &built.shim)?;
         let ctx = Ctx {
-            shim_dir: warmed_shim_dir(&tier, &built.shim)?,
+            shim_dir,
             record: args.record,
             built,
             aimock: Aimock::install(&tier)?,
@@ -857,9 +827,8 @@ mod run {
             .ok_or_else(|| std::io::Error::other("an example sits three below its target dir"))
     }
 
-    /// The build under test, beside this example in its profile's directory:
-    /// the binary, the shim and the recorder. Never a `pixtuoid` off PATH: a
-    /// released one would pass with none of the change under test in it.
+    /// The build under test: the binary and the shim ([`built`]), and beside
+    /// this example the recorder and the TUI driver.
     struct Built {
         pixtuoid: PathBuf,
         shim: PathBuf,
@@ -871,18 +840,14 @@ mod run {
     impl Built {
         fn find() -> std::io::Result<Self> {
             let me = std::env::current_exe()?;
-            let profile_dir = me
-                .parent()
-                .and_then(Path::parent)
-                .ok_or_else(|| std::io::Error::other("an example sits two below its target dir"))?;
             let exe = |name: &str| format!("{name}{}", std::env::consts::EXE_SUFFIX);
             let found = Self {
-                pixtuoid: profile_dir.join(exe("pixtuoid")),
-                shim: profile_dir.join(exe("pixtuoid-hook")),
+                pixtuoid: built("pixtuoid")?,
+                shim: built("pixtuoid-hook")?,
                 recorder: me.with_file_name(exe("capture_fixture")),
                 driver: me.with_file_name(exe("tui_drive")),
             };
-            for p in [&found.pixtuoid, &found.shim, &found.recorder, &found.driver] {
+            for p in [&found.recorder, &found.driver] {
                 if !p.is_file() {
                     return Err(std::io::Error::other(format!(
                         "{} is not built — `just hermetic` builds it",
@@ -892,36 +857,6 @@ mod run {
             }
             Ok(found)
         }
-    }
-
-    /// The directory every sandbox's PATH names, holding the tier's one shim:
-    /// Unix links the built one, and Windows, where a symlink needs privilege,
-    /// copies it once. The shim runs once here, at no endpoint, so no run's first
-    /// hook is a cold exec of a new file: a CLI lost its first payload behind one.
-    fn warmed_shim_dir(tier: &Path, shim: &Path) -> std::io::Result<PathBuf> {
-        let dir = tier.join("bin");
-        match std::fs::remove_dir_all(&dir) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-            _ => {}
-        }
-        std::fs::create_dir_all(&dir)?;
-        let name = shim
-            .file_name()
-            .ok_or_else(|| std::io::Error::other("the shim has no file name"))?;
-        let placed = dir.join(name);
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(shim, &placed)?;
-        #[cfg(windows)]
-        std::fs::copy(shim, &placed)?;
-        let mut warm = tool(&placed)
-            .env(Endpoint::ENV, dir.join("nothing-listens"))
-            .stdin(Stdio::piped())
-            .spawn()?;
-        if let Some(mut stdin) = warm.stdin.take() {
-            stdin.write_all(b"{}")?;
-        }
-        warm.wait()?;
-        Ok(dir)
     }
 
     /// The scripted model, installed from the committed lockfile, scripts off.
@@ -1546,11 +1481,10 @@ mod run {
         }
     }
 
-    /// One sandbox: every home a CLI or pixtuoid resolves points inside it, so
-    /// nothing reads or writes the operator's.
+    /// One sandbox ([`SandboxEnv`]), with the profile's own env and config.
     struct Sandbox {
         dir: tempfile::TempDir,
-        env: Vec<(String, OsString)>,
+        env: SandboxEnv,
         /// Where the headless pixtuoid listens and the recorder tees to.
         scene: Endpoint,
     }
@@ -1568,34 +1502,12 @@ mod run {
             // plugin copy then refuses its plugin (`@openclaw/fs-safe`
             // `src/copy-root-file-sync.ts:57`, `:77-79` at v0.24.2).
             let dir = tempfile::tempdir_in(dunce::canonicalize(std::env::temp_dir())?)?;
-            let at = |rel: &str| -> std::io::Result<PathBuf> {
-                let d = dir.path().join(rel);
-                std::fs::create_dir_all(&d)?;
-                Ok(d)
-            };
-            let mut env: Vec<(String, OsString)> = inherited()
-                .filter(|k| *k != "PATH")
-                .filter_map(|k| std::env::var_os(k).map(|v| (k.to_string(), v)))
-                .collect();
-            let host_path = std::env::var_os("PATH").unwrap_or_default();
-            let path = std::env::join_paths(
-                [shim_dir.to_path_buf(), cli_bin.to_path_buf()]
-                    .into_iter()
-                    .chain(std::env::split_paths(&host_path)),
-            )
-            .map_err(std::io::Error::other)?;
-            env.push(("PATH".into(), path));
-            for (var, rel) in SANDBOX_HOMES {
-                env.push(((*var).into(), at(rel)?.into()));
-            }
-            for var in p.home_vars() {
-                env.push((var.into(), at(&format!("homes/{var}"))?.into()));
-            }
+            let mut env = SandboxEnv::new(dir.path(), p.home_vars(), &[shim_dir, cli_bin])?;
             let expand = |t: &str| expanded(t, ports);
             // Every child gets the profile's env, `connect`'s spawned CLI included;
             // the CLI under test also gets it in the plan's `cli_env` (`Sandbox::cli_env`).
             for (k, v) in p.env {
-                env.push(((*k).to_string(), expand(v).into()));
+                env.set(*k, expand(v));
             }
             let sandbox = Self {
                 scene: Endpoint::in_dir(dir.path(), "scene"),
@@ -1639,22 +1551,11 @@ mod run {
         }
 
         fn var_os(&self, key: &str) -> Option<&OsString> {
-            self.env
-                .iter()
-                .rev()
-                .find(|(k, _)| k == key)
-                .map(|(_, v)| v)
+            self.env.var_os(key)
         }
 
-        /// A child of the run. Its stdin is empty: `opencode run` reads a non-TTY
-        /// stdin to its end (`packages/cli/src/run/run.ts:76`), so an inherited
-        /// one that never closes hangs the run.
         fn command(&self, program: impl AsRef<OsStr>) -> Command {
-            let mut c = Command::new(program);
-            c.env_clear()
-                .envs(self.env.iter().map(|(k, v)| (k, v)))
-                .stdin(Stdio::null());
-            c
+            self.env.command(program)
         }
     }
 
@@ -1750,20 +1651,12 @@ mod run {
     ) -> std::io::Result<(Manifest, Sandboxed)> {
         let (ports, _) = Ports::pick(0)?;
         let ((workspace, workspace_root), cli, sandbox) = sandboxed(ctx, p, version, ports)?;
-        let connect = sandbox
-            .command(&ctx.built.pixtuoid)
-            .args(["connect", p.source, "--json"])
-            .output()?;
-        std::fs::write(dir.join("connect.log"), &connect.stdout)?;
-        let rows: Vec<serde_json::Value> =
-            serde_json::from_slice(&connect.stdout).unwrap_or_default();
-        if !rows.iter().any(|r| r["outcome"] == Step::Connect.outcome()) {
-            return Err(std::io::Error::other(format!(
-                "pixtuoid connect {} did not connect: {}",
-                p.source,
-                String::from_utf8_lossy(&connect.stderr).trim()
-            )));
-        }
+        connect(
+            &sandbox.env,
+            &ctx.built.pixtuoid,
+            p.source,
+            &mut std::fs::File::create(dir.join("connect.log"))?,
+        )?;
         let run = Sandboxed {
             ports,
             workspace,
@@ -2165,7 +2058,7 @@ mod run {
                 })
                 .transpose()
                 .map_err(plan_error)?,
-            keychains: None,
+            operator: None,
         })
     }
 
@@ -2334,6 +2227,7 @@ mod run {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use pixtuoid_core::harness::host::SANDBOX_HOMES;
         use pixtuoid_core::harness::plan::Resolved;
         use strum::VariantArray;
 
@@ -3208,29 +3102,6 @@ mod run {
                     p.source
                 );
             }
-        }
-
-        /// The built shim itself, run once before any CLI: a fresh copy, or a
-        /// first exec, is cold.
-        #[cfg(unix)]
-        #[test]
-        fn a_tier_links_the_built_shim_and_runs_it_once() {
-            use std::os::unix::fs::PermissionsExt;
-            let d = tempfile::tempdir().expect("tempdir");
-            let shim = d.path().join("pixtuoid-hook");
-            let ran = d.path().join("ran");
-            std::fs::write(&shim, format!("#!/bin/sh\ncat > '{}'\n", ran.display()))
-                .expect("a shim");
-            std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755))
-                .expect("executable");
-            let dir = warmed_shim_dir(&d.path().join("tier"), &shim).expect("placed");
-            let placed = dir.join("pixtuoid-hook");
-            assert_eq!(std::fs::read_link(&placed).ok(), Some(shim), "not a copy");
-            assert_eq!(
-                std::fs::read_to_string(&ran).ok().as_deref(),
-                Some("{}"),
-                "it ran"
-            );
         }
 
         #[test]
