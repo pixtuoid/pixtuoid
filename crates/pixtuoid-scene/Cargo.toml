@@ -21,17 +21,13 @@ categories.workspace   = true
 workspace = true
 
 [features]
-default        = ["native", "cutaway-assets", "pixel-font"]
+default        = ["native", "pixel-font"]
 # Without it the render engine builds for wasm32 (no tokio/notify): the
 # WebAssembly office hero.
 native         = ["pixtuoid-core/native"]
-# The bundled `@Nx` art and hair dressing, which only a render scale above
-# `RenderScale::ONE` reaches (`densest_frame`, `dress_for`). A build without
-# it can draw only the classic.
-cutaway-assets = []
-# The Fusion Pixel face the cutaway sets baked world text and the terminal's
-# grid in; a painter that sets the world text itself (`WorldText::Host`) draws
-# none of it.
+# The Fusion Pixel face the cutaway sets baked world text and the floating
+# window's screen text (`paint_grid`) in; a painter that sets the world text
+# itself (`WorldText::Host`) draws none of it.
 pixel-font     = []
 
 [dependencies]
@@ -49,7 +45,6 @@ enum-map      = { workspace = true }
 thiserror     = { workspace = true }
 
 [build-dependencies]
-toml_edit  = { workspace = true }
 toml       = { workspace = true }
 serde_json = { workspace = true }
 
@@ -64,7 +59,7 @@ snapbox    = { workspace = true }
 # tests/model_boundary.rs parses the source.
 syn         = { workspace = true }
 proc-macro2 = { workspace = true }
-# build_support/density_art.rs, which the tests compile too.
+# The tests' manifest edits (`pack::density_art`, `test_office_with`).
 toml_edit  = { workspace = true }
 # Statistical render-path benchmarks (`just bench`). The CodSpeed compat
 # package is a documented passthrough to real criterion when CodSpeed is

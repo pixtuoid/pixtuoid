@@ -45,7 +45,6 @@ fn sort_row(pivot: crate::layout::Pivot, pos: crate::layout::Point, h: u16, belo
 /// own front, so someone on the first row south of the art stands in FRONT
 /// of the desk, not behind a face that is never drawn.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn someone_just_south_of_a_variant_desk_sorts_in_front_of_it() {
     let pack = test_office();
     let scale = RenderScale::from(pack.max_density_variant());
@@ -558,7 +557,6 @@ fn a_badge_sits_above_the_head_and_centred_on_the_sprite() {
 /// across, its text whole, at every density the pack draws: a row lower
 /// and it covers the top of the elevator door, over everything.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn the_floor_indicator_stays_in_its_cell() {
     use crate::display::text::LINE_H;
     let pack = crate::pack::test_office();
@@ -646,12 +644,11 @@ fn no_run_overprints_another_on_its_line() {
                 .any(|(r, ..)| *r == crate::display::TextRole::Brand),
             "at scale {s} the brand is drawn"
         );
-        // Without the density art every scale is the base art's grid.
         assert_eq!(
             rects
                 .iter()
                 .any(|(r, ..)| *r == crate::display::TextRole::Star),
-            cfg!(feature = "cutaway-assets") && s.is_multiple_of(d),
+            s.is_multiple_of(d),
             "at scale {s} the star is drawn exactly where the pack's density divides it"
         );
         for (i, (a, ya, ra)) in rects.iter().enumerate() {
@@ -668,7 +665,6 @@ fn no_run_overprints_another_on_its_line() {
 /// At the pack's 4x art the board writes inside the neon sign's dark
 /// interior, as the classic's terminal board does, however full its lines.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn the_board_writes_inside_the_signs_interior() {
     use crate::layout::{
         NEON_PANEL_INNER_H, NEON_PANEL_INNER_W, NEON_PANEL_INNER_X, NEON_PANEL_INNER_Y,

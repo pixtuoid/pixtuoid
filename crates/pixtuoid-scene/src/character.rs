@@ -18,7 +18,7 @@ pub(crate) mod test_support;
 #[cfg(test)]
 pub(crate) use colors::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY};
 pub(crate) use colors::{agent_overrides, work_glow_tint};
-#[cfg(all(test, feature = "cutaway-assets"))]
+#[cfg(test)]
 pub(crate) use hair::dress;
 pub(crate) use hair::{Dress, dress_for};
 
@@ -206,7 +206,7 @@ pub(crate) struct CharacterFrame<'c> {
     pub(crate) rise: u16,
 }
 
-#[cfg(all(test, feature = "cutaway-assets"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fmt::Write as _;

@@ -221,14 +221,14 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   await expect(page.locator('[data-sl-onair]')).toHaveText('● LIVE', { timeout: 10_000 });
   // The office is 130 layout units tall: width = min(640, max(64, round(w/h · 130))) units,
   // at the canvas's pixels per unit.
-  const bufW = () =>
+  const unitsW = () =>
     page.evaluate(() => {
       const c = document.getElementById('office-live') as HTMLCanvasElement;
       return (c.width * 130) / c.height;
     });
-  expect(await bufW()).toBe(231);
+  expect(await unitsW()).toBe(231);
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(bufW).toBe(72);
+  await expect.poll(unitsW).toBe(72);
   expect(errors()).toEqual([]);
 });
 
@@ -344,7 +344,7 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   const shot = () =>
     page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).toDataURL());
-  const bufW = () =>
+  const unitsW = () =>
     page.evaluate(() => {
       const c = document.getElementById('office-live') as HTMLCanvasElement;
       return (c.width * 130) / c.height;
@@ -355,10 +355,10 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await page.waitForTimeout(400); // >10 would-be frames at the 33ms cap
   expect(await shot()).toBe(frozen);
   await expect(page.locator('[data-sl-onair]')).toHaveText('❚❚ PAUSED');
-  // sizeBuffer() wipes the bitmap and no rAF will repaint it, so the resize
+  // sizeCanvas() wipes the bitmap and no rAF will repaint it, so the resize
   // handler must re-render the ONE frozen frame — else a blank var(--bg) void.
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(bufW).toBe(72);
+  await expect.poll(unitsW).toBe(72);
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
   const painted = await page.evaluate(() => {
     const c = document.getElementById('office-live') as HTMLCanvasElement;

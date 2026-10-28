@@ -366,13 +366,13 @@ const officeDriverUrl = asset('office-driver.js');
     if (hasWasm && !mq.matches) cover();
     else markEngineResolved();
 
-    const BUF_H = 130;
+    const UNITS_H = 130;
     const FRAME_MS = 33;
     // ONE office for the whole page (user-pinned): seed 0 is the app's 1F Standard look.
     const SEED = 0;
     const REVEAL_MS = 1600;
     const FLOORS_PAST = 3.2;
-    const CHROMA_SPLIT_PX = 3;
+    const CHROMA_SPLIT_UNITS = 3;
     // DERIVED from FRAME_MS, never a second literal: a budget the paint gate could later rise to meet
     // puts EVERY frame over budget, so every reveal takes the MAX_WAIT fallback — green, and untestable.
     const REVEAL_MAX_STEP_MS = Math.round(FRAME_MS * 1.5);
@@ -385,7 +385,8 @@ const officeDriverUrl = asset('office-driver.js');
     let officeDriver = null;
     let ctx2d = null;
     let img = null;
-    let bufW = 0;
+    let unitsW = 0;
+    let scale = 1;
     let raf = 0;
     let last = 0;
     let live = false;
@@ -396,15 +397,14 @@ const officeDriverUrl = asset('office-driver.js');
     let pausedAt = 0;
 
     // Sprites are fixed-size, so a smaller office IS zoom — deliberately a closer camera than the app's.
-    // bufW × BUF_H are layout units; the canvas takes the office's `scale()` pixels per unit.
-    function sizeBuffer() {
+    function sizeCanvas() {
       const w = window.innerWidth;
       const h = window.innerHeight;
       if (w < 1 || h < 1 || !office) return;
-      bufW = Math.min(640, Math.max(64, Math.round((w / h) * BUF_H)));
-      const s = office.scale();
-      canvas.width = bufW * s;
-      canvas.height = BUF_H * s;
+      unitsW = Math.min(640, Math.max(64, Math.round((w / h) * UNITS_H)));
+      scale = office.scale();
+      canvas.width = unitsW * scale;
+      canvas.height = UNITS_H * scale;
       img = new ImageData(canvas.width, canvas.height);
     }
 
@@ -453,11 +453,15 @@ const officeDriverUrl = asset('office-driver.js');
       }
     }
 
-    // object-fit:cover mapping: scale = max(disp/buf) — cover fills then crops, buffer centered.
+    // object-fit:cover mapping in CSS px per unit: s = max(disp/units) — cover fills then crops, office centered.
     function coverMap() {
       const r = canvas.getBoundingClientRect();
-      const s = Math.max(r.width / bufW, r.height / BUF_H);
-      return { s, ox: r.left + (r.width - bufW * s) / 2, oy: r.top + (r.height - BUF_H * s) / 2 };
+      const s = Math.max(r.width / unitsW, r.height / UNITS_H);
+      return {
+        s,
+        ox: r.left + (r.width - unitsW * s) / 2,
+        oy: r.top + (r.height - UNITS_H * s) / 2,
+      };
     }
 
     // Fusion Pixel 8px's em: its glyph pixels land on whole CSS pixels only at
@@ -469,7 +473,7 @@ const officeDriverUrl = asset('office-driver.js');
     }
 
     function updateOverlay() {
-      if (bufW < 1) return;
+      if (unitsW < 1) return;
       const data = JSON.parse(office.overlay_json());
       const map = coverMap();
       // Written as a shared CSS var, not per-span, so the labels don't each
@@ -481,7 +485,7 @@ const officeDriverUrl = asset('office-driver.js');
         overlayEl.style.setProperty('--ov-label-px', labelPx + 'px');
       }
       const labels = data.labels;
-      const lift = Math.max(2, map.s); // ~1 buffer px above the head-top
+      const lift = Math.max(2, map.s); // ~1 unit above the head-top
       let i = 0;
       for (; i < labels.length; i++) {
         let el = labelPool[i];
@@ -544,7 +548,7 @@ const officeDriverUrl = asset('office-driver.js');
 
     function paint(nowMs) {
       if (!img) return;
-      office.step(nowMs, bufW, BUF_H);
+      office.step(nowMs, unitsW, UNITS_H);
       // Re-read ptr/len every frame — resize and memory.grow move the frame view.
       const view = officeDriver.officeFrameView(office, wasm);
       markEngineResolved();
@@ -585,15 +589,14 @@ const officeDriverUrl = asset('office-driver.js');
     function drawRevealFrame(view, rt) {
       const w = img.width;
       const h = img.height;
-      const s = h / BUF_H;
       const d = img.data;
       const e = 1 - Math.pow(1 - rt, 4);
       const roll = Math.round((1 - e) * h * FLOORS_PAST);
       const alpha = Math.min(1, rt / 0.15);
-      const split = Math.round((1 - e) * CHROMA_SPLIT_PX * s);
+      const split = Math.round((1 - e) * CHROMA_SPLIT_UNITS * scale);
       for (let y = 0; y < h; y++) {
         const sy = (y + roll) % h;
-        const seam = sy < s || sy > h - 2 * s ? 0.3 : 1; // floor divider: more bg shows
+        const seam = sy < scale || sy >= h - scale ? 0.3 : 1; // floor divider: more bg shows
         const a = alpha * seam * 255;
         const row = sy * w;
         for (let x = 0; x < w; x++) {
@@ -1087,7 +1090,7 @@ const officeDriverUrl = asset('office-driver.js');
             wasm = w;
             office = new mod.Office(SEED);
             ctx2d = canvas.getContext('2d');
-            sizeBuffer();
+            sizeCanvas();
             start();
             if (window.requestIdleCallback) {
               window.requestIdleCallback(prewarmSpawn, { timeout: PREWARM_IDLE_TIMEOUT_MS });
@@ -1126,7 +1129,7 @@ const officeDriverUrl = asset('office-driver.js');
       if (rraf) return;
       rraf = requestAnimationFrame(function () {
         rraf = 0;
-        sizeBuffer();
+        sizeCanvas();
         // Setting canvas.width WIPES the bitmap: while paused no loop will
         // repaint it, so re-render the ONE frozen frame at its frozen time.
         if (paused && live) paint(pausedAt - pauseOffset);

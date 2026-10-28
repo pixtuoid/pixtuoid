@@ -216,7 +216,7 @@ impl LightView {
     }
 
     /// Where it lifts most, in art pixels: the middle of its brightest.
-    #[cfg(all(test, feature = "cutaway-assets"))]
+    #[cfg(test)]
     pub(crate) fn peak(&self) -> (f32, f32) {
         let top = self.lift.iter().copied().max().unwrap_or(0);
         let w = usize::from(self.w.max(1));

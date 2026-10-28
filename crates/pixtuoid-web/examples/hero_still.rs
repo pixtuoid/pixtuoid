@@ -125,9 +125,9 @@ fn main() -> ExitCode {
         eprintln!("frame length didn't match {width}x{height}*4");
         return ExitCode::FAILURE;
     };
-    // The hero poster loads at high priority beside the page's first paint, so
-    // its bytes are load time: the frame is opaque (RGB), and flat pixel-art
-    // rows deflate best unfiltered.
+    // A poster's bytes are load time: the frame is opaque (RGB), and its flat
+    // pixel-art runs deflate best unfiltered, against the Paeth that
+    // https://www.w3.org/TR/png-3/#12Filter-selection expects for truecolor.
     let rgb = image::DynamicImage::ImageRgba8(img).into_rgb8();
     let written = std::fs::File::create(out)
         .map_err(image::ImageError::IoError)

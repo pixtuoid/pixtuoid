@@ -135,7 +135,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn the_bundled_pack_draws_every_variant_at_one_density() {
         let pack = crate::pack::test_office();
         assert_eq!(

@@ -1,14 +1,12 @@
 //! Drop the bundled pack's density art — its `@Nx` animations, the hairstyles
-//! that dress them and its buildings' `@Nx` variants — for a build without the
-//! `cutaway-assets` feature. `build.rs` and `the_pack_without_density_art_loads_whole`
-//! both run [`bundled_without_density_art`], so the manifest a feature-less
-//! build embeds is one a test has loaded.
+//! that dress them and its buildings' `@Nx` variants — for the base
+//! [`test_pack_with`](super::test_pack_with) swaps sprites into, where a
+//! swapped base would orphan the variants drawn over it.
 
 use std::collections::BTreeSet;
 
-/// `pack_toml` as a build without `cutaway-assets` embeds it — without its density
-/// art ([`strip_density_art`]), then without its comments — and the files it no
-/// longer draws.
+/// `pack_toml` without its density art ([`strip_density_art`]), then without
+/// its comments, and the files it no longer draws.
 pub(crate) fn bundled_without_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
     let (toml, dropped) = strip_density_art(pack_toml);
     (super::comments::strip_comments(&toml), dropped)
@@ -22,7 +20,7 @@ pub(crate) fn bundled_without_density_art(pack_toml: &str) -> (String, BTreeSet<
 /// density variant: core's load refuses an animation key that names no
 /// `Piece`, and a building base named with one. So core's
 /// `DENSITY_VARIANT_SEP` alone identifies them here, where its
-/// `split_density_variant` is crate-private and core is no build-dependency.
+/// `split_density_variant` is crate-private.
 fn strip_density_art(pack_toml: &str) -> (String, BTreeSet<String>) {
     let mut doc: toml_edit::DocumentMut = pack_toml.parse().expect("the bundled pack.toml parses");
     let mut dropped: BTreeSet<String> = BTreeSet::new();

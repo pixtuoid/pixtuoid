@@ -5,7 +5,6 @@ use crate::anim::{Motion, epoch_ms};
 use crate::character::test_support::{color_of, make_slot, make_slot_cwd};
 use crate::character::{HAIR_KEY, PANTS_KEY, SHIRT_KEY, SKIN_KEY, work_glow_tint};
 use crate::cutaway::wall::paint_wall;
-#[cfg(feature = "cutaway-assets")]
 use crate::display::pen::test_density;
 use crate::floor::{FloorInputs, PetInputs};
 use crate::layout::CHARACTER_SPRITE_W;
@@ -388,7 +387,6 @@ fn a_back_turned_desk_shows_the_pose_s_own_back_view() {
 }
 
 /// `piece`'s base art and each density variant, named as the manifest keys them.
-#[cfg(feature = "cutaway-assets")]
 fn arts_of(
     pack: &crate::pack::OfficeArt,
     piece: Piece,
@@ -405,7 +403,6 @@ fn arts_of(
 /// Every look of frame `i` of `anim` a viewer could see under `overrides`:
 /// recolored and, where the art marks its head, dressed in each of the pack's
 /// hairstyles.
-#[cfg(feature = "cutaway-assets")]
 fn looks(
     pack: &crate::pack::OfficeArt,
     anim: &pixtuoid_core::sprite::Sprite,
@@ -427,7 +424,6 @@ fn looks(
 }
 
 /// Whether recoloring `key` changes some pixel of every look of frame `i`.
-#[cfg(feature = "cutaway-assets")]
 fn recolors(
     pack: &crate::pack::OfficeArt,
     anim: &pixtuoid_core::sprite::Sprite,
@@ -445,7 +441,6 @@ fn recolors(
 /// the pack's own color there: `standing` shows all four, at every density,
 /// dressed in whichever hairstyle.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn the_bundled_pack_draws_every_key_an_agent_recolors() {
     let pack = crate::pack::test_office();
     let mut drawn = 0;
@@ -470,7 +465,6 @@ fn the_bundled_pack_draws_every_key_an_agent_recolors() {
 /// (the key itself or one of its `[ramps]` shades), or it shows every agent in
 /// the pack's own colours. Skin and pants may be out of sight.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn every_character_frame_at_every_density_recolors_hair_and_shirt() {
     let pack = crate::pack::test_office();
     let mut variants = 0;
@@ -4149,7 +4143,6 @@ fn appliance_at(sprite: Piece, busy: bool, ms: u64) -> RgbBuffer {
 /// A busy appliance reads busy for most of its loop at every density: fewer
 /// than half its busy frames may show it at rest.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn a_busy_loop_spends_most_of_its_frames_away_from_rest() {
     let pack = crate::pack::test_office();
     let four = test_density(4);
@@ -5772,7 +5765,6 @@ fn an_unflipped_character_faces_the_way_its_art_does() {
 /// style's layers are drawn for the art as authored, so profile hair laid on a
 /// flipped body would land on the face side.
 #[test]
-#[cfg(feature = "cutaway-assets")]
 fn a_facing_flip_mirrors_the_dressed_frame() {
     let pack = crate::pack::test_office();
     let scale = crate::render_scale::RenderScale::from(pack.max_density_variant());

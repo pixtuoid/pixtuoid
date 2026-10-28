@@ -1794,7 +1794,6 @@ mod tests {
     /// and its text at every density the pack draws it, or a key names nothing
     /// and that screen never lights.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn the_bundled_back_turned_desk_draws_its_screen_in_the_screen_keys() {
         let pack = test_office();
         let art = PackPiece::DeskNorth;
@@ -2406,7 +2405,6 @@ mod tests {
     /// figure's badge however far the z has risen, the z only climbs and drifts
     /// away, and the dust lies along the stepping foot's row.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn the_dense_looks_keep_their_places() {
         looks_keep_their_places(test_office().max_density_variant().get());
     }
@@ -2742,12 +2740,7 @@ mod tests {
                 }
             }
         }
-        // Only the density art draws bulbs.
-        let want: &[&str] = if cfg!(feature = "cutaway-assets") {
-            &["desk", "door", "hung decor", "prop"]
-        } else {
-            &["desk"]
-        };
+        let want: &[&str] = &["desk", "door", "hung decor", "prop"];
         assert_eq!(
             marked.into_iter().collect::<Vec<_>>(),
             want,
@@ -3223,7 +3216,6 @@ mod tests {
     /// a floor lamp's bulb, and the ceiling of an open elevator's car, while
     /// the room around them darkens.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn what_glows_of_its_own_keeps_its_colour_at_night() {
         let theme = crate::theme::theme_by_name("normal").expect("theme");
         let pack = test_office();
@@ -3605,7 +3597,6 @@ mod tests {
 
     /// [`face_rows`]' rule, through the real paint.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn only_the_top_down_base_desk_gets_a_derived_front_face() {
         let pack = test_office();
         let ground = pixtuoid_core::sprite::Rgb { r: 1, g: 2, b: 3 };
@@ -5373,7 +5364,6 @@ mod tests {
     /// desk faces and at every density its art is drawn at: the cutaway's art
     /// stands it on the side the desk faces.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn a_desk_lamp_pools_under_its_painted_bulb() {
         let theme = crate::theme::theme_by_name("normal").expect("theme");
         let pack = test_office();

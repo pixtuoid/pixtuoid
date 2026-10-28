@@ -416,9 +416,8 @@ pub fn load_bundled_pack() -> Result<OfficeArt, ArtError> {
 }
 
 /// Every default sprite as `(filename, source)`: every `.sprite` in
-/// `sprites/default/`, listed by `build.rs` (less, without `cutaway-assets`, the
-/// frames only a density variant draws), so a sprite committed there cannot be
-/// left out by omission. `test_pack_with` swaps files within this EXACT set.
+/// `sprites/default/`, listed by `build.rs`, so a sprite committed there cannot
+/// be left out by omission. `test_pack_with` swaps files within this EXACT set.
 fn bundled_sprite_srcs() -> Vec<(&'static str, &'static str)> {
     const SPRITES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/bundled_sprites.rs"));
     SPRITES.to_vec()
@@ -441,7 +440,7 @@ pub(crate) fn test_pack_with(overrides: &[(&str, &'static str)]) -> Pack {
 }
 
 /// The bundled manifest without its density art, and the sprites it still
-/// draws: a build without `cutaway-assets`'s pack.
+/// draws.
 #[cfg(test)]
 fn base_pack_srcs() -> (String, Vec<(&'static str, &'static str)>) {
     let (toml, dropped) =
@@ -494,7 +493,6 @@ pub(crate) fn test_pack_declaring(old: &str, new: &str) -> Pack {
 }
 
 #[cfg(test)]
-#[path = "../../build_support/density_art.rs"]
 mod density_art;
 
 #[cfg(test)]
@@ -679,8 +677,7 @@ mod tests {
             .collect()
     }
 
-    /// A build without `cutaway-assets`'s pack, which a default-feature run
-    /// loads nowhere else.
+    /// The base [`test_pack_with`] swaps sprites into, which no build ships.
     #[test]
     fn the_pack_without_density_art_loads_whole() {
         let (_, dropped) = density_art::bundled_without_density_art(include_str!(
@@ -708,7 +705,6 @@ mod tests {
     /// What a default run's render scale rounds to (`RenderScale::fit`): a
     /// change to the bundled art's densest variant should be a decision.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn the_bundled_pack_is_drawn_at_most_at_4x() {
         assert_eq!(test_default_pack().max_density_variant().get(), 4);
     }
@@ -717,7 +713,6 @@ mod tests {
     /// beside the base the classic painter draws, for a city drawn on that
     /// art's grid.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn every_bundled_building_is_drawn_at_1x_and_4x() {
         let pack = test_default_pack();
         assert!(
@@ -999,7 +994,6 @@ mod tests {
 
     /// A variant desk is parsed as its base is: at 4x, too, a desk that marks
     /// no `cup` does not parse.
-    #[cfg(feature = "cutaway-assets")]
     #[test]
     fn a_variant_desk_missing_a_prop_mark_does_not_parse() {
         let srcs: Vec<(&str, &str)> = bundled_sprite_srcs()

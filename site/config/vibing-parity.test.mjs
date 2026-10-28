@@ -1,5 +1,5 @@
 // The VIBING poster must be a truthful still of the live canvas it covers, and
-// the buffer dims ARE the camera (smaller buffer = closer zoom). The values
+// the layout units ARE the camera (fewer units = closer zoom). The values
 // necessarily live in three files, so pin the copies together.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -19,8 +19,8 @@ const poster = media.find((j) => j.id === 'vibing-poster');
 test('vibing poster job mirrors the live canvas (dims + seed)', () => {
   assert.ok(vibing, 'showcase.json has a vibing channel');
   assert.ok(poster, 'media.json has a vibing-poster job');
-  assert.equal(poster.w, vibing.w, 'poster width == canvas buffer width');
-  assert.equal(poster.h, vibing.h, 'poster height == canvas buffer height');
+  assert.equal(poster.w, vibing.w, 'poster width == canvas width, in layout units');
+  assert.equal(poster.h, vibing.h, 'poster height == canvas height, in layout units');
   const seedMatch = astro.match(/const VIBING_SEED = (\d+)/);
   assert.ok(seedMatch, 'Showcase.astro declares VIBING_SEED as a numeric literal');
   assert.equal(
