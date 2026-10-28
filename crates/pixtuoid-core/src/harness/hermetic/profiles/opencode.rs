@@ -35,11 +35,11 @@ const TUI: tui::Tui = tui::Tui {
 pub(crate) const PROFILE: Profile = Profile {
     source: crate::source::opencode::SOURCE_NAME,
     package: Package::Npm("@opencode/cli"),
+    plugin_types: &["@opencode/plugin"],
     // On the daemon, whose plugin forwards its session's delete
     // (`packages/core/src/session.ts:378-388` at v2.1.0): a delete through
     // a private server of its own forwards none. Only an explicit `--model`
     // reaches the session's events (`packages/cli/src/run/run.ts:91`).
-    plugin_types: &["@opencode/plugin"],
     invocation: &[
         "opencode",
         "run",

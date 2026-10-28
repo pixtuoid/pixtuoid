@@ -82,12 +82,12 @@ const TUI_CODE_MODE_APPROVE: tui::Tui = tui::Tui {
 pub(crate) const PROFILE: Profile = Profile {
     source: crate::source::codex::SOURCE_NAME,
     package: Package::Npm("@openai/codex"),
+    plugin_types: &[],
     // A hook runs only once trusted, and trust is a hash of codex's own
     // normalized hook identity (`codex-rs/hooks/src/engine/discovery.rs:775`)
     // that seeding would have to re-implement; this flag is upstream's path
     // for "automation that already vets hook sources"
     // (`codex-rs/utils/cli/src/shared_options.rs:62-64`).
-    plugin_types: &[],
     invocation: &[
         "codex",
         "exec",
