@@ -3,39 +3,114 @@
 //! (the floating window's), where the terminal sets it in its own.
 
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
+use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::Canvas as _;
-use pixtuoid_scene::floor::{FloorInputs, FloorSession};
-use pixtuoid_scene::look::{Dim, Place, RenderInputs, WorldText};
+use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
+use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
+use pixtuoid_scene::pet::Pet;
 use pixtuoid_scene::render_scale::PixelFit;
 use pixtuoid_scene::theme::Theme;
 
 use crate::encode::{ImageCanvas, terminal_cell};
 
-/// The TUI's cutaway on one terminal: a floor session of its own, stepped on
-/// the classic frame's inputs.
-pub(crate) struct CutawayOffice {
-    session: FloorSession,
+/// The TUI's cutaway on one terminal: a session of its own, stepped on the
+/// inputs of the classic frame whose office it takes.
+pub(crate) struct CutawayOffice<S> {
+    session: S,
     fit: PixelFit,
 }
 
-impl CutawayOffice {
-    /// The cutaway the TUI fits to a `cols`×`rows` terminal.
-    pub(crate) fn new(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
+/// What a cutaway steps: what the classic frame beside it steps, so both show
+/// one office.
+pub(crate) trait CutawaySession {
+    /// Step and draw one frame of `inputs` in `look`.
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>);
+
+    /// The last frame's pixels; `None` before the first, and when it could not
+    /// lay out.
+    fn pixels(&self) -> Option<&RgbBuffer>;
+}
+
+/// `draw_scene`'s one floor, under the `FloorMeta` it is handed (`--floor-seed`).
+impl CutawaySession for FloorSession {
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
+        self.render(look, inputs);
+    }
+
+    fn pixels(&self) -> Option<&RgbBuffer> {
+        self.picture().map(|picture| picture.pixels)
+    }
+}
+
+/// A second office stepped beside a `TuiRenderer`'s: every floor its scene
+/// fills, the pet each picks of `pets`, and the slide between two.
+pub(crate) struct RendererOffice {
+    session: OfficeSession,
+    pets: Vec<Pet>,
+}
+
+impl CutawaySession for RendererOffice {
+    fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
+        // Nothing here plays its audio or reports its pacing.
+        let _ = self
+            .session
+            .render(look, inputs, &self.pets, inputs.theme.surface.bg_fallback);
+    }
+
+    fn pixels(&self) -> Option<&RgbBuffer> {
+        self.session.picture().map(|picture| picture.pixels())
+    }
+}
+
+impl CutawayOffice<FloorSession> {
+    /// The cutaway of `draw_scene`'s floor on a `cols`×`rows` terminal.
+    pub(crate) fn of_draw_scene(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
+        Self::fitted(FloorSession::new(Arc::clone(pack)), pack, cols, rows)
+    }
+
+    /// Its floor's stores, to seed as `draw_scene`'s floor is seeded.
+    pub(crate) fn floor_mut(&mut self) -> &mut PerFloor {
+        self.session.floor_mut()
+    }
+}
+
+impl CutawayOffice<RendererOffice> {
+    /// The cutaway of a `TuiRenderer` with `pets` on a `cols`×`rows` terminal.
+    pub(crate) fn of_renderer(
+        pack: &Arc<OfficeArt>,
+        cols: u16,
+        rows: u16,
+        pets: Vec<Pet>,
+    ) -> Result<Self> {
+        let office = RendererOffice {
+            session: OfficeSession::new(Arc::clone(pack)),
+            pets,
+        };
+        Self::fitted(office, pack, cols, rows)
+    }
+
+    /// Slide to floor `target` at `now`, as the renderer beside it does.
+    pub(crate) fn navigate(&mut self, target: usize, now: SystemTime) {
+        self.session.session.navigate(target, now);
+    }
+}
+
+impl<S: CutawaySession> CutawayOffice<S> {
+    /// `session`, drawn as the cutaway the TUI fits to a `cols`×`rows` terminal.
+    fn fitted(session: S, pack: &OfficeArt, cols: u16, rows: u16) -> Result<Self> {
         let cell = terminal_cell();
         let fit = pixtuoid::dev::cutaway_office(cols, rows, (cell.w, cell.h), pack)
             .with_context(|| format!("a {}x{} px cell fits no cutaway", cell.w, cell.h))?;
-        Ok(Self {
-            session: FloorSession::new(Arc::clone(pack)),
-            fit,
-        })
+        Ok(Self { session, fit })
     }
 
     /// Step and draw `world`'s office.
     pub(crate) fn render(&mut self, world: FloorInputs<'_>, theme: &'static Theme) -> Result<()> {
-        self.session.render(
+        self.session.draw(
             self.fit.look(WorldText::Baked),
             RenderInputs {
                 world,
@@ -50,20 +125,16 @@ impl CutawayOffice {
             },
         );
         self.session
-            .picture()
+            .pixels()
             .map(drop)
             .context("the cutaway does not lay out")
     }
 
     /// The last frame over `img`'s scene cells, which start at its top-left.
-    pub(crate) fn paint<I: image::GenericImage>(&self, img: &mut I)
-    where
-        I::Pixel: image::Pixel<Subpixel = u8>,
-    {
-        let Some(picture) = self.session.picture() else {
+    pub(crate) fn paint(&self, img: &mut image::RgbaImage) {
+        let Some(buf) = self.session.pixels() else {
             return;
         };
-        let buf = picture.pixels;
         let w = u32::from(buf.width());
         let up = u32::from(self.fit.upscale());
         let mut canvas = ImageCanvas(img);
@@ -79,33 +150,81 @@ impl CutawayOffice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encode::cells_to_rgba;
+    use crate::encode::{
+        AnimJob, FrameSink, Timeline, cells_to_rgba, compose, save_renderer_animation,
+    };
     use crate::{CELL_H, scenes::sample_scene};
-    use image::RgbaImage;
+    use image::{Rgba, RgbaImage};
     use pixtuoid::dev::{DrawCtx, draw_scene, scene_buf_size};
-    use pixtuoid_scene::floor::{FloorMeta, PerFloor, PerOffice};
+    use pixtuoid_core::SceneState;
+    use pixtuoid_scene::floor::{FloorMeta, PerOffice};
+    use pixtuoid_scene::pet::{Pet, PetKind};
     use pixtuoid_scene::theme::NORMAL;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    const COLS: u16 = 96;
+    const ROWS: u16 = 40;
+
+    fn epoch() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    }
+
+    /// `img`'s pixel rows `rows`.
+    fn band(img: &RgbaImage, rows: std::ops::Range<u32>) -> Vec<Rgba<u8>> {
+        rows.flat_map(|y| (0..img.width()).map(move |x| *img.get_pixel(x, y)))
+            .collect()
+    }
+
+    /// The first pixel row of a [`COLS`]×[`ROWS`] frame's footer.
+    fn footer_top() -> u32 {
+        u32::from(scene_buf_size(COLS, ROWS).1 / pixtuoid_scene::layout::CELL_ROWS) * CELL_H
+    }
+
+    /// `img`'s office, above its footer.
+    fn office_band(img: &RgbaImage) -> Vec<Rgba<u8>> {
+        band(img, 0..footer_top())
+    }
+
+    /// `composed` is the cutaway over `classic`: its footer `classic`'s, pixel
+    /// for pixel, and most of its office another's.
+    fn assert_cutaway_over(composed: &RgbaImage, classic: &RgbaImage) {
+        assert_eq!(
+            band(composed, footer_top()..composed.height()),
+            band(classic, footer_top()..classic.height()),
+            "the footer moved"
+        );
+        let ours = office_band(composed);
+        let changed = ours
+            .iter()
+            .zip(office_band(classic))
+            .filter(|(a, b)| **a != *b)
+            .count();
+        assert!(
+            changed * 2 > ours.len(),
+            "only {changed} of {} office pixels are the cutaway's",
+            ours.len()
+        );
+    }
 
     /// The cutaway lands on the scene's cells and nowhere else: the footer
     /// under it stays the classic frame's, pixel for pixel.
     #[test]
     fn the_cutaway_takes_the_office_and_keeps_the_footer() {
-        let (cols, rows) = (96, 40);
-        let now = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let now = epoch();
         let scene = sample_scene(now, 12, 6);
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let meta = FloorMeta::ground();
-        let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
+        let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         let mut floor = PerFloor::new(Arc::clone(&pack));
         let mut office = PerOffice::new();
         let mut ctx = DrawCtx::offscreen(&mut floor, office.stores(), &NORMAL, &scene, now, meta);
         draw_scene(&mut term, &mut ctx).unwrap();
-        let classic = cells_to_rgba(term.backend().buffer());
+        let cells = term.backend().buffer();
+        let classic = cells_to_rgba(cells, cells.area);
 
-        let mut cutaway = CutawayOffice::new(&pack, cols, rows).unwrap();
+        let mut cutaway = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
         let world = FloorInputs {
             scene: &scene,
             now,
@@ -113,30 +232,92 @@ mod tests {
             pets: Default::default(),
         };
         cutaway.render(world, &NORMAL).unwrap();
-        let mut composed = classic.clone();
-        cutaway.paint(&mut composed);
+        assert_cutaway_over(&compose(cells, cells.area, Some(&cutaway)), &classic);
+    }
 
-        let footer_top = u32::from(scene_buf_size(cols, rows).1 / 2) * CELL_H;
-        let band = |img: &RgbaImage, top: u32, bottom: u32| {
-            (top..bottom)
-                .flat_map(|y| (0..img.width()).map(move |x| *img.get_pixel(x, y)))
-                .collect::<Vec<_>>()
+    /// The last frame `save_renderer_animation` writes of `scene` with `pets`
+    /// and `navigations`, the cutaway over it when `cutaway`.
+    fn renderer_frame(
+        scene: &SceneState,
+        cutaway: bool,
+        pets: &[Pet],
+        navigations: &[(u64, usize)],
+    ) -> RgbaImage {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let frames = tempfile::tempdir().unwrap();
+        // Its last frame is mid-slide from a navigation at 0.
+        let timeline = Timeline {
+            fps: 2,
+            secs: 1,
+            start: epoch(),
         };
-        assert_eq!(
-            band(&composed, footer_top, composed.height()),
-            band(&classic, footer_top, classic.height()),
-            "the footer moved"
-        );
-        let office = band(&composed, 0, footer_top);
-        let changed = office
-            .iter()
-            .zip(band(&classic, 0, footer_top))
-            .filter(|(a, b)| **a != *b)
-            .count();
+        let job = AnimJob {
+            path: frames.path(),
+            frames_dir: Some(frames.path()),
+            timeline,
+            scene,
+            pack: &pack,
+            theme: &NORMAL,
+            weather: Default::default(),
+        };
+        let term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
+        save_renderer_animation(&job, term, navigations, pets.to_vec(), cutaway).unwrap();
+        let last = FrameSink::frame_path(frames.path(), timeline.frame_count());
+        image::open(last).unwrap().to_rgba8()
+    }
+
+    /// The renderer path (`--pets`, `--navigate-at`) paints the cutaway too, and
+    /// its office holds the renderer's pets and slides to the floor it does.
+    #[test]
+    fn the_renderer_path_paints_the_cutaway_with_its_pets_and_floors() {
+        // Two floors.
+        let scene = sample_scene(epoch(), 4, 6);
+        let cat = [Pet::defaulted(PetKind::Cat)];
+        let up = [(0, 1)];
+        let frame = renderer_frame(&scene, true, &cat, &up);
+        assert_cutaway_over(&frame, &renderer_frame(&scene, false, &cat, &up));
         assert!(
-            changed * 2 > office.len(),
-            "only {changed} of {} office pixels are the cutaway's",
-            office.len()
+            office_band(&frame) != office_band(&renderer_frame(&scene, true, &[], &up)),
+            "the cutaway drew no pet"
+        );
+        assert!(
+            office_band(&frame) != office_band(&renderer_frame(&scene, true, &cat, &[])),
+            "the cutaway stayed on its floor"
+        );
+    }
+
+    /// `--empty` settles both looks' floors to the empty office's light: the
+    /// cutaway's as dim as the classic's, and drawn darker than one left lit.
+    #[test]
+    fn an_empty_still_settles_the_cutaway_as_it_does_the_classic() {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let scene = SceneState::uniform(12);
+        let world = FloorInputs {
+            scene: &scene,
+            now: epoch(),
+            floor: FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
+        let mut lit = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut settled = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut classic = PerFloor::new(Arc::clone(&pack));
+        crate::settle_empty(&mut classic, Some(&mut settled));
+        let level = |floor: &PerFloor| floor.ctx.vacancy_dim.level();
+        assert!(level(&classic) < 1.0, "the classic floor stayed lit");
+        assert_eq!(level(settled.session.floor()), level(&classic));
+
+        let brightness = |cutaway: &mut CutawayOffice<FloorSession>| -> u64 {
+            cutaway.render(world, &NORMAL).unwrap();
+            let frame = compose(&blank, blank.area, Some(&*cutaway));
+            office_band(&frame)
+                .iter()
+                .map(|px| px.0[..3].iter().map(|&c| u64::from(c)).sum::<u64>())
+                .sum()
+        };
+        assert!(
+            brightness(&mut settled) < brightness(&mut lit),
+            "the settled cutaway is not darker"
         );
     }
 }

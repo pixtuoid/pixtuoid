@@ -616,7 +616,8 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );
         draw_scene(&mut term, &mut draw_ctx)?;
-        let office = cells_to_rgba(term.backend().buffer());
+        let cells = term.backend().buffer();
+        let office = cells_to_rgba(cells, cells.area);
         for (kind, sink) in [
             (ProofLayout::Wide, &mut wide),
             (ProofLayout::Tall, &mut tall),

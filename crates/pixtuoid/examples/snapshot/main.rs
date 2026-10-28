@@ -26,6 +26,7 @@ use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
+use crate::cutaway::CutawayOffice;
 use crate::encode::{
     AnimJob, Timeline, centered_crop, compute_crop_rect, print_walkability_report, save_animation,
     save_backend_as_png, save_renderer_animation,
@@ -92,8 +93,8 @@ struct SnapshotArgs {
     // renders on a path the cutaway is not wired into.
     #[arg(long, conflicts_with_all = [
         "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
-        "hover", "debug_walkable", "empty", "crop_agent", "crop_furniture", "crop_mascot",
-        "proof", "pets", "navigate_at",
+        "hover", "debug_walkable", "crop_agent", "crop_furniture", "crop_mascot",
+        "proof",
     ])]
     cutaway: bool,
 
@@ -445,10 +446,6 @@ fn main() -> Result<()> {
     let mut term = Terminal::new(backend)?;
     let pack = std::sync::Arc::new(load_bundled_pack()?);
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(&pack));
-    let mut cutaway = args
-        .cutaway
-        .then(|| cutaway::CutawayOffice::new(&pack, cols, rows))
-        .transpose()?;
     // A typo'd theme silently rendering NORMAL would put wrong-palette art into
     // the docs/site screenshot pipelines.
     let theme = pixtuoid_scene::theme::theme_by_name(&args.theme).ok_or_else(|| {
@@ -525,11 +522,15 @@ fn main() -> Result<()> {
     };
     let anim_dest = args.frames_dir.as_deref().unwrap_or(&args.out);
     if !navigations.is_empty() || !pet_vec.is_empty() {
-        save_renderer_animation(&anim_job, term, &navigations, pet_vec)?;
+        save_renderer_animation(&anim_job, term, &navigations, pet_vec, args.cutaway)?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
 
+    let mut cutaway = args
+        .cutaway
+        .then(|| CutawayOffice::of_draw_scene(&pack, cols, rows))
+        .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;
     if args.gif || args.anim.is_some() {
@@ -566,10 +567,8 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     let warning_text = pixtuoid::dev::footer_warning(&deaths, &drifted);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
-    // Static snapshots have no time to animate the fade — snap straight
-    // to the steady-state level for the chosen scene.
     if args.empty {
-        floor.ctx.vacancy_dim.snap_to_empty();
+        settle_empty(&mut floor, cutaway.as_mut());
     }
     let (dash_rows, dash_selected) = if args.dashboard {
         let folds = pixtuoid::dev::DashboardFolds::default();
@@ -784,6 +783,17 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// An empty office's still: `floor`, and `cutaway`'s where there is one, at
+/// the light they fade to. A still has no time to animate the fade.
+fn settle_empty(
+    floor: &mut pixtuoid_scene::floor::PerFloor,
+    cutaway: Option<&mut CutawayOffice<pixtuoid_scene::floor::FloorSession>>,
+) {
+    for floor in std::iter::once(floor).chain(cutaway.map(CutawayOffice::floor_mut)) {
+        floor.ctx.vacancy_dim.snap_to_empty();
+    }
+}
+
 /// Floors whose scheduled navigation comes due at `elapsed_ms`, firing each
 /// schedule entry exactly once (marks `fired`).
 fn due_navigations(
@@ -890,7 +900,10 @@ mod tests {
             .iter()
             .find(|w| w.kind == pixtuoid_scene::layout::WaypointKind::Pantry)
             .unwrap();
-        let (cx, cy) = (pantry.pos.x, pantry.pos.y / 2);
+        let (cx, cy) = (
+            pantry.pos.x,
+            pantry.pos.y / pixtuoid_scene::layout::CELL_ROWS,
+        );
         assert!(rect.x <= cx && cx < rect.x + rect.width, "x not in crop");
         assert!(rect.y <= cy && cy < rect.y + rect.height, "y not in crop");
     }
@@ -1095,13 +1108,10 @@ mod tests {
             &["--popup"],
             &["--hover", "1,1"],
             &["--debug-walkable"],
-            &["--empty"],
             &["--crop-agent", "x"],
             &["--crop-furniture", "pantry"],
             &["--crop-mascot", "--openclaw", "idle"],
             &["--proof", "session.jsonl"],
-            &["--gif", "--pets", "cat"],
-            &["--gif", "--navigate-at", "3:1"],
         ] {
             let alone = [&["snapshot"][..], flags].concat();
             assert!(parses(&alone), "rejected {alone:?}");
@@ -1112,6 +1122,9 @@ mod tests {
             &["snapshot", "--cutaway"][..],
             &["snapshot", "--cutaway", "--gif"],
             &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
+            &["snapshot", "--cutaway", "--gif", "--pets", "cat"],
+            &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
+            &["snapshot", "--cutaway", "--empty"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
         }
