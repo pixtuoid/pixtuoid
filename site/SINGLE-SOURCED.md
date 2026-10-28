@@ -71,19 +71,19 @@ Notes no gate carries:
   purpose: a shadow the glyph paints is decoration, not the ground WCAG
   grades against (measured worst case 5.28:1) — don't theme it.
 - **♩ audio**: muted-by-default, gesture-gated (`AudioContext` only on first
-  click); foley prewarms OFF-thread in `public/audio-worker.js` at idle (the
-  click-time chunked warmup its fallback), music streams from `public/music-worker.js`
+  click); the office host synthesizes the foley at idle (reduced motion: on
+  the click), music streams from `public/music-worker.js`
   into `public/music-worklet.js`, silent where either can't run; buffers COPIED out
   of wasm memory (views dangle on `memory.grow`); sound rides the render's
   pause-shifted `nowMs`. **iOS silent-switch bypass is DELIBERATE (#664)**:
   `navigator.audioSession.type = 'playback'` before the context, else the Ring/Silent switch mutes a deliberate ♩ tap.
-- **The VIBING channel is a SECOND live `Office` (#468)**: each office keeps
-  its own weather, and both consumers MUST share ONE `init()` via
-  `public/office-driver.js` (`sharedWasm` / `officeFrameView`) — independent `mod.default()` calls
-  racing instantiate two wasm instances that stomp the module-global. The
-  bounded init retry lives INSIDE that one promise; it nulls only a SETTLED
-  rejection (#671). Its rAF loop runs only active + in-view + not paused +
-  not reduced-motion, and joins the `pix:paused` set as a consumer.
+- **Both live offices run in ONE office host (`public/office-host.js`)**: a
+  module worker drawing into each transferred canvas, so no wasm boot or frame
+  blocks the page (TBT); the page's thread hosts it without OffscreenCanvas.
+  Both open their `Office` via `public/office-driver.js`'s `officeHost`, whose
+  memo a host that never loads nulls, so a later consumer retries (#671). VIBING's
+  SECOND `Office` (#468) keeps its own weather; its rAF loop runs only active +
+  in-view + not paused + not reduced-motion, and joins the `pix:paused` set.
 - **Scoped `<style>` does not reach `set:html` content** — runtime-injected
   markup carries no Astro scope hash; target it with `:global(...)`. Caught
   only by rendering, never the static gates.

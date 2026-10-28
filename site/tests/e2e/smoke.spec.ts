@@ -78,7 +78,12 @@ async function officeGrounds(
       const cr = canvas.getBoundingClientRect();
       const sx = canvas.width / cr.width;
       const sy = canvas.height / cr.height;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+      // The canvas hands its drawing to the office host, so it is read through a copy.
+      const copy = document.createElement('canvas');
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      const ctx = copy.getContext('2d', { willReadFrequently: true })!;
+      ctx.drawImage(canvas, 0, 0);
       const x0 = Math.min(canvas.width - 1, Math.max(0, Math.floor((r.left - cr.left) * sx)));
       const y0 = Math.min(canvas.height - 1, Math.max(0, Math.floor((r.top - cr.top) * sy)));
       const w = Math.min(Math.max(1, Math.ceil(r.width * sx)), canvas.width - x0);
@@ -182,6 +187,21 @@ async function paintedContrast(page: Page, selector: string, nth = 0): Promise<n
   }
   return worst;
 }
+/** A canvas's shot once the frame the office host was drawing when it paused has landed. */
+async function settledShot(shot: () => Promise<string>): Promise<string> {
+  let last = await shot();
+  await expect
+    .poll(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const now = await shot();
+      const same = now === last;
+      last = now;
+      return same;
+    })
+    .toBe(true);
+  return last;
+}
+
 function watchErrors(page: Page): () => string[] {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -229,6 +249,24 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   expect(await unitsW()).toBe(231);
   await page.setViewportSize({ width: 500, height: 900 });
   await expect.poll(unitsW).toBe(72);
+  expect(errors()).toEqual([]);
+});
+
+test('without OffscreenCanvas the page thread hosts the office, which still goes live', async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  await page.addInitScript(() => {
+    delete (HTMLCanvasElement.prototype as Partial<HTMLCanvasElement>).transferControlToOffscreen;
+  });
+  await gotoLive(page);
+  await expect(page.locator('#office-overlay .ov-label').first()).toHaveText(/\S/, {
+    timeout: 10_000,
+  });
+  const drawnHere = await page.evaluate(
+    () => !!(document.getElementById('office-live') as HTMLCanvasElement).getContext('2d')
+  );
+  expect(drawnHere, 'a transferred canvas has no context of its own').toBe(true);
   expect(errors()).toEqual([]);
 });
 
@@ -351,7 +389,7 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
     });
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'true');
-  const frozen = await shot();
+  const frozen = await settledShot(shot);
   await page.waitForTimeout(400); // >10 would-be frames at the 33ms cap
   expect(await shot()).toBe(frozen);
   await expect(page.locator('[data-sl-onair]')).toHaveText('❚❚ PAUSED');
@@ -362,8 +400,12 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
   const painted = await page.evaluate(() => {
     const c = document.getElementById('office-live') as HTMLCanvasElement;
-    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-    return d.some((v) => v !== 0);
+    const copy = document.createElement('canvas');
+    copy.width = c.width;
+    copy.height = c.height;
+    const ctx = copy.getContext('2d')!;
+    ctx.drawImage(c, 0, 0);
+    return ctx.getImageData(0, 0, c.width, c.height).data.some((v) => v !== 0);
   });
   expect(painted).toBe(true);
   const frozen2 = await shot();
@@ -413,17 +455,18 @@ test('the ♩ bus holds an over-full sum under the native ceiling and passes a q
   const errors = watchErrors(page);
   await gotoLive(page);
   const { ceiling, loudPeak, quietPeak } = await page.evaluate(async () => {
-    const { officeDriverUrl, wasmJsUrl } = (
+    const { officeDriverUrl, officeHostUrl, wasmJsUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
-    const office = new (await drv.sharedWasm(wasmJsUrl!)).Office(0);
+    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const { audio } = await host.open(0, document.createElement('canvas'));
     const rate = 48_000;
     // Each tone starts at `startS`; the peak is read from `fromS` on, since the spec starts the compressor's detector
     // average at 0.
     async function peak(amplitudes: number[], startS: number, fromS: number): Promise<number> {
       const ctx = new OfflineAudioContext(1, rate * 2, rate);
-      const bus = drv.audioBus(ctx, office);
+      const bus = drv.audioBus(ctx, audio);
       amplitudes.forEach((gain, i) => {
         const tone = new OscillatorNode(ctx, { frequency: 110 * (i + 1) });
         tone.connect(new GainNode(ctx, { gain })).connect(bus);
@@ -433,7 +476,7 @@ test('the ♩ bus holds an over-full sum under the native ceiling and passes a q
       return out.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
     }
     return {
-      ceiling: Math.fround(10 ** (office.audio_ceiling_dbfs() / 20)),
+      ceiling: Math.fround(10 ** (audio.ceilingDbfs / 20)),
       loudPeak: await peak([0.9, 0.9, 0.9], 0.5, 0),
       quietPeak: await peak([0.1], 0, 1),
     };
@@ -453,23 +496,26 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl } = (
-      document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
-    ).dataset;
+    const {
+      officeDriverUrl,
+      officeHostUrl,
+      wasmJsUrl,
+      musicWorkerUrl,
+      musicWasmJsUrl,
+      musicWorkletUrl,
+    } = (document.querySelector('script[data-office-driver-url]') as HTMLScriptElement).dataset;
     const drv = await import(officeDriverUrl!);
-    const office = new (await drv.sharedWasm(wasmJsUrl!)).Office(0);
+    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const office = await host.open(0, document.createElement('canvas'));
     // The controls as a tick hands them over.
-    office.step(Date.now(), 64, 64);
-    office.audio_begin();
-    while (office.audio_warmup_step() > 0) {
-      /* the bank, then the rain */
-    }
-    const { controls } = JSON.parse(office.audio_tick(0)).music;
-    const rate = office.audio_sample_rate();
+    const tick = { now: Date.now(), w: 64, h: 64, draw: null, overlay: false };
+    await office.frame({ ...tick, audio: false });
+    await office.warmAudio();
+    const { controls } = JSON.parse((await office.frame({ ...tick, audio: true })).audio).music;
+    const rate = office.audio.sampleRate;
     const ctx = new OfflineAudioContext(2, rate, rate);
     const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, musicWasm: musicWasmJsUrl };
-    const ahead = office.audio_music_ahead_s();
-    const music = await drv.startMusic(ctx, urls, ahead, Date.now(), controls);
+    const music = await drv.startMusic(ctx, urls, office.audio.musicAheadS, Date.now(), controls);
     music.node.connect(ctx.destination);
     // The first chunk crossed worklet → worker ("need") → worklet before a quantum renders.
     await music.primed;
@@ -596,14 +642,14 @@ test('background playback: a hidden tab keeps ticking, reduced-motion stops it c
   expect(errors()).toEqual([]);
 });
 
-test('audio prewarm: the idle worker hands the take over and the ♩ click plays it', async ({
+test('audio prewarm: the office host synthesizes at idle and the ♩ click plays it', async ({
   page,
 }) => {
   const errors = watchErrors(page);
   await gotoLive(page);
-  // worker spawn (idle) + off-thread synthesis + adoption; generous for CI
+  // idle callback + off-thread synthesis; generous for CI
   await page.waitForFunction(
-    () => (window as unknown as { __pixAudioPrewarm?: string }).__pixAudioPrewarm === 'adopted',
+    () => (window as unknown as { __pixAudioPrewarm?: string }).__pixAudioPrewarm === 'ready',
     undefined,
     { timeout: 60_000 }
   );
@@ -616,18 +662,10 @@ test('audio prewarm: the idle worker hands the take over and the ♩ click plays
   expect(errors()).toEqual([]);
 });
 
-test('dead audio workers leave the music silent and the foley on the click-time chunked warmup', async ({
-  page,
-}) => {
+test('a dead music worker leaves the music silent and the foley playing', async ({ page }) => {
   const errors = watchErrors(page);
-  await page.route('**/audio-worker.js', (route) => route.abort());
   await page.route('**/music-worker.js', (route) => route.abort());
   await gotoLive(page);
-  await page.waitForFunction(
-    () => (window as unknown as { __pixAudioPrewarm?: string }).__pixAudioPrewarm === 'failed',
-    undefined,
-    { timeout: 30_000 }
-  );
   await page.locator('#office-audio').click();
   await page.waitForFunction(
     () => (window as unknown as { __pixAudioReadyAt?: number }).__pixAudioReadyAt !== undefined,
@@ -947,8 +985,8 @@ test('the hire cap stops the receipt at 3 but keeps hiring every time', async ({
     // its bool return, or the admission signal gating pix:hired goes missing.
     const real = window.__pixHire!;
     (window as unknown as { __hireResults: boolean[] }).__hireResults = [];
-    window.__pixHire = function () {
-      const admitted = real();
+    window.__pixHire = async function () {
+      const admitted = await real();
       (window as unknown as { __hireResults: boolean[] }).__hireResults.push(admitted);
       return admitted;
     };
@@ -1097,7 +1135,7 @@ test('a transient wasm-fetch drop self-heals: the office still goes live via ret
   browser,
 }) => {
   // Abort ONLY the FIRST pixtuoid_web_bg.wasm request (the big binary, the likeliest drop) and let every retry through:
-  // one dropped fetch used to reject the shared __pixWasm promise and strand the office until a reload.
+  // one dropped fetch used to reject the shared office host and strand the office until a reload.
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = watchErrors(page);
@@ -1136,7 +1174,7 @@ test('#671 cross-trigger recovery: after the hero exhausts its retries, a later 
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   await expect
-    .poll(() => page.evaluate(() => window.__pixWasm === null), { timeout: 15_000 })
+    .poll(() => page.evaluate(() => window.__pixOfficeHost === null), { timeout: 15_000 })
     .toBe(true);
   await expect(page.locator('.backdrop.is-live')).not.toBeAttached();
   await page.evaluate(() =>
@@ -1148,13 +1186,17 @@ test('#671 cross-trigger recovery: after the hero exhausts its retries, a later 
         page.evaluate(() => {
           const c = document.querySelector('[data-vibing-canvas]') as HTMLCanvasElement | null;
           if (!c) return false;
-          const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-          return d.some((v) => v !== 0);
+          const copy = document.createElement('canvas');
+          copy.width = c.width;
+          copy.height = c.height;
+          const ctx = copy.getContext('2d')!;
+          ctx.drawImage(c, 0, 0);
+          return ctx.getImageData(0, 0, c.width, c.height).data.some((v) => v !== 0);
         }),
       { timeout: 15_000 }
     )
     .toBe(true);
-  expect(await page.evaluate(() => window.__pixWasm !== null)).toBe(true);
+  expect(await page.evaluate(() => window.__pixOfficeHost !== null)).toBe(true);
   expect(wasmHits).toBeGreaterThan(3);
   expect(errors().filter((e) => !e.includes('Failed to load resource'))).toEqual([]);
 });
@@ -1655,8 +1697,12 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
   const vibingPainted = () =>
     page.evaluate(() => {
       const c = document.querySelector('[data-vibing-canvas]') as HTMLCanvasElement;
-      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-      return d.some((v) => v !== 0);
+      const copy = document.createElement('canvas');
+      copy.width = c.width;
+      copy.height = c.height;
+      const ctx = copy.getContext('2d')!;
+      ctx.drawImage(c, 0, 0);
+      return ctx.getImageData(0, 0, c.width, c.height).data.some((v) => v !== 0);
     });
   await expect.poll(vibingPainted, { timeout: 15_000 }).toBe(true);
 
@@ -1703,7 +1749,7 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
   const pauseBtn = page.locator('#office-pause');
   await pauseBtn.click();
   await expect(pauseBtn).toHaveAttribute('aria-pressed', 'true');
-  const frozen = await vibingShot();
+  const frozen = await settledShot(vibingShot);
   await page.waitForTimeout(400); // >12 would-be frames at the 33ms cap
   expect(await vibingShot()).toBe(frozen);
   await pauseBtn.click();

@@ -96,24 +96,6 @@ impl AssetBank {
         }
     }
 
-    /// A bank of buffers built elsewhere (the wasm worker's handoff); `None`
-    /// unless each pool holds its full size.
-    pub fn adopt(
-        keystrokes: Vec<Arc<Vec<f32>>>,
-        drops: Vec<Arc<Vec<f32>>>,
-        door_chime: Arc<Vec<f32>>,
-        printer_whir: Arc<Vec<f32>>,
-        vending_drop: Arc<Vec<f32>>,
-    ) -> Option<Self> {
-        Some(Self {
-            keystrokes: keystrokes.try_into().ok()?,
-            drops: drops.try_into().ok()?,
-            door_chime,
-            printer_whir,
-            vending_drop,
-        })
-    }
-
     /// The `index`th buffer of `pool`, `None` past its end; an appliance pool
     /// holds one.
     pub fn get(&self, pool: OneShotPool, index: usize) -> Option<&Arc<Vec<f32>>> {

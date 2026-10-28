@@ -166,12 +166,8 @@ pub struct Office {
     /// The badges of the frame the page shows, which its labels sit over: a
     /// held frame keeps the last's.
     shown_badges: Vec<pixtuoid_scene::display::Badge>,
-    /// The WebAudio engine — `None` until the visitor clicks ♩ (browser autoplay
-    /// policy: no sound without a gesture).
+    /// The WebAudio engine — `None` until the site warms the ♩'s buffers.
     audio: Option<audio::WebAudioDriver>,
-    /// An in-flight worker-prewarm handoff — staged by `audio_adopt_begin`,
-    /// promoted to `audio` by `audio_adopt_finish`.
-    adopting: Option<audio::Adoption>,
 }
 
 #[wasm_bindgen]
@@ -212,7 +208,6 @@ impl Office {
             screen: Screen::on(page_clock()),
             shown_badges: Vec::new(),
             audio: None,
-            adopting: None,
         })
     }
 
@@ -383,9 +378,9 @@ impl Office {
         out
     }
 
-    // JS drives the audio after the ♩ click (browser autoplay policy):
-    // audio_begin → pump audio_warmup_step off setTimeout(0) → upload the
-    // buffers via the ptr/len getters → audio_tick per rAF.
+    // The site's office host drives the audio: audio_begin → pump
+    // audio_warmup_step → copy the buffers out via the ptr/len getters →
+    // audio_tick per frame once the ♩ plays them.
 
     /// Create the audio engine. Idempotent — a second call is ignored. Costs
     /// nothing until `audio_warmup_step`.
@@ -397,8 +392,8 @@ impl Office {
     }
 
     /// Build ONE synthesis piece; returns pieces REMAINING (0 = ready to upload
-    /// buffers + tick). JS loops it off `setTimeout(0)` so the synthesis never
-    /// blocks the main thread in one shot.
+    /// buffers + tick). The host pumps one piece per task, so no frame waits on
+    /// the whole synthesis.
     pub fn audio_warmup_step(&mut self) -> u32 {
         self.audio.as_mut().map_or(0, |a| a.warmup_step())
     }
@@ -467,8 +462,9 @@ impl Office {
             OneShotPool::from_wire(pool).map_or(0, |p| a.oneshot_buffer(p, idx).len())
         })
     }
+    /// Every one-shot pool's wire: JS discovers a pool's slots, but not the pools.
     pub fn audio_oneshot_wires(&self) -> Vec<u8> {
-        oneshot_wires()
+        OneShotPool::ALL.map(OneShotPool::wire).to_vec()
     }
 
     /// Advance the audio one tick at `now_ms` (the site's pause-shifted clock,
@@ -492,110 +488,6 @@ impl Office {
         let frame = self.session.audio_frame(&self.scene, meta, now);
         audio::commands_json(&audio.tick(now_ms, frame))
     }
-
-    /// Stage a handoff of the worker's take. Overwrites any prior stage.
-    pub fn audio_adopt_begin(&mut self) {
-        self.adopting = Some(audio::Adoption::default());
-    }
-
-    /// Copy in one one-shot buffer (the worker's pool-discovery order).
-    /// `false` = refused (no stage / bad pool / overflow).
-    pub fn audio_adopt_oneshot(&mut self, pool: u8, samples: &[f32]) -> bool {
-        let Some(ad) = self.adopting.as_mut() else {
-            return false;
-        };
-        match OneShotPool::from_wire(pool) {
-            Some(p) => ad.push_oneshot(p, samples),
-            None => false,
-        }
-    }
-
-    /// Copy in loop stem `idx` ([`LoopStem::ALL`](pixtuoid_scene::audio::mixer::LoopStem::ALL)
-    /// order). Same `false` contract as
-    /// `audio_adopt_oneshot`.
-    pub fn audio_adopt_loop(&mut self, idx: usize, samples: &[f32]) -> bool {
-        match self.adopting.as_mut() {
-            Some(ad) => ad.push_loop(idx, samples),
-            None => false,
-        }
-    }
-
-    /// Promote a COMPLETE handoff to the live driver. Refuses a torn handoff, and
-    /// refuses to stomp a driver a click already warmed (first ready wins).
-    pub fn audio_adopt_finish(&mut self) -> bool {
-        let Some(ad) = self.adopting.take() else {
-            return false;
-        };
-        if self.audio.is_some() {
-            return false;
-        }
-        match ad.finish() {
-            Some(driver) => {
-                self.audio = Some(driver);
-                true
-            }
-            None => false,
-        }
-    }
-}
-
-/// The worker-side synthesizer: the audio-prewarm Web Worker instantiates its
-/// OWN wasm module (memories can't be shared), pumps [`SynthTake::step`] to 0,
-/// then transfers each buffer to the main thread for `Office::audio_adopt_*`.
-#[wasm_bindgen]
-#[derive(Debug)]
-pub struct SynthTake {
-    driver: audio::WebAudioDriver,
-}
-
-#[wasm_bindgen]
-impl SynthTake {
-    #[wasm_bindgen(constructor)]
-    #[expect(
-        clippy::new_without_default,
-        reason = "a wasm-bindgen constructor is how JS builds it; JS has no Default"
-    )]
-    pub fn new() -> SynthTake {
-        SynthTake {
-            driver: audio::WebAudioDriver::new(),
-        }
-    }
-
-    /// Build ONE synthesis piece; pieces remaining (0 = done).
-    pub fn step(&mut self) -> u32 {
-        self.driver.warmup_step()
-    }
-
-    /// The loop-stem count — loops aren't self-terminating like the one-shot
-    /// pools, so JS can't discover the copy-out bound itself.
-    pub fn loop_count(&self) -> usize {
-        LoopStem::ALL.len()
-    }
-
-    /// Zero-copy reads, same contract as the `Office::audio_*` getters — the
-    /// worker copies before its next wasm call.
-    pub fn loop_ptr(&self, idx: usize) -> *const f32 {
-        self.driver.loop_buffer(idx).as_ptr()
-    }
-    pub fn loop_len(&self, idx: usize) -> usize {
-        self.driver.loop_buffer(idx).len()
-    }
-    pub fn oneshot_ptr(&self, pool: u8, idx: usize) -> *const f32 {
-        OneShotPool::from_wire(pool).map_or(std::ptr::null(), |p| {
-            self.driver.oneshot_buffer(p, idx).as_ptr()
-        })
-    }
-    pub fn oneshot_len(&self, pool: u8, idx: usize) -> usize {
-        OneShotPool::from_wire(pool).map_or(0, |p| self.driver.oneshot_buffer(p, idx).len())
-    }
-    pub fn oneshot_wires(&self) -> Vec<u8> {
-        oneshot_wires()
-    }
-}
-
-/// Every one-shot pool's wire: JS discovers a pool's slots, but not the pools.
-fn oneshot_wires() -> Vec<u8> {
-    OneShotPool::ALL.map(OneShotPool::wire).to_vec()
 }
 
 /// The `setTargetAtTime` time constant each GainNode approaches a tick's gain
@@ -822,71 +714,6 @@ mod tests {
             Ok(o) => o,
             Err(_) => panic!("bundled pack must parse"),
         }
-    }
-
-    /// The worker→main handoff, minus the JS/postMessage hop.
-    fn adopt_take_into(o: &mut Office) -> SynthTake {
-        let mut take = SynthTake::new();
-        while take.step() > 0 {}
-        o.audio_adopt_begin();
-        for i in 0..take.loop_count() {
-            assert!(
-                o.audio_adopt_loop(i, take.driver.loop_buffer(i)),
-                "loop {i} adopted"
-            );
-        }
-        for wire in take.oneshot_wires() {
-            let pool = OneShotPool::from_wire(wire).expect("known wire");
-            let mut j = 0;
-            while !take.driver.oneshot_buffer(pool, j).is_empty() {
-                assert!(
-                    o.audio_adopt_oneshot(wire, take.driver.oneshot_buffer(pool, j)),
-                    "{pool:?}[{j}] adopted"
-                );
-                j += 1;
-            }
-        }
-        take
-    }
-
-    #[test]
-    fn a_worker_take_adopts_into_an_office_and_the_click_is_upload_only() {
-        let mut o = office();
-        let take = adopt_take_into(&mut o);
-        assert!(o.audio_adopt_finish(), "complete handoff promotes");
-        o.audio_begin();
-        assert_eq!(o.audio_warmup_step(), 0, "click-time synthesis skipped");
-        for i in 0..take.loop_count() {
-            assert_eq!(
-                o.audio_loop_len(i),
-                take.driver.loop_buffer(i).len(),
-                "stem {i} upload reads the adopted bytes"
-            );
-        }
-        assert!(
-            !o.audio_adopt_finish(),
-            "a second finish has nothing staged"
-        );
-    }
-
-    #[test]
-    fn a_click_warmed_driver_wins_over_a_late_adoption() {
-        let mut o = office();
-        o.audio_begin();
-        while o.audio_warmup_step() > 0 {}
-        let rain = pixtuoid_scene::audio::mixer::LoopStem::ALL
-            .iter()
-            .position(|s| *s == pixtuoid_scene::audio::mixer::LoopStem::Rain)
-            .expect("rain is a loop stem");
-        let baseline = o.audio_loop_ptr(rain);
-        adopt_take_into(&mut o);
-        assert!(
-            !o.audio_adopt_finish(),
-            "first ready wins — a late adoption must not stomp the live driver"
-        );
-        assert_eq!(o.audio_loop_ptr(rain), baseline, "live driver untouched");
-        assert!(!o.audio_adopt_loop(0, &[0.1]));
-        assert!(!o.audio_adopt_oneshot(0, &[0.1]));
     }
 
     /// Anchor sim time well past 0 so `exiting_at`-style guards never see the

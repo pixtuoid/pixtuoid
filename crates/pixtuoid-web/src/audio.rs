@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use pixtuoid_scene::audio::bank::{AssetBank, DROP_POOL, KEYSTROKE_POOL, Synthesis};
+use pixtuoid_scene::audio::bank::{AssetBank, Synthesis};
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::audio::{AudioEngine, AudioFrame, MAX_DT_S, OneShotPool, TickCommands};
 
@@ -35,18 +35,8 @@ impl WebAudioDriver {
         }
     }
 
-    /// A driver assembled from worker-synthesized pieces, ready immediately.
-    pub(crate) fn adopted(bank: AssetBank, rain: Arc<Vec<f32>>) -> Self {
-        Self {
-            bank: Some(bank),
-            rain: Some(rain),
-            ..Self::new()
-        }
-    }
-
     /// Build ONE synthesis piece (bank → rain, the [`Synthesis`] order),
-    /// returning the pieces REMAINING. JS pumps this off `setTimeout(0)` so the
-    /// main thread never blocks on the whole synthesis.
+    /// returning the pieces REMAINING.
     pub(crate) fn warmup_step(&mut self) -> u32 {
         if self.bank.is_none() {
             self.bank = Some(self.synthesis.assets());
@@ -82,90 +72,12 @@ impl WebAudioDriver {
 
     /// MUST return empty for any `index` past the pool's end: the JS discovery
     /// loop grows until the first empty slot, so an unbounded non-empty would
-    /// spin the browser's main thread forever.
+    /// spin the site's office host forever.
     pub(crate) fn oneshot_buffer(&self, pool: OneShotPool, index: usize) -> &[f32] {
         let Some(bank) = &self.bank else {
             return &[];
         };
         bank.get(pool, index).map_or(&[], |a| a.as_slice())
-    }
-}
-
-/// The worker-prewarm handoff: buffers synthesized in a Web Worker's OWN wasm
-/// instance are copied here piece-by-piece, because a postMessage transfer
-/// can't cross wasm memories. A torn handoff (worker died mid-stream) yields
-/// `None` so the click-time warmup runs instead.
-#[derive(Debug, Default)]
-pub(crate) struct Adoption {
-    keystrokes: Vec<Arc<Vec<f32>>>,
-    drops: Vec<Arc<Vec<f32>>>,
-    door_chime: Option<Arc<Vec<f32>>>,
-    printer_whir: Option<Arc<Vec<f32>>>,
-    vending_drop: Option<Arc<Vec<f32>>>,
-    rain: Option<Arc<Vec<f32>>>,
-}
-
-impl Adoption {
-    /// `false` — overflow, duplicate, or empty — aborts the handoff.
-    pub(crate) fn push_oneshot(&mut self, pool: OneShotPool, samples: &[f32]) -> bool {
-        if samples.is_empty() {
-            return false;
-        }
-        let arc = Arc::new(samples.to_vec());
-        let slot = |o: &mut Option<Arc<Vec<f32>>>| {
-            if o.is_some() {
-                return false;
-            }
-            *o = Some(arc.clone());
-            true
-        };
-        match pool {
-            OneShotPool::Keystroke => {
-                if self.keystrokes.len() >= KEYSTROKE_POOL {
-                    return false;
-                }
-                self.keystrokes.push(arc.clone());
-                true
-            }
-            OneShotPool::Drop => {
-                if self.drops.len() >= DROP_POOL {
-                    return false;
-                }
-                self.drops.push(arc.clone());
-                true
-            }
-            OneShotPool::DoorChime => slot(&mut self.door_chime),
-            OneShotPool::PrinterWhir => slot(&mut self.printer_whir),
-            OneShotPool::VendingDrop => slot(&mut self.vending_drop),
-        }
-    }
-
-    /// Loop stem `idx` in `LoopStem::ALL` order; a stem twice aborts.
-    pub(crate) fn push_loop(&mut self, idx: usize, samples: &[f32]) -> bool {
-        if samples.is_empty() {
-            return false;
-        }
-        match LoopStem::ALL.get(idx) {
-            Some(LoopStem::Rain) => {
-                if self.rain.is_some() {
-                    return false;
-                }
-                self.rain = Some(Arc::new(samples.to_vec()));
-                true
-            }
-            None => false,
-        }
-    }
-
-    pub(crate) fn finish(self) -> Option<WebAudioDriver> {
-        let bank = AssetBank::adopt(
-            self.keystrokes,
-            self.drops,
-            self.door_chime?,
-            self.printer_whir?,
-            self.vending_drop?,
-        )?;
-        Some(WebAudioDriver::adopted(bank, self.rain?))
     }
 }
 
@@ -214,6 +126,7 @@ fn fmt_f32(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixtuoid_scene::audio::bank::{DROP_POOL, KEYSTROKE_POOL};
     use pixtuoid_scene::audio::{Controls, PlayCmd, bank, controls_from_wire};
 
     /// The index of `stem` in a tick's `gains` and the loop wire.
@@ -405,22 +318,6 @@ mod tests {
         );
     }
 
-    fn adopt_all_of(src: &WebAudioDriver) -> Adoption {
-        let mut ad = Adoption::default();
-        for i in 0..LoopStem::ALL.len() {
-            assert!(ad.push_loop(i, src.loop_buffer(i)), "loop {i}");
-        }
-        for (pool, size) in ONESHOT_POOL_SIZES {
-            for j in 0..size {
-                assert!(
-                    ad.push_oneshot(pool, src.oneshot_buffer(pool, j)),
-                    "{pool:?}[{j}]"
-                );
-            }
-        }
-        ad
-    }
-
     const ONESHOT_POOL_SIZES: [(OneShotPool, usize); 5] = [
         (OneShotPool::Keystroke, KEYSTROKE_POOL),
         (OneShotPool::Drop, DROP_POOL),
@@ -428,96 +325,4 @@ mod tests {
         (OneShotPool::PrinterWhir, 1),
         (OneShotPool::VendingDrop, 1),
     ];
-
-    #[test]
-    fn adoption_round_trips_a_warmed_driver_byte_for_byte() {
-        let mut src = WebAudioDriver::new();
-        while src.warmup_step() > 0 {}
-        let dst = adopt_all_of(&src).finish().expect("complete handoff");
-        assert!(dst.is_ready(), "adopted driver is ready with zero warmup");
-        for i in 0..LoopStem::ALL.len() {
-            assert_eq!(dst.loop_buffer(i), src.loop_buffer(i), "stem {i} bytes");
-        }
-        for (pool, size) in ONESHOT_POOL_SIZES {
-            for j in 0..size {
-                assert_eq!(dst.oneshot_buffer(pool, j), src.oneshot_buffer(pool, j));
-            }
-            assert!(
-                dst.oneshot_buffer(pool, size).is_empty(),
-                "{pool:?} keeps the discovery-loop terminator"
-            );
-        }
-    }
-
-    #[test]
-    fn an_adopted_driver_ticks_like_a_warmed_one() {
-        let mut src = WebAudioDriver::new();
-        while src.warmup_step() > 0 {}
-        let mut d = adopt_all_of(&src).finish().expect("handoff");
-        assert!(d.is_ready(), "an adopted driver needs no warmup");
-        // 200 ticks × 50 ms: the typing and the rain's drops schedule plays.
-        let mut now = 0.0;
-        let mut rain = 0.0;
-        let mut plays = 0;
-        for _ in 0..200 {
-            now += 50.0;
-            let cmd = d.tick(now, running_rainy());
-            rain = cmd.gains[at(LoopStem::Rain)];
-            for p in &cmd.plays {
-                assert_eq!(
-                    d.oneshot_buffer(p.pool, p.index),
-                    src.oneshot_buffer(p.pool, p.index),
-                    "{:?}[{}] plays the adopted buffer",
-                    p.pool,
-                    p.index
-                );
-                plays += 1;
-            }
-        }
-        assert!(rain > 0.0, "adopted mix ramps up");
-        assert!(plays > 0, "premise: the engine scheduled plays");
-    }
-
-    #[test]
-    fn a_torn_adoption_yields_none_and_bad_pushes_are_refused() {
-        let mut src = WebAudioDriver::new();
-        while src.warmup_step() > 0 {}
-        let mut ad = adopt_all_of(&src);
-        ad.rain = None;
-        assert!(ad.finish().is_none(), "missing rain is a torn handoff");
-        let rain = src.loop_buffer(at(LoopStem::Rain));
-        let mut ad = Adoption::default();
-        assert!(
-            !ad.push_loop(LoopStem::ALL.len(), rain),
-            "an unknown loop is refused"
-        );
-        assert!(
-            !ad.push_loop(at(LoopStem::Rain), &[]),
-            "empty buffers are refused"
-        );
-        let mut ad = adopt_all_of(&src);
-        assert!(
-            !ad.push_loop(at(LoopStem::Rain), rain),
-            "a second rain bed is refused"
-        );
-        assert!(
-            !ad.push_oneshot(
-                OneShotPool::Keystroke,
-                src.oneshot_buffer(OneShotPool::Keystroke, 0)
-            ),
-            "keystroke overflow refused"
-        );
-        assert!(
-            !ad.push_oneshot(
-                OneShotPool::DoorChime,
-                src.oneshot_buffer(OneShotPool::DoorChime, 0)
-            ),
-            "duplicate cue refused"
-        );
-        let mut ad = Adoption::default();
-        for i in 0..LoopStem::ALL.len() {
-            ad.push_loop(i, src.loop_buffer(i));
-        }
-        assert!(ad.finish().is_none(), "missing one-shots is a torn handoff");
-    }
 }
