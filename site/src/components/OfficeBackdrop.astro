@@ -395,15 +395,17 @@ const officeDriverUrl = asset('office-driver.js');
     let pauseOffset = 0;
     let pausedAt = 0;
 
-    // Sprites are fixed-size, so a smaller buffer IS zoom — deliberately a closer camera than the app's.
+    // Sprites are fixed-size, so a smaller office IS zoom — deliberately a closer camera than the app's.
+    // bufW × BUF_H are layout units; the canvas takes the office's `scale()` pixels per unit.
     function sizeBuffer() {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      if (w < 1 || h < 1) return;
+      if (w < 1 || h < 1 || !office) return;
       bufW = Math.min(640, Math.max(64, Math.round((w / h) * BUF_H)));
-      canvas.width = bufW;
-      canvas.height = BUF_H;
-      img = new ImageData(bufW, BUF_H);
+      const s = office.scale();
+      canvas.width = bufW * s;
+      canvas.height = BUF_H * s;
+      img = new ImageData(canvas.width, canvas.height);
     }
 
     const overlayEl = document.getElementById('office-overlay');
@@ -581,16 +583,17 @@ const officeDriverUrl = asset('office-driver.js');
     // putImageData writes the sub-1 alpha straight to the canvas, so the
     // element's own bg (var(--bg)) shows through the transparent pixels.
     function drawRevealFrame(view, rt) {
-      const w = bufW;
-      const h = BUF_H;
+      const w = img.width;
+      const h = img.height;
+      const s = h / BUF_H;
       const d = img.data;
       const e = 1 - Math.pow(1 - rt, 4);
       const roll = Math.round((1 - e) * h * FLOORS_PAST);
       const alpha = Math.min(1, rt / 0.15);
-      const split = Math.round((1 - e) * CHROMA_SPLIT_PX);
+      const split = Math.round((1 - e) * CHROMA_SPLIT_PX * s);
       for (let y = 0; y < h; y++) {
         const sy = (y + roll) % h;
-        const seam = sy < 1 || sy > h - 2 ? 0.3 : 1; // floor divider: more bg shows
+        const seam = sy < s || sy > h - 2 * s ? 0.3 : 1; // floor divider: more bg shows
         const a = alpha * seam * 255;
         const row = sy * w;
         for (let x = 0; x < w; x++) {

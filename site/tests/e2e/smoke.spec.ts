@@ -219,9 +219,13 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   const errors = watchErrors(page);
   await gotoLive(page);
   await expect(page.locator('[data-sl-onair]')).toHaveText('● LIVE', { timeout: 10_000 });
-  // Buffer height is fixed at 130: width = min(640, max(64, round(w/h · 130))).
+  // The office is 130 layout units tall: width = min(640, max(64, round(w/h · 130))) units,
+  // at the canvas's pixels per unit.
   const bufW = () =>
-    page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).width);
+    page.evaluate(() => {
+      const c = document.getElementById('office-live') as HTMLCanvasElement;
+      return (c.width * 130) / c.height;
+    });
   expect(await bufW()).toBe(231);
   await page.setViewportSize({ width: 500, height: 900 });
   await expect.poll(bufW).toBe(72);
@@ -341,7 +345,10 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   const shot = () =>
     page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).toDataURL());
   const bufW = () =>
-    page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).width);
+    page.evaluate(() => {
+      const c = document.getElementById('office-live') as HTMLCanvasElement;
+      return (c.width * 130) / c.height;
+    });
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'true');
   const frozen = await shot();

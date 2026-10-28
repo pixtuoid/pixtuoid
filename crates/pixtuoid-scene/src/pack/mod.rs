@@ -441,7 +441,7 @@ pub(crate) fn test_pack_with(overrides: &[(&str, &'static str)]) -> Pack {
 }
 
 /// The bundled manifest without its density art, and the sprites it still
-/// draws: the web hero's pack.
+/// draws: a build without `cutaway-assets`'s pack.
 #[cfg(test)]
 fn base_pack_srcs() -> (String, Vec<(&'static str, &'static str)>) {
     let (toml, dropped) =
@@ -679,7 +679,8 @@ mod tests {
             .collect()
     }
 
-    /// The web hero's pack, which a default-feature run loads nowhere else.
+    /// A build without `cutaway-assets`'s pack, which a default-feature run
+    /// loads nowhere else.
     #[test]
     fn the_pack_without_density_art_loads_whole() {
         let (_, dropped) = density_art::bundled_without_density_art(include_str!(

@@ -21,15 +21,18 @@ categories.workspace   = true
 workspace = true
 
 [features]
-default        = ["native", "cutaway-assets"]
+default        = ["native", "cutaway-assets", "pixel-font"]
 # Without it the render engine builds for wasm32 (no tokio/notify): the
 # WebAssembly office hero.
 native         = ["pixtuoid-core/native"]
 # The bundled `@Nx` art and hair dressing, which only a render scale above
-# `RenderScale::ONE` reaches (`densest_frame`, `dress_for`), and the text's
-# Fusion Pixel face. The wasm hero draws only the classic, so building without
-# this keeps those bytes out of the page.
+# `RenderScale::ONE` reaches (`densest_frame`, `dress_for`). A build without
+# it can draw only the classic.
 cutaway-assets = []
+# The Fusion Pixel face the cutaway sets baked world text and the terminal's
+# grid in; a painter that sets the world text itself (`WorldText::Host`) draws
+# none of it.
+pixel-font     = []
 
 [dependencies]
 pixtuoid-core = { path = "../pixtuoid-core", version = "0.21.0", default-features = false }

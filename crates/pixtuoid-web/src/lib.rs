@@ -30,8 +30,9 @@ use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
 use pixtuoid_scene::floor::{FloorInputs, FloorMeta, FloorSession, PetInputs, floor_capacity};
 use pixtuoid_scene::layout::Size;
-use pixtuoid_scene::look::{Look, Place, RenderInputs};
+use pixtuoid_scene::look::{Look, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::load_bundled_pack;
+use pixtuoid_scene::render_scale::RenderScale;
 use pixtuoid_scene::screen::{Screen, ScreenClock};
 use pixtuoid_scene::sky::WeatherPolicy;
 use pixtuoid_scene::theme::{NORMAL, Theme};
@@ -140,6 +141,10 @@ pub struct Office {
     /// view into wasm memory, so blitting is zero-copy on the JS side.
     rgba: Vec<u8>,
     theme: &'static Theme,
+    /// What `step` draws in.
+    look: Look,
+    /// The cutaway at the pack's densest art, with the page setting its text.
+    cutaway: Look,
     seed: u64,
     reducer: Reducer,
     beats: Vec<Beat>,
@@ -182,6 +187,11 @@ impl Office {
     pub fn new(seed: u32) -> Result<Office, JsError> {
         let pack =
             std::sync::Arc::new(load_bundled_pack().map_err(|e| JsError::new(&format!("{e:#}")))?);
+        // The browser upscales the frame, so it renders at the art's own density.
+        let cutaway = Look::Cutaway {
+            scale: RenderScale::from(pack.max_density_variant()),
+            text: WorldText::Host,
+        };
         Ok(Office {
             // Capacity starts empty and is synced from the CANVAS's own layout
             // on every `step` before any beat fires, so the reducer only admits
@@ -190,6 +200,8 @@ impl Office {
             session: FloorSession::new(pack),
             rgba: Vec::new(),
             theme: &NORMAL,
+            look: cutaway,
+            cutaway,
             seed: u64::from(seed),
             reducer: Reducer::new(),
             beats: hero_script(),
@@ -208,9 +220,9 @@ impl Office {
         })
     }
 
-    /// Advance to `now_ms` and render at `w`×`h` pixels into the RGBA staging
-    /// buffer, which keeps the last frame while the flash hold keeps this one
-    /// back.
+    /// Advance to `now_ms` and render an office `w`×`h` layout units big into
+    /// the RGBA staging buffer, [`Office::scale`] pixels per unit, which keeps
+    /// the last frame while the flash hold keeps this one back.
     ///
     /// CONTRACT: `now_ms` must be UNIX-epoch milliseconds — `Date.now()`, NOT
     /// `performance.now()` and NOT a `requestAnimationFrame` timestamp: those are
@@ -218,8 +230,11 @@ impl Office {
     pub fn step(&mut self, now_ms: f64, w: u32, h: u32) {
         let now = pixtuoid_scene::anim::from_epoch_ms(now_ms);
         self.last_now = Some(now);
-        let buf_w = w.clamp(1, u32::from(u16::MAX)) as u16;
-        let buf_h = h.clamp(1, u32::from(u16::MAX)) as u16;
+        let scale = self.scale();
+        // The frame's pixels, not just its units, must fit the buffer's u16.
+        let units = |n: u32| n.clamp(1, u32::from(u16::MAX) / scale) as u16;
+        let (buf_w, buf_h) = (units(w), units(h));
+        let px = (buf_w * scale as u16, buf_h * scale as u16);
         // Capacity BEFORE the script advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(buf_w, buf_h);
@@ -238,12 +253,14 @@ impl Office {
         self.render(now, buf_w, buf_h);
         let Some(picture) = self.session.picture() else {
             // Too small to lay out: the canvas still takes a frame its size,
-            // the raster's backdrop.
-            self.screen.blank((buf_w, buf_h));
+            // the classic's backdrop, in either look.
+            self.screen.blank(px);
             self.shown_badges.clear();
-            if let Some(backdrop) = self.session.floor().raster.pixels() {
-                expand_rgba(&mut self.rgba, backdrop);
-            }
+            let bg = self.theme.surface.bg_fallback;
+            let n = usize::from(px.0) * usize::from(px.1);
+            self.rgba.clear();
+            self.rgba
+                .extend(std::iter::repeat_n([bg.r, bg.g, bg.b, 255], n).flatten());
             self.screen.landed();
             return;
         };
@@ -251,11 +268,7 @@ impl Office {
             .text
             .map_or_else(Vec::new, |text| text.badges.to_vec());
         let picture = pixtuoid_scene::look::Picture::Floor(picture);
-        if !self
-            .screen
-            .admit(&picture, (buf_w, buf_h), (), None)
-            .written()
-        {
+        if !self.screen.admit(&picture, px, (), None).written() {
             return;
         }
         expand_rgba(&mut self.rgba, picture.pixels());
@@ -277,6 +290,24 @@ impl Office {
     /// Byte length of the RGBA frame (`w*h*4`).
     pub fn frame_len(&self) -> usize {
         self.rgba.len()
+    }
+
+    /// Frame pixels per layout unit `step` takes, in the current look.
+    pub fn scale(&self) -> u32 {
+        match self.look {
+            Look::Classic => 1,
+            Look::Cutaway { scale, .. } => u32::from(scale.get()),
+        }
+    }
+
+    /// Draw in the look `name` names, `"cutaway"` or `"classic"`. Unknown
+    /// name = no-op.
+    pub fn set_look(&mut self, name: &str) {
+        match name {
+            "cutaway" => self.look = self.cutaway,
+            "classic" => self.look = Look::Classic,
+            _ => {}
+        }
     }
 
     /// Hire one more agent: a new coworker walks into the background office,
@@ -318,7 +349,7 @@ impl Office {
     /// The wasm office renders at a SMALL buffer that CSS upscales with
     /// `image-rendering: pixelated`, so anti-aliased text CANNOT be baked into the
     /// pixels — the site lays crisp DOM spans over the canvas from this model
-    /// instead. Coordinates are OFFICE-BUFFER px (a label's `x` is the sprite
+    /// instead. Coordinates are the LAYOUT units `step` takes (a label's `x` is the sprite
     /// CENTER, `y` its head-top; the board `rect` is the neon-panel interior).
     /// Colors are RESOLVED against the CURRENT theme. Call right after `step` (it
     /// reads the step's clock).
@@ -682,7 +713,7 @@ impl Office {
         // Too-small layouts leave the cleared buffer; never panics.
         let floor_meta = self.floor_meta();
         self.session.render(
-            Look::Classic,
+            self.look,
             RenderInputs {
                 world: FloorInputs {
                     scene: &self.scene,
@@ -884,7 +915,12 @@ mod tests {
         let mut o = office();
         let (w, h) = (160u32, 96u32);
         o.step(T0_MS, w, h);
-        assert_eq!(o.frame_len(), (w * h * 4) as usize, "len is w*h*4");
+        let s = o.scale();
+        assert_eq!(
+            o.frame_len(),
+            (w * s * h * s * 4) as usize,
+            "len is w*h*scale²*4"
+        );
         let frame = &o.rgba;
         assert!(
             frame.iter().skip(3).step_by(4).all(|&a| a == 255),
@@ -1043,11 +1079,12 @@ mod tests {
         step_at(&mut o, &screen, first - 2 * FLOOR_MS);
         step_at(&mut o, &screen, second - FLOOR_MS / 4);
         screen.at(SystemTime::UNIX_EPOCH + Duration::from_millis(second - FLOOR_MS / 8));
+        let s = o.scale() as usize;
         o.step((second - FLOOR_MS / 8) as f64, 8, 8);
-        assert_eq!(o.frame_len(), 8 * 8 * 4, "premise: the backdrop");
+        assert_eq!(o.frame_len(), 8 * s * 8 * s * 4, "premise: the backdrop");
         screen.at(SystemTime::UNIX_EPOCH + Duration::from_millis(second));
         o.step(second as f64, 160, 96);
-        assert_eq!(o.frame_len(), 160 * 96 * 4);
+        assert_eq!(o.frame_len(), 160 * s * 96 * s * 4);
     }
 
     /// A phase holds the floor from when its frame is written, not from the
@@ -1094,14 +1131,36 @@ mod tests {
 
     #[test]
     fn resize_reshapes_the_frame_and_a_tiny_canvas_never_panics() {
+        for look in ["cutaway", "classic"] {
+            let mut o = office();
+            o.set_look(look);
+            let s = o.scale() as usize;
+            o.step(T0_MS, 320, 180);
+            assert_eq!(o.frame_len(), 320 * s * 180 * s * 4, "{look}");
+            o.step(T0_MS + 100.0, 480, 270);
+            assert_eq!(o.frame_len(), 480 * s * 270 * s * 4, "{look}");
+            // Too small for any layout: render early-returns, still a valid frame.
+            o.step(T0_MS + 200.0, 8, 8);
+            assert_eq!(o.frame_len(), 8 * s * 8 * s * 4, "{look}");
+        }
+    }
+
+    /// The page gets the cutaway at the art's own density unless it picks the
+    /// classic, one pixel a unit; an unknown name keeps the look.
+    #[test]
+    fn the_cutaway_is_the_default_and_the_classic_a_pick() {
         let mut o = office();
-        o.step(T0_MS, 320, 180);
-        assert_eq!(o.frame_len(), 320 * 180 * 4);
-        o.step(T0_MS + 100.0, 480, 270);
-        assert_eq!(o.frame_len(), 480 * 270 * 4);
-        // Too small for any layout: render early-returns, still a valid frame.
-        o.step(T0_MS + 200.0, 8, 8);
-        assert_eq!(o.frame_len(), 8 * 8 * 4);
+        let density = load_bundled_pack()
+            .expect("the bundled pack parses")
+            .max_density_variant()
+            .get();
+        assert_eq!(o.scale(), u32::from(density));
+        o.set_look("classic");
+        assert_eq!(o.scale(), 1);
+        o.set_look("sepia");
+        assert_eq!(o.scale(), 1, "an unknown name keeps the look");
+        o.set_look("cutaway");
+        assert_eq!(o.scale(), u32::from(density));
     }
 
     #[test]

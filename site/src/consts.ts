@@ -120,7 +120,7 @@ export interface ShowcaseChannel {
   label: string; // monitor label (channel number is derived from manifest order)
   kind: 'clip' | 'variant-set' | 'live';
   asset?: string; // clip: demos/<asset>.mp4 [+ .webm] + <asset>-poster.png
-  // clip: intrinsic dims (CLS); live: the canvas BUFFER dims — the vibing
+  // clip: intrinsic dims (CLS); live: the office's LAYOUT units — the vibing
   // "camera", where smaller = closer zoom. MUST match media.json's poster job
   // or the static poster and the live canvas reframe on the crossfade.
   w?: number;
