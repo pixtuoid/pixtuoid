@@ -468,8 +468,8 @@ fn callout_dot(desk: (i32, i32)) -> (i32, i32) {
     // Clears the halo `paint_ceiling_halos` burns over a lit monitor, with a
     // margin, so the connector/dot never sits inside the glow.
     const GLOW_CLEARANCE: i32 = 24;
-    const DOT_INSET: i32 = 6;
-    (desk.0 - DOT_INSET, desk.1 - GLOW_CLEARANCE)
+    const DOT_WEST_OF_DESK: i32 = 6;
+    (desk.0 - DOT_WEST_OF_DESK, desk.1 - GLOW_CLEARANCE)
 }
 
 pub(crate) fn compose_frame(
@@ -565,7 +565,6 @@ pub(crate) struct ProofJob<'a> {
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
     pub(crate) pack: &'a std::sync::Arc<pixtuoid_scene::pack::OfficeArt>,
     pub(crate) weather: pixtuoid_scene::sky::WeatherPolicy,
-    /// Draw the office side as the cutaway.
     pub(crate) cutaway: bool,
 }
 
@@ -781,7 +780,7 @@ mod tests {
     fn last_wide_frame(cols: u16, rows: u16, cutaway: bool) -> RgbaImage {
         let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let frames = tempfile::tempdir().unwrap();
-        // The last of two frames, a second in: its first callout is burned in.
+        // Its last frame is inside the first callout's window.
         let timeline = Timeline {
             fps: 1,
             secs: 2,
