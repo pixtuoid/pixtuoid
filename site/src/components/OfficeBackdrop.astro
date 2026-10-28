@@ -546,7 +546,9 @@ const officeDriverUrl = asset('office-driver.js');
         queuedPaint = nowMs;
         return;
       }
+      const wasLive = live;
       const draw = revealAt(nowMs);
+      const goesLive = live && !wasLive;
       // A paused repaint leaves the sound's clock where the pause froze it.
       const audio = audioReady && !paused;
       hero
@@ -554,6 +556,13 @@ const officeDriverUrl = asset('office-driver.js');
         .then(
           function (r) {
             markEngineResolved();
+            // The office announces itself live with its first frame on the canvas, unless reduced motion came first.
+            if (goesLive && live) {
+              wrap.classList.add('is-live');
+              document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: true } }));
+              showAudioBtn();
+              syncAudioCtx();
+            }
             // As the page stands when the frame lands: a pause or reduced motion may have come in meanwhile. Caption
             // the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
             // A reply reads `live`, never `mq.matches`: read from a reply's task, Chromium dropped mq's next change
@@ -591,10 +600,6 @@ const officeDriverUrl = asset('office-driver.js');
         if (reveal.ready < REVEAL_READY_FRAMES && reveal.waited < REVEAL_READY_MAX_WAIT)
           return null;
         live = true;
-        wrap.classList.add('is-live');
-        document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: true } }));
-        showAudioBtn();
-        syncAudioCtx();
       }
       // Safari blocks the main thread for over a second inside its tab-snapshot IPC, so the roll rides PAINTED
       // frames: the clamp makes a hitch PAUSE it, and Date.now()'s backward jumps hold it rather than rewind.

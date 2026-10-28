@@ -67,6 +67,15 @@ async function officeGrounds(
   nth = 0
 ): Promise<[number, number, number][] | null> {
   if ((await page.locator('#office-live').count()) === 0) return null;
+  // The covered canvas is blank until the office host's frames land: grade the settled office, or the poster once the
+  // office is uncovered.
+  await page.waitForFunction(
+    () =>
+      document.getElementById('office-overlay')!.classList.contains('is-on') ||
+      getComputedStyle(document.getElementById('office-live')!).opacity === '0',
+    undefined,
+    { timeout: 20_000 }
+  );
   await page.locator(selector).nth(nth).scrollIntoViewIfNeeded();
   await page.waitForTimeout(SCROLL_SETTLE_MS);
   const sampled = await page.evaluate(
