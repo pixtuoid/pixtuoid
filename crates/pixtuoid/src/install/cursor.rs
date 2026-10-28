@@ -21,7 +21,7 @@ use crate::install::target::MergeOutcome;
 /// Events we register == events we decode (`source/cursor.rs`), enforced by
 /// `every_registered_cursor_event_decodes` below. `subagentStart`/`subagentStop` are documented
 /// (cursor.com/docs/agent/hooks) but unregistered: no committed capture shows the CLI firing them;
-/// an uncommitted `-p` run with both registered saw neither (8af59de4b's message). A failed tool
+/// an uncommitted `-p` run with both registered saw neither (#1950). A failed tool
 /// fires `postToolUseFailure` instead of `postToolUse` (`source/cursor.rs`).
 pub(crate) const CURSOR_EVENTS: &[&str] = &[
     "sessionStart",
