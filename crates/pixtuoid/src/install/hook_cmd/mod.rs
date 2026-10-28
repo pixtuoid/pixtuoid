@@ -89,7 +89,7 @@ mod parity {
         }
     }
 
-    /// Its stamps are pinned by `the_shim_stamps_each_key_the_daemon_reads`.
+    /// Its stamps are pinned by `each_key_the_shim_stamps_is_the_one_core_reads`.
     #[test]
     fn the_shim_parses_every_flag_its_writers_spell() {
         let shim = include_str!("../../../../pixtuoid-hook/src/main.rs");

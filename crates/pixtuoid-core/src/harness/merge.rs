@@ -16,7 +16,7 @@ use crate::{AgentEvent, Reducer, Transport};
 
 /// What the shim stamps on every envelope: when it forwarded it, in
 /// milliseconds since the epoch. Pinned by
-/// `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+/// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 pub const SHIM_STAMP: &str = "_shim_ts_ms";
 
 /// One event a merge applied.

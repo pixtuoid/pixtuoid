@@ -151,7 +151,7 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
 
 /// The hook-envelope key that carries the agent CLI's pid: a plugin stamps it
 /// from inside the CLI, else the shim from its ancestry (`pixtuoid-hook`'s `cli_pid`).
-/// Pinned by `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+/// Pinned by `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 #[doc(hidden)]
 pub const PID_STAMP: &str = "_pid";
 
@@ -249,7 +249,7 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
 }
 
 /// The key the shim stamps with the CLI whose hook ran it. Pinned by
-/// `the_shim_stamps_each_key_the_daemon_reads` to the shim's copy.
+/// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 pub const SOURCE_STAMP: &str = "_pixtuoid_source";
 
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned

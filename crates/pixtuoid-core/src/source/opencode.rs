@@ -78,8 +78,8 @@ pub const DECODED_EVENTS: &[&str] = &[
 
 /// Every `data` path `field` reads, dotted, pinned by
 /// `every_decoded_data_field_is_read`. The plugin's `allowlisted` copies these
-/// and nothing more, pinned by
-/// its selftest, through `the_plugin_contract_is_the_committed_file`.
+/// and nothing more, which its selftest holds it to through
+/// `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_DATA_FIELDS: &[&str] = &[

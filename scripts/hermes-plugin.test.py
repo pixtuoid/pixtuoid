@@ -92,6 +92,13 @@ class PluginTest(unittest.TestCase):
         _, ctx = self.plugin(self.dir / "absent")
         self.assertEqual(set(ctx.hooks), set(ROW["registers"]))
 
+    def test_it_copies_the_contracts_fields_and_nothing_more(self):
+        # The plugin's own allowlists, so a name the fixtures never pass is held
+        # too: `cwd` comes from the session, not the kwargs.
+        module, _ = self.plugin(self.dir / "absent")
+        self.assertEqual(set(module.FIELDS) | {"cwd"}, set(ROW["fields"]))
+        self.assertEqual(set(module.ARGS), set(ROW["detail_keys"]))
+
     @unittest.skipUnless(POSIX, "the fake shims are sh scripts")
     def test_each_event_sends_exactly_the_contracts_fields(self):
         _, ctx = self.plugin(self.recorder())

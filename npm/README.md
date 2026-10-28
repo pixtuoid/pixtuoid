@@ -36,7 +36,7 @@ package via `require.resolve` and exec the native binary:
 | File | Role |
 |---|---|
 | `pixtuoid/package.json` | launcher manifest (version + the 6 dep pins are `0.0.0` placeholders, stamped at publish) |
-| `pixtuoid/bin/{pixtuoid,pixtuoid-hook,resolve.js}` | the two shims + shared resolver |
+| `pixtuoid/bin/{pixtuoid.js,pixtuoid-hook.js,resolve.js}` | the two shims + shared resolver |
 | `generate.mjs` | emits the 6 `@pixtuoid/cli-*` packages from prebuilt binaries + stamps the launcher |
 
 The per-platform packages are **generated, not committed** (see `.gitignore`).

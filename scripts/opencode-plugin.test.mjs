@@ -92,6 +92,30 @@ test("forwards each event of the contract once, copying exactly the decoded fiel
   await assertShimContract(SOURCE, argvFile, payloads);
 });
 
+/**
+ * `data` holding every field: each path reads back as itself, so a payload
+ * holds exactly the paths the plugin copies, whichever those are.
+ * @param {string} [prefix]
+ * @returns {any}
+ */
+function everyField(prefix = "") {
+  return new Proxy(
+    {},
+    {
+      get: (_, key) =>
+        key === "toJSON" ? () => prefix.slice(0, -1) : typeof key === "string" ? everyField(`${prefix}${key}.`) : undefined,
+    },
+  );
+}
+
+test("copies the decoded fields and nothing more, whatever an event carries", { skip: !POSIX }, async (t) => {
+  const { module, outFile } = await render(t, SOURCE);
+  const cleanup = await run(module, host([{ type: "session.tool.success", data: everyField() }]));
+  const [payload] = await recorded(outFile, 1);
+  await cleanup();
+  assert.deepEqual(paths(payload.data).sort(), [...dataFields].sort());
+});
+
 test("a turn's start carries what its session's record adds", { skip: !POSIX }, async (t) => {
   const { module, outFile } = await render(t, SOURCE);
   const events = [{ type: "session.execution.started", data: { sessionID: "ses_1" } }];

@@ -1,4 +1,5 @@
 {
+  "name": "pixtuoid-checkers",
   "private": true,
   "description": "The type checkers `just lint` runs over the repo's JavaScript and Python.",
   "devDependencies": {

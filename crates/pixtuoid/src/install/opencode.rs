@@ -102,11 +102,11 @@ mod tests {
     use super::*;
     use crate::install::merge::HOOK_PLACEHOLDER;
 
-    /// Every event name the plugin spells outside `FORWARD`, wherever it
-    /// compares an event, must be one it forwards: the loop drops every other.
+    /// Every event name the plugin spells is one the decoder reads; its
+    /// selftest pins what it forwards to the same set.
     #[test]
-    fn every_event_the_plugin_names_is_one_it_forwards() {
-        let forwarded = pixtuoid_core::source::opencode::DECODED_EVENTS;
+    fn every_event_the_plugin_names_is_one_the_decoder_reads() {
+        let decoded = pixtuoid_core::source::opencode::DECODED_EVENTS;
         for lit in PLUGIN_TEMPLATE.split('"').skip(1).step_by(2) {
             let event_shaped = lit.contains('.')
                 && lit.split('.').all(|w| {
@@ -116,8 +116,8 @@ mod tests {
                 });
             if event_shaped {
                 assert!(
-                    forwarded.contains(&lit),
-                    "the plugin names `{lit}` but never forwards it"
+                    decoded.contains(&lit),
+                    "the plugin names `{lit}` but the decoder never reads it"
                 );
             }
         }

@@ -1,4 +1,5 @@
-//! Each key the shim stamps is the one the daemon reads. The shim's source is
+//! Each key the shim stamps is the one core reads: the decoders the source,
+//! event and pid keys, the harness merge the timestamp. The shim's source is
 //! included via `#[path]`, NOT a cargo dependency, because the hook crate must
 //! stay free of pixtuoid-core (`pixtuoid-hook/src/keys.rs`).
 
@@ -8,7 +9,7 @@ mod shim_keys;
 use pixtuoid_core::source::decoder;
 
 #[test]
-fn the_shim_stamps_each_key_the_daemon_reads() {
+fn each_key_the_shim_stamps_is_the_one_core_reads() {
     assert_eq!(
         shim_keys::SHIM_STAMP,
         pixtuoid_core::harness::merge::SHIM_STAMP
