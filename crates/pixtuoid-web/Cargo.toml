@@ -6,8 +6,7 @@ description  = "WebAssembly canvas painter over the pixtuoid-scene engine — th
 publish     = false
 version.workspace      = true
 edition.workspace      = true
-# Links pixtuoid-scene, whose font is OFL-1.1.
-license                = "MIT AND OFL-1.1"
+license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true
 homepage.workspace     = true
@@ -25,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 # runtime (no tokio/notify) → the whole graph compiles to wasm32.
 pixtuoid-core  = { path = "../pixtuoid-core", version = "0.21.0", default-features = false }
 pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.21.0", default-features = false }
-wasm-bindgen   = "0.2"
+wasm-bindgen   = { workspace = true }
 # Feature-unions `wasmbind` into scene's chrono so that on wasm32
 # `chrono::Local` resolves the REAL browser timezone via js-sys; without it the
 # office's day/night cycle silently falls back to UTC for most visitors.
@@ -37,6 +36,6 @@ chrono         = { workspace = true, features = ["wasmbind"] }
 ignored = ["chrono"]
 
 [dev-dependencies]
-# hero_still example only: PNG encode for the committed wide poster.
+# hero_still example only: PNG encode for the wasm-still posters.
 image = { workspace = true }
 serde_json = { workspace = true }

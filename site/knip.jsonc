@@ -14,7 +14,7 @@
     "public/music-worker.js",
     "public/music-worklet.js",
     // The #721 shared wasm-Office driver: dynamic-`import()`ed at runtime from
-    // both live-office consumers' is:inline scripts — no static import to trace.
+    // both live-office consumers' is:inline scripts, which knip cannot trace.
     "public/office-driver.js",
   ],
 }

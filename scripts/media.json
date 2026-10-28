@@ -1,55 +1,11 @@
 [
  {
-  "id": "screenshot",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2
- },
- {
-  "id": "dashboard",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2,
-  "extra": [
-   "--dashboard"
-  ]
- },
- {
-  "id": "connection",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "hour": 19,
-  "day": 1,
-  "theme": "normal",
-  "scale": 2,
-  "extra": [
-   "--connection"
-  ]
- },
- {
   "id": "themes-composite",
   "kind": "composite",
   "targets": [
    "docs"
   ],
+  "caption": "Every built-in theme, one slice each.",
   "over": "@themes.json",
   "slant": -0.2,
   "look": "cutaway",
@@ -64,6 +20,7 @@
   "targets": [
    "docs"
   ],
+  "caption": "The same moment as the detailed cutaway (left) and the simpler classic look (right).",
   "axis": "look",
   "over": [
    "cutaway",
@@ -77,35 +34,13 @@
   "theme": "normal"
  },
  {
-  "id": "reference",
-  "kind": "render",
-  "targets": [
-   "docs"
-  ],
-  "cols": 192,
-  "rows": 64,
-  "day": 1,
-  "frames": [
-   {
-    "name": "reference-screenshot",
-    "theme": "normal",
-    "hour": 19,
-    "weather": "clear"
-   },
-   {
-    "name": "reference-night",
-    "theme": "cyberpunk",
-    "hour": 1,
-    "weather": "clear"
-   }
-  ]
- },
- {
   "id": "demo",
   "kind": "gif",
   "targets": [
    "docs"
   ],
+  "caption": "Agents walk in, get to work and doze off as the day turns into a snowy night.",
+  "href": "/",
   "look": "cutaway",
   "cols": 192,
   "rows": 64,

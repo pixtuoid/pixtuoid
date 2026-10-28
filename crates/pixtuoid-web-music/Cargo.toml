@@ -1,0 +1,22 @@
+[package]
+name        = "pixtuoid-web-music"
+description  = "WebAssembly lofi stream for the site's music worker, apart from the live office's wasm"
+# A site build input, never a crates.io artifact, as pixtuoid-web.
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+homepage.workspace     = true
+
+[lints]
+workspace = true
+
+# cdylib = the wasm-bindgen artifact; rlib = so its test runs natively.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.21.0", default-features = false }
+wasm-bindgen   = { workspace = true }

@@ -29,7 +29,6 @@ allow = [
 exceptions = [
     { allow = ["OFL-1.1"], crate = "pixtuoid" },
     { allow = ["OFL-1.1"], crate = "pixtuoid-scene" },
-    { allow = ["OFL-1.1"], crate = "pixtuoid-web" },
 ]
 
 [bans]

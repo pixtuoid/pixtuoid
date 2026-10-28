@@ -6,6 +6,7 @@ members  = [
     "crates/pixtuoid",
     "crates/pixtuoid-hook",
     "crates/pixtuoid-web",
+    "crates/pixtuoid-web-music",
 ]
 
 [workspace.package]
@@ -62,10 +63,10 @@ codegen-units = 1
 strip         = "debuginfo"
 panic         = "abort"
 
-# The browser engine (`just gen-wasm`). `release` is tuned for the native
-# binary's speed; the wasm is a DOWNLOAD every visitor pays for before the hero
-# goes live, its frame step is a rounding error against a frame budget and its
-# synth runs in a worker — so it trades the other way. `z` vs `s` is empirical,
+# The browser engines (`just gen-wasm`). `release` is tuned for the native
+# binary's speed; the office's wasm is a DOWNLOAD every visitor pays for before
+# the hero goes live, its frame step is a rounding error against a frame budget
+# and its synth runs in a worker — so it trades the other way. `z` vs `s` is empirical,
 # not principled: `just gen-wasm-check` prints the size to re-judge it by.
 [profile.wasm-release]
 inherits  = "release"
@@ -110,6 +111,7 @@ lru                = { version = "0.18", default-features = false }
 tokio              = { version = "1", default-features = false }
 serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"
+wasm-bindgen       = "0.2"
 toml               = "1"
 # Format-preserving TOML editing for config.toml saves: comments + unknown keys
 # survive a round-trip.

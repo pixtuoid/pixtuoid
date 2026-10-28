@@ -398,7 +398,7 @@ mod tests {
 
     /// Screen text draws ASCII, the quotes and letters a session's title or
     /// cwd writes, and CJK, each as wide as its cells.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn screen_text_draws_latin_and_cjk_in_their_cells() {
         let pack = crate::pack::test_office();

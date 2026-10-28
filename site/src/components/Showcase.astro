@@ -231,6 +231,9 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       vibingStage && vibingStage.querySelector('.stage__osd[data-group="weather"]');
     const vibingTheme = vibingStage && vibingStage.querySelector('.stage__osd[data-group="theme"]');
     const VIBING_SEED = 11; // distinct from OfficeBackdrop's page office (seed 0)
+    const vUnits = vibingCanvas
+      ? [Number(vibingCanvas.dataset.unitsW), Number(vibingCanvas.dataset.unitsH)]
+      : [0, 0];
     let vWasm = null;
     let vOffice = null;
     let vDriver = null; // { sharedWasm, officeFrameView } from office-driver.js
@@ -270,7 +273,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     }
     function vPaint() {
       const now = vBase + (Date.now() - vStart);
-      vOffice.step(now, vibingCanvas.width, vibingCanvas.height);
+      vOffice.step(now, vUnits[0], vUnits[1]);
       const view = vDriver.officeFrameView(vOffice, vWasm);
       vImg.data.set(view);
       vCtx.putImageData(vImg, 0, 0);
@@ -313,6 +316,9 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
             const t0 = vibingStage.querySelector('.osd__chip[data-theme].is-active');
             if (t0) vOffice.set_theme(t0.dataset.theme);
             setSliderPhase(scrubHour);
+            const s = vOffice.scale();
+            vibingCanvas.width = vUnits[0] * s;
+            vibingCanvas.height = vUnits[1] * s;
             vCtx = vibingCanvas.getContext('2d');
             vImg = vCtx.createImageData(vibingCanvas.width, vibingCanvas.height);
             syncCanvas(); // gating may have moved on while the fetch was in flight

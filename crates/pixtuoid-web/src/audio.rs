@@ -10,9 +10,7 @@ use std::sync::Arc;
 
 use pixtuoid_scene::audio::bank::{AssetBank, DROP_POOL, KEYSTROKE_POOL, Synthesis};
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::audio::{
-    AudioEngine, AudioFrame, Controls, MAX_DT_S, OneShotPool, TickCommands,
-};
+use pixtuoid_scene::audio::{AudioEngine, AudioFrame, MAX_DT_S, OneShotPool, TickCommands};
 
 #[derive(Debug)]
 pub(crate) struct WebAudioDriver {
@@ -194,7 +192,7 @@ pub(crate) fn commands_json(cmd: &TickCommands) -> String {
     out.push_str("],\"music\":");
     match cmd.music {
         Some(m) => {
-            let [daylight, intensity, rain] = controls_wire(m.controls);
+            let [daylight, intensity, rain] = pixtuoid_scene::audio::controls_wire(m.controls);
             out.push_str(&format!(
                 "{{\"controls\":[{},{},{}],\"gain\":{}}}",
                 fmt_f32(daylight),
@@ -209,25 +207,6 @@ pub(crate) fn commands_json(cmd: &TickCommands) -> String {
     out
 }
 
-/// The music's controls as the wire carries them to the worker, which hands
-/// them back to [`controls_from_wire`] unread.
-fn controls_wire(c: Controls) -> [f32; 3] {
-    [c.daylight, c.intensity, c.rain]
-}
-
-/// [`controls_wire`]'s inverse; `None` for anything but its three values.
-pub(crate) fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
-    let &[daylight, intensity, rain] = wire else {
-        return None;
-    };
-    Some(
-        Controls::default()
-            .with_daylight(daylight)
-            .with_intensity(intensity)
-            .with_rain(rain),
-    )
-}
-
 fn fmt_f32(v: f32) -> String {
     format!("{v:.5}")
 }
@@ -235,7 +214,7 @@ fn fmt_f32(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_scene::audio::{PlayCmd, bank};
+    use pixtuoid_scene::audio::{Controls, PlayCmd, bank, controls_from_wire};
 
     /// The index of `stem` in a tick's `gains` and the loop wire.
     fn at(stem: LoopStem) -> usize {
@@ -339,7 +318,6 @@ mod tests {
             cmd.music.map(|m| m.controls),
             "the worker hands back what the wire carried"
         );
-        assert_eq!(controls_from_wire(&wire[..2]), None);
         let silent: serde_json::Value =
             serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
         assert!(silent["music"].is_null(), "no frame, no song");

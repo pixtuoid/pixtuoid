@@ -41,14 +41,14 @@ fn theme_help() -> String {
 /// [`crate::config::resolve_look`].
 #[derive(Debug, Default, Clone, Copy, clap::Args)]
 pub(crate) struct LookArgs {
-    /// Which office to paint: the cutaway, drawn in terminal graphics
-    /// (kitty/iTerm2/SIXEL), or the classic half-blocks. Overrides the `look`
-    /// config key; the default is `auto`. `pixtuoid doctor` shows what this
-    /// terminal supports.
+    /// Which office to paint: the cutaway, drawn in terminal graphics (the
+    /// protocols `--protocol` lists), or the classic half-blocks. Overrides the
+    /// `look` config key; the default is `auto`. `pixtuoid doctor` shows what
+    /// this terminal supports.
     #[arg(long, value_enum)]
     pub(crate) look: Option<crate::graphics::LookMode>,
-    /// Draw the cutaway in this protocol whatever the terminal answers; it
-    /// implies `--look cutaway`.
+    /// Draw the cutaway in this protocol whatever protocol the terminal
+    /// reports; it implies `--look cutaway`.
     #[arg(long, value_enum, conflicts_with = "look")]
     pub(crate) protocol: Option<crate::graphics::ImageProtocol>,
 }

@@ -294,6 +294,22 @@ ICONS = {
             "K K K K K K K K K K",
         ]
     },
+    # the cutaway office: a terminal framing sky, sun, skyline and floor, so
+    # it reads as a picture where `window` reads as text
+    "cutaway": {
+        "grid": [
+            "K K K K K K K K K K",
+            "K M M M M M M M M K",
+            "K c c c c c c y y K",
+            "K c c c c c c y y K",
+            "K c n c c c n c c K",
+            "K n n c n c n n c K",
+            "K n n n n n n n n K",
+            "K D D D D D D D D K",
+            "K d D D d D D d D K",
+            "K K K K K K K K K K",
+        ]
+    },
 }
 
 

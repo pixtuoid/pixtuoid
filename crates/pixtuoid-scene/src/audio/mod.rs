@@ -226,9 +226,42 @@ pub fn music_seed(now: std::time::SystemTime) -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// The music's controls as a page carries them from the office's tick to its
+/// music worker, which hands them back to [`controls_from_wire`] unread.
+pub fn controls_wire(c: Controls) -> [f32; 3] {
+    [c.daylight, c.intensity, c.rain]
+}
+
+/// [`controls_wire`]'s inverse; `None` for anything but its three values.
+pub fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
+    let &[daylight, intensity, rain] = wire else {
+        return None;
+    };
+    Some(
+        Controls::default()
+            .with_daylight(daylight)
+            .with_intensity(intensity)
+            .with_rain(rain),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wire hands back the controls it carried, and refuses any other
+    /// count of values.
+    #[test]
+    fn the_controls_wire_round_trips_and_refuses_a_torn_one() {
+        let c = Controls::default()
+            .with_daylight(0.25)
+            .with_intensity(1.0)
+            .with_rain(0.5);
+        let wire = controls_wire(c);
+        assert_eq!(controls_from_wire(&wire), Some(c));
+        assert_eq!(controls_from_wire(&wire[..2]), None);
+        assert_eq!(controls_from_wire(&[0.0; 4]), None);
+    }
 
     fn counts(running: usize) -> StateCounts {
         StateCounts {

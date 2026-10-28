@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
-// Showcase/SupportedTools/Install read, so README and site can't drift.
+// Showcase/SupportedTools/Install read, so README and site can't drift — and
+// its captioned images from scripts/media.json's jobs.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,8 @@ import process from 'node:process';
 import features from '../site/src/features.json' with { type: 'json' };
 import sources from '../site/src/sources.json' with { type: 'json' };
 import install from '../site/src/install.json' with { type: 'json' };
+import media from './media.json' with { type: 'json' };
+import { featureText } from '../site/config/feature-text.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
@@ -92,7 +95,7 @@ const iconCell = (f) =>
   f.pix ? `<img src="docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
 const featuredFeatures = features.filter((f) => f.featured !== false);
 const featureRows = featuredFeatures.map(
-  (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(f.desc)} |`
+  (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(featureText(f.desc, f))} |`
 );
 // GitHub ignores an <img>'s width/height when its table cell is "shorter" than
 // the image and collapses the column — hard in Safari, where the injected
@@ -149,6 +152,42 @@ regenSection(
   ].join('\n')
 );
 
+// Half the docs jobs' render width, so a 2x screen draws each pixel.
+const README_IMAGE_WIDTH = 768;
+// A docs image with a `caption`, the caption under it and an `href` (a site
+// path) around it. Its file must be committed: media-regen.yml renders
+// docs/images from main, so a new image's README PR follows the bot PR that
+// commits it.
+const codeSpans = (/** @type {string} */ s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+const captioned = media.filter((j) => 'caption' in j && j.targets.includes('docs'));
+for (const job of captioned) {
+  const file = `docs/images/${job.id}.${job.kind === 'gif' ? 'gif' : 'png'}`;
+  if (!existsSync(join(root, file))) {
+    errors.push(`media.json "${job.id}" has a caption but ${file} isn't committed yet — wait for media-regen.yml.`);
+    continue;
+  }
+  // A linked image names where it goes
+  // (https://www.w3.org/WAI/tutorials/images/functional/, Example 1); an
+  // unlinked one takes `alt=""`, its caption already describing it
+  // (https://www.w3.org/WAI/tutorials/images/decorative/, Example 3).
+  const href = 'href' in job ? new URL(String(job.href), SITE) : null;
+  const alt = href ? `${href.host}${href.pathname}`.replace(/\/$/, '') : '';
+  const img = `<img src="${file}" alt="${esc(alt)}" width="${README_IMAGE_WIDTH}" />`;
+  const linked = href ? `<a href="${esc(href)}">${img}</a>` : img;
+  regenSection(
+    `${job.id} image`,
+    `<!-- media:${job.id}:start · generated from scripts/media.json by \`just gen-readme\` — edit the JSON, not this block -->`,
+    `<!-- media:${job.id}:end -->`,
+    `<p align="center">${linked}<br /><sub>${codeSpans(String(job.caption))}</sub></p>`
+  );
+}
+// A block no captioned job renders would go stale unseen.
+for (const [, id] of readme.matchAll(/<!-- media:(\S+):start/g)) {
+  if (!captioned.some((j) => j.id === id)) {
+    errors.push(`README.md has a media:${id} block but scripts/media.json has no captioned docs job "${id}".`);
+  }
+}
+
 const installBody = install
   .filter((m) => m.readme)
   .map(
@@ -169,8 +208,8 @@ if (errors.length) {
 }
 console.log(
   check
-    ? 'README is in sync with features.json + sources.json + install.json ✓'
-    : 'README regenerated from features.json + sources.json + install.json ✓'
+    ? 'README is in sync with features.json + sources.json + install.json + media.json ✓'
+    : 'README regenerated from features.json + sources.json + install.json + media.json ✓'
 );
 
 /** @param {string} s */

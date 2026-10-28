@@ -1,5 +1,12 @@
 [
   {
+    "icon": "🖼️",
+    "name": "Cutaway office",
+    "desc": "Terminals that can show images ({protocols}) can draw the cutaway, a detailed pixel view of the office; others get the classic look, drawn with text blocks",
+    "protocols": ["kitty", "iTerm2", "SIXEL"],
+    "pix": "cutaway"
+  },
+  {
     "icon": "🏢",
     "name": "Multi-agent office",
     "desc": "Every agent session gets its own desk — when a floor fills up, a new floor opens automatically",
@@ -23,7 +30,7 @@
   {
     "icon": "🎭",
     "name": "Animated characters",
-    "desc": "Coworkers type, wait with a `?`, sleep under little z's, and walk A\\*-routed paths between desks",
+    "desc": "Coworkers type, raise a `?` when they need you, nap under little z's, and walk between desks",
     "pix": "walk",
     "card": {
       "blurb": "everyone types, waits with a '?', naps under z's, and walks A*-routed paths between desks."
@@ -32,10 +39,10 @@
   {
     "icon": "🎨",
     "name": "Team palette",
-    "desc": "Shirt and pants take their colors from the working directory — same repo, same colors, so the room reads like an org chart. Hair and skin vary per agent; 16 curated outfits",
+    "desc": "Agents in the same working directory wear the same colors, so you can see who works together at a glance",
     "pix": "palette",
     "card": {
-      "blurb": "shirt and pants colored by working directory — same repo, same colors: the room reads like an org-chart."
+      "blurb": "agents in the same working directory share shirt and pants colors: the room reads like an org-chart."
     }
   },
   {
@@ -50,7 +57,7 @@
   {
     "icon": "📄",
     "name": "Token meter",
-    "desc": "Paper stacks up on a desk as its session burns tokens — the pile climbs through 250K / 2M / 16M tiers, a big spend drops a fresh sheet, and hovering shows the exact total (Σ)",
+    "desc": "Paper piles up on a desk as its session uses tokens, growing at 250K, 2M and 16M; hover for the exact count",
     "pix": "tokens",
     "card": {
       "blurb": "paper piles up on a desk as its agent burns tokens — a big spend drops a sheet onto the stack; hover for the exact Σ total."
@@ -69,7 +76,7 @@
   {
     "icon": "🗂️",
     "name": "Agent tree dashboard",
-    "desc": "Tab opens a collapsible tree of every floor's agents — each badged with the CLI it runs, color-tinted by what it's doing, with tool-call counts",
+    "desc": "Press Tab to see every agent: which CLI it runs and what it's doing",
     "pix": "tree",
     "channel": "dashboard"
   },
@@ -108,14 +115,14 @@
   {
     "icon": "🎛️",
     "name": "Office vibes",
-    "desc": "The sun and moon cross the skyline as the day goes by, weather rolls past the windows — rain, storm, snow, fog, overcast, windy, smog — and each theme gives the office a whole new look",
+    "desc": "Day turns to night outside the windows, the weather changes, and each theme gives the office a new look",
     "pix": "vibes",
     "channel": "vibing"
   },
   {
     "icon": "🎧",
     "name": "Lofi soundtrack",
-    "desc": "A lofi soundtrack synthesized entirely in code — no audio files shipped. An endless run of songs follows the office's clock, weather and busyness, typing sounds swell with activity, and the door chime, printer and vending machine play as coworkers come and go. `m` mutes, `+`/`-` volume",
+    "desc": "A lofi soundtrack, made entirely in code, follows the office's time, weather and activity; `m` mutes, `+`/`-` sets the volume",
     "pix": "note",
     "card": {
       "blurb": "a lofi soundtrack, synthesized live in code, follows the office's clock, weather and busyness — hear it: the ♩ toggle in the corner of this page."

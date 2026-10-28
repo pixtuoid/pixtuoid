@@ -48,8 +48,8 @@ DIFF_DIR = ROOT / "target/gen-check-diff"
 # --check must REGENERATE the proof posters (pixel-gated stills) but skip the
 # video encodes (presence-gated, non-byte-stable) — handlers read this flag.
 CHECK_MODE = False
-# A live-agent capture: committed but not generated here, so --check must never
-# compare it.
+# The project's first real (live-agent) capture, kept on purpose though nothing
+# renders or links it: committed but not generated here, so --check never compares it.
 NOT_GENERATED = {"screenshot-real.png"}
 # The snapshot's `--frames-dir` naming (its `FrameSink::Pngs`).
 FRAME_PATTERN = "f%04d.png"
@@ -137,19 +137,9 @@ def run_render(job, out_dirs, work, intermediates):
         look=job.get("look", "classic"),
         extra=job.get("extra", ()),
     )
-    intermediates[job["id"]] = raw  # crops read the unscaled render
-
-    scale = job.get("scale")
+    intermediates[job["id"]] = raw  # crops read the render
     for d in out_dirs:
-        dst = d / f"{job['id']}.png"
-        if scale:
-            with Image.open(raw) as im:
-                img = im.convert("RGB")
-            img.resize(
-                (img.width * scale, img.height * scale), Image.Resampling.NEAREST
-            ).save(dst)
-        else:
-            shutil.copyfile(raw, dst)
+        shutil.copyfile(raw, d / f"{job['id']}.png")
 
 
 def crop_box(img, spec, job_id):
@@ -168,21 +158,10 @@ def run_crop(job, out_dirs, work, intermediates):
     src = intermediates[job["from"]]
     with Image.open(src) as im:
         img = im.convert("RGB")
-    if "quadrants" in job:
-        w, h = img.size
-        scale = job.get("scale", 1)
-        for name, (x0, y0, x1, y1) in job["quadrants"].items():
-            crop = img.crop((int(w * x0), int(h * y0), int(w * x1), int(h * y1)))
-            out = crop.resize(
-                (crop.width * scale, crop.height * scale), Image.Resampling.NEAREST
-            )
-            for d in out_dirs:
-                out.save(d / f"{job['id']}-{name}.png")
-    else:
-        for key, spec in job["crops"].items():
-            out = crop_box(img, spec, job["id"])
-            for d in out_dirs:
-                out.save(d / f"{job['id']}_{key}.png")
+    for key, spec in job["crops"].items():
+        out = crop_box(img, spec, job["id"])
+        for d in out_dirs:
+            out.save(d / f"{job['id']}_{key}.png")
 
 
 def run_composite(job, out_dirs, work, intermediates):

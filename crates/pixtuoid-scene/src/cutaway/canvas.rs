@@ -1108,7 +1108,6 @@ mod tests {
     /// its box on the pack's grid where the pack's density divides the scale,
     /// and nothing on the base art's grid, where it yields to the brand.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn the_star_link_is_the_drawn_star() {
         use crate::display::TextRole;
         let pack = Arc::new(test_office());
@@ -1429,15 +1428,15 @@ mod tests {
 
     /// The digests [`the_canvas_paints_the_pinned_frames`] pins, one frame a
     /// line.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     const PINNED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/cutaway/canvas.golden");
 
     /// Every pixel of a fixed set of frames, as committed: a refactor of the
     /// cutaway leaves this file as it found it, and a change to its look
     /// rewrites it (`just gen-cutaway-golden`). Each instant is a local
     /// hour ([`localclock`](crate::localclock)), so any `$TZ` paints it alike.
-    // The golden pins 4x rows, which only `cutaway-assets` paints.
-    #[cfg(feature = "cutaway-assets")]
+    // The golden pins baked text.
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn the_canvas_paints_the_pinned_frames() {
         use crate::sky::{Weather, WeatherPolicy};

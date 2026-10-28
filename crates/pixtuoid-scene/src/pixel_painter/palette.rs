@@ -95,10 +95,8 @@ pub(super) fn blend_pixel(buf: &mut RgbBuffer, x: u16, y: u16, tint: Rgb, t: f32
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "cutaway-assets")]
     use crate::display::pen::test_density;
     use crate::pack::{appliance_overrides, fixture_overrides};
-    #[cfg(feature = "cutaway-assets")]
     use pixtuoid_core::sprite::format::Piece;
 
     #[test]
@@ -148,7 +146,6 @@ mod tests {
 
     /// A theme's fixtures take its colours.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn a_recolour_rethemes_the_fixture_art() {
         let pack = crate::pack::test_office();
         let art = pack.variants_of(Piece::FishTank)[&test_density(4)].recolorable_at(0);
@@ -168,7 +165,6 @@ mod tests {
     /// A recolour re-derives the shading: one shaded cell of the vending art
     /// is a different colour in two themes whose appliance bodies differ.
     #[test]
-    #[cfg(feature = "cutaway-assets")]
     fn a_recolour_reshades_the_appliance_art() {
         let pack = crate::pack::test_office();
         let art = pack.variants_of(Piece::VendingMachine)[&test_density(4)].recolorable_at(0);

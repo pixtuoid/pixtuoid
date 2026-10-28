@@ -1,8 +1,7 @@
 // The shared wasm-`Office` driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
-// music.
-// Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so
-// they can't static-import a shared `src/` module — they dynamic-`import()` this
-// public ES module at boot instead.
+// music. Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so they can't static-import a
+// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. music-worker.js static-imports
+// `loadWasm` into a module worker, which has no `window`: module scope touches no page global.
 'use strict';
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
@@ -16,6 +15,13 @@ const WASM_INIT_BACKOFF_MS = 400;
 // shared promise: a per-consumer retry would reintroduce that race.
 export function sharedWasm(wasmJsUrl) {
   if (window.__pixWasm) return window.__pixWasm;
+  window.__pixWasm = loadWasm(wasmJsUrl);
+  return window.__pixWasm;
+}
+
+// A wasm glue module once its wasm instantiates, retried a bounded number of times: one dropped fetch must not
+// strand its office or its music until a reload (#671).
+export function loadWasm(wasmJsUrl) {
   function attempt(left) {
     return import(wasmJsUrl)
       .then(function (m) {
@@ -32,8 +38,7 @@ export function sharedWasm(wasmJsUrl) {
         });
       });
   }
-  window.__pixWasm = attempt(WASM_INIT_RETRIES);
-  return window.__pixWasm;
+  return attempt(WASM_INIT_RETRIES);
 }
 
 // The engine never strikes in a lightning bucket's last STRIKE_GAP_MS
@@ -85,7 +90,8 @@ export function audioBus(ctx, office) {
   return limiter;
 }
 
-// The ♩ music: the office's lofi stream, rendered in the music worker (`urls.worker`, loading `urls.wasm`) and played
+// The ♩ music: the office's lofi stream, rendered in the music worker (`urls.worker`, loading the music's own wasm
+// glue, `urls.musicWasm`) and played
 // by the worklet (`urls.worklet`) `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays
 // off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
 // `{ node, primed, failed, setControls, stop }`: `node` to connect, `primed` on the worklet's first chunk, `failed` on
@@ -108,7 +114,7 @@ export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
     };
   });
   const channel = new MessageChannel();
-  worker.postMessage({ wasmJsUrl: urls.wasm, port: channel.port1, nowMs, controls }, [
+  worker.postMessage({ musicWasmJsUrl: urls.musicWasm, port: channel.port1, nowMs, controls }, [
     channel.port1,
   ]);
   node.port.postMessage({ source: channel.port2 }, [channel.port2]);

@@ -20,9 +20,9 @@ pub(crate) const LEFTMOST_PIXEL: u8 = 1 << (u8::BITS - 1);
 
 /// Fusion Pixel 8px, written by `scripts/gen-fonts.py` (its format);
 /// license and sources in `fonts/`.
-#[cfg(feature = "cutaway-assets")]
+#[cfg(feature = "pixel-font")]
 static FUSION: &[u8] = include_bytes!("../../fonts/fusion-pixel-8px.bin");
-#[cfg(not(feature = "cutaway-assets"))]
+#[cfg(not(feature = "pixel-font"))]
 static FUSION: &[u8] = &[];
 
 /// Fusion Pixel's code points, ascending, and their glyphs; `None` when it
@@ -285,7 +285,7 @@ mod tests {
 
     /// Every character the wall board and the floor indicator write as text:
     /// each mood over two flap cycles, each gateway state, many floors.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     fn signs() -> std::collections::BTreeSet<char> {
         use crate::anim::Motion;
         use crate::neon_sign::build_board;
@@ -354,7 +354,7 @@ mod tests {
     }
 
     /// The font draws everything the signs write: no sign shows a tofu box.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn the_font_draws_every_character_the_signs_write() {
         let missing: Vec<char> = signs()
@@ -411,7 +411,7 @@ mod tests {
     }
 
     /// The first and last rows `c`'s glyph inks.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     fn ink_rows(c: char) -> (Option<usize>, Option<usize>) {
         let inked: Vec<usize> = (0..)
             .zip(glyph(c).expect("drawn"))
@@ -423,7 +423,7 @@ mod tests {
 
     /// [`ACCENT_ROWS`] and [`CAP_H`] are Fusion Pixel's own: its capitals
     /// span the rows they name.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn the_capitals_span_the_rows_the_metrics_name() {
         let top = usize::from(ACCENT_ROWS);
@@ -435,7 +435,7 @@ mod tests {
 
     /// A glyph drawn by hand stands on Fusion Pixel's own rows: a capital
     /// spans its `E`'s, a lowercase letter its `o`'s.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn hand_drawn_glyphs_stand_on_the_fonts_rows() {
         for c in ['\u{3a3}', '\u{d8}'] {
@@ -510,7 +510,7 @@ mod tests {
 
     /// Project names in CJK and accented Latin draw real glyphs,
     /// each as wide as its [`cells`](crate::display::text::cells).
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn names_beyond_ascii_draw_glyphs_as_wide_as_their_cells() {
         for (name, n) in [
@@ -596,15 +596,15 @@ mod tests {
         }
     }
 
-    /// Without `cutaway-assets` a character only Fusion Pixel draws is the
+    /// Without `pixel-font` a character only Fusion Pixel draws is the
     /// box.
     #[test]
-    fn fusion_pixel_ships_with_cutaway_assets() {
-        assert_eq!(fusion('e').is_some(), cfg!(feature = "cutaway-assets"));
+    fn fusion_pixel_ships_with_pixel_font() {
+        assert_eq!(fusion('e').is_some(), cfg!(feature = "pixel-font"));
     }
 
     /// Fusion Pixel's CJK reaches the descender row its Latin does.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn cjk_reaches_the_descender_row() {
         let bottom = |c| glyph(c).and_then(|g| g.iter().rposition(|&row| row != 0));
@@ -617,7 +617,7 @@ mod tests {
 
     /// Fusion Pixel's glyphs are well formed, and every one fits the cells its
     /// character takes.
-    #[cfg(feature = "cutaway-assets")]
+    #[cfg(feature = "pixel-font")]
     #[test]
     fn every_fusion_glyph_fits_its_characters_cells() {
         let (points, glyphs) = fusion_font().expect("the header matches LINE_H");

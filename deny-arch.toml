@@ -2,7 +2,7 @@
 # depend only on the crates below: any other crate fails until a PR lists it
 # here with its reason, and a terminal, window or audio-device crate is never
 # listed. `just arch` runs this against those two crates alone: `exclude` drops
-# the binary and the web painter, which depend on scene (an edge back would be
+# the binary and the two web crates, which depend on scene (an edge back would be
 # a cycle cargo refuses), and the hook shim, which has no lib target to link.
 # `all-features` plus every target holds each dep any feature or platform can
 # pull. An entry nothing uses is not reported, so the list can outgrow the set.
@@ -10,7 +10,7 @@
 [graph]
 all-features = true
 exclude-dev = true
-exclude = ["pixtuoid", "pixtuoid-hook", "pixtuoid-web"]
+exclude = ["pixtuoid", "pixtuoid-hook", "pixtuoid-web", "pixtuoid-web-music"]
 
 [bans]
 multiple-versions = "allow"

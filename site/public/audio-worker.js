@@ -1,5 +1,5 @@
 // Audio synthesis OFF the main thread. This worker loads its OWN instance of
-// the site's wasm build (memories can't be shared with the page's instance),
+// the office's wasm build (memories can't be shared with the page's instance),
 // pumps the full SynthTake warmup — blocking is fine here — then TRANSFERS
 // every buffer to the main thread. One message in, one out, then the worker
 // closes so its wasm memory is reclaimed.

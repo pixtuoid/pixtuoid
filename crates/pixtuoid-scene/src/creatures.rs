@@ -1666,7 +1666,6 @@ mod tests {
     }
 
     /// Every pet's walk master faces east too, so both densities face one way.
-    #[cfg(feature = "cutaway-assets")]
     #[test]
     fn every_pet_walk_master_faces_east() {
         let pack = test_pack();

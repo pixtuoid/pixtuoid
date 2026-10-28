@@ -58,6 +58,13 @@ pub(crate) fn epoch_ms(now: SystemTime) -> u64 {
     elapsed_ms(now, SystemTime::UNIX_EPOCH)
 }
 
+/// `epoch_ms`'s inverse for a host that hands its clock over as float
+/// milliseconds (a page's `Date.now()`). `f64 as u64` saturates (negatives and
+/// NaN to 0), so no input needs a pre-clamp.
+pub fn from_epoch_ms(ms: f64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64)
+}
+
 /// How much of the office's ambient life moves: the loops that only make it
 /// look alive — a flicker, a twinkle, an idle wander — never what an agent is
 /// doing. Each tier steps those loops on its own clock.

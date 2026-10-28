@@ -219,12 +219,16 @@ test('the office goes live and the statusline truth-light agrees', async ({ page
   const errors = watchErrors(page);
   await gotoLive(page);
   await expect(page.locator('[data-sl-onair]')).toHaveText('● LIVE', { timeout: 10_000 });
-  // Buffer height is fixed at 130: width = min(640, max(64, round(w/h · 130))).
-  const bufW = () =>
-    page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).width);
-  expect(await bufW()).toBe(231);
+  // The office is 130 layout units tall: width = min(640, max(64, round(w/h · 130))) units,
+  // at the canvas's pixels per unit.
+  const unitsW = () =>
+    page.evaluate(() => {
+      const c = document.getElementById('office-live') as HTMLCanvasElement;
+      return (c.width * 130) / c.height;
+    });
+  expect(await unitsW()).toBe(231);
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(bufW).toBe(72);
+  await expect.poll(unitsW).toBe(72);
   expect(errors()).toEqual([]);
 });
 
@@ -340,18 +344,21 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   const shot = () =>
     page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).toDataURL());
-  const bufW = () =>
-    page.evaluate(() => (document.getElementById('office-live') as HTMLCanvasElement).width);
+  const unitsW = () =>
+    page.evaluate(() => {
+      const c = document.getElementById('office-live') as HTMLCanvasElement;
+      return (c.width * 130) / c.height;
+    });
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'true');
   const frozen = await shot();
   await page.waitForTimeout(400); // >10 would-be frames at the 33ms cap
   expect(await shot()).toBe(frozen);
   await expect(page.locator('[data-sl-onair]')).toHaveText('❚❚ PAUSED');
-  // sizeBuffer() wipes the bitmap and no rAF will repaint it, so the resize
+  // sizeCanvas() wipes the bitmap and no rAF will repaint it, so the resize
   // handler must re-render the ONE frozen frame — else a blank var(--bg) void.
   await page.setViewportSize({ width: 500, height: 900 });
-  await expect.poll(bufW).toBe(72);
+  await expect.poll(unitsW).toBe(72);
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
   const painted = await page.evaluate(() => {
     const c = document.getElementById('office-live') as HTMLCanvasElement;
@@ -446,7 +453,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWorkletUrl } = (
+    const { officeDriverUrl, wasmJsUrl, musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
@@ -460,7 +467,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     const { controls } = JSON.parse(office.audio_tick(0)).music;
     const rate = office.audio_sample_rate();
     const ctx = new OfflineAudioContext(2, rate, rate);
-    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: wasmJsUrl };
+    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, musicWasm: musicWasmJsUrl };
     const ahead = office.audio_music_ahead_s();
     const music = await drv.startMusic(ctx, urls, ahead, Date.now(), controls);
     music.node.connect(ctx.destination);
@@ -491,6 +498,25 @@ test('the ♩ click starts the music from the office it hears', async ({ page })
     { timeout: 60_000 }
   );
   expect(errors()).toEqual([]);
+});
+
+test('one dropped fetch of the music wasm still lets the ♩ play', async ({ page, context }) => {
+  const errors = watchErrors(page);
+  let hits = 0;
+  // The context's route: the music worker, not the page, fetches it.
+  await context.route('**/pixtuoid_web_music_bg.wasm', (route) => {
+    hits += 1;
+    return hits === 1 ? route.abort() : route.continue();
+  });
+  await gotoLive(page);
+  await page.locator('#office-audio').click();
+  await page.waitForFunction(
+    () => (window as unknown as { __pixMusic?: string }).__pixMusic === 'playing',
+    undefined,
+    { timeout: 60_000 }
+  );
+  expect(hits).toBeGreaterThan(1);
+  expect(errors().filter((e) => !e.includes('Failed to load resource'))).toEqual([]);
 });
 
 test('every ♩ lane and one-shot reaches the speakers only through the limiter bus', async ({

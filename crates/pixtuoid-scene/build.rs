@@ -1,16 +1,10 @@
 //! Bundle the default pack: the sprite list is generated from `sprites/default/`
-//! itself, so a sprite committed there is bundled by construction, less,
-//! without the `cutaway-assets` feature, what
-//! [`density_art::bundled_without_density_art`] drops from both the manifest
-//! and the list. Every bundled file goes in without its comments
-//! ([`comments::strip_comments`]).
+//! itself, so a sprite committed there is bundled by construction. Every
+//! bundled file goes in without its comments ([`comments::strip_comments`]).
 
 #[path = "build_support/comments.rs"]
 mod comments;
-#[path = "build_support/density_art.rs"]
-mod density_art;
 
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -28,12 +22,9 @@ fn main() {
 
     // Core's `PACK_MANIFEST`, which a build script cannot import: a rename fails
     // this read, and so the build.
-    let pack_toml = std::fs::read_to_string(asset_dir.join("pack.toml")).expect("read pack.toml");
-    let (pack_toml, dropped) = if std::env::var_os("CARGO_FEATURE_CUTAWAY_ASSETS").is_some() {
-        (comments::strip_comments(&pack_toml), BTreeSet::new())
-    } else {
-        density_art::bundled_without_density_art(&pack_toml)
-    };
+    let pack_toml = comments::strip_comments(
+        &std::fs::read_to_string(asset_dir.join("pack.toml")).expect("read pack.toml"),
+    );
     // For `load_pack_from_json`; the tests edit the TOML.
     let pack_json: serde_json::Value = toml::from_str(&pack_toml).expect("pack.toml is TOML");
     std::fs::write(out_dir.join("bundled_pack.json"), pack_json.to_string())
@@ -64,9 +55,6 @@ fn main() {
             .file_name()
             .and_then(|n| n.to_str())
             .expect("a sprite file name is UTF-8");
-        if dropped.contains(name) {
-            continue;
-        }
         let src = std::fs::read_to_string(path).expect("read a sprite");
         let bundled = stripped.join(name);
         std::fs::write(&bundled, comments::strip_comments(&src)).expect("write a stripped sprite");
