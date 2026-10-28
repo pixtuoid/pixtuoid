@@ -52,10 +52,29 @@
   ],
   "over": "@themes.json",
   "slant": -0.2,
+  "look": "cutaway",
   "cols": 192,
   "rows": 64,
   "hour": 19,
   "day": 1
+ },
+ {
+  "id": "looks-composite",
+  "kind": "composite",
+  "targets": [
+   "docs"
+  ],
+  "axis": "look",
+  "over": [
+   "cutaway",
+   "classic"
+  ],
+  "slant": -0.2,
+  "cols": 192,
+  "rows": 64,
+  "hour": 19,
+  "day": 1,
+  "theme": "normal"
  },
  {
   "id": "reference",
@@ -87,12 +106,28 @@
   "targets": [
    "docs"
   ],
+  "look": "cutaway",
   "cols": 192,
   "rows": 64,
-  "hour": 19,
   "day": 1,
   "theme": "normal",
-  "duration": 15,
+  "segments": [
+   {
+    "hour": 13,
+    "weather": "clear",
+    "duration": 5
+   },
+   {
+    "hour": 18,
+    "weather": "clear",
+    "duration": 5
+   },
+   {
+    "hour": 22,
+    "weather": "snow",
+    "duration": 5
+   }
+  ],
   "fps": 10,
   "colors": 128
  },

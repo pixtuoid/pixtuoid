@@ -3,6 +3,7 @@
 //! `--proof` frame sequences — so the visual output is verifiable without a real
 //! terminal.
 
+mod cutaway;
 mod encode;
 mod proof;
 
@@ -84,6 +85,17 @@ struct SnapshotArgs {
     /// Output an animated GIF instead of a static PNG.
     #[arg(long)]
     gif: bool,
+
+    /// Draw the office as the cutaway the TUI fits to this terminal of
+    /// `CELL_W`×`CELL_H` cells, under the classic frame's footer.
+    // Each paints the classic's office cells, which the cutaway covers, or
+    // renders on a path the cutaway is not wired into.
+    #[arg(long, conflicts_with_all = [
+        "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
+        "hover", "debug_walkable", "empty", "crop_agent", "crop_furniture", "crop_mascot",
+        "proof", "pets", "navigate_at",
+    ])]
+    cutaway: bool,
 
     /// GIF duration in seconds (only with --gif, which --anim implies).
     #[arg(long, default_value_t = 5)]
@@ -441,6 +453,10 @@ fn main() -> Result<()> {
     let mut term = Terminal::new(backend)?;
     let pack = std::sync::Arc::new(load_bundled_pack()?);
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(&pack));
+    let mut cutaway = args
+        .cutaway
+        .then(|| cutaway::CutawayOffice::new(&pack, cols, rows))
+        .transpose()?;
     // A typo'd theme silently rendering NORMAL would put wrong-palette art into
     // the docs/site screenshot pipelines.
     let theme = pixtuoid_scene::theme::theme_by_name(&args.theme).ok_or_else(|| {
@@ -532,6 +548,7 @@ fn main() -> Result<()> {
             floor_meta,
             skip_ms,
             args.debug_walkable,
+            cutaway,
         )?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
@@ -740,6 +757,9 @@ fn main() -> Result<()> {
         ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
     };
     let drawn = draw_scene(&mut term, &mut draw_ctx)?;
+    if let Some(cutaway) = &mut cutaway {
+        cutaway.render(draw_ctx.world, theme)?;
+    }
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -758,7 +778,7 @@ fn main() -> Result<()> {
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
-    save_backend_as_png(&term, &args.out, area)?;
+    save_backend_as_png(&term, &args.out, area, cutaway.as_ref())?;
     println!("wrote {}", args.out.display());
 
     println!("\n--- text preview (symbols only) ---");

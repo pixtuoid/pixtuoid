@@ -13,6 +13,7 @@ use pixtuoid_scene::theme::Theme;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
+use crate::cutaway::CutawayOffice;
 use crate::{CELL_H, CELL_W, SnapshotArgs, due_navigations};
 
 /// Print a connectedness report for the walkable mask: a BFS from the door threshold,
@@ -234,10 +235,13 @@ pub(crate) fn centered_crop(
     }
 }
 
+/// `area`'s cells to `path`, `cutaway`'s office painted over them where there
+/// is one.
 pub(crate) fn save_backend_as_png(
     term: &Terminal<TestBackend>,
     path: &PathBuf,
     area: ratatui::layout::Rect,
+    cutaway: Option<&CutawayOffice>,
 ) -> Result<()> {
     let mut img = RgbImage::from_pixel(
         u32::from(area.width) * CELL_W,
@@ -245,6 +249,9 @@ pub(crate) fn save_backend_as_png(
         ImgRgb(TERMINAL_BG),
     );
     rasterize_cells(&mut img, term.backend().buffer(), area);
+    if let Some(cutaway) = cutaway {
+        cutaway.paint(&mut img);
+    }
     img.save(path)?;
     Ok(())
 }
@@ -395,13 +402,13 @@ pub(crate) struct AnimJob<'a> {
 
 impl AnimJob<'_> {
     /// Call `render` once per frame on `state` — `skip_ms` of pre-roll first,
-    /// rendered but not encoded — then encode the cell buffer `cells` reads back.
+    /// rendered but not encoded — then encode the image `image` reads back.
     fn encode<S>(
         &self,
         skip_ms: u64,
         state: &mut S,
         mut render: impl FnMut(&mut S, SystemTime, u64) -> Result<()>,
-        cells: impl Fn(&S) -> &ratatui::buffer::Buffer,
+        image: impl Fn(&S) -> RgbaImage,
     ) -> Result<()> {
         let Timeline { fps, secs, .. } = self.timeline;
         let frame_count = self.timeline.frame_count();
@@ -415,7 +422,7 @@ impl AnimJob<'_> {
             if i < skip_frames {
                 continue;
             }
-            sink.push(cells_to_rgba(cells(state)))?;
+            sink.push(image(state))?;
             let cap = i + 1 - skip_frames;
             if cap.is_multiple_of(fps as usize) {
                 eprint!("\r  encoding: {}/{secs}s", cap / fps as usize);
@@ -450,12 +457,13 @@ pub(crate) fn save_renderer_animation(
             }
             r.render(job.scene, now)
         },
-        |r| r.terminal.backend().buffer(),
+        |r| cells_to_rgba(r.terminal.backend().buffer()),
     )
 }
 
-/// Drive `draw_scene` over one floor and encode it; `skip_ms` (from --anim,
-/// --meeting or --warmup-secs) starts the clip mid-action.
+/// Drive `draw_scene` over one floor, `cutaway`'s office over it where there
+/// is one, and encode it; `skip_ms` (from --anim, --meeting or --warmup-secs)
+/// starts the clip mid-action.
 pub(crate) fn save_animation(
     job: &AnimJob,
     term: &mut Terminal<TestBackend>,
@@ -463,20 +471,31 @@ pub(crate) fn save_animation(
     floor_meta: FloorMeta,
     skip_ms: u64,
     debug_walkable: bool,
+    cutaway: Option<CutawayOffice>,
 ) -> Result<()> {
     let scene = job.scene;
     let mut office = pixtuoid_scene::floor::PerOffice::new();
     job.encode(
         skip_ms,
-        term,
-        |term, now, _| {
+        &mut (term, cutaway),
+        |(term, cutaway), now, _| {
             let mut draw_ctx = DrawCtx {
                 debug_walkable,
                 ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
             };
-            draw_scene(term, &mut draw_ctx).map(drop)
+            draw_scene(term, &mut draw_ctx)?;
+            if let Some(cutaway) = cutaway {
+                cutaway.render(draw_ctx.world, job.theme)?;
+            }
+            Ok(())
         },
-        |term| term.backend().buffer(),
+        |(term, cutaway)| {
+            let mut img = cells_to_rgba(term.backend().buffer());
+            if let Some(cutaway) = cutaway {
+                cutaway.paint(&mut img);
+            }
+            img
+        },
     )
 }
 
