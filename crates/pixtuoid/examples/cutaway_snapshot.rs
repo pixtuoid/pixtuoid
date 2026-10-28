@@ -28,6 +28,19 @@ use pixtuoid_scene::theme::theme_by_name;
 /// (corridor appliances) get placed at all.
 const DEFAULT_LOGICAL: (u16, u16) = (160, 96);
 
+/// The agents drawn unless `--agents` names another count.
+const DEFAULT_AGENTS: usize = 10;
+
+/// How many of [`pixtuoid_scene::DEMO_REPOS`] the cast cycles through, unless
+/// `--repos` names others. Fewer than [`DEFAULT_AGENTS`] on purpose: two
+/// agents sharing a repo share an outfit, which is the grouping Team Palette
+/// exists to show.
+const TEAMS: usize = 4;
+const _: () = assert!(
+    TEAMS < DEFAULT_AGENTS && TEAMS <= pixtuoid_scene::DEMO_REPOS.len(),
+    "the default cast must share a repo"
+);
+
 fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
@@ -86,13 +99,14 @@ fn main() -> Result<()> {
         .next()
         .ok_or_else(|| anyhow!("usage: see the `//!` header of examples/cutaway_snapshot.rs"))?;
 
-    let (mut scale_n, mut agents, mut theme_name) = (None, 10usize, "tokyo-night".to_string());
+    let (mut scale_n, mut agents, mut theme_name) =
+        (None, DEFAULT_AGENTS, "tokyo-night".to_string());
     let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, (0usize, 1usize));
     // 1 = the clock's base date, as the classic snapshot's `--now-day`.
     let mut now_day = 1u32;
     let mut weather = None::<String>;
     let mut flame = None::<usize>;
-    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS
+    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..TEAMS]
         .iter()
         .map(|&r| r.to_string())
         .collect();
