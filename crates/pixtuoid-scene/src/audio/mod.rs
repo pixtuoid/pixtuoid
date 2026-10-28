@@ -249,6 +249,20 @@ pub fn controls_from_wire(wire: &[f32]) -> Option<Controls> {
 mod tests {
     use super::*;
 
+    /// The wire hands back the controls it carried, and refuses any other
+    /// count of values.
+    #[test]
+    fn the_controls_wire_round_trips_and_refuses_a_torn_one() {
+        let c = Controls::default()
+            .with_daylight(0.25)
+            .with_intensity(1.0)
+            .with_rain(0.5);
+        let wire = controls_wire(c);
+        assert_eq!(controls_from_wire(&wire), Some(c));
+        assert_eq!(controls_from_wire(&wire[..2]), None);
+        assert_eq!(controls_from_wire(&[0.0; 4]), None);
+    }
+
     fn counts(running: usize) -> StateCounts {
         StateCounts {
             running,

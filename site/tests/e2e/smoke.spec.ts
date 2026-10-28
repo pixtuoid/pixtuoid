@@ -460,7 +460,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     const { controls } = JSON.parse(office.audio_tick(0)).music;
     const rate = office.audio_sample_rate();
     const ctx = new OfflineAudioContext(2, rate, rate);
-    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: musicWasmJsUrl };
+    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, musicWasm: musicWasmJsUrl };
     const ahead = office.audio_music_ahead_s();
     const music = await drv.startMusic(ctx, urls, ahead, Date.now(), controls);
     music.node.connect(ctx.destination);
@@ -491,6 +491,25 @@ test('the ♩ click starts the music from the office it hears', async ({ page })
     { timeout: 60_000 }
   );
   expect(errors()).toEqual([]);
+});
+
+test('one dropped fetch of the music wasm still lets the ♩ play', async ({ page, context }) => {
+  const errors = watchErrors(page);
+  let hits = 0;
+  // The context's route: the music worker, not the page, fetches it.
+  await context.route('**/pixtuoid_web_music_bg.wasm', (route) => {
+    hits += 1;
+    return hits === 1 ? route.abort() : route.continue();
+  });
+  await gotoLive(page);
+  await page.locator('#office-audio').click();
+  await page.waitForFunction(
+    () => (window as unknown as { __pixMusic?: string }).__pixMusic === 'playing',
+    undefined,
+    { timeout: 60_000 }
+  );
+  expect(hits).toBeGreaterThan(1);
+  expect(errors().filter((e) => !e.includes('Failed to load resource'))).toEqual([]);
 });
 
 test('every ♩ lane and one-shot reaches the speakers only through the limiter bus', async ({

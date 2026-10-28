@@ -728,7 +728,11 @@ const officeDriverUrl = asset('office-driver.js');
       if (music === 'idle') {
         music = 'starting';
         window.__pixMusic = 'starting';
-        const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, wasm: musicWasmJsUrl };
+        const urls = {
+          worklet: musicWorkletUrl,
+          worker: musicWorkerUrl,
+          musicWasm: musicWasmJsUrl,
+        };
         officeDriver
           .startMusic(audioCtx, urls, office.audio_music_ahead_s(), Date.now(), controls)
           .then(function (m) {

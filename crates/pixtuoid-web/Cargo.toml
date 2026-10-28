@@ -25,7 +25,7 @@ crate-type = ["cdylib", "rlib"]
 # runtime (no tokio/notify) → the whole graph compiles to wasm32.
 pixtuoid-core  = { path = "../pixtuoid-core", version = "0.21.0", default-features = false }
 pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.21.0", default-features = false }
-wasm-bindgen   = "0.2"
+wasm-bindgen   = { workspace = true }
 # Feature-unions `wasmbind` into scene's chrono so that on wasm32
 # `chrono::Local` resolves the REAL browser timezone via js-sys; without it the
 # office's day/night cycle silently falls back to UTC for most visitors.

@@ -5,6 +5,8 @@
 // thread means the music failed.
 'use strict';
 
+import { loadWasm } from './office-driver.js';
+
 // The stream once built, and the controls that arrived while it was building.
 let stream = null;
 let asked = null;
@@ -20,10 +22,10 @@ self.onmessage = function (e) {
 
 // `controls` are the office's first, as a tick's `music.controls`: they pick the first song, so the stream is built
 // with them before it renders.
-async function start({ wasmJsUrl, port, nowMs, controls }) {
+async function start({ musicWasmJsUrl, port, nowMs, controls }) {
   let w;
   try {
-    const mod = await import(wasmJsUrl);
+    const mod = await loadWasm(musicWasmJsUrl);
     w = await mod.default();
     stream = new mod.MusicStream(nowMs, new Float32Array(controls));
   } catch (err) {

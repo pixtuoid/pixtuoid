@@ -45,6 +45,10 @@ export PATH := (if _mise_paths == '' { '' } else { replace_regex(_mise_paths, '\
 # release-plz.toml switches the check off for the binary's lib target.
 PUBLISHED_CRATES := "pixtuoid-core pixtuoid-scene"
 
+# The wasm the site ships, one per crate: `gen-wasm` builds them, `gen-wasm-check`
+# caps each, and `hawk` leaves their wasm exports alone.
+WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
+
 # Standalone shell FILES share one authority so formatting and lint coverage
 # cannot drift. Shell embedded in YAML is a second population this cannot cover:
 # workflow `run:` blocks go to actionlint, composite-action ones to
@@ -521,7 +525,7 @@ hawk *args: _hawk-toolchain
     fi
     # The `-A`: AGENTS.md's Visibility rule stops at `pub(crate)`, never private.
     PATH="$bin:$PATH" cargo +{{ HAWK_RUST }} hawk check --target-dir target/hawk \
-        --exclude-crate pixtuoid_web --exclude-crate pixtuoid_web_music -D warnings -A hawk::unnecessary_restricted_visibility "$@"
+        $(printf -- '--exclude-crate %s ' {{ replace(WASM_CRATES, "-", "_") }}) -D warnings -A hawk::unnecessary_restricted_visibility "$@"
 
 [private]
 _hawk-toolchain:
@@ -881,19 +885,19 @@ _wasm-bindgen-version:
     @awk '$0 == "name = \"wasm-bindgen\"" { getline; gsub(/"/, "", $3); print $3; found = 1 } END { exit !found }' Cargo.lock
 
 # The output is gitignored; CI builds it through .github/actions/gen-wasm.
-[doc('Build pixtuoid-web and pixtuoid-web-music (wasm) + JS glue into site/public/wasm/')]
+[doc("Build the site's wasm crates + JS glue into site/public/wasm/")]
 [group('site')]
 gen-wasm: (_targets "wasm32-unknown-unknown")
     #!/usr/bin/env bash
     set -eu
-    cargo build -p pixtuoid-web -p pixtuoid-web-music --target wasm32-unknown-unknown --profile wasm-release
-    for lib in pixtuoid_web pixtuoid_web_music; do
+    cargo build $(printf -- '-p %s ' {{ WASM_CRATES }}) --target wasm32-unknown-unknown --profile wasm-release
+    for lib in {{ replace(WASM_CRATES, "-", "_") }}; do
         wasm-bindgen --target web --out-dir site/public/wasm \
             "target/wasm32-unknown-unknown/wasm-release/$lib.wasm"
         wasm-opt -Oz -o "site/public/wasm/${lib}_bg.wasm" "site/public/wasm/${lib}_bg.wasm"
     done
 
-# Bloat gate for the wasm the site ships. Size: the hero must stay
+# Bloat gate for each wasm the site ships. Size: the hero must stay
 # a lazy-load behind the poster, so a silent size regression (a dep pulling in
 # formatting machinery, an accidental debug build) fails loudly. The cap is on
 # the GZIPPED size, because the wire cost is what the poster is hiding.
@@ -904,25 +908,32 @@ gen-wasm: (_targets "wasm32-unknown-unknown")
 # simulated throttling, sized to admit a wasm AT this cap. The cap is growth
 # budget for the scene the hero runs, not a margin over today's payload, so a
 # regression shows as the printed gap shrinking, not as a red.
-[doc('Fail if the built wasm is missing or over its gzipped size cap')]
+[doc('Fail if a built wasm is missing or over its gzipped size cap')]
 [group('site')]
 gen-wasm-check:
     #!/usr/bin/env bash
     set -euo pipefail
-    W=site/public/wasm/pixtuoid_web_bg.wasm
-    # Not tuned to the last KB: this measures gzip locally while the CDN does its
-    # own.
-    CAP=524288
-    WIRE=$(gzip -9 -c "$W" | wc -c | tr -d ' ')
-    RAW=$(wc -c < "$W" | tr -d ' ')
-    test "$WIRE" -le "$CAP" || { echo "$W gzips to $WIRE bytes (> $CAP cap) — investigate the bloat"; exit 1; }
-    # Report the headroom, don't just pass silently. A ratchet you can only read
-    # at the moment it breaks gives no warning that it is about to — and a prose
-    # estimate of the size drifts unnoticed precisely because every run is green.
-    # Raw rides along with its RATIO, not bare: a bare byte count has nothing to
-    # be read against. The ratio does — it is gzipped-over-raw, so RISING means
-    # new poorly-compressible code and falling means new sprite text.
-    echo "wasm $WIRE / $CAP bytes gzipped ($((WIRE * 100 / CAP))% of cap, $(((CAP - WIRE) / 1024)) KB headroom; $RAW raw, compressing to $((WIRE * 100 / RAW))%)"
+    for lib in {{ replace(WASM_CRATES, "-", "_") }}; do
+        W="site/public/wasm/${lib}_bg.wasm"
+        # Not tuned to the last KB: this measures gzip locally while the CDN does its
+        # own.
+        case "$lib" in
+            pixtuoid_web) CAP=524288 ;;
+            # Fetched on the first ♩ click, off the poster's path.
+            pixtuoid_web_music) CAP=131072 ;;
+            *) echo "no size cap for $lib"; exit 1 ;;
+        esac
+        WIRE=$(gzip -9 -c "$W" | wc -c | tr -d ' ')
+        RAW=$(wc -c < "$W" | tr -d ' ')
+        test "$WIRE" -le "$CAP" || { echo "$W gzips to $WIRE bytes (> $CAP cap) — investigate the bloat"; exit 1; }
+        # Report the headroom, don't just pass silently. A ratchet you can only read
+        # at the moment it breaks gives no warning that it is about to — and a prose
+        # estimate of the size drifts unnoticed precisely because every run is green.
+        # Raw rides along with its RATIO, not bare: a bare byte count has nothing to
+        # be read against. The ratio does — it is gzipped-over-raw, so RISING means
+        # new poorly-compressible code and falling means new sprite text.
+        echo "$lib $WIRE / $CAP bytes gzipped ($((WIRE * 100 / CAP))% of cap, $(((CAP - WIRE) / 1024)) KB headroom; $RAW raw, compressing to $((WIRE * 100 / RAW))%)"
+    done
 
 [doc('Fail if anything `just gen` writes has drifted')]
 [group('gen')]

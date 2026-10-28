@@ -2,6 +2,9 @@
 //! it, once a visitor turns the ♩ on, so the office's wasm every visitor
 //! downloads carries no synthesizer for it.
 
+// AGENTS.md's Errors rule, as a lint: no `unwrap()` outside tests.
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 use pixtuoid_scene::anim::from_epoch_ms;
 use pixtuoid_scene::audio::{Frame, Performance, controls_from_wire, music_seed};
 use wasm_bindgen::prelude::*;
@@ -17,10 +20,10 @@ pub struct MusicStream {
 
 #[wasm_bindgen]
 impl MusicStream {
-    /// A stream starting at `now_ms` (UNIX-epoch milliseconds, the
-    /// `Office::step` contract) under the office's first `controls`, a tick's
-    /// `music.controls` as `Office::audio_tick` wrote them, which pick its
-    /// first song.
+    /// A stream starting at `now_ms` ([`from_epoch_ms`]'s milliseconds) under
+    /// the office's first `controls`, a tick's `music.controls` on the
+    /// [`controls_wire`](pixtuoid_scene::audio::controls_wire), which pick
+    /// its first song.
     ///
     /// # Errors
     ///
@@ -35,8 +38,8 @@ impl MusicStream {
         })
     }
 
-    /// The office's latest `controls`, as `Office::audio_tick` wrote them,
-    /// which the next bar latches; `false` when they aren't the wire's.
+    /// The office's latest `controls`, which the next bar latches; `false`
+    /// when they aren't the wire's.
     pub fn set_controls(&mut self, controls: &[f32]) -> bool {
         controls_from_wire(controls)
             .map(|c| self.performance.set_controls(c))
