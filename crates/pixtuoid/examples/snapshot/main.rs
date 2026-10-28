@@ -93,7 +93,7 @@ struct SnapshotArgs {
     // renders on a path the cutaway is not wired into.
     #[arg(long, conflicts_with_all = [
         "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
-        "hover", "debug_walkable", "empty", "crop_agent", "crop_furniture", "crop_mascot",
+        "hover", "debug_walkable", "crop_agent", "crop_furniture", "crop_mascot",
         "proof",
     ])]
     cutaway: bool,
@@ -567,10 +567,8 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     let warning_text = pixtuoid::dev::footer_warning(&deaths, &drifted);
     let mut office = pixtuoid_scene::floor::PerOffice::new();
-    // Static snapshots have no time to animate the fade — snap straight
-    // to the steady-state level for the chosen scene.
     if args.empty {
-        floor.ctx.vacancy_dim.snap_to_empty();
+        settle_empty(&mut floor, cutaway.as_mut());
     }
     let (dash_rows, dash_selected) = if args.dashboard {
         let folds = pixtuoid::dev::DashboardFolds::default();
@@ -783,6 +781,17 @@ fn main() -> Result<()> {
         println!();
     }
     Ok(())
+}
+
+/// An empty office's still: `floor`, and `cutaway`'s where there is one, at
+/// the light they fade to. A still has no time to animate the fade.
+fn settle_empty(
+    floor: &mut pixtuoid_scene::floor::PerFloor,
+    cutaway: Option<&mut CutawayOffice<pixtuoid_scene::floor::FloorSession>>,
+) {
+    for floor in std::iter::once(floor).chain(cutaway.map(CutawayOffice::floor_mut)) {
+        floor.ctx.vacancy_dim.snap_to_empty();
+    }
 }
 
 /// Floors whose scheduled navigation comes due at `elapsed_ms`, firing each
@@ -1096,7 +1105,6 @@ mod tests {
             &["--popup"],
             &["--hover", "1,1"],
             &["--debug-walkable"],
-            &["--empty"],
             &["--crop-agent", "x"],
             &["--crop-furniture", "pantry"],
             &["--crop-mascot", "--openclaw", "idle"],
@@ -1113,6 +1121,7 @@ mod tests {
             &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
             &["snapshot", "--cutaway", "--gif", "--pets", "cat"],
             &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
+            &["snapshot", "--cutaway", "--empty"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
         }

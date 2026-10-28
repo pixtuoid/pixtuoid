@@ -561,8 +561,7 @@ impl FloorSession {
     }
 
     /// [`Self::floor`], to seed or inspect its stores.
-    #[cfg(test)]
-    pub(crate) fn floor_mut(&mut self) -> &mut PerFloor {
+    pub fn floor_mut(&mut self) -> &mut PerFloor {
         &mut self.view.floor
     }
 

@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use anyhow::{Context as _, Result};
 use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::Canvas as _;
-use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession};
+use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
 use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
@@ -70,6 +70,11 @@ impl CutawayOffice<FloorSession> {
     /// The cutaway of `draw_scene`'s floor on a `cols`×`rows` terminal.
     pub(crate) fn of_draw_scene(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
         Self::fitted(FloorSession::new(Arc::clone(pack)), pack, cols, rows)
+    }
+
+    /// Its floor's stores, to seed as `draw_scene`'s floor is seeded.
+    pub(crate) fn floor_mut(&mut self) -> &mut PerFloor {
+        self.session.floor_mut()
     }
 }
 
@@ -152,7 +157,7 @@ mod tests {
     use image::{Rgba, RgbaImage};
     use pixtuoid::dev::{DrawCtx, draw_scene, scene_buf_size};
     use pixtuoid_core::SceneState;
-    use pixtuoid_scene::floor::{FloorMeta, PerFloor, PerOffice};
+    use pixtuoid_scene::floor::{FloorMeta, PerOffice};
     use pixtuoid_scene::pet::{Pet, PetKind};
     use pixtuoid_scene::theme::NORMAL;
     use ratatui::Terminal;
@@ -278,6 +283,41 @@ mod tests {
         assert!(
             office_band(&frame) != office_band(&renderer_frame(&scene, true, &cat, &[])),
             "the cutaway stayed on its floor"
+        );
+    }
+
+    /// `--empty` settles both looks' floors to the empty office's light: the
+    /// cutaway's as dim as the classic's, and drawn darker than one left lit.
+    #[test]
+    fn an_empty_still_settles_the_cutaway_as_it_does_the_classic() {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let scene = SceneState::uniform(12);
+        let world = FloorInputs {
+            scene: &scene,
+            now: epoch(),
+            floor: FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
+        let mut lit = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut settled = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut classic = PerFloor::new(Arc::clone(&pack));
+        crate::settle_empty(&mut classic, Some(&mut settled));
+        let level = |floor: &PerFloor| floor.ctx.vacancy_dim.level();
+        assert!(level(&classic) < 1.0, "the classic floor stayed lit");
+        assert_eq!(level(settled.session.floor()), level(&classic));
+
+        let brightness = |cutaway: &mut CutawayOffice<FloorSession>| -> u64 {
+            cutaway.render(world, &NORMAL).unwrap();
+            let frame = compose(&blank, blank.area, Some(&*cutaway));
+            office_band(&frame)
+                .iter()
+                .map(|px| px.0[..3].iter().map(|&c| u64::from(c)).sum::<u64>())
+                .sum()
+        };
+        assert!(
+            brightness(&mut settled) < brightness(&mut lit),
+            "the settled cutaway is not darker"
         );
     }
 }
