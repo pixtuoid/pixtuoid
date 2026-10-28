@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn unknown_event_bails_loudly() {
-        // subagentStart/Stop are deliberately unregistered — they do not fire.
+        // subagentStart/Stop are unregistered (see `CURSOR_EVENTS`), so they must bail.
         for ev in [
             "subagentStart",
             "subagentStop",
