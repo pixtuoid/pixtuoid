@@ -69,7 +69,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "gateway_stop",
                 "session_end",
             ],
-            fixture: "fixtures/openclaw/tool-run-hermetic",
+            fixture: "openclaw/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -84,7 +84,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "gateway_stop",
                 "session_end",
             ],
-            fixture: "fixtures/openclaw/model-error-hermetic",
+            fixture: "openclaw/fixtures/model-error-hermetic",
             turn: Turn::PROFILE,
         },
     ],

@@ -741,7 +741,7 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
     // `codex_id_from_path` keys on the filename's trailing UUID, so the replay
     // name (not the fixture's own) is what identifies the session.
     let recorded = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/sources/fixtures/codex/permission-hermetic");
+        .join("tests/sources/codex/fixtures/permission-hermetic");
     let fixture = pixtuoid_core::harness::transcript_in("codex", &recorded)
         .unwrap_or_else(|found| panic!("one recorded rollout, found {found:?}"));
     let body = std::fs::read_to_string(&fixture).expect("committed permission-hermetic fixture");

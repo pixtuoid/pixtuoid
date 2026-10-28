@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn a_recorded_envelope_carries_the_shim_stamp_by_this_key() {
         let hooks = crate::harness::sources_root()
-            .join("fixtures/codex/tool-run-hermetic")
+            .join("codex/fixtures/tool-run-hermetic")
             .join(crate::harness::HOOK_PAYLOADS);
         let text = std::fs::read_to_string(&hooks).expect("a recorded hook capture");
         for line in text.lines() {

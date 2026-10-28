@@ -1,7 +1,7 @@
 //! Cursor's DELEGATING run, from a capture of a real `cursor-agent -p` turn that
-//! was asked for a subagent. It lives here rather than under
-//! `sources/fixtures/cursor/` because a child is an INDEPENDENT session — two
-//! sprites, which the conformance harness's one-AgentId rule cannot hold.
+//! was asked for a subagent. Conformance skips it (`OUTSIDE_CONFORMANCE`): a child
+//! is an INDEPENDENT session — two sprites, which the conformance harness's
+//! one-AgentId rule cannot hold.
 //!
 //! It pins that the child is a session of its own and that the parent's `Task`
 //! dispatch ends on its own post.

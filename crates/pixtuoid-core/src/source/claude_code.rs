@@ -500,7 +500,7 @@ mod tests {
     use serde_json::json;
 
     /// A subagent's tool hook names it in `agent_id` (hooks.md;
-    /// `claude/fixtures/subagent-hermetic`): every event it decodes to lands on
+    /// `claude_code/fixtures/subagent-hermetic`): every event it decodes to lands on
     /// the subagent, Identity's session too, whatever `session_id` says.
     #[test]
     fn a_subagents_tool_hook_lands_on_the_subagent() {

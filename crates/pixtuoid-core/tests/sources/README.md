@@ -11,7 +11,7 @@ just capture-fixture kimi tool-run kimi -p '{prompt}'
 ```
 
 A hand-written fixture pins whatever its author believed the wire looked like, and that belief is what the fixture then teaches every later reader.
-The composed `cursor/tool-run` this replaced carried no `tool_use_id`; the
+The composed `cursor/fixtures/tool-run` this replaced carried no `tool_use_id`; the
 capture that replaced it shows an id on every `preToolUse`, and
 `cursor/fixtures/delegation` shows tools that INTERLEAVE (#901 discovered the
 same gap the expensive way). kimi's composed fixture went further and asserted the decoder's
@@ -42,7 +42,7 @@ whole, or of one value only. The other direction is cheap: `just restrip-fixture
 strip over the committed corpus, offline and unbilled, so a field a decoder
 STOPPED reading is one pass from gone.
 
-The table above is not the schema — [`Provenance`](../../../src/harness/provenance.rs)
+The table above is not the schema — [`Provenance`](../../src/harness/provenance.rs)
 is: a record it does not parse fails every test that walks the captures, and
 `the_fixtures_readme_states_each_origin` pins this table to it.
 
@@ -65,11 +65,7 @@ belongs, since CC only FIRES
 `PermissionRequest` when a project rule makes the tool ask. `CAPTURE_PROMPT` replaces the shared prompt for
 a scenario it cannot reach. Neither touches the user's own config.
 
-**A module's own scenarios re-record in place.** The recorder writes to
-`<source>/fixtures/<scenario>/` when a committed `provenance.json` is already
-there (omp's bridge rounds), else to the conformance root — where a new
-directory would be auto-scanned by `conformance.rs` with no committed bytes
-beside it for the `.new` no-clobber rule to protect.
+**A scenario records into its source's one home**, `<module>/fixtures/<scenario>/`.
 
 **Re-recording an existing scenario needs a hand** unless the tier records it. The tier keeps a
 fixture whose record, its `dropped` among its fields, equals the run's but for `captured` and
@@ -121,12 +117,12 @@ gated run says which side is wrong.
 Each fixture is a directory:
 
 ```
-tests/sources/fixtures/<source>/<scenario>/
+tests/sources/<module>/fixtures/<scenario>/
     <transcript>.jsonl     # JSONL transcript lines, fed to the source's LineDecoder
                            # (JSONL-bearing sources only — a hook-only row,
                            # transcript: None, ships NO transcript)
     hook-payloads.jsonl    # one hook payload per line, fed to decode_hook_payload
-    # expected snapshot lives in tests/sources/snapshots/ (insta), generated on first run
+    # expected snapshot lives in tests/sources/<module>/snapshots/ (insta), generated on first run
 ```
 
 A scenario ships the transports its source actually has: both files
@@ -142,11 +138,9 @@ nests: `<scenario>/<session-uuid>/updates.jsonl`. The recorder keeps the fewest
 parent dirs that leave the registry's own `id_deriver_for` id unchanged, and the
 harness recurses to find it.
 
-(This tree is **conformance-scanned ONLY** — `conformance.rs` asserts every dir
-here is a registered source. Single-owner fixtures read by one module — decode's
-`sources/decode/fixtures/`, codex's `sources/codex/fixtures/`, render's
-`render/fixtures/` — live with their module, NOT here. See
-[`tests/AGENTS.md`](../../AGENTS.md) for the governing principle.)
+(`conformance.rs` scans every capture but a `harness::OUTSIDE_CONFORMANCE` one, and each
+home must be a registered source's; hand-built inputs — `sources/decode/fixtures/`,
+`render/fixtures/` — live with their module. See [`tests/AGENTS.md`](../AGENTS.md).)
 
 The harness, for each fixture dir:
 1. decodes the transcript lines (via the source's `LineDecoder`) and the hook
@@ -161,7 +155,7 @@ runtime with the fixture's transcript file path (for a hook-only scenario: the
 scenario dir's relative path), so a CC hook (which coalesces on
 `transcript_path`) lines up with its JSONL file.
 
-**Adding a CLI:** [the test steps](../../AGENTS.md#adding-a-new-agent-cli--the-test-steps).
+**Adding a CLI:** [the test steps](../AGENTS.md#adding-a-new-agent-cli--the-test-steps).
 
 ## Where a scenario's own story lives
 

@@ -120,7 +120,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
 
 /// The recording's hook payloads, which every re-record re-keys, so each id
 /// below is read off them.
-const RECORDED_HOOKS: &str = "claude/fixtures/subagent-hermetic/hook-payloads.jsonl";
+const RECORDED_HOOKS: &str = "claude_code/fixtures/subagent-hermetic/hook-payloads.jsonl";
 
 fn recorded_hooks() -> Vec<serde_json::Value> {
     super::captures::fixture_lines(&super::captures::sources_root().join(RECORDED_HOOKS))
@@ -335,7 +335,7 @@ fn cc_hook_first_subagent_coalesces_with_later_jsonl_session_start() {
 /// the root's never carries it.
 #[test]
 fn a_recorded_childs_transcript_names_its_agent() {
-    let dir = super::captures::sources_root().join("claude/fixtures/subagent-hermetic");
+    let dir = super::captures::sources_root().join("claude_code/fixtures/subagent-hermetic");
     let transcripts = super::captures::transcripts_in(&dir);
     let stem = |t: &std::path::Path| {
         t.file_stem()

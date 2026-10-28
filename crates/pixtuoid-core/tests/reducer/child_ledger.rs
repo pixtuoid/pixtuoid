@@ -1166,7 +1166,7 @@ fn reasonix_resurrect_is_unaffected_by_another_ids_lifecycle() {
 }
 
 /// The hook shapes a claude-code subagent's turns arrive in
-/// (`claude/fixtures/subagent-hermetic`), around one root session.
+/// (`claude_code/fixtures/subagent-hermetic`), around one root session.
 struct CcTurns {
     root: AgentId,
     child: AgentId,

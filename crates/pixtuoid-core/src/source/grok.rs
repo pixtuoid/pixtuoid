@@ -9,7 +9,7 @@
 //!   snake_case event values** (`hookEventName`, `sessionId`, `toolUseId`, …)
 //!   — the only spelling pre-1.0 sent, hence the claims-all custom decoder
 //!   below; 1.0.x mirrors every key in CC's snake_case too
-//!   (`grok/tool-run-hermetic`), which this decoder still does not read. Hooks
+//!   (`grok/fixtures/tool-run-hermetic`), which this decoder still does not read. Hooks
 //!   dispatch SEQUENTIALLY inline on the session actor, so the shim's
 //!   `WRITE_TIMEOUT` bound matters here.
 //! - **Keying**: `sessionId` is consistent across every event of a session, ==
@@ -685,7 +685,7 @@ mod tests {
 
     #[test]
     fn an_ordinary_updates_meta_carries_the_model() {
-        // The shape from fixtures/grok/permission-hermetic — `model_changed`
+        // The shape from grok/fixtures/permission-hermetic — `model_changed`
         // never appears in a real session.
         let evs = decode_line(json!({
             "method": "session/update",

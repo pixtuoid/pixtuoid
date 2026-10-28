@@ -12,7 +12,7 @@ use pixtuoid_core::state::TurnKey;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
-use super::captures::{fixture_lines, fixtures_root, transcript_in};
+use super::captures::{fixture_lines, transcript_in};
 
 /// One recorded run's two streams.
 struct Run {
@@ -27,7 +27,9 @@ struct Run {
 
 impl Run {
     fn of(source: &str, scenario: &str) -> Self {
-        let dir = fixtures_root().join(source).join(scenario);
+        let dir = pixtuoid_core::harness::source_home(source)
+            .join("fixtures")
+            .join(scenario);
         let transcript = transcript_in(&dir);
         let hooks = fixture_lines(&dir.join("hook-payloads.jsonl"));
         let lines = fixture_lines(&transcript);

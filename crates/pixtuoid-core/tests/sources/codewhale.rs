@@ -123,7 +123,8 @@ fn codewhale_subagent_outlives_its_dispatch_and_ends_on_its_own_complete() {
 #[test]
 fn a_cold_session_idle_registers_its_own_session_not_a_blank_slot() {
     let idle = super::captures::fixture_lines(
-        &super::captures::fixtures_root().join("codewhale/permission-hermetic/hook-payloads.jsonl"),
+        &super::captures::sources_root()
+            .join("codewhale/fixtures/permission-hermetic/hook-payloads.jsonl"),
     )
     .into_iter()
     .find(|l| l.contains(r#""event":"session_idle""#))

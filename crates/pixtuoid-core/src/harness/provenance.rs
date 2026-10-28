@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn the_fixtures_readme_states_each_origin() {
         let schema = serde_json::to_value(schemars::schema_for!(Provenance)).expect("json");
-        let readme = sources_root().join("fixtures/README.md");
+        let readme = sources_root().join("README.md");
         let readme = std::fs::read_to_string(&readme).expect("README");
         let variants = schema["oneOf"].as_array().expect("a schema per origin");
         for v in variants {
@@ -309,7 +309,7 @@ mod tests {
             );
             assert!(
                 readme.contains(&row),
-                "fixtures/README.md must carry this row verbatim:\n  {row}"
+                "tests/sources/README.md must carry this row verbatim:\n  {row}"
             );
         }
     }

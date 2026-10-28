@@ -29,10 +29,8 @@ fn t0() -> SystemTime {
 }
 
 /// The core crate's source-test tree, so these tests decode the SAME captured
-/// wire bytes that crate pins, never a hand-rolled re-encoding. It is the tree
-/// and not `fixtures/` alone because a two-session capture cannot live under the
-/// conformance harness's one-AgentId rule.
-fn core_fixtures_root() -> PathBuf {
+/// wire bytes that crate pins, never a hand-rolled re-encoding.
+fn core_sources() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("pixtuoid-core")
@@ -112,7 +110,7 @@ enum Wire {
 struct WireCase {
     name: &'static str,
     source: &'static str,
-    /// Path to the fixture file, relative to `core_fixtures_root()`, or to a
+    /// Path to the fixture file, relative to `core_sources()`, or to a
     /// capture holding one transcript of `source`'s under a session id that
     /// each re-record changes.
     fixture: &'static str,
@@ -124,7 +122,7 @@ struct WireCase {
 }
 
 fn fixture_path(case: &WireCase) -> PathBuf {
-    let path = core_fixtures_root().join(case.fixture);
+    let path = core_sources().join(case.fixture);
     if !path.is_dir() {
         return path;
     }
@@ -196,28 +194,28 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "claude_code",
             source: "claude-code",
-            fixture: "fixtures/claude-code/tool-run-hermetic",
+            fixture: "claude_code/fixtures/tool-run-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "codex",
             source: "codex",
-            fixture: "fixtures/codex/permission-hermetic",
+            fixture: "codex/fixtures/permission-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "antigravity",
             source: "antigravity",
-            fixture: "fixtures/antigravity/tool-run-hermetic/hook-payloads.jsonl",
+            fixture: "antigravity/fixtures/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "copilot",
             source: "copilot",
-            fixture: "fixtures/copilot/tool-run-hermetic",
+            fixture: "copilot/fixtures/tool-run-hermetic",
             wire: Wire::Transcript { seeded: false },
             must_reach: &[Reach::Running],
         },
@@ -240,7 +238,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "grok",
             source: "grok",
-            fixture: "fixtures/grok/permission-hermetic",
+            fixture: "grok/fixtures/permission-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
@@ -254,14 +252,14 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "codewhale",
             source: "codewhale",
-            fixture: "fixtures/codewhale/tool-run-hermetic/hook-payloads.jsonl",
+            fixture: "codewhale/fixtures/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "opencode",
             source: "opencode",
-            fixture: "fixtures/opencode/permission-hermetic/hook-payloads.jsonl",
+            fixture: "opencode/fixtures/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::RequiresAction],
         },
@@ -278,14 +276,14 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "hermes",
             source: "hermes",
-            fixture: "fixtures/hermes/tool-run-hermetic/hook-payloads.jsonl",
+            fixture: "hermes/fixtures/tool-run-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "hermes_approval",
             source: "hermes",
-            fixture: "fixtures/hermes/permission-hermetic/hook-payloads.jsonl",
+            fixture: "hermes/fixtures/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::RequiresAction],
         },
@@ -293,7 +291,7 @@ fn agent_cases() -> Vec<WireCase> {
             // The recorded tool run pins Running on real wire.
             name: "dsh",
             source: "dsh",
-            fixture: "fixtures/dsh/tool-run-recorded/hook-payloads.jsonl",
+            fixture: "dsh/fixtures/tool-run-recorded/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running],
         },
@@ -303,14 +301,14 @@ fn agent_cases() -> Vec<WireCase> {
             // through the `subagent` dispatch.
             name: "dsh-delegation",
             source: "dsh",
-            fixture: "delegation/fixtures/dsh/hook-payloads.jsonl",
+            fixture: "dsh/fixtures/subagent-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::Delegating],
         },
         WireCase {
             name: "kimi",
             source: "kimi",
-            fixture: "fixtures/kimi/permission-hermetic/hook-payloads.jsonl",
+            fixture: "kimi/fixtures/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::RequiresAction],
         },
@@ -395,8 +393,7 @@ fn openclaw_state(
     attach_after: Option<&str>,
     stop_at: &[&str],
 ) -> pixtuoid_core::state::DaemonState {
-    let hooks =
-        core_fixtures_root().join(format!("fixtures/openclaw/{scenario}/hook-payloads.jsonl"));
+    let hooks = core_sources().join(format!("openclaw/fixtures/{scenario}/hook-payloads.jsonl"));
     let mut scene = SceneState::uniform(16);
     let now = t0();
     let envelopes: Vec<serde_json::Value> = read_nonblank_lines(&hooks)
@@ -474,8 +471,7 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
 fn openclaw_presence_envelope_renders_a_lobster() {
-    let hooks =
-        core_fixtures_root().join("fixtures/openclaw/tool-run-hermetic/hook-payloads.jsonl");
+    let hooks = core_sources().join("openclaw/fixtures/tool-run-hermetic/hook-payloads.jsonl");
 
     let lines = read_nonblank_lines(&hooks);
     let mut scene = SceneState::uniform(16);

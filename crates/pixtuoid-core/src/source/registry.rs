@@ -26,7 +26,7 @@ pub enum ToolIdKey {
     /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
     /// but Kimi's.
     ToolUse,
-    /// `tool_call_id` — Kimi's (capture-verified: `fixtures/kimi/tool-run-hermetic` never
+    /// `tool_call_id` — Kimi's (capture-verified: `kimi/fixtures/tool-run-hermetic` never
     /// carries `tool_use_id`).
     ToolCall,
 }

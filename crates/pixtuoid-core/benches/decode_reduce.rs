@@ -12,10 +12,10 @@
 //! the JSONL arm runs a transcript line decoder, the hook arm a hook decoder
 //! plus the `recent_hook_tool_uses` dedup bookkeeping.
 //!
-//! Lines are synthesized rather than read from `tests/sources/fixtures/`, which
-//! is the conformance harness's scanned population — one transcript per scenario
-//! dir, every dir a registered source — so a bench-shaped fixture there would be
-//! mis-scanned and panic.
+//! Lines are synthesized rather than read from a `tests/sources/<module>/fixtures/`,
+//! which is the conformance harness's scanned population — one transcript per
+//! scenario dir — so a bench-shaped fixture there would be mis-scanned and
+//! panic.
 
 use criterion::{Criterion, criterion_main};
 use pixtuoid_core::harness::Drive;

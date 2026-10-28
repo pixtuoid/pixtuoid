@@ -189,7 +189,7 @@ startup:
             shape: Shape::Subagent,
             surface: Surface::Headless,
             expects: &["session_start", "session_shutdown"],
-            fixture: "delegation/fixtures/omp",
+            fixture: "omp/fixtures/subagent-hermetic",
             turn: Turn::PROFILE,
         },
         // `/new` is a TUI builtin, which `-p` never runs

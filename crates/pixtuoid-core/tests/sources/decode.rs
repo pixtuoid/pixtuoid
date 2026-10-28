@@ -1036,28 +1036,28 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 #[test]
 fn registry_cwd_extractor_matches_each_sources_real_head_shape() {
     use std::path::{Path, PathBuf};
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources/fixtures");
+    let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources");
     // A recording names its transcript after its session, which every
     // re-record changes.
     let transcript_of = |source: &str, capture: &str| {
-        pixtuoid_core::harness::transcript_in(source, &fixtures.join(capture))
+        pixtuoid_core::harness::transcript_in(source, &sources.join(capture))
             .unwrap_or_else(|found| panic!("one {source} transcript, found {found:?}"))
     };
-    let agy = transcript_of("antigravity", "antigravity/tool-run-hermetic");
+    let agy = transcript_of("antigravity", "antigravity/fixtures/tool-run-hermetic");
     let cases: [(&str, PathBuf, Option<&str>); 4] = [
         (
             "claude-code",
-            transcript_of("claude-code", "claude-code/tool-run-hermetic"),
+            transcript_of("claude-code", "claude_code/fixtures/tool-run-hermetic"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
             "codex",
-            transcript_of("codex", "codex/permission-hermetic"),
+            transcript_of("codex", "codex/fixtures/permission-hermetic"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         (
             "copilot",
-            transcript_of("copilot", "copilot/tool-run-hermetic"),
+            transcript_of("copilot", "copilot/fixtures/tool-run-hermetic"),
             Some("/private/tmp/pixtuoid-capture/proj"),
         ),
         ("antigravity", agy, None),

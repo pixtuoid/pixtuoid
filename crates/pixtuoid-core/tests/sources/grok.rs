@@ -1,7 +1,7 @@
-//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`. It lives
-//! here rather than under `sources/fixtures/grok/` because a child is its own
-//! grok session with its own transcript — two sprites, which the conformance
-//! harness's one-AgentId rule cannot hold (the same reason `cursor/mod.rs` exists).
+//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`.
+//! Conformance skips it (`OUTSIDE_CONFORMANCE`): a child is its own grok session with
+//! its own transcript — two sprites, which the conformance harness's one-AgentId
+//! rule cannot hold (the same reason `cursor.rs` exists).
 //!
 //! Both halves of the one run are here: the parent's transcript, whose
 //! `subagent_spawned` line registers the child, and the hook wire, where the

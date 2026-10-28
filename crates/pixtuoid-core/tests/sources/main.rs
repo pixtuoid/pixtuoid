@@ -1,5 +1,5 @@
 mod captures;
-mod claude;
+mod claude_code;
 mod codewhale;
 mod codex;
 mod conformance;

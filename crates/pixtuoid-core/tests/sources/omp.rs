@@ -1,6 +1,6 @@
 //! omp's bridge-extension rounds, recorded from real `omp` runs with the
-//! extension installed (#951). They live here rather than under
-//! `sources/fixtures/omp/` because the hook decoder derives its keys through
+//! extension installed (#951). Conformance skips them (`OUTSIDE_CONFORMANCE`): the
+//! hook decoder derives its keys through
 //! the watcher's `normalize_path_key` FOLD — platform-dependent on Windows,
 //! where omp's stems carry case — while the conformance goldens are
 //! deliberately platform-invariant.
@@ -148,7 +148,7 @@ fn a_resumed_session_re_registers_after_its_earlier_end() {
 /// `_pid` on the wire.
 #[test]
 fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
-    const TASK: &str = "delegation/fixtures/omp";
+    const TASK: &str = "omp/fixtures/subagent-hermetic";
     let evs = events_at(TASK);
     let starts: Vec<&AgentEvent> = evs
         .iter()

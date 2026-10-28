@@ -103,7 +103,7 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/reasonix/tool-run-hermetic",
+            fixture: "reasonix/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -153,7 +153,7 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/reasonix/planner-hermetic",
+            fixture: "reasonix/fixtures/planner-hermetic",
             turn: Turn {
                 prompt: Some("[Reasonix: plan-first] Read NOTE.txt."),
                 ..Turn::PROFILE
@@ -171,7 +171,7 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/reasonix/bash-run-hermetic",
+            fixture: "reasonix/fixtures/bash-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -189,7 +189,7 @@ model = "guardian-model"
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/reasonix/permission-hermetic",
+            fixture: "reasonix/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
     ],

@@ -30,7 +30,7 @@ fn assert_the_refusal_resolves_its_wait(what: &str, d: &Driven) {
 #[test]
 fn the_recorded_auto_deny_resolves_its_wait() {
     let t = super::captures::transcript_in(
-        &super::captures::sources_root().join("fixtures/copilot/permission-hermetic"),
+        &super::captures::sources_root().join("copilot/fixtures/permission-hermetic"),
     );
     // Its shutdown would end the slot this reads.
     let lines = super::captures::fixture_lines(&t)

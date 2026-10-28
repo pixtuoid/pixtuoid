@@ -85,7 +85,7 @@ telemetry:
                 "post_tool_call",
                 "on_session_end",
             ],
-            fixture: "fixtures/hermes/tool-run-hermetic",
+            fixture: "hermes/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -100,7 +100,7 @@ telemetry:
                 "on_session_end",
                 "on_session_finalize",
             ],
-            fixture: "fixtures/hermes/permission-hermetic",
+            fixture: "hermes/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
     ],

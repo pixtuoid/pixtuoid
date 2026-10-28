@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn a_scenario_not_yet_recorded_has_no_baseline() {
         assert_eq!(
-            baseline_at("fixtures/copilot/never-recorded-hermetic")
+            baseline_at("copilot/fixtures/never-recorded-hermetic")
                 .expect("a missing record is no error"),
             None
         );

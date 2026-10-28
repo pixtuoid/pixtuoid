@@ -533,9 +533,8 @@ mod tests {
 
     fn stripped_copy(source: &str, scenario: &str, name: &str) -> (tempfile::TempDir, PathBuf) {
         stripped_copy_of(
-            &sources_root()
+            &crate::harness::source_home(source)
                 .join("fixtures")
-                .join(source)
                 .join(scenario)
                 .join(name),
         )
@@ -588,7 +587,7 @@ mod tests {
     fn the_first_sight_cwd_survives_the_strip() {
         let (_d, rollout) = stripped_copy_of(&transcript_in(
             "codex",
-            &sources_root().join("fixtures/codex/tool-run-hermetic"),
+            &sources_root().join("codex/fixtures/tool-run-hermetic"),
         ));
         let cwds = |p: &Path| -> Vec<Option<PathBuf>> {
             let extract = registry::cwd_extractor_for("codex");
@@ -665,7 +664,7 @@ mod tests {
         const STAMP: &str = "2026-10-27T04:47:02.517Z";
         let (_d, rollout) = stripped_copy_of(&transcript_in(
             "codex",
-            &sources_root().join("fixtures/codex/tool-run-hermetic"),
+            &sources_root().join("codex/fixtures/tool-run-hermetic"),
         ));
         let (_e, hooks) = stripped_copy("codex", "tool-run-hermetic", "hook-payloads.jsonl");
         for file in [&rollout, &hooks] {
@@ -700,7 +699,7 @@ mod tests {
     #[test]
     fn stripping_blanks_what_no_decoder_reads_and_changes_no_event() {
         let d = tempfile::tempdir().expect("tempdir");
-        let src = sources_root().join("fixtures/codex/tool-run-hermetic");
+        let src = sources_root().join("codex/fixtures/tool-run-hermetic");
         let files: Vec<PathBuf> = [
             transcript_in("codex", &src),
             src.join("hook-payloads.jsonl"),
@@ -882,13 +881,13 @@ mod tests {
             walked.insert(label);
         }
         for sentinel in [
-            "fixtures/codex/tool-run-hermetic",
-            "fixtures/claude-code/tool-run-hermetic",
+            "codex/fixtures/tool-run-hermetic",
+            "claude_code/fixtures/tool-run-hermetic",
             "omp/fixtures/tool-run-hermetic",
             "cursor/fixtures/delegation",
-            "delegation/fixtures/copilot",
-            "fixtures/copilot/tool-run-hermetic",
-            "fixtures/grok/tool-run-hermetic",
+            "copilot/fixtures/subagent-hermetic",
+            "copilot/fixtures/tool-run-hermetic",
+            "grok/fixtures/tool-run-hermetic",
         ] {
             assert!(
                 walked.contains(sentinel),
@@ -924,7 +923,7 @@ mod tests {
     #[test]
     fn a_restrip_only_shrinks_a_records_sentinel_reads() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/grok/tool-run-hermetic");
+        let scenario = corpus_copy(d.path(), "grok/fixtures/tool-run-hermetic");
         let prov = scenario.join("provenance.json");
         let reads = || {
             Provenance::read(&prov)
@@ -966,7 +965,7 @@ mod tests {
     #[test]
     fn the_detector_names_exactly_a_read_its_record_lacks() {
         let d = tempfile::tempdir().expect("tempdir");
-        let capture = "fixtures/grok/tool-run-hermetic";
+        let capture = "grok/fixtures/tool-run-hermetic";
         let scenario = corpus_copy(d.path(), capture);
         assert_eq!(unrecorded_reads(d.path()), Vec::<String>::new());
         let prov = scenario.join("provenance.json");
@@ -1012,7 +1011,7 @@ mod tests {
     #[test]
     fn strip_corpus_records_its_count_in_the_provenance_and_is_idempotent() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
+        let scenario = corpus_copy(d.path(), "codex/fixtures/tool-run-hermetic");
         plant_unread(
             &transcript_in("codex", &scenario),
             "installed_skills",
@@ -1121,9 +1120,9 @@ mod tests {
     #[test]
     fn strip_corpus_reports_each_capture_before_a_later_failure() {
         let d = tempfile::tempdir().expect("tempdir");
-        let good = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
+        let good = corpus_copy(d.path(), "codex/fixtures/tool-run-hermetic");
         // Walked after codex (the walk sorts), and its record does not parse.
-        let broken = d.path().join("fixtures/opencode/zz-broken");
+        let broken = d.path().join("opencode/fixtures/zz-broken");
         std::fs::create_dir_all(&broken).expect("mkdir");
         std::fs::write(broken.join("provenance.json"), "not json").expect("write");
         let mut heard = Vec::new();

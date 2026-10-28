@@ -87,7 +87,7 @@ const USAGE: &str = "usage";
 const OUTCOME_ALLOWED: &str = "allowed-once";
 
 /// dsh's subagent dispatch tools. The first is capture-verified
-/// (`delegation/fixtures/dsh`: the parent streams a `tool_call` naming it,
+/// (`dsh/fixtures/subagent-hermetic`: the parent streams a `tool_call` naming it,
 /// the child arrives as its own `parentSession`-linked session, and the
 /// parent's `tool_result` lands at launch, before the child's first request). The
 /// second is preset-verified: the tool NAME is

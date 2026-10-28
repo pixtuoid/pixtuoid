@@ -1,5 +1,5 @@
 //! Golden-fixture decode + coalescing harness: bytes come from the COMMITTED
-//! fixture dirs (`tests/sources/fixtures/<source>/<scenario>/`), the decoded
+//! fixture dirs (`tests/sources/<module>/fixtures/<scenario>/`), the decoded
 //! `AgentEvent` sequence is snapshotted (insta yaml), and every decoded event
 //! must share ONE `AgentId` (a mismatch = two sprites for one session).
 //!
@@ -22,7 +22,7 @@ use pixtuoid_core::source::{AgentEvent, registry};
 // copies whose `read_dir` SWALLOWED errors where the other panics — an
 // unreadable capture dir made `wire_files()` empty, so the redaction rule
 // passed vacuously for it.
-use super::captures::{fixture_lines, fixtures_root, sorted_dirs, transcript_in, transcripts_in};
+use super::captures::{conformance_scenarios, fixture_lines, transcript_in, transcripts_in};
 
 /// Hook-only-ness comes from the registry row, never a harness-side list — a
 /// second list could mark a JSONL source hook-only and pass the harness without
@@ -81,13 +81,17 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
     // Hook-only scenarios key the substitution on the scenario dir instead.
     // Separators are normalized to '/' so the key — and therefore every AgentId
     // hash baked into the snapshots — is byte-identical on Windows.
-    let logical = transcripts
-        .first()
-        .map_or(dir, PathBuf::as_path)
-        .strip_prefix(fixtures_root())
-        .unwrap()
-        .to_string_lossy()
-        .replace('\\', "/");
+    let fixtures = dir.parent().expect("a scenario sits in its fixtures dir");
+    let logical = format!(
+        "{source}/{}",
+        transcripts
+            .first()
+            .map_or(dir, PathBuf::as_path)
+            .strip_prefix(fixtures)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/")
+    );
 
     let jsonl = transcripts.first().map(|transcript| {
         let drive = Drive::transcript(source, &logical).unwrap_or_else(|| {
@@ -132,57 +136,45 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
 /// the identity, so a raw vs normalized key divergence is invisible locally.
 #[test]
 fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
-    let root = fixtures_root();
     let mut ran = 0;
-    for source_dir in sorted_dirs(&root) {
-        let source = source_dir
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+    for (source, scenario_dir) in conformance_scenarios() {
         if is_hook_only(&source) || is_daemon(&source) {
             continue;
         }
-        for scenario_dir in sorted_dirs(&source_dir) {
-            let transcript = transcript_in(&scenario_dir);
-            let driven = Drive::transcript_at(&source, &transcript)
-                .unwrap_or_else(|| panic!("{source}: no transcript decoder"))
-                .seeded()
-                .lines(fixture_lines(&transcript));
-            driven.assert_clean(&format!("seeded transcript {}", transcript.display()));
+        let transcript = transcript_in(&scenario_dir);
+        let driven = Drive::transcript_at(&source, &transcript)
+            .unwrap_or_else(|| panic!("{source}: no transcript decoder"))
+            .seeded()
+            .lines(fixture_lines(&transcript));
+        driven.assert_clean(&format!("seeded transcript {}", transcript.display()));
 
-            let ids: BTreeSet<_> = driven.events.iter().map(AgentEvent::agent_id).collect();
-            assert!(
-                driven.events.len() >= 2,
-                "{source}: the seed plus this transcript's own events, got {:?}",
-                driven.events
-            );
-            assert_eq!(
-                ids.len(),
-                1,
-                "{source}/{}: the first-sight seed and the decoded lines must be ONE agent \
-                 — the registry row's id deriver disagrees with this source's own decoder \
-                 keying, got {ids:?}",
-                scenario_dir.file_name().unwrap().to_string_lossy(),
-            );
-            assert_eq!(
-                driven.registered(),
-                1,
-                "{source}: a seeded transcript must register exactly one slot"
-            );
-            ran += 1;
-        }
+        let ids: BTreeSet<_> = driven.events.iter().map(AgentEvent::agent_id).collect();
+        assert!(
+            driven.events.len() >= 2,
+            "{source}: the seed plus this transcript's own events, got {:?}",
+            driven.events
+        );
+        assert_eq!(
+            ids.len(),
+            1,
+            "{source}/{}: the first-sight seed and the decoded lines must be ONE agent \
+             — the registry row's id deriver disagrees with this source's own decoder \
+             keying, got {ids:?}",
+            scenario_dir.file_name().unwrap().to_string_lossy(),
+        );
+        assert_eq!(
+            driven.registered(),
+            1,
+            "{source}: a seeded transcript must register exactly one slot"
+        );
+        ran += 1;
     }
-    assert!(
-        ran > 0,
-        "no transcript fixtures found under {}",
-        root.display()
-    );
+    assert!(ran > 0, "no transcript fixtures found");
 }
 
 /// A source whose coalescing its own test pins, on rounds that can't live
 /// here: omp's hook keys fold per platform, while these goldens can't
-/// (`omp/mod.rs`'s module doc).
+/// (`omp.rs`'s module doc).
 const COALESCED_ELSEWHERE: &[(&str, fn())] = &[(
     pixtuoid_core::source::omp::SOURCE_NAME,
     super::omp::each_bridge_round_coalesces_both_transports_onto_one_id,
@@ -193,13 +185,14 @@ const COALESCED_ELSEWHERE: &[(&str, fn())] = &[(
 /// broken decoder while the harness stays green. Registration is not coverage.
 #[test]
 fn every_registered_source_has_a_coalescing_fixture() {
-    let root = fixtures_root();
+    let scenarios = conformance_scenarios();
     for src in registry::registered_source_names() {
-        let dir = root.join(src);
+        let dir = pixtuoid_core::harness::source_home(src).join("fixtures");
         if COALESCED_ELSEWHERE.iter().any(|(s, _)| *s == src) {
             assert!(
-                !dir.is_dir() || sorted_dirs(&dir).is_empty(),
-                "{src}: a fixture here makes its COALESCED_ELSEWHERE row stale"
+                !scenarios.iter().any(|(s, _)| s == src),
+                "{src}: a conformance scenario makes its COALESCED_ELSEWHERE row stale, \
+                 or the scenario belongs in `harness::OUTSIDE_CONFORMANCE`"
             );
             continue;
         }
@@ -209,13 +202,9 @@ fn every_registered_source_has_a_coalescing_fixture() {
             "transcript.jsonl [+ hook-payloads.jsonl]"
         };
         assert!(
-            dir.is_dir(),
-            "registered source {src:?} has no fixture dir {} — add a coalescing fixture ({shape})",
-            dir.display()
-        );
-        assert!(
-            !sorted_dirs(&dir).is_empty(),
-            "registered source {src:?} fixture dir {} has no scenario subdir",
+            scenarios.iter().any(|(s, _)| s == src),
+            "registered source {src:?} has no conformance scenario under {} — add a \
+             coalescing fixture ({shape})",
             dir.display()
         );
     }
@@ -228,13 +217,7 @@ fn every_registered_source_has_a_coalescing_fixture() {
 /// `stem_chain` shape) reads as filename-keyed and is skipped.
 #[test]
 fn a_parent_dir_keyed_transcript_is_nested_under_its_session_id() {
-    let root = fixtures_root();
-    for source_dir in sorted_dirs(&root) {
-        let source = source_dir
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+    for (source, scenario_dir) in conformance_scenarios() {
         if is_hook_only(&source) || is_daemon(&source) {
             continue;
         }
@@ -245,129 +228,125 @@ fn a_parent_dir_keyed_transcript_is_nested_under_its_session_id() {
         if derive(Path::new(&format!("{PROBE}/x.jsonl"))) != PROBE {
             continue;
         }
-        for scenario_dir in sorted_dirs(&source_dir) {
-            let scenario = scenario_dir
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            for t in transcripts_in(&scenario_dir) {
-                let parent = t.parent().unwrap().file_name().unwrap().to_string_lossy();
-                assert_ne!(
-                    parent,
-                    scenario,
-                    "{}: {source} keys the session on the transcript's PARENT DIR, so a flat \
-                     fixture makes the scenario name the session id — nest it under the real id",
-                    t.display()
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn all_source_fixtures_decode_and_coalesce() {
-    let root = fixtures_root();
-    let mut ran = 0;
-    for source_dir in sorted_dirs(&root) {
-        let source = source_dir
+        let scenario = scenario_dir
             .file_name()
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        for scenario_dir in sorted_dirs(&source_dir) {
-            let scenario = scenario_dir
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            let d = decode_fixture(&source, &scenario_dir);
-            let events = d.events();
-
-            if is_daemon(&source) {
-                assert!(
-                    !d.hook_lines.is_empty(),
-                    "{source}/{scenario}: a daemon source must ship a NON-EMPTY \
-                     hook-payloads.jsonl (an empty fixture passes the zero-events check vacuously)"
-                );
-                assert!(
-                    events.is_empty(),
-                    "{source}/{scenario}: a daemon source must decode to ZERO AgentEvents \
-                     (presence rides the sibling channel), got {events:?}"
-                );
-                // The PRESENCE lane, not the agent one: these payloads ride the
-                // sibling channel, so they are decoded here from the committed
-                // lines rather than through `Drive` (whose `AgentEvent` output
-                // for a daemon is empty by construction, asserted just above).
-                let decoded: Vec<_> = d
-                    .hook_lines
-                    .iter()
-                    .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-                    .filter_map(|v| {
-                        pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(
-                            v.as_object()?,
-                        )
-                        .ok()
-                    })
-                    .collect();
-                assert!(
-                    decoded.iter().any(|d| !d.updates.is_empty()),
-                    "{source}/{scenario}: the byte-real fixture decoded to ZERO presence deltas \
-                     — the presence decoder's field names drifted from the captured wire format"
-                );
-                let instances: std::collections::BTreeSet<_> =
-                    decoded.iter().map(|d| d.instance.as_str()).collect();
-                assert_eq!(
-                    instances.len(),
-                    1,
-                    "{source}/{scenario}: one captured gateway must resolve to exactly one \
-                     instance id, got {instances:?}"
-                );
-                assert!(
-                    instances
-                        .iter()
-                        .all(|i| i.chars().all(|c| c.is_ascii_digit())),
-                    "{source}/{scenario}: the captured wire must carry a real gateway port \
-                     (got {instances:?})"
-                );
-                insta::assert_yaml_snapshot!(format!("{source}__{scenario}"), events);
-                ran += 1;
-                continue;
-            }
-
-            // Each present transport must actually contribute — else a
-            // degenerate fixture (e.g. all-no-op JSONL) could pass coalescing
-            // on hooks alone, silently skipping the keying path this guards.
-            if is_hook_only(&source) {
-                assert!(
-                    d.hooks.as_ref().is_some_and(|h| !h.events.is_empty()),
-                    "{source}/{scenario}: a hook-only source's scenario must ship a non-empty hook-payloads.jsonl"
-                );
-            } else {
-                assert!(
-                    d.jsonl.as_ref().is_some_and(|j| !j.events.is_empty()),
-                    "{source}/{scenario}: transcript decoded to ZERO events"
-                );
-            }
-            if let Some(hooks) = &d.hooks {
-                assert!(
-                    !hooks.events.is_empty(),
-                    "{source}/{scenario}: hook-payloads.jsonl decoded to ZERO events"
-                );
-            }
-
-            insta::assert_yaml_snapshot!(format!("{source}__{scenario}"), events);
-
-            let ids: BTreeSet<_> = events.iter().map(|e| e.agent_id()).collect();
-            assert_eq!(
-                ids.len(),
-                1,
-                "{source}/{scenario}: hook+JSONL events must coalesce to ONE agent_id, got {}: {:?}",
-                ids.len(),
-                ids
+        for t in transcripts_in(&scenario_dir) {
+            let parent = t.parent().unwrap().file_name().unwrap().to_string_lossy();
+            assert_ne!(
+                parent,
+                scenario,
+                "{}: {source} keys the session on the transcript's PARENT DIR, so a flat \
+                 fixture makes the scenario name the session id — nest it under the real id",
+                t.display()
             );
-            ran += 1;
         }
     }
-    assert!(ran > 0, "no fixtures found under {}", root.display());
+}
+
+/// The decoded events' golden, beside the source's fixtures.
+fn golden(source: &str, scenario: &str, events: &[AgentEvent]) {
+    let home = pixtuoid_core::harness::module_of(source);
+    insta::with_settings!({ snapshot_path => format!("{home}/snapshots") }, {
+        insta::assert_yaml_snapshot!(format!("{source}__{scenario}"), events);
+    });
+}
+
+#[test]
+fn all_source_fixtures_decode_and_coalesce() {
+    let mut ran = 0;
+    for (source, scenario_dir) in conformance_scenarios() {
+        let scenario = scenario_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let d = decode_fixture(&source, &scenario_dir);
+        let events = d.events();
+
+        if is_daemon(&source) {
+            assert!(
+                !d.hook_lines.is_empty(),
+                "{source}/{scenario}: a daemon source must ship a NON-EMPTY \
+                 hook-payloads.jsonl (an empty fixture passes the zero-events check vacuously)"
+            );
+            assert!(
+                events.is_empty(),
+                "{source}/{scenario}: a daemon source must decode to ZERO AgentEvents \
+                 (presence rides the sibling channel), got {events:?}"
+            );
+            // The PRESENCE lane, not the agent one: these payloads ride the
+            // sibling channel, so they are decoded here from the committed
+            // lines rather than through `Drive` (whose `AgentEvent` output
+            // for a daemon is empty by construction, asserted just above).
+            let decoded: Vec<_> = d
+                .hook_lines
+                .iter()
+                .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                .filter_map(|v| {
+                    pixtuoid_core::source::openclaw::decode_openclaw_hook_payload(v.as_object()?)
+                        .ok()
+                })
+                .collect();
+            assert!(
+                decoded.iter().any(|d| !d.updates.is_empty()),
+                "{source}/{scenario}: the byte-real fixture decoded to ZERO presence deltas \
+                 — the presence decoder's field names drifted from the captured wire format"
+            );
+            let instances: std::collections::BTreeSet<_> =
+                decoded.iter().map(|d| d.instance.as_str()).collect();
+            assert_eq!(
+                instances.len(),
+                1,
+                "{source}/{scenario}: one captured gateway must resolve to exactly one \
+                 instance id, got {instances:?}"
+            );
+            assert!(
+                instances
+                    .iter()
+                    .all(|i| i.chars().all(|c| c.is_ascii_digit())),
+                "{source}/{scenario}: the captured wire must carry a real gateway port \
+                 (got {instances:?})"
+            );
+            golden(&source, &scenario, &events);
+            ran += 1;
+            continue;
+        }
+
+        // Each present transport must actually contribute — else a
+        // degenerate fixture (e.g. all-no-op JSONL) could pass coalescing
+        // on hooks alone, silently skipping the keying path this guards.
+        if is_hook_only(&source) {
+            assert!(
+                d.hooks.as_ref().is_some_and(|h| !h.events.is_empty()),
+                "{source}/{scenario}: a hook-only source's scenario must ship a non-empty hook-payloads.jsonl"
+            );
+        } else {
+            assert!(
+                d.jsonl.as_ref().is_some_and(|j| !j.events.is_empty()),
+                "{source}/{scenario}: transcript decoded to ZERO events"
+            );
+        }
+        if let Some(hooks) = &d.hooks {
+            assert!(
+                !hooks.events.is_empty(),
+                "{source}/{scenario}: hook-payloads.jsonl decoded to ZERO events"
+            );
+        }
+
+        golden(&source, &scenario, &events);
+
+        let ids: BTreeSet<_> = events.iter().map(|e| e.agent_id()).collect();
+        assert_eq!(
+            ids.len(),
+            1,
+            "{source}/{scenario}: hook+JSONL events must coalesce to ONE agent_id, got {}: {:?}",
+            ids.len(),
+            ids
+        );
+        ran += 1;
+    }
+    assert!(ran > 0, "no fixtures found");
 }

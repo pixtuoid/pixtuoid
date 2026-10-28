@@ -14,24 +14,21 @@ tests/
 │   │                    enumeration, no mirror: with two populations a fix lands
 │   │                    on one and misses the other. `conformance.rs` imports its
 │   │                    tree helpers, so dropping `mod captures;` fails to COMPILE.
-│   ├── decode/          cross-CLI decoder unit tests; its fixtures/{hooks,jsonl}/ are
+│   ├── decode.rs        cross-CLI decoder unit tests; decode/fixtures/{hooks,jsonl}/ are
 │   │                    hand-built decoder inputs, NOT captures (`harness::captures` skips it)
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
 │   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`)
-│   ├── claude/ codex/ codewhale/ cursor/ grok/ opencode/ reasonix/  DELEGATING captures — a child is
-│   │                    an independent session (two sprites), so these can't live under the one-AgentId rule
-│   ├── copilot/         the refusal endings (`-p` auto-deny, Esc cancel) and a failed child's own end
-│   ├── omp/             the bridge-extension rounds (#951) — hook keys FOLD
-│   │                    platform-dependently, so expectations derive through the
-│   │                    fold, not the platform-invariant conformance goldens
-│   ├── delegation/      the NAME-KEYED family (a tool literally called `task` — `subagent`
+│   ├── <module>/        ONE home per registered source, named as its `source/` module:
+│   │                    fixtures/<scenario>/ (provenance.json REQUIRED, README.md) and
+│   │                    snapshots/; conformance skips only `harness::OUTSIDE_CONFORMANCE`
+│   ├── <module>.rs      a source's unique behavior: claude_code codex codewhale cursor grok
+│   │                    opencode reasonix (DELEGATING runs, two sprites), copilot (refusal
+│   │                    endings), omp (bridge rounds whose hook keys FOLD per OS, #951)
+│   ├── delegation.rs    the NAME-KEYED family (a tool literally called `task` — `subagent`
 │   │                    for dsh and opencode): copilot, omp, dsh, opencode — one rule, one table
-│   ├── hermetic/        `harness::hermetic`'s aimock lock and per-CLI scripts: data, no module
-│   ├── snapshots/       insta snaps (sources__conformance__<source>__<scenario>)
-│   └── fixtures/<source>/<scenario>/  conformance scenarios ONLY — dir name MUST be a
-│                        registered source; provenance.json REQUIRED (fixtures/README.md)
+│   └── hermetic/        `harness::hermetic`'s aimock lock and per-CLI scripts: data, no module
 ├── reducer/main.rs      state-machine behavior; shared builders + apply-DSL in main.rs
 │                        (lifecycle · activity · tasks · liveness · display ·
 │                        child_ledger · snapshot.rs, the full-scene insta golden #279)
@@ -49,36 +46,34 @@ tests/
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 
-Data scopes to the binary that reads it — a module-owned fixture lives with
-its module. One cross-crate reader: `pixtuoid/tests/wire_to_pixels.rs` roots
-at `sources/` (not `sources/fixtures/`) because it needs the two-sprite
-captures the one-AgentId rule cannot host.
+Data scopes to the source it describes: a CLI's captures share its home,
+whichever test reads them.
 
 ## The one pipeline
 
 Real wire bytes ride `pixtuoid_core::harness::Drive` (dev-only `harness`
-feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,delegation}`,
+feature): `conformance.rs`, `merge.rs`, `sources/{grok,cursor,opencode,copilot,delegation}.rs`,
 `pixtuoid/tests/wire_to_pixels.rs`, and the on-demand
 `corpus_check`. A shell supplies bytes and asserts;
 it does NOT re-roll decode→reduce and never re-derives the first-sight seed's
 `AgentId` (that comes from the source's `DESCRIPTOR`; a driver
 keyed off anything else registers NOTHING).
 `benches/decode_reduce.rs` SYNTHESIZES its lines — a bench-shaped fixture
-under `sources/fixtures/` would be mis-scanned.
+under a `sources/<module>/fixtures/` would be mis-scanned.
 
 ## Adding a new agent CLI — the test steps
 
-1. **Always:** `tests/sources/fixtures/<registered-source>/<scenario>/` — at
+1. **Always:** `tests/sources/<module>/fixtures/<scenario>/` — at
    minimum a RECORDED SessionStart scenario (`just capture-fixture`) with the
    `provenance.json` the recorder writes. `conformance.rs`
    auto-discovers the dir; `supported_sources_manifest` forces the manifest
-   row; `cargo insta review` accepts the snapshot. Dir name = registered
-   source name (`claude-code`, not `claude`); transcript-bearing fixtures are
+   row; `cargo insta review` accepts the snapshot. Dir name = the source's
+   `source/` module (`claude_code`, not `claude`); transcript-bearing fixtures are
    driven WITH the first-sight seed, so a wrong `id_from_path` fails here
    instead of shipping two sprites for one session.
 2. **Always:** the roster literal in
    [CONTRIBUTING's add-a-CLI checklist](../../../docs/CONTRIBUTING.md#adding-a-new-agent-cli)
    (its last step).
 3. **Only for unique behavior** (subagent hooks, custom lifecycle): a
-   `tests/sources/<cli>/` module registered in `sources/main.rs`. Plain CLIs
+   `tests/sources/<module>.rs` registered in `sources/main.rs`. Plain CLIs
    (antigravity) need none.

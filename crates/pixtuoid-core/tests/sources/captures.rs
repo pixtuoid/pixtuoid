@@ -108,9 +108,14 @@ pub(crate) fn sources_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sources")
 }
 
-/// The conformance subtree, whose scenarios the decode harness iterates.
-pub(crate) fn fixtures_root() -> PathBuf {
-    sources_root().join("fixtures")
+/// Every conformance scenario as `(source, dir)`, sorted: the walk's captures
+/// but the module-owned ones.
+pub(crate) fn conformance_scenarios() -> Vec<(String, PathBuf)> {
+    pixtuoid_core::harness::captures(&sources_root())
+        .into_iter()
+        .filter(pixtuoid_core::harness::Capture::in_conformance)
+        .map(|c| (c.source, c.dir))
+        .collect()
 }
 
 pub(crate) fn read_dir_or_panic(dir: &Path) -> Vec<std::fs::DirEntry> {
@@ -219,7 +224,7 @@ fn the_walk_sees_every_provenance_on_disk() {
     assert!(
         orphans.is_empty(),
         "wire bytes no capture claims — a `.jsonl` dropped straight into \
-         `fixtures/<source>/`, or a whole unregistered `fixtures/<name>/` dir, \
+         `<module>/fixtures/`, or a whole unregistered `<name>/fixtures/` dir, \
          declares no provenance and so nothing decodes or scans it:\n  {}",
         orphans.join("\n  ")
     );
@@ -242,6 +247,19 @@ fn the_walk_sees_every_provenance_on_disk() {
 /// to a descriptor lookup that silently returns `None`.
 #[test]
 fn every_captures_layout_names_a_registered_source() {
+    let walked: BTreeSet<(String, String)> = every_capture()
+        .iter()
+        .map(|c| {
+            let scenario = c.dir.file_name().unwrap_or_default().to_string_lossy();
+            (c.source.clone(), scenario.into_owned())
+        })
+        .collect();
+    for (source, scenario) in pixtuoid_core::harness::OUTSIDE_CONFORMANCE {
+        assert!(
+            walked.contains(&((*source).to_string(), (*scenario).to_string())),
+            "OUTSIDE_CONFORMANCE names {source}/{scenario}, which no capture is"
+        );
+    }
     for c in every_capture() {
         assert!(
             registry::descriptor_for(&c.source).is_some(),

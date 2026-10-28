@@ -325,8 +325,35 @@ pub struct SecondTurn {
     pub end: ProcessExit,
 }
 
-/// Module dirs whose name is NOT the registered source id.
-const MODULE_TO_SOURCE: &[(&str, &str)] = &[("claude", "claude-code")];
+/// The captures a module test drives itself, as `(source, scenario)`: two
+/// sessions, or keys that fold per platform, which the conformance golden's
+/// one-AgentId rule cannot hold (each module's header says which). Exact, so a
+/// capture leaves conformance only by a reviewed line here.
+pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
+    ("claude-code", "subagent-hermetic"),
+    ("codewhale", "child-error-hermetic"),
+    ("codex", "subagent-hermetic"),
+    ("copilot", "child-error-hermetic"),
+    ("copilot", "subagent-hermetic"),
+    ("cursor", "delegation"),
+    ("dsh", "subagent-hermetic"),
+    ("grok", "subagent-hermetic"),
+    ("omp", "approve-hermetic"),
+    ("omp", "ask-hermetic"),
+    ("omp", "new-session-hermetic"),
+    ("omp", "permission-hermetic"),
+    ("omp", "resume-hermetic"),
+    ("omp", "subagent-hermetic"),
+    ("omp", "tool-run-hermetic"),
+    ("opencode", "subagent-hermetic"),
+    ("reasonix", "explore-hermetic"),
+    ("reasonix", "subagent-hermetic"),
+];
+
+/// The home of `source`'s captures, scripts and screens under the corpus.
+pub fn source_home(source: &str) -> PathBuf {
+    crate::harness::sources_root().join(crate::harness::module_of(source))
+}
 
 /// A committed capture: the directory holding its bytes and the registered
 /// source the LAYOUT says owns them — never the provenance, which could lie.
@@ -349,6 +376,12 @@ impl Capture {
     /// Its `provenance.json`.
     pub fn provenance_path(&self) -> PathBuf {
         self.dir.join(PROVENANCE)
+    }
+
+    /// Whether the conformance golden snapshots it: all but [`OUTSIDE_CONFORMANCE`].
+    pub fn in_conformance(&self) -> bool {
+        let scenario = self.dir.file_name().unwrap_or_default().to_string_lossy();
+        !OUTSIDE_CONFORMANCE.contains(&(self.source.as_str(), scenario.as_ref()))
     }
 }
 
@@ -419,7 +452,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "uuid",
         pattern: r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-        seen_in: "fixtures/claude-code/tool-run-hermetic",
+        seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[(
             "3a94538f-09fe-4231-8195-8e5277ac55fe",
             "5c268a10-f98f-494a-b750-92a110ad30a9",
@@ -428,7 +461,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "anthropic-tool-use",
         pattern: r"toolu_[0-9A-Za-z_-]+",
-        seen_in: "fixtures/claude-code/tool-run-hermetic",
+        seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R")],
     },
     // Not the wire names that hold it (`call_id`, `function_call_output`): a
@@ -436,7 +469,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "openai-tool-call",
         pattern: r"\bcall_[0-9A-Za-z_-]{16,}",
-        seen_in: "fixtures/kimi/tool-run-hermetic",
+        seen_in: "kimi/fixtures/tool-run-hermetic",
         renamed: &[
             ("call_orvKmWb1fXgIDLfw", "call_2Xs85giJlWCQx58K"),
             (
@@ -448,13 +481,13 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "claude-code-subagent",
         pattern: r"\ba[0-9a-f]{16}\b",
-        seen_in: "claude/fixtures/subagent-hermetic",
+        seen_in: "claude_code/fixtures/subagent-hermetic",
         renamed: &[("agent-a8074a27caeedb715", "agent-a615cb511b5899d39")],
     },
     IdFamily {
         name: "opencode-session",
         pattern: r"ses_[0-9A-Za-z]{26}",
-        seen_in: "fixtures/opencode/tool-run-hermetic",
+        seen_in: "opencode/fixtures/tool-run-hermetic",
         renamed: &[(
             "ses_eabb87c3cffeVHXkPkR0sAM6MD",
             "ses_eab5376a1ffezRy0f5TzOmUH7a",
@@ -463,7 +496,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "codewhale-session",
         pattern: r"\bsess_[0-9a-f]{8}\b",
-        seen_in: "fixtures/codewhale/tool-run-hermetic",
+        seen_in: "codewhale/fixtures/tool-run-hermetic",
         renamed: &[("sess_45ce9c9f", "sess_411948cd")],
     },
     IdFamily {
@@ -484,7 +517,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "reasonix-session-start",
         pattern: r"\d{8}-\d{6}\.\d{9}",
-        seen_in: "fixtures/reasonix/tool-run-hermetic",
+        seen_in: "reasonix/fixtures/tool-run-hermetic",
         renamed: &[(
             "20261019-063638.389045000-deepseek-v4-flash",
             "20261019-162745.781162000-deepseek-v4-flash",
@@ -493,7 +526,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "hermes-session",
         pattern: r"\blocal-[0-9a-f]{64}\b",
-        seen_in: "fixtures/hermes/tool-run-hermetic",
+        seen_in: "hermes/fixtures/tool-run-hermetic",
         renamed: &[(
             "local-b65b0c6b008cbf991f9bba7c89ed68d89e5aefca3f897033db205cca4ca90bcf",
             "local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e",
@@ -515,19 +548,19 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "recorder-sandbox",
         pattern: r"\.tmp[0-9A-Za-z]{6}",
-        seen_in: "delegation/fixtures/omp",
+        seen_in: "omp/fixtures/subagent-hermetic",
         renamed: &[("/T/.tmpbelEXY/homes", "/T/.tmpLZD2ds/homes")],
     },
     IdFamily {
         name: "shim-pid",
         pattern: r#""_pid":(\d+)"#,
-        seen_in: "fixtures/dsh/tool-run-recorded",
+        seen_in: "dsh/fixtures/tool-run-recorded",
         renamed: &[(r#"{"_pid":56875}"#, r#"{"_pid":42895}"#)],
     },
     IdFamily {
         name: "shim-clock",
         pattern: r#""_shim_ts_ms":(\d+)"#,
-        seen_in: "fixtures/dsh/tool-run-recorded",
+        seen_in: "dsh/fixtures/tool-run-recorded",
         renamed: &[(
             r#"{"_shim_ts_ms":1792464600287}"#,
             r#"{"_shim_ts_ms":1792482405228}"#,
@@ -538,7 +571,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "transcript-clock",
         pattern: r#""timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z)""#,
-        seen_in: "fixtures/codex/tool-run-hermetic",
+        seen_in: "codex/fixtures/tool-run-hermetic",
         renamed: &[(
             r#"{"timestamp":"2026-10-27T04:47:02.476Z"}"#,
             r#"{"timestamp":"2026-10-27T06:40:52.169Z"}"#,
@@ -547,14 +580,14 @@ const ID_FAMILIES: &[IdFamily] = &[
     IdFamily {
         name: "transcript-epoch-clock",
         pattern: r#""timestamp":(\d{10})\b"#,
-        seen_in: "fixtures/grok/tool-run-hermetic",
+        seen_in: "grok/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"timestamp":1793078269}"#, r#"{"timestamp":1793083460}"#)],
     },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",
         pattern: r#""gatewayPort":(\d+)"#,
-        seen_in: "fixtures/openclaw/tool-run-hermetic",
+        seen_in: "openclaw/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"gatewayPort":55736}"#, r#"{"gatewayPort":63297}"#)],
     },
 ];
@@ -680,14 +713,10 @@ pub fn slashed_under(base: &Path, path: &Path) -> std::io::Result<String> {
 }
 
 /// THE enumeration of committed captures under a `tests/sources` tree, from the
-/// layout alone: the provenance gates walk it and the recorder re-strips it, so
-/// a fix lands on the whole population. Three shapes: `fixtures/<source>/<scenario>/`;
-/// `<module>/fixtures/` declaring at its root; `<module>/fixtures/<sub>/`, owned by
-/// the module when its `MODULE_TO_SOURCE` id is registered (omp's, claude's), else
-/// by the sub (delegation's per-source rule families). `decode/` holds hand-built
-/// decoder inputs, not captures. A module `fixtures/` that declares nothing at
-/// its root and holds no sub-tree is returned as a capture, so the provenance
-/// gate names it rather than the walk losing it.
+/// layout alone: every `<module>/fixtures/<scenario>/`, owned by the source the
+/// module spells (the inverse of [`crate::harness::module_of`]). The provenance
+/// gates walk it and the recorder re-strips it, so a fix lands on the whole
+/// population. `decode/` holds hand-built decoder inputs, not captures.
 pub fn captures(root: &Path) -> Vec<Capture> {
     fn dirs(dir: &Path) -> Vec<PathBuf> {
         let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -700,53 +729,16 @@ pub fn captures(root: &Path) -> Vec<Capture> {
         out.sort();
         out
     }
-    fn name(p: &Path) -> String {
-        p.file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned()
-    }
-    fn source_id(raw: &str) -> String {
-        MODULE_TO_SOURCE
-            .iter()
-            .find(|(from, _)| *from == raw)
-            .map_or(raw, |(_, to)| *to)
-            .to_string()
-    }
     let mut out = Vec::new();
-    for source_dir in dirs(&root.join("fixtures")) {
-        let source = source_id(&name(&source_dir));
-        out.extend(dirs(&source_dir).into_iter().map(|dir| Capture {
+    for home in dirs(root) {
+        let module = home.file_name().unwrap_or_default().to_string_lossy();
+        if module == "decode" {
+            continue;
+        }
+        let source = crate::harness::source_of(&module);
+        out.extend(dirs(&home.join("fixtures")).into_iter().map(|dir| Capture {
             dir,
             source: source.clone(),
-        }));
-    }
-    for module in dirs(root) {
-        let module_name = name(&module);
-        if module_name == "decode" || module_name == "fixtures" {
-            continue;
-        }
-        let fixtures = module.join("fixtures");
-        if !fixtures.is_dir() {
-            continue;
-        }
-        let subs = dirs(&fixtures);
-        if fixtures.join(PROVENANCE).is_file() || subs.is_empty() {
-            out.push(Capture {
-                dir: fixtures,
-                source: source_id(&module_name),
-            });
-            continue;
-        }
-        let module_source = source_id(&module_name);
-        let module_is_source = registry::descriptor_for(&module_source).is_some();
-        out.extend(subs.into_iter().map(|sub| Capture {
-            source: if module_is_source {
-                module_source.clone()
-            } else {
-                source_id(&name(&sub))
-            },
-            dir: sub,
         }));
     }
     out.sort_by(|a, b| a.dir.cmp(&b.dir));

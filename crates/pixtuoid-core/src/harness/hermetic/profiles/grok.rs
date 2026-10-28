@@ -137,7 +137,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/grok/tool-run-hermetic",
+            fixture: "grok/fixtures/tool-run-hermetic",
             turn: Turn::PROFILE,
         },
         // A tool that fails to dispatch fires PostToolUseFailure, a built-in's
@@ -157,7 +157,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/grok/tool-error-hermetic",
+            fixture: "grok/fixtures/tool-error-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -191,7 +191,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "SessionEnd",
                 "Stop",
             ],
-            fixture: "fixtures/grok/permission-hermetic",
+            fixture: "grok/fixtures/permission-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -199,7 +199,7 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ModelError,
             surface: Surface::Headless,
             expects: &["SessionStart", "UserPromptSubmit", "StopFailure"],
-            fixture: "fixtures/grok/model-error-hermetic",
+            fixture: "grok/fixtures/model-error-hermetic",
             turn: Turn::PROFILE,
         },
         // A question headless cannot answer: the shell fires the
@@ -219,7 +219,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/grok/ask-user-hermetic",
+            fixture: "grok/fixtures/ask-user-hermetic",
             turn: Turn::PROFILE,
         },
         Scenario {
@@ -234,7 +234,7 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
-            fixture: "fixtures/grok/two-turn-hermetic",
+            fixture: "grok/fixtures/two-turn-hermetic",
             turn: Turn {
                 second: Some(Second::Prompt(SECOND_TURN)),
                 ..Turn::PROFILE

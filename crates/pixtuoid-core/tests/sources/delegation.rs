@@ -11,16 +11,15 @@ use pixtuoid_core::source::{AgentEvent, ToolDetail};
 
 fn lines(cli: &str, name: &str) -> Vec<String> {
     super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("delegation/fixtures")
-            .join(cli)
+        &pixtuoid_core::harness::source_home(cli)
+            .join("fixtures/subagent-hermetic")
             .join(name),
     )
 }
 
 fn copilot_transcript() -> PathBuf {
     super::captures::transcript_in(
-        &super::captures::sources_root().join("delegation/fixtures/copilot"),
+        &super::captures::sources_root().join("copilot/fixtures/subagent-hermetic"),
     )
 }
 
@@ -35,7 +34,7 @@ fn copilot_events() -> Vec<AgentEvent> {
 
 /// The parent's: omp writes each child inside a same-named DIR beside it.
 fn omp_transcript() -> PathBuf {
-    let dir = super::captures::sources_root().join("delegation/fixtures/omp");
+    let dir = super::captures::sources_root().join("omp/fixtures/subagent-hermetic");
     let mut parents: Vec<_> = super::captures::transcripts_in(&dir)
         .into_iter()
         .filter(|t| t.parent() == Some(dir.as_path()))
@@ -59,12 +58,8 @@ fn dsh_events() -> Vec<AgentEvent> {
     d.events
 }
 
-/// Its hermetic profile records it under opencode's own module.
 fn opencode_lines() -> Vec<String> {
-    super::captures::fixture_lines(
-        &super::captures::sources_root()
-            .join("opencode/fixtures/subagent-hermetic/hook-payloads.jsonl"),
-    )
+    lines("opencode", "hook-payloads.jsonl")
 }
 
 fn opencode_events() -> Vec<AgentEvent> {

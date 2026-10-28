@@ -970,7 +970,7 @@ mod tests {
         assert_eq!(
             recapture_line(
                 "cursor",
-                std::path::Path::new("/s/fixtures/cursor/x"),
+                std::path::Path::new("/s/cursor/fixtures/x"),
                 &record
             ),
             r"CAPTURE_PROMPT='Don'\''t read it' just capture-fixture cursor x cursor-agent -p {prompt}"

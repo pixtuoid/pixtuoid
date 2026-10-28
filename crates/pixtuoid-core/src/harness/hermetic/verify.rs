@@ -1401,9 +1401,8 @@ mod tests {
     /// A run directory built from a committed recording of `source`'s tool run,
     /// judged as if the tier had just produced it.
     fn run_from(source: &str, scenario_dir: &str, scene: &str) -> tempfile::TempDir {
-        let src = crate::harness::sources_root()
+        let src = crate::harness::source_home(source)
             .join("fixtures")
-            .join(source)
             .join(scenario_dir);
         run_of(&src, source, "tool-run", scene)
     }
@@ -2531,7 +2530,7 @@ mod tests {
 
     #[test]
     fn a_second_turn_passes_only_once_it_ran_and_exited_clean() {
-        let src = crate::harness::sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+        let src = crate::harness::sources_root().join("claude_code/fixtures/ultra-effort-hermetic");
         let judged = |end, second: Option<crate::harness::SecondTurn>| {
             let d = run_of(&src, "claude-code", "ultra-effort", CC_SCENE);
             write_manifest(d.path(), "claude-code", |m| {

@@ -1,6 +1,6 @@
 //! Record a conformance fixture from the bytes a real agent CLI actually sent.
 //! Worked examples, the rules, and why this is Rust and not the shell script it
-//! replaces: `tests/sources/fixtures/README.md`.
+//! replaces: `tests/sources/README.md`.
 //!
 //! ⚠ BILLED — runs one real model turn on that provider's account.
 //!
@@ -1527,21 +1527,14 @@ mod recorder {
         )
     }
 
-    /// Where this scenario's bytes ALREADY live, else the conformance root: a module
-    /// keeps its own rounds out of conformance's reach (omp's hook keys fold on
-    /// Windows), and a re-record sent to the root instead lands as a NEW directory
-    /// `conformance.rs` auto-scans, with no committed bytes for `.new` to protect.
-    /// Keyed on the SOURCE, never a search across modules: scenario names repeat
-    /// (`permission-hermetic` is hermes' and omp's), so a search finds the wrong
-    /// module's single match and a billed capture lands as `.new` files inside it.
-    /// `claude/` owning `claude-code` is the one name mismatch, and it holds no
-    /// scenario subdirectory, so it cannot reach here.
+    /// The scenario's one home, `<module>/fixtures/<scenario>/`. Keyed on the
+    /// SOURCE, never a search across modules: scenario names repeat
+    /// (`permission-hermetic` is hermes' and omp's).
     fn scenario_dest(sources: &Path, source: &str, scenario: &str) -> PathBuf {
-        let owned = sources.join(source).join("fixtures").join(scenario);
-        if owned.join(PROVENANCE).is_file() {
-            return owned;
-        }
-        sources.join("fixtures").join(source).join(scenario)
+        sources
+            .join(pixtuoid_core::harness::module_of(source))
+            .join("fixtures")
+            .join(scenario)
     }
 
     #[cfg(test)]
@@ -2176,7 +2169,7 @@ mod recorder {
                     std::fs::read_to_string(p.dest.join(HOOK_PAYLOADS)).expect("bytes"),
                     std::fs::read_to_string(
                         sources_root()
-                            .join("fixtures/dsh/tool-run-recorded")
+                            .join("dsh/fixtures/tool-run-recorded")
                             .join(HOOK_PAYLOADS)
                     )
                     .expect("committed"),
@@ -2371,7 +2364,7 @@ mod recorder {
 
         #[test]
         fn the_second_turns_session_is_the_one_the_first_turns_wire_names() {
-            let cc = sources_root().join("fixtures/claude-code/ultra-effort-hermetic");
+            let cc = sources_root().join("claude_code/fixtures/ultra-effort-hermetic");
             let payloads: Vec<String> = std::fs::read_to_string(cc.join(HOOK_PAYLOADS))
                 .expect("payloads")
                 .lines()
@@ -2386,7 +2379,7 @@ mod recorder {
                 "claude-code's hooks name the session its transcript keys"
             );
             // copilot fires no hooks; its session rides its transcript's path.
-            let cp = sources_root().join("fixtures/copilot/resume-hermetic");
+            let cp = sources_root().join("copilot/fixtures/resume-hermetic");
             let events =
                 pixtuoid_core::harness::transcript_in("copilot", &cp).expect("the one transcript");
             let dir = events
@@ -2457,35 +2450,20 @@ mod recorder {
         }
 
         #[test]
-        fn a_module_owned_scenario_is_re_recorded_where_it_lives() {
-            let d = tempfile::tempdir().expect("tempdir");
-            let root = d.path();
-            let owned = root.join("omp/fixtures/bridge-run-recorded");
-            std::fs::create_dir_all(&owned).expect("mkdir");
-            std::fs::write(owned.join("provenance.json"), "{}").expect("write");
-
-            assert_eq!(scenario_dest(root, "omp", "bridge-run-recorded"), owned);
+        fn a_scenario_is_recorded_in_its_sources_one_home() {
+            let root = Path::new("/s");
             assert_eq!(
-                scenario_dest(root, "omp", "tool-run-recorded"),
-                root.join("fixtures/omp/tool-run-recorded")
+                scenario_dest(root, "omp", "bridge-run-recorded"),
+                root.join("omp/fixtures/bridge-run-recorded")
             );
             assert_eq!(
-                scenario_dest(root, "kimi", "tool-run"),
-                root.join("fixtures/kimi/tool-run")
+                scenario_dest(root, "claude-code", "tool-run"),
+                root.join("claude_code/fixtures/tool-run")
             );
-            std::fs::create_dir_all(root.join("kimi/fixtures/tool-run")).expect("mkdir");
-            assert_eq!(
-                scenario_dest(root, "kimi", "tool-run"),
-                root.join("fixtures/kimi/tool-run")
-            );
-
-            let mine = root.join("omp/fixtures/permission-hermetic");
-            std::fs::create_dir_all(&mine).expect("mkdir");
-            std::fs::write(mine.join("provenance.json"), "{}").expect("write");
-            assert_eq!(scenario_dest(root, "omp", "permission-hermetic"), mine);
-            assert_eq!(
+            assert_ne!(
+                scenario_dest(root, "omp", "permission-hermetic"),
                 scenario_dest(root, "hermes", "permission-hermetic"),
-                root.join("fixtures/hermes/permission-hermetic")
+                "a scenario name two sources share"
             );
         }
 
