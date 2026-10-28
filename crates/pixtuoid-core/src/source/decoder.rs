@@ -157,9 +157,8 @@ pub(crate) fn extract_top_level_cwd(v: &Value) -> Option<PathBuf> {
     v.get("cwd").and_then(Value::as_str).map(PathBuf::from)
 }
 
-/// The directory a CC subagent transcript sits under: `<parent>/subagents/
-/// agent-*.jsonl`. Single source of truth for both `is_subagent_path` and the
-/// watcher's `detect_parent_id` so they cannot diverge.
+/// The directory a subagent's transcript nests in under its parent's:
+/// `<parent>/subagents/<child>.jsonl`.
 pub(crate) const SUBAGENTS_DIR: &str = "subagents";
 
 /// Whether a transcript path is a CC subagent transcript. Matched as a whole
@@ -247,13 +246,16 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
     ))
 }
 
+/// The key the shim stamps with the CLI whose hook ran it.
+pub const SOURCE_STAMP: &str = "_pixtuoid_source";
+
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
-/// `_pixtuoid_source`. CC's public `source` field carries the SessionStart REASON
+/// [`SOURCE_STAMP`]. CC's public `source` field carries the SessionStart REASON
 /// (startup/resume/clear/compact), so reading it would namespace the agent under
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
 pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
-    obj.get("_pixtuoid_source")
+    obj.get(SOURCE_STAMP)
         .and_then(|s| s.as_str())
         .unwrap_or(crate::source::claude_code::SOURCE_NAME)
 }
@@ -284,9 +286,9 @@ fn decodes_to_nothing(
         tracing::trace!(source, "dropping grok cross-fired hook envelope");
         return true;
     }
-    // cursor's own unstamped duplicates, counted in `source/cursor.rs`'s module doc.
-    if cc && obj.contains_key("cursor_version") && !obj.contains_key("_pixtuoid_source") {
-        tracing::trace!("dropping an unstamped cursor hook invocation");
+    // cursor's duplicates through Claude Code's hooks, `source/cursor.rs`'s module doc.
+    if cc && obj.contains_key("cursor_version") {
+        tracing::trace!("dropping a cursor hook envelope on the claude-code channel");
         return true;
     }
     false
@@ -1904,23 +1906,31 @@ mod tests {
         );
     }
 
-    /// cursor's UNSTAMPED invocations, which used to reach CC's arms and bail.
+    /// cursor's envelopes on the claude-code channel, which used to reach CC's
+    /// arms and bail.
     #[test]
-    fn an_unstamped_cursor_invocation_is_dropped_quietly() {
+    fn a_cursor_envelope_on_the_claude_code_channel_is_dropped_quietly() {
         let unstamped = json!({
             "hook_event_name": "preToolUse",
             "session_id": "s1",
-            "cursor_version": "2026.08.11-e8db854",
+            "cursor_version": "2026.10.22-27dcf5f",
             "workspace_roots": ["/w"],
             "tool_name": "Read",
             "tool_use_id": "t1",
         });
-        assert!(
-            decode_hook_payload(unstamped.clone())
-                .expect("must not error")
-                .is_empty(),
-            "an unstamped cursor envelope is a duplicate of the stamped one"
-        );
+        let mut cc_stamped = unstamped.clone();
+        cc_stamped["_pixtuoid_source"] = json!(crate::source::claude_code::SOURCE_NAME);
+        for (copy, envelope) in [
+            ("unstamped", &unstamped),
+            ("claude-code-stamped", &cc_stamped),
+        ] {
+            assert!(
+                decode_hook_payload(envelope.clone())
+                    .expect("must not error")
+                    .is_empty(),
+                "a {copy} cursor envelope is a duplicate of the cursor-stamped one"
+            );
+        }
 
         // The STAMPED copy is the one that must survive — dropping both would
         // erase cursor from the office entirely.

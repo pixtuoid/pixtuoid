@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "opencode",
-  "version": "opencode v2.1.4",
-  "captured": "2026-10-27",
+  "version": "opencode v2.2.0",
+  "captured": "2026-10-28",
   "command": "just hermetic --record opencode",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 2
+    "blanked": 1
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/opencode/cancel.json",
   "dropped": {
     "os": "macos",

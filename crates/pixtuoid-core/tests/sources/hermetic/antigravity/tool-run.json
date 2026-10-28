@@ -3,8 +3,8 @@
     {
       "match": {"systemMessage": "You are Antigravity", "turnIndex": 0},
       "response": {"toolCalls": [
-        {"name": "view_file", "arguments": {"AbsolutePath": "{workspace}/NOTE.txt", "toolSummary": "Read the note", "toolAction": "Reading NOTE.txt"}},
-        {"name": "view_file", "arguments": {"AbsolutePath": "{workspace}/NOTE.txt", "toolSummary": "Read the note again", "toolAction": "Reading NOTE.txt"}}
+        {"name": "read_file", "arguments": {"Path": "{workspace}/NOTE.txt"}},
+        {"name": "read_file", "arguments": {"Path": "{workspace}/NOTE.txt"}}
       ]},
       "latency": 300
     },

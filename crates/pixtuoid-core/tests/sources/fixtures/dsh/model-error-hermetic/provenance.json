@@ -2,13 +2,13 @@
   "origin": "recorded",
   "cli": "dsh",
   "version": "0.2.1-rc.2",
-  "captured": "2026-10-27",
+  "captured": "2026-10-28",
   "command": "just hermetic --record dsh",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 1
   },
-  "aimock": "1.45.1",
+  "aimock": "1.47.0",
   "script": "tests/sources/hermetic/dsh/model-error.json",
   "dropped": {
     "os": "macos",

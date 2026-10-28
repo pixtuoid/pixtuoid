@@ -216,7 +216,9 @@ jobs:
         with:
           shared-key: hermetic
       # Built before any leg's verdicts are on the runner, outside the workspace.
-      - run: cargo build --release -q -p pixtuoid-core --example issues
+      - run: cargo build --release -q -p pixtuoid-core --example issues --example hermetic
+      # The unprofiled CLIs' latest releases, which no leg installs.
+      - run: target/release/examples/hermetic --freshness >"$RUNNER_TEMP/freshness.json"
       - uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.drift.outputs.verdicts-stem }}*
@@ -231,7 +233,7 @@ jobs:
             --json number,state,body >"$RUNNER_TEMP/issues.json"
           printf '%s' "$DRIFT" >"$RUNNER_TEMP/drift.json"
           target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/issues.json" \
-            "$RUNNER_TEMP/verdicts" "$RUN_URL" >"$RUNNER_TEMP/plan.json"
+            "$RUNNER_TEMP/verdicts" "$RUNNER_TEMP/freshness.json" "$RUN_URL" >"$RUNNER_TEMP/plan.json"
       - uses: actions/upload-artifact@v7
         with:
           name: hermetic-issues-${{ github.run_id }}-${{ github.run_attempt }}

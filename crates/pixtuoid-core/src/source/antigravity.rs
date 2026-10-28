@@ -259,11 +259,11 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
 /// The first present path/command field of an Antigravity tool call's `args`,
 /// quote-stripped — the `: target` half of the Generic display.
 fn ag_tool_target(args: Option<&Value>) -> Option<String> {
-    // Priority order, each an argument hooks.md documents ("Supported tools").
+    // Priority order. `Path` is `read_file`'s, `write_file`'s and `edit_file`'s
+    // in 1.4.8's tool declarations, as its request to the model lists them.
     const KEYS: &[&str] = &[
         "DirectoryPath",
-        "AbsolutePath",
-        "TargetFile",
+        "Path",
         "CommandLine",
         "SearchPath",
         "query",
@@ -334,8 +334,8 @@ mod tests {
             "type": "PLANNER_RESPONSE",
             "step_index": 1,
             "tool_calls": [
-                { "name": "view_file", "args": {} },
-                { "name": "view_file", "args": {} },
+                { "name": "read_file", "args": {} },
+                { "name": "read_file", "args": {} },
             ],
         });
         let ids: Vec<_> = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v)
@@ -389,7 +389,7 @@ mod tests {
             "tool_calls": [
                 { "name": "run_command", "args": { "CommandLine": "\"git status\"" } },
                 { "name": "grep_search", "args": { "SearchPath": "/repo", "query": "TODO" } },
-                { "name": "view_file", "args": {} },
+                { "name": "read_file", "args": {} },
             ],
         });
         let out = decode_ag_line("/x/t.jsonl", SOURCE_NAME, v);
@@ -405,13 +405,13 @@ mod tests {
             .collect();
         assert_eq!(
             displays,
-            ["run_command: git status", "grep_search: /repo", "view_file",]
+            ["run_command: git status", "grep_search: /repo", "read_file",]
         );
     }
 
     #[test]
     fn ag_tool_target_falls_through_a_present_non_string_key() {
-        let args = serde_json::json!({ "DirectoryPath": 42, "AbsolutePath": "/repo/x" });
+        let args = serde_json::json!({ "DirectoryPath": 42, "Path": "/repo/x" });
         assert_eq!(ag_tool_target(Some(&args)).as_deref(), Some("/repo/x"));
     }
 
@@ -457,13 +457,13 @@ mod tests {
     fn a_hook_tool_call_pairs_on_its_step() {
         let call = serde_json::json!({
             "stepIdx": 2,
-            "toolCall": { "name": "view_file", "args": { "AbsolutePath": "/repo/NOTE.txt" } },
+            "toolCall": { "name": "read_file", "args": { "Path": "/repo/NOTE.txt" } },
         });
         let start = decode_ag_hook_payload(test_obj(&hook("PreToolUse", call.clone()))).unwrap();
         assert!(
             start.iter().any(|e| matches!(e,
                 AgentEvent::ToolUseStart { tool_use_id: Some(t), detail: Some(d), .. }
-                    if t == "ag-2" && d.display() == "view_file: /repo/NOTE.txt")),
+                    if t == "ag-2" && d.display() == "read_file: /repo/NOTE.txt")),
             "{start:?}"
         );
         let end = decode_ag_hook_payload(test_obj(&hook("PostToolUse", call))).unwrap();

@@ -3,9 +3,7 @@
 //! `sources/fixtures/omp/` because the hook decoder derives its keys through
 //! the watcher's `normalize_path_key` FOLD — platform-dependent on Windows,
 //! where omp's stems carry case — while the conformance goldens are
-//! deliberately platform-invariant. (Two rounds also break conformance's
-//! shape anyway: a resume's file predates the run, and a task run is two
-//! sprites.)
+//! deliberately platform-invariant.
 
 use std::time::{Duration, SystemTime};
 
@@ -24,27 +22,53 @@ fn folded_key(raw: &str) -> String {
     omp_id_from_path(std::path::Path::new(&normalize_path_key(raw)))
 }
 
-fn lines(scenario: &str) -> Vec<String> {
+/// The hook payloads of the capture at `capture`, under `tests/sources`.
+fn lines_at(capture: &str) -> Vec<String> {
     super::captures::fixture_lines(
         &super::captures::sources_root()
-            .join(format!("omp/fixtures/{scenario}/hook-payloads.jsonl")),
+            .join(capture)
+            .join("hook-payloads.jsonl"),
     )
 }
 
-fn events(scenario: &str) -> Vec<AgentEvent> {
-    let d = Drive::hooks().lines(lines(scenario));
-    d.assert_clean(scenario);
+fn lines(scenario: &str) -> Vec<String> {
+    lines_at(&format!("omp/fixtures/{scenario}"))
+}
+
+fn events_at(capture: &str) -> Vec<AgentEvent> {
+    let d = Drive::hooks().lines(lines_at(capture));
+    d.assert_clean(capture);
     d.events
 }
 
+fn events(scenario: &str) -> Vec<AgentEvent> {
+    events_at(&format!("omp/fixtures/{scenario}"))
+}
+
+/// The session `new-session-hermetic`'s switch names, by `key`: `sessionFile`
+/// the one it starts, `previousSessionFile` the one it leaves.
+fn switched(key: &str) -> AgentId {
+    let raw: Vec<serde_json::Value> = lines("new-session-hermetic")
+        .iter()
+        .map(|l| serde_json::from_str(l).expect("valid json"))
+        .collect();
+    let switch = raw
+        .iter()
+        .find(|v| v["type"] == "session_switch")
+        .expect("the round switches sessions");
+    AgentId::from_parts("omp", &folded_key(switch[key].as_str().expect("named")))
+}
+
 /// The issue's empty-session criterion: a session that shuts down before any
-/// assistant message writes no `session_exit` (at the recorded version, no
-/// transcript at all), so the bridge's `session_shutdown` is the only end
-/// signal, and it must remove the slot on the exit grace, not the stale sweep.
+/// assistant message writes no `session_exit`, so the bridge's
+/// `session_shutdown` is the only end signal, and it must remove the slot on
+/// the exit grace, not the stale sweep. `/new`'s session is that one: the
+/// round quits before prompting it.
 #[test]
 fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
-    let evs = events("empty-session-recorded");
-    let id = evs[0].agent_id();
+    let evs = events("new-session-hermetic");
+    let id = switched("sessionFile");
+    let last = evs.len() as u64;
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -65,7 +89,7 @@ fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
     );
     r.tick(
         &mut scene,
-        t0 + Duration::from_secs(2) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+        t0 + Duration::from_secs(last) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
     );
     assert!(
         !scene.agents.contains_key(&id),
@@ -73,19 +97,24 @@ fn an_empty_session_round_registers_then_leaves_on_the_exit_grace() {
     );
 }
 
-/// `omp -c` in a fresh process fires `session_start` on the SAME
+/// `omp --resume` in a fresh process fires `session_start` on the SAME
 /// stem-keyed id the earlier life used — the ended session walks back in
 /// through ordinary parentless re-registration (registry row doc).
 #[test]
 fn a_resumed_session_re_registers_after_its_earlier_end() {
-    let evs = events("resume-recorded");
+    let evs = events("resume-hermetic");
     let id = evs[0].agent_id();
+    let resumed = evs
+        .iter()
+        .rposition(|e| matches!(e, AgentEvent::SessionStart { .. }))
+        .filter(|&at| at > 0)
+        .expect("the resume fires its own session_start");
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    // First life: the recorded round is start → shutdown; let the slot leave.
-    for (i, ev) in events("resume-recorded").into_iter().enumerate() {
+    // First life: the recorded round up to the resume; let the slot leave.
+    for (i, ev) in evs[..resumed].iter().cloned().enumerate() {
         r.apply(
             &mut scene,
             ev,
@@ -95,13 +124,18 @@ fn a_resumed_session_re_registers_after_its_earlier_end() {
     }
     r.tick(
         &mut scene,
-        t0 + Duration::from_secs(2) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
+        t0 + Duration::from_secs(resumed as u64) + EXIT_GRACE_WINDOW + Duration::from_secs(1),
     );
     assert!(!scene.agents.contains_key(&id), "first life left");
 
-    // Second life: the SAME recorded start must register again.
+    // Second life: the resume's start must register the SAME id again.
+    assert_eq!(
+        evs[resumed].agent_id(),
+        id,
+        "the resume keys on the same file"
+    );
     let t1 = t0 + Duration::from_secs(600);
-    r.apply(&mut scene, evs[0].clone(), t1, Transport::Hook);
+    r.apply(&mut scene, evs[resumed].clone(), t1, Transport::Hook);
     assert!(
         scene.agents.contains_key(&id),
         "a resume's session_start re-registers the ended id"
@@ -114,7 +148,8 @@ fn a_resumed_session_re_registers_after_its_earlier_end() {
 /// `_pid` on the wire.
 #[test]
 fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
-    let evs = events("task-recorded");
+    const TASK: &str = "delegation/fixtures/omp";
+    let evs = events_at(TASK);
     let starts: Vec<&AgentEvent> = evs
         .iter()
         .filter(|e| matches!(e, AgentEvent::SessionStart { .. }))
@@ -137,17 +172,25 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
         panic!("expected a parentless start then a linked child start: {starts:?}");
     };
     assert_eq!(linked, parent, "the child links to the parent by path");
-    let child_file = lines("task-recorded")
+    let raw: Vec<serde_json::Value> = lines_at(TASK)
         .iter()
-        .find_map(|l| {
-            let v: serde_json::Value = serde_json::from_str(l).ok()?;
-            let f = v["sessionFile"].as_str()?;
-            f.contains("SayHi").then(|| f.to_string())
-        })
-        .expect("the child payload names its nested file");
+        .map(|l| serde_json::from_str(l).expect("valid json"))
+        .collect();
+    let files: Vec<&str> = raw
+        .iter()
+        .filter(|v| v["type"] == "session_start")
+        .filter_map(|v| v["sessionFile"].as_str())
+        .collect();
+    let [root_file, child_file] = files[..] else {
+        panic!("two session_start payloads, each naming its file: {files:?}");
+    };
+    assert!(
+        child_file.starts_with(root_file.trim_end_matches(".jsonl")),
+        "the child's file nests under the root's: {child_file} vs {root_file}"
+    );
     assert_eq!(
         *child_key,
-        folded_key(&child_file),
+        folded_key(child_file),
         "the child keys on the nested stem chain, same as the transcript side"
     );
     assert!(
@@ -155,31 +198,34 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
         "the chain nests under the parent's own key: {child_key} vs {parent_key}"
     );
     assert_eq!(*child, AgentId::from_parts("omp", child_key));
+    let stem = std::path::Path::new(child_file)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .expect("a named file");
     assert!(
-        child_key.ends_with("/sayhi") || child_key.ends_with("/SayHi"),
+        child_key
+            .rsplit('/')
+            .next()
+            .is_some_and(|last| last.eq_ignore_ascii_case(stem)),
         "the chain ends on the nested task file's stem: {child_key}"
     );
 
-    let ends: Vec<bool> = evs
+    let ends: std::collections::BTreeSet<(AgentId, bool)> = evs
         .iter()
         .filter_map(|e| match e {
-            AgentEvent::SessionEnd { as_child, .. } => Some(*as_child),
+            AgentEvent::SessionEnd { agent_id, as_child } => Some((*agent_id, *as_child)),
             _ => None,
         })
         .collect();
     assert_eq!(
         ends,
-        vec![false, true],
+        [(*parent, false), (*child, true)].into(),
         "the root ends as a root, the nested child as a child"
     );
 
-    let pids: std::collections::BTreeSet<i64> = lines("task-recorded")
+    let pids: std::collections::BTreeSet<i64> = raw
         .iter()
-        .map(|l| {
-            serde_json::from_str::<serde_json::Value>(l).expect("valid json")["_pid"]
-                .as_i64()
-                .expect("the extension stamps _pid")
-        })
+        .map(|v| v["_pid"].as_i64().expect("the extension stamps _pid"))
         .collect();
     assert_eq!(pids.len(), 1, "extensions run in-process: one pid");
 }
@@ -189,11 +235,9 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
 /// Start twins — separated by human latency — count ONE call through a real
 /// `Reducer`.
 #[test]
-fn each_bridge_round_coalesces_both_transports_onto_one_id() {
+pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
     for scenario in [
-        "approval-recorded",
-        "denial-recorded",
-        "bridge-run-recorded",
+        "approve-hermetic",
         "permission-hermetic",
         "tool-run-hermetic",
     ] {
@@ -255,7 +299,7 @@ fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             hook_events[hook_tail].clone(),
             Transport::Hook,
         );
-        if !matches!(scenario, "bridge-run-recorded" | "tool-run-hermetic") {
+        if scenario != "tool-run-hermetic" {
             // One gated bash call per round; the cross-transport twins and the
             // approval resume must fold into ONE count.
             let count = scene
@@ -274,18 +318,8 @@ fn each_bridge_round_coalesces_both_transports_onto_one_id() {
 #[test]
 fn a_recorded_switch_ends_the_previous_session_and_starts_the_current() {
     let evs = events("new-session-hermetic");
-    let raw: Vec<serde_json::Value> = lines("new-session-hermetic")
-        .iter()
-        .map(|l| serde_json::from_str(l).expect("valid json"))
-        .collect();
-    let prev_id = AgentId::from_parts(
-        "omp",
-        &folded_key(raw[1]["previousSessionFile"].as_str().expect("named")),
-    );
-    let cur_id = AgentId::from_parts(
-        "omp",
-        &folded_key(raw[1]["sessionFile"].as_str().expect("named")),
-    );
+    let prev_id = switched("previousSessionFile");
+    let cur_id = switched("sessionFile");
     let kinds: Vec<String> = evs
         .iter()
         .map(|e| match e {

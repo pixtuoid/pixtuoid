@@ -14,23 +14,23 @@
 //! and CONSISTENT across every CLI event, so concurrent sessions in one project
 //! stay distinct.
 //!
-//! - **A start's `tool_use_id` is DROPPED deliberately — do not "fix"
-//!   that.** `Task` fires `preToolUse` and NEVER a post (capture-verified), so
-//!   passing the id through would satisfy `track_tasks_in_flight`' `Some(tuid)` arm,
-//!   insert a tuid nothing drains, and strand the parent Delegating for the rest
-//!   of the session. A post's id is kept: it equals its start's, and an id-less
-//!   start's item matches any keyed end. Pinned by
-//!   `only_a_post_keeps_its_tool_use_id`.
-//! - **cursor runs its hook command 4-6x per event, and only ONE keeps the
-//!   `PIXTUOID_SOURCE=` env prefix** its install writes. Unstamped copies fall to
-//!   the claude-code default and bail on these camelCase values, so `decoder`'s
-//!   cross-fire guard drops them on `cursor_version`. Lossless — the one stamped
-//!   copy carries the whole arc (`cursor/tool-failure` pins it byte for byte).
-//! - **Subagents render FLAT: the parent-link is genuinely absent.** Each child
-//!   is an INDEPENDENT session, `subagentStart`/`subagentStop` never fire
-//!   (capture-verified: 0), the `Task` dispatch carries only the PARENT's id, and
-//!   child events carry no `parentId`. Getting no `sessionEnd`, children age out
-//!   via the idle stale-sweep.
+//! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
+//!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
+//!   user who connected both CLIs gets each cursor event again through CC's shim,
+//!   stamped `claude-code`, or unstamped by an install without the env prefix.
+//!   `decoder`'s cross-fire guard drops every one on `cursor_version`. Lossless —
+//!   the `cursor`-stamped copy carries the whole arc.
+//! - **A child is its own session, linked late.** pixtuoid registers no
+//!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`
+//!   (`cursor/fixtures/delegation`), so it registers on its first tool event.
+//!   A hook's `transcript_path` is the first of the child's transcripts that
+//!   exists when the hook runs, else null; once cursor-agent records the
+//!   child's parent (`3863.index.js:1` `setTranscriptParentConversationId`),
+//!   the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
+//!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
+//!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
+//!   child (`nested_parent`), and its parent's `Task` post then ends it; the
+//!   committed delegation's child posts carry null, so its child ages out.
 //! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
 //!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
 //!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
@@ -41,7 +41,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, SUBAGENTS_DIR, ellipsize, non_empty};
 use crate::source::registry::HookObject;
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -118,7 +118,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
-                    tool_use_id: None,
+                    tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
                     detail: Some(cursor_tool_detail(tool, obj.get("tool_input"))),
                 },
             ])
@@ -126,13 +126,23 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
         // Without this arm a failed tool's ToolUseStart never ends under `-p`
         // (where `stop` doesn't fire) and the sprite lingers Running.
-        "postToolUse" | "postToolUseFailure" => Ok(vec![
-            identity(),
-            AgentEvent::ToolUseEnd {
+        "postToolUse" | "postToolUseFailure" => Ok(nested_parent(obj)
+            .map(|parent| AgentEvent::SessionStart {
                 agent_id,
-                tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
-            },
-        ]),
+                source: SOURCE_NAME.to_string(),
+                session_id: key.to_string(),
+                cwd: cwd.into(),
+                parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
+            })
+            .into_iter()
+            .chain([
+                identity(),
+                AgentEvent::ToolUseEnd {
+                    agent_id,
+                    tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
+                },
+            ])
+            .collect()),
         // Identity-less: an end alone proves too little to label a session, so
         // an unknown id registers blank (`shows_activity`).
         "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
@@ -164,15 +174,25 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
 
 fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     // Cursor's `Task` tool carries a `subagent_type` (capture-verified) — the
-    // SAME stable semantic signal CC's `make_tool_detail` keys on. The children
-    // run as INDEPENDENT sessions with no parent-link in the stream (module
-    // doc), so this is the only delegation signal pixtuoid can render.
+    // SAME stable semantic signal CC's `make_tool_detail` keys on. A child links
+    // to its parent late if at all (module doc), so the parent's `Task` is what
+    // renders the delegation.
     let has_subagent_type = args.and_then(|a| a.get("subagent_type")).is_some();
     if tool == "Task" || has_subagent_type {
         return ToolDetail::Task;
     }
     const KEYS: &[&str] = &["command", "file_path", "path", "pattern", "url"];
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
+}
+
+/// The session a subagent's `transcript_path` nests under,
+/// `<parent>/subagents/<child>.jsonl` (module doc).
+fn nested_parent(obj: &HookObject) -> Option<&str> {
+    let dir = std::path::Path::new(obj.get("transcript_path")?.as_str()?).parent()?;
+    if dir.file_name()? != SUBAGENTS_DIR {
+        return None;
+    }
+    dir.parent()?.file_name()?.to_str()
 }
 
 #[cfg(test)]
@@ -229,15 +249,48 @@ mod tests {
         );
     }
 
-    /// The wire's `tool_use_id` pairs a start with its post. A start's is
-    /// dropped on purpose: wiring it would let `track_tasks_in_flight` claim
-    /// cursor's `Task` — which never gets a `postToolUse` — and strand the parent
-    /// Delegating. See the module doc before changing this.
+    /// A child's transcript nests under its parent's, which is the one place
+    /// the wire names the parent: the child's tool events carry the path.
     #[test]
-    fn only_a_post_keeps_its_tool_use_id() {
+    fn a_tool_event_from_a_nested_transcript_links_its_session_to_the_parent() {
+        let child = |path: Value| {
+            decode_all(json!({
+                "hook_event_name": "postToolUse", "session_id": "child",
+                "workspace_roots": ["/repo"], "tool_use_id": "t",
+                "transcript_path": path,
+            }))
+        };
+        let linked = child(json!(
+            "/h/.cursor/projects/p/agent-transcripts/parent/subagents/child.jsonl"
+        ));
+        assert!(
+            matches!(
+                linked.first(),
+                Some(AgentEvent::SessionStart { agent_id, parent_id: Some(p), .. })
+                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "child")
+                        && *p == AgentId::from_parts(SOURCE_NAME, "parent")
+            ),
+            "{linked:?}"
+        );
+        for unnested in [
+            json!("/h/.cursor/projects/p/agent-transcripts/child/child.jsonl"),
+            json!(null),
+        ] {
+            assert!(
+                !child(unnested.clone())
+                    .iter()
+                    .any(|e| matches!(e, AgentEvent::SessionStart { .. })),
+                "{unnested}"
+            );
+        }
+    }
+
+    /// The wire's `tool_use_id` pairs a start with its post.
+    #[test]
+    fn a_start_and_its_post_keep_their_tool_use_id() {
         const ID: &str = "tool_b3a89c28-dbe4-487e-8c70-ea05a83083a";
         for (event, kept) in [
-            ("preToolUse", None),
+            ("preToolUse", Some(ID)),
             ("postToolUse", Some(ID)),
             ("postToolUseFailure", Some(ID)),
         ] {

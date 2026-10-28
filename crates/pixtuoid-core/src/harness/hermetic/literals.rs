@@ -804,8 +804,6 @@ mod tests {
     const LOSS_APPROVE: &str = "loss list: the tier only refuses, so no run approves";
     const LOSS_SIBLING: &str =
         "loss list: a sibling on one arm of a name a scenario reaches or its profile owes";
-    const LOSS_CACHE_WRITE: &str = "loss list: aimock's Messages usage carries no cache \
-         writes, as claude-code's `cache_creation_input_tokens` row cites";
     /// Why agy's input steps need none: their line decodes to nothing, so the
     /// strip blanks it whole, and renamed, one only ends a call no step began.
     const AG_INPUT_STEP: &str = "an agy input step: its line decodes to nothing either way";
@@ -908,7 +906,6 @@ mod tests {
         sibling("reasonix.rs", "review", "explore"),
         sibling("reasonix.rs", "security_review", "explore"),
         sibling("antigravity.rs", "ask_permission", "ask_question"),
-        literal("dsh.rs", "cacheWriteTokens", LOSS_CACHE_WRITE),
         literal("antigravity.rs", "CONVERSATION_HISTORY", AG_INPUT_STEP),
         literal("antigravity.rs", "USER_INPUT", AG_INPUT_STEP),
     ];
@@ -927,7 +924,7 @@ mod tests {
 
     #[test]
     fn every_literal_a_decoder_reads_is_recorded_owed_or_exempt() {
-        let absent = NOT_HERMETIC.iter().map(|(s, _)| *s).collect();
+        let absent = NOT_HERMETIC.iter().map(|u| u.source).collect();
         let owing: Vec<Owing<'_>> = PROFILES.iter().map(Owing::of).collect();
         let found = problems(
             &population().expect("the decoders parse"),

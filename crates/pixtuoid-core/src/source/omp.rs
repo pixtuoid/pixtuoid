@@ -1440,7 +1440,7 @@ mod tests {
         assert!(decode(empty).is_empty());
     }
 
-    /// Byte-real shape, anchored by the recorded `omp/ask-recorded` fixture:
+    /// Byte-real shape, anchored by the recorded `omp/fixtures/tool-run-hermetic`:
     /// `configured` is the user's PIN and is `null` whenever the pin is "auto",
     /// while `thinkingLevel` is what the turn actually ran at — only the latter
     /// is an effort observation.

@@ -9,7 +9,7 @@
 //!   snake_case event values** (`hookEventName`, `sessionId`, `toolUseId`, …)
 //!   — the only spelling pre-1.0 sent, hence the claims-all custom decoder
 //!   below; 1.0.x mirrors every key in CC's snake_case too
-//!   (`grok/tool-run-recorded`), which this decoder still does not read. Hooks
+//!   (`grok/tool-run-hermetic`), which this decoder still does not read. Hooks
 //!   dispatch SEQUENTIALLY inline on the session actor, so the shim's
 //!   `WRITE_TIMEOUT` bound matters here.
 //! - **Keying**: `sessionId` is consistent across every event of a session, ==
@@ -292,9 +292,8 @@ fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Resul
 
 /// Grok tool detail: `"name: target"` over grok's snake_case tool vocabulary.
 ///
-/// **`spawn_subagent` maps to `ToolDetail::Task` ONLY for an explicit
-/// `background: false` (blocking) dispatch — NOT on the CC-style semantic
-/// `subagent_type` detection.** grok's spawn defaults to background=TRUE, where
+/// **[`SPAWN_TOOL`] maps to `ToolDetail::Task` ONLY for an explicit
+/// `background: false` (blocking) dispatch.** grok's spawn defaults to background=TRUE, where
 /// `post_tool_use` fires at SPAWN time, not completion; a Task-detail Start
 /// whose End arrives immediately would drain `tasks_in_flight` while the child is
 /// alive, and the reducer's b1 drain-cascade would then `cascade_exit` the LIVE
@@ -303,8 +302,7 @@ fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Resul
 /// children are FIRST-CLASS (child-keyed tool hooks) and their ends are
 /// wire-carried, so b1 has no end to infer.
 fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
-    let is_spawn = tool == "spawn_subagent" || args.and_then(|a| a.get("subagent_type")).is_some();
-    if is_spawn && spawn_is_blocking(args) {
+    if is_blocking_spawn(tool, args) {
         return ToolDetail::Task;
     }
     const KEYS: &[&str] = &[
@@ -438,23 +436,31 @@ pub(crate) fn extract_grok_cwd(_v: &Value) -> Option<PathBuf> {
 /// Task detection follows the SAME blocking-only rule as the hook side — see
 /// [`grok_tool_detail`] for the b1 WHY.
 fn grok_transcript_tool_detail(title: &str, raw_input: Option<&Value>) -> ToolDetail {
-    if raw_input.is_some_and(|a| a.get("subagent_type").is_some()) && spawn_is_blocking(raw_input) {
+    if is_blocking_spawn(title, raw_input) {
         return ToolDetail::Task;
     }
     generic_tool_display(title, None)
 }
 
-/// Whether spawn args explicitly request a BLOCKING run (`false`): the model's
-/// `background` on both transports, since the hook's `toolInput` and a fresh
+/// grok's spawn tool, by name: its model-facing schema has no `subagent_type`
+/// (`crates/common/xai-tool-types/src/task.rs:26-32` at `xai-org/grok-build`
+/// `2bdd1d6a63`).
+const SPAWN_TOOL: &str = "spawn_subagent";
+
+/// Whether `tool` is [`SPAWN_TOOL`] and its args request a BLOCKING run
+/// (`false`): the model's `background` on both transports, since the hook's
+/// `toolInput` and a fresh
 /// `tool_call`'s `rawInput` carry its arguments as sent; the struct's own
 /// `run_in_background` rides only the later `tool_call_update` (1.0.62's run).
 /// Upstream parses the flag LENIENTLY — a model-emitted `"false"` STRING still
 /// runs blocking — which this `as_bool` read misses toward the SAFE side only:
 /// a missed `false` skips the Task detail, never over-mints it into b1.
-fn spawn_is_blocking(args: Option<&Value>) -> bool {
-    args.and_then(|a| a.get("background"))
-        .and_then(Value::as_bool)
-        == Some(false)
+fn is_blocking_spawn(tool: &str, args: Option<&Value>) -> bool {
+    tool == SPAWN_TOOL
+        && args
+            .and_then(|a| a.get("background"))
+            .and_then(Value::as_bool)
+            == Some(false)
 }
 
 /// The first-sight gate's session-ended checker: an ended grok session is
@@ -666,58 +672,44 @@ mod tests {
 
     #[test]
     fn blocking_spawn_is_task_background_and_default_are_not() {
-        let blocking = grok_tool_detail(
-            "spawn_subagent",
-            Some(&json!({"subagent_type": "explore", "background": false})),
-        );
+        let blocking = grok_tool_detail(SPAWN_TOOL, Some(&json!({"background": false})));
         assert!(blocking.is_task(), "blocking spawn must read Delegating");
 
         // background:true AND the absent-field DEFAULT (grok's spawn defaults
         // to background) must both stay generic.
         for input in [
-            json!({"subagent_type": "explore", "background": true}),
-            json!({"subagent_type": "explore", "description": "map the build"}),
+            json!({"background": true}),
+            json!({"description": "map the build"}),
         ] {
-            let detail = grok_tool_detail("spawn_subagent", Some(&input));
+            let detail = grok_tool_detail(SPAWN_TOOL, Some(&input));
             assert!(
                 !detail.is_task(),
                 "background/default spawn must NOT be Task (b1 would evict the live child): {input}"
             );
         }
-        assert!(!grok_tool_detail("spawn_subagent", None).is_task());
-        let renamed = grok_tool_detail(
-            "task",
-            Some(&json!({"subagent_type": "explore", "background": false})),
-        );
-        assert!(
-            renamed.is_task(),
-            "semantic detection still applies when blocking"
-        );
+        assert!(!grok_tool_detail(SPAWN_TOOL, None).is_task());
     }
 
     #[test]
     fn blocking_flag_is_the_models_background_on_both_transports() {
-        let blocking = json!({"subagent_type": "explore", "background": false});
-        assert!(grok_tool_detail("spawn_subagent", Some(&blocking)).is_task());
-        assert!(grok_transcript_tool_detail("Spawn subagent", Some(&blocking)).is_task());
-        let background = json!({"subagent_type": "explore", "background": true});
-        assert!(!grok_tool_detail("spawn_subagent", Some(&background)).is_task());
-        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&background)).is_task());
+        let blocking = json!({"background": false});
+        assert!(grok_tool_detail(SPAWN_TOOL, Some(&blocking)).is_task());
+        assert!(grok_transcript_tool_detail(SPAWN_TOOL, Some(&blocking)).is_task());
+        let background = json!({"background": true});
+        assert!(!grok_tool_detail(SPAWN_TOOL, Some(&background)).is_task());
+        assert!(!grok_transcript_tool_detail(SPAWN_TOOL, Some(&background)).is_task());
         // The struct's spelling rides no line either transport reads.
-        let structs_spelling = json!({"subagent_type": "explore", "run_in_background": false});
-        assert!(!grok_tool_detail("spawn_subagent", Some(&structs_spelling)).is_task());
-        assert!(!grok_transcript_tool_detail("Spawn subagent", Some(&structs_spelling)).is_task());
+        let structs_spelling = json!({"run_in_background": false});
+        assert!(!grok_tool_detail(SPAWN_TOOL, Some(&structs_spelling)).is_task());
+        assert!(!grok_transcript_tool_detail(SPAWN_TOOL, Some(&structs_spelling)).is_task());
         // A model-emitted STRING "false" (upstream parses leniently).
-        let lenient = json!({"subagent_type": "explore", "background": "false"});
-        assert!(!grok_tool_detail("spawn_subagent", Some(&lenient)).is_task());
+        let lenient = json!({"background": "false"});
+        assert!(!grok_tool_detail(SPAWN_TOOL, Some(&lenient)).is_task());
     }
 
     #[test]
     fn background_spawn_displays_description_as_target() {
-        let detail = grok_tool_detail(
-            "spawn_subagent",
-            Some(&json!({"subagent_type": "explore", "description": "map the build"})),
-        );
+        let detail = grok_tool_detail(SPAWN_TOOL, Some(&json!({"description": "map the build"})));
         assert_eq!(detail.display(), "spawn_subagent: map the build");
     }
 
@@ -919,11 +911,11 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_spawn_subagent_call_is_task_detail_without_a_subagent_type_arg() {
-        // `background: false` is what makes a spawn BLOCKING; the args carry no
-        // `subagent_type`, so only the tool NAME can classify this one.
+    fn only_the_spawn_tool_is_a_spawn() {
+        // `background: false` makes a spawn BLOCKING; only the tool NAME makes
+        // it a spawn.
         assert_eq!(
-            grok_tool_detail("spawn_subagent", Some(&json!({"background": false}))),
+            grok_tool_detail(SPAWN_TOOL, Some(&json!({"background": false}))),
             ToolDetail::Task,
             "the tool NAME alone marks a blocking spawn"
         );
@@ -1027,7 +1019,7 @@ mod tests {
         let blocking = decode_line(acp_line(json!({
             "sessionUpdate": "tool_call", "toolCallId": "call-0b8fe95b-2070-4e76-a5c7-036d4ad88f12-0",
             "title": "spawn_subagent",
-            "rawInput": {"subagent_type": "general-purpose", "background": false,
+            "rawInput": {"background": false,
                          "description": "Reply with single word", "prompt": "reply done"}
         })));
         assert!(
@@ -1036,7 +1028,7 @@ mod tests {
         let background = decode_line(acp_line(json!({
             "sessionUpdate": "tool_call", "toolCallId": "call-0b8fe95b-2070-4e76-a5c7-036d4ad88f12-1",
             "title": "spawn_subagent",
-            "rawInput": {"subagent_type": "general-purpose", "background": true,
+            "rawInput": {"background": true,
                          "description": "Reply with single word", "prompt": "reply done"}
         })));
         assert!(

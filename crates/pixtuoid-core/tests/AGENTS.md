@@ -44,8 +44,7 @@ tests/
 │                        `watcher`'s process-wide `fast_watch()` polling can't reach them
 ├── transport/main.rs    #[cfg(unix)] socket / #[cfg(windows)] pipe
 ├── render/main.rs       blit + format (+ sprite fixtures)
-└── socket_path_parity.rs · supported_sources_manifest.rs ·
-    proof_fixture_disjointness.rs · pinned_by_claims.rs
+└── socket_path_parity.rs · supported_sources_manifest.rs · pinned_by_claims.rs
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 
@@ -70,8 +69,7 @@ under `sources/fixtures/` would be mis-scanned.
 
 1. **Always:** `tests/sources/fixtures/<registered-source>/<scenario>/` — at
    minimum a RECORDED SessionStart scenario (`just capture-fixture`) with the
-   `provenance.json` the recorder writes; a hook-only source's first recorded
-   scenario also drops its `NO_WIRE_EVIDENCE_YET` entry. `conformance.rs`
+   `provenance.json` the recorder writes. `conformance.rs`
    auto-discovers the dir; `supported_sources_manifest` forces the manifest
    row; `cargo insta review` accepts the snapshot. Dir name = registered
    source name (`claude-code`, not `claude`); transcript-bearing fixtures are

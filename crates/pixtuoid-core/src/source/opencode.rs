@@ -6,7 +6,7 @@
 //! allowlisted copy of each event into the `pixtuoid-hook` shim:
 //!
 //! ```json
-//! {"type":"session.created","location":{"directory":"/repo"},"data":{"sessionID":"ses_…","location":{"directory":"/repo"},"parentID":"ses_…","model":{"id":"…"}},"_pid":12345}
+//! {"type":"session.execution.started","data":{"sessionID":"ses_…","location":{"directory":"/repo"},"parentID":"ses_…","model":{"id":"…"}},"_pid":12345}
 //! ```
 //!
 //! The upstream facts the decode rests on, at opencode v2:
@@ -14,8 +14,11 @@
 //! - `sessionID` is on every session event and is the session's durable key,
 //!   so slots key on it.
 //! - A subagent is a child SESSION: the `subagent` tool creates it with
-//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:188-189`), so its
-//!   `session.created` links it.
+//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:188-189`), so the
+//!   record its first start carries links it.
+//! - A session registers at its first turn's start, the one signal for it: the
+//!   plugin's subscription may not be live yet when opencode publishes the
+//!   session's creation (#1934).
 //! - An event published in a location carries it on its envelope, beside
 //!   `data` (`packages/schema/src/event.ts:114`, `:138`): the recording's tool
 //!   and permission events do, its `session.execution.*` events do not.
@@ -35,7 +38,6 @@ use crate::state::TurnKey;
 /// The opencode CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "opencode";
 
-const SESSION_CREATED: &str = "session.created";
 const SESSION_DELETED: &str = "session.deleted";
 const EXECUTION_STARTED: &str = "session.execution.started";
 const EXECUTION_SUCCEEDED: &str = "session.execution.succeeded";
@@ -61,7 +63,6 @@ const DISPATCH_TOOL: &str = "subagent";
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_EVENTS: &[&str] = &[
-    SESSION_CREATED,
     SESSION_DELETED,
     EXECUTION_STARTED,
     EXECUTION_SUCCEEDED,
@@ -113,7 +114,6 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
 
     let turn = obj.get(TURN).and_then(Value::as_u64).map(TurnKey::Seq);
     match event {
-        SESSION_CREATED => session_start(data, at, event),
         // A new prompt re-emits SessionStart, the event that walks a swept
         // session back in, mid-walkout too. Its own `data` is only `sessionID`,
         // so the plugin adds the session's record (`ctx.session.get`).
@@ -286,8 +286,8 @@ mod tests {
         decode_all(v).pop().expect("at least one event")
     }
 
-    fn created(data: Value) -> Value {
-        json!({"type": SESSION_CREATED, "data": data, "_pid": 13358})
+    fn started(data: Value) -> Value {
+        json!({"type": EXECUTION_STARTED, "data": data, "_pid": 13358})
     }
 
     /// [`field`]'s assertion holds every read to the list; this holds every
@@ -334,47 +334,11 @@ mod tests {
     }
 
     #[test]
-    fn session_created_keys_on_its_session_id_and_reads_its_location() {
-        let evs = decode_all(created(json!({
-            "sessionID": "ses_140762860ffe0d", "projectID": "prj_1", "slug": "shiny-canyon",
-            "location": {"directory": "/private/tmp/oc-capture/ws"},
-            "model": {"id": "claude-sonnet-4-5", "providerID": "anthropic"}, "version": "2.0.27"
-        })));
-        match &evs[0] {
-            AgentEvent::SessionStart {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                parent_id,
-            } => {
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(
-                    *agent_id,
-                    AgentId::from_parts(SOURCE_NAME, "ses_140762860ffe0d")
-                );
-                assert_eq!(session_id, "ses_140762860ffe0d");
-                assert_eq!(*cwd, std::path::PathBuf::from("/private/tmp/oc-capture/ws"));
-                assert_eq!(*parent_id, None);
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
-        assert!(
-            matches!(&evs[1], AgentEvent::ModelInfo { model: Some(m), effort: None, .. }
-            if m == "claude-sonnet-4-5")
-        );
-        let bare = decode_all(created(
-            json!({"sessionID": "ses_n", "location": {"directory": "/r"}}),
-        ));
-        assert_eq!(bare.len(), 1, "no model, no ModelInfo: {bare:?}");
-    }
-
-    #[test]
     fn a_subagent_session_links_to_its_parent_and_keeps_its_own_id() {
-        let parent = decode(created(
+        let parent = decode(started(
             json!({"sessionID": "ses_p", "location": {"directory": "/r"}}),
         ));
-        let child = decode_all(created(json!({
+        let child = decode_all(started(json!({
             "sessionID": "ses_c", "location": {"directory": "/r"}, "parentID": "ses_p"})));
         match &child[0] {
             AgentEvent::SessionStart {
@@ -586,7 +550,7 @@ mod tests {
     #[test]
     fn a_long_model_slug_is_truncated_at_the_decode_boundary() {
         let long = "m".repeat(MAX_DECODED_FIELD_CHARS + 10);
-        let evs = decode_all(created(
+        let evs = decode_all(started(
             json!({"sessionID": "s", "location": {"directory": "/r"}, "model": {"id": long}}),
         ));
         assert!(

@@ -33,7 +33,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "opencode",
+    source: crate::source::opencode::SOURCE_NAME,
     package: Package::Npm("@opencode/cli"),
     // On the daemon, whose plugin forwards its session's delete
     // (`packages/core/src/session.ts:378-388` at v2.1.0): a delete through
@@ -120,7 +120,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &[
-                "session.created",
                 "session.execution.started",
                 "session.tool.input.started",
                 "session.tool.success",
@@ -134,7 +133,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::Subagent,
             surface: Surface::Headless,
             expects: &[
-                "session.created",
                 "session.execution.started",
                 "session.tool.input.started",
                 "session.tool.success",
@@ -147,11 +145,7 @@ pub(crate) const PROFILE: Profile = Profile {
             name: "model-error",
             shape: Shape::ModelError,
             surface: Surface::Headless,
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.execution.failed",
-            ],
+            expects: &["session.execution.started", "session.execution.failed"],
             fixture: "fixtures/opencode/model-error-hermetic",
             turn: Turn::PROFILE,
         },
@@ -160,7 +154,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::Permission,
             surface: Surface::Headless,
             expects: &[
-                "session.created",
                 "session.execution.started",
                 "session.tool.input.started",
                 "permission.asked",
@@ -175,7 +168,6 @@ pub(crate) const PROFILE: Profile = Profile {
             shape: Shape::ToolRun,
             surface: Surface::Headless,
             expects: &[
-                "session.created",
                 "session.execution.started",
                 "session.tool.input.started",
                 "session.tool.success",
@@ -192,11 +184,7 @@ pub(crate) const PROFILE: Profile = Profile {
             name: "cancel",
             shape: Shape::Cancel,
             surface: Surface::Tui { row: &TUI },
-            expects: &[
-                "session.created",
-                "session.execution.started",
-                "session.execution.interrupted",
-            ],
+            expects: &["session.execution.started", "session.execution.interrupted"],
             fixture: "fixtures/opencode/cancel-hermetic",
             turn: Turn::PROFILE,
         },

@@ -10,7 +10,7 @@
 //! CLAUDE-CODE-SHAPED: snake_case
 //! `hook_event_name`/`session_id`/`cwd`/`tool_name`/`tool_input` with PascalCase
 //! event VALUES — **except the per-call id, which Kimi spells `tool_call_id`**
-//! (capture-verified: `fixtures/kimi/tool-run` never carries `tool_use_id`). That
+//! (capture-verified: `fixtures/kimi/tool-run-hermetic` never carries `tool_use_id`). That
 //! is a registry row, `ToolIdKey::ToolCall`, and NOT a reason to re-implement the
 //! tool arms here: the name is the whole difference, and a copy of those arms
 //! would silently stop tracking whatever they learn next.

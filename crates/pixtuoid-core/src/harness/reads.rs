@@ -3,7 +3,7 @@
 //! from the line unchanged. The recorder strips captures with it, so a field a
 //! decoder stopped reading cannot linger in committed bytes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -14,16 +14,20 @@ use super::{Capture, Drive, LineFailure, captures};
 use crate::source::daemon::DecodedPresence;
 use crate::source::registry;
 
-/// One strip pass: how many subtrees were blanked, and which files were left as
-/// recorded because a line in them is not JSON.
+/// One strip pass: how many subtrees were blanked, which files were left as
+/// recorded because a line in them is not JSON, and which blank leaves the
+/// decoders read.
 #[derive(Debug, Default)]
 pub struct Strip {
     /// Subtrees blanked across every file.
     pub blanked: usize,
     /// Files left whole, each with its first parse error: half-rewriting one
     /// would corrupt the bytes. The committed-tree gate refuses to skip such a
-    /// line at all (`no_identity_key_holds_a_value_outside_a_pinned_exemption`).
+    /// line at all (`no_identity_key_holds_a_value`).
     pub not_json: Vec<(PathBuf, String)>,
+    /// Each stripped file's blank leaves the decoders read once set, as
+    /// `<line>:<pointer>`: the view its record keeps.
+    pub sentinel_reads: BTreeMap<PathBuf, BTreeSet<String>>,
 }
 
 /// Blank every subtree no decoder reads, so an operator's roster, instructions
@@ -50,6 +54,10 @@ pub fn strip_unread(source: &str, files: &[PathBuf]) -> std::io::Result<Strip> {
             }
         };
         let per_line = strip_with(source, &drive, file, &mut lines);
+        strip.sentinel_reads.insert(
+            file.clone(),
+            sentinel_reads_of(source, &drive, &mut lines, is_hook_envelope(file)),
+        );
         let mut out = String::new();
         for (i, here) in per_line.into_iter().enumerate() {
             strip.blanked += here;
@@ -84,6 +92,76 @@ fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> 
         .collect()
 }
 
+/// What a leaf [`blank_of`] could have blanked holds while the decoders are
+/// asked whether they read it, a value of its own type; `None` for any other
+/// leaf. A string's is path-shaped and under
+/// [`SUBAGENTS_DIR`](crate::source::decoder::SUBAGENTS_DIR), so a decoder that
+/// parses a nested transcript's parent out of one reads it.
+fn sentinel_for(leaf: &Value) -> Option<Value> {
+    match leaf {
+        Value::String(s) if s.is_empty() => Some(Value::String(format!(
+            "/pixtuoid-sentinel/{}/pixtuoid-sentinel.jsonl",
+            crate::source::decoder::SUBAGENTS_DIR
+        ))),
+        Value::Number(n) if n.as_f64() == Some(0.0) => Some(Value::from(1)),
+        Value::Bool(false) => Some(Value::Bool(true)),
+        _ => None,
+    }
+}
+
+/// Each blank leaf under `at` in `v`, by pointer, a [`kept_key`] aside.
+fn blank_leaves(source: &str, stamped: bool, v: &Value, at: &str, out: &mut Vec<String>) {
+    match v {
+        Value::Object(m) => m
+            .iter()
+            .filter(|(k, _)| !kept_key(source, stamped, at, k))
+            .for_each(|(k, x)| blank_leaves(source, stamped, x, &child_pointer(at, k), out)),
+        Value::Array(a) => a
+            .iter()
+            .enumerate()
+            .for_each(|(k, x)| blank_leaves(source, stamped, x, &format!("{at}/{k}"), out)),
+        leaf if sentinel_for(leaf).is_some() => out.push(at.to_owned()),
+        _ => {}
+    }
+}
+
+/// Each blank leaf of `lines` that changes what the registry derives once it
+/// holds its [`sentinel_for`], as `<line>:<pointer>`, the line counted from 1:
+/// a field the decoders read that the bytes hold no value for. Whether the
+/// strip blanked it or the wire sent it blank, the bytes cannot say, so a
+/// capture's record keeps the set its strip saw, and one a decoder reads LATER
+/// is a field that decoder never saw a value of
+/// (`no_capture_blanked_a_field_a_decoder_now_reads`).
+fn sentinel_reads_of(
+    source: &str,
+    drive: &Drive,
+    lines: &mut [Value],
+    stamped: bool,
+) -> BTreeSet<String> {
+    let base = events_of(source, drive, lines, !stamped);
+    let mut read = BTreeSet::new();
+    for i in 0..lines.len() {
+        let mut blanks = Vec::new();
+        blank_leaves(source, stamped, &lines[i], "", &mut blanks);
+        for at in blanks {
+            let Some(slot) = lines[i].pointer_mut(&at) else {
+                continue;
+            };
+            let Some(sentinel) = sentinel_for(slot) else {
+                continue;
+            };
+            let blank = std::mem::replace(slot, sentinel);
+            if events_of(source, drive, lines, !stamped) != base {
+                read.insert(format!("{}:{at}", i + 1));
+            }
+            if let Some(slot) = lines[i].pointer_mut(&at) {
+                *slot = blank;
+            }
+        }
+    }
+    read
+}
+
 /// Write `bytes` over `file` through a sibling and a rename, so a reader never
 /// sees a half-written capture. Std rather than `tempfile`, which
 /// `deny-arch.toml`'s allowlist does not carry (architecture invariant #1). The
@@ -113,9 +191,8 @@ fn sibling_of(file: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Strip every RECORDED capture under `root` in place — local and unbilled — and
-/// record the count in its provenance. A composed capture carries no operator
-/// data by construction, and the README demo reads its bytes past the decoders.
+/// Strip every capture under `root` in place — local and unbilled — and
+/// record the count in its provenance.
 /// `blanked` counts every subtree blanked from the original recording: a pass
 /// adds to the record's count, and one that blanks nothing leaves it alone.
 /// `report` hears each capture as soon as its rewrite lands, so a later failure
@@ -128,25 +205,39 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
     for capture in captures(root) {
         let path = capture.provenance_path();
         let mut record = Provenance::read(&path)?;
-        let Provenance::Recorded(r) = &mut record else {
-            continue;
-        };
-        if !r.strips() {
-            continue;
-        }
+        let Provenance::Recorded(r) = &mut record;
         let files = capture.jsonl_files();
         if files.is_empty() {
             continue;
         }
         let strip = strip_unread(&capture.source, &files)?;
-        if strip.blanked > 0 || r.deidentified.is_none() {
-            let earlier = match r.deidentified {
-                Some(Deidentified::Stripped { blanked }) => blanked,
-                _ => 0,
+        let mut changed = false;
+        if strip.blanked > 0 {
+            let Deidentified::Stripped { blanked } = r.deidentified;
+            r.deidentified = Deidentified::Stripped {
+                blanked: blanked + strip.blanked,
             };
-            r.deidentified = Some(Deidentified::Stripped {
-                blanked: earlier + strip.blanked,
-            });
+            changed = true;
+        }
+        // Shrink only: a read the record lacks is one a decoder grew after the
+        // capture was stripped, which only a re-recording may add.
+        for (file, now) in &strip.sentinel_reads {
+            let key = super::slashed_under(&capture.dir, file)?;
+            if let Some(kept) = r.sentinel_reads.get_mut(&key) {
+                let before = kept.len();
+                kept.retain(|read| now.contains(read));
+                changed |= kept.len() != before;
+            }
+        }
+        let named = files
+            .iter()
+            .map(|f| super::slashed_under(&capture.dir, f))
+            .collect::<std::io::Result<BTreeSet<_>>>()?;
+        let before = r.sentinel_reads.len();
+        r.sentinel_reads
+            .retain(|file, reads| !reads.is_empty() && named.contains(file));
+        changed |= r.sentinel_reads.len() != before;
+        if changed {
             record.write_to(&path)?;
         }
         report(&capture, &strip);
@@ -220,7 +311,7 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> 
         .iter()
         .map(|line| {
             let obj = line.as_object()?;
-            let src = obj.get("_pixtuoid_source")?.as_str()?;
+            let src = obj.get(crate::source::decoder::SOURCE_STAMP)?.as_str()?;
             registry::presence_decoder_for(src)?(obj).ok()
         })
         .collect();
@@ -287,6 +378,12 @@ pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str
             .any(|&(s, k, _)| s == source && k == key)
 }
 
+/// Whether `key` under `at` is one the strip keeps whatever the decoders read:
+/// a hook envelope's shim stamp, or a transcript's write stamp.
+fn kept_key(source: &str, stamped: bool, at: &str, key: &str) -> bool {
+    (stamped && is_shim_stamp(at, key)) || is_write_stamp(source, !stamped, at, key)
+}
+
 /// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
 /// string that holds JSON read on under its own pointer. A shim stamp counts:
 /// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
@@ -344,9 +441,7 @@ fn probe(
         Value::Array(a) => (0..a.len()).map(|k| format!("{at}/{k}")).collect(),
         Value::Object(m) => m
             .keys()
-            .filter(|k| {
-                !(stamped && is_shim_stamp(at, k)) && !is_write_stamp(source, !stamped, at, k)
-            })
+            .filter(|k| !kept_key(source, stamped, at, k))
             .map(|k| child_pointer(at, k))
             .collect(),
         _ => Vec::new(),
@@ -462,9 +557,19 @@ mod tests {
         );
     }
 
+    /// `PathBuf` equality drops the trailing slash a rendered event keeps, so a
+    /// probe comparing paths would blank `cwd` here, its fallback naming the
+    /// same directory with a slash. No current CLI's wire has the shape (grok's
+    /// before 1.0.70 did), so the line is written here.
     #[test]
     fn a_cwd_whose_fallback_differs_by_a_trailing_slash_survives_the_strip() {
-        let (_d, hooks) = stripped_copy("grok", "gate-both-ways", "hook-payloads.jsonl");
+        let d = tempfile::tempdir().expect("tempdir");
+        let hooks = d.path().join(crate::harness::HOOK_PAYLOADS);
+        std::fs::write(
+            &hooks,
+            r#"{"hookEventName":"session_start","sessionId":"s1","cwd":"/private/tmp/pixtuoid-capture/proj","workspaceRoot":"/private/tmp/pixtuoid-capture/proj/","_pixtuoid_source":"grok"}"#,
+        )
+        .expect("write");
         let rendered = |p: &Path| -> Vec<String> {
             Drive::hooks()
                 .lines(std::fs::read_to_string(p).expect("read").lines())
@@ -539,7 +644,7 @@ mod tests {
 
     #[test]
     fn the_shim_stamps_survive_the_strip() {
-        let (_d, hooks) = stripped_copy("claude-code", "tool-run-recorded", "hook-payloads.jsonl");
+        let (_d, hooks) = stripped_copy("claude-code", "tool-run-hermetic", "hook-payloads.jsonl");
         let stamps = |p: &Path| -> Vec<serde_json::Value> {
             parsed_lines(p)
                 .expect("read")
@@ -668,6 +773,61 @@ mod tests {
         value
     }
 
+    /// [`sentinel_reads_of`] over `file` as it stands; `None` where no decoder
+    /// reads it or a line is not JSON.
+    ///
+    /// # Errors
+    ///
+    /// If `file` cannot be read.
+    fn sentinel_reads(source: &str, file: &Path) -> std::io::Result<Option<BTreeSet<String>>> {
+        let (Some(drive), Ok((_, mut lines))) = (drive_for(source, file), parsed_lines(file)?)
+        else {
+            return Ok(None);
+        };
+        Ok(Some(sentinel_reads_of(
+            source,
+            &drive,
+            &mut lines,
+            is_hook_envelope(file),
+        )))
+    }
+
+    /// Each read of a capture under `root` that its record lacks, as
+    /// `<file> <line>:<pointer>`.
+    fn unrecorded_reads(root: &Path) -> Vec<String> {
+        let mut stale = Vec::new();
+        for capture in captures(root) {
+            let record = Provenance::read(&capture.provenance_path()).expect("a record parses");
+            let kept = &record.recorded().sentinel_reads;
+            for file in capture.jsonl_files() {
+                let Some(now) = sentinel_reads(&capture.source, &file).expect("read") else {
+                    continue;
+                };
+                let then =
+                    kept.get(&crate::harness::slashed_under(&capture.dir, &file).expect("under"));
+                for read in now.iter().filter(|r| !then.is_some_and(|t| t.contains(*r))) {
+                    let at = crate::harness::slashed_under(root, &file).expect("under");
+                    stale.push(format!("{at} {read}"));
+                }
+            }
+        }
+        stale
+    }
+
+    /// A field a capture's strip blanked, once a decoder reads it, holds no
+    /// value that decoder can see: the golden encodes "absent" where the wire
+    /// carried one, so the scenario is owed a re-recording. Judged against the
+    /// reads its record kept when the strip ran.
+    #[test]
+    fn no_capture_blanked_a_field_a_decoder_now_reads() {
+        let stale = unrecorded_reads(&sources_root());
+        assert!(
+            stale.is_empty(),
+            "a decoder reads what these captures' strip blanked; re-record each scenario:\n  {}",
+            stale.join("\n  ")
+        );
+    }
+
     #[test]
     fn stripping_a_committed_scenario_keeps_its_events_and_a_recordings_bytes() {
         let root = sources_root();
@@ -713,7 +873,7 @@ mod tests {
             assert_eq!(scenario_events(source, &files), before, "{label}");
             let recorded = Provenance::read_if_any(&capture.provenance_path())
                 .expect("a committed record parses")
-                .is_some_and(|record| record.strips());
+                .is_some();
             assert!(
                 !recorded || strip.blanked == 0,
                 "{label}: {} subtrees no decoder reads any more; `just restrip-fixtures`",
@@ -723,12 +883,12 @@ mod tests {
         }
         for sentinel in [
             "fixtures/codex/tool-run-hermetic",
-            "fixtures/claude-code/tool-run-recorded",
-            "omp/fixtures/bridge-run-recorded",
-            "cursor/fixtures",
+            "fixtures/claude-code/tool-run-hermetic",
+            "omp/fixtures/tool-run-hermetic",
+            "cursor/fixtures/delegation",
             "delegation/fixtures/copilot",
-            "fixtures/copilot/tool-run-recorded",
-            "fixtures/grok/tool-run-recorded",
+            "fixtures/copilot/tool-run-hermetic",
+            "fixtures/grok/tool-run-hermetic",
         ] {
             assert!(
                 walked.contains(sentinel),
@@ -739,13 +899,11 @@ mod tests {
 
     /// `capture`, a dir under the corpus, copied to the same path under `root`.
     fn corpus_copy(root: &Path, capture: &str) -> PathBuf {
-        let to = root.join(capture);
-        std::fs::create_dir_all(&to).expect("mkdir");
-        for from in std::fs::read_dir(sources_root().join(capture))
-            .expect("read")
-            .flatten()
-        {
-            std::fs::copy(from.path(), to.join(from.file_name())).expect("copy");
+        let (from, to) = (sources_root().join(capture), root.join(capture));
+        for file in crate::harness::files_under(&from) {
+            let at = to.join(file.strip_prefix(&from).expect("under"));
+            std::fs::create_dir_all(at.parent().expect("a parent")).expect("mkdir");
+            std::fs::copy(&file, at).expect("copy");
         }
         to
     }
@@ -761,38 +919,94 @@ mod tests {
         out
     }
 
+    /// A restrip keeps a read the decoders stopped making out of the record, and
+    /// never writes one in: a read the record lacks is the detector's to name.
     #[test]
-    fn strip_corpus_leaves_a_composed_capture_alone() {
+    fn a_restrip_only_shrinks_a_records_sentinel_reads() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/claude-code/proof-session");
-        let before = bytes_of(&scenario);
+        let scenario = corpus_copy(d.path(), "fixtures/grok/tool-run-hermetic");
+        let prov = scenario.join("provenance.json");
+        let reads = || {
+            Provenance::read(&prov)
+                .expect("parses")
+                .recorded()
+                .sentinel_reads
+                .clone()
+        };
+        let real = reads();
+        assert!(!real.is_empty(), "grok's hooks carry a read blank `cwd`");
         strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
         assert_eq!(
-            bytes_of(&scenario),
-            before,
-            "composed bytes carry no operator data"
+            reads(),
+            real,
+            "a restrip keeps every read the decoders still make"
         );
+        let mut record = Provenance::read(&prov).expect("parses");
+        let Provenance::Recorded(r) = &mut record;
+        for kept in r.sentinel_reads.values_mut() {
+            kept.insert("1:/no-longer-read".into());
+        }
+        r.sentinel_reads
+            .insert("gone.jsonl".into(), ["1:/x".into()].into());
+        record.write_to(&prov).expect("write");
+        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
+        assert_eq!(reads(), real, "the bogus reads go, the real ones stay");
+
+        let mut record = Provenance::read(&prov).expect("parses");
+        let Provenance::Recorded(r) = &mut record;
+        r.sentinel_reads.clear();
+        record.write_to(&prov).expect("write");
+        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
+        assert!(reads().is_empty(), "a restrip never adds a read");
     }
 
+    /// The detector over a copy of a committed capture whose record lost one
+    /// of its reads: it names exactly that one, so an empty answer over the
+    /// corpus is a verdict, not a probe that found nothing.
     #[test]
-    fn strip_corpus_honors_an_exemption_the_provenance_declares() {
+    fn the_detector_names_exactly_a_read_its_record_lacks() {
         let d = tempfile::tempdir().expect("tempdir");
-        let scenario = corpus_copy(d.path(), "fixtures/codex/tool-run-hermetic");
+        let capture = "fixtures/grok/tool-run-hermetic";
+        let scenario = corpus_copy(d.path(), capture);
+        assert_eq!(unrecorded_reads(d.path()), Vec::<String>::new());
         let prov = scenario.join("provenance.json");
-        let mut record: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&prov).expect("read")).expect("json");
-        record["deidentified"] = serde_json::json!({
-            "method": "none",
-            "why": "pins a wire premise the decoder drops on purpose"
-        });
-        std::fs::write(&prov, serde_json::to_string_pretty(&record).expect("json")).expect("write");
-        let before = bytes_of(&scenario);
-        strip_corpus(d.path(), |_, _| {}).expect("strip corpus");
-        assert_eq!(
-            bytes_of(&scenario),
-            before,
-            "an exempt capture keeps its bytes and its record"
-        );
+        let mut record = Provenance::read(&prov).expect("parses");
+        let Provenance::Recorded(r) = &mut record;
+        let (file, kept) = r.sentinel_reads.iter_mut().next().expect("a recorded read");
+        let dropped = kept.pop_first().expect("a read");
+        let named = format!("{capture}/{file} {dropped}");
+        record.write_to(&prov).expect("write");
+        assert_eq!(unrecorded_reads(d.path()), [named]);
+    }
+
+    /// Every blank [`blank_of`] writes is probed with a value of its own type,
+    /// and only a blank one is: a container the strip collapsed has no keys
+    /// left to stand in for.
+    #[test]
+    fn every_blank_leaf_is_probed_with_a_value_of_its_type() {
+        use serde_json::json;
+        for leaf in [json!(""), json!(0), json!(0.0), json!(false)] {
+            let sentinel = sentinel_for(&leaf).expect("probed");
+            assert_eq!(
+                std::mem::discriminant(&sentinel),
+                std::mem::discriminant(&leaf),
+                "{leaf}"
+            );
+            assert!(
+                blank_of(&sentinel).is_some(),
+                "{leaf}: {sentinel} is not blank"
+            );
+        }
+        for leaf in [
+            json!("x"),
+            json!(3),
+            json!(true),
+            json!(null),
+            json!({}),
+            json!([]),
+        ] {
+            assert_eq!(sentinel_for(&leaf), None, "{leaf}");
+        }
     }
 
     #[test]

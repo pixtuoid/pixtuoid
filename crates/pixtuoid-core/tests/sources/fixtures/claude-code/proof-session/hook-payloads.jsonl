@@ -1,3 +1,0 @@
-{"hook_event_name":"SessionStart","session_id":"01000000-0000-7000-8000-0000000000f4","transcript_path":"{{TRANSCRIPT_PATH}}","cwd":"/home/user/pixtuoid","source":"startup"}
-{"hook_event_name":"PreToolUse","session_id":"01000000-0000-7000-8000-0000000000f4","transcript_path":"{{TRANSCRIPT_PATH}}","cwd":"/home/user/pixtuoid","tool_name":"Read","tool_input":{"file_path":"site/src/components/ElevatorShaft.astro"},"tool_use_id":"toolu_proof000000000000001"}
-{"hook_event_name":"PostToolUse","session_id":"01000000-0000-7000-8000-0000000000f4","transcript_path":"{{TRANSCRIPT_PATH}}","tool_name":"Read","tool_use_id":"toolu_proof000000000000001"}

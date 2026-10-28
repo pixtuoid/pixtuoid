@@ -1,5 +1,5 @@
 //! agy is closed source: its cites are its installer,
-//! antigravity.google/cli/install.sh, and the agy 1.4.2 binary.
+//! antigravity.google/cli/install.sh, and the agy 1.4.8 binary.
 
 use crate::harness::plan::Placeholder;
 use std::borrow::Cow;
@@ -17,7 +17,7 @@ fn shim_stamped_event(v: &Value) -> Option<Cow<'_, str>> {
 }
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "antigravity",
+    source: crate::source::antigravity::SOURCE_NAME,
     package: Package::UpdaterManifest {
         manifest: "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{platform}.json",
         // The installer's `${os}_${arch}`, glibc's on Linux (`install.sh:69-99`).
@@ -68,7 +68,7 @@ pub(crate) const PROFILE: Profile = Profile {
             turn: Turn::PROFILE,
         },
         // `-p` answers the question itself: "Auto-answering ask_question at
-        // step %d with skipped=true" (`ask_question_manager.go:30`).
+        // step %d with skipped=true" (the 1.4.8 binary's `ask_question_manager.go`).
         Scenario {
             name: "ask-question",
             shape: Shape::Permission,

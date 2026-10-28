@@ -4,6 +4,7 @@
 //! callers: its workspace, raw record, flag spellings and the wait on a
 //! server either starts.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -602,12 +603,18 @@ fn with_ids_named(
 /// so one numbering is the one bijection two recordings must share. Files are
 /// walked in the order of their paths, then their texts, with ids masked, as
 /// a raw sort would order two id-named session dirs at random; none when two
-/// files tie there, as only their ids tell them apart.
+/// files tie there, as only their ids tell them apart. Then `reads`, a
+/// record's reads keyed by each file's path from `dir`
+/// ([`Recorded::sentinel_reads`](super::provenance::Recorded::sentinel_reads)),
+/// rekeyed by that file's numbered path; a key naming no file stays as it is.
 ///
 /// # Errors
 ///
 /// If a file cannot be read.
-pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, String)>>> {
+pub fn canonical_capture(
+    dir: &Path,
+    reads: &BTreeMap<String, BTreeSet<String>>,
+) -> std::io::Result<Option<Canonical>> {
     let masked = |text: &str| {
         with_ids_named(text, &ID_PATTERNS, |row, _| {
             format!("⟨{}⟩", ID_FAMILIES[row].name)
@@ -632,13 +639,24 @@ pub fn canonical_capture(dir: &Path) -> std::io::Result<Option<Vec<(String, Stri
             format!("⟨{}#{n}⟩", ID_FAMILIES[row].name)
         })
     };
-    Ok(Some(
-        files
-            .into_iter()
-            .map(|(_, (path, text))| (numbered(&path), numbered(&text)))
-            .collect(),
-    ))
+    let mut names = BTreeMap::new();
+    let files = files
+        .into_iter()
+        .map(|(_, (path, text))| {
+            let named = numbered(&path);
+            names.insert(path, named.clone());
+            (named, numbered(&text))
+        })
+        .collect();
+    let reads = reads
+        .iter()
+        .map(|(file, read)| (names.get(file).unwrap_or(file).clone(), read.clone()))
+        .collect();
+    Ok(Some((files, reads)))
 }
+
+/// [`canonical_capture`]'s answer: each file's path and text, then the reads.
+pub type Canonical = (Vec<(String, String)>, BTreeMap<String, BTreeSet<String>>);
 
 /// `path` from `base`, its components `/`-joined as every host's checkout
 /// spells them.
@@ -774,7 +792,9 @@ mod tests {
             std::fs::create_dir_all(to.parent().expect("parent")).expect("mkdir");
             std::fs::write(to, text).expect("write");
         }
-        canonical_capture(d.path()).expect("readable")
+        canonical_capture(d.path(), &BTreeMap::new())
+            .expect("readable")
+            .map(|(files, _)| files)
     }
 
     fn same_up_to_ids(old: &[(&str, &str)], new: &[(&str, &str)]) -> bool {
@@ -792,6 +812,25 @@ mod tests {
     const U1: &str = "3e335f66-3b4f-473b-abf2-5b7cb52d7a0d";
     const U2: &str = "4f446a77-4c5a-584c-bca3-6c8dc63e8b1e";
     const U3: &str = "5a557b88-5d6b-695d-cdb4-7d9ed74f9c2f";
+
+    /// A record's read keyed by an id-named file: two runs name it apart, and
+    /// up to ids it is one read.
+    #[test]
+    fn a_read_renames_with_the_file_it_names() {
+        let canonical_with_read = |id: &str| {
+            let d = tempfile::tempdir().expect("tempdir");
+            let file = format!("s/{id}.jsonl");
+            std::fs::create_dir_all(d.path().join("s")).expect("mkdir");
+            std::fs::write(d.path().join(&file), format!(r#"{{"id":"{id}"}}"#)).expect("write");
+            let reads = BTreeMap::from([(file, BTreeSet::from(["1:/x".to_owned()]))]);
+            canonical_capture(d.path(), &reads)
+                .expect("readable")
+                .expect("canonical")
+        };
+        let (files, reads) = canonical_with_read(U1);
+        assert_eq!((files, reads.clone()), canonical_with_read(U2));
+        assert!(!reads.keys().any(|k| k.contains(U1)), "{reads:?}");
+    }
 
     #[test]
     fn a_file_name_renames_with_the_ids_inside_it() {

@@ -196,7 +196,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "claude_code",
             source: "claude-code",
-            fixture: "fixtures/claude-code/permission-recorded",
+            fixture: "fixtures/claude-code/tool-run-hermetic",
             wire: Wire::Transcript { seeded: true },
             must_reach: &[Reach::Running],
         },
@@ -217,14 +217,14 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "copilot",
             source: "copilot",
-            fixture: "fixtures/copilot/tool-run/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl",
+            fixture: "fixtures/copilot/tool-run-hermetic",
             wire: Wire::Transcript { seeded: false },
             must_reach: &[Reach::Running],
         },
         WireCase {
             name: "omp",
             source: "omp",
-            fixture: "fixtures/omp/tool-run-recorded/2026-09-19T18-16-13-370Z_01a0bae2-133a-769f-851a-927926fbca45.jsonl",
+            fixture: "omp/fixtures/tool-run-hermetic",
             wire: Wire::Transcript { seeded: false },
             must_reach: &[Reach::Running],
         },
@@ -233,7 +233,7 @@ fn agent_cases() -> Vec<WireCase> {
             source: "omp",
             // The bridge's approval round: the UserActionRequest the transcript can
             // never carry must survive all the way to pixels (#951).
-            fixture: "omp/fixtures/approval-recorded/hook-payloads.jsonl",
+            fixture: "omp/fixtures/approve-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::RequiresAction, Reach::Running],
         },
@@ -261,7 +261,7 @@ fn agent_cases() -> Vec<WireCase> {
         WireCase {
             name: "opencode",
             source: "opencode",
-            fixture: "fixtures/opencode/session-recorded/hook-payloads.jsonl",
+            fixture: "fixtures/opencode/permission-hermetic/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::RequiresAction],
         },
@@ -271,7 +271,7 @@ fn agent_cases() -> Vec<WireCase> {
             // The DELEGATING capture, not the tool-run one: `Delegating` needs a
             // Task dispatch, and a real cursor turn only delegates when asked.
             // Two sessions, so it cannot live under `fixtures/`.
-            fixture: "cursor/fixtures/hook-payloads.jsonl",
+            fixture: "cursor/fixtures/delegation/hook-payloads.jsonl",
             wire: Wire::Hooks,
             must_reach: &[Reach::Running, Reach::Delegating],
         },
@@ -386,16 +386,34 @@ fn lobster_px(r: &mut TuiRenderer<TestBackend>, scene: &SceneState, times: &[Sys
 }
 
 /// Drives one openclaw capture through the presence seam and hands back what the
-/// office would paint. `stop_at` ends the stream before a type, as the lobster
-/// test does to stay inside the live window.
-fn openclaw_state(scenario: &str, stop_at: &[&str]) -> pixtuoid_core::state::DaemonState {
+/// office would paint. `attach_after` starts the stream just past the first
+/// envelope of a type, where a listener that attached late picks it up;
+/// `stop_at` ends it before a type, as the lobster test does to stay inside the
+/// live window.
+fn openclaw_state(
+    scenario: &str,
+    attach_after: Option<&str>,
+    stop_at: &[&str],
+) -> pixtuoid_core::state::DaemonState {
     let hooks =
         core_fixtures_root().join(format!("fixtures/openclaw/{scenario}/hook-payloads.jsonl"));
     let mut scene = SceneState::uniform(16);
     let now = t0();
-    for line in &read_nonblank_lines(&hooks) {
-        let v: serde_json::Value = serde_json::from_str(line).expect("openclaw hook json");
-        let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let envelopes: Vec<serde_json::Value> = read_nonblank_lines(&hooks)
+        .iter()
+        .map(|line| serde_json::from_str(line).expect("openclaw hook json"))
+        .collect();
+    fn type_of(v: &serde_json::Value) -> &str {
+        v.get("type").and_then(|t| t.as_str()).unwrap_or("")
+    }
+    let from = attach_after.map_or(0, |after| {
+        1 + envelopes
+            .iter()
+            .position(|v| type_of(v) == after)
+            .unwrap_or_else(|| panic!("{scenario} has no {after}"))
+    });
+    for v in &envelopes[from..] {
+        let ty = type_of(v);
         if stop_at.contains(&ty) {
             break;
         }
@@ -419,31 +437,35 @@ fn openclaw_state(scenario: &str, stop_at: &[&str]) -> pixtuoid_core::state::Dae
 }
 
 /// pixtuoid usually starts AFTER the gateway, so `gateway_start` is the one
-/// envelope a real attach never sees; the capture here opens on `session_start`.
+/// envelope a real attach never sees: its hook exits into a socket nobody holds
+/// yet, and the stream pixtuoid gets is the rest.
 #[test]
 fn a_gateway_we_never_saw_start_still_materializes_from_its_session_wire() {
     use pixtuoid_core::state::DaemonState;
     assert_eq!(
-        openclaw_state("mid-attach-recorded", &["agent_end"]),
+        openclaw_state("tool-run-hermetic", Some("gateway_start"), &["agent_end"]),
         DaemonState::Running,
         "a mid-attach stream carries no gateway_start, so the session envelopes must \
          materialize the instance themselves and put the turn in flight on it"
     );
     assert_eq!(
-        openclaw_state("mid-attach-recorded", &[]),
+        openclaw_state(
+            "tool-run-hermetic",
+            Some("gateway_start"),
+            &["gateway_stop"]
+        ),
         DaemonState::Idle,
         "and agent_end must retire that turn"
     );
 }
 
-/// A provider that refuses every connection, from real bytes: each retried
-/// attempt's `agent_end` carries no `error`, and only the plugin's `errored`
-/// tells the failure apart.
+/// A model that errs, from real bytes: `agent_end` carries no `error`, and only
+/// the plugin's `errored` tells the failure apart.
 #[test]
 fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
     use pixtuoid_core::state::DaemonState;
     assert_eq!(
-        openclaw_state("provider-failed-run-recorded", &["gateway_stop"]),
+        openclaw_state("model-error-hermetic", None, &["gateway_stop"]),
         DaemonState::Degraded
     );
 }

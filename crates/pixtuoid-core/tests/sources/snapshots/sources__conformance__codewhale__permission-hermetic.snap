@@ -3,50 +3,50 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 6234576998802458522
-    tool_use_id: 8fd4b2d8-047d-44f8-8f51-296cefb4273c
+    agent_id: 9732699767085216413
+    tool_use_id: b7347bb9-50bf-40fb-b0d8-c978f3d38e8e
     detail:
       Generic:
         display: "bash: rm NOTE.txt"
 - Identity:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
 - Identity:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 6234576998802458522
-    tool_use_id: 8fd4b2d8-047d-44f8-8f51-296cefb4273c
+    agent_id: 9732699767085216413
+    tool_use_id: b7347bb9-50bf-40fb-b0d8-c978f3d38e8e
 - Identity:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     source: codewhale
-    session_id: sess_f09b12b9
+    session_id: sess_a5e965f5
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
 - SessionEnd:
-    agent_id: 6234576998802458522
+    agent_id: 9732699767085216413
     as_child: false

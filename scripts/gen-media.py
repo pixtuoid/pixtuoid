@@ -390,7 +390,7 @@ def run_wasm_still(job, out_dirs, work, intermediates):
 
 def run_proof(job, out_dirs, work, intermediates):
     # ONE snapshot --proof pass renders BOTH compositions (wide + tall) from the
-    # same fixture-driven reducer replay; the poster is a designated frame COPY,
+    # same session-driven reducer replay; the poster is a designated frame COPY,
     # so it stays pixel-gated while the encodes stay presence-only.
     fps = job["fps"]
     # In --check only the poster frame matters: rendering a deterministic PREFIX
@@ -401,7 +401,7 @@ def run_proof(job, out_dirs, work, intermediates):
         [
             str(SNAP),
             "--proof",
-            str(ROOT / job["fixture"]),
+            str(ROOT / job["session"]),
             "--frames-dir",
             str(frames),
             "--proof-fps",

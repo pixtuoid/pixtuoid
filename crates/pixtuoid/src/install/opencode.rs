@@ -404,7 +404,6 @@ mod tests {
             plugin_events(),
             [
                 "permission.asked",
-                "session.created",
                 "session.deleted",
                 "session.execution.failed",
                 "session.execution.interrupted",

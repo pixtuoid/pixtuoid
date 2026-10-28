@@ -1081,7 +1081,7 @@ mod tests {
                 // #935's instance: shipped by CC and read by nothing here.
                 json!({"type": "history-suppression", "cause": "x"}),
                 // #959's instances — message-less sidecars seen since CC 2.1.211
-                // (atis-latch's line is in tool-run-recorded; cost-state is
+                // (atis-latch is in the hermetic recordings' `dropped`; cost-state is
                 // corpus-sampled and abridged).
                 json!({"type": "atis-latch", "atis": "", "sessionId": "s"}),
                 json!({"type": "cost-state", "totalCostUSD": 0.5, "sessionId": "s"}),

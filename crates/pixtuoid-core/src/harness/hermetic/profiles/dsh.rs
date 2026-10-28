@@ -24,7 +24,7 @@ fn event(v: &Value) -> Option<Cow<'_, str>> {
 }
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "dsh",
+    source: crate::source::dsh::SOURCE_NAME,
     package: Package::Npm("@deepseek-ai/dsh"),
     invocation: &["dsh", "--profile", "headless", Placeholder::Prompt.as_str()],
     second_turn: None,

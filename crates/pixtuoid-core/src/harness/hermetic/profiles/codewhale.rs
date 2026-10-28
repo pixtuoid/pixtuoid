@@ -34,7 +34,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "codewhale",
+    source: crate::source::codewhale::SOURCE_NAME,
     // What its installer fetches and checks against the release's sums
     // (`web/public/install.sh:197-207`, `:222-224`, `:237`).
     package: Package::GithubRelease {

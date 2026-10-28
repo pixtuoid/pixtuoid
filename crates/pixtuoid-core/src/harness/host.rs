@@ -1,11 +1,17 @@
-//! What the capture rig asks of the host: a known folder as the shell resolves
-//! it, a directory no other local user can write into, whether this process
+//! What the capture rig asks of the host: the sandbox its CLIs run in, a known
+//! folder as the shell resolves it, a directory no other local user can write into, whether this process
 //! owns a path, a lock on a file it owns, a removal that waits out a process
 //! holding the tree, and whether a registry key exists.
 
+use std::ffi::{OsStr, OsString};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::harness::hermetic::{PerOs, Step};
+#[cfg(feature = "native")]
+use crate::harness::tap::Endpoint;
 #[cfg(windows)]
 use crate::win32::nul_terminated;
 
@@ -36,6 +42,213 @@ impl KnownFolder {
             Self::ProgramData => "{FOLDERID_ProgramData}",
             Self::Profile => "{FOLDERID_Profile}",
         }
+    }
+}
+
+/// Every home a CLI or pixtuoid may resolve, each a directory of a sandbox. All
+/// are set on every platform: a variable no reader there reads is inert.
+pub const SANDBOX_HOMES: &[(&str, &str)] = &[
+    ("HOME", "home"),
+    ("USERPROFILE", "home"),
+    ("APPDATA", "home/AppData/Roaming"),
+    ("LOCALAPPDATA", "home/AppData/Local"),
+    // Each at its default under the home: reasonix refuses to link a
+    // plugin from outside it
+    // (`internal/ext/installsource/plugin_package.go:480-481` at v2.39.0).
+    ("XDG_CONFIG_HOME", "home/.config"),
+    ("XDG_DATA_HOME", "home/.local/share"),
+    ("XDG_STATE_HOME", "home/.local/state"),
+    ("XDG_CACHE_HOME", "home/.cache"),
+];
+
+/// The variables a sandboxed CLI inherits from the host, with each platform's
+/// own in [`PLATFORM_INHERITED`]: everything else is cleared, so neither an
+/// operator's provider key nor a home override of theirs (`CLAUDE_CONFIG_DIR`)
+/// reaches a CLI the sandbox runs.
+pub(crate) const INHERITED_EVERYWHERE: &[&str] = &["PATH"];
+/// [`INHERITED_EVERYWHERE`]'s per-platform part.
+pub(crate) const PLATFORM_INHERITED: PerOs<&[&str]> = PerOs {
+    unix: &[
+        "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "USER", "LOGNAME",
+    ],
+    windows: &[
+        // `connect` finds a CLI's `.cmd` through `which`, which reads it
+        // (`which-8.0.6/src/finder.rs:277`).
+        "PATHEXT",
+        // "In order to run a side-by-side assembly the specified env must
+        // include a valid %SystemRoot%" (docs.python.org, subprocess).
+        "SystemRoot",
+        // A CLI's shell: Node falls back to `cmd.exe` without it
+        // (nodejs.org/api/child_process.html, "Default Windows shell").
+        "ComSpec",
+        // TMPDIR's twins: GetTempPath reads TMP, then TEMP, then
+        // USERPROFILE, a sandbox home (learn.microsoft.com, GetTempPath2W).
+        "TMP",
+        "TEMP",
+    ],
+};
+
+/// Every variable a sandboxed CLI inherits on this platform.
+pub fn inherited() -> impl Iterator<Item = &'static str> {
+    INHERITED_EVERYWHERE
+        .iter()
+        .chain(PLATFORM_INHERITED.here().iter())
+        .copied()
+}
+
+/// The environment of one sandbox, which both recorders run their CLI in: the
+/// host's cleared to what [`inherited`] keeps, and every home a CLI or
+/// pixtuoid resolves pointing into the sandbox's directory, so nothing reads
+/// or writes the operator's.
+#[derive(Debug, Clone)]
+pub struct SandboxEnv(Vec<(String, OsString)>);
+
+impl SandboxEnv {
+    /// `dir`'s, with `path_first` ahead of the host's `PATH`, and each of
+    /// [`SANDBOX_HOMES`] and `home_vars` a directory in `dir`.
+    ///
+    /// # Errors
+    ///
+    /// If a home cannot be created, or `PATH` joined.
+    pub fn new<'a>(
+        dir: &Path,
+        home_vars: impl IntoIterator<Item = &'a str>,
+        path_first: &[&Path],
+    ) -> std::io::Result<Self> {
+        let at = |rel: &str| -> std::io::Result<OsString> {
+            let d = dir.join(rel);
+            std::fs::create_dir_all(&d)?;
+            Ok(d.into())
+        };
+        let mut env: Vec<(String, OsString)> = inherited()
+            .filter(|k| *k != "PATH")
+            .filter_map(|k| std::env::var_os(k).map(|v| (k.to_owned(), v)))
+            .collect();
+        let host_path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            path_first
+                .iter()
+                .map(|p| p.to_path_buf())
+                .chain(std::env::split_paths(&host_path)),
+        )
+        .map_err(std::io::Error::other)?;
+        env.push(("PATH".into(), path));
+        for (var, rel) in SANDBOX_HOMES {
+            env.push(((*var).into(), at(rel)?));
+        }
+        for var in home_vars {
+            env.push((var.into(), at(&format!("homes/{var}"))?));
+        }
+        Ok(Self(env))
+    }
+
+    /// Sets `key` for every child, over any earlier value.
+    pub fn set(&mut self, key: impl Into<String>, value: impl Into<OsString>) {
+        self.0.push((key.into(), value.into()));
+    }
+
+    /// `key`'s value, the last one set.
+    pub fn var_os(&self, key: &str) -> Option<&OsString> {
+        self.0.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    /// A child of the sandbox. Its stdin is empty: `opencode run` reads a
+    /// non-TTY stdin to its end (`packages/cli/src/run/run.ts:76`), so an
+    /// inherited one that never closes hangs the run.
+    pub fn command(&self, program: impl AsRef<OsStr>) -> Command {
+        let mut c = Command::new(program);
+        c.env_clear()
+            .envs(self.0.iter().map(|(k, v)| (k, v)))
+            .stdin(Stdio::null());
+        c
+    }
+}
+
+/// `name`, built into the directory two above the running example, which is
+/// its profile's: never one off `PATH`, which would pass with none of the
+/// change under test in it.
+///
+/// # Errors
+///
+/// If it is not built there.
+pub fn built(name: &str) -> std::io::Result<PathBuf> {
+    let me = std::env::current_exe()?;
+    let at = me
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| std::io::Error::other("an example sits two below its target dir"))?
+        .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    if at.is_file() {
+        Ok(at)
+    } else {
+        Err(std::io::Error::other(format!(
+            "{} is not built — its `just` recipe builds it",
+            at.display()
+        )))
+    }
+}
+
+/// `dir` made afresh, holding `shim`: Unix links it, and Windows, where a
+/// symlink needs privilege, copies it. The shim runs once there, at no
+/// endpoint, so no run's first hook is a cold exec of a new file: a CLI lost
+/// its first payload behind one.
+///
+/// # Errors
+///
+/// If `dir` cannot be made, or the shim placed or run.
+#[cfg(feature = "native")]
+pub fn warmed_shim_dir(dir: &Path, shim: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    std::fs::create_dir_all(dir)?;
+    let name = shim
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("the shim has no file name"))?;
+    let placed = dir.join(name);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(shim, &placed)?;
+    #[cfg(windows)]
+    std::fs::copy(shim, &placed)?;
+    let mut warm = Command::new(&placed)
+        .env_clear()
+        .envs(inherited().filter_map(|k| std::env::var_os(k).map(|v| (k, v))))
+        .env(Endpoint::ENV, dir.join("nothing-listens"))
+        .stdin(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = warm.stdin.take() {
+        stdin.write_all(b"{}")?;
+    }
+    warm.wait()?;
+    Ok(())
+}
+
+/// `source` connected in `env` by `pixtuoid`, its `--json` rows written to
+/// `log`.
+///
+/// # Errors
+///
+/// If it cannot run, or no row says it connected.
+pub fn connect(
+    env: &SandboxEnv,
+    pixtuoid: &Path,
+    source: &str,
+    log: &mut impl Write,
+) -> std::io::Result<()> {
+    let out = env
+        .command(pixtuoid)
+        .args([Step::Connect.command(), source, "--json"])
+        .output()?;
+    log.write_all(&out.stdout)?;
+    let rows: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap_or_default();
+    if rows.iter().any(|r| r["outcome"] == Step::Connect.outcome()) {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "pixtuoid connect {source} did not connect: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
     }
 }
 
@@ -356,6 +569,66 @@ pub fn registry_key_exists(hive: Hive, sub: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What `CLAUDE_CONFIG_DIR` did to a billed capture that inherited the
+    /// operator's env: `connect` wrote their real config.
+    #[test]
+    fn a_sandbox_holds_every_home_and_none_of_the_hosts_other_env() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let first = d.path().join("bin");
+        temp_env::with_vars(
+            [
+                ("CLAUDE_CONFIG_DIR", Some("/operator/.claude")),
+                ("ANTHROPIC_API_KEY", Some("sk-host")),
+            ],
+            || {
+                let env = SandboxEnv::new(d.path(), ["CODEX_HOME"], &[&first]).expect("env");
+                for var in SANDBOX_HOMES
+                    .iter()
+                    .map(|(var, _)| *var)
+                    .chain(["CODEX_HOME"])
+                {
+                    let home = PathBuf::from(env.var_os(var).expect("set"));
+                    assert!(home.starts_with(d.path()) && home.is_dir(), "{var}");
+                }
+                for var in ["CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"] {
+                    assert_eq!(env.var_os(var), None, "{var} is the operator's");
+                }
+                let path = env.var_os("PATH").expect("PATH");
+                assert_eq!(std::env::split_paths(path).next(), Some(first.clone()));
+                let child: Vec<String> = env
+                    .command("x")
+                    .get_envs()
+                    .map(|(k, _)| k.to_string_lossy().into_owned())
+                    .collect();
+                assert!(child.iter().any(|k| k == "HOME"));
+                assert!(!child.iter().any(|k| k == "CLAUDE_CONFIG_DIR"));
+            },
+        );
+    }
+
+    /// The built shim itself, run once before any CLI: a fresh copy, or a
+    /// first exec, is cold.
+    #[cfg(all(unix, feature = "native"))]
+    #[test]
+    fn a_shim_dir_links_the_built_shim_and_runs_it_once() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().expect("tempdir");
+        let shim = d.path().join("pixtuoid-hook");
+        let ran = d.path().join("ran");
+        std::fs::write(&shim, format!("#!/bin/sh\ncat > '{}'\n", ran.display())).expect("a shim");
+        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755))
+            .expect("executable");
+        let dir = d.path().join("bin");
+        warmed_shim_dir(&dir, &shim).expect("placed");
+        let placed = dir.join("pixtuoid-hook");
+        assert_eq!(std::fs::read_link(&placed).ok(), Some(shim), "not a copy");
+        assert_eq!(
+            std::fs::read_to_string(&ran).ok().as_deref(),
+            Some("{}"),
+            "it ran"
+        );
+    }
 
     #[test]
     fn a_lock_waits_for_its_holder_and_truncates_nothing() {

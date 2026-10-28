@@ -4,10 +4,14 @@
   "version": "2026.10.22-27dcf5f",
   "captured": "2026-10-27",
   "command": "cursor-agent -p --trust --model auto {prompt}",
-  "note": "Recorded with `--model auto`: cursor-agent on a free plan refuses named models. Filtered to cursor's own `_pixtuoid_source` stamp, as fixtures/README.md requires: cursor-agent also ran the operator's Claude Code hooks and three unstamped registrations, so `blanked` counts the unfiltered capture.",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 146
+    "blanked": 27
   },
-  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened."
+  "prompt": "Read the file does-not-exist.txt in this directory and tell me exactly what happened.",
+  "sentinel_reads": {
+    "hook-payloads.jsonl": [
+      "3:/transcript_path"
+    ]
+  }
 }

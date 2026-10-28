@@ -80,7 +80,7 @@ const TUI_CODE_MODE_APPROVE: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "codex",
+    source: crate::source::codex::SOURCE_NAME,
     package: Package::Npm("@openai/codex"),
     // A hook runs only once trusted, and trust is a hash of codex's own
     // normalized hook identity (`codex-rs/hooks/src/engine/discovery.rs:775`)

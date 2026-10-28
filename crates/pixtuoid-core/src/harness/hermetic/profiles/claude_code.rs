@@ -30,7 +30,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "claude-code",
+    source: crate::source::claude_code::SOURCE_NAME,
     package: Package::Npm("@anthropic-ai/claude-code"),
     invocation: &["claude", "-p", Placeholder::Prompt.as_str()],
     // `-r, --resume [value]`: "Resume a conversation by session ID"
@@ -141,11 +141,7 @@ pub(crate) const PROFILE: Profile = Profile {
     script_vars: &[],
     not_yet: &[],
     event_name: hook_event_name,
-    not_yet_fields: &[
-        // aimock's Messages usage is input and output tokens alone
-        // (`CopilotKit/aimock` `src/messages.ts:413-421` at v1.45.1).
-        ("tx:assistant", "/message/usage/cache_creation_input_tokens"),
-    ],
+    not_yet_fields: &[],
     not_yet_literals: &[],
     children_inherit_cwd: false,
     result_unseen: false,

@@ -27,7 +27,7 @@ const TUI: tui::Tui = tui::Tui {
 };
 
 pub(crate) const PROFILE: Profile = Profile {
-    source: "hermes",
+    source: crate::source::hermes::SOURCE_NAME,
     // Its build refuses a wheel (`setup.py:37`), so no index carries a
     // current release; a source checkout tracks the latest `vX.Y.Z` tag
     // (`website/docs/getting-started/updating.md:33-36`). Its installer

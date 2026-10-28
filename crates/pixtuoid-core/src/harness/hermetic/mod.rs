@@ -127,6 +127,75 @@ pub enum Package {
     },
 }
 
+impl Package {
+    /// Where its releases are published.
+    pub const fn feed(&self) -> Feed {
+        match *self {
+            Self::Npm(package) => Feed::Npm(package),
+            Self::GithubRelease { repo, .. } | Self::UvLocked(repo) => Feed::GithubLatest(repo),
+            Self::UpdaterManifest {
+                manifest,
+                platforms,
+                ..
+            } => Feed::UpdaterManifest {
+                manifest,
+                platforms,
+            },
+        }
+    }
+}
+
+/// Where a CLI's releases are published, as its latest one is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feed {
+    /// An npm package's `latest` dist-tag.
+    Npm(&'static str),
+    /// A GitHub repository's latest release, spelled as [`Package::GithubRelease`]'s `repo`.
+    GithubLatest(&'static str),
+    /// The build an updater's manifest names now, as [`Package::UpdaterManifest`]
+    /// spells it.
+    UpdaterManifest {
+        /// The manifest's URL, with `{platform}` filled for the host.
+        manifest: &'static str,
+        /// Each platform's name, as `(OS, ARCH, platform)`.
+        platforms: &'static [(&'static str, &'static str, &'static str)],
+    },
+    /// The build the script users pipe to a shell downloads ([`installer_build`]).
+    Installer {
+        /// The script's URL.
+        script: &'static str,
+        /// What its download URL holds right before the build.
+        build_at: &'static str,
+    },
+}
+
+/// The build an installer `script` downloads: the path segment after each
+/// `build_at` in it, which must all agree.
+///
+/// # Errors
+///
+/// When it names no build, or two.
+pub fn installer_build<'a>(script: &'a str, build_at: &str) -> Result<&'a str, String> {
+    let builds: std::collections::BTreeSet<&str> = script
+        .match_indices(build_at)
+        .map(|(at, _)| {
+            let rest = &script[at + build_at.len()..];
+            let end = rest
+                .find(|c: char| c == '/' || c == '"' || c == '\'' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .collect();
+    match builds.into_iter().collect::<Vec<_>>()[..] {
+        [build] if !build.is_empty() => Ok(build),
+        [] | [_] => Err(format!("the script names no build after {build_at}")),
+        ref builds => Err(format!(
+            "the script names {} builds after {build_at}",
+            builds.len()
+        )),
+    }
+}
+
 /// What a scenario's script drives a CLI through. Shared by every CLI, so one CLI
 /// cannot be held to a weaker bar than another, save the gaps a profile's
 /// `result_unseen` and its source's `ChildEndInference` owe.
@@ -482,7 +551,7 @@ impl Step {
 
     /// The `outcome` its row must report, a token of the `--json` contract
     /// (`integrations/raycast/contract/outcome-row.schema.json`).
-    pub fn outcome(self) -> &'static str {
+    pub(crate) fn outcome(self) -> &'static str {
         match self {
             Self::Connect => "connected",
             Self::Disconnect => "disconnected",
@@ -534,6 +603,19 @@ pub struct Manifest {
     pub results_seen: usize,
 }
 
+/// A registered source without a profile: why, and where its releases are
+/// published, which the nightly reads so a capture only a billed run refreshes
+/// is not left behind.
+#[derive(Debug)]
+pub struct Unprofiled {
+    /// The registered source id.
+    pub source: &'static str,
+    /// Why it has no profile.
+    pub absence: Absence,
+    /// Where its releases are published.
+    pub feed: Feed,
+}
+
 /// Why a registered source has no profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Absence {
@@ -558,15 +640,35 @@ pub const PROFILES: &[Profile] = &[
     profiles::codewhale::PROFILE,
 ];
 
-/// Every registered source without a profile, and why.
-pub const NOT_HERMETIC: &[(&str, Absence)] = &[
-    // Owner, 2026-10-13: no custom model endpoint, so no upstream detection.
-    ("cursor", Absence::NoModelEndpoint),
-];
+/// Every registered source without a profile.
+pub const NOT_HERMETIC: &[Unprofiled] = &[Unprofiled {
+    source: crate::source::cursor::SOURCE_NAME,
+    // Owner, 2026-10-13: no custom model endpoint.
+    absence: Absence::NoModelEndpoint,
+    // `DOWNLOAD_URL="https://downloads.cursor.com/lab/<build>/${OS}/${ARCH}/…"`
+    // (the script at 2026.10.22-27dcf5f, `:85`).
+    feed: Feed::Installer {
+        script: "https://cursor.com/install",
+        build_at: "https://downloads.cursor.com/lab/",
+    },
+}];
 
 /// The profile for `source`, if it has one.
 pub fn profile(source: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.source == source)
+}
+
+/// Every home variable `source`'s CLI reads that a sandbox points into its
+/// own directories: its profile's ([`Profile::home_vars`]), else its registry
+/// row's.
+pub fn home_vars(source: &str) -> Vec<&'static str> {
+    match profile(source) {
+        Some(p) => p.home_vars().collect(),
+        None => crate::source::registry::descriptor_for(source)
+            .and_then(|d| d.home_env)
+            .into_iter()
+            .collect(),
+    }
 }
 
 /// The matrix's `os` axis, as `hermetic.yml` names it.
@@ -775,7 +877,7 @@ mod tests {
     fn every_registered_source_is_profiled_or_says_why_not_and_never_both() {
         let registered: BTreeSet<&str> = registry::registered_source_names().collect();
         let profiled: BTreeSet<&str> = PROFILES.iter().map(|p| p.source).collect();
-        let absent: BTreeSet<&str> = NOT_HERMETIC.iter().map(|(s, _)| *s).collect();
+        let absent: BTreeSet<&str> = NOT_HERMETIC.iter().map(|u| u.source).collect();
         assert_eq!(profiled.len(), PROFILES.len(), "a source profiled twice");
         assert_eq!(absent.len(), NOT_HERMETIC.len(), "a source listed twice");
         assert!(
@@ -788,6 +890,31 @@ mod tests {
             covered, registered,
             "the tier's population is the roster: profile each source or say why not"
         );
+    }
+
+    #[test]
+    fn an_installer_names_its_build_once_or_says_why_not() {
+        // cursor's script as fetched at 2026.10.22-27dcf5f, its download line.
+        let script = r#"DOWNLOAD_URL="https://downloads.cursor.com/lab/2026.10.22-27dcf5f/${OS}/${ARCH}/agent-cli-package.tar.gz""#;
+        let [
+            Unprofiled {
+                feed: Feed::Installer { build_at, .. },
+                ..
+            },
+        ] = NOT_HERMETIC
+        else {
+            panic!("cursor's feed is its installer");
+        };
+        assert_eq!(installer_build(script, build_at), Ok("2026.10.22-27dcf5f"));
+        assert!(installer_build("echo no url", build_at).is_err());
+        assert!(
+            installer_build(&format!("{build_at}/x"), build_at).is_err(),
+            "an empty build"
+        );
+        let two = format!("{script}\n{}", script.replace("10.22", "10.23"));
+        assert!(installer_build(&two, build_at).is_err(), "two builds");
+        let twice = format!("{script}\n{script}");
+        assert_eq!(installer_build(&twice, build_at), Ok("2026.10.22-27dcf5f"));
     }
 
     #[test]
@@ -967,7 +1094,7 @@ mod tests {
                 };
                 // Any other key may pace or cut the stream (aimock's
                 // `dist/sse-writer.js` `calculateDelay`, `dist/interruption.js`
-                // at v1.45.1).
+                // at v1.47.0).
                 for key in stream.as_object().expect("a reply").keys() {
                     assert!(
                         ["match", "response", "latency", "chunkSize"].contains(&key.as_str()),
@@ -1070,7 +1197,7 @@ mod tests {
                     .join(crate::harness::PROVENANCE);
                 let prov = Provenance::read(&path).unwrap_or_else(|e| panic!("{}: {e}", p.source));
                 assert!(
-                    prov.recorded().is_some_and(|r| r.aimock.is_some()),
+                    prov.recorded().aimock.is_some(),
                     "{0}: {1} holds no recording of the tier; `just hermetic --record {0}` writes one",
                     p.source,
                     s.fixture
@@ -1292,7 +1419,7 @@ mod tests {
         // note in the gated call's result, which no refused call returns. A
         // question's gate calls nothing that could, so those rows are held to
         // the note alone.
-        const QUESTIONS: &[&str] = &["ask-user", "ask-question"];
+        const QUESTIONS: &[&str] = &["ask-user", "ask-question", "ask"];
         for p in PROFILES {
             for s in p
                 .scenarios

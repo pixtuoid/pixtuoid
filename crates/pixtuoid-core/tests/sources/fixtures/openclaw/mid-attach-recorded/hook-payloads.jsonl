@@ -1,3 +1,0 @@
-{"type":"session_start","sessionId":"","sessionKey":"","gatewayPort":19099,"_pid":67914,"_shim_ts_ms":1786822321407,"_pixtuoid_source":"openclaw"}
-{"type":"before_agent_run","runId":"3823252e-f8bc-4611-b259-68b0d527120d","sessionId":"","sessionKey":"","gatewayPort":19099,"_pid":67914,"_shim_ts_ms":1786822321661,"_pixtuoid_source":"openclaw"}
-{"type":"agent_end","runId":"3823252e-f8bc-4611-b259-68b0d527120d","sessionId":"","sessionKey":"","success":false,"gatewayPort":19099,"_pid":67914,"_shim_ts_ms":1786822335116,"_pixtuoid_source":"openclaw"}
