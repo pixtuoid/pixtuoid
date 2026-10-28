@@ -850,6 +850,45 @@ mod tests {
         assert_eq!(grid_unwind(true), b"\x1b\\\x1b[2J");
     }
 
+    /// The README and the site name the cutaway's protocols from one
+    /// `site/src/features.json` row, cased for reading; no binary build
+    /// reaches the site, so this test is the only bridge to the code's.
+    #[test]
+    fn the_site_names_every_image_protocol() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/features.json");
+        let Ok(json) = std::fs::read_to_string(path) else {
+            // crates.io-packaged test runs don't ship the repo's site/ tree.
+            eprintln!("skipping: {path} not present (packaged build)");
+            return;
+        };
+        let features: Vec<serde_json::Value> =
+            serde_json::from_str(&json).expect("features.json parses");
+        let rows: Vec<_> = features
+            .iter()
+            .filter_map(|f| f.get("protocols")?.as_array())
+            .collect();
+        let [row] = rows.as_slice() else {
+            panic!(
+                "features.json needs exactly one `protocols` row, has {}",
+                rows.len()
+            );
+        };
+        let mut site: Vec<String> = row
+            .iter()
+            .map(|p| p.as_str().expect("a protocol is a string").to_lowercase())
+            .collect();
+        let mut code: Vec<&str> = <ImageProtocol as clap::ValueEnum>::value_variants()
+            .iter()
+            .map(|p| p.name())
+            .collect();
+        site.sort_unstable();
+        code.sort_unstable();
+        assert_eq!(
+            site, code,
+            "features.json `protocols` must name every ImageProtocol"
+        );
+    }
+
     const CELL_8X16: CellSize = CellSize { w: 8, h: 16 };
     /// A pack with no density variants.
     const BASE_ONLY: Density = Density::ONE;

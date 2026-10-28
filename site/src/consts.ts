@@ -3,6 +3,7 @@ import weatherData from './weather.json';
 import showcaseData from './showcase.json';
 import featuresData from './features.json';
 import { REPO_SLUG } from '../config/gh-stars.mjs';
+import { featureText } from '../config/feature-text.mjs';
 
 // Base is '/' today, but every internal URL still goes through asset()/BASE_URL
 // so a base change can never silently break links.
@@ -152,8 +153,13 @@ export interface Feature {
   pix?: string;
   channel?: string; // joins to a SHOWCASE row's `id`
   card?: { blurb: string };
+  protocols?: string[];
 }
-export const FEATURES: Feature[] = featuresData as Feature[];
+export const FEATURES: Feature[] = (featuresData as Feature[]).map((f) => ({
+  ...f,
+  desc: featureText(f.desc, f),
+  card: f.card && { blurb: featureText(f.card.blurb, f) },
+}));
 
 const featureByChannelId = new Map(FEATURES.filter((f) => f.channel).map((f) => [f.channel!, f]));
 

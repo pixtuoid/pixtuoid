@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
-// Showcase/SupportedTools/Install read, so README and site can't drift.
+// Showcase/SupportedTools/Install read, so README and site can't drift — and
+// its images from scripts/media.json, which renders them.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,8 @@ import process from 'node:process';
 import features from '../site/src/features.json' with { type: 'json' };
 import sources from '../site/src/sources.json' with { type: 'json' };
 import install from '../site/src/install.json' with { type: 'json' };
+import media from './media.json' with { type: 'json' };
+import { featureText } from '../site/config/feature-text.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
@@ -92,7 +95,7 @@ const iconCell = (f) =>
   f.pix ? `<img src="docs/images/pix-icons/${cell(f.pix)}.svg" alt=""${pixDims(f.pix)}>` : cell(f.icon);
 const featuredFeatures = features.filter((f) => f.featured !== false);
 const featureRows = featuredFeatures.map(
-  (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(f.desc)} |`
+  (f) => `| ${iconCell(f)} | **${cell(f.name)}** | ${cell(featureText(f.desc, f))} |`
 );
 // GitHub ignores an <img>'s width/height when its table cell is "shorter" than
 // the image and collapses the column — hard in Safari, where the injected
@@ -149,6 +152,31 @@ regenSection(
   ].join('\n')
 );
 
+// A docs image with a `caption`: centred at half its pixel width, so a 2x
+// screen draws each pixel, its caption under it. Its file must be committed:
+// media-regen.yml renders docs/images from main, so a new image's README PR
+// follows the PR that adds its job.
+/** @param {string} file */
+const pixelWidth = (file) => {
+  const b = readFileSync(join(root, file));
+  return file.endsWith('.gif') ? b.readUInt16LE(6) : b.readUInt32BE(16);
+};
+const codeSpans = (/** @type {string} */ s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+for (const job of media.filter((j) => 'caption' in j && j.targets.includes('docs'))) {
+  const file = `docs/images/${job.id}.${job.kind === 'gif' ? 'gif' : 'png'}`;
+  if (!existsSync(join(root, file))) {
+    errors.push(`media.json "${job.id}" has a caption but ${file} isn't committed yet — wait for media-regen.yml.`);
+    continue;
+  }
+  const caption = String(job.caption);
+  regenSection(
+    `${job.id} image`,
+    `<!-- media:${job.id}:start · generated from scripts/media.json by \`just gen-readme\` — edit the JSON, not this block -->`,
+    `<!-- media:${job.id}:end -->`,
+    `<p align="center"><img src="${file}" alt="${esc(caption.replace(/`/g, ''))}" width="${pixelWidth(file) / 2}" /><br /><sub>${codeSpans(caption)}</sub></p>`
+  );
+}
+
 const installBody = install
   .filter((m) => m.readme)
   .map(
@@ -169,8 +197,8 @@ if (errors.length) {
 }
 console.log(
   check
-    ? 'README is in sync with features.json + sources.json + install.json ✓'
-    : 'README regenerated from features.json + sources.json + install.json ✓'
+    ? 'README is in sync with features.json + sources.json + install.json + media.json ✓'
+    : 'README regenerated from features.json + sources.json + install.json + media.json ✓'
 );
 
 /** @param {string} s */

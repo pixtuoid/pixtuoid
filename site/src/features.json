@@ -1,5 +1,12 @@
 [
   {
+    "icon": "🖼️",
+    "name": "Pixel-art office",
+    "desc": "Where the terminal speaks {protocols} graphics, the office is drawn in real pixels; anywhere else, or with `look = \"classic\"`, it falls back to half-block cells",
+    "protocols": ["kitty", "iTerm2", "SIXEL"],
+    "pix": "cutaway"
+  },
+  {
     "icon": "🏢",
     "name": "Multi-agent office",
     "desc": "Every agent session gets its own desk — when a floor fills up, a new floor opens automatically",
@@ -32,10 +39,10 @@
   {
     "icon": "🎨",
     "name": "Team palette",
-    "desc": "Shirt and pants take their colors from the working directory — same repo, same colors, so the room reads like an org chart. Hair and skin vary per agent; 16 curated outfits",
+    "desc": "Agents in the same working directory share shirt and pants colors, so the room reads like an org chart. Hair and skin vary per agent; 16 curated outfits",
     "pix": "palette",
     "card": {
-      "blurb": "shirt and pants colored by working directory — same repo, same colors: the room reads like an org-chart."
+      "blurb": "agents in the same working directory share shirt and pants colors: the room reads like an org-chart."
     }
   },
   {
