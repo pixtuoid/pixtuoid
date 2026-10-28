@@ -25,6 +25,5 @@
         "user.message"
       ]
     }
-  },
-  "sentinel_reads": {}
+  }
 }

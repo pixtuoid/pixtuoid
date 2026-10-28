@@ -1633,7 +1633,6 @@ mod recorder {
                 "version": "0.2.0-rc.1",
                 "captured": "2026-01-01",
                 "command": "just hermetic --record dsh",
-                "sentinel_reads": {},
             });
             if let (Some(base), Some(over)) = (record.as_object_mut(), over.as_object()) {
                 base.extend(over.clone());

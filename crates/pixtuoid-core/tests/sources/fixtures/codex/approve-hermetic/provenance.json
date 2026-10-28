@@ -27,6 +27,5 @@
         "world_state"
       ]
     }
-  },
-  "sentinel_reads": {}
+  }
 }

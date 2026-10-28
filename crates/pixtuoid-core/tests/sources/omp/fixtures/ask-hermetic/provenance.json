@@ -30,6 +30,5 @@
         "model_change"
       ]
     }
-  },
-  "sentinel_reads": {}
+  }
 }

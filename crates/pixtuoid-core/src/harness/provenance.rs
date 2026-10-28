@@ -55,7 +55,7 @@ pub struct Recorded {
     pub dropped: Option<Dropped>,
     /// Each file's empty strings the decoders read when it was stripped, by
     /// path under the capture ([`Strip::sentinel_reads`](super::reads::Strip::sentinel_reads)).
-    /// Required: a baseline only a recording writes cannot default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sentinel_reads: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -178,7 +178,8 @@ mod tests {
         serde_json::from_str(json)
     }
 
-    const RECORDED: &str = r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x","sentinel_reads":{}}"#;
+    const RECORDED: &str =
+        r#"{"origin":"recorded","cli":"c","version":"1","captured":"d","command":"x"}"#;
 
     /// serde's docs (https://serde.rs/container-attrs.html) say nothing of
     /// `deny_unknown_fields` inside an internally tagged newtype variant; the
@@ -204,7 +205,7 @@ mod tests {
     /// README's row follows.
     #[test]
     fn a_record_missing_a_required_key_fails_to_parse() {
-        for key in ["cli", "version", "captured", "command", "sentinel_reads"] {
+        for key in ["cli", "version", "captured", "command"] {
             let without: serde_json::Map<String, serde_json::Value> =
                 serde_json::from_str::<serde_json::Map<_, _>>(RECORDED)
                     .expect("json")

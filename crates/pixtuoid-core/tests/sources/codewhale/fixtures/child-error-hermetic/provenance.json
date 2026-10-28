@@ -13,6 +13,5 @@
   "dropped": {
     "os": "macos",
     "at": {}
-  },
-  "sentinel_reads": {}
+  }
 }

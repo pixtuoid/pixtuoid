@@ -42,6 +42,5 @@
         "user"
       ]
     }
-  },
-  "sentinel_reads": {}
+  }
 }
