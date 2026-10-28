@@ -255,8 +255,8 @@ struct SnapshotArgs {
     anim_facing: Option<String>,
 
     /// Crop the generated PNG (and text preview) to the fixed crop window
-    /// centered on the agent this session id, or a label only it wears, names.
-    /// Static-PNG path only.
+    /// centered on the agent with this session id, or the one agent with this
+    /// label. Static-PNG path only.
     // The --gif/--anim paths return before the crop is computed, so clap rejects
     // the combination instead of silently ignoring the flag.
     #[arg(long, conflicts_with_all = ["crop_furniture", "gif", "anim"])]
@@ -269,8 +269,8 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with_all = ["gif", "anim"])]
     crop_furniture: Option<String>,
 
-    /// Give the agent this session id, or a label only it wears, names a Top
-    /// burn tier (claude-fable-5 at fresh ultra effort → ember hair + flame crown).
+    /// Give the agent with this session id, or the one agent with this label,
+    /// a Top burn tier (claude-fable-5 at fresh ultra effort → ember hair + flame crown).
     #[arg(long)]
     flame: Option<String>,
 
