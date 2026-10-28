@@ -14,6 +14,7 @@ use pixtuoid_core::source::{
     opencode, reasonix,
 };
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
+use pixtuoid_scene::DEMO_REPOS;
 
 #[derive(Debug)]
 pub(crate) struct Beat {
@@ -25,40 +26,45 @@ pub(crate) struct Beat {
 /// Long enough that the cycle doesn't read as a loop.
 pub(crate) const LOOP_MS: u64 = 120_000;
 
-/// A cast member: a source CLI + a repo-ish cwd (drives the label AND the
-/// Team-Palette outfit, which keys on cwd). Sources MUST reference the modules'
-/// `SOURCE_NAME` consts — a hand-typed string silently misses the registry and
-/// the label falls back to the RAW string (`claude_code·api` not `cc·api`).
-const CAST: &[(&str, &str, &str)] = &[
-    // (source, session key, cwd)
-    (claude_code::SOURCE_NAME, "hero-cc-api", "/work/api"),
-    (codex::SOURCE_NAME, "hero-cx-web", "/work/webapp"),
-    (antigravity::SOURCE_NAME, "hero-ag-infra", "/work/infra"),
-    (codewhale::SOURCE_NAME, "hero-cw-data", "/work/data"),
-    (opencode::SOURCE_NAME, "hero-oc-cli", "/work/cli"),
-    (copilot::SOURCE_NAME, "hero-cp-docs", "/work/docs"),
-    (cursor::SOURCE_NAME, "hero-cu-etl", "/work/etl"),
-    (hermes::SOURCE_NAME, "hero-hm-tests", "/work/tests"),
-    (grok::SOURCE_NAME, "hero-gk-ml", "/work/ml"),
-    (reasonix::SOURCE_NAME, "hero-rx-research", "/work/research"),
-    (omp::SOURCE_NAME, "hero-om-embedded", "/work/embedded"),
+/// A cast member: a source CLI + its session key; the `i`th works in
+/// [`DEMO_REPOS`]`[i]`, the cwd its label AND its Team-Palette outfit key on.
+/// Sources MUST reference the modules' `SOURCE_NAME` consts — a hand-typed
+/// string silently misses the registry and the label falls back to the RAW
+/// string (`claude_code·api` not `cc·api`).
+const CAST: &[(&str, &str)] = &[
+    // (source, session key)
+    (claude_code::SOURCE_NAME, "hero-cc-api"),
+    (codex::SOURCE_NAME, "hero-cx-web"),
+    (antigravity::SOURCE_NAME, "hero-ag-infra"),
+    (codewhale::SOURCE_NAME, "hero-cw-data"),
+    (opencode::SOURCE_NAME, "hero-oc-cli"),
+    (copilot::SOURCE_NAME, "hero-cp-docs"),
+    (cursor::SOURCE_NAME, "hero-cu-etl"),
+    (hermes::SOURCE_NAME, "hero-hm-tests"),
+    (grok::SOURCE_NAME, "hero-gk-ml"),
+    (reasonix::SOURCE_NAME, "hero-rx-research"),
+    (omp::SOURCE_NAME, "hero-om-embedded"),
 ];
+const _: () = assert!(
+    CAST.len() <= DEMO_REPOS.len(),
+    "a cast member without a repo"
+);
 
 #[cfg(test)]
 pub(crate) const CAST_LEN: usize = CAST.len();
 
 pub(crate) fn cast_id(i: usize) -> AgentId {
-    let (source, key, _) = CAST[i];
+    let (source, key) = CAST[i];
     AgentId::from_parts(source, key)
 }
 
 fn session_start(i: usize) -> AgentEvent {
-    let (source, key, cwd) = CAST[i];
+    let (source, key) = CAST[i];
     AgentEvent::SessionStart {
         agent_id: cast_id(i),
         source: source.to_string(),
         session_id: key.to_string(),
-        cwd: PathBuf::from(cwd),
+        cwd: PathBuf::from("/work").join(DEMO_REPOS[i]),
         parent_id: None,
     }
 }
@@ -484,7 +490,7 @@ mod tests {
             "cx must carry a tower after one loop, got {} tokens",
             tokens_of(1)
         );
-        for (i, (source, _, _)) in CAST.iter().enumerate().skip(2) {
+        for (i, (source, _)) in CAST.iter().enumerate().skip(2) {
             assert_eq!(
                 tokens_of(i),
                 0,

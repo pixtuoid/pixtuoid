@@ -102,6 +102,38 @@ pub mod token_meter;
 pub mod tooltip;
 pub mod walk;
 
+/// The repos (cwd basenames) the demo agents work in, the one list every demo
+/// names its agents from: the web hero's cast in order and the snapshot
+/// examples' agents by desk, so every README and site image. As long as the
+/// most agents a `scripts/media.json` job stages, or two would share a label.
+#[doc(hidden)]
+pub const DEMO_REPOS: &[&str] = &[
+    "api",
+    "webapp",
+    "infra",
+    "data",
+    "cli",
+    "docs",
+    "etl",
+    "tests",
+    "ml",
+    "research",
+    "embedded",
+    "mobile",
+    "billing",
+    "auth",
+    "search",
+    "payments",
+    "gateway",
+    "analytics",
+    "ios",
+    "android",
+    "sdk",
+    "storage",
+    "deploy",
+    "design",
+];
+
 /// ⌊2⁶⁴/φ⌋, φ the golden ratio: the Fibonacci-hashing multiplier and splitmix64's increment.
 pub(crate) const GOLDEN_GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
 pub(crate) const GOLDEN_GAMMA_32: u32 = (GOLDEN_GAMMA >> 32) as u32;
