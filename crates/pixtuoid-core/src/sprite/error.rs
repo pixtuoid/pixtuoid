@@ -10,6 +10,7 @@ use super::format::{DENSITY_VARIANT_SEP, Material, PACK_MANIFEST};
 #[non_exhaustive]
 pub enum PackError {
     /// `pack.toml` is not valid TOML, or does not match the manifest schema.
+    #[cfg(feature = "pack-toml")]
     #[error("parsing {PACK_MANIFEST}")]
     #[non_exhaustive]
     Manifest {
@@ -18,12 +19,12 @@ pub enum PackError {
         source: toml::de::Error,
     },
     /// A build's JSON transcode of `pack.toml` does not match the manifest schema.
-    #[error("parsing the JSON transcode of {PACK_MANIFEST}")]
+    #[error("parsing the JSON transcode of {PACK_MANIFEST}: {message}")]
     #[non_exhaustive]
     JsonManifest {
-        /// The parser's diagnostic.
-        #[source]
-        source: serde_json::Error,
+        /// The parser's diagnostic, as text: `serde_json::Error` would cost
+        /// the error `UnwindSafe`.
+        message: String,
     },
     /// An in-memory pack names a frame it was not given.
     #[error("missing embedded frame {file}")]
@@ -466,10 +467,8 @@ mod tests {
     /// Every error with a cause, built once — a new wrapping variant joins here.
     fn wrapping() -> Vec<PackError> {
         let toml = toml::from_str::<toml::Table>("= broken").expect_err("not TOML");
-        let json = serde_json::from_str::<serde_json::Value>("{").expect_err("not JSON");
         vec![
             PackError::Manifest { source: toml },
-            PackError::JsonManifest { source: json },
             PackError::Color {
                 key: "A".into(),
                 source: ColorError::Hex {

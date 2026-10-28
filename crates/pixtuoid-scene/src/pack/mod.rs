@@ -398,7 +398,8 @@ pub(crate) fn test_default_pack() -> Pack {
 #[cfg(test)]
 const BUNDLED_PACK_TOML: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.toml"));
 
-/// [`BUNDLED_PACK_TOML`]'s JSON transcode, which `build.rs` writes beside it.
+/// The default pack's manifest as `build.rs` transcodes it to JSON, which
+/// [`load_bundled_pack`] reads.
 const BUNDLED_PACK_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/bundled_pack.json"));
 
 /// The compiled-in default pack, parsed: all a build without `native` can load.
@@ -678,8 +679,7 @@ mod tests {
             .collect()
     }
 
-    /// The web hero's pack. Nothing runs this suite without `cutaway-assets`
-    /// (`just hack` builds no tests), so this is the one place it is loaded.
+    /// The web hero's pack, which a default-feature run loads nowhere else.
     #[test]
     fn the_pack_without_density_art_loads_whole() {
         let (_, dropped) = density_art::bundled_without_density_art(include_str!(

@@ -1402,28 +1402,32 @@ pub(crate) const PACK_MANIFEST: &str = "pack.toml";
 /// # Errors
 ///
 /// If `pack_toml` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
+#[cfg(feature = "pack-toml")]
 pub fn load_pack_from_strings(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     load_from_strings(pack_toml, frames, &mut |_| {})
 }
 
-/// [`load_pack_from_strings`] of a manifest a build script transcoded from
-/// TOML to JSON, so a build that loads only its bundled pack links no TOML
-/// parser.
+/// A `Pack` from a manifest a build script transcoded to JSON, and each frame
+/// file it names: what a build without `pack-toml` loads.
 ///
 /// # Errors
 ///
-/// As [`load_pack_from_strings`].
+/// If `pack_json` does not parse, a frame it names is absent from `frames`, or the pack fails validation.
 pub fn load_pack_from_json(pack_json: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     let parsed: PackToml =
-        serde_json::from_str(pack_json).map_err(|source| PackError::JsonManifest { source })?;
+        serde_json::from_str(pack_json).map_err(|e| PackError::JsonManifest {
+            message: e.to_string(),
+        })?;
     build_from_strings(parsed, frames, &mut |_| {})
 }
 
 /// The one-frame sprite [`fill_pack_manifest`] draws every piece it adds in.
+#[cfg(feature = "pack-toml")]
 pub(crate) const FILLER_SPRITE: (&str, &str) = ("filler.sprite", "@frame 0\n~");
 
 /// The palette keys [`fill_pack_manifest`] adds: the filler's, then one per
 /// [`Material`] and the character outline's.
+#[cfg(feature = "pack-toml")]
 const FILLER_KEYS: [char; 9] = ['~', '^', '`', '|', '{', '}', '<', '>', '='];
 
 /// `pack_toml` with every piece it leaves out drawn in [`FILLER_SPRITE`],
@@ -1433,6 +1437,7 @@ const FILLER_KEYS: [char; 9] = ['~', '^', '`', '|', '{', '}', '<', '>', '='];
 /// # Errors
 ///
 /// If `pack_toml` is not TOML.
+#[cfg(feature = "pack-toml")]
 pub(crate) fn fill_pack_manifest(pack_toml: &str) -> Result<String> {
     use toml::{Table, Value};
     let mut manifest: Table = pack_toml
@@ -1486,6 +1491,7 @@ pub(crate) fn fill_pack_manifest(pack_toml: &str) -> Result<String> {
 /// # Errors
 ///
 /// As [`load_pack_from_strings`].
+#[cfg(feature = "pack-toml")]
 #[doc(hidden)]
 pub fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack> {
     let frames: Vec<_> = frames.iter().copied().chain([FILLER_SPRITE]).collect();
@@ -1499,6 +1505,7 @@ pub fn load_filled_pack(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Pack
 /// # Errors
 ///
 /// As [`load_pack_from_strings`].
+#[cfg(feature = "pack-toml")]
 #[doc(hidden)]
 pub fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Vec<String>> {
     let mut read = Vec::new();
@@ -1506,6 +1513,7 @@ pub fn frames_read_by(pack_toml: &str, frames: &[(&str, &str)]) -> Result<Vec<St
     Ok(read)
 }
 
+#[cfg(feature = "pack-toml")]
 fn load_from_strings(
     pack_toml: &str,
     frames: &[(&str, &str)],

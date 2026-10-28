@@ -34,8 +34,7 @@ fn main() {
     } else {
         density_art::bundled_without_density_art(&pack_toml)
     };
-    // The runtime reads the manifest as JSON (`load_pack_from_json`), so no
-    // build links a TOML parser for one fixed file; the tests edit the TOML.
+    // For `load_pack_from_json`; the tests edit the TOML.
     let pack_json: serde_json::Value = toml::from_str(&pack_toml).expect("pack.toml is TOML");
     std::fs::write(out_dir.join("bundled_pack.json"), pack_json.to_string())
         .expect("write bundled_pack.json");

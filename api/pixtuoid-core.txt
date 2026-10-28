@@ -992,6 +992,8 @@ pub pixtuoid_core::sprite::error::PackError::HairstylesDiffer::first: pixtuoid_c
 pub pixtuoid_core::sprite::error::PackError::HairstylesDiffer::other: pixtuoid_core::sprite::format::Density
 #[non_exhaustive] pub pixtuoid_core::sprite::error::PackError::IconFrames
 pub pixtuoid_core::sprite::error::PackError::IconFrames::file: alloc::string::String
+#[non_exhaustive] pub pixtuoid_core::sprite::error::PackError::JsonManifest
+pub pixtuoid_core::sprite::error::PackError::JsonManifest::message: alloc::string::String
 #[non_exhaustive] pub pixtuoid_core::sprite::error::PackError::Manifest
 pub pixtuoid_core::sprite::error::PackError::Manifest::source: toml::de::error::Error
 #[non_exhaustive] pub pixtuoid_core::sprite::error::PackError::MissingEmbeddedFrame
@@ -1424,6 +1426,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::sprite::format::
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::sprite::format::Pack
 pub const pixtuoid_core::sprite::format::MAX_RAMP_LEVEL: i8
 pub fn pixtuoid_core::sprite::format::density_variant_name(&str, pixtuoid_core::sprite::format::Density) -> alloc::string::String
+pub fn pixtuoid_core::sprite::format::load_pack_from_json(&str, &[(&str, &str)]) -> core::result::Result<pixtuoid_core::sprite::format::Pack, pixtuoid_core::sprite::error::PackError>
 pub fn pixtuoid_core::sprite::format::load_pack_from_strings(&str, &[(&str, &str)]) -> core::result::Result<pixtuoid_core::sprite::format::Pack, pixtuoid_core::sprite::error::PackError>
 #[non_exhaustive] pub enum pixtuoid_core::sprite::HeadView
 pub pixtuoid_core::sprite::HeadView::Back

@@ -41,8 +41,12 @@ workspace = true
 # a default build keeps it out of `cargo public-api` + `cargo semver-checks`, so
 # it never becomes a semver commitment.
 [features]
-default = ["native"]
+default = ["native", "pack-toml"]
 native  = ["dep:tokio", "dep:notify"]
+# A pack manifest in TOML: `load_pack_from_strings` and the loaders on it.
+# Without it a build loads only a manifest transcoded to JSON
+# (`load_pack_from_json`) and links no TOML parser: the WebAssembly office.
+pack-toml = ["dep:toml"]
 # The recorder writes captured lines back; without insertion order every
 # rewritten object would come out alphabetized, an edit past the sanctioned one.
 harness = [
@@ -67,7 +71,7 @@ harness = [
 tokio       = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util"], optional = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
-toml        = { workspace = true }
+toml        = { workspace = true, optional = true }
 anyhow      = { workspace = true }
 thiserror   = { workspace = true }
 tracing     = { workspace = true }
