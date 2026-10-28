@@ -126,8 +126,9 @@ impl<S: CutawaySession> CutawayOffice<S> {
         })
     }
 
-    /// Step and draw `world`'s office, under the cells of the frame's text
-    /// `under` leaves it, where there is text over it.
+    /// Step and draw `world`'s office, dimmed as `under`'s backdrop is;
+    /// [`Self::paint`] shows it on `under`'s image cells (every scene cell
+    /// where `None`).
     pub(crate) fn render(
         &mut self,
         world: FloorInputs<'_>,

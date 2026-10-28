@@ -32,9 +32,9 @@ use pixtuoid_scene::render_scale::PixelFit;
 /// Where the transmits go: the terminal ratatui's backend also writes to.
 pub(crate) type Sink = Box<dyn Write + Send>;
 
-/// What a SIXEL or iTerm2 image cell holds before the frame's text is drawn:
-/// a symbol no text sets, which ratatui's diff skips, so the flush never
-/// blanks the pixels.
+/// What an image cell no kitty placeholder names holds before the frame's
+/// text is drawn: a symbol no text sets, which ratatui's diff skips, so the
+/// flush never blanks the pixels.
 static SENTINEL: Cell = {
     let mut cell = Cell::new("\u{F8FF}");
     cell.set_diff_option(CellDiffOption::Skip);

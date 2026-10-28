@@ -41,10 +41,6 @@ const ROWS: u16 = 80;
 const CELL_W: u32 = 8;
 const CELL_H: u32 = 16;
 
-/// The modes whose frames draw no panel and no pointer, so a flag only a
-/// still draws conflicts with them rather than being silently dropped.
-const STILL_ONLY: [&str; 3] = ["gif", "anim", "proof"];
-
 #[derive(Debug, Parser)]
 #[command(about = "Render the TUI off-screen to a PNG, GIF or proof frames for verification")]
 #[command(group(clap::ArgGroup::new("animation").args(["gif", "anim", "proof"]).multiple(true)))]
@@ -166,31 +162,31 @@ struct SnapshotArgs {
     weather: Option<String>,
 
     /// Force the `?` keyboard help overlay open (for screenshots).
-    #[arg(long, conflicts_with_all = STILL_ONLY)]
+    #[arg(long, conflicts_with = "animation")]
     help_open: bool,
 
     /// Force the source-death footer warning with the given source
     /// name (for screenshots), e.g. --source-warning claude-code.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "animation")]
     source_warning: Option<String>,
 
     /// Force the decode-drift footer nudge for the given comma-separated
     /// source label-prefixes (for screenshots), e.g. --drift-warning cc,cx.
     /// Lower priority than --source-warning (source-death preempts it).
-    #[arg(long)]
+    #[arg(long, conflicts_with = "animation")]
     drift_warning: Option<String>,
 
     /// Force the theme picker open at the given row index (for screenshots).
-    #[arg(long, conflicts_with_all = STILL_ONLY)]
+    #[arg(long, conflicts_with = "animation")]
     theme_picker: Option<usize>,
 
     /// Force the version popup fully visible (for screenshots).
-    #[arg(long, conflicts_with_all = STILL_ONLY)]
+    #[arg(long, conflicts_with = "animation")]
     popup: bool,
 
     /// Force a hover tooltip at terminal cell "x,y" (for screenshots / shadow
     /// visual checks), e.g. --hover 30,40.
-    #[arg(long, value_name = "X,Y", conflicts_with_all = STILL_ONLY)]
+    #[arg(long, value_name = "X,Y", conflicts_with = "animation")]
     hover: Option<String>,
 
     /// Add a wandering office pet to a renderer-driven --gif capture
@@ -1101,7 +1097,7 @@ mod tests {
     }
 
     #[test]
-    fn cutaway_conflicts_with_what_it_covers() {
+    fn cutaway_conflicts_with_what_it_cannot_draw() {
         let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
         for flags in [
             &["--hover", "1,1"][..],
@@ -1143,6 +1139,8 @@ mod tests {
             &["--theme-picker", "0"],
             &["--popup"],
             &["--hover", "1,1"],
+            &["--source-warning", "claude-code"],
+            &["--drift-warning", "cc"],
         ] {
             let alone = [&["snapshot"][..], flag].concat();
             assert!(parses(&alone), "rejected {alone:?}");
