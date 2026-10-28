@@ -1,8 +1,8 @@
 //! ONE row per agent CLI. A column must BOTH be picked by NAME by a generic caller
 //! AND be depended on by production, not merely reported (`ActivityRecency`,
-//! `should_seed_at_eof` fail that half). Two exceptions: `home_env`, the QUESTION a
-//! struct literal forces since a checklist let three sources ship an unverified
-//! resolver (#880/#343/#342/#195), and `FocusProbe::present`, doctor's typed path check.
+//! `should_seed_at_eof` fail that half). Exempt: `home_env`, the QUESTION a struct
+//! literal forces since a checklist let three sources ship an unverified resolver
+//! (#880/#343/#342/#195), and every path doctor checks, in the `Native` column.
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::{Map, Value};
