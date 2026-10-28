@@ -318,7 +318,32 @@ mod tests {
         assert_eq!(paths.of("codex"), [codex.join("sessions")]);
     }
 
-    /// Roots no probe gate admits: each family resolves nothing.
+    /// The click's own join: a slot's source names its paths, and its probe
+    /// reads them. grok's binds on pid-alive alone (its `pid_for_session` test).
+    #[cfg(unix)]
+    #[test]
+    fn a_probe_backed_slot_resolves_its_pid_through_its_sources_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let registry = root.path().join("active_sessions.json");
+        let me = std::process::id();
+        std::fs::write(
+            &registry,
+            format!(r#"[{{"session_id":"focus-grok","pid":{me},"cwd":"/r/a"}}]"#),
+        )
+        .unwrap();
+        let paths = FocusPaths(vec![("grok", vec![registry])]);
+        let table = empty_table();
+        assert_eq!(
+            resolve_pid(&slot("grok", "focus-grok", None), &paths, &table),
+            Some(me as i32)
+        );
+        assert_eq!(
+            resolve_pid(&slot("grok", "unknown", None), &paths, &table),
+            None
+        );
+    }
+
+    /// No probe paths: the probe is never reached, so no source resolves a pid.
     fn no_paths() -> FocusPaths {
         FocusPaths(Vec::new())
     }

@@ -266,9 +266,10 @@ fn sessions_root() -> Option<PathBuf> {
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    let mut roots = vec![omp_sessions_dir()];
-    roots.extend(omp_profile_sessions_dirs());
-    Ok(roots)
+    let s = OmpSource::default_paths();
+    Ok(std::iter::once(s.sessions_root)
+        .chain(s.profile_sessions_roots)
+        .collect())
 }
 
 /// The live session's pid, keyed by the `omp_id_from_path` stem CHAIN (the

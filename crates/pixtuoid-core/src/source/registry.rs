@@ -1,8 +1,8 @@
-//! ONE row per agent CLI. A column must BOTH be picked by NAME by a generic
-//! caller AND be depended on by production, not merely reported (`ActivityRecency`,
-//! `should_seed_at_eof` fail that half). `home_env` is the deliberate exception:
-//! its value is not the datum but the QUESTION a struct literal forces, after a
-//! checklist bullet let three sources ship an unverified resolver (#880/#343/#342/#195).
+//! ONE row per agent CLI. A column must BOTH be picked by NAME by a generic caller
+//! AND be depended on by production, not merely reported (`ActivityRecency`,
+//! `should_seed_at_eof` fail that half). Two exceptions: `home_env`, the QUESTION a
+//! struct literal forces since a checklist let three sources ship an unverified
+//! resolver (#880/#343/#342/#195), and `FocusProbe::present`, doctor's typed path check.
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::{Map, Value};
@@ -996,8 +996,8 @@ mod tests {
 
                 match resolved {
                     None => failures.push(format!(
-                        "{name} declares home_env={var} but `resolved_source_root` has no arm \
-                     for it — add one, or the declaration is unproven"
+                        "{name} declares home_env={var} but its `Native::root` is None — set \
+                     one, or the declaration is unproven"
                     )),
                     Some(r) if !r.starts_with(&root_env) => failures.push(format!(
                         "{name}: ${var}={} did not reach the resolved root {} — the override is \
