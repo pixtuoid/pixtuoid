@@ -14,10 +14,19 @@ const FORWARDED = registers.filter((hook) => !consumes.includes(hook));
 const DEFAULT_GATEWAY_PORT = 18789;
 
 /**
+ * `register` reads `OPENCLAW_GATEWAY_PORT` before the config, so each test owns
+ * it: unset unless `envPort` names it, and restored once `t` ends.
  * @param {import("node:test").TestContext} t
- * @param {{ shim?: "recorder" | "missing" }} [options]
+ * @param {{ shim?: "recorder" | "missing", envPort?: string }} [options]
  */
-async function renderPlugin(t, options) {
+async function renderPlugin(t, { envPort, ...options } = {}) {
+  const original = process.env.OPENCLAW_GATEWAY_PORT;
+  t.after(() => {
+    if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
+    else process.env.OPENCLAW_GATEWAY_PORT = original;
+  });
+  if (envPort === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
+  else process.env.OPENCLAW_GATEWAY_PORT = envPort;
   const rendered = await render(t, SOURCE, options);
   return { ...rendered, plugin: rendered.module.default };
 }
@@ -100,8 +109,9 @@ test("forwards ONLY the allowlist plus identity, never content", { skip: !POSIX 
 
   // BY TYPE: the shims are detached, so their appends race — arrival order is
   // deliberately not part of the contract.
-  const lines = await recorded(outFile, 2);
-  const byType = new Map(lines.map((l) => [l.type, l]));
+  const payloads = await recorded(outFile);
+  assert.equal(payloads.length, 2);
+  const byType = new Map(payloads.map((l) => [l.type, l]));
   const run = byType.get("before_agent_run");
   const end = byType.get("agent_end");
   assert.deepEqual(run, {
@@ -131,7 +141,9 @@ test("the port observed on a hook outranks the config fallback", { skip: !POSIX 
   const handlers = register(plugin, { config: { gateway: { port: 18789 } } });
   handlers["gateway_start"]({ port: 19790 }, { port: 19790 });
   handlers["session_start"]({ sessionId: "s1" }, { sessionId: "s1" });
-  const byType = new Map((await recorded(outFile, 2)).map((l) => [l.type, l]));
+  const payloads = await recorded(outFile);
+  assert.equal(payloads.length, 2);
+  const byType = new Map(payloads.map((l) => [l.type, l]));
   assert.equal(byType.get("gateway_start").gatewayPort, 19790, "the bound port wins");
   assert.equal(
     byType.get("session_start").gatewayPort,
@@ -141,19 +153,9 @@ test("the port observed on a hook outranks the config fallback", { skip: !POSIX 
 });
 
 test("port resolution defaults when neither env nor config names one", { skip: !POSIX }, async (t) => {
-  const original = process.env.OPENCLAW_GATEWAY_PORT;
-  t.after(() => {
-    if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
-    else process.env.OPENCLAW_GATEWAY_PORT = original;
-  });
-
-  delete process.env.OPENCLAW_GATEWAY_PORT;
-  {
-    const { outFile, plugin } = await renderPlugin(t);
-    register(plugin)["session_start"]({ sessionId: "s" }, {});
-    const [only] = await recorded(outFile, 1);
-    assert.equal(only.gatewayPort, DEFAULT_GATEWAY_PORT);
-  }
+  const { outFile, plugin } = await renderPlugin(t);
+  register(plugin)["session_start"]({ sessionId: "s" }, {});
+  assert.deepEqual((await recorded(outFile)).map((l) => l.gatewayPort), [DEFAULT_GATEWAY_PORT]);
 });
 
 // A bare `Number.parseInt` matches upstream's parser on plain digits and diverges on
@@ -173,19 +175,12 @@ for (const [raw, want, why] of /** @type {[string, number, string][]} */ ([
   ["", CONFIG_PORT, "empty"],
 ])) {
   test(`env port form: ${JSON.stringify(raw)} ⇒ ${want} (${why})`, { skip: !POSIX }, async (t) => {
-    const original = process.env.OPENCLAW_GATEWAY_PORT;
-    t.after(() => {
-      if (original === undefined) delete process.env.OPENCLAW_GATEWAY_PORT;
-      else process.env.OPENCLAW_GATEWAY_PORT = original;
-    });
-    process.env.OPENCLAW_GATEWAY_PORT = raw;
-    const { outFile, plugin } = await renderPlugin(t);
+    const { outFile, plugin } = await renderPlugin(t, { envPort: raw });
     register(plugin, { config: { gateway: { port: CONFIG_PORT } } })["session_start"](
       { sessionId: "s" },
       {},
     );
-    const [only] = await recorded(outFile, 1);
-    assert.equal(only.gatewayPort, want);
+    assert.deepEqual((await recorded(outFile)).map((l) => l.gatewayPort), [want]);
   });
 }
 
@@ -202,7 +197,8 @@ test("agent_end forwards the errored verdict, never the error string", { skip: !
   );
   handlers["agent_end"]({ runId: "r2", sessionId: "s1", success: false }, {});
   handlers["agent_end"]({ runId: "r3", sessionId: "s1", success: true }, {});
-  const rows = await recorded(outFile, 3);
+  const rows = await recorded(outFile);
+  assert.equal(rows.length, 3);
   const byRun = new Map(rows.map((r) => [r.runId, r]));
 
   assert.equal(byRun.get("r1").errored, true, "a prompt error is a real failure");
@@ -223,13 +219,13 @@ test("an out-of-range observed port is refused, keeping the resolved one", { ski
   // bogus value here would silently drop the mascot.
   const { outFile, plugin } = await renderPlugin(t);
   const handlers = register(plugin, { config: { gateway: { port: 18999 } } });
-  for (const bad of [0, -1, 65_536, 1.5, "19001", null]) {
-    handlers["gateway_start"]({ port: bad }, {});
-  }
-  const lines = await recorded(outFile, 6);
-  for (const line of lines) {
-    assert.equal(line.gatewayPort, 18999, `bogus port ${line.gatewayPort} was adopted`);
-  }
+  const bogus = [0, -1, 65_536, 1.5, "19001", null];
+  for (const port of bogus) handlers["gateway_start"]({ port }, {});
+  assert.deepEqual(
+    (await recorded(outFile)).map((l) => l.gatewayPort),
+    Array(bogus.length).fill(18999),
+    "a bogus port was adopted",
+  );
 });
 
 test("every forwarded hook keeps the shim contract", { skip: !POSIX }, async (t) => {
@@ -239,7 +235,7 @@ test("every forwarded hook keeps the shim contract", { skip: !POSIX }, async (t)
   assert.equal(module.default.id, "pixtuoid", "the export id must match the manifest id");
   const handlers = register(plugin);
   for (const hook of FORWARDED) handlers[hook]({ reason: "shutdown" }, {});
-  const payloads = await recorded(outFile, FORWARDED.length);
+  const payloads = await recorded(outFile);
   assert.deepEqual(payloads.map((p) => p.type).sort(), [...FORWARDED].sort());
   await assertShimContract(SOURCE, argvFile, payloads);
 });
@@ -266,7 +262,7 @@ test("a run's last model call decides errored, and the call itself is never forw
   for (const runId of ["down", "retried", "aborted", "clean", "no-calls"]) {
     handlers["agent_end"]({ runId, sessionId: "s", success: true }, {});
   }
-  const rows = await recorded(outFile, 5);
+  const rows = await recorded(outFile);
   assert.deepEqual(
     rows.map((r) => r.type),
     Array(5).fill("agent_end"),
@@ -290,7 +286,8 @@ test("a run's failure is its own, and agent_end forgets it", { skip: !POSIX }, a
   handlers["agent_end"]({ runId: "b", sessionId: "b", success: true }, {});
   handlers["agent_end"]({ runId: "a", sessionId: "a-first", success: true }, {});
   handlers["agent_end"]({ runId: "a", sessionId: "a-again", success: true }, {});
-  const rows = await recorded(outFile, 3);
+  const rows = await recorded(outFile);
+  assert.equal(rows.length, 3);
   assert.deepEqual(Object.fromEntries(rows.map((r) => [r.sessionId, r.errored])), {
     b: false,
     "a-first": true,
@@ -311,7 +308,8 @@ test("the failed-call ledger is bounded, the least recently called run first", {
   for (const runId of ["r0", "r1", "r2"]) {
     handlers["agent_end"]({ runId, success: true }, {});
   }
-  const rows = await recorded(outFile, 3);
+  const rows = await recorded(outFile);
+  assert.equal(rows.length, 3);
   assert.deepEqual(
     Object.fromEntries(rows.map((r) => [r.runId, r.errored])),
     { r0: true, r1: false, r2: true },

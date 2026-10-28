@@ -4,7 +4,9 @@
 // text, so this is where a plugin's behaviour is executed.
 
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,6 +19,25 @@ const POLL_DEADLINE_MS = 10_000;
 const POLL_TICK_MS = 25;
 
 export const POSIX = process.platform !== "win32";
+
+// Every child this process spawned that has yet to emit `close`, a
+// ChildProcess's last event (https://nodejs.org/api/child_process.html#event-close).
+/** @type {Set<import("node:child_process").ChildProcess>} */
+const open = new Set();
+const { spawn } = childProcess;
+childProcess.spawn = /** @type {typeof spawn} */ (
+  /** @param {unknown[]} args */
+  (...args) => {
+    /** @type {import("node:child_process").ChildProcess} */
+    const child = Reflect.apply(spawn, childProcess, args);
+    open.add(child);
+    child.once("close", () => open.delete(child));
+    return child;
+  }
+);
+// A plugin's imported `spawn` reaches this wrapper once the builtin's live
+// bindings are resynced (https://nodejs.org/api/module.html#modulesyncbuiltinesmexports).
+syncBuiltinESMExports();
 
 /**
  * @param {string} source
@@ -69,30 +90,30 @@ export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) 
 }
 
 /**
- * `file`'s non-empty lines once `done` holds of them: a shim writes after the
- * handler that spawned it returns.
+ * `file`'s non-empty lines once no shim is left open, including any a queue
+ * spawns while it waits, so a count or set read from them includes whatever
+ * extra a plugin sent.
  * @param {string} file
- * @param {(lines: string[]) => boolean} done
  */
-export async function poll(file, done) {
+export async function lines(file) {
   const deadline = Date.now() + POLL_DEADLINE_MS;
-  for (;;) {
-    const text = await readFile(file, "utf8").catch(() => "");
-    const lines = text.split("\n").filter((l) => l.trim().length > 0);
-    if (done(lines)) return lines;
-    if (Date.now() > deadline) throw new Error(`timed out polling ${file}; got ${lines.length} line(s)`);
+  // Checked only after a timer: a queue spawns each shim in microtasks, its
+  // first after the handler returns, each next in its previous one's `close`.
+  do {
+    if (Date.now() > deadline) throw new Error(`timed out with ${open.size} shim(s) still open`);
     await new Promise((r) => setTimeout(r, POLL_TICK_MS));
-  }
+  } while (open.size > 0);
+  const text = await readFile(file, "utf8").catch(() => "");
+  return text.split("\n").filter((l) => l.trim().length > 0);
 }
 
 /**
- * The first `n` payloads the shim received.
+ * Every payload the shim received.
  * @param {string} outFile
- * @param {number} n
  * @returns {Promise<any[]>} JSON, as the shim received it
  */
-export async function recorded(outFile, n) {
-  return (await poll(outFile, (lines) => lines.length >= n)).slice(0, n).map((l) => JSON.parse(l));
+export async function recorded(outFile) {
+  return (await lines(outFile)).map((l) => JSON.parse(l));
 }
 
 /**
@@ -103,8 +124,7 @@ export async function recorded(outFile, n) {
  * @param {Record<string, unknown>[]} payloads
  */
 export async function assertShimContract(source, argvFile, payloads) {
-  const argv = (await poll(argvFile, (lines) => lines.length >= payloads.length)).slice(0, payloads.length);
-  assert.deepEqual(argv, Array(payloads.length).fill(`${contract.source_flag} ${source}`));
+  assert.deepEqual(await lines(argvFile), Array(payloads.length).fill(`${contract.source_flag} ${source}`));
   for (const p of payloads) assert.equal(p[contract.pid_key], process.pid, `${JSON.stringify(p)} lacks the host pid`);
 }
 
