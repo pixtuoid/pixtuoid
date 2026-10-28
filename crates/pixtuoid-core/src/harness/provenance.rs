@@ -148,22 +148,13 @@ impl Provenance {
         }
     }
 
-    /// Write it to `path` as [`Provenance::text`].
+    /// Write it to `path`, pretty and newline-terminated.
     ///
     /// # Errors
     ///
     /// If it cannot be written.
     pub fn write_to(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::write(path, self.text()?)
-    }
-
-    /// Its file's text, pretty and newline-terminated.
-    ///
-    /// # Errors
-    ///
-    /// If it cannot be serialized.
-    pub fn text(&self) -> std::io::Result<String> {
-        Ok(format!("{}\n", serde_json::to_string_pretty(self)?))
+        std::fs::write(path, format!("{}\n", serde_json::to_string_pretty(self)?))
     }
 
     /// Its recording's record.

@@ -783,14 +783,12 @@ mod recorder {
                 deidentified,
             )?
         };
-        // Its text, not its parse: a key the record lacks parses to its default.
         if let Some(old) = committed.as_ref().map(Provenance::recorded)
-            && std::fs::read_to_string(dest.join(PROVENANCE))?
-                == Provenance::Recorded(Box::new(Recorded {
+            && *old
+                == (Recorded {
                     captured: old.captured.clone(),
                     ..fresh_record.clone()
-                }))
-                .text()?
+                })
             && let Some(bytes) = canonical_capture(&dest)?
             && canonical_capture(staged.path())?.as_ref() == Some(&bytes)
         {
