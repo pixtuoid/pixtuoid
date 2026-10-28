@@ -23,11 +23,23 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::source::daemon::{DaemonPresenceUpdate, DecodedPresence};
-use crate::source::registry::HookObject;
+use crate::source::registry::{HookObject, Hyphen, SourceDescriptor, SourceKind};
 use crate::state::{DaemonInstanceId, TurnKey};
 
 /// The OpenClaw daemon source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "openclaw";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "ok",
+    verified_version: "2026.10.8",
+    version_probe: Some(&["openclaw", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Daemon {
+        presence_decoder: decode_openclaw_hook_payload,
+    },
+};
 
 /// The wire field carrying the gateway's RESOLVED listening port — the "which
 /// gateway" key: unique among *live* gateways (two can't bind one port) and STABLE

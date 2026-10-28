@@ -33,11 +33,43 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The CodeWhale CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "codewhale";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "cw",
+    verified_version: "0.10.2",
+    version_probe: Some(&["codewhale", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_cw_hook_payload)),
+        caps: SourceCaps {
+            // session_end fires on a clean TUI quit — best-effort counts.
+            has_exit_signal: true,
+            // message_submit re-emits SessionStart, so a swept-but-live session
+            // walks back in on the next prompt.
+            resurrects_on_prompt: true,
+            // The recorded dispatch fires nothing of the child's own between
+            // `subagent_spawn` and `subagent_complete`.
+            delegations_are_hook_silent: true,
+            // `agent start` returns at dispatch, its child running on until its
+            // own `subagent_complete`.
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
+    },
+};
 
 /// CodeWhale's one sub-agent tool; its `action` picks the verb
 /// (`parse_agent_tool_action`, `codewhale-hq/Codewhale`

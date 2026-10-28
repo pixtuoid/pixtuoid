@@ -230,7 +230,7 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
     assert_eq!(pids.len(), 1, "extensions run in-process: one pid");
 }
 
-/// The registry row's load-bearing claim, pinned hermetically per recorded
+/// The omp module doc's load-bearing claim, pinned hermetically per recorded
 /// round: BOTH transports mint one folded AgentId, and the approval round's
 /// Start twins — separated by human latency — count ONE call through a real
 /// `Reducer`.

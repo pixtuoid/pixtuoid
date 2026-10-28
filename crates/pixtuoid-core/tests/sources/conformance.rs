@@ -8,7 +8,7 @@
 //! shows rather than one a seed hides.
 //!
 //! Adding a CLI = drop a fixture dir; the decoder comes from the source's
-//! `SourceDescriptor` row in `source/registry.rs` — no harness edit. Snapshots
+//! `DESCRIPTOR` in its `source/` module — no harness edit. Snapshots
 //! stay portable because the decoder is fed the fixture's *relative* path, and
 //! `AgentId` is a deterministic hash of that key.
 
@@ -93,7 +93,7 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
         let drive = Drive::transcript(source, &logical).unwrap_or_else(|| {
             panic!(
                 "fixture source {source:?} has no line_decoder — add/extend its \
-                 SourceDescriptor row in source/registry.rs"
+                 DESCRIPTOR in its source/ module"
             )
         });
         let driven = drive.lines(fixture_lines(transcript));

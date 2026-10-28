@@ -9,9 +9,12 @@ use semver::Version;
 
 use crate::source::registry::{self, Hyphen, SourceDescriptor};
 
-/// The source file holding every pin.
-pub fn registry_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/source/registry.rs")
+/// The source file holding `source`'s pin: its decoder module, whose
+/// `DESCRIPTOR` the pin is a field of.
+pub fn descriptor_path(source: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/source")
+        .join(format!("{}.rs", crate::harness::module_of(source)))
 }
 
 /// The release `d`'s pin names, strict as npm publishes them: an install reads
@@ -54,7 +57,7 @@ pub fn every_run_reported(
     }
 }
 
-/// The registry a recording of `d`'s source at `installed` leaves: `None`
+/// The module a recording of `d`'s source at `installed` leaves: `None`
 /// while the pin stays.
 ///
 /// # Errors
@@ -62,12 +65,12 @@ pub fn every_run_reported(
 /// When `installed` is below the pin, the pin is not a release, or the row or
 /// its pin line can't be found exactly.
 pub fn repinned(
-    registry: &str,
+    module: &str,
     d: &SourceDescriptor,
     installed: &Version,
 ) -> Result<Option<String>, String> {
     if moves(d, installed)? {
-        repin(registry, d.name, installed).map(Some)
+        repin(module, d.name, installed).map(Some)
     } else {
         Ok(None)
     }
@@ -92,22 +95,22 @@ pub fn moves(d: &SourceDescriptor, installed: &Version) -> Result<bool, String> 
 
 const PIN_FIELD: &str = "verified_version: ";
 
-/// `registry` with `source`'s pin, and nothing else, now naming `new`.
+/// `module` with `source`'s pin, and nothing else, now naming `new`.
 ///
-/// The row is the block whose `name:` line is `<source with - as _>::SOURCE_NAME`,
-/// up to its `};`, and the pin is that block's one `verified_version:` line:
-/// a bare version also sits in other rows and in the registry's tests. Only the
-/// literal's bytes change, so line endings survive.
+/// The row is the block whose `name:` line is `SOURCE_NAME`, up to its `};`,
+/// and the pin is that block's one `verified_version:` line: a bare version
+/// also sits in the module's tests. Only the literal's bytes change, so line
+/// endings survive.
 ///
 /// # Errors
 ///
 /// When the row's anchor or its pin line is not exactly one line, or the pin
 /// line holds no string literal.
-fn repin(registry: &str, source: &str, new: &Version) -> Result<String, String> {
-    let anchor = format!("name: {}::SOURCE_NAME,", source.replace('-', "_"));
+fn repin(module: &str, source: &str, new: &Version) -> Result<String, String> {
+    let anchor = "name: SOURCE_NAME,";
     let mut lines = Vec::new();
     let mut at = 0;
-    for line in registry.split_inclusive('\n') {
+    for line in module.split_inclusive('\n') {
         lines.push((at, line));
         at += line.len();
     }
@@ -116,7 +119,7 @@ fn repin(registry: &str, source: &str, new: &Version) -> Result<String, String> 
         .collect();
     let [row] = rows[..] else {
         return Err(format!(
-            "`{anchor}` is on {} registry lines, not 1",
+            "{source}: `{anchor}` is on {} lines, not 1",
             rows.len()
         ));
     };
@@ -135,10 +138,10 @@ fn repin(registry: &str, source: &str, new: &Version) -> Result<String, String> 
         .find('"')
         .and_then(|open| Some((open + 1, open + 1 + line[open + 1..].find('"')?)))
         .ok_or_else(|| format!("{source}'s pin line holds no string literal"))?;
-    let mut out = String::with_capacity(registry.len());
-    out.push_str(&registry[..start + literal.0]);
+    let mut out = String::with_capacity(module.len());
+    out.push_str(&module[..start + literal.0]);
     out.push_str(&new.to_string());
-    out.push_str(&registry[start + literal.1..]);
+    out.push_str(&module[start + literal.1..]);
     Ok(out)
 }
 
@@ -206,7 +209,7 @@ mod tests {
 
     #[test]
     fn a_recording_moves_the_pin_only_up() {
-        let src = std::fs::read_to_string(registry_path()).expect("registry.rs");
+        let src = std::fs::read_to_string(descriptor_path("codex")).expect("codex.rs");
         let d = registry::descriptor_for("codex").expect("codex");
         let pin = pinned(d).expect("codex's pin");
         assert_eq!(repinned(&src, d, &pin), Ok(None));
@@ -227,10 +230,10 @@ mod tests {
 
     #[test]
     fn a_repin_moves_only_its_own_rows_pin() {
-        let src = std::fs::read_to_string(registry_path()).expect("registry.rs");
         let new = "999.0.0-sentinel";
-        assert!(!src.contains(new));
         for d in registry::REGISTRY {
+            let src = std::fs::read_to_string(descriptor_path(d.name)).expect("its module");
+            assert!(!src.contains(new));
             let out = repin(&src, d.name, &v(new)).unwrap_or_else(|e| panic!("{}: {e}", d.name));
             let changed: Vec<(usize, &str)> = src
                 .lines()
@@ -250,7 +253,7 @@ mod tests {
                 .find(|l| l.trim_start().starts_with("name: "));
             assert_eq!(
                 row.map(|l| l.trim()),
-                Some(format!("name: {}::SOURCE_NAME,", d.name.replace('-', "_")).as_str()),
+                Some("name: SOURCE_NAME,"),
                 "{}: the pin moved is its own row's",
                 d.name
             );
@@ -260,20 +263,24 @@ mod tests {
 
     #[test]
     fn a_repin_refuses_a_row_it_cannot_find_exactly() {
-        let row = "const A: D = D {\n    name: a_cli::SOURCE_NAME,\n    verified_version: \"1.0.0\",\n};\n";
+        let row =
+            "const A: D = D {\n    name: SOURCE_NAME,\n    verified_version: \"1.0.0\",\n};\n";
         let new = v("1.1.0");
-        assert!(repin(row, "b-cli", &new).is_err(), "no row");
+        assert!(
+            repin(&row.replace("name: ", "label: "), "a-cli", &new).is_err(),
+            "no row"
+        );
         assert!(
             repin(&format!("{row}{row}"), "a-cli", &new).is_err(),
             "two rows"
         );
-        let pinless = "const A: D = D {\n    name: a_cli::SOURCE_NAME,\n};\n\
-                       const B: D = D {\n    name: b_cli::SOURCE_NAME,\n    verified_version: \"2.0.0\",\n};\n";
+        let pinless = "const A: D = D {\n    name: SOURCE_NAME,\n};\n\
+                       const B: D = D {\n    label: \"b\",\n    verified_version: \"2.0.0\",\n};\n";
         assert!(
             repin(pinless, "a-cli", &new).is_err(),
             "the next row's pin is not its own"
         );
-        let quoted = format!("// a row opens with `name: a_cli::SOURCE_NAME,`\n{row}");
+        let quoted = format!("// a row opens with `name: SOURCE_NAME,`\n{row}");
         assert!(
             repin(&quoted, "a-cli", &new).is_ok(),
             "the anchor is the whole line"
@@ -282,7 +289,7 @@ mod tests {
 
     #[test]
     fn a_repin_rewrites_the_literal_alone() {
-        let row = "const A: D = D {\r\n    name: a_cli::SOURCE_NAME,\r\n    // verified_version: \"0.1.0\", once\r\n    verified_version: \"1.0.0\",\r\n};\r\n";
+        let row = "const A: D = D {\r\n    name: SOURCE_NAME,\r\n    // verified_version: \"0.1.0\", once\r\n    verified_version: \"1.0.0\",\r\n};\r\n";
         assert_eq!(
             repin(row, "a-cli", &v("1.1.0")).as_deref(),
             Ok(row.replace("\"1.0.0\"", "\"1.1.0\"").as_str()),

@@ -42,11 +42,43 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, SUBAGENTS_DIR, ellipsize, non_empty};
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, ToolDetail};
 
 /// The Cursor CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "cursor";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "cu",
+    verified_version: "2026.10.22",
+    version_probe: Some(&["cursor-agent", "--version"]),
+    version_hyphen: Hyphen::Build,
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_cursor_hook_payload)),
+        caps: SourceCaps {
+            // `sessionEnd` fires on clean completion. An abrupt exit rides the
+            // shim-stamped pid, which reaches the CLI only because the ancestor walk
+            // skips Cursor's wrapper shell (#896).
+            has_exit_signal: true,
+            // Each `cursor-agent` invocation is a NEW session_id, so a swept
+            // session never walks back in.
+            resurrects_on_prompt: false,
+            // A child's events ride its own session, so the parent's goes quiet
+            // until its `Task` post.
+            delegations_are_hook_silent: true,
+            child_end_inference: ChildEndInference::TaskDrain,
+            child_hooks_unnamed: false,
+            brackets_turns: false,
+        },
+        focus: FocusChannel::ShimStamp(Corroboration::Twice),
+    },
+};
 
 /// Decode one Cursor hook payload (already identified by
 /// `_pixtuoid_source == "cursor"`). Envelope per `cursor.com/docs/hooks`; an

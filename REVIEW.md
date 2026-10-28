@@ -221,7 +221,7 @@ runs it again, a merge of `main` or a comment-only change does not. The
 - **Probe** a reducer, liveness or sweep change: a test that drives the
   interleaving the change touches.
 - **Run live, or replay hermetically**, a new source or hook integration
-  (`source/registry.rs`), without capture-rig convenience flags; event shapes
+  (a source's `DESCRIPTOR`), without capture-rig convenience flags; event shapes
   from canonical upstream docs, never a fork.
 - **Fetch** another CLI's upstream that is not on GitHub, for its config's
   resolution axes.

@@ -70,7 +70,7 @@ impl Literal {
             return *owner;
         }
         let head = self.module.split('/').next().unwrap_or_default();
-        let name = head.trim_end_matches(".rs").replace('_', "-");
+        let name = crate::harness::source_of(head.trim_end_matches(".rs"));
         crate::source::registry::registered_source_names()
             .find(|s| *s == name)
             .map_or(Owner::Unowned, Owner::Source)
@@ -125,10 +125,6 @@ const OWNERS: &[(&str, Owner)] = &[
     ("hook/unix.rs", Owner::Nobody(OUR_SHIM)),
     ("hook/windows.rs", Owner::Nobody(OUR_SHIM)),
     ("hook/pid_watch.rs", Owner::Nobody(OUR_SHIM)),
-    (
-        "registry.rs",
-        Owner::Nobody("the roster: ids, labels, pins and home variables"),
-    ),
 ];
 
 /// Why a path or environment name needs no fixture.
@@ -194,6 +190,13 @@ pub(crate) fn population() -> std::io::Result<BTreeSet<Literal>> {
         out.extend(collect(&module, &file));
     }
     Ok(out)
+}
+
+/// Whether `ty` is a source's registry row. Its id, label and pin are ours, a
+/// profiled row's version probe is one the hermetic run calls, and its home
+/// variable is a resolver axis ([`PATH_AXIS`]).
+fn is_roster_row(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "SourceDescriptor"))
 }
 
 /// Whether `attrs` hold a `cfg` only a test build meets: `test`, or an
@@ -380,7 +383,9 @@ impl<'ast> Visit<'ast> for Collect {
     }
 
     fn visit_item_const(&mut self, c: &'ast syn::ItemConst) {
-        self.within(c.ident.to_string(), |v| v.lits_in(&c.expr));
+        if !is_roster_row(&c.ty) {
+            self.within(c.ident.to_string(), |v| v.lits_in(&c.expr));
+        }
     }
 
     fn visit_item_static(&mut self, s: &'ast syn::ItemStatic) {

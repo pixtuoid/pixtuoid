@@ -123,7 +123,7 @@ Load-bearing — see `AGENTS.md` and the nested crate guides before changing:
   per-source format knowledge lives in that source's own decoders. Hook-only
   CLIs are the documented exception: registry rows with `transcript: None`, a
   custom hook decoder, and an install target.
-- **Cross-source facts live in ONE registry row** (`SourceDescriptor`):
+- **Cross-source facts live in ONE registry row** (its module's `DESCRIPTOR`):
   prefix, decoders, hook decoding, capability flags. The reducer derives
   lifecycle policy from the flags — it never matches CLI names.
 - **Events flow through one tagged channel**; producers tag their own events.

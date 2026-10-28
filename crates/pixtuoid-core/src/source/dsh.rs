@@ -1,23 +1,73 @@
-//! DeepSeek Harness (`dsh`) source. Hook-only: the transcript is not
-//! line-readable (the `DSH` registry row owns that story), so the only plane
-//! is a pixtuoid-owned cordis plugin (`pixtuoid/src/install/dsh_plugin.mjs`)
-//! mounted through the home-level `$DSH_HOME/cordis.patch.yml`, forwarding
-//! emit-only events through the shim. A REMOTE subagent provider
+//! DeepSeek Harness (`dsh`) source. Hook-only: dsh persists a session as
+//! zstd-compressed concatenated frames (`session.jsonl.zstd`, format v0 with no
+//! migration promise), which no line reader can tail, so the only plane is a
+//! pixtuoid-owned cordis plugin (`pixtuoid/src/install/dsh_plugin.mjs`; its
+//! mount and never-block stories live on the template and its tests) mounted
+//! through the home-level `$DSH_HOME/cordis.patch.yml`, forwarding emit-only
+//! events through the shim. A REMOTE subagent provider
 //! (`dsh-subagent-claude-code`/`-codex`/`-acp`) publishes no local child
 //! session, so such a delegation paints nothing here — at most the spawned
 //! CLI's own source shows a parentless sprite. Wire shape: upstream `packages/core/session/src/types.ts` (the
 //! `session/event` feed), `packages/interaction/user-approval/src/types.ts`
 //! (the log-only approval audit pair), `packages/core/agent/src/runtime-types.ts`
 //! (#928). One dsh process hosts MANY sessions (the `web` profile is a
-//! server), so `sessionId` is the identity and `_pid` only drives liveness.
+//! server; the opencode pid model), so `sessionId` is the identity and `_pid`
+//! only drives liveness.
 
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
-use crate::source::registry::HookObject;
+use crate::source::registry::{
+    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    SourceDescriptor, SourceKind,
+};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
-/// Stable source id; MUST equal the registry row's `name`.
+/// The dsh source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "dsh";
+
+pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
+    name: SOURCE_NAME,
+    label_prefix: "ds",
+    verified_version: "0.2.1-rc.2",
+    version_probe: Some(&["dsh", "--version"]),
+    version_hyphen: Hyphen::Prerelease,
+    // `DSH_HOME` is honored INSTALLER-side (the plugin file + patch row live
+    // under it); hook-only, so core resolves no root to relocate.
+    home_env: None,
+    kind: SourceKind::Agent {
+        transcript: None,
+        hook: Some(HookDecoding::ClaimsAll(decode_dsh_payload)),
+        caps: SourceCaps {
+            // `agent/disposed` + the plugin's own effect-disposer sweep fire
+            // on clean quit AND signal shutdown (dsh runs disposers there
+            // too); SIGKILL and an uncaught crash (upstream installs no
+            // `uncaughtException` handler, so no disposer runs) fall to
+            // `HookPidWatch` via the stamped pid.
+            has_exit_signal: true,
+            // Sessions are persistent; a `--resume` boots a NEW dsh whose
+            // plugin emits a fresh `session_start` on the same id — the
+            // SessionStart arm's ordinary re-registration, not this flag.
+            resurrects_on_prompt: false,
+            delegations_are_hook_silent: false,
+            // The dispatch returns the child's id at launch, and the child's
+            // own `session_end` ends it (`packages/subagent/tool-subagent/src/index.ts:215`
+            // at `dsh-v0.2.1-rc.2`; the delegation capture).
+            child_end_inference: ChildEndInference::None,
+            child_hooks_unnamed: false,
+            // A Ctrl-C'd turn's `turn/end` is written only as the `agents`
+            // service unloads (`packages/core/agent-loop/src/index.ts:544-580`
+            // at `dsh-v0.2.1-rc.2`). Our plugin consumes that service, and a
+            // consumer unloads before its provider
+            // (`packages/session/session-persistence-jsonl/src/index.ts:1814-1817`,
+            // same tag), so the plugin never sees that end.
+            brackets_turns: false,
+        },
+        // The plugin runs in-process (a cordis plugin in the launcher's one
+        // root context; no worker mode exists for plugins), so its stamped
+        // `process.pid` is dsh's own.
+        focus: FocusChannel::PluginStamp,
+    },
+};
 
 /// The payload types the plugin sends — one per subscribed upstream event.
 /// The plugin owns the upstream-name → wire-name mapping; the decoder owns
@@ -391,7 +441,7 @@ mod tests {
     }
 
     /// dsh's turn ends name no turn here: it does not bracket its turns
-    /// (its registry row says why).
+    /// (its `DESCRIPTOR` says why).
     #[test]
     fn a_turns_end_ends_the_agents_work() {
         let evs = decode(json!({"type": "turn_end", "sessionId": SID}));
