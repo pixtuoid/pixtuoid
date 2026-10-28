@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { POSIX, assertRegisters, assertShimContract, poll, render, row } from "./lib/plugin-harness.mjs";
+import { POSIX, assertRegisters, assertShimContract, lines, recorded, render, row } from "./lib/plugin-harness.mjs";
 
 const SOURCE = "dsh";
 // Long enough that two shims spawned together would overlap in the trace.
@@ -33,17 +33,6 @@ function apply(module) {
   return { handlers, event };
 }
 
-/**
- * Every payload once `agent/disposed`'s session_end, sent last, has landed: the
- * queue is first in, first out, so nothing sent before it can still be missing.
- * @param {string} outFile
- * @returns {Promise<Record<string, unknown>[]>}
- */
-const payloadsThroughEnd = async (outFile) =>
-  (await poll(outFile, (lines) => lines.some((l) => JSON.parse(l).type === "session_end"))).map((l) =>
-    JSON.parse(l),
-  );
-
 // A session event of each type the plugin forwards, carrying what it reads.
 /** @type {Record<string, unknown>} */
 const FULL = {
@@ -68,7 +57,7 @@ test("forwards each event of the contract once, and no other", { skip: !POSIX },
   for (const type of cases) event(type, FULL[type]);
   handlers.get("agent/disposed")?.({ agent: { session } });
 
-  const payloads = await payloadsThroughEnd(outFile);
+  const payloads = await recorded(outFile);
   assert.equal(payloads.length, cases.length + 2, `one payload per case, the session's ends: ${JSON.stringify(payloads)}`);
   await assertShimContract(SOURCE, argvFile, payloads);
 });
@@ -87,10 +76,9 @@ test("agent/created returns nothing, and events reach the shim in order, one at 
   event("tool/result", { message: { toolCallId: "c1" } });
   handlers.get("agent/disposed")?.({ agent: { session } });
 
-  const types = (await payloadsThroughEnd(outFile)).map((p) => p.type);
+  const types = (await recorded(outFile)).map((p) => p.type);
   assert.deepEqual(types, ["session_start", "approval_asked", "approval_decided", "tool_result", "session_end"]);
-  const trace = await poll(traceFile, (lines) => lines.length >= 2 * types.length);
-  assert.deepEqual(trace.slice(0, 2 * types.length), types.flatMap(() => ["begin", "end"]));
+  assert.deepEqual(await lines(traceFile), types.flatMap(() => ["begin", "end"]));
 });
 
 test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) => {
@@ -123,7 +111,7 @@ test("forwards only the allowlist, never content", { skip: !POSIX }, async (t) =
 
   // Exact payloads: a key nobody planted fails too, and so does a payload.
   const at = { sessionId: "s1", cwd: "/w", _pid: process.pid };
-  assert.deepEqual(await payloadsThroughEnd(outFile), [
+  assert.deepEqual(await recorded(outFile), [
     { type: "session_start", ...at },
     { type: "tool_call", ...at, callId: "c1", toolName: "bash" },
     { type: "approval_asked", ...at, callId: "c1", toolName: "bash", reason: "wider access" },
