@@ -9,6 +9,7 @@ use anyhow::{Context as _, Result};
 use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
+use pixtuoid_scene::layout::{Point, SceneLayout};
 use pixtuoid_scene::look::{Dim, Look, Place, RenderInputs, WorldText};
 use pixtuoid_scene::pack::OfficeArt;
 use pixtuoid_scene::pet::Pet;
@@ -75,6 +76,13 @@ impl CutawayOffice<FloorSession> {
     /// Its floor's stores, to seed as `draw_scene`'s floor is seeded.
     pub(crate) fn floor_mut(&mut self) -> &mut PerFloor {
         self.session.floor_mut()
+    }
+
+    /// The layout its last frame was drawn on.
+    pub(crate) fn layout(&self) -> Option<&SceneLayout> {
+        self.session
+            .picture()
+            .map(|picture| &**picture.hits.layout())
     }
 }
 
@@ -144,6 +152,12 @@ impl<S: CutawaySession> CutawayOffice<S> {
                 canvas.set((x + dx) as i32, (y + dy) as i32, px);
             }
         }
+    }
+
+    /// Where [`Self::paint`] puts the layout's point `p`: its top-left pixel.
+    pub(crate) fn frame_px(&self, p: Point) -> (u32, u32) {
+        let scale = u32::from(self.fit.scale().get());
+        (u32::from(p.x) * scale, u32::from(p.y) * scale)
     }
 }
 
@@ -319,5 +333,37 @@ mod tests {
             brightness(&mut settled) < brightness(&mut lit),
             "the settled cutaway is not darker"
         );
+    }
+
+    /// `frame_px` puts a point of the layout where `paint` puts its pixel.
+    #[test]
+    fn frame_px_lands_where_paint_puts_the_point() {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let scene = sample_scene(epoch(), 12, 6);
+        let mut cutaway = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let world = FloorInputs {
+            scene: &scene,
+            now: epoch(),
+            floor: FloorMeta::ground(),
+            pets: Default::default(),
+        };
+        cutaway.render(world, &NORMAL).unwrap();
+        let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
+        let frame = compose(&blank, blank.area, Some(&cutaway));
+        let density = cutaway.fit.density().get();
+        let pixels = cutaway.session.pixels().unwrap();
+        let logical = cutaway.layout().unwrap();
+        let points = (0..logical.buf_h)
+            .step_by(7)
+            .flat_map(|y| (0..logical.buf_w).step_by(5).map(move |x| (x, y)));
+        for (x, y) in points {
+            let (fx, fy) = cutaway.frame_px(pixtuoid_scene::layout::Point { x, y });
+            let want = pixels.get(x * density, y * density);
+            assert_eq!(
+                frame.get_pixel(fx, fy).0[..3],
+                [want.r, want.g, want.b],
+                "logical ({x}, {y})"
+            );
+        }
     }
 }

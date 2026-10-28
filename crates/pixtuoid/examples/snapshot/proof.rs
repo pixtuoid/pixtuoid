@@ -18,7 +18,8 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 
-use crate::encode::{FrameSink, ImageCanvas, Timeline, cells_to_rgba, fill_rect, terminal_cell};
+use crate::cutaway::CutawayOffice;
+use crate::encode::{FrameSink, ImageCanvas, Timeline, compose, fill_rect, terminal_cell};
 use crate::{CELL_H, CELL_W};
 use pixtuoid_scene::cutaway::{GridInk, paint_grid};
 use pixtuoid_scene::display::cells::CellGrid;
@@ -557,35 +558,21 @@ pub(crate) struct ProofJob<'a> {
     pub(crate) theme: &'static pixtuoid_scene::theme::Theme,
     pub(crate) pack: &'a std::sync::Arc<pixtuoid_scene::pack::OfficeArt>,
     pub(crate) weather: pixtuoid_scene::sky::WeatherPolicy,
+    /// Draw the office side as the cutaway.
+    pub(crate) cutaway: bool,
 }
 
 pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
     let script = build_script(job.session)?;
     let mut pending: VecDeque<(u64, AgentEvent)> = script.events.iter().cloned().collect();
 
-    // Anchor the burned callout to home_desks[0] in the SAME layout draw_scene
-    // computes.
-    let (buf_w, buf_h) = pixtuoid::dev::scene_buf_size(job.cols, job.rows);
-    let layout = pixtuoid_scene::layout::SceneLayout::compute_with_seed(
-        buf_w,
-        buf_h,
-        Some(job.max_desks),
-        0,
-    )
-    .ok_or_else(|| anyhow!("scene too small for a proof layout"))?;
-    let desk = layout
-        .home_desks
-        .first()
-        .copied()
-        .ok_or_else(|| anyhow!("layout has no home desks"))?;
-    let desk_px = (
-        u32::from(desk.at.x) * CELL_W,
-        (u32::from(desk.at.y) / 2) * CELL_H,
-    );
-
     let backend = TestBackend::new(job.cols, job.rows);
     let mut term = Terminal::new(backend)?;
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(job.pack));
+    let mut cutaway = job
+        .cutaway
+        .then(|| CutawayOffice::of_draw_scene(job.pack, job.cols, job.rows))
+        .transpose()?;
     let mut scene = SceneState::uniform(job.max_desks);
     let mut reducer = Reducer::new();
     let mut office = pixtuoid_scene::floor::PerOffice::new();
@@ -615,9 +602,29 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );
-        draw_scene(&mut term, &mut draw_ctx)?;
+        let hits = draw_scene(&mut term, &mut draw_ctx)?;
+        // The burned callout's anchor: home_desks[0] of the layout the office
+        // side was drawn on.
+        let desk_px = match &mut cutaway {
+            Some(cutaway) => {
+                cutaway.render(draw_ctx.world, job.theme)?;
+                let desk = cutaway.layout().and_then(|l| l.home_desks.first());
+                desk.map(|desk| cutaway.frame_px(desk.at))
+            }
+            None => {
+                let desk = hits.as_ref().and_then(|h| h.layout().home_desks.first());
+                // A half-block cell is one layout unit across and two down.
+                desk.map(|desk| {
+                    (
+                        u32::from(desk.at.x) * CELL_W,
+                        (u32::from(desk.at.y) / 2) * CELL_H,
+                    )
+                })
+            }
+        }
+        .context("the office drew no home desk")?;
         let cells = term.backend().buffer();
-        let office = cells_to_rgba(cells, cells.area);
+        let office = compose(cells, cells.area, cutaway.as_ref());
         for (kind, sink) in [
             (ProofLayout::Wide, &mut wide),
             (ProofLayout::Tall, &mut tall),
@@ -763,5 +770,69 @@ mod tests {
         let unit_width = |s: &str| s.chars().count() as i32;
         assert_eq!(wrap_text("", 100, unit_width), vec![String::new()]);
         assert_eq!(wrap_text("hi", 1, unit_width), vec!["hi".to_string()]);
+    }
+
+    /// The last wide frame of a short `--proof` of the committed session at
+    /// `cols`×`rows`, its office the cutaway's when `cutaway`.
+    fn last_wide_frame(cols: u16, rows: u16, cutaway: bool) -> RgbaImage {
+        let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let frames = tempfile::tempdir().unwrap();
+        let timeline = Timeline {
+            fps: 2,
+            secs: 1,
+            start: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000),
+        };
+        render_proof(&ProofJob {
+            session: &session_path(),
+            frames_dir: frames.path(),
+            cols,
+            rows,
+            timeline,
+            max_desks: 12,
+            theme: &pixtuoid_scene::theme::NORMAL,
+            pack: &pack,
+            weather: Default::default(),
+            cutaway,
+        })
+        .unwrap();
+        let last = FrameSink::frame_path(&frames.path().join("wide"), timeline.frame_count());
+        image::open(last).unwrap().to_rgba8()
+    }
+
+    /// `--proof --cutaway`: the office side is the cutaway's, and the typed
+    /// panel beside it is the classic proof's, pixel for pixel.
+    #[test]
+    fn the_proof_draws_its_office_side_in_the_cutaway() {
+        let (cols, rows) = (120, 52);
+        let (classic, cutaway) = (
+            last_wide_frame(cols, rows, false),
+            last_wide_frame(cols, rows, true),
+        );
+        let region = |img: &RgbaImage, xs: std::ops::Range<u32>, ys: std::ops::Range<u32>| {
+            ys.flat_map(|y| xs.clone().map(move |x| *img.get_pixel(x, y)))
+                .collect::<Vec<_>>()
+        };
+        let panel = 0..PANEL_W - PAD;
+        let all_rows = 0..classic.height();
+        assert_eq!(
+            region(&cutaway, panel.clone(), all_rows.clone()),
+            region(&classic, panel, all_rows),
+            "the typed panel moved"
+        );
+        let office = (
+            PANEL_W..classic.width(),
+            HEADER_H..HEADER_H + u32::from(rows) * CELL_H,
+        );
+        let ours = region(&cutaway, office.0.clone(), office.1.clone());
+        let changed = ours
+            .iter()
+            .zip(region(&classic, office.0, office.1))
+            .filter(|(a, b)| **a != *b)
+            .count();
+        assert!(
+            changed * 2 > ours.len(),
+            "only {changed} of {} office pixels are the cutaway's",
+            ours.len()
+        );
     }
 }

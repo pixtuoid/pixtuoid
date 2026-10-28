@@ -89,12 +89,11 @@ struct SnapshotArgs {
 
     /// Draw the office as the cutaway the TUI fits to this terminal of
     /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer.
-    // Each paints the classic's office cells, which the cutaway covers, or
-    // renders on a path the cutaway is not wired into.
+    // Each draws over the classic's office cells, which the cutaway covers, or
+    // crops a frame the cutaway paints from its top-left.
     #[arg(long, conflicts_with_all = [
         "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
         "hover", "debug_walkable", "crop_agent", "crop_furniture", "crop_mascot",
-        "proof",
     ])]
     cutaway: bool,
 
@@ -479,6 +478,7 @@ fn main() -> Result<()> {
             theme,
             pack: &pack,
             weather,
+            cutaway: args.cutaway,
         })?;
         println!("wrote proof frames → {}", frames_dir.display());
         return Ok(());
@@ -1108,7 +1108,6 @@ mod tests {
             &["--crop-agent", "x"],
             &["--crop-furniture", "pantry"],
             &["--crop-mascot", "--openclaw", "idle"],
-            &["--proof", "session.jsonl"],
         ] {
             let alone = [&["snapshot"][..], flags].concat();
             assert!(parses(&alone), "rejected {alone:?}");
@@ -1122,6 +1121,7 @@ mod tests {
             &["snapshot", "--cutaway", "--gif", "--pets", "cat"],
             &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
             &["snapshot", "--cutaway", "--empty"],
+            &["snapshot", "--cutaway", "--proof", "session.jsonl"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
         }
