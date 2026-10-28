@@ -50,7 +50,7 @@
   "targets": [
    "docs"
   ],
-  "caption": "Every built-in theme, one diagonal slice each.",
+  "caption": "Every built-in theme, one slice each.",
   "over": "@themes.json",
   "slant": -0.2,
   "look": "cutaway",
@@ -65,7 +65,7 @@
   "targets": [
    "docs"
   ],
-  "caption": "One office, one moment: the cutaway (left) and the classic (right).",
+  "caption": "The same moment as the detailed cutaway (left) and the simpler text-art view (right).",
   "axis": "look",
   "over": [
    "cutaway",
@@ -108,7 +108,7 @@
   "targets": [
    "docs"
   ],
-  "caption": "New sessions walk in from the elevator, each monitor glows with the tool in use, idle agents doze off, and the clock runs from afternoon through sunset into a snowy night.",
+  "caption": "Agents walk in, get to work and doze off as the day turns into a snowy night.",
   "href": "/",
   "look": "cutaway",
   "cols": 192,
