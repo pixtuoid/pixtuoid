@@ -1,8 +1,7 @@
 // The shared wasm-`Office` driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
-// music.
-// Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so
-// they can't static-import a shared `src/` module — they dynamic-`import()` this
-// public ES module at boot instead.
+// music. Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so they can't static-import a
+// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. music-worker.js static-imports
+// `loadWasm` into a module worker, which has no `window`: module scope touches no page global.
 'use strict';
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first

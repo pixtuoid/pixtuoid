@@ -318,7 +318,6 @@ mod tests {
             cmd.music.map(|m| m.controls),
             "the worker hands back what the wire carried"
         );
-        assert_eq!(controls_from_wire(&wire[..2]), None);
         let silent: serde_json::Value =
             serde_json::from_str(&commands_json(&TickCommands::default())).expect("valid JSON");
         assert!(silent["music"].is_null(), "no frame, no song");

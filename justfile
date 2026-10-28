@@ -897,17 +897,17 @@ gen-wasm: (_targets "wasm32-unknown-unknown")
         wasm-opt -Oz -o "site/public/wasm/${lib}_bg.wasm" "site/public/wasm/${lib}_bg.wasm"
     done
 
-# Bloat gate for each wasm the site ships. Size: the hero must stay
-# a lazy-load behind the poster, so a silent size regression (a dep pulling in
-# formatting machinery, an accidental debug build) fails loudly. The cap is on
-# the GZIPPED size, because the wire cost is what the poster is hiding.
-# Raw is REPORTED, never gated as wire: the runner prices the wasm gzipped, as
-# GitHub Pages ships it (`startPagesLikeProxy`), so site/lighthouserc.json sees raw
-# growth only as parse/compile cost (its CPU-time assertions). WIRE cost is gated
-# twice on purpose — here, naming the wasm, and there via its byte budgets under
-# simulated throttling, sized to admit a wasm AT this cap. The cap is growth
-# budget for the scene the hero runs, not a margin over today's payload, so a
-# regression shows as the printed gap shrinking, not as a red.
+# Bloat gate for each wasm the site ships: a silent size regression (a dep
+# pulling in formatting machinery, an accidental debug build) fails loudly. The
+# cap is on the GZIPPED size, the wire cost; raw is REPORTED, never gated as
+# wire: the runner prices the office's wasm gzipped, as GitHub Pages ships it
+# (`startPagesLikeProxy`), so site/lighthouserc.json sees raw growth only as
+# parse/compile cost (its CPU-time assertions). The office's WIRE cost is gated
+# twice on purpose — here, naming the file, and there via its byte budgets under
+# simulated throttling, sized to admit it AT this cap — because the poster hides
+# it while the hero lazy-loads. Its cap is growth budget for the scene the hero
+# runs, not a margin over today's payload, so a regression shows as the printed
+# gap shrinking, not as a red.
 [doc('Fail if a built wasm is missing or over its gzipped size cap')]
 [group('site')]
 gen-wasm-check:
@@ -919,7 +919,7 @@ gen-wasm-check:
         # own.
         case "$lib" in
             pixtuoid_web) CAP=524288 ;;
-            # Fetched on the first ♩ click, off the poster's path.
+            # Fetched on the first ♩ click, which Lighthouse never makes: this cap alone gates it.
             pixtuoid_web_music) CAP=131072 ;;
             *) echo "no size cap for $lib"; exit 1 ;;
         esac
