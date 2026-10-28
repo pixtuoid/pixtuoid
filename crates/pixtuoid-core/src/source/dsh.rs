@@ -67,6 +67,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // `process.pid` is dsh's own.
         focus: FocusChannel::PluginStamp,
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// The payload types the plugin sends — one per subscribed upstream event.

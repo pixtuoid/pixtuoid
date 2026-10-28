@@ -16,6 +16,7 @@
 //! codecov-ignored.
 
 use pixtuoid_core::AgentSlot;
+use pixtuoid_core::source::registry;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -60,34 +61,28 @@ pub(crate) fn ancestor_walk(table: &impl ProcessTable, start: i32) -> Option<i32
     None
 }
 
-/// The roots click-time pid resolution consults, each as its source's own
-/// default resolves it: a click looks a pid up where the source found the
-/// session, and doctor reports these same roots.
-pub(crate) struct FocusPaths {
-    /// CC's projects root.
-    pub cc_projects_root: std::path::PathBuf,
-    /// Codex's sessions root (rollout tree) for the fd probe.
-    pub codex_sessions_root: std::path::PathBuf,
-    /// grok's home root (`active_sessions.json`'s parent).
-    pub grok_root: std::path::PathBuf,
-    /// omp's sessions roots — the primary plus every profile's — for the fd
-    /// probe.
-    pub omp_sessions_roots: Vec<std::path::PathBuf>,
-}
+/// Each probe-backed source's click-time paths, as its row's
+/// `FocusProbe::paths` resolves them in this process's environment: a click
+/// reads where the source found the session, and doctor reports these same
+/// paths.
+pub(crate) struct FocusPaths(Vec<(&'static str, Vec<std::path::PathBuf>)>);
 
 impl FocusPaths {
-    /// The roots this process's environment resolves.
+    /// The paths this process's environment resolves.
     pub(crate) fn from_env() -> Self {
-        let mut omp_sessions_roots = vec![pixtuoid_core::source::omp::omp_sessions_dir()];
-        omp_sessions_roots.extend(pixtuoid_core::source::omp::omp_profile_sessions_dirs());
-        Self {
-            cc_projects_root: pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths()
-                .projects_root,
-            codex_sessions_root: pixtuoid_core::source::codex::CodexSource::default_paths()
-                .sessions_root,
-            grok_root: pixtuoid_core::source::grok::grok_home(),
-            omp_sessions_roots,
-        }
+        Self(
+            registry::REGISTRY
+                .iter()
+                .filter_map(|d| Some((d.name, (d.focus_probe()?.paths)().ok()?)))
+                .collect(),
+        )
+    }
+
+    fn of(&self, source: &str) -> &[std::path::PathBuf] {
+        self.0
+            .iter()
+            .find(|(s, _)| *s == source)
+            .map_or(&[], |(_, paths)| paths)
     }
 }
 
@@ -121,33 +116,15 @@ pub(crate) fn resolve_pid(
         }
         return Some(cached.pid);
     }
-    // The probe FNS stay here in the binary: the registry const table compiles to
-    // wasm and cannot hold a native-only fn pointer. The name match uses the
-    // registry consts, not literals — a source rename must not silently drop an
-    // arm to `_ => None`. Deliberately NO FocusChannel read: a channel gate
-    // ahead of the match severed omp's probe the day it became PluginStamp
-    // (its stamp-less shapes — `--no-extensions`, a session predating the
-    // bridge install — resolve only here), and an arm-less source falls to
-    // `_ => None` without one.
-    match slot.source.as_ref() {
-        s if s == pixtuoid_core::source::claude_code::SOURCE_NAME => {
-            pixtuoid_core::source::cc_pid_for_session(&paths.cc_projects_root, &slot.session_id)
-        }
-        s if s == pixtuoid_core::source::codex::SOURCE_NAME => {
-            pixtuoid_core::source::codex_pid_for_session(
-                &paths.codex_sessions_root,
-                &slot.session_id,
-            )
-        }
-        s if s == pixtuoid_core::source::grok::SOURCE_NAME => {
-            pixtuoid_core::source::grok_pid_for_session(&paths.grok_root, &slot.session_id)
-        }
-        s if s == pixtuoid_core::source::omp::SOURCE_NAME => paths
-            .omp_sessions_roots
-            .iter()
-            .find_map(|d| pixtuoid_core::source::omp_pid_for_session(d, &slot.session_id)),
-        _ => None,
-    }
+    // Deliberately NO FocusChannel read: a channel gate ahead of the probe
+    // severed omp's the day it became PluginStamp (its stamp-less shapes —
+    // `--no-extensions`, a session predating the bridge install — resolve only
+    // here).
+    let probe = registry::descriptor_for(&slot.source)?.focus_probe()?;
+    paths
+        .of(&slot.source)
+        .iter()
+        .find_map(|path| (probe.pid_for_session)(path, &slot.session_id))
 }
 
 /// The painter-agnostic focus dispatch: ANY painter's trigger resolves + walks +
@@ -337,18 +314,13 @@ mod tests {
             ],
             FocusPaths::from_env,
         );
-        assert_eq!(paths.cc_projects_root, cc.join("projects"));
-        assert_eq!(paths.codex_sessions_root, codex.join("sessions"));
+        assert_eq!(paths.of("claude-code"), [cc.join("sessions")]);
+        assert_eq!(paths.of("codex"), [codex.join("sessions")]);
     }
 
     /// Roots no probe gate admits: each family resolves nothing.
     fn no_paths() -> FocusPaths {
-        FocusPaths {
-            cc_projects_root: "/nonexistent/fixture".into(),
-            codex_sessions_root: "/nonexistent/fixture".into(),
-            grok_root: "/nonexistent/fixture".into(),
-            omp_sessions_roots: Vec::new(),
-        }
+        FocusPaths(Vec::new())
     }
 
     fn empty_table() -> MockTable {
@@ -402,33 +374,6 @@ mod tests {
         assert_eq!(resolve_pid(&r, &no_paths(), &empty_table()), None);
         let a = slot("copilot", "ses_d", None);
         assert_eq!(resolve_pid(&a, &no_paths(), &empty_table()), None);
-    }
-
-    #[test]
-    fn transcript_probe_sources_all_have_a_resolve_arm() {
-        // Lockstep pin: marking a new source `TranscriptProbe` in the registry
-        // REQUIRES wiring a probe arm in `resolve_pid` — extend BOTH, then add
-        // its name here. omp stays listed while PluginStamp: its arm is the
-        // stamp-less fallback, reachable because `resolve_pid` reads no
-        // channel.
-        use pixtuoid_core::source::registry::FocusChannel;
-        let wired = [
-            pixtuoid_core::source::claude_code::SOURCE_NAME,
-            pixtuoid_core::source::codex::SOURCE_NAME,
-            pixtuoid_core::source::grok::SOURCE_NAME,
-            pixtuoid_core::source::omp::SOURCE_NAME,
-        ];
-        for src in pixtuoid_core::source::registry::registered_source_names() {
-            let Some(d) = pixtuoid_core::source::registry::descriptor_for(src) else {
-                continue;
-            };
-            if d.focus_channel() == FocusChannel::TranscriptProbe {
-                assert!(
-                    wired.contains(&src),
-                    "{src} is TranscriptProbe but resolve_pid has no probe arm for it"
-                );
-            }
-        }
     }
 
     #[test]

@@ -71,6 +71,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
         focus: FocusChannel::ServerStamp,
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 const SESSION_DELETED: &str = "session.deleted";

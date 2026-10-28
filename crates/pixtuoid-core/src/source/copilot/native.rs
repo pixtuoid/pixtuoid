@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::{SOURCE_NAME, copilot_home, decode_copilot_line};
 use crate::source::decoder::parsed_tail_lines;
 use crate::source::jsonl::JsonlWatcher;
+use crate::source::registry::Native;
 use crate::source::{Source, TaggedSender};
 
 /// Copilot persists a real [`super::SESSION_SHUTDOWN`] event, so a transcript
@@ -48,6 +49,15 @@ impl Source for CopilotSource {
         .run(tx)
         .await
     }
+}
+
+pub(crate) const NATIVE: Native = Native {
+    root: Some(sessions_root),
+    focus_probe: None,
+};
+
+fn sessions_root() -> Option<PathBuf> {
+    Some(CopilotSource::default_paths().sessions_root)
 }
 
 #[cfg(test)]

@@ -39,6 +39,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     kind: SourceKind::Daemon {
         presence_decoder: decode_openclaw_hook_payload,
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// The wire field carrying the gateway's RESOLVED listening port — the "which

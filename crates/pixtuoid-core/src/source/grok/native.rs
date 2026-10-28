@@ -8,6 +8,7 @@ use anyhow::Result;
 
 use super::{SOURCE_NAME, decode_grok_line, grok_cwd_from_path, grok_home, grok_session_ended};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
+use crate::source::registry::{FocusProbe, Native};
 use crate::source::{Source, TaggedSender};
 
 /// Sized for the whole registry, not one entry: grok writes EVERY live TUI
@@ -32,7 +33,7 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 /// the enumeration itself failed, so the watcher changes nothing.
 #[cfg(unix)]
 pub(crate) fn live_grok_session_ids(grok_root: &Path) -> Option<ProbeSnapshot> {
-    let path = grok_root.join("active_sessions.json");
+    let path = session_registry(grok_root);
     let bytes = match crate::source::read_bounded_bytes(&path, MAX_SESSION_REGISTRY_BYTES) {
         Ok(b) => b,
         // Absent registry = healthy "no TUI clients".
@@ -201,6 +202,36 @@ impl Source for GrokSource {
         }
         watcher.run(tx).await
     }
+}
+
+pub(crate) const NATIVE: Native = Native {
+    root: Some(sessions_root),
+    focus_probe: Some(FocusProbe {
+        paths: probe_paths,
+        present: Path::is_file,
+        pid_for_session,
+    }),
+};
+
+fn sessions_root() -> Option<PathBuf> {
+    Some(GrokSource::default_paths().sessions_root)
+}
+
+fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
+    Ok(vec![session_registry(&grok_home())])
+}
+
+fn session_registry(grok_root: &Path) -> PathBuf {
+    grok_root.join("active_sessions.json")
+}
+
+/// The live session's pid, keyed by the session id (== the transcript's
+/// parent-dir name), as grok's own registry names it.
+fn pid_for_session(registry: &Path, session_id: &str) -> Option<i32> {
+    live_grok_session_ids(registry.parent()?)?
+        .pid_of
+        .get(session_id)
+        .copied()
 }
 
 #[cfg(test)]
@@ -485,5 +516,28 @@ mod tests {
                 "control: the registry's own live entry still binds"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pid_for_session_binds_a_live_registry_pid_and_misses_otherwise() {
+        let root = tempfile::tempdir().unwrap();
+        let me = std::process::id();
+        // No `opened_at`: a fixed stamp would predate this process's kernel
+        // start and the recycle guard would (correctly) drop the entry, so the
+        // binder is exercised on the pid-alive-only path.
+        let registry = session_registry(root.path());
+        std::fs::write(
+            &registry,
+            format!(r#"[{{"session_id":"focus-grok","pid":{me},"cwd":"/r/a"}}]"#),
+        )
+        .unwrap();
+
+        assert_eq!(
+            pid_for_session(&registry, "focus-grok"),
+            Some(me as i32),
+            "hit: the session's own live registry pid"
+        );
+        assert_eq!(pid_for_session(&registry, "unknown-sess"), None);
     }
 }

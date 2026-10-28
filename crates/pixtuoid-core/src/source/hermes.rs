@@ -60,6 +60,11 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // window owns (`install/hermes_plugin.py`).
         focus: FocusChannel::ServerStamp,
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native {
+        root: Some(hermes_home),
+        focus_probe: None,
+    },
 };
 
 /// The Hermes home dir (`config.yaml` lives directly in it), mirroring hermes's

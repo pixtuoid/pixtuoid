@@ -7,6 +7,7 @@ use anyhow::Result;
 
 use super::{SOURCE_NAME, codex_home, codex_id_from_path, decode_codex_line};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
+use crate::source::registry::{FocusProbe, Native};
 use crate::source::{Source, TaggedSender};
 
 /// Codex writes no session-end marker — defer to the mtime window + stale-sweep.
@@ -81,6 +82,33 @@ impl Source for CodexSource {
         }
         watcher.run(tx).await
     }
+}
+
+pub(crate) const NATIVE: Native = Native {
+    root: Some(sessions_root),
+    focus_probe: Some(FocusProbe {
+        paths: probe_paths,
+        present: Path::is_dir,
+        pid_for_session,
+    }),
+};
+
+fn sessions_root() -> Option<PathBuf> {
+    Some(CodexSource::default_paths().sessions_root)
+}
+
+fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
+    Ok(vec![CodexSource::default_paths().sessions_root])
+}
+
+/// The live session's pid, keyed by the rollout UUID (the slot's
+/// `session_id`) — NOT the rollout path, which comes back kernel-canonicalized
+/// from the fd probe and is deliberately not matched on.
+fn pid_for_session(sessions_root: &Path, uuid: &str) -> Option<i32> {
+    live_codex_rollout_ids(sessions_root)?
+        .pid_of
+        .get(uuid)
+        .copied()
 }
 
 #[cfg(test)]
@@ -180,5 +208,12 @@ mod tests {
         let snap = live_codex_rollout_ids(dir.path())
             .expect("a healthy system's enumeration must succeed");
         assert!(snap.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pid_for_session_misses_on_unknown_uuid() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(pid_for_session(root.path(), "0000-none"), None);
     }
 }

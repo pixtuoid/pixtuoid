@@ -180,6 +180,8 @@ pub struct SourceDescriptor {
     /// What KIND of source this is. Consumers read through the accessors so the
     /// enum shape stays an internal detail.
     pub(crate) kind: SourceKind,
+    #[cfg(feature = "native")]
+    pub(crate) native: Native,
 }
 
 /// The transcript half of an `Agent` row. Bundling the fns makes the
@@ -216,9 +218,9 @@ pub struct Transcript {
     pub(crate) parent_extractor: Option<ParentExtractor>,
 }
 
-/// Where this source's OS pid comes from — a DATA-only capability: this const
-/// table compiles to wasm, so a native-only probe FN POINTER can never live here
-/// (the probes stay in the BINARY's `focus::resolve_pid`). ONE source of truth
+/// Where this source's OS pid comes from — a DATA-only capability, which a wasm
+/// build reads too; a click-time probe rides the row's native column
+/// (`SourceDescriptor::focus_probe`). ONE source of truth
 /// for the focus stamp gate, the hook exit-watch binding and the doctor report
 /// bucketing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,7 +239,7 @@ pub enum FocusChannel {
     ServerStamp,
     /// Pid resolves through a recycle-guarded liveness probe at CLICK time; hook
     /// stamps are never trusted (the shim resolves the nearest non-shell
-    /// ancestor, not necessarily the CLI). The probe fn itself lives in the binary.
+    /// ancestor, not necessarily the CLI). The probe is the row's `focus_probe`.
     TranscriptProbe,
     /// No pid channel — a focus click silently no-ops (the ONE failure rule).
     Unsupported,
@@ -263,6 +265,42 @@ impl FocusChannel {
     pub(crate) fn stamps_focus_pid(self) -> bool {
         matches!(self, FocusChannel::ShimStamp(_) | FocusChannel::PluginStamp)
     }
+}
+
+/// What only a native build of a source runs: a wasm build compiles the column
+/// away, so its fn pointers never reach wasm.
+#[cfg(feature = "native")]
+#[derive(Debug)]
+pub(crate) struct Native {
+    /// The primary on-disk root [`crate::source::resolved_source_root`] reports.
+    pub(crate) root: Option<fn() -> Option<std::path::PathBuf>>,
+    /// The click-time pid lookup, for a source whose stamp is absent or untrusted.
+    pub(crate) focus_probe: Option<FocusProbe>,
+}
+
+#[cfg(feature = "native")]
+impl Native {
+    pub(crate) const NONE: Self = Self {
+        root: None,
+        focus_probe: None,
+    };
+}
+
+/// A source's click-time pid lookup: a point query against the CLI's live
+/// state, never a transcript scan, riding the recycle-guarded probe, which is
+/// why a transcript family's pid is never taken from the shim parent. A
+/// non-unix build resolves nothing (focus silently no-ops).
+#[cfg(feature = "native")]
+#[derive(Debug, Clone, Copy)]
+pub struct FocusProbe {
+    /// The paths the lookup reads in this environment, one per root; `Err`
+    /// names why the layout hosts none.
+    pub paths: fn() -> std::result::Result<Vec<std::path::PathBuf>, &'static str>,
+    /// Whether a path is there as the lookup reads it (`Path::is_dir` or
+    /// `Path::is_file`): a stray file where a dir belongs reads missing.
+    pub present: fn(&std::path::Path) -> bool,
+    /// The live session's pid, as `path` names it.
+    pub pid_for_session: fn(path: &std::path::Path, session_id: &str) -> Option<i32>,
 }
 
 /// The two source classes, type-isolated: the registry-driven demux and the
@@ -343,6 +381,12 @@ impl SourceDescriptor {
             SourceKind::Agent { focus, .. } => *focus,
             SourceKind::Daemon { .. } => FocusChannel::Unsupported,
         }
+    }
+
+    /// Its click-time pid lookup.
+    #[cfg(feature = "native")]
+    pub fn focus_probe(&self) -> Option<&FocusProbe> {
+        self.native.focus_probe.as_ref()
     }
 
     /// The hook-decoding spec (`None` for a daemon and for a transcript-only
@@ -612,6 +656,22 @@ mod tests {
             REGISTRY.len(),
             "duplicate label_prefix across sources — two CLIs would share one sprite prefix"
         );
+    }
+
+    /// The binary's focus dispatch reads no channel, so a `TranscriptProbe`
+    /// source without a probe would silently never focus.
+    #[cfg(feature = "native")]
+    #[test]
+    fn every_transcript_probe_source_has_a_focus_probe() {
+        for d in REGISTRY {
+            if d.focus_channel() == FocusChannel::TranscriptProbe {
+                assert!(
+                    d.focus_probe().is_some(),
+                    "{} is TranscriptProbe with no probe",
+                    d.name
+                );
+            }
+        }
     }
 
     #[test]

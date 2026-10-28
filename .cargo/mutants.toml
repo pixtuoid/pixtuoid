@@ -59,7 +59,7 @@ exclude_re = [
     # `Some(Default` spelling: each fn's `-> None` twin IS killable and caught.
     'omp/native\.rs.*replace live_omp_session_ids -> Option<ProbeSnapshot> with Some\(Default',
     'codex/native\.rs.*replace live_codex_rollout_ids -> Option<ProbeSnapshot> with Some\(Default',
-    'mod\.rs.*replace codex_pid_for_session -> Option<i32> with None',
+    'codex/native\.rs.*replace pid_for_session -> Option<i32> with None',
     # #828: `cfg!(windows)` short-circuits this comparison to a constant `false`
     # off Windows, so the operator is unobservable there. Its `&&` sibling one
     # column left IS killable and is caught.

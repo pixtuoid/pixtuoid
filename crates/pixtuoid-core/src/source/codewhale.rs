@@ -69,6 +69,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// CodeWhale's one sub-agent tool; its `action` picks the verb

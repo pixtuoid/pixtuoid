@@ -2,7 +2,7 @@
 //! `ClaudeCodeSource` (the pure `~/.claude/projects` JSONL watcher), the
 //! shim↔daemon socket-path anchor, and the liveness-probe re-export.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -10,6 +10,7 @@ use super::{SOURCE_NAME, cc_derive_label, cc_session_ended, claude_config_dir, d
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
+use crate::source::registry::{FocusProbe, Native};
 use crate::source::{Source, TaggedSender};
 
 /// A pure `~/.claude/projects` transcript watcher: no socket bind, no
@@ -111,6 +112,39 @@ impl Source for ClaudeCodeSource {
     }
 }
 
+pub(crate) const NATIVE: Native = Native {
+    root: Some(projects_root),
+    focus_probe: Some(FocusProbe {
+        paths: probe_paths,
+        present: Path::is_dir,
+        pid_for_session,
+    }),
+};
+
+fn projects_root() -> Option<PathBuf> {
+    Some(ClaudeCodeSource::default_paths().projects_root)
+}
+
+fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
+    registry_dir(&ClaudeCodeSource::default_paths().projects_root)
+        .map(|dir| vec![dir])
+        .ok_or("non-standard projects root")
+}
+
+/// CC's sessions registry, the dir its pid lookup reads: the SAME
+/// standard-layout gate the probe applies, so a projects root pointed
+/// elsewhere yields `None`.
+pub fn registry_dir(projects_root: &Path) -> Option<PathBuf> {
+    cc_sessions_dir(projects_root)
+}
+
+fn pid_for_session(sessions_dir: &Path, session_id: &str) -> Option<i32> {
+    live_cc_session_ids(sessions_dir)?
+        .pid_of
+        .get(session_id)
+        .copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +224,50 @@ mod tests {
                 empty_paths.projects_root
             );
         });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pid_for_session_hits_misses_and_tolerates_garbage() {
+        let home = tempfile::tempdir().unwrap();
+        let sessions = home.path().join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        // Our own pid is alive by construction.
+        std::fs::write(
+            sessions.join("self.json"),
+            serde_json::json!({
+                "pid": std::process::id(),
+                "sessionId": "focus-sess",
+                "startedAt": crate::source::cc_probe::pid_start_time_secs(std::process::id() as i32).unwrap_or(0) * 1000,
+                "status": "idle"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(sessions.join("junk.json"), "not json {{{").unwrap();
+
+        assert_eq!(
+            pid_for_session(&sessions, "focus-sess"),
+            Some(std::process::id() as i32),
+            "hit: the session's live registry pid"
+        );
+        assert_eq!(
+            pid_for_session(&sessions, "unknown-sess"),
+            None,
+            "miss: unknown session resolves nothing"
+        );
+    }
+
+    #[test]
+    fn registry_dir_derives_the_sibling_only_for_the_standard_layout() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(
+            registry_dir(&home.path().join("projects")),
+            Some(home.path().join("sessions")),
+            "the standard layout derives the SIBLING sessions dir"
+        );
+        // A root pointed elsewhere (file_name != "projects") derives nothing,
+        // so it keeps the pure-mtime gate.
+        assert_eq!(registry_dir(&home.path().join("fixture")), None);
     }
 }

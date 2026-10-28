@@ -52,6 +52,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// The CLI's app data dir, under [`gemini_dir`]: NOT `antigravity`, the App's,

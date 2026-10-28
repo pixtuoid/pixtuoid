@@ -18,7 +18,7 @@ use crate::source::registry::{
 #[cfg(feature = "native")]
 mod native;
 #[cfg(feature = "native")]
-pub use native::{ClaudeCodeSource, cc_watcher, live_cc_session_ids};
+pub use native::{ClaudeCodeSource, cc_watcher, live_cc_session_ids, registry_dir};
 
 /// The Claude Code source's registry name (its `SourceDescriptor.name`).
 ///
@@ -66,6 +66,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::TranscriptProbe,
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// The label the attachment decoder synthesizes for the `ultra_effort_exit`

@@ -12,6 +12,7 @@ use super::{
 };
 use crate::source::decoder::parsed_tail_lines;
 use crate::source::jsonl::{JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root};
+use crate::source::registry::{FocusProbe, Native};
 use crate::source::{DEFAULT_POLL_INTERVAL, Source, TaggedSender};
 
 /// The profile-roots lister [`OmpSource::run`] re-invokes on each new profile
@@ -249,6 +250,37 @@ fn omp_recognize(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
 
+/// Its probe is the fallback for a session its bridge never stamped
+/// (`--no-extensions`, or one predating the install).
+pub(crate) const NATIVE: Native = Native {
+    root: Some(sessions_root),
+    focus_probe: Some(FocusProbe {
+        paths: probe_paths,
+        present: Path::is_dir,
+        pid_for_session,
+    }),
+};
+
+fn sessions_root() -> Option<PathBuf> {
+    Some(OmpSource::default_paths().sessions_root)
+}
+
+fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
+    let mut roots = vec![omp_sessions_dir()];
+    roots.extend(omp_profile_sessions_dirs());
+    Ok(roots)
+}
+
+/// The live session's pid, keyed by the `omp_id_from_path` stem CHAIN (the
+/// slot's `session_id`, so a nested subagent resolves its OWN pid — which is
+/// the parent's, since omp subagents run in-process and inherit the fd).
+fn pid_for_session(sessions_root: &Path, session_id: &str) -> Option<i32> {
+    live_omp_session_ids(sessions_root)?
+        .pid_of
+        .get(session_id)
+        .copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +377,14 @@ mod tests {
         let snap =
             live_omp_session_ids(dir.path()).expect("a healthy system's enumeration must succeed");
         assert!(snap.is_empty());
+    }
+
+    /// Miss-only, like codex's: a HIT needs an fd held by a process the probe
+    /// recognizes (`bun`/`omp`), which a test binary is not.
+    #[cfg(unix)]
+    #[test]
+    fn pid_for_session_misses_on_unknown_session() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(pid_for_session(root.path(), "any-session"), None);
     }
 }

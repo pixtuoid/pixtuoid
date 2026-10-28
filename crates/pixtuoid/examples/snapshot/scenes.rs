@@ -25,7 +25,7 @@ pub(crate) async fn capture_live_scene(
     // The SAME liveness probe as the real source: without it an in-flight session
     // first-sights at EOF (no history replay), so session-cumulative state —
     // tokens_used above all — reads ZERO and `--live` renders no paper tower.
-    if let Some(sessions_dir) = pixtuoid_core::source::cc_registry_dir(&root) {
+    if let Some(sessions_dir) = pixtuoid_core::source::claude_code::registry_dir(&root) {
         watcher = watcher.with_liveness_probe(std::sync::Arc::new(move || {
             pixtuoid_core::source::claude_code::live_cc_session_ids(&sessions_dir)
         }));

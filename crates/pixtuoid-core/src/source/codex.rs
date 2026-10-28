@@ -28,8 +28,6 @@ use crate::state::TurnKey;
 mod native;
 #[cfg(feature = "native")]
 pub use native::CodexSource;
-#[cfg(feature = "native")]
-pub(crate) use native::live_codex_rollout_ids;
 
 /// The Codex source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "codex";
@@ -69,6 +67,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::TranscriptProbe,
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// Trailing canonical UUID (`8-4-4-4-12`) of a `rollout-<ts>-<UUID>.jsonl`

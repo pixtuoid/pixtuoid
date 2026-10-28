@@ -1,7 +1,7 @@
 //! Oh My Pi (`omp`, omp.sh) source. HYBRID: the durable authority is the
 //! session transcript (`<sessions-root>/<encoded-cwd>/<ts>_<uuid>.jsonl`), read
-//! by one `JsonlWatcher` per root: [`omp_sessions_dir`] owns every axis of the
-//! primary root, [`omp_profile_sessions_dirs`] adds every other profile's.
+//! by one `JsonlWatcher` per root: `omp_sessions_dir` owns every axis of the
+//! primary root, `omp_profile_sessions_dirs` adds every other profile's.
 //! Subagents persist as SEPARATE nested files (`<parent-stem>/<taskId>.jsonl`),
 //! parent-linked by path. omp has no shell-hook seam — its hooks are in-process
 //! TS extension modules — so the hook plane is a pixtuoid-owned bridge
@@ -35,8 +35,6 @@ use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 mod native;
 #[cfg(feature = "native")]
 pub use native::OmpSource;
-#[cfg(feature = "native")]
-pub(crate) use native::live_omp_session_ids;
 
 /// The Oh My Pi (omp) source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "omp";
@@ -87,10 +85,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // puts omp on `HookPidWatch` (prompt exits) and makes a bridge-only,
         // never-persisted session focusable from birth. Stamp-less shapes —
         // `--no-extensions`, a session predating the bridge install — still
-        // focus through the append-fd probe: `resolve_pid` dispatches by
-        // source name and reads no channel.
+        // focus through its `NATIVE` focus probe, which `resolve_pid` reads
+        // with no channel gate.
         focus: FocusChannel::PluginStamp,
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// omp's SESSIONS root, mirroring `dirs.ts` — deliberately NOT
@@ -99,7 +99,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// read through the `.env` overlay first (`with_omp_dotenv`): upstream applies
 /// those files and then REBUILDS this resolver, so a var set only in `~/.env`
 /// moves the sessions dir and process env alone would watch an empty directory.
-pub fn omp_sessions_dir() -> PathBuf {
+#[cfg(feature = "native")]
+pub(crate) fn omp_sessions_dir() -> PathBuf {
     let env = overlaid_env();
     resolve_omp_sessions_dir(
         &env,
@@ -110,7 +111,7 @@ pub fn omp_sessions_dir() -> PathBuf {
 
 /// omp's ACTIVE agent directory, the root its extension loader scans (its
 /// `EXTENSIONS_SUBDIR` child). Same `.env` overlay as
-/// [`omp_sessions_dir`], same profile/override precedence, but NO XDG
+/// `omp_sessions_dir`, same profile/override precedence, but NO XDG
 /// flatten: upstream's `getAgentDir()` returns `dirs.agentDir` un-redirected
 /// (`dirs.ts` applies XDG only per-category via `agentSubdir`), so a
 /// migrated-XDG user's extensions still load from here. Exported for the
@@ -283,6 +284,7 @@ fn resolve_omp_agent_dir(env: &OmpEnv) -> PathBuf {
 }
 
 /// `getSessionsDir()` = `agentSubdir(undefined, "sessions", "data")`.
+#[cfg(feature = "native")]
 fn resolve_omp_sessions_dir(
     env: &OmpEnv,
     xdg_platform: bool,
@@ -308,7 +310,8 @@ fn resolve_omp_sessions_dir(
 /// set is deterministic. Only the SELECTED profile's `.env` files overlay the
 /// env (upstream freezes the resolver per process the same way), so another
 /// profile's own `.env` relocations are unseen here.
-pub fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
+#[cfg(feature = "native")]
+pub(crate) fn omp_profile_sessions_dirs() -> Vec<PathBuf> {
     let env = overlaid_env();
     omp_profile_sessions_dirs_resolved(
         &env,
@@ -335,10 +338,12 @@ pub(crate) fn omp_profiles_dir() -> Option<PathBuf> {
     profiles_dir(&env)
 }
 
+#[cfg(feature = "native")]
 fn profiles_dir(env: &OmpEnv) -> Option<PathBuf> {
     Some(omp_config_root(env, None)?.join(PROFILES_SUBDIR))
 }
 
+#[cfg(feature = "native")]
 fn omp_profile_sessions_dirs_resolved(
     env: &OmpEnv,
     xdg_platform: bool,
@@ -375,6 +380,7 @@ fn omp_profile_sessions_dirs_resolved(
 /// the home-rooted layout. Linux and macOS only, and only for a DEFAULT agent dir.
 /// The file's own header claims there is no existence check; its code calls
 /// `fs.existsSync`.
+#[cfg(feature = "native")]
 fn xdg_app_root(
     xdg_data_home: Option<&Path>,
     profile: Option<&str>,

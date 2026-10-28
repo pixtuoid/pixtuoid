@@ -68,6 +68,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// Reasonix tools that spawn a subagent, so the slot reads "Delegating" while

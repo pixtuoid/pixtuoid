@@ -77,6 +77,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // https://nodejs.org/api/child_process.html): re-check both if either changes.
         focus: FocusChannel::ShimStamp(Corroboration::OnceViaShell),
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// Decode Kimi's two failure-variant hook events (no CC equivalent) and DECLINE

@@ -7,6 +7,7 @@ use anyhow::Result;
 
 use super::{CLI_APP_DATA_DIR, SOURCE_NAME, decode_ag_line, gemini_dir};
 use crate::source::jsonl::JsonlWatcher;
+use crate::source::registry::Native;
 use crate::source::{Source, TaggedSender};
 
 /// Source that watches Antigravity CLI conversation log directories.
@@ -43,6 +44,15 @@ impl Source for AntigravitySource {
 
 fn ag_session_ended(_tail: &[u8]) -> bool {
     false
+}
+
+pub(crate) const NATIVE: Native = Native {
+    root: Some(brain_root),
+    focus_probe: None,
+};
+
+fn brain_root() -> Option<PathBuf> {
+    Some(AntigravitySource::default_paths().brain_root)
 }
 
 #[cfg(test)]

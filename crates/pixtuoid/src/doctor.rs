@@ -646,15 +646,8 @@ struct DoctorReport {
     /// `false` = the focus backend itself can't work here (the Wayland /
     /// no-display arms) — the focus category's verdict, not a probe result.
     backend_healthy: bool,
-    /// `None` = probe disabled (non-standard projects root).
-    cc_registry: Option<(ShownPath, bool)>,
-    codex_sessions: (ShownPath, bool),
-    /// The other two probe roots (omp's probe is the stamp-less FALLBACK since
-    /// the PluginStamp flip). Each is source-specific — omp's is the resolved
-    /// sessions dir, grok's a registry FILE — so each needs its own
-    /// hand-written row, pinned by `every_focusable_source_appears_in_the_focus_category`.
-    omp_sessions: (ShownPath, bool),
-    grok_registry: (ShownPath, bool),
+    /// One per probe-backed source, in registry order.
+    probes: Vec<ProbePath>,
     home_split: Option<String>,
     /// Whether the report may carry ANSI color — see [`report_color`].
     color: bool,
@@ -744,41 +737,28 @@ fn collect_roots() -> Vec<RootStatus> {
         .collect()
 }
 
-/// The click's probe roots ([`crate::focus::FocusPaths::from_env`]), so the
-/// report cannot claim a root a click would not read. grok's is a registry
-/// FILE, not a directory; omp's is its primary root.
-struct ProbeRoots {
-    cc_registry: Option<(std::path::PathBuf, bool)>,
-    codex_sessions: std::path::PathBuf,
-    codex_exists: bool,
-    omp_sessions: std::path::PathBuf,
-    omp_exists: bool,
-    grok_registry: std::path::PathBuf,
-    grok_exists: bool,
+/// One probe-backed source's click-time path: its first, and whether it is
+/// there, or why its layout hosts none. Read through the same
+/// `FocusProbe::paths` a click reads, so the report cannot claim a path a click
+/// would not.
+struct ProbePath {
+    source: &'static registry::SourceDescriptor,
+    path: Result<(ShownPath, bool), &'static str>,
 }
 
-fn probe_roots() -> ProbeRoots {
-    let roots = crate::focus::FocusPaths::from_env();
-    let cc_registry = pixtuoid_core::source::cc_registry_dir(&roots.cc_projects_root).map(|d| {
-        let exists = d.is_dir();
-        (d, exists)
-    });
-    let codex_sessions = roots.codex_sessions_root;
-    let omp_sessions = roots
-        .omp_sessions_roots
-        .into_iter()
-        .next()
-        .unwrap_or_default();
-    let grok_registry = roots.grok_root.join("active_sessions.json");
-    ProbeRoots {
-        cc_registry,
-        codex_exists: codex_sessions.is_dir(),
-        codex_sessions,
-        omp_exists: omp_sessions.is_dir(),
-        omp_sessions,
-        grok_exists: grok_registry.is_file(),
-        grok_registry,
-    }
+fn probe_paths() -> Vec<ProbePath> {
+    registry::REGISTRY
+        .iter()
+        .filter_map(|source| {
+            let probe = source.focus_probe()?;
+            let path = (probe.paths)().map(|paths| {
+                let first = paths.into_iter().next().unwrap_or_default();
+                let present = (probe.present)(&first);
+                (ShownPath::new(first), present)
+            });
+            Some(ProbePath { source, path })
+        })
+        .collect()
 }
 
 /// All probing, no formatting. `log_at` is injected by `main` (resolved by
@@ -844,15 +824,6 @@ fn collect(
         .collect();
 
     let roots = collect_roots();
-    let ProbeRoots {
-        cc_registry,
-        codex_sessions,
-        codex_exists,
-        omp_sessions,
-        omp_exists,
-        grok_registry,
-        grok_exists,
-    } = probe_roots();
 
     // Read as BYTES, lossy ONLY here: the advisory renders these for a human and never
     // opens them, so this is the one boundary where losing an ill-formed byte costs nothing.
@@ -882,10 +853,7 @@ fn collect(
         roots,
         backend,
         backend_healthy,
-        cc_registry: cc_registry.map(|(p, exists)| (ShownPath::new(p), exists)),
-        codex_sessions: (ShownPath::new(codex_sessions), codex_exists),
-        omp_sessions: (ShownPath::new(omp_sessions), omp_exists),
-        grok_registry: (ShownPath::new(grok_registry), grok_exists),
+        probes: probe_paths(),
         home_split,
         color,
     })
@@ -1164,93 +1132,48 @@ fn roots_category(roots: &[RootStatus], ink: &Ink) -> Option<Category> {
 /// straight from the registry, so a new source lands in the right bucket with
 /// no edit here.
 fn focus_category(r: &DoctorReport, ink: &Ink) -> Category {
-    let prefix_of = |src: &str| {
-        registry::descriptor_for(src)
-            .expect("a SOURCE_NAME const is registered")
-            .label_prefix
-    };
+    use registry::FocusChannel;
     let mut details = Vec::new();
     let mut problem = !r.backend_healthy;
-    let cc_prefix = prefix_of(pixtuoid_core::source::claude_code::SOURCE_NAME);
-    match &r.cc_registry {
-        Some((p, true)) => details.push(format!(
-            "{DETAIL_INDENT}{cc_prefix}\u{b7}claude-code — registry probe {} {}",
-            ink.ok("\u{2713}"),
-            p
-        )),
-        Some((p, false)) => {
-            problem = true;
-            details.push(format!(
-                "{DETAIL_INDENT}{cc_prefix}\u{b7}claude-code — registry probe {} {} (focus no-ops until \
-                 CC writes it)",
-                ink.bad("\u{2717} missing"),
-                p
-            ));
+    for p in &r.probes {
+        // Behind a stamp, the probe only covers the shapes the stamp misses.
+        let fallback = p.source.focus_channel() != FocusChannel::TranscriptProbe;
+        let row = format!(
+            "{DETAIL_INDENT}{}\u{b7}{} — pid probe{}",
+            p.source.label_prefix,
+            p.source.name,
+            if fallback {
+                " (stamp-less fallback)"
+            } else {
+                ""
+            }
+        );
+        match &p.path {
+            Ok((path, true)) => details.push(format!("{row} {} {path}", ink.ok("\u{2713}"))),
+            Ok((path, false)) if fallback => {
+                details.push(format!("{row} {} {path}", ink.warn("\u{2717} missing")));
+            }
+            Ok((path, false)) => {
+                problem = true;
+                details.push(format!(
+                    "{row} {} {path} (focus no-ops until {} writes it)",
+                    ink.bad("\u{2717} missing"),
+                    p.source.name
+                ));
+            }
+            Err(why) => {
+                problem |= !fallback;
+                details.push(format!("{row} disabled ({why}) — focus no-ops"));
+            }
         }
-        None => {
-            problem = true;
-            details.push(format!(
-                "{DETAIL_INDENT}{cc_prefix}\u{b7}claude-code — registry probe disabled (non-standard \
-                 projects root) — focus no-ops"
-            ));
-        }
     }
-    let cx_prefix = prefix_of(pixtuoid_core::source::codex::SOURCE_NAME);
-    if r.codex_sessions.1 {
-        details.push(format!(
-            "{DETAIL_INDENT}{cx_prefix}\u{b7}codex — rollout probe {} {}",
-            ink.ok("\u{2713}"),
-            r.codex_sessions.0
-        ));
-    } else {
-        problem = true;
-        details.push(format!(
-            "{DETAIL_INDENT}{cx_prefix}\u{b7}codex — rollout probe {} {} (focus no-ops until codex \
-             writes it)",
-            ink.bad("\u{2717} missing"),
-            r.codex_sessions.0
-        ));
-    }
-    let om_prefix = prefix_of(pixtuoid_core::source::omp::SOURCE_NAME);
-    if r.omp_sessions.1 {
-        details.push(format!(
-            "{DETAIL_INDENT}{om_prefix}\u{b7}omp — append-fd probe (stamp-less fallback) {} {}",
-            ink.ok("\u{2713}"),
-            r.omp_sessions.0
-        ));
-    } else {
-        // Not a problem row since the PluginStamp flip: the stamped pid is the
-        // primary channel, this probe only covers stamp-less shapes.
-        details.push(format!(
-            "{DETAIL_INDENT}{om_prefix}\u{b7}omp — append-fd probe (stamp-less fallback) {} {}",
-            ink.warn("\u{2717} missing"),
-            r.omp_sessions.0
-        ));
-    }
-    let gk_prefix = prefix_of(pixtuoid_core::source::grok::SOURCE_NAME);
-    if r.grok_registry.1 {
-        details.push(format!(
-            "{DETAIL_INDENT}{gk_prefix}\u{b7}grok — session registry {} {}",
-            ink.ok("\u{2713}"),
-            r.grok_registry.0
-        ));
-    } else {
-        problem = true;
-        details.push(format!(
-            "{DETAIL_INDENT}{gk_prefix}\u{b7}grok — session registry {} {} (focus no-ops until grok \
-             writes it)",
-            ink.bad("\u{2717} missing"),
-            r.grok_registry.0
-        ));
-    }
-    use registry::FocusChannel;
     let mut shim_stamp = Vec::new();
     let mut plugin_stamp = Vec::new();
     let mut no_channel = Vec::new();
     for d in registry::REGISTRY {
         // Daemons aren't click-focusable agents; the TranscriptProbe sources
-        // got their own probe rows above (omp appears in BOTH: its probe row
-        // is the stamp-less fallback, this census line the primary channel).
+        // got their probe rows above (omp appears in BOTH: its probe row is
+        // the stamp-less fallback, this census line the primary channel).
         if d.is_daemon() || d.focus_channel() == FocusChannel::TranscriptProbe {
             continue;
         }
@@ -1452,14 +1375,14 @@ mod tests {
         assert_eq!(c.status, CategoryStatus::Ok);
         assert_eq!(c.summary, "test-backend");
         let s = c.details.join("\n");
-        assert!(s.contains("claude-code — registry probe ✓"), "{s}");
-        assert!(s.contains("codex — rollout probe ✓"), "{s}");
+        assert!(s.contains("claude-code — pid probe ✓"), "{s}");
+        assert!(s.contains("codex — pid probe ✓"), "{s}");
         assert!(
             s.contains("dsh") && s.contains("plugin-stamped"),
             "plugin stampers listed separately: {s}"
         );
         assert!(
-            s.contains("om\u{b7}omp — append-fd probe (stamp-less fallback)"),
+            s.contains("om\u{b7}omp — pid probe (stamp-less fallback)"),
             "omp keeps its fallback-probe row beside the stamp census: {s}"
         );
         assert!(
@@ -1485,42 +1408,48 @@ mod tests {
     #[test]
     fn focus_category_warns_on_missing_and_disabled_probe_roots() {
         let mut r = summary_report(vec![]);
-        r.cc_registry = Some((ShownPath::new("/home/u/.claude/sessions"), false));
-        r.codex_sessions = (ShownPath::new("/home/u/.codex/sessions"), false);
+        set_probe(
+            &mut r,
+            "claude-code",
+            Ok((ShownPath::new("/home/u/.claude/sessions"), false)),
+        );
+        set_probe(
+            &mut r,
+            "codex",
+            Ok((ShownPath::new("/home/u/.codex/sessions"), false)),
+        );
         let c = focus_category(&r, &Ink { on: false });
         assert_eq!(c.status, CategoryStatus::Warn);
         let s = c.details.join("\n");
         assert!(
-            s.contains("✗ missing") && s.contains("focus no-ops until CC writes it"),
+            s.contains("✗ missing") && s.contains("focus no-ops until claude-code writes it"),
             "{s}"
         );
         assert!(s.contains("focus no-ops until codex writes it"), "{s}");
 
-        r.cc_registry = None;
-        r.codex_sessions = (ShownPath::new("/home/u/.codex/sessions"), true);
+        set_probe(&mut r, "claude-code", Err("non-standard projects root"));
+        set_probe(
+            &mut r,
+            "codex",
+            Ok((ShownPath::new("/home/u/.codex/sessions"), true)),
+        );
         let c = focus_category(&r, &Ink { on: false });
         assert_eq!(c.status, CategoryStatus::Warn);
         assert!(
             c.details
                 .iter()
-                .any(|l| l.contains("registry probe disabled (non-standard projects root)")),
+                .any(|l| l.contains("pid probe disabled (non-standard projects root)")),
             "{:?}",
             c.details
         );
     }
 
     /// Every focusable (non-daemon) registered source must appear SOMEWHERE in
-    /// the category. A `TranscriptProbe` row is HAND-WRITTEN — the registry loop
-    /// below it skips that channel — so without this a newly probe-backed source
-    /// silently VANISHES from the report, which is exactly what omp did the
-    /// moment it left `Unsupported`.
+    /// the category: the census skips `TranscriptProbe`, leaving such a source to
+    /// its probe row, and omp vanished the moment it left `Unsupported`.
     #[test]
     fn every_focusable_source_appears_in_the_focus_category() {
-        let mut r = summary_report(vec![]);
-        r.cc_registry = Some((ShownPath::new("/home/u/x"), true));
-        r.codex_sessions = (ShownPath::new("/home/u/x"), true);
-        r.omp_sessions = (ShownPath::new("/home/u/x"), true);
-        r.grok_registry = (ShownPath::new("/home/u/x"), true);
+        let r = summary_report(vec![]);
         let s = focus_category(&r, &Ink { on: false }).details.join("\n");
         for d in registry::REGISTRY {
             if d.is_daemon() {
@@ -1599,6 +1528,18 @@ mod tests {
         }
     }
 
+    fn set_probe(
+        r: &mut DoctorReport,
+        source: &str,
+        path: Result<(ShownPath, bool), &'static str>,
+    ) {
+        r.probes
+            .iter_mut()
+            .find(|p| p.source.name == source)
+            .expect("a probe-backed source")
+            .path = path;
+    }
+
     fn summary_report(rows: Vec<DoctorSourceRow>) -> DoctorReport {
         DoctorReport {
             log_path: ShownPath::new("/tmp/log"),
@@ -1617,10 +1558,14 @@ mod tests {
             roots: vec![],
             backend: "NSRunningApplication (macOS)",
             backend_healthy: true,
-            cc_registry: Some((ShownPath::new("/tmp/reg"), true)),
-            codex_sessions: (ShownPath::new("/tmp/cx"), true),
-            omp_sessions: (ShownPath::new("/tmp/om"), true),
-            grok_registry: (ShownPath::new("/tmp/gk/active_sessions.json"), true),
+            probes: registry::REGISTRY
+                .iter()
+                .filter(|source| source.focus_probe().is_some())
+                .map(|source| ProbePath {
+                    source,
+                    path: Ok((ShownPath::new(format!("/tmp/{}", source.name)), true)),
+                })
+                .collect(),
             home_split: None,
             color: false,
         }
@@ -1675,10 +1620,10 @@ mod tests {
         );
         r.term_env = Some(evil());
         r.colorterm_env = Some(evil());
-        r.cc_registry = Some((ShownPath::new(evil()), false));
-        r.codex_sessions = (ShownPath::new(evil()), false);
-        r.omp_sessions = (ShownPath::new(evil()), false);
-        r.grok_registry = (ShownPath::new(evil()), false);
+        set_probe(&mut r, "claude-code", Ok((ShownPath::new(evil()), false)));
+        set_probe(&mut r, "codex", Ok((ShownPath::new(evil()), false)));
+        set_probe(&mut r, "omp", Ok((ShownPath::new(evil()), false)));
+        set_probe(&mut r, "grok", Ok((ShownPath::new(evil()), false)));
         r.home_split = home_split_advisory(true, Some(&evil()), Some(r"C:\Users\me"));
         r.roots = vec![RootStatus {
             source: "claude-code",
@@ -2032,14 +1977,18 @@ mod tests {
     #[test]
     fn report_focus_probe_failure_warns_with_detail() {
         let mut r = summary_report(vec![summary_row("claude-code")]);
-        r.cc_registry = Some((ShownPath::new("/tmp/reg"), false));
+        set_probe(
+            &mut r,
+            "claude-code",
+            Ok((ShownPath::new("/tmp/reg"), false)),
+        );
         let out = render(&r);
         assert!(
             out.contains("[!] focus-jump — NSRunningApplication (macOS)\n"),
             "{out}"
         );
         assert!(
-            out.contains("claude-code — registry probe ✗ missing /tmp/reg"),
+            out.contains("claude-code — pid probe ✗ missing /tmp/reg"),
             "{out}"
         );
     }

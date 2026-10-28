@@ -44,8 +44,6 @@ use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 mod native;
 #[cfg(feature = "native")]
 pub use native::GrokSource;
-#[cfg(feature = "native")]
-pub(crate) use native::live_grok_session_ids;
 
 /// The Grok Build source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "grok";
@@ -90,6 +88,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
         focus: FocusChannel::TranscriptProbe,
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// xAI's private JSON-RPC method namespace, named once so the decode arm and

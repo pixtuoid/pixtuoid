@@ -66,6 +66,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::Unsupported,
     },
+    #[cfg(feature = "native")]
+    native: native::NATIVE,
 };
 
 /// `$COPILOT_HOME` if set, else `~/.copilot` — mirroring copilot 1.0.78's

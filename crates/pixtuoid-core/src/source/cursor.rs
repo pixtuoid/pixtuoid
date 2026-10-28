@@ -78,6 +78,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         },
         focus: FocusChannel::ShimStamp(Corroboration::Twice),
     },
+    #[cfg(feature = "native")]
+    native: crate::source::registry::Native::NONE,
 };
 
 /// Decode one Cursor hook payload (already identified by

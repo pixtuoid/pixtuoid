@@ -123,6 +123,7 @@ pub fn pixtuoid_core::source::claude_code::cc_session_ended(&[u8]) -> bool
 pub fn pixtuoid_core::source::claude_code::cc_watcher(std::path::PathBuf) -> pixtuoid_core::source::jsonl::JsonlWatcher
 pub fn pixtuoid_core::source::claude_code::decode_cc_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
 pub fn pixtuoid_core::source::claude_code::live_cc_session_ids(&std::path::Path) -> core::option::Option<pixtuoid_core::source::jsonl::ProbeSnapshot>
+pub fn pixtuoid_core::source::claude_code::registry_dir(&std::path::Path) -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::source::codewhale
 pub const pixtuoid_core::source::codewhale::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::codex
@@ -616,8 +617,6 @@ pub fn pixtuoid_core::source::omp::decode_omp_line(&str, &str, serde_json::value
 pub fn pixtuoid_core::source::omp::omp_agent_dir() -> std::path::PathBuf
 pub fn pixtuoid_core::source::omp::omp_extensions_dir() -> std::path::PathBuf
 pub fn pixtuoid_core::source::omp::omp_id_from_path(&std::path::Path) -> alloc::string::String
-pub fn pixtuoid_core::source::omp::omp_profile_sessions_dirs() -> alloc::vec::Vec<std::path::PathBuf>
-pub fn pixtuoid_core::source::omp::omp_sessions_dir() -> std::path::PathBuf
 pub mod pixtuoid_core::source::openclaw
 pub const pixtuoid_core::source::openclaw::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::opencode
@@ -847,11 +846,6 @@ pub async fn pixtuoid_core::source::hook::HookRouter::run(alloc::boxed::Box<Self
 impl pixtuoid_core::Source for pixtuoid_core::source::omp::OmpSource
 pub fn pixtuoid_core::source::omp::OmpSource::name(&self) -> &str
 pub async fn pixtuoid_core::source::omp::OmpSource::run(alloc::boxed::Box<Self>, pixtuoid_core::TaggedSender) -> anyhow::Result<()>
-pub fn pixtuoid_core::source::cc_pid_for_session(&std::path::Path, &str) -> core::option::Option<i32>
-pub fn pixtuoid_core::source::cc_registry_dir(&std::path::Path) -> core::option::Option<std::path::PathBuf>
-pub fn pixtuoid_core::source::codex_pid_for_session(&std::path::Path, &str) -> core::option::Option<i32>
-pub fn pixtuoid_core::source::grok_pid_for_session(&std::path::Path, &str) -> core::option::Option<i32>
-pub fn pixtuoid_core::source::omp_pid_for_session(&std::path::Path, &str) -> core::option::Option<i32>
 pub fn pixtuoid_core::source::pid_start_marker(i32) -> core::option::Option<u64>
 pub type pixtuoid_core::source::TaggedReceiver = tokio::sync::mpsc::bounded::Receiver<(pixtuoid_core::source::Transport, pixtuoid_core::source::AgentEvent)>
 pub type pixtuoid_core::source::TaggedSender = tokio::sync::mpsc::bounded::Sender<(pixtuoid_core::source::Transport, pixtuoid_core::source::AgentEvent)>
