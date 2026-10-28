@@ -288,7 +288,8 @@ pub enum Surface {
 #[derive(Debug)]
 pub struct Scenario {
     /// Its name, unique in its profile: its script's file stem, its run
-    /// directory, and what `just hermetic <source> <name>` selects.
+    /// directory, its recording's directory ([`Scenario::fixture`]), and what
+    /// `just hermetic <source> <name>` selects.
     pub name: &'static str,
     /// What the run must look like.
     pub shape: Shape,
@@ -765,8 +766,8 @@ fn lifecycle_turn_of(scenarios: &[Scenario], windows: bool) -> Option<&Scenario>
 }
 
 impl Scenario {
-    /// The committed recording `--record` rewrites, under `tests/sources`: the
-    /// tier's own, beside any capture still carrying a field the profile owes.
+    /// The committed recording `--record` rewrites, under `tests/sources`:
+    /// `<module>/fixtures/<name>-hermetic`, so renaming a scenario moves it.
     pub fn fixture(&self, source: &str) -> PathBuf {
         crate::harness::fixtures_dir(Path::new(""), source).join(format!("{}-hermetic", self.name))
     }

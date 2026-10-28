@@ -247,6 +247,20 @@ fn the_walk_sees_every_provenance_on_disk() {
 /// to a descriptor lookup that silently returns `None`.
 #[test]
 fn every_captures_layout_names_a_registered_source() {
+    for c in every_capture() {
+        assert!(
+            registry::descriptor_for(&c.source).is_some(),
+            "{}: layout names source {:?}, which is not registered",
+            c.dir.display(),
+            c.source
+        );
+    }
+}
+
+/// Every `harness::OUTSIDE_CONFORMANCE` row names a capture the walk finds, so
+/// a renamed or removed capture cannot leave its row behind.
+#[test]
+fn every_outside_conformance_row_is_a_capture() {
     let walked: BTreeSet<(String, String)> = every_capture()
         .iter()
         .map(|c| {
@@ -258,14 +272,6 @@ fn every_captures_layout_names_a_registered_source() {
         assert!(
             walked.contains(&((*source).to_string(), (*scenario).to_string())),
             "OUTSIDE_CONFORMANCE names {source}/{scenario}, which no capture is"
-        );
-    }
-    for c in every_capture() {
-        assert!(
-            registry::descriptor_for(&c.source).is_some(),
-            "{}: layout names source {:?}, which is not registered",
-            c.dir.display(),
-            c.source
         );
     }
 }
