@@ -107,7 +107,7 @@ pub mod walk;
 /// examples' casts cycle the first [`DEMO_TEAMS`].
 #[doc(hidden)]
 pub const DEMO_REPOS: &[&str] = &[
-    "api", "webapp", "infra", "data", "cli", "docs", "etl", "tests", "ml", "research", "embedded",
+    "api", "web", "infra", "data", "cli", "docs", "etl", "tests", "ml", "research", "embedded",
 ];
 
 /// How many of [`DEMO_REPOS`] the snapshot examples' casts cycle through:
