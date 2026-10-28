@@ -556,7 +556,9 @@ const officeDriverUrl = asset('office-driver.js');
             markEngineResolved();
             // As the page stands when the frame lands: a pause or reduced motion may have come in meanwhile. Caption
             // the settled office only: labels track the FINAL sprite positions, so they'd smear over the rolling floors.
-            if (r.overlay && captionFace && live && !mq.matches) {
+            // A reply reads `live`, never `mq.matches`: read from a reply's task, Chromium dropped mq's next change
+            // event (the 'un-reducing motion' e2e, under CI's load).
+            if (r.overlay && captionFace && live) {
               updateOverlay(JSON.parse(r.overlay));
               overlayEl.classList.add('is-on');
             }
@@ -592,6 +594,7 @@ const officeDriverUrl = asset('office-driver.js');
         wrap.classList.add('is-live');
         document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: true } }));
         showAudioBtn();
+        syncAudioCtx();
       }
       // Safari blocks the main thread for over a second inside its tab-snapshot IPC, so the roll rides PAINTED
       // frames: the clamp makes a hitch PAUSE it, and Date.now()'s backward jumps hold it rather than rewind.
@@ -763,10 +766,10 @@ const officeDriverUrl = asset('office-driver.js');
         audioDisable();
       }
     }
-    // The AudioContext runs only while the ♩ plays an office in motion. A suspended one fires every node queued against
-    // it at once on resume, so nothing is scheduled while it is.
+    // The AudioContext runs only while the ♩ plays a live, unpaused office. A suspended one fires every node queued
+    // against it at once on resume, so nothing is scheduled while it is.
     function audible() {
-      return audioPlaying && !paused && !mq.matches;
+      return audioPlaying && !paused && live;
     }
     function syncAudioCtx() {
       if (!audioCtx) return;
@@ -1028,7 +1031,7 @@ const officeDriverUrl = asset('office-driver.js');
           reveal = freshReveal();
           document.dispatchEvent(new CustomEvent('pix:onair', { detail: { live: false } }));
           // Reduced motion stops the rAF loop, so the sound loops would drone unfed behind the poster — suspend, keeping the
-          // flag on so an un-reduce resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
+          // flag on so the office going live again resumes it. Re-arm the ♩, or showAudioBtn's once-guard keeps it hidden through the fresh boot.
           syncAudioCtx();
           audioBtn.hidden = true;
           audioBtnShown = false;
@@ -1036,7 +1039,6 @@ const officeDriverUrl = asset('office-driver.js');
           cover();
           boot();
           start();
-          syncAudioCtx();
         }
         syncPauseBtn();
       });
