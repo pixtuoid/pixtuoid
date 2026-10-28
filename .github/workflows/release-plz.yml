@@ -57,7 +57,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The bump is computed from every commit since the crates.io baseline.
           fetch-depth: 0
@@ -210,7 +210,7 @@ jobs:
       # short-lived token, so no CARGO_REGISTRY_TOKEN exists to leak.
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # release-plz walks the merged PR's commits to pick the one to tag,
           # and decides "already released" from LOCAL tags — a shallow fetch
@@ -245,7 +245,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-tools

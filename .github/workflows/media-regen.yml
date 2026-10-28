@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-alsa
@@ -44,7 +44,7 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install --quiet -r requirements-dev.txt
           .venv/bin/python3 scripts/gen-media.py --only docs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: media-${{ github.sha }}
           path: docs/images/
@@ -59,17 +59,17 @@ jobs:
     permissions: {}
     steps:
       # main at the rendered commit, for the tree the media commit sits on.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: media-${{ github.sha }}
           path: rendered
       # An App installation token, because a GITHUB_TOKEN PR starts no CI; it
       # is minted per run for this repository alone and expires within the hour.
       - id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_KEY }}
