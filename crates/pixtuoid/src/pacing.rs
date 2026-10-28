@@ -1,7 +1,8 @@
 //! The frame-pacing bench's way into the real TUI painter: a renderer over
 //! ratatui's own crossterm encoder and, for an image protocol, the real tile
 //! sink, both writing into a [`Wire`] that counts bytes and the time spent
-//! writing them. Mechanism for `examples/pacing.rs`, not a contract.
+//! writing them. Mechanism for `examples/pacing.rs` and `snapshot --cutaway`'s
+//! fit, not a contract.
 
 use std::io::Write;
 use std::sync::Arc;

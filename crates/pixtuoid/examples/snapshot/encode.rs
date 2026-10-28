@@ -128,17 +128,7 @@ pub(crate) fn compute_crop_rect(
     // silently writing the full uncropped PNG defeats the point of the flag.
     let target_pixel: pixtuoid_scene::layout::Point = if let Some(ref agent_label) = args.crop_agent
     {
-        let slot = scene
-            .agents
-            .values()
-            .find(|s| s.label.as_ref() == agent_label)
-            .ok_or_else(|| {
-                let labels: Vec<&str> = scene.agents.values().map(|s| s.label.as_ref()).collect();
-                anyhow::anyhow!(
-                    "--crop-agent {agent_label:?} not found in scene; labels: {}",
-                    labels.join(", ")
-                )
-            })?;
+        let slot = crate::scenes::agent_named(scene, "--crop-agent", agent_label)?;
         // `PoseHistory` records only waypoint and walking poses, so every
         // desk-seated agent — the majority, and every seated pose — has no entry.
         // Fall back to the seat the painter would draw them on rather than widen

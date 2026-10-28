@@ -101,6 +101,32 @@ fn demo_repo(team: usize, source: &str) -> (Arc<Path>, String) {
     (Arc::from(cwd.as_path()), label)
 }
 
+/// The agent `key` names for `flag`: the one with that session id, else the
+/// one agent wearing that label.
+pub(crate) fn agent_named<'s>(s: &'s SceneState, flag: &str, key: &str) -> Result<&'s AgentSlot> {
+    if let Some(a) = s.agents.values().find(|a| &*a.session_id == key) {
+        return Ok(a);
+    }
+    let wearers: Vec<_> = s
+        .agents
+        .values()
+        .filter(|a| a.label.as_ref() == key)
+        .collect();
+    if let [one] = wearers.as_slice() {
+        return Ok(one);
+    }
+    let agents: Vec<_> = s
+        .agents
+        .values()
+        .map(|a| format!("{} ({})", a.label.as_ref(), a.session_id))
+        .collect();
+    anyhow::bail!(
+        "{flag} {key:?} names {} agents; name one by label or session id: {}",
+        wearers.len(),
+        agents.join(", ")
+    )
+}
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum GatewayState {
     Idle,
@@ -844,6 +870,22 @@ mod tests {
         assert_eq!(got, want);
         let teams: std::collections::HashSet<_> = got.iter().map(|(_, l)| l).collect();
         assert!(teams.len() < got.len(), "no two sample agents share a team");
+    }
+
+    /// A flag names an agent by its session id, or by a label only one agent
+    /// wears: a team's shared label names none.
+    #[test]
+    fn an_agent_is_named_by_session_or_by_a_label_it_alone_wears() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let team = sample_scene(now, 12, 12);
+        let a = team.agents.values().next().unwrap();
+        assert!(agent_named(&team, "--flame", a.label.as_ref()).is_err());
+        let by_session = agent_named(&team, "--flame", &a.session_id).unwrap();
+        assert_eq!(by_session.agent_id, a.agent_id);
+        let alone = sample_scene(now, 12, 1);
+        let b = alone.agents.values().next().unwrap();
+        let by_label = agent_named(&alone, "--flame", b.label.as_ref()).unwrap();
+        assert_eq!(by_label.agent_id, b.agent_id);
     }
 
     #[test]

@@ -87,7 +87,7 @@ struct SnapshotArgs {
     gif: bool,
 
     /// Draw the office as the cutaway the TUI fits to this terminal of
-    /// `CELL_W`×`CELL_H` cells, under the classic frame's footer.
+    /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer.
     // Each paints the classic's office cells, which the cutaway covers, or
     // renders on a path the cutaway is not wired into.
     #[arg(long, conflicts_with_all = [
@@ -255,7 +255,8 @@ struct SnapshotArgs {
     anim_facing: Option<String>,
 
     /// Crop the generated PNG (and text preview) to the fixed crop window
-    /// centered on the agent with this label. Static-PNG path only.
+    /// centered on the agent this session id, or a label only it wears, names.
+    /// Static-PNG path only.
     // The --gif/--anim paths return before the crop is computed, so clap rejects
     // the combination instead of silently ignoring the flag.
     #[arg(long, conflicts_with_all = ["crop_furniture", "gif", "anim"])]
@@ -268,8 +269,8 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with_all = ["gif", "anim"])]
     crop_furniture: Option<String>,
 
-    /// Give the agent with this label a Top burn tier (claude-fable-5 at
-    /// fresh ultra effort → ember hair + flame crown).
+    /// Give the agent this session id, or a label only it wears, names a Top
+    /// burn tier (claude-fable-5 at fresh ultra effort → ember hair + flame crown).
     #[arg(long)]
     flame: Option<String>,
 
@@ -427,23 +428,14 @@ fn main() -> Result<()> {
         eprintln!("WARMUP pre-roll = {skip_ms}ms (explicit --warmup-secs)");
     }
     let mut scene = scene;
-    if let Some(label) = &args.flame {
-        let hit = scene
-            .agents
-            .values_mut()
-            .find(|a| a.label.as_ref() == label.as_str());
-        match hit {
-            Some(a) => {
-                a.model = Some("claude-fable-5".into());
-                a.effort = Some(pixtuoid_core::state::EffortObservation::new(
-                    "ultra".into(),
-                    now,
-                ));
-            }
-            None => {
-                let labels: Vec<_> = scene.agents.values().map(|a| a.label.to_string()).collect();
-                anyhow::bail!("--flame {label:?} not found in scene; labels: {labels:?}");
-            }
+    if let Some(key) = &args.flame {
+        let id = scenes::agent_named(&scene, "--flame", key)?.agent_id;
+        if let Some(a) = scene.agents.get_mut(&id) {
+            a.model = Some("claude-fable-5".into());
+            a.effort = Some(pixtuoid_core::state::EffortObservation::new(
+                "ultra".into(),
+                now,
+            ));
         }
     }
     if let Some(state) = args.openclaw {
@@ -916,17 +908,17 @@ mod tests {
             .values()
             .find(|a| a.floor_idx > 0)
             .expect("a scene with 9 agents over 4 desks must reach an upper floor");
-        let label = upper.label.to_string();
+        let session = upper.session_id.to_string();
         let floor = upper.floor_idx;
 
         let history = pixtuoid_scene::pose::PoseHistory::new();
-        let args = crop_args(&["--crop-agent", &label]);
+        let args = crop_args(&["--crop-agent", &session]);
         let rect = compute_crop_rect(&args, &scene, &history, 192, 64, now)
-            .unwrap_or_else(|e| panic!("floor {floor} agent {label:?} must crop: {e}"))
+            .unwrap_or_else(|e| panic!("floor {floor} agent {session:?} must crop: {e}"))
             .expect("a seated agent crops");
         assert!(
             rect.width > 0 && rect.height > 0,
-            "empty crop for {label:?}"
+            "empty crop for {session:?}"
         );
     }
 
@@ -955,7 +947,7 @@ mod tests {
 
         let ghost = crop_args(&["--crop-agent", "ghost"]);
         let err = compute_crop_rect(&ghost, &scene, &history, 192, 64, now).unwrap_err();
-        assert!(err.to_string().contains("labels:"), "{err}");
+        assert!(err.to_string().contains("(demo-turn)"), "{err}");
     }
 
     #[test]

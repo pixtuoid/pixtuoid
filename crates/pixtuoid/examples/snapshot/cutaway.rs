@@ -1,5 +1,5 @@
 //! `--cutaway`: the office a graphics terminal of [`terminal_cell`]s shows,
-//! over the classic frame's footer. Its world text is the scene's pixel font
+//! in place of the classic frame's office, above its footer. Its world text is the scene's pixel font
 //! (the floating window's), where the terminal sets it in its own.
 
 use std::sync::Arc;
