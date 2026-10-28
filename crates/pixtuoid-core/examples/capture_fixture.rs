@@ -1995,9 +1995,16 @@ mod recorder {
             .into_owned()
         }
 
-        /// The sources root in `d`, codex's tool-run fixture under it, and a way
-        /// to make that scenario's `n`th run in `d`, every id reminted `n` steps.
-        fn codex_reruns(d: &Path) -> (PathBuf, PathBuf, impl Fn(usize) -> PathBuf + '_) {
+        /// A scenario's sources `root`, its fixture `dest` under it, and `run`,
+        /// which makes its `n`th run with every id reminted `n` steps.
+        struct Reruns<F: Fn(usize) -> PathBuf> {
+            root: PathBuf,
+            dest: PathBuf,
+            run: F,
+        }
+
+        /// [`Reruns`] of codex's tool-run, in `d`.
+        fn codex_reruns(d: &Path) -> Reruns<impl Fn(usize) -> PathBuf + '_> {
             let s = hermetic::profile("codex")
                 .and_then(|p| p.scenario("tool-run"))
                 .expect("codex's tool-run");
@@ -2045,7 +2052,11 @@ mod recorder {
                 dir
             };
             let root = d.join("sources");
-            (root.join(s.fixture), root, run)
+            Reruns {
+                dest: root.join(s.fixture),
+                root,
+                run,
+            }
         }
 
         /// A transcript's name carries the ids its run minted, and so does its
@@ -2053,24 +2064,27 @@ mod recorder {
         #[test]
         fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
             let d = tempfile::tempdir().expect("tempdir");
-            let (dest, root, run) = codex_reruns(d.path());
-            promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
-            let before = snapshot(&dest);
-            promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
-            assert_eq!(snapshot(&dest), before, "only ids differ");
+            let r = codex_reruns(d.path());
+            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            let before = snapshot(&r.dest);
+            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
+                .expect("recorded again");
+            assert_eq!(snapshot(&r.dest), before, "only ids differ");
         }
 
         #[test]
         fn a_re_record_that_makes_a_read_its_record_lacks_is_rewritten() {
             let d = tempfile::tempdir().expect("tempdir");
-            let (dest, root, run) = codex_reruns(d.path());
-            promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
-            let mut record = Provenance::read(&dest.join(PROVENANCE)).expect("its record");
-            let Provenance::Recorded(r) = &mut record;
-            r.sentinel_reads.clear();
-            record.write_to(&dest.join(PROVENANCE)).expect("write");
-            promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
-            let record = Provenance::read(&dest.join(PROVENANCE)).expect("its record");
+            let r = codex_reruns(d.path());
+            let prov = r.dest.join(PROVENANCE);
+            promote(&(r.run)(1), &r.root, &needles(), &mut std::io::sink()).expect("recorded");
+            let mut record = Provenance::read(&prov).expect("its record");
+            let Provenance::Recorded(recorded) = &mut record;
+            recorded.sentinel_reads.clear();
+            record.write_to(&prov).expect("write");
+            promote(&(r.run)(2), &r.root, &needles(), &mut std::io::sink())
+                .expect("recorded again");
+            let record = Provenance::read(&prov).expect("its record");
             assert!(
                 !record.recorded().sentinel_reads.is_empty(),
                 "rewritten with the run's reads"
