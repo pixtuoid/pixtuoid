@@ -468,7 +468,8 @@ fn callout_dot(desk: (i32, i32)) -> (i32, i32) {
     // Clears the halo `paint_ceiling_halos` burns over a lit monitor, with a
     // margin, so the connector/dot never sits inside the glow.
     const GLOW_CLEARANCE: i32 = 24;
-    (desk.0 - 6, desk.1 - GLOW_CLEARANCE)
+    const DOT_INSET: i32 = 6;
+    (desk.0 - DOT_INSET, desk.1 - GLOW_CLEARANCE)
 }
 
 pub(crate) fn compose_frame(
@@ -526,7 +527,7 @@ pub(crate) fn compose_frame(
                 dashed_h(
                     &mut img,
                     (PANEL_W - PAD) as i32,
-                    desk.0 - 10,
+                    dot_x - ANNOT_DOT_R,
                     anchor_y,
                     ANNOT,
                 );
