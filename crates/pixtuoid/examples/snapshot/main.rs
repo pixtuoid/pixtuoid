@@ -3,6 +3,7 @@
 //! `--proof` frame sequences — so the visual output is verifiable without a real
 //! terminal.
 
+mod cutaway;
 mod encode;
 mod proof;
 
@@ -84,6 +85,17 @@ struct SnapshotArgs {
     /// Output an animated GIF instead of a static PNG.
     #[arg(long)]
     gif: bool,
+
+    /// Draw the office as the cutaway the TUI fits to this terminal of
+    /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer.
+    // Each paints the classic's office cells, which the cutaway covers, or
+    // renders on a path the cutaway is not wired into.
+    #[arg(long, conflicts_with_all = [
+        "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
+        "hover", "debug_walkable", "empty", "crop_agent", "crop_furniture", "crop_mascot",
+        "proof", "pets", "navigate_at",
+    ])]
+    cutaway: bool,
 
     /// GIF duration in seconds (only with --gif, which --anim implies).
     #[arg(long, default_value_t = 5)]
@@ -243,7 +255,8 @@ struct SnapshotArgs {
     anim_facing: Option<String>,
 
     /// Crop the generated PNG (and text preview) to the fixed crop window
-    /// centered on the agent with this label. Static-PNG path only.
+    /// centered on the agent with this session id, or the one agent with this
+    /// label. Static-PNG path only.
     // The --gif/--anim paths return before the crop is computed, so clap rejects
     // the combination instead of silently ignoring the flag.
     #[arg(long, conflicts_with_all = ["crop_furniture", "gif", "anim"])]
@@ -256,8 +269,8 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with_all = ["gif", "anim"])]
     crop_furniture: Option<String>,
 
-    /// Give the agent with this label a Top burn tier (claude-fable-5 at
-    /// fresh ultra effort → ember hair + flame crown).
+    /// Give the agent with this session id, or the one agent with this label,
+    /// a Top burn tier (claude-fable-5 at fresh ultra effort → ember hair + flame crown).
     #[arg(long)]
     flame: Option<String>,
 
@@ -415,23 +428,14 @@ fn main() -> Result<()> {
         eprintln!("WARMUP pre-roll = {skip_ms}ms (explicit --warmup-secs)");
     }
     let mut scene = scene;
-    if let Some(label) = &args.flame {
-        let hit = scene
-            .agents
-            .values_mut()
-            .find(|a| a.label.as_ref() == label.as_str());
-        match hit {
-            Some(a) => {
-                a.model = Some("claude-fable-5".into());
-                a.effort = Some(pixtuoid_core::state::EffortObservation::new(
-                    "ultra".into(),
-                    now,
-                ));
-            }
-            None => {
-                let labels: Vec<_> = scene.agents.values().map(|a| a.label.to_string()).collect();
-                anyhow::bail!("--flame {label:?} not found in scene; labels: {labels:?}");
-            }
+    if let Some(key) = &args.flame {
+        let id = scenes::agent_named(&scene, "--flame", key)?.agent_id;
+        if let Some(a) = scene.agents.get_mut(&id) {
+            a.model = Some("claude-fable-5".into());
+            a.effort = Some(pixtuoid_core::state::EffortObservation::new(
+                "ultra".into(),
+                now,
+            ));
         }
     }
     if let Some(state) = args.openclaw {
@@ -441,6 +445,10 @@ fn main() -> Result<()> {
     let mut term = Terminal::new(backend)?;
     let pack = std::sync::Arc::new(load_bundled_pack()?);
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(&pack));
+    let mut cutaway = args
+        .cutaway
+        .then(|| cutaway::CutawayOffice::new(&pack, cols, rows))
+        .transpose()?;
     // A typo'd theme silently rendering NORMAL would put wrong-palette art into
     // the docs/site screenshot pipelines.
     let theme = pixtuoid_scene::theme::theme_by_name(&args.theme).ok_or_else(|| {
@@ -532,6 +540,7 @@ fn main() -> Result<()> {
             floor_meta,
             skip_ms,
             args.debug_walkable,
+            cutaway,
         )?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
@@ -740,6 +749,9 @@ fn main() -> Result<()> {
         ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
     };
     let drawn = draw_scene(&mut term, &mut draw_ctx)?;
+    if let Some(cutaway) = &mut cutaway {
+        cutaway.render(draw_ctx.world, theme)?;
+    }
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -758,7 +770,7 @@ fn main() -> Result<()> {
     };
     let area = crop_rect.unwrap_or(ratatui::layout::Rect::new(0, 0, cols, rows));
 
-    save_backend_as_png(&term, &args.out, area)?;
+    save_backend_as_png(&term, &args.out, area, cutaway.as_ref())?;
     println!("wrote {}", args.out.display());
 
     println!("\n--- text preview (symbols only) ---");
@@ -896,17 +908,16 @@ mod tests {
             .values()
             .find(|a| a.floor_idx > 0)
             .expect("a scene with 9 agents over 4 desks must reach an upper floor");
-        let label = upper.label.to_string();
-        let floor = upper.floor_idx;
+        let (floor, desk) = (upper.floor_idx, upper.desk_index.0);
 
         let history = pixtuoid_scene::pose::PoseHistory::new();
-        let args = crop_args(&["--crop-agent", &label]);
+        let args = crop_args(&["--crop-agent", &upper.session_id]);
         let rect = compute_crop_rect(&args, &scene, &history, 192, 64, now)
-            .unwrap_or_else(|e| panic!("floor {floor} agent {label:?} must crop: {e}"))
+            .unwrap_or_else(|e| panic!("floor {floor} agent at desk {desk} must crop: {e}"))
             .expect("a seated agent crops");
         assert!(
             rect.width > 0 && rect.height > 0,
-            "empty crop for {label:?}"
+            "empty crop for desk {desk}"
         );
     }
 
@@ -935,7 +946,7 @@ mod tests {
 
         let ghost = crop_args(&["--crop-agent", "ghost"]);
         let err = compute_crop_rect(&ghost, &scene, &history, 192, 64, now).unwrap_err();
-        assert!(err.to_string().contains("labels:"), "{err}");
+        assert!(err.to_string().contains("(demo-turn)"), "{err}");
     }
 
     #[test]
@@ -1070,5 +1081,39 @@ mod tests {
         assert!(
             SnapshotArgs::try_parse_from(["snapshot", "out.png", "--dashboard", "--gif"]).is_err()
         );
+    }
+
+    #[test]
+    fn cutaway_conflicts_with_what_it_covers() {
+        let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
+        for flags in [
+            &["--dashboard"][..],
+            &["--connection"],
+            &["--onboarding"],
+            &["--help-open"],
+            &["--theme-picker", "0"],
+            &["--popup"],
+            &["--hover", "1,1"],
+            &["--debug-walkable"],
+            &["--empty"],
+            &["--crop-agent", "x"],
+            &["--crop-furniture", "pantry"],
+            &["--crop-mascot", "--openclaw", "idle"],
+            &["--proof", "session.jsonl"],
+            &["--gif", "--pets", "cat"],
+            &["--gif", "--navigate-at", "3:1"],
+        ] {
+            let alone = [&["snapshot"][..], flags].concat();
+            assert!(parses(&alone), "rejected {alone:?}");
+            let with = [&alone[..], &["--cutaway"]].concat();
+            assert!(!parses(&with), "accepted {with:?}");
+        }
+        for argv in [
+            &["snapshot", "--cutaway"][..],
+            &["snapshot", "--cutaway", "--gif"],
+            &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
+        ] {
+            assert!(parses(argv), "rejected {argv:?}");
+        }
     }
 }

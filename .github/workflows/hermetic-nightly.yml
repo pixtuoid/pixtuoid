@@ -33,7 +33,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
@@ -63,7 +63,7 @@ jobs:
     outputs:
       proposals: ${{ steps.plan.outputs.proposals }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
@@ -96,7 +96,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
@@ -112,7 +112,7 @@ jobs:
           SOURCE: ${{ matrix.source }}
           RELEASE: ${{ matrix.version }}
         run: just hermetic-bump "$SOURCE" "$RELEASE" "$RUNNER_TEMP/$SOURCE.patch"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: patch-${{ matrix.source }}
           path: ${{ runner.temp }}/${{ matrix.source }}.patch
@@ -130,7 +130,7 @@ jobs:
     outputs:
       approved: ${{ steps.check.outputs.approved }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
@@ -138,7 +138,7 @@ jobs:
           shared-key: hermetic
       # Built before any patch is on the runner, outside the workspace.
       - run: cargo build --release -q -p pixtuoid-core --example bump
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: patch-*
           path: ${{ runner.temp }}/patches
@@ -165,10 +165,10 @@ jobs:
     timeout-minutes: 10
     permissions: {}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: patch-${{ matrix.source }}
           path: ${{ runner.temp }}
@@ -177,7 +177,7 @@ jobs:
         run: git apply "$RUNNER_TEMP/$SOURCE.patch"
       # An App token, because a GITHUB_TOKEN PR starts no CI.
       - id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_KEY }}
@@ -209,7 +209,7 @@ jobs:
       contents: read
       issues: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-cargo-just
@@ -219,7 +219,7 @@ jobs:
       - run: cargo build --release -q -p pixtuoid-core --example issues --example hermetic
       # The unprofiled CLIs' latest releases, which no leg installs.
       - run: target/release/examples/hermetic --freshness >"$RUNNER_TEMP/freshness.json"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ${{ needs.drift.outputs.verdicts-stem }}*
           path: ${{ runner.temp }}/verdicts
@@ -234,7 +234,7 @@ jobs:
           printf '%s' "$DRIFT" >"$RUNNER_TEMP/drift.json"
           target/release/examples/issues plan "$RUNNER_TEMP/drift.json" "$RUNNER_TEMP/issues.json" \
             "$RUNNER_TEMP/verdicts" "$RUNNER_TEMP/freshness.json" "$RUN_URL" >"$RUNNER_TEMP/plan.json"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: hermetic-issues-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/plan.json
@@ -250,7 +250,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hermetic-issues-${{ github.run_id }}-${{ github.run_attempt }}
 

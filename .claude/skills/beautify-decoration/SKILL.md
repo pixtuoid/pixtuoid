@@ -28,7 +28,7 @@ A repo-specific iteration loop for visually redesigning a decoration in `pixtuoi
    ↓
 4. .venv/bin/python3 scripts/crop-snapshot.py /tmp/snap.png --scale 3 -q <quadrant>
    (its QUADRANTS table is the zone map — or skip the quadrant guessing: snapshot --crop-furniture pantry|couch|vending|
-   printer|meeting|sofa|chair|island|snackshelf|desk OR --crop-agent <label> renders a `CROP_WINDOW`
+   printer|meeting|sofa|chair|island|snackshelf|desk OR --crop-agent <label|session> renders a `CROP_WINDOW`
    already centered on the target — no Python step)
    ↓
 5. Read the cropped PNG → self-critique → back to step 1

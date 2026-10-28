@@ -3,42 +3,42 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
     source: copilot
-    session_id: 331b0460-db7c-4af7-a541-9ce2fc1c0738
+    session_id: 0885ec73-f30f-408f-bcf4-6ece4b48a38f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ToolUseStart:
-    agent_id: 14916591005770400954
-    tool_use_id: call_cOQiPjkGfRFwvyHj
+    agent_id: 11271334243419929482
+    tool_use_id: call_feOJEBPQsLsMILDz
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 14916591005770400954
-    tool_use_id: call_cOQiPjkGfRFwvyHj
+    agent_id: 11271334243419929482
+    tool_use_id: call_feOJEBPQsLsMILDz
 - ModelInfo:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
     model: gpt-4.1
     effort: ~
 - ToolUseStart:
-    agent_id: 14916591005770400954
-    tool_use_id: call_JcmBROdFNw0pR16p
+    agent_id: 11271334243419929482
+    tool_use_id: call_vu6rvrFsuMLivEVs
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 14916591005770400954
-    tool_use_id: call_JcmBROdFNw0pR16p
+    agent_id: 11271334243419929482
+    tool_use_id: call_vu6rvrFsuMLivEVs
 - ModelInfo:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
     model: gpt-4.1
     effort: ~
 - TurnEnd:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
 - SessionEnd:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
     as_child: false
 - Usage:
-    agent_id: 14916591005770400954
+    agent_id: 11271334243419929482
     fresh_tokens: 14371

@@ -17,6 +17,9 @@
   <a href="https://github.com/pixtuoid/pixtuoid/releases"><img src="https://img.shields.io/github/v/release/pixtuoid/pixtuoid?label=version&style=flat-square" alt="Version" /></a>
   <a href="https://pixtuoid.dev/#tools"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpixtuoid%2Fpixtuoid%2Fmain%2Fsite%2Fsrc%2Fsources.json&query=%24.length&label=agents%20supported&style=flat-square&color=8957e5" alt="Supported agents" /></a>
   <a href="https://github.com/pixtuoid/pixtuoid/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/pixtuoid/pixtuoid/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://github.com/pixtuoid/pixtuoid/actions/workflows/github-code-scanning/codeql"><img src="https://img.shields.io/github/actions/workflow/status/pixtuoid/pixtuoid/github-code-scanning/codeql?style=flat-square&label=CodeQL" alt="CodeQL" /></a>
+  <a href="https://codecov.io/github/pixtuoid/pixtuoid"><img src="https://img.shields.io/codecov/c/github/pixtuoid/pixtuoid?style=flat-square&label=coverage" alt="Codecov" /></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/pixtuoid/pixtuoid"><img src="https://api.scorecard.dev/projects/github.com/pixtuoid/pixtuoid/badge?style=flat-square" alt="OpenSSF Scorecard" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
 </p>
 

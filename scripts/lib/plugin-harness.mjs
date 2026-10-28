@@ -62,7 +62,14 @@ let bust = 0;
  */
 export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) {
   const root = await mkdtemp(join(tmpdir(), `pixtuoid-${source}-plugin-`));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A shim still writing into `root` races the removal (ENOTEMPTY).
+  t.after(async () => {
+    try {
+      await settled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   const { file } = row(source);
   const template = await readFile(join(INSTALL_DIR, file), "utf8");
   assert.equal(template.split(contract.hook_placeholder).length, 2, "one hook placeholder, which the bake replaces");
@@ -89,13 +96,8 @@ export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) 
   return { argvFile, module, outFile, traceFile };
 }
 
-/**
- * `file`'s non-empty lines once no shim is left open, including any a queue
- * spawns while it waits, so a count or set read from them includes whatever
- * extra a plugin sent.
- * @param {string} file
- */
-export async function lines(file) {
+/** Resolves once no shim is left open, including any a queue spawns meanwhile. */
+async function settled() {
   const deadline = Date.now() + POLL_DEADLINE_MS;
   // Checked only after a timer: a queue spawns each shim in microtasks, its
   // first after the handler returns, each next in its previous one's `close`.
@@ -103,6 +105,15 @@ export async function lines(file) {
     if (Date.now() > deadline) throw new Error(`timed out with ${open.size} shim(s) still open`);
     await new Promise((r) => setTimeout(r, POLL_TICK_MS));
   } while (open.size > 0);
+}
+
+/**
+ * `file`'s non-empty lines once `settled`, so a count or set read from them
+ * includes whatever extra a plugin sent.
+ * @param {string} file
+ */
+export async function lines(file) {
+  await settled();
   const text = await readFile(file, "utf8").catch(() => "");
   return text.split("\n").filter((l) => l.trim().length > 0);
 }

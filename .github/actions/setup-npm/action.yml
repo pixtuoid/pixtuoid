@@ -18,7 +18,7 @@ runs:
   using: 'composite'
   steps:
     - id: node
-      uses: actions/setup-node@v7
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: ${{ inputs.node-version-file }}
         cache: npm

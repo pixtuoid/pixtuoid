@@ -1,0 +1,16 @@
+{"type":"session.start","data":{"sessionId":"698aa8b3-1047-4e50-b7db-772d80e6314f","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_7Dg0SnA2MtacxcCE","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}
+{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_7Dg0SnA2MtacxcCE","fullCommandText":"","shellType":"","intention":"","commands":[],"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"hasWriteFileRedirection":false,"possibleUrls":[]},"promptRequest":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}
+{"type":"permission.completed","data":{"requestId":"","toolCallId":"call_7Dg0SnA2MtacxcCE","result":{},"decisionSource":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_7Dg0SnA2MtacxcCE","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{}
+{}
+{}
+{"type":"session.shutdown","data":{"accountingSnapshot":{},"providerModelMetrics":[],"usageAccountingWatermarks":{},"shutdownType":"","totalPremiumRequests":0,"totalNanoAiu":0,"totalApiDurationMs":0,"sessionStartTime":0,"eventsFileSizeBytes":0,"codeChanges":{},"modelMetrics":{"gpt-4.1":{"requests":{},"usage":{"inputTokens":11221,"outputTokens":17,"cacheReadTokens":0,"cacheWriteTokens":0},"totalNanoAiu":0}},"agentMetrics":{},"currentModel":"","currentTokens":0,"systemTokens":0,"conversationTokens":0,"toolDefinitionsTokens":0},"id":"","timestamp":"","parentId":""}

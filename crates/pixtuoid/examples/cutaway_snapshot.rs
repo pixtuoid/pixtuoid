@@ -7,12 +7,13 @@
 //!       [--agents N] [--theme T] [--logical WxH] [--now-hour H] [--floor I/N]
 //!       [--weather W] [--now-day D] [--now-sec S] [--flame I] [--repos a,b,...]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
 use image::{Rgb as ImgRgb, RgbImage};
+use pixtuoid_core::source::claude_code;
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 use pixtuoid_core::{AgentId, AgentSlot, GlobalDeskIndex};
 use pixtuoid_scene::floor::{FloorMeta, FloorSession};
@@ -27,16 +28,19 @@ use pixtuoid_scene::theme::theme_by_name;
 /// (corridor appliances) get placed at all.
 const DEFAULT_LOGICAL: (u16, u16) = (160, 96);
 
-/// The repos (cwd basenames) the fixture cycles through, unless `--repos`
-/// names others. Fewer than the desk count on purpose: two agents sharing a
-/// repo share an outfit, which is the grouping Team Palette exists to show.
-const REPOS: &[&str] = &["pixtuoid", "site", "raycast", "notes"];
+/// The agents drawn unless `--agents` names another count.
+const DEFAULT_AGENTS: usize = 10;
+const _: () = assert!(
+    pixtuoid_scene::DEMO_TEAMS < DEFAULT_AGENTS,
+    "the default cast must share a working directory"
+);
 
 fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String]) {
     let seated = now.checked_sub(Duration::from_secs(120)).unwrap_or(now);
     let recent = now.checked_sub(Duration::from_secs(3)).unwrap_or(now);
     for i in 0..n {
         let id = AgentId::from_transcript_path(&format!("/cutaway/a{i}.jsonl"));
+        let cwd = PathBuf::from("/w").join(&repos[i % repos.len()]);
         let state = match i % 4 {
             0 => ActivityState::Running {
                 item: Some(ToolUse {
@@ -55,11 +59,13 @@ fn populate(scene: &mut SceneState, now: SystemTime, n: usize, repos: &[String])
             id,
             AgentSlot {
                 agent_id: id,
-                source: Arc::from("claude-code"),
+                source: Arc::from(claude_code::SOURCE_NAME),
                 session_id: Arc::from(format!("cut-{i:04x}").as_str()),
-                cwd: Arc::from(PathBuf::from(format!("/w/{}", repos[i % repos.len()])).as_path()),
-                // The decoder's `cc·<cwd basename>`, so the badges show real text.
-                label: format!("cc\u{b7}{}", repos[i % repos.len()]).into(),
+                cwd: Arc::from(cwd.as_path()),
+                // No transcript path: only a subagent's would name the label.
+                label: claude_code::cc_derive_label(Path::new(""), claude_code::SOURCE_NAME, &cwd)
+                    .as_str()
+                    .into(),
                 state,
                 state_started_at: seated,
                 created_at: seated,
@@ -87,13 +93,17 @@ fn main() -> Result<()> {
         .next()
         .ok_or_else(|| anyhow!("usage: see the `//!` header of examples/cutaway_snapshot.rs"))?;
 
-    let (mut scale_n, mut agents, mut theme_name) = (None, 10usize, "tokyo-night".to_string());
+    let (mut scale_n, mut agents, mut theme_name) =
+        (None, DEFAULT_AGENTS, "tokyo-night".to_string());
     let (mut now_hour, mut now_sec, mut floor) = (None::<u32>, 0u64, (0usize, 1usize));
     // 1 = the clock's base date, as the classic snapshot's `--now-day`.
     let mut now_day = 1u32;
     let mut weather = None::<String>;
     let mut flame = None::<usize>;
-    let mut repos: Vec<String> = REPOS.iter().map(|&r| r.to_string()).collect();
+    let mut repos: Vec<String> = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS]
+        .iter()
+        .map(|&r| r.to_string())
+        .collect();
     let (mut lw, mut lh) = DEFAULT_LOGICAL;
     let rest: Vec<String> = args.collect();
     let mut i = 0;

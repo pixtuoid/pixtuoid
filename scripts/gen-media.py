@@ -53,6 +53,8 @@ CHECK_MODE = False
 NOT_GENERATED = {"screenshot-real.png"}
 # The snapshot's `--frames-dir` naming (its `FrameSink::Pngs`).
 FRAME_PATTERN = "f%04d.png"
+# A job's `look` (the TUI's `--look` names), as the snapshot's flags.
+LOOK_ARGS = {"classic": [], "cutaway": ["--cutaway"]}
 
 
 def build_once():
@@ -75,11 +77,13 @@ def snap(
     day=None,
     theme=None,
     weather=None,
+    look="classic",
     extra=(),
     gif=None,
     frames_dir=None,
 ):
     cmd = [str(SNAP), "--cols", str(cols), "--rows", str(rows), "--now-hour", str(hour)]
+    cmd += LOOK_ARGS[look]
     if day is not None:
         cmd += ["--now-day", str(day)]
     if theme is not None:
@@ -117,6 +121,7 @@ def run_render(job, out_dirs, work, intermediates):
                     day=job.get("day"),
                     theme=f.get("theme"),
                     weather=f.get("weather"),
+                    look=job.get("look", "classic"),
                 )
         return
 
@@ -129,6 +134,7 @@ def run_render(job, out_dirs, work, intermediates):
         day=job.get("day"),
         theme=job.get("theme"),
         weather=job.get("weather"),
+        look=job.get("look", "classic"),
         extra=job.get("extra", ()),
     )
     intermediates[job["id"]] = raw  # crops read the unscaled render
@@ -180,25 +186,30 @@ def run_crop(job, out_dirs, work, intermediates):
 
 
 def run_composite(job, out_dirs, work, intermediates):
-    themes = [t["id"] for t in expand_ref(job["over"])]
+    """One diagonal band per value of `axis` (`theme` unless named) that
+    `over` lists, an `@` ref's ids or the list itself; the job sets the rest."""
+    over = job["over"]
+    values = [x["id"] for x in expand_ref(over)] if isinstance(over, str) else over
+    axis = job.get("axis", "theme")
+    inputs = {"theme": job.get("theme"), "look": job.get("look", "classic")}
     slant = job["slant"]
     paths = []
-    for i, theme in enumerate(themes):
-        p = work / f"composite_{i}.png"
+    for i, value in enumerate(values):
+        p = work / f"{job['id']}_{i}.png"
         snap(
             p,
             cols=job["cols"],
             rows=job["rows"],
             hour=job["hour"],
             day=job.get("day"),
-            theme=theme,
+            **{**inputs, axis: value},
         )
         paths.append(p)
 
     with Image.open(paths[0]) as im:
         comp = im.convert("RGB")
     w, h = comp.size
-    n = len(themes)
+    n = len(values)
     half = h / 2
     far = w + abs(slant) * h + 10
 
@@ -216,41 +227,38 @@ def run_composite(job, out_dirs, work, intermediates):
         ImageDraw.Draw(mask).polygon([(lt, 0), (rt, 0), (rb, h), (lb, h)], fill=255)
         comp.paste(im, (0, 0), mask)
     for d in out_dirs:
-        comp.save(d / "themes-composite.png")
+        comp.save(d / f"{job['id']}.png")
 
 
 def run_gif(job, out_dirs, work, intermediates):
-    for d in out_dirs:
-        dst = d / f"{job['id']}.gif"
+    """The job's `segments` (each an `hour`, a `duration` and maybe a
+    `weather`), cut one after another. Each pre-rolls the ones before it, so
+    the office walks on through the cut while the clock jumps."""
+    parts = []
+    warmup = 0
+    for i, seg in enumerate(job["segments"]):
+        part = work / f"{job['id']}_{i}.gif"
         snap(
-            dst,
+            part,
             cols=job["cols"],
             rows=job["rows"],
-            hour=job["hour"],
+            hour=seg["hour"],
             day=job.get("day"),
             theme=job.get("theme"),
-            gif={"duration": job["duration"], "fps": job["fps"]},
+            weather=seg.get("weather"),
+            look=job.get("look", "classic"),
+            extra=["--warmup-secs", str(warmup)] if warmup else [],
+            gif={"duration": seg["duration"], "fps": job["fps"]},
         )
+        parts.append(str(part))
+        warmup += seg["duration"]
+    for d in out_dirs:
         # NOT --lossy: it breaks gifsicle's inter-frame diff and ships a bigger file.
         subprocess.run(
-            ["gifsicle", "-b", "-O3", "--colors", str(job["colors"]), str(dst)],
+            ["gifsicle", "-O3", "--colors", str(job["colors"]), *parts]
+            + ["-o", str(d / f"{job['id']}.gif")],
             check=True,
         )
-
-
-def run_matrix(job, out_dirs, work, intermediates):
-    items = [x["id"] for x in expand_ref(job["over"])]
-    axis = job["axis"]  # "theme" | "weather"
-    for item in items:
-        for d in out_dirs:
-            kwargs = {"theme": item} if axis == "theme" else {"weather": item}
-            snap(
-                d / f"{axis}_{item}.png",
-                cols=job["cols"],
-                rows=job["rows"],
-                hour=job["hour"],
-                **kwargs,
-            )
 
 
 # H.264 and VP9 both require even width/height. `neighbor` keeps the art's hard
@@ -323,6 +331,7 @@ def run_clip(job, out_dirs, work, intermediates):
         cols=job["cols"],
         rows=job["rows"],
         hour=job["hour"],
+        look=job.get("look", "classic"),
         extra=job.get("extra", ()),
         gif={"duration": job["duration"], "fps": fps},
         frames_dir=frames,
@@ -448,7 +457,6 @@ HANDLERS = {
     "crop": run_crop,
     "composite": run_composite,
     "gif": run_gif,
-    "matrix": run_matrix,
     "clip": run_clip,
     "wasm-still": run_wasm_still,
     "proof": run_proof,

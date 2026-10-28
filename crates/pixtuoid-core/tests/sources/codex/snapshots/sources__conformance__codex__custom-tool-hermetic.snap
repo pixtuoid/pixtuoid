@@ -3,64 +3,64 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - TurnStart:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     turn:
-      Id: 01a18035-73fb-7641-9f63-95344f564d4c
+      Id: 01a18304-9af9-79a3-a547-49be45a1e872
 - ModelInfo:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     model: gpt-5.5
     effort: high
 - ToolUseStart:
-    agent_id: 7939266709568979379
-    tool_use_id: call_LDqBEuHE9sy16wHT
+    agent_id: 4372118191362085175
+    tool_use_id: call_3Q23KSCgyp4NZy-v
     detail:
       Generic:
         display: apply_patch
 - ToolUseEnd:
-    agent_id: 7939266709568979379
-    tool_use_id: call_LDqBEuHE9sy16wHT
+    agent_id: 4372118191362085175
+    tool_use_id: call_3Q23KSCgyp4NZy-v
 - Usage:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     fresh_tokens: 19
 - Usage:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     fresh_tokens: 19
 - TurnEnd:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     turn:
-      Id: 01a18035-73fb-7641-9f63-95344f564d4c
+      Id: 01a18304-9af9-79a3-a547-49be45a1e872
 - SessionStart:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     source: codex
-    session_id: 01a18035-73c0-7642-8cb0-54e7a8c20b6e
+    session_id: 01a18304-9aa8-75a2-8c63-76f655d1ab4c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     model: gpt-5.5
     effort: ~
 - SessionStart:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     source: codex
-    session_id: 01a18035-73c0-7642-8cb0-54e7a8c20b6e
+    session_id: 01a18304-9aa8-75a2-8c63-76f655d1ab4c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     source: codex
-    session_id: 01a18035-73c0-7642-8cb0-54e7a8c20b6e
+    session_id: 01a18304-9aa8-75a2-8c63-76f655d1ab4c
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 7939266709568979379
-    tool_use_id: call_LDqBEuHE9sy16wHT
+    agent_id: 4372118191362085175
+    tool_use_id: call_3Q23KSCgyp4NZy-v
     tool_name: apply_patch
     turn:
-      Id: 01a18035-73fb-7641-9f63-95344f564d4c
+      Id: 01a18304-9af9-79a3-a547-49be45a1e872
 - UserActionResolved:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     by:
       Turn:
-        Id: 01a18035-73fb-7641-9f63-95344f564d4c
+        Id: 01a18304-9af9-79a3-a547-49be45a1e872
 - SessionEnd:
-    agent_id: 7939266709568979379
+    agent_id: 4372118191362085175
     as_child: false

@@ -22,7 +22,7 @@ jobs:
     # A cold gen-demos (release build plus encodes) on top of a cold gen-wasm.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # the displayed version is the latest release TAG; a shallow tag-less
           # checkout silently falls back to Cargo.toml
@@ -75,4 +75,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

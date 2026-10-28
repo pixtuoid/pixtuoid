@@ -38,7 +38,7 @@ pub const SOURCE_NAME: &str = "copilot";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "cp",
-    verified_version: "1.0.104",
+    verified_version: "1.0.105",
     version_probe: Some(&["copilot", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("COPILOT_HOME"),

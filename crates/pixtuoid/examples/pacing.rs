@@ -490,8 +490,9 @@ fn owner_terminal(pack: &pixtuoid_scene::pack::OfficeArt, cell: (u16, u16)) -> R
     (1..=1000u16)
         .flat_map(|c| (1..=400u16).map(move |r| (c, r)))
         .find(|&(c, r)| {
-            pixtuoid::dev::cutaway_office(c, r, cell, pack)
-                .is_some_and(|(w, h, _)| w >= OWNER_OFFICE.0 && h >= OWNER_OFFICE.1)
+            pixtuoid::dev::cutaway_office(c, r, cell, pack).is_some_and(|fit| {
+                fit.logical().w >= OWNER_OFFICE.0 && fit.logical().h >= OWNER_OFFICE.1
+            })
         })
         .context("no terminal fits the owner's office")
 }
@@ -534,8 +535,11 @@ fn hitch(path: &Path) -> Result<()> {
     let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack()?);
     let (cols, rows) = owner_terminal(&pack, OWNER_CELL)?;
     anyhow::ensure!(
-        pixtuoid::dev::cutaway_office(cols, rows, OWNER_CELL, &pack)
-            .is_some_and(|(w, h, _)| (w, h) == OWNER_OFFICE),
+        pixtuoid::dev::cutaway_office(cols, rows, OWNER_CELL, &pack).is_some_and(|fit| (
+            fit.logical().w,
+            fit.logical().h
+        )
+            == OWNER_OFFICE),
         "the owner's terminal no longer gives the owner's office exactly: its runs stop being comparable"
     );
     let tick = Duration::from_secs(1) / PAINT_FPS;
@@ -670,7 +674,8 @@ fn hitch(path: &Path) -> Result<()> {
     let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
     let mut stdout = std::io::stdout().lock();
     for t in &terms {
-        let office_of = pixtuoid::dev::cutaway_office(t.cols, t.rows, t.cell, &pack);
+        let office_of = pixtuoid::dev::cutaway_office(t.cols, t.rows, t.cell, &pack)
+            .map(|fit| (fit.logical().w, fit.logical().h, fit.scale().get()));
         let _ = writeln!(
             stdout,
             "{}: {}x{} cells of {:?} px, cutaway office/scale {office_of:?}",

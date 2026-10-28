@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "omp",
-  "version": "omp/18.13.1",
+  "version": "omp/18.13.3",
   "captured": "2026-10-28",
   "command": "just hermetic --record omp",
   "deidentified": {
