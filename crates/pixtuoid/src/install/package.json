@@ -10,5 +10,13 @@
     "@opencode/plugin": "2.2.0",
     "@types/bun": "^1.4.4",
     "openclaw": "2026.10.8"
+  },
+  "allowScripts": {
+    "@google/genai": false,
+    "onnxruntime-node": false,
+    "esbuild": false,
+    "koffi": false,
+    "openclaw": false,
+    "protobufjs": false
   }
 }

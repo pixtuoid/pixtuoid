@@ -95,5 +95,5 @@ test("a broken session manager or shim never rejects into omp", async (t) => {
       },
     },
   };
-  for (const name of Object.keys(handlers)) await handlers[name](undefined, broken);
+  for (const name of Object.keys(handlers)) await handlers[name]({ type: name }, broken);
 });

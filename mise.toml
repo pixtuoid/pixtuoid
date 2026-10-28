@@ -14,6 +14,8 @@ lychee = "latest"
 "pypi:check-jsonschema" = "latest"
 uv = "latest"
 ruff = "latest"
+# Pre-push's `lint` runs tsc and pyright on it, as CI's setup-npm reads `.nvmrc`'s.
+node = "latest"
 cargo-binstall = "latest"
 cargo-deny = "latest"
 cargo-insta = "latest"

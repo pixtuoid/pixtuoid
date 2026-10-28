@@ -23,21 +23,25 @@ const PLUGIN_ID: &str = "pixtuoid";
 
 pub(crate) const PLUGIN_TEMPLATE: &str = include_str!("dsh_plugin.mjs");
 
-/// The upstream events the plugin forwards: its agent subscriptions and the
-/// cases of its session-event switch, which its selftest executes it against
-/// (`plugin-contract.json`).
+/// The upstream events the plugin forwards, read off its agent subscriptions and
+/// its session-event switch's cases: the selftest can fire only the cases it is
+/// told of, so a hand list would leave an added case unexercised.
 #[cfg(test)]
-pub(crate) const DSH_EVENTS: &[&str] = &[
-    "agent/created",
-    "agent/disposed",
-    "approval/asked",
-    "approval/decided",
-    "assistant/message",
-    "request/header",
-    "tool/call",
-    "tool/result",
-    "turn/end",
-];
+pub(crate) fn plugin_events() -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for marker in [r#"ctx.on(""#, r#"case ""#] {
+        for (i, m) in PLUGIN_TEMPLATE.match_indices(marker) {
+            if let Some((name, _)) = PLUGIN_TEMPLATE[i + m.len()..].split_once('"') {
+                names.push(name);
+            }
+        }
+    }
+    // The channel the cases arrive on, not an event.
+    names.retain(|name| *name != "session/event");
+    names.sort_unstable();
+    names.dedup();
+    names
+}
 
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
 /// (`packages/util/home-paths/src/index.ts`, fetched 2026-09-01) resolves

@@ -52,6 +52,10 @@ PUBLISHED_CRATES := "pixtuoid-core pixtuoid-scene"
 # scalar in place — so adding a file here is not enough for embedded shell.
 SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh"
 
+# The projects that run their own checkers (site/AGENTS.md,
+# integrations/raycast/AGENTS.md), as git pathspecs.
+SELF_GATED := "':!:site/' ':!:integrations/'"
+
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
 # nightly-only). Provisioned by `_api-toolchain`, which also fails while it
 # can't build what rust-toolchain.toml's release admits (`_toolchain-covers`).
@@ -219,27 +223,66 @@ ruff:
     ruff check
     ruff format --check
 
-# Pyright takes its interpreter, and with it the scripts' imports, from the env
-# uv builds out of requirements-dev.txt: the Python the scripts run on.
+# Every tracked Python file, so none escapes an `include`. The env uv builds
+# out of requirements-dev.txt resolves the scripts' imports.
 [doc('Type-check the Python (pyright, as pyproject.toml configures it)')]
 [group('rust')]
 pyright: (_npm ".")
-    uv run --no-project --with-requirements requirements-dev.txt -- node_modules/.bin/pyright
+    git ls-files -z -- '*.py' '*.pyi' {{ SELF_GATED }} | xargs -0 uv run --no-project --with-requirements requirements-dev.txt -- node_modules/.bin/pyright
 
 [doc('Type-check the JavaScript (tsc --checkJs, as tsconfig.json configures it)')]
 [group('rust')]
 tsc: (_npm ".")
     node_modules/.bin/tsc -p tsconfig.json
 
+# What each checker reads, by its own account: tsc's program, the files `pyright`
+# is handed and SHELL_SOURCES as the shell expands it for shellcheck. tsc lists
+# the plugins' project without its hosts' types installed, then exits 1.
+[doc('Fail on a tracked JS/TS, Python or shell source no checker reads')]
+[group('rust')]
+lang-census: (_npm ".")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export LC_ALL=C
+    interpreter='^#!.*[/[:space:]](node|python[0-9.]*|sh|bash)$'
+    read_by=$(
+        {
+            for project in tsconfig.json crates/pixtuoid/src/install; do
+                { node_modules/.bin/tsc -p "$project" --listFilesOnly || true; } | grep "^$PWD/" | cut -c "$((${#PWD} + 2))-"
+            done
+            git ls-files -- '*.py' '*.pyi' {{ SELF_GATED }}
+            printf '%s\n' {{ SHELL_SOURCES }}
+        } | sort -u
+    )
+    unread=$(
+        git ls-files -z -- {{ SELF_GATED }} | while IFS= read -r -d '' f; do
+            case ${f##*/} in
+                (*.py | *.pyi | *.js | *.mjs | *.cjs | *.ts | *.mts | *.cts | *.sh) ;;
+                (*.*) continue ;;
+                (*)
+                    [[ -f $f && ! -L $f ]] || continue
+                    shebang=$(head -n 1 "$f")
+                    [[ $shebang =~ $interpreter ]] || continue
+                    ;;
+            esac
+            printf '%s\n' "$f"
+        done | sort | comm -23 - <(printf '%s\n' "$read_by")
+    )
+    if [[ -n $unread ]]; then
+        echo "no checker reads these: give an extensionless script its extension, else name it in a tsconfig.json include or SHELL_SOURCES" >&2
+        printf '%s\n' "$unread" >&2
+        exit 1
+    fi
+
 # Each host's own published types, pinned with its hermetic pin: an install too
-# heavy for `lint`, so CI's plugin-types job runs it, and a plugin's change does.
+# heavy for `lint`, so CI's hygiene job runs it when an input changes.
 [doc("Type-check each shipped plugin against its host's own published API")]
 [group('rust')]
 plugin-types: (_npm ".") (_npm "crates/pixtuoid/src/install")
     node_modules/.bin/tsc -p crates/pixtuoid/src/install
 
-# An install older than its lockfile is redone; `dir`'s .npmrc keeps every
-# package's install scripts from running.
+# An install older than its lockfile is redone; `dir`'s .npmrc fails it on any
+# install script its `allowScripts` hasn't reviewed.
 [private]
 _npm dir:
     @[ "$1/node_modules/.package-lock.json" -nt "$1/package-lock.json" ] || npm ci --prefix "$1" --no-audit --no-fund
@@ -315,6 +358,7 @@ lint: (_npm ".")
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)
     run tsc     just tsc                 & pids+=($!)
+    run census  just lang-census         & pids+=($!)
     run hookscrub just hook-scrub-selftest  & pids+=($!)
     run starhist just star-history-selftest & pids+=($!)
     run bmcbtn  just bmc-button-selftest  & pids+=($!)

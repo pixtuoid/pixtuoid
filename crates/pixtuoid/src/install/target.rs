@@ -560,7 +560,7 @@ pub(crate) const DSH: Target = Target {
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
-    registers: || crate::install::dsh::DSH_EVENTS.to_vec(),
+    registers: crate::install::dsh::plugin_events,
 };
 
 pub(crate) const OMP: Target = Target {

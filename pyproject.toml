@@ -1,5 +1,7 @@
 [tool.pyright]
 include = ["scripts", "crates/pixtuoid/src/install"]
+# The scripts' floor (`tomllib`, `datetime.UTC`), so every machine's verdict is CI's.
+pythonVersion = "3.11"
 # A shipped plugin runs inside its host, where a type error is the host's.
 strict = ["crates/pixtuoid/src/install"]
 # hermes-agent's floor (its pyproject.toml:15 at v0.22.5). Its API is a stub

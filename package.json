@@ -5,5 +5,8 @@
     "@types/node": "^26.6.5",
     "pyright": "^1.1.414",
     "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "fsevents": false
   }
 }

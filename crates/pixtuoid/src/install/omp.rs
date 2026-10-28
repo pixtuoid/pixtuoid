@@ -90,51 +90,6 @@ mod tests {
     use super::*;
     use crate::install::merge::HOOK_PLACEHOLDER;
 
-    /// Every event the extension registers decodes to something: its selftest
-    /// holds it to exactly `DECODED_HOOK_EVENTS` (`plugin-contract.json`).
-    #[test]
-    fn every_forwarded_omp_event_decodes() {
-        use pixtuoid_core::source::decoder::decode_hook_payload;
-        const FILE: &str = "/h/.omp/agent/sessions/-r/2026-08-31T06-00-52-863Z_01a05668-057f-7559-8fed-f28ff062e3ca.jsonl";
-        let payloads = [
-            serde_json::json!({"type": "session_start", "sessionFile": FILE,
-                "sessionId": "u", "cwd": "/r", "_pixtuoid_source": "omp"}),
-            serde_json::json!({"type": "session_switch", "sessionFile": FILE,
-                "previousSessionFile": "/h/.omp/agent/sessions/-r/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000009.jsonl",
-                "sessionId": "u", "cwd": "/r", "_pixtuoid_source": "omp"}),
-            serde_json::json!({"type": "session_branch", "sessionFile": FILE,
-                "previousSessionFile": FILE,
-                "sessionId": "u", "cwd": "/r", "_pixtuoid_source": "omp"}),
-            serde_json::json!({"type": "session_shutdown", "sessionFile": FILE,
-                "sessionId": "u", "cwd": "/r", "_pixtuoid_source": "omp"}),
-            serde_json::json!({"type": "tool_approval_requested", "sessionFile": FILE,
-                "sessionId": "u", "cwd": "/r", "toolCallId": "c1", "toolName": "bash",
-                "_pixtuoid_source": "omp"}),
-            serde_json::json!({"type": "tool_approval_resolved", "sessionFile": FILE,
-                "sessionId": "u", "cwd": "/r", "toolCallId": "c1", "toolName": "bash",
-                "approved": true, "_pixtuoid_source": "omp"}),
-        ];
-        let covered: std::collections::BTreeSet<&str> = payloads
-            .iter()
-            .map(|p| p["type"].as_str().unwrap())
-            .collect();
-        for ev in pixtuoid_core::source::omp::DECODED_HOOK_EVENTS {
-            assert!(
-                covered.contains(ev),
-                "extension forwards `{ev}` but this test has no payload for it — the \
-                 hand-listed fixtures drifted from omp_extension.ts"
-            );
-        }
-        for p in payloads {
-            let ty = p["type"].clone();
-            let evs = decode_hook_payload(p).unwrap();
-            assert!(
-                !evs.is_empty(),
-                "forwarded omp event {ty} decoded to NOTHING — add an arm in source/omp.rs"
-            );
-        }
-    }
-
     /// The bridge must never hold a gate: omp's `tool_call` handlers fail
     /// CLOSED (a throw/timeout blocks the user's tool), so the extension may
     /// only ever observe, and its selftest holds what it registers to

@@ -80,14 +80,22 @@ function scaffold(t, { skip, skipNotices } = {}) {
  * @param {string} npmDir
  * @param {string} artifacts
  * @param {string} version
+ * @param {...string} extra
  */
-function run(npmDir, artifacts, version) {
+function run(npmDir, artifacts, version, ...extra) {
   return spawnSync(
     process.execPath,
-    [SCRIPT, "--version", version, "--artifacts", artifacts, "--npm-dir", npmDir],
+    [SCRIPT, "--version", version, "--artifacts", artifacts, "--npm-dir", npmDir, ...extra],
     { encoding: "utf8" },
   );
 }
+
+test("refuses a flag it does not know rather than ignore it", (t) => {
+  const { npmDir, artifacts } = scaffold(t);
+  const r = run(npmDir, artifacts, "1.2.3", "--bogus");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /--bogus/);
+});
 
 test("stamps launcher + all 6 platform packages with the asymmetric libc gate", (t) => {
   const { npmDir, artifacts } = scaffold(t);

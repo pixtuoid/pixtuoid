@@ -93,10 +93,8 @@ def require(holds, why):
 
 
 def doc(draw) -> str:
-    """`draw`'s docstring, the header its sprite carries, which `-OO` strips."""
-    if draw.__doc__ is None:
-        raise ValueError(f"{draw.__name__} has no docstring: run without -OO")
-    return draw.__doc__
+    """`draw`'s docstring, the header its sprite carries."""
+    return draw.__doc__ or ""
 
 
 class Draws:

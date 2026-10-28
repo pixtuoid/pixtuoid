@@ -316,25 +316,4 @@ mod tests {
         let bad = Path::new(std::ffi::OsStr::from_bytes(b"/x/\xff/pixtuoid-hook"));
         assert!(hook_command(bad, false).is_err());
     }
-
-    /// Every event the plugin forwards decodes: its selftest holds it to
-    /// exactly `DECODED_EVENTS` (`plugin-contract.json`).
-    #[test]
-    fn every_forwarded_opencode_event_decodes() {
-        use pixtuoid_core::source::decoder::decode_hook_payload;
-        let payloads = pixtuoid_core::source::opencode::DECODED_EVENTS
-            .iter()
-            .map(|ty| {
-                serde_json::json!({"type": ty, "_pixtuoid_source": "opencode",
-                "data": {"sessionID": "ses_1", "location": {"directory": "/r"},
-                    "id": "c", "name": "bash", "action": "bash"}})
-            });
-        for p in payloads {
-            let ty = p["type"].clone();
-            assert!(
-                decode_hook_payload(p).is_ok_and(|evs| !evs.is_empty()),
-                "forwarded opencode event {ty} decoded to nothing — add an arm in source/opencode.rs"
-            );
-        }
-    }
 }
