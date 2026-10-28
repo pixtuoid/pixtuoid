@@ -900,7 +900,10 @@ mod tests {
             .iter()
             .find(|w| w.kind == pixtuoid_scene::layout::WaypointKind::Pantry)
             .unwrap();
-        let (cx, cy) = (pantry.pos.x, pantry.pos.y / 2);
+        let (cx, cy) = (
+            pantry.pos.x,
+            pantry.pos.y / pixtuoid_scene::layout::CELL_ROWS,
+        );
         assert!(rect.x <= cx && cx < rect.x + rect.width, "x not in crop");
         assert!(rect.y <= cy && cy < rect.y + rect.height, "y not in crop");
     }
