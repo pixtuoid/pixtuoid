@@ -122,7 +122,7 @@ jobs:
       # SHA also pins the release-plz binary the action installs. Dependabot
       # moves the pin.
       - id: release-plz
-        uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+        uses: release-plz/action@8b5bf233ecb5779f63508db7cd050e948ee77cc2 # v0.5.144
         with:
           command: release-pr
         env:
@@ -221,7 +221,7 @@ jobs:
       # `cargo publish` BUILDS each crate to verify it, and the default `audio`
       # feature reaches alsa-sys — hence the ALSA step above.
       - uses: ./.github/actions/setup-cargo-just
-      - uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+      - uses: release-plz/action@8b5bf233ecb5779f63508db7cd050e948ee77cc2 # v0.5.144
         with:
           command: release
         env:
