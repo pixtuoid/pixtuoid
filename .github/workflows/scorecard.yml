@@ -41,8 +41,21 @@ jobs:
           results_format: json
           publish_results: true
 
-      # A rejected publish only warns (scorecard-action v2.5.0
-      # signing/signing.go:166-171), leaving the badge stale on a green run.
+  # A rejected publish only warns (scorecard-action v2.5.0
+  # signing/signing.go:166-171), leaving the badge stale on a green run. Its
+  # own job: the API rejects a `run:` step in the scorecard job
+  # (ossf/scorecard-infra api/app/server/verify_workflow.go, errEmptyStepUses).
+  published:
+    needs: analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # this run's start, which a fresh publish's date follows
+    steps:
+      # A re-score of an already published commit finds the old result too.
       - env:
-          PUBLISHED: https://api.scorecard.dev/projects/github.com/${{ github.repository }}?commit=${{ github.sha }}
-        run: curl -fsS -o /dev/null "$PUBLISHED"
+          GH_TOKEN: ${{ github.token }}
+          RESULT: https://api.scorecard.dev/projects/github.com/${{ github.repository }}?commit=${{ github.sha }}
+        run: |
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          curl -fsS "$RESULT" | jq -e --arg started "$started" '.date >= $started'
