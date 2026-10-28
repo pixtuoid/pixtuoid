@@ -92,8 +92,8 @@ updates:
     cooldown:
       default-days: 7
 
-  # requirements-dev.txt pins exact versions (pip.pypa.io topics/repeatable-installs);
-  # this moves the pins.
+  # requirements-dev.txt pins exact versions and hashes (pip.pypa.io
+  # topics/secure-installs); this moves both.
   - package-ecosystem: pip
     directory: /
     schedule:
