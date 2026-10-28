@@ -1995,9 +1995,9 @@ mod recorder {
             .into_owned()
         }
 
-        /// codex's tool-run fixture, under `root` in `d`, and a way to make its
-        /// `n`th run in `d`, every id reminted `n` steps.
-        fn codex_reruns(d: &Path) -> (PathBuf, impl Fn(usize) -> PathBuf + '_) {
+        /// The sources root in `d`, codex's tool-run fixture under it, and a way
+        /// to make that scenario's `n`th run in `d`, every id reminted `n` steps.
+        fn codex_reruns(d: &Path) -> (PathBuf, PathBuf, impl Fn(usize) -> PathBuf + '_) {
             let s = hermetic::profile("codex")
                 .and_then(|p| p.scenario("tool-run"))
                 .expect("codex's tool-run");
@@ -2044,7 +2044,8 @@ mod recorder {
                 .expect("manifest");
                 dir
             };
-            (d.join("sources").join(s.fixture), run)
+            let root = d.join("sources");
+            (root.join(s.fixture), root, run)
         }
 
         /// A transcript's name carries the ids its run minted, and so does its
@@ -2052,8 +2053,7 @@ mod recorder {
         #[test]
         fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
             let d = tempfile::tempdir().expect("tempdir");
-            let (dest, run) = codex_reruns(d.path());
-            let root = d.path().join("sources");
+            let (dest, root, run) = codex_reruns(d.path());
             promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
             let before = snapshot(&dest);
             promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
@@ -2063,8 +2063,7 @@ mod recorder {
         #[test]
         fn a_re_record_that_makes_a_read_its_record_lacks_is_rewritten() {
             let d = tempfile::tempdir().expect("tempdir");
-            let (dest, run) = codex_reruns(d.path());
-            let root = d.path().join("sources");
+            let (dest, root, run) = codex_reruns(d.path());
             promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
             let mut record = Provenance::read(&dest.join(PROVENANCE)).expect("its record");
             let Provenance::Recorded(r) = &mut record;
