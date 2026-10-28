@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "kimi",
-  "version": "2.3.3",
+  "version": "2.4.0",
   "captured": "2026-10-28",
   "command": "just hermetic --record kimi",
   "deidentified": {
