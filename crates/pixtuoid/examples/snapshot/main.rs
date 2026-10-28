@@ -26,6 +26,7 @@ use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
+use crate::cutaway::CutawayOffice;
 use crate::encode::{
     AnimJob, Timeline, centered_crop, compute_crop_rect, print_walkability_report, save_animation,
     save_backend_as_png, save_renderer_animation,
@@ -93,7 +94,7 @@ struct SnapshotArgs {
     #[arg(long, conflicts_with_all = [
         "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
         "hover", "debug_walkable", "empty", "crop_agent", "crop_furniture", "crop_mascot",
-        "proof", "pets", "navigate_at",
+        "proof",
     ])]
     cutaway: bool,
 
@@ -445,10 +446,6 @@ fn main() -> Result<()> {
     let mut term = Terminal::new(backend)?;
     let pack = std::sync::Arc::new(load_bundled_pack()?);
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(&pack));
-    let mut cutaway = args
-        .cutaway
-        .then(|| cutaway::CutawayOffice::new(&pack, cols, rows))
-        .transpose()?;
     // A typo'd theme silently rendering NORMAL would put wrong-palette art into
     // the docs/site screenshot pipelines.
     let theme = pixtuoid_scene::theme::theme_by_name(&args.theme).ok_or_else(|| {
@@ -525,11 +522,19 @@ fn main() -> Result<()> {
     };
     let anim_dest = args.frames_dir.as_deref().unwrap_or(&args.out);
     if !navigations.is_empty() || !pet_vec.is_empty() {
-        save_renderer_animation(&anim_job, term, &navigations, pet_vec)?;
+        let cutaway = args
+            .cutaway
+            .then(|| CutawayOffice::office(&pack, cols, rows, pet_vec.clone()))
+            .transpose()?;
+        save_renderer_animation(&anim_job, term, &navigations, pet_vec, cutaway)?;
         println!("wrote {}", anim_dest.display());
         return Ok(());
     }
 
+    let mut cutaway = args
+        .cutaway
+        .then(|| CutawayOffice::floor(&pack, cols, rows))
+        .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;
     if args.gif || args.anim.is_some() {
@@ -1100,8 +1105,6 @@ mod tests {
             &["--crop-furniture", "pantry"],
             &["--crop-mascot", "--openclaw", "idle"],
             &["--proof", "session.jsonl"],
-            &["--gif", "--pets", "cat"],
-            &["--gif", "--navigate-at", "3:1"],
         ] {
             let alone = [&["snapshot"][..], flags].concat();
             assert!(parses(&alone), "rejected {alone:?}");
@@ -1112,6 +1115,8 @@ mod tests {
             &["snapshot", "--cutaway"][..],
             &["snapshot", "--cutaway", "--gif"],
             &["snapshot", "--cutaway", "--gif", "--warmup-secs", "1"],
+            &["snapshot", "--cutaway", "--gif", "--pets", "cat"],
+            &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
         }
