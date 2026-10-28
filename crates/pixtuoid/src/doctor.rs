@@ -737,7 +737,7 @@ fn collect_roots() -> Vec<RootStatus> {
         .collect()
 }
 
-/// One probe-backed source's click-time path: its first, and whether it is
+/// One probe-backed source's click-time path ([`shown_path`]), and whether it is
 /// there, or why its layout hosts none. Read through the same
 /// `FocusProbe::paths` a click reads, so the report cannot claim a path a click
 /// would not.
@@ -752,13 +752,24 @@ fn probe_paths() -> Vec<ProbePath> {
         .filter_map(|source| {
             let probe = source.focus_probe()?;
             let path = (probe.paths)().map(|paths| {
-                let first = paths.into_iter().next().unwrap_or_default();
-                let present = (probe.present)(&first);
-                (ShownPath::new(first), present)
+                let (shown, present) = shown_path(&paths, probe.present);
+                (ShownPath::new(shown), present)
             });
             Some(ProbePath { source, path })
         })
         .collect()
+}
+
+/// The path a probe row shows: the first one there, as a click tries every one,
+/// else the first.
+fn shown_path(
+    paths: &[std::path::PathBuf],
+    present: fn(&std::path::Path) -> bool,
+) -> (std::path::PathBuf, bool) {
+    match paths.iter().find(|p| present(p)) {
+        Some(found) => (found.clone(), true),
+        None => (paths.first().cloned().unwrap_or_default(), false),
+    }
 }
 
 /// All probing, no formatting. `log_at` is injected by `main` (resolved by
@@ -1526,6 +1537,27 @@ mod tests {
                 drift: LogScanResult::default(),
             },
         }
+    }
+
+    #[test]
+    fn a_probe_row_shows_the_first_path_a_click_would_find() {
+        let home = tempfile::tempdir().unwrap();
+        let default = home.path().join("default");
+        let profile = home.path().join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        assert_eq!(
+            shown_path(&[default.clone(), profile.clone()], std::path::Path::is_dir),
+            (profile, true),
+            "a profile's dir alone is found, as the click finds it"
+        );
+        assert_eq!(
+            shown_path(
+                &[default.clone(), home.path().join("gone")],
+                std::path::Path::is_dir
+            ),
+            (default, false),
+            "none there: the first is the one reported missing"
+        );
     }
 
     fn set_probe(
