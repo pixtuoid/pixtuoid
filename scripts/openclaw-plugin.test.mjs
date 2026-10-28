@@ -100,9 +100,9 @@ test("forwards ONLY the allowlist plus identity, never content", { skip: !POSIX 
 
   // BY TYPE: the shims are detached, so their appends race — arrival order is
   // deliberately not part of the contract.
-  const lines = await recorded(outFile);
-  assert.equal(lines.length, 2);
-  const byType = new Map(lines.map((l) => [l.type, l]));
+  const payloads = await recorded(outFile);
+  assert.equal(payloads.length, 2);
+  const byType = new Map(payloads.map((l) => [l.type, l]));
   const run = byType.get("before_agent_run");
   const end = byType.get("agent_end");
   assert.deepEqual(run, {

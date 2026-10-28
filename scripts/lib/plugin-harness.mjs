@@ -22,8 +22,6 @@ export const POSIX = process.platform !== "win32";
 
 // Every child this process spawned that has yet to emit `close`, a
 // ChildProcess's last event (https://nodejs.org/api/child_process.html#event-close).
-// A plugin's imported `spawn` reaches this wrapper once the builtin's live
-// bindings are resynced (https://nodejs.org/api/module.html#modulesyncbuiltinesmexports).
 /** @type {Set<import("node:child_process").ChildProcess>} */
 const open = new Set();
 const { spawn } = childProcess;
@@ -37,6 +35,8 @@ childProcess.spawn = /** @type {typeof spawn} */ (
     return child;
   }
 );
+// A plugin's imported `spawn` reaches this wrapper once the builtin's live
+// bindings are resynced (https://nodejs.org/api/module.html#modulesyncbuiltinesmexports).
 syncBuiltinESMExports();
 
 /**
@@ -96,8 +96,8 @@ export async function render(t, source, { shim = "recorder", holdMs = 0 } = {}) 
  */
 export async function lines(file) {
   const deadline = Date.now() + POLL_DEADLINE_MS;
-  // Checked after a timer: a queue spawns its next shim in the microtasks its
-  // previous one's `close` runs.
+  // Checked only after a timer: a queue spawns each shim in microtasks, its
+  // first after the handler returns, each next in its previous one's `close`.
   do {
     if (Date.now() > deadline) throw new Error(`timed out with ${open.size} shim(s) still open`);
     await new Promise((r) => setTimeout(r, POLL_TICK_MS));

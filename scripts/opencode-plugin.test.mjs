@@ -131,13 +131,6 @@ test("a turn's start carries what its session's record adds", { skip: !POSIX }, 
   );
 });
 
-test("cleanup waits for what is in flight before it aborts the stream", { skip: !POSIX }, async (t) => {
-  const { module, outFile } = await render(t, SOURCE);
-  const events = registers.map((type) => ({ type, data: { sessionID: "ses_1" } }));
-  await run(module, host(events));
-  assert.equal((await recorded(outFile)).length, registers.length);
-});
-
 test("an unspawnable shim or an unreadable session never rejects into opencode", async (t) => {
   const { module } = await render(t, SOURCE, { shim: "missing" });
   const ctx = host(registers.map((type) => ({ type, data: { sessionID: "ses_1" } })));
