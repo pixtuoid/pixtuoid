@@ -274,11 +274,16 @@ lang-census: (_npm ".")
         exit 1
     fi
 
-# Each host's own published types, pinned with its hermetic pin: an install too
-# heavy for `lint`, so CI's hygiene job runs it when an input changes.
+# Each host's own published types at its `verified_version`, the one pin, on top
+# of the committed runtime types: an install too heavy for `lint`, so CI's
+# hygiene job runs it when an input changes.
 [doc("Type-check each shipped plugin against its host's own published API")]
 [group('rust')]
 plugin-types: (_npm ".") (_npm "crates/pixtuoid/src/install")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    read -ra hosts <<<"$(cargo run -q -p pixtuoid-core --example bump -- plugin-types | tr '\n' ' ')"
+    npm install --prefix crates/pixtuoid/src/install --no-save --no-audit --no-fund "${hosts[@]}"
     node_modules/.bin/tsc -p crates/pixtuoid/src/install
 
 # An install older than its lockfile is redone; `dir`'s .npmrc fails it on any
@@ -696,15 +701,7 @@ hermetic *args: hermetic-build
 [doc('Re-record a source at a release, moving its pin, and write the bump as a patch')]
 [group('rust')]
 hermetic-bump source release out: (hermetic "--cli" release "--record" source)
-    #!/usr/bin/env bash
-    set -euo pipefail
     TZ={{ TEST_TZ }} INSTA_UPDATE=always INSTA_FORCE_PASS=1 cargo test -q -p pixtuoid-core --test sources
-    # The plugin's host types move with the pin, so the bump's own PR checks it
-    # against the release's API; checking here would open no PR to red.
-    listed=$(cargo run --release -q -p pixtuoid-core --example bump -- plugin-types "$1")
-    packages=()
-    for package in $listed; do packages+=("$package@$2"); done
-    ((${#packages[@]} == 0)) || npm install --prefix crates/pixtuoid/src/install --save-exact --no-audit --no-fund "${packages[@]}"
     cargo run --release -q -p pixtuoid-core --example bump -- patch "$1" "$3"
 
 # Compile the workspace; extra args are forwarded:

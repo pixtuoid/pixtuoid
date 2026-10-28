@@ -116,14 +116,10 @@ updates:
     cooldown:
       default-days: 7
 
-  # Each host's types move with its hermetic pin (`just hermetic-bump`), so
-  # only the runtimes' move here.
   - package-ecosystem: npm
     directory: /crates/pixtuoid/src/install
     schedule:
       interval: weekly
-    allow:
-      - dependency-name: "@types/*"
     cooldown:
       default-days: 7
 

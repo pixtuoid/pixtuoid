@@ -391,9 +391,9 @@ pub struct Profile {
     pub source: &'static str,
     /// How users install it.
     pub package: Package,
-    /// The npm packages publishing the API its plugin is type-checked against
-    /// (`plugin_types_manifest`), each pinned there at its registry row's
-    /// `verified_version`, so a bump moves both.
+    /// The npm packages publishing the API its plugin is type-checked against,
+    /// which `just plugin-types` installs at its registry row's
+    /// `verified_version`.
     pub plugin_types: &'static [&'static str],
     /// The headless invocation: [`Placeholder::Prompt`] expands to the
     /// scenario's prompt in the runner, else to [`crate::harness::plan::DEFAULT_PROMPT`], and
@@ -734,13 +734,6 @@ pub fn scripts_dir() -> PathBuf {
     crate::harness::sources_root().join("hermetic")
 }
 
-/// The npm manifest of every profile's [`Profile::plugin_types`], beside the
-/// plugins `just plugin-types` checks against them; its lockfile is the sibling
-/// `package-lock.json`.
-pub(crate) fn plugin_types_manifest() -> PathBuf {
-    bump::repo_root().join("crates/pixtuoid/src/install/package.json")
-}
-
 impl Profile {
     /// The pinned build's per-platform manifests, beside the profile's scripts,
     /// for a [`Package::UpdaterManifest`] profile.
@@ -837,38 +830,6 @@ mod tests {
 
     use super::*;
     use crate::harness::provenance::Provenance;
-
-    /// A host's types move with its pin, so a bump that changed the host's API
-    /// fails the plugin's type check on the bump's own PR; and no host package
-    /// there drifts unpinned (`@types/*` describe a runtime, not a host).
-    #[test]
-    fn plugin_types_are_pinned_at_their_verified_version() {
-        let manifest = plugin_types_manifest();
-        let pins: Value = crate::harness::read_json(&manifest).expect("the plugin types manifest");
-        let pins = pins["devDependencies"]
-            .as_object()
-            .expect("devDependencies");
-        let mut owned = BTreeSet::new();
-        for p in PROFILES {
-            for package in p.plugin_types {
-                assert_eq!(
-                    pins.get(*package).and_then(Value::as_str),
-                    Some(p.descriptor().verified_version),
-                    "{}: {package} must be pinned in {manifest:?} at its verified_version",
-                    p.source
-                );
-                owned.insert(*package);
-            }
-        }
-        let unowned: Vec<&String> = pins
-            .keys()
-            .filter(|k| !k.starts_with("@types/") && !owned.contains(k.as_str()))
-            .collect();
-        assert!(
-            unowned.is_empty(),
-            "{unowned:?} is no profile's plugin_types"
-        );
-    }
 
     #[test]
     fn hermetic_yml_reads_the_verdicts_and_names_the_upload_of_every_leg() {
