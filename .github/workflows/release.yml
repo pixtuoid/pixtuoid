@@ -222,12 +222,20 @@ jobs:
       # Before the release goes public, so a failed attestation leaves a draft,
       # never a published release without provenance.
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             artifacts/*.tar.gz
             artifacts/*.deb
             artifacts/*.zip
+
+      # Lets a download be verified offline (`gh attestation verify --bundle`);
+      # `*.intoto.jsonl` is the name Scorecard's Signed-Releases looks for.
+      - name: Name the attestation bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp -- "$BUNDLE" "artifacts/pixtuoid-${GITHUB_REF_NAME}.intoto.jsonl"
 
       # release-plz created this release as a DRAFT carrying the changelog, so
       # the version is never visible without its binaries. Passing neither
@@ -248,6 +256,7 @@ jobs:
             artifacts/*.deb
             artifacts/*.zip
             artifacts/sha256sums.txt
+            artifacts/*.intoto.jsonl
 
   npm:
     name: publish to npm
