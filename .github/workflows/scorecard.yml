@@ -50,12 +50,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: read # this run's start, which a fresh publish's date follows
+      actions: read # the publishing analysis job's start, which its result's date follows
     steps:
       # A re-score of an already published commit finds the old result too.
+      # The job's start, not the run's: a re-run of only this job resets
+      # run_started_at but keeps analysis's earlier publish.
       - env:
           GH_TOKEN: ${{ github.token }}
           RESULT: https://api.scorecard.dev/projects/github.com/${{ github.repository }}?commit=${{ github.sha }}
         run: |
-          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all" \
+            --jq '[.jobs[] | select(.name == "analysis" and .conclusion == "success")] | max_by(.started_at) | .started_at')
           curl -fsS "$RESULT" | jq -e --arg started "$started" '.date >= $started'
