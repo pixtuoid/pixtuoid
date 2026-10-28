@@ -10,9 +10,16 @@ authors.workspace      = true
 homepage.workspace     = true
 keywords.workspace     = true
 categories.workspace   = true
-# The plugins' type check and selftest contract: dev tooling beside the
-# templates `include_str!` bakes, which no build reads.
-exclude                = ["src/install/*.json", "src/install/.npmrc", "src/install/*.d.ts", "src/install/*.pyi"]
+# The plugins' type-check tooling beside the templates `include_str!` bakes,
+# which no build or packaged test reads; `contract.rs` reads plugin-contract.json.
+exclude                = [
+    "src/install/package.json",
+    "src/install/package-lock.json",
+    "src/install/tsconfig.json",
+    "src/install/.npmrc",
+    "src/install/*.d.ts",
+    "src/install/*.pyi",
+]
 
 [lints]
 workspace = true
