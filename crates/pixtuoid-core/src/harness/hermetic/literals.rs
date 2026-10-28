@@ -192,8 +192,9 @@ pub(crate) fn population() -> std::io::Result<BTreeSet<Literal>> {
     Ok(out)
 }
 
-/// Whether `ty` is a source's registry row, whose literals are the roster's:
-/// ids, labels, pins and home variables, which no upstream renames.
+/// Whether `ty` is a source's registry row. Its id, label and pin are ours; the
+/// hermetic run calls its version probe, and its home variable is a resolver
+/// axis ([`PATH_AXIS`]).
 fn is_roster_row(ty: &syn::Type) -> bool {
     matches!(ty, syn::Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "SourceDescriptor"))
 }
