@@ -2091,6 +2091,24 @@ mod validation_floor_tests {
         }
     }
 
+    /// A manifest's JSON transcode loads, and one the parser or the schema
+    /// refuses is a `JsonManifest` error that says why.
+    #[test]
+    fn a_json_manifest_loads_and_a_bad_one_says_why() {
+        let manifest = fill_pack_manifest("[palette]\n").expect("a manifest");
+        let json: serde_json::Value = toml::from_str(&manifest).expect("toml");
+        load_pack_from_json(&json.to_string(), &[FILLER_SPRITE]).expect("the transcode loads");
+        let mut unknown = json.clone();
+        unknown["sprites"] = serde_json::json!({});
+        for (bad, why) in [("{".to_owned(), "EOF"), (unknown.to_string(), "sprites")] {
+            let err = load_pack_from_json(&bad, &[FILLER_SPRITE]).expect_err("refused");
+            assert!(
+                matches!(&err, PackError::JsonManifest { message } if message.contains(why)),
+                "{why}: {err:?}"
+            );
+        }
+    }
+
     /// A walk's frames advance by its stride, so one without it does not load.
     #[test]
     fn a_walk_without_a_stride_does_not_load() {
