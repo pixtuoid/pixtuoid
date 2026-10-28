@@ -1531,10 +1531,7 @@ mod recorder {
     /// SOURCE, never a search across modules: scenario names repeat
     /// (`permission-hermetic` is hermes' and omp's).
     fn scenario_dest(sources: &Path, source: &str, scenario: &str) -> PathBuf {
-        sources
-            .join(pixtuoid_core::harness::module_of(source))
-            .join("fixtures")
-            .join(scenario)
+        pixtuoid_core::harness::fixtures_dir(sources, source).join(scenario)
     }
 
     #[cfg(test)]

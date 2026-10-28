@@ -11,8 +11,8 @@ use pixtuoid_core::source::{AgentEvent, ToolDetail};
 
 fn lines(cli: &str, name: &str) -> Vec<String> {
     super::captures::fixture_lines(
-        &pixtuoid_core::harness::source_home(cli)
-            .join("fixtures/subagent-hermetic")
+        &pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), cli)
+            .join("subagent-hermetic")
             .join(name),
     )
 }

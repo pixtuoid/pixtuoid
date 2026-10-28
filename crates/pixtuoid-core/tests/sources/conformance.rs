@@ -187,7 +187,7 @@ const COALESCED_ELSEWHERE: &[(&str, fn())] = &[(
 fn every_registered_source_has_a_coalescing_fixture() {
     let scenarios = conformance_scenarios();
     for src in registry::registered_source_names() {
-        let dir = pixtuoid_core::harness::source_home(src).join("fixtures");
+        let dir = pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), src);
         if COALESCED_ELSEWHERE.iter().any(|(s, _)| *s == src) {
             assert!(
                 !scenarios.iter().any(|(s, _)| s == src),

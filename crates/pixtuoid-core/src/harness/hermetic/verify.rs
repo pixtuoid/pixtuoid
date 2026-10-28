@@ -1406,8 +1406,7 @@ mod tests {
     /// A run directory built from a committed recording of `source`'s tool run,
     /// judged as if the tier had just produced it.
     fn run_from(source: &str, scenario_dir: &str, scene: &str) -> tempfile::TempDir {
-        let src = crate::harness::source_home(source)
-            .join("fixtures")
+        let src = crate::harness::fixtures_dir(&crate::harness::sources_root(), source)
             .join(scenario_dir);
         run_of(&src, source, "tool-run", scene)
     }

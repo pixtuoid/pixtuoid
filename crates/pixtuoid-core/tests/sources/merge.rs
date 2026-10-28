@@ -27,8 +27,7 @@ struct Run {
 
 impl Run {
     fn of(source: &str, scenario: &str) -> Self {
-        let dir = pixtuoid_core::harness::source_home(source)
-            .join("fixtures")
+        let dir = pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), source)
             .join(scenario);
         let transcript = transcript_in(&dir);
         let hooks = fixture_lines(&dir.join("hook-payloads.jsonl"));

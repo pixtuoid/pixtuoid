@@ -424,10 +424,11 @@ mod tests {
             .collect();
         let scanned = |p: &&Profile| {
             p.scenarios.iter().any(|s| {
-                let fixture = s.fixture(p.source);
-                let scenario = fixture.file_name().unwrap_or_default();
-                !crate::harness::OUTSIDE_CONFORMANCE
-                    .contains(&(p.source, scenario.to_string_lossy().as_ref()))
+                crate::harness::Capture {
+                    dir: s.fixture(p.source),
+                    source: p.source.to_string(),
+                }
+                .in_conformance()
             })
         };
         let skipped: Vec<_> = PROFILES

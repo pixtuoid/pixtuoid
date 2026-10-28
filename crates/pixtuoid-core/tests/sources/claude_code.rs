@@ -1,5 +1,5 @@
 //! Claude Code subagent lifecycle (parallels the sibling `codex` module), its
-//! wire the hermetic tier's recording, `fixtures/subagent-hermetic/`.
+//! wire the hermetic tier's recording, `claude_code/fixtures/subagent-hermetic/`.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};

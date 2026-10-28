@@ -109,7 +109,7 @@ pub(crate) fn sources_root() -> PathBuf {
 }
 
 /// Every conformance scenario as `(source, dir)`, sorted: the walk's captures
-/// but the module-owned ones.
+/// but `harness::OUTSIDE_CONFORMANCE`'s.
 pub(crate) fn conformance_scenarios() -> Vec<(String, PathBuf)> {
     pixtuoid_core::harness::captures(&sources_root())
         .into_iter()
@@ -144,9 +144,9 @@ pub(crate) fn every_capture() -> Vec<Capture> {
         let pixtuoid_core::harness::Capture { dir, source } = capture;
         assert!(
             prov.is_file(),
-            "{}: a capture must declare its origin — add provenance.json here, or \
-             one per sub-tree. Nothing else in the bytes separates a capture from a \
-             composition, which is the whole reason provenance exists.",
+            "{}: a capture must declare its origin — add provenance.json here. Nothing \
+             else in the bytes separates a capture from a composition, which is the \
+             whole reason provenance exists.",
             dir.display()
         );
         let provenance = Provenance::read(&prov).unwrap_or_else(|e| panic!("{e}"));

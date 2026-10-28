@@ -325,10 +325,10 @@ pub struct SecondTurn {
     pub end: ProcessExit,
 }
 
-/// The captures a module test drives itself, as `(source, scenario)`: two
-/// sessions, or keys that fold per platform, which the conformance golden's
-/// one-AgentId rule cannot hold (each module's header says which). Exact, so a
-/// capture leaves conformance only by a reviewed line here.
+/// The captures a module test drives itself, as `(source, scenario)`, which the
+/// conformance golden's one-AgentId rule cannot hold: omp's fold their hook keys
+/// per platform, and every other row is a delegation, a child with a sprite of
+/// its own. Exact, so a capture leaves conformance only by a reviewed line here.
 pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
     ("claude-code", "subagent-hermetic"),
     ("codewhale", "child-error-hermetic"),
@@ -351,8 +351,15 @@ pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
 ];
 
 /// The home of `source`'s captures, scripts and screens under the corpus.
-pub fn source_home(source: &str) -> PathBuf {
+pub(crate) fn source_home(source: &str) -> PathBuf {
     crate::harness::sources_root().join(crate::harness::module_of(source))
+}
+
+/// Where `source`'s captures sit in the corpus at `root`: the walk, the
+/// recorder and the hermetic tier's derived fixtures all spell it here.
+pub fn fixtures_dir(root: &Path, source: &str) -> PathBuf {
+    root.join(crate::harness::module_of(source))
+        .join("fixtures")
 }
 
 /// A committed capture: the directory holding its bytes and the registered
@@ -736,10 +743,14 @@ pub fn captures(root: &Path) -> Vec<Capture> {
             continue;
         }
         let source = crate::harness::source_of(&module);
-        out.extend(dirs(&home.join("fixtures")).into_iter().map(|dir| Capture {
-            dir,
-            source: source.clone(),
-        }));
+        out.extend(
+            dirs(&fixtures_dir(root, &source))
+                .into_iter()
+                .map(|dir| Capture {
+                    dir,
+                    source: source.clone(),
+                }),
+        );
     }
     out.sort_by(|a, b| a.dir.cmp(&b.dir));
     out

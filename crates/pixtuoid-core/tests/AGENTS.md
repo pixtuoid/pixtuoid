@@ -21,7 +21,7 @@ tests/
 │   ├── manager.rs       SourceManager spawn/health
 │   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`)
 │   ├── <module>/        ONE home per registered source, named as its `source/` module:
-│   │                    fixtures/<scenario>/ (provenance.json REQUIRED, README.md),
+│   │                    fixtures/<scenario>/ (provenance.json REQUIRED; rules in sources/README.md),
 │   │                    snapshots/, hermetic/ (its aimock scripts and seeds), screens/
 │   │                    (its TUI runs); conformance skips `harness::OUTSIDE_CONFORMANCE`
 │   ├── <module>.rs      a source's unique behavior: claude_code codex codewhale cursor grok

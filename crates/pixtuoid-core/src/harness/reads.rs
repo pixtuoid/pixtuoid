@@ -533,8 +533,7 @@ mod tests {
 
     fn stripped_copy(source: &str, scenario: &str, name: &str) -> (tempfile::TempDir, PathBuf) {
         stripped_copy_of(
-            &crate::harness::source_home(source)
-                .join("fixtures")
+            &crate::harness::fixtures_dir(&crate::harness::sources_root(), source)
                 .join(scenario)
                 .join(name),
         )

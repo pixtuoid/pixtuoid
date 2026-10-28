@@ -5,7 +5,7 @@
 //! a profile holds only what it doesn't.
 
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -768,9 +768,7 @@ impl Scenario {
     /// The committed recording `--record` rewrites, under `tests/sources`: the
     /// tier's own, beside any capture still carrying a field the profile owes.
     pub fn fixture(&self, source: &str) -> PathBuf {
-        PathBuf::from(crate::harness::module_of(source))
-            .join("fixtures")
-            .join(format!("{}-hermetic", self.name))
+        crate::harness::fixtures_dir(Path::new(""), source).join(format!("{}-hermetic", self.name))
     }
 
     /// `source`'s script for this scenario.
