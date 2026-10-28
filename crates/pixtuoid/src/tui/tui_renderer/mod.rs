@@ -849,10 +849,9 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         scene: &SceneState,
         now: SystemTime,
     ) -> Result<Option<FrameNote>> {
-        use crate::panels::paint_overlays;
         use crate::panels::widgets::{paint_host_text, star_area};
         use crate::tui::hit_test::SceneHit;
-        use crate::tui::renderer::{TooltipAt, paint_footer, scene_rect};
+        use crate::tui::renderer::{TooltipAt, paint_over_image};
         use pixtuoid_scene::display::HoverTarget;
         if crate::tui::renderer::scene_too_small(fitted.scene) {
             return self.draw_too_small(scene, now, false);
@@ -902,23 +901,28 @@ impl<B: Backend<Error: Send + Sync + 'static>> TuiRenderer<B> {
         cutaway.before_flush(now)?;
         let mut carves = Vec::new();
         self.terminal.draw(|f| {
-            let full = f.area();
-            let scene_area = scene_rect(full);
-            paint_footer(f, &footer, full, theme);
-            cutaway.place(f.buffer_mut(), scene_area);
-            if let Some(text) = text {
-                paint_host_text(f, text, (scene_area, geometry.map()), hovered);
-            }
-            if let Some((mx, my, tip)) = &tooltip {
-                let at = TooltipAt {
-                    mx: *mx,
-                    my: *my,
-                    scene_rect: scene_area,
-                };
-                crate::tui::renderer::paint_tooltip(f, tip, at, theme);
-            }
-            paint_overlays(f, &overlays, now, full, theme);
-            carves = cutaway.carve(f.buffer_mut(), scene_area);
+            carves = paint_over_image(
+                f,
+                &footer,
+                &overlays,
+                theme,
+                now,
+                |f, scene_area| {
+                    cutaway.place(f.buffer_mut(), scene_area);
+                    if let Some(text) = text {
+                        paint_host_text(f, text, (scene_area, geometry.map()), hovered);
+                    }
+                    if let Some((mx, my, tip)) = &tooltip {
+                        let at = TooltipAt {
+                            mx: *mx,
+                            my: *my,
+                            scene_rect: scene_area,
+                        };
+                        crate::tui::renderer::paint_tooltip(f, tip, at, theme);
+                    }
+                },
+                |buf, scene_area| cutaway.carve(buf, scene_area),
+            );
         })?;
         cutaway.after_flush(&carves, now)?;
         self.chrome.popup.last_scale = popup_scale;

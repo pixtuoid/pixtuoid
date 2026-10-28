@@ -679,6 +679,32 @@ fn a_modal_over_the_image_shows_its_text() {
     assert!(frame_text(r.frame_buffer()).contains("? Keyboard"));
 }
 
+/// A modal's drop shadow over kitty's placeholders leaves each naming the
+/// image it named without the modal: its foreground colour is the image id.
+#[test]
+fn a_modal_shadow_leaves_kitty_placeholders_naming_their_images() {
+    let (mut r, _wire) = kitty(120, 40);
+    let scene = office();
+    r.render(&scene, t0()).expect("render");
+    let bare = r.frame_buffer().clone();
+    r.set_frames(
+        RenderFrames {
+            help_open: true,
+            ..Default::default()
+        },
+        t0(),
+    );
+    r.render(&scene, t0()).expect("render");
+    let modal = r.frame_buffer();
+    assert!(frame_text(modal).contains("? Keyboard"));
+    let renamed: Vec<_> = modal
+        .area
+        .positions()
+        .filter(|&p| modal[p].symbol().starts_with(PLACEHOLDER) && modal[p].fg != bare[p].fg)
+        .collect();
+    assert!(renamed.is_empty(), "placeholders renamed: {renamed:?}");
+}
+
 #[test]
 fn a_redraw_re_sends_every_tile() {
     let (mut r, wire) = kitty(120, 40);

@@ -1,11 +1,12 @@
 //! `--cutaway`: the office a graphics terminal of [`terminal_cell`]s shows,
-//! in place of the classic frame's office, above its footer. Its world text is the scene's pixel font
+//! in place of the classic frame's office, above its footer and under its panels. Its world text is the scene's pixel font
 //! (the floating window's), where the terminal sets it in its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
+use pixtuoid::dev::ImageCells;
 use pixtuoid_core::sprite::RgbBuffer;
 use pixtuoid_scene::cutaway::Canvas as _;
 use pixtuoid_scene::floor::{FloorInputs, FloorSession, OfficeSession, PerFloor};
@@ -23,10 +24,13 @@ use crate::encode::{ImageCanvas, terminal_cell};
 pub(crate) struct CutawayOffice<S> {
     session: S,
     fit: PixelFit,
+    /// The cells its last frame shows under that frame's text; all of them
+    /// where none was drawn over it.
+    under: Option<ImageCells>,
 }
 
-/// What a cutaway steps: what the classic frame beside it steps, so both show
-/// one office.
+/// What a cutaway steps, on the inputs a classic frame of the same office
+/// steps on.
 pub(crate) trait CutawaySession {
     /// Step and draw one frame of `inputs` in `look`.
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>);
@@ -36,7 +40,8 @@ pub(crate) trait CutawaySession {
     fn pixels(&self) -> Option<&RgbBuffer>;
 }
 
-/// `draw_scene`'s one floor, under the `FloorMeta` it is handed (`--floor-seed`).
+/// [`crate::encode::draw_frame`]'s one floor, under the `FloorMeta` it is
+/// handed (`--floor-seed`).
 impl CutawaySession for FloorSession {
     fn draw(&mut self, look: Look, inputs: RenderInputs<'_>) {
         self.render(look, inputs);
@@ -68,12 +73,13 @@ impl CutawaySession for RendererOffice {
 }
 
 impl CutawayOffice<FloorSession> {
-    /// The cutaway of `draw_scene`'s floor on a `cols`×`rows` terminal.
-    pub(crate) fn of_draw_scene(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
+    /// The cutaway [`crate::encode::draw_frame`] draws on a `cols`×`rows`
+    /// terminal.
+    pub(crate) fn of_draw_frame(pack: &Arc<OfficeArt>, cols: u16, rows: u16) -> Result<Self> {
         Self::fitted(FloorSession::new(Arc::clone(pack)), pack, cols, rows)
     }
 
-    /// Its floor's stores, to seed as `draw_scene`'s floor is seeded.
+    /// Its floor's stores, to seed as the classic floor is seeded.
     pub(crate) fn floor_mut(&mut self) -> &mut PerFloor {
         self.session.floor_mut()
     }
@@ -113,11 +119,21 @@ impl<S: CutawaySession> CutawayOffice<S> {
         let cell = terminal_cell();
         let fit = pixtuoid::dev::cutaway_office(cols, rows, (cell.w, cell.h), pack)
             .with_context(|| format!("a {}x{} px cell fits no cutaway", cell.w, cell.h))?;
-        Ok(Self { session, fit })
+        Ok(Self {
+            session,
+            fit,
+            under: None,
+        })
     }
 
-    /// Step and draw `world`'s office.
-    pub(crate) fn render(&mut self, world: FloorInputs<'_>, theme: &'static Theme) -> Result<()> {
+    /// Step and draw `world`'s office, under the cells of the frame's text
+    /// `under` leaves it, where there is text over it.
+    pub(crate) fn render(
+        &mut self,
+        world: FloorInputs<'_>,
+        theme: &'static Theme,
+        under: Option<ImageCells>,
+    ) -> Result<()> {
         self.session.draw(
             self.fit.look(WorldText::Baked),
             RenderInputs {
@@ -129,27 +145,40 @@ impl<S: CutawaySession> CutawayOffice<S> {
                     floor: None,
                 },
                 debug_walkable: false,
-                dim: Dim::NONE,
+                dim: under.as_ref().map_or(Dim::NONE, ImageCells::dim),
             },
         );
+        self.under = under;
         self.session
             .pixels()
             .map(drop)
             .context("the cutaway does not lay out")
     }
 
-    /// The last frame over `img`'s scene cells, which start at its top-left.
+    /// The last frame over `img`'s scene cells, which start at its top-left,
+    /// on those its frame's text left to it.
     pub(crate) fn paint(&self, img: &mut image::RgbaImage) {
         let Some(buf) = self.session.pixels() else {
             return;
         };
         let w = u32::from(buf.width());
         let up = u32::from(self.fit.upscale());
+        let cell = terminal_cell();
+        let shows = |x: u32, y: u32| {
+            self.under.as_ref().is_none_or(|under| {
+                let col = u16::try_from(x / u32::from(cell.w)).unwrap_or(u16::MAX);
+                let row = u16::try_from(y / u32::from(cell.h)).unwrap_or(u16::MAX);
+                under.shows(col, row)
+            })
+        };
         let mut canvas = ImageCanvas(img);
         for (i, &px) in buf.as_slice().iter().enumerate() {
             let (x, y) = (i as u32 % w * up, i as u32 / w * up);
             for (dx, dy) in (0..up).flat_map(|dy| (0..up).map(move |dx| (dx, dy))) {
-                canvas.set((x + dx) as i32, (y + dy) as i32, px);
+                let (x, y) = (x + dx, y + dy);
+                if shows(x, y) {
+                    canvas.set(x as i32, y as i32, px);
+                }
             }
         }
     }
@@ -165,11 +194,11 @@ impl<S: CutawaySession> CutawayOffice<S> {
 mod tests {
     use super::*;
     use crate::encode::{
-        AnimJob, FrameSink, Timeline, cells_to_rgba, compose, save_renderer_animation,
+        AnimJob, FrameSink, Timeline, cells_to_rgba, compose, draw_frame, save_renderer_animation,
     };
-    use crate::{CELL_H, scenes::sample_scene};
+    use crate::{CELL_H, CELL_W, scenes::sample_scene};
     use image::{Rgba, RgbaImage};
-    use pixtuoid::dev::{DrawCtx, draw_scene, scene_buf_size};
+    use pixtuoid::dev::{DrawCtx, RenderFrames, scene_buf_size};
     use pixtuoid_core::SceneState;
     use pixtuoid_scene::floor::{FloorMeta, PerOffice};
     use pixtuoid_scene::pet::{Pet, PetKind};
@@ -222,31 +251,45 @@ mod tests {
         );
     }
 
+    /// A [`COLS`]×[`ROWS`] still of `scene` under `frames`' panels through
+    /// [`draw_frame`]: the classic, the cutaway, and the cutaway drawn.
+    fn stills(
+        scene: &SceneState,
+        frames: &RenderFrames,
+    ) -> (RgbaImage, RgbaImage, CutawayOffice<FloorSession>) {
+        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
+        let mut floor = PerFloor::new(Arc::clone(&pack));
+        let mut office = PerOffice::new();
+        let mut ctx = DrawCtx {
+            overlays: frames.overlays(0.0, &[]),
+            ..DrawCtx::offscreen(
+                &mut floor,
+                office.stores(),
+                &NORMAL,
+                scene,
+                epoch(),
+                FloorMeta::ground(),
+            )
+        };
+        let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
+        draw_frame(&mut term, &mut ctx, None).unwrap();
+        let cells = term.backend().buffer();
+        let classic = cells_to_rgba(cells, cells.area);
+        let mut cutaway = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
+        let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
+        draw_frame(&mut term, &mut ctx, Some(&mut cutaway)).unwrap();
+        let cells = term.backend().buffer();
+        let composed = compose(cells, cells.area, Some(&cutaway));
+        (classic, composed, cutaway)
+    }
+
     /// The cutaway lands on the scene's cells and nowhere else: the footer
     /// under it stays the classic frame's, pixel for pixel.
     #[test]
     fn the_cutaway_takes_the_office_and_keeps_the_footer() {
-        let now = epoch();
-        let scene = sample_scene(now, 12, 6);
-        let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
-        let meta = FloorMeta::ground();
-        let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-        let mut floor = PerFloor::new(Arc::clone(&pack));
-        let mut office = PerOffice::new();
-        let mut ctx = DrawCtx::offscreen(&mut floor, office.stores(), &NORMAL, &scene, now, meta);
-        draw_scene(&mut term, &mut ctx).unwrap();
-        let cells = term.backend().buffer();
-        let classic = cells_to_rgba(cells, cells.area);
-
-        let mut cutaway = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
-        let world = FloorInputs {
-            scene: &scene,
-            now,
-            floor: meta,
-            pets: Default::default(),
-        };
-        cutaway.render(world, &NORMAL).unwrap();
-        assert_cutaway_over(&compose(cells, cells.area, Some(&cutaway)), &classic);
+        let scene = sample_scene(epoch(), 12, 6);
+        let (classic, cutaway, _) = stills(&scene, &RenderFrames::default());
+        assert_cutaway_over(&cutaway, &classic);
     }
 
     /// The last frame `save_renderer_animation` writes of `scene` with `pets`
@@ -313,8 +356,8 @@ mod tests {
             pets: Default::default(),
         };
         let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
-        let mut lit = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
-        let mut settled = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut lit = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
+        let mut settled = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
         let mut classic = PerFloor::new(Arc::clone(&pack));
         crate::settle_empty(&mut classic, Some(&mut settled));
         let level = |floor: &PerFloor| floor.ctx.vacancy_dim.level();
@@ -322,7 +365,7 @@ mod tests {
         assert_eq!(level(settled.session.floor()), level(&classic));
 
         let brightness = |cutaway: &mut CutawayOffice<FloorSession>| -> u64 {
-            cutaway.render(world, &NORMAL).unwrap();
+            cutaway.render(world, &NORMAL, None).unwrap();
             let frame = compose(&blank, blank.area, Some(&*cutaway));
             office_band(&frame)
                 .iter()
@@ -340,14 +383,14 @@ mod tests {
     fn frame_px_lands_where_paint_puts_the_point() {
         let pack = Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
         let scene = sample_scene(epoch(), 12, 6);
-        let mut cutaway = CutawayOffice::of_draw_scene(&pack, COLS, ROWS).unwrap();
+        let mut cutaway = CutawayOffice::of_draw_frame(&pack, COLS, ROWS).unwrap();
         let world = FloorInputs {
             scene: &scene,
             now: epoch(),
             floor: FloorMeta::ground(),
             pets: Default::default(),
         };
-        cutaway.render(world, &NORMAL).unwrap();
+        cutaway.render(world, &NORMAL, None).unwrap();
         let blank = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, COLS, ROWS));
         let frame = compose(&blank, blank.area, Some(&cutaway));
         let density = cutaway.fit.density().get();
@@ -365,5 +408,86 @@ mod tests {
                 "logical ({x}, {y})"
             );
         }
+    }
+
+    /// `--cutaway --dashboard`: the panel's cells are the classic frame's, as
+    /// the TUI draws a panel over its image, and the cutaway shows around them.
+    #[test]
+    fn a_panel_keeps_its_cells_over_the_cutaway() {
+        use pixtuoid::dev::{DashboardFolds, DashboardFrame, build_dashboard_rows};
+        let scene = sample_scene(epoch(), 12, 6);
+        let rows = build_dashboard_rows(&scene, &DashboardFolds::default());
+        let frames = RenderFrames {
+            dashboard: DashboardFrame {
+                open: true,
+                selected: rows.first().map(|r| r.agent_id),
+                rows,
+                scroll: 0,
+            },
+            ..Default::default()
+        };
+        let (classic, composed, cutaway) = stills(&scene, &frames);
+        assert_cutaway_over(&composed, &classic);
+        let image = cutaway.under.as_ref().expect("text over the cutaway");
+
+        let scene_rows = footer_top() / CELL_H;
+        let panel: Vec<_> = (0..scene_rows)
+            .flat_map(|row| (0..u32::from(COLS)).map(move |col| (col, row)))
+            .filter(|&(col, row)| !image.shows(col as u16, row as u16))
+            .collect();
+        assert!(!panel.is_empty(), "no cell is the panel's");
+        let block = |img: &RgbaImage, (col, row): (u32, u32)| {
+            band(img, row * CELL_H..(row + 1) * CELL_H)
+                .chunks(img.width() as usize)
+                .flat_map(|line| {
+                    line[(col * CELL_W) as usize..((col + 1) * CELL_W) as usize].to_vec()
+                })
+                .collect::<Vec<_>>()
+        };
+        for &cell in &panel {
+            assert_eq!(
+                block(&composed, cell),
+                block(&classic, cell),
+                "panel cell {cell:?}"
+            );
+        }
+    }
+
+    /// `--cutaway --onboarding`: the backdrop dims the cutaway around the
+    /// welcome card, as the TUI dims its own.
+    #[test]
+    fn the_onboarding_dims_the_cutaway_around_its_card() {
+        use pixtuoid::dev::{OnboardingFrame, dim_opening};
+        let scene = sample_scene(epoch(), 12, 6);
+        let elapsed_ms = 100_000;
+        let onboarding = RenderFrames {
+            onboarding: OnboardingFrame {
+                open: true,
+                rows: Vec::new(),
+                selected: 0,
+                elapsed_ms,
+                dim: dim_opening(elapsed_ms),
+            },
+            ..Default::default()
+        };
+        let (_, lit, _) = stills(&scene, &RenderFrames::default());
+        let (_, dimmed, cutaway) = stills(&scene, &onboarding);
+        let image = cutaway.under.as_ref().expect("text over the cutaway");
+        let brightness = |img: &RgbaImage| -> u64 {
+            (0..footer_top())
+                .flat_map(|y| (0..img.width()).map(move |x| (x, y)))
+                .filter(|&(x, y)| image.shows((x / CELL_W) as u16, (y / CELL_H) as u16))
+                .map(|(x, y)| {
+                    img.get_pixel(x, y).0[..3]
+                        .iter()
+                        .map(|&c| u64::from(c))
+                        .sum::<u64>()
+                })
+                .sum()
+        };
+        assert!(
+            brightness(&dimmed) < brightness(&lit),
+            "the backdrop left the cutaway lit"
+        );
     }
 }

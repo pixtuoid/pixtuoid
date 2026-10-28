@@ -1,12 +1,12 @@
 //! `--proof`: the §3 split-screen causal-proof renderer. ONE committed CC session
 //! (`proof-session/`) drives BOTH sides of every frame: the left panel types the session,
-//! the right side is the REAL draw_scene pass replaying the SAME decoded
+//! the right side is the REAL `draw_frame` pass replaying the SAME decoded
 //! AgentEvent stream through the real Reducer — the two sides structurally cannot
 //! desync. scripts/gen-media.py (kind:"proof") encodes the frames.
 
 use anyhow::{Context as _, Result, anyhow};
 use image::{Rgba, RgbaImage};
-use pixtuoid::dev::{DrawCtx, draw_scene};
+use pixtuoid::dev::DrawCtx;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::claude_code::{
     SOURCE_NAME, cc_derive_label, cc_id_from_path, decode_cc_line,
@@ -19,7 +19,9 @@ use std::fs;
 use std::path::Path;
 
 use crate::cutaway::CutawayOffice;
-use crate::encode::{FrameSink, ImageCanvas, Timeline, compose, fill_rect, terminal_cell};
+use crate::encode::{
+    FrameSink, ImageCanvas, Timeline, compose, draw_frame, fill_rect, terminal_cell,
+};
 use crate::{CELL_H, CELL_W};
 use pixtuoid_scene::cutaway::{GridInk, paint_grid};
 use pixtuoid_scene::display::cells::CellGrid;
@@ -577,7 +579,7 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
     let mut floor = pixtuoid_scene::floor::PerFloor::new(std::sync::Arc::clone(job.pack));
     let mut cutaway = job
         .cutaway
-        .then(|| CutawayOffice::of_draw_scene(job.pack, job.cols, job.rows))
+        .then(|| CutawayOffice::of_draw_frame(job.pack, job.cols, job.rows))
         .transpose()?;
     let mut scene = SceneState::uniform(job.max_desks);
     let mut reducer = Reducer::new();
@@ -608,12 +610,11 @@ pub(crate) fn render_proof(job: &ProofJob) -> Result<()> {
             now,
             pixtuoid_scene::floor::FloorMeta::ground().with_weather(job.weather),
         );
-        let hits = draw_scene(&mut term, &mut draw_ctx)?;
+        let hits = draw_frame(&mut term, &mut draw_ctx, cutaway.as_mut())?;
         // The burned callout's anchor: home_desks[0] of the layout the office
         // side was drawn on.
-        let desk_px = match &mut cutaway {
+        let desk_px = match &cutaway {
             Some(cutaway) => {
-                cutaway.render(draw_ctx.world, job.theme)?;
                 let desk = cutaway.layout().and_then(|l| l.home_desks.first());
                 desk.map(|desk| cutaway.frame_px(desk.at))
             }
@@ -841,7 +842,7 @@ mod tests {
         );
 
         let pack = std::sync::Arc::new(pixtuoid_scene::pack::load_bundled_pack().unwrap());
-        let mut office = crate::cutaway::CutawayOffice::of_draw_scene(&pack, cols, rows).unwrap();
+        let mut office = crate::cutaway::CutawayOffice::of_draw_frame(&pack, cols, rows).unwrap();
         let scene = SceneState::uniform(12);
         let world = pixtuoid_scene::floor::FloorInputs {
             scene: &scene,
@@ -850,7 +851,7 @@ mod tests {
             pets: Default::default(),
         };
         office
-            .render(world, &pixtuoid_scene::theme::NORMAL)
+            .render(world, &pixtuoid_scene::theme::NORMAL, None)
             .unwrap();
         let desk = office.layout().unwrap().home_desks[0].at;
         let (x, y) = office.frame_px(desk);

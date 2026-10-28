@@ -50,7 +50,10 @@ pub mod dev {
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::{footer_context, grid_of};
     pub use crate::sources::{ConnState, ConnectionRow};
-    pub use crate::tui::renderer::{DrawCtx, PetState, draw_scene, scene_buf_size};
+    pub use crate::tui::cutaway::ImageCells;
+    pub use crate::tui::renderer::{
+        DrawCtx, PetState, draw_over_image, draw_scene, scene_buf_size,
+    };
     pub use crate::tui::tui_renderer::TuiRenderer;
 }
 

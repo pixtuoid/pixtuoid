@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::Result;
 use image::codecs::gif::{GifEncoder, Repeat};
 use image::{Delay, Frame as GifFrame, Rgba, RgbaImage};
-use pixtuoid::dev::{DrawCtx, draw_scene};
+use pixtuoid::dev::{DrawCtx, draw_over_image, draw_scene};
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::cutaway::{Canvas, CellPx, GridInk, paint_grid};
 use pixtuoid_scene::floor::{FloorMeta, FloorSession, PerFloor};
@@ -458,7 +458,7 @@ pub(crate) fn save_renderer_animation(
             }
             r.render(job.scene, now)?;
             if let Some(cutaway) = cutaway {
-                cutaway.render(r.office_world(job.scene, now), job.theme)?;
+                cutaway.render(r.office_world(job.scene, now), job.theme, None)?;
             }
             Ok(())
         },
@@ -469,9 +469,24 @@ pub(crate) fn save_renderer_animation(
     )
 }
 
-/// Drive `draw_scene` over one floor, `cutaway`'s office over it where there
-/// is one, and encode it; `skip_ms` (from --anim, --meeting or --warmup-secs)
-/// starts the clip mid-action.
+/// One frame of `ctx`'s floor: `draw_scene`'s, or `cutaway`'s office under
+/// the frame's text, as the TUI's cutaway draws it. What the classic frame
+/// answers a pointer with.
+pub(crate) fn draw_frame(
+    term: &mut Terminal<TestBackend>,
+    ctx: &mut DrawCtx<'_>,
+    cutaway: Option<&mut CutawayOffice<FloorSession>>,
+) -> Result<Option<pixtuoid_scene::look::Hits>> {
+    let Some(cutaway) = cutaway else {
+        return draw_scene(term, ctx);
+    };
+    let under = draw_over_image(term, ctx)?;
+    cutaway.render(ctx.world, ctx.theme, Some(under))?;
+    Ok(None)
+}
+
+/// Drive [`draw_frame`] over one floor and encode it; `skip_ms` (from --anim,
+/// --meeting or --warmup-secs) starts the clip mid-action.
 pub(crate) fn save_animation(
     job: &AnimJob,
     term: &mut Terminal<TestBackend>,
@@ -491,11 +506,7 @@ pub(crate) fn save_animation(
                 debug_walkable,
                 ..DrawCtx::offscreen(floor, office.stores(), job.theme, scene, now, floor_meta)
             };
-            draw_scene(term, &mut draw_ctx)?;
-            if let Some(cutaway) = cutaway {
-                cutaway.render(draw_ctx.world, job.theme)?;
-            }
-            Ok(())
+            draw_frame(term, &mut draw_ctx, cutaway.as_mut()).map(drop)
         },
         |(term, cutaway)| {
             let cells = term.backend().buffer();

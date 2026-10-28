@@ -20,7 +20,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
-use pixtuoid::dev::{DrawCtx, draw_scene};
+use pixtuoid::dev::DrawCtx;
 use pixtuoid_core::SceneState;
 use pixtuoid_scene::pack::load_bundled_pack;
 use ratatui::Terminal;
@@ -28,8 +28,8 @@ use ratatui::backend::TestBackend;
 
 use crate::cutaway::CutawayOffice;
 use crate::encode::{
-    AnimJob, Timeline, centered_crop, compute_crop_rect, print_walkability_report, save_animation,
-    save_backend_as_png, save_renderer_animation,
+    AnimJob, Timeline, centered_crop, compute_crop_rect, draw_frame, print_walkability_report,
+    save_animation, save_backend_as_png, save_renderer_animation,
 };
 use crate::scenes::{
     GatewayState, anim_scene, capture_live_scene, dashboard_scene, inject_openclaw_presence,
@@ -40,6 +40,10 @@ const COLS: u16 = 192;
 const ROWS: u16 = 80;
 const CELL_W: u32 = 8;
 const CELL_H: u32 = 16;
+
+/// The modes whose frames draw no panel and no pointer, so a flag only a
+/// still draws conflicts with them rather than being silently dropped.
+const STILL_ONLY: [&str; 3] = ["gif", "anim", "proof"];
 
 #[derive(Debug, Parser)]
 #[command(about = "Render the TUI off-screen to a PNG, GIF or proof frames for verification")]
@@ -88,12 +92,15 @@ struct SnapshotArgs {
     gif: bool,
 
     /// Draw the office as the cutaway the TUI fits to this terminal of
-    /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer.
-    // Each draws over the classic's office cells, which the cutaway covers, or
-    // crops a frame the cutaway paints from its top-left.
+    /// `CELL_W`×`CELL_H` cells, in place of the classic office, above its footer
+    /// and under its panels.
     #[arg(long, conflicts_with_all = [
-        "dashboard", "connection", "onboarding", "help_open", "theme_picker", "popup",
-        "hover", "debug_walkable", "crop_agent", "crop_furniture", "crop_mascot",
+        // `draw_over_image` hit-tests no pointer on the cutaway.
+        "hover",
+        // The cutaway never draws the walkable layer (`TuiRenderer::offers_walkable_debug`).
+        "debug_walkable",
+        // A crop moves the frame the cutaway paints from its top-left.
+        "crop_agent", "crop_furniture", "crop_mascot",
     ])]
     cutaway: bool,
 
@@ -159,7 +166,7 @@ struct SnapshotArgs {
     weather: Option<String>,
 
     /// Force the `?` keyboard help overlay open (for screenshots).
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = STILL_ONLY)]
     help_open: bool,
 
     /// Force the source-death footer warning with the given source
@@ -174,16 +181,16 @@ struct SnapshotArgs {
     drift_warning: Option<String>,
 
     /// Force the theme picker open at the given row index (for screenshots).
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = STILL_ONLY)]
     theme_picker: Option<usize>,
 
     /// Force the version popup fully visible (for screenshots).
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = STILL_ONLY)]
     popup: bool,
 
     /// Force a hover tooltip at terminal cell "x,y" (for screenshots / shadow
     /// visual checks), e.g. --hover 30,40.
-    #[arg(long, value_name = "X,Y")]
+    #[arg(long, value_name = "X,Y", conflicts_with_all = STILL_ONLY)]
     hover: Option<String>,
 
     /// Add a wandering office pet to a renderer-driven --gif capture
@@ -529,7 +536,7 @@ fn main() -> Result<()> {
 
     let mut cutaway = args
         .cutaway
-        .then(|| CutawayOffice::of_draw_scene(&pack, cols, rows))
+        .then(|| CutawayOffice::of_draw_frame(&pack, cols, rows))
         .transpose()?;
     let mut floor_meta = pixtuoid_scene::floor::FloorMeta::ground().with_weather(weather);
     floor_meta.floor_seed = args.floor_seed;
@@ -747,10 +754,7 @@ fn main() -> Result<()> {
         overlays: frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]),
         ..DrawCtx::offscreen(&mut floor, office.stores(), theme, &scene, now, floor_meta)
     };
-    let drawn = draw_scene(&mut term, &mut draw_ctx)?;
-    if let Some(cutaway) = &mut cutaway {
-        cutaway.render(draw_ctx.world, theme)?;
-    }
+    let drawn = draw_frame(&mut term, &mut draw_ctx, cutaway.as_mut())?;
 
     if args.debug_walkable {
         print_walkability_report(&term, args.floor_seed)?;
@@ -1100,13 +1104,7 @@ mod tests {
     fn cutaway_conflicts_with_what_it_covers() {
         let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
         for flags in [
-            &["--dashboard"][..],
-            &["--connection"],
-            &["--onboarding"],
-            &["--help-open"],
-            &["--theme-picker", "0"],
-            &["--popup"],
-            &["--hover", "1,1"],
+            &["--hover", "1,1"][..],
             &["--debug-walkable"],
             &["--crop-agent", "x"],
             &["--crop-furniture", "pantry"],
@@ -1125,8 +1123,37 @@ mod tests {
             &["snapshot", "--cutaway", "--gif", "--navigate-at", "3:1"],
             &["snapshot", "--cutaway", "--empty"],
             &["snapshot", "--cutaway", "--proof", "session.jsonl"],
+            &["snapshot", "--cutaway", "--dashboard"],
+            &["snapshot", "--cutaway", "--connection"],
+            &["snapshot", "--cutaway", "--onboarding"],
+            &["snapshot", "--cutaway", "--help-open"],
+            &["snapshot", "--cutaway", "--theme-picker", "0"],
+            &["snapshot", "--cutaway", "--popup"],
         ] {
             assert!(parses(argv), "rejected {argv:?}");
+        }
+    }
+
+    /// A flag only a still draws is rejected beside every mode that drops it.
+    #[test]
+    fn still_only_flags_conflict_with_every_animation() {
+        let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
+        for flag in [
+            &["--help-open"][..],
+            &["--theme-picker", "0"],
+            &["--popup"],
+            &["--hover", "1,1"],
+        ] {
+            let alone = [&["snapshot"][..], flag].concat();
+            assert!(parses(&alone), "rejected {alone:?}");
+            for mode in [
+                &["--gif"][..],
+                &["--anim", "sofa"],
+                &["--proof", "session.jsonl"],
+            ] {
+                let with = [&alone[..], mode].concat();
+                assert!(!parses(&with), "accepted {with:?}");
+            }
         }
     }
 }

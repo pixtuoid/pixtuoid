@@ -23,7 +23,7 @@ use pixtuoid_scene::screen::Admit;
 use ratatui::buffer::{Buffer, Cell, CellDiffOption};
 use ratatui::layout::{Position, Rect};
 
-use crate::graphics::tiles::{Carve, Changed, Tile, Tiles};
+use crate::graphics::tiles::{Carve, Changed, Tiles};
 use crate::graphics::{CellSize, ImageProtocol, cutaway_fit, iterm2, kitty, sixel};
 use crate::jank::FrameSend;
 use crate::tui::geometry::SceneGeometry;
@@ -32,9 +32,14 @@ use pixtuoid_scene::render_scale::PixelFit;
 /// Where the transmits go: the terminal ratatui's backend also writes to.
 pub(crate) type Sink = Box<dyn Write + Send>;
 
-/// What an image cell holds before the frame's text is drawn: a cell still
-/// equal to it afterwards is image, any other is text.
-const SENTINEL: &str = "\u{F8FF}";
+/// What a SIXEL or iTerm2 image cell holds before the frame's text is drawn:
+/// a symbol no text sets, which ratatui's diff skips, so the flush never
+/// blanks the pixels.
+static SENTINEL: Cell = {
+    let mut cell = Cell::new("\u{F8FF}");
+    cell.set_diff_option(CellDiffOption::Skip);
+    cell
+};
 
 /// What a frame's tiles are cut for: the scene's cells, each `cell` big, and
 /// the office fitted over them.
@@ -389,54 +394,57 @@ impl TileCutaway {
     }
 
     /// Show every tile in `scene`'s cells of `buf`, before the frame's text
-    /// is drawn: kitty's placeholders, or for SIXEL and iTerm2 a
-    /// [`SENTINEL`] ratatui's diff skips, so the flush never blanks the
-    /// pixels.
+    /// is drawn: each cell [placed](place_image_cell) as kitty's placeholder,
+    /// or for SIXEL and iTerm2 as the [`SENTINEL`].
     pub(crate) fn place(&self, buf: &mut Buffer, scene: Rect) {
         if self.route.protocol() == ImageProtocol::Kitty {
-            let tiles = self
-                .tiles
-                .all()
-                .filter_map(|tile| kitty::placeholders(kitty::image_id(self.base, tile)?, tile));
-            for p in tiles.flatten() {
-                if let Some(cell) = image_cell(buf, scene, p.col, p.row) {
-                    cell.reset();
-                    cell.set_symbol(&p.symbol).set_fg(p.fg);
-                }
+            for (at, placeholder) in self.placeholders() {
+                place_image_cell(buf, scene, at, &placeholder);
             }
             return;
         }
         for tile in self.tiles.all() {
-            for (col, row) in cells(tile) {
-                if let Some(cell) = image_cell(buf, scene, col, row) {
-                    *cell = sentinel();
-                }
+            for at in Rect::new(tile.col, tile.row, tile.cols, tile.rows).positions() {
+                place_image_cell(buf, scene, at, &SENTINEL);
             }
         }
     }
 
-    /// Per tile, its cells text was drawn in since [`Self::place`], each
-    /// handed back to ratatui's diff. Kitty's text needs no room made.
+    /// Per tile, the cells text took since [`Self::place`], every cell
+    /// [carved](carve_image_cell). Kitty's text needs no room made, so it
+    /// reports none.
     pub(crate) fn carve(&self, buf: &mut Buffer, scene: Rect) -> Vec<Carve> {
         if self.route.protocol() == ImageProtocol::Kitty {
+            for (at, placeholder) in self.placeholders() {
+                carve_image_cell(buf, scene, at, &placeholder);
+            }
             return Vec::new();
         }
-        let sentinel = sentinel();
         self.tiles
             .all()
             .map(|tile| {
                 let mut carve = 0;
-                for (col, row) in cells(tile) {
-                    if let Some(cell) = image_cell(buf, scene, col, row)
-                        && *cell != sentinel
-                    {
-                        cell.set_diff_option(CellDiffOption::None);
-                        carve |= tile.bit(col - tile.col, row - tile.row);
+                for at in Rect::new(tile.col, tile.row, tile.cols, tile.rows).positions() {
+                    if carve_image_cell(buf, scene, at, &SENTINEL) {
+                        carve |= tile.bit(at.x - tile.col, at.y - tile.row);
                     }
                 }
                 carve
             })
             .collect()
+    }
+
+    /// Every tile's kitty placeholders, each with the image cell it shows.
+    fn placeholders(&self) -> impl Iterator<Item = (Position, Cell)> {
+        self.tiles
+            .all()
+            .filter_map(|tile| kitty::placeholders(kitty::image_id(self.base, tile)?, tile))
+            .flatten()
+            .map(|p| {
+                let mut cell = Cell::default();
+                cell.set_symbol(&p.symbol).set_fg(p.fg);
+                (Position { x: p.col, y: p.row }, cell)
+            })
     }
 
     /// What the last frame's transmits did.
@@ -482,7 +490,7 @@ impl Encoder<'_> {
     }
 
     /// `c`'s tile in the protocol's escape, carved: one image a
-    /// [piece](Tile::pieces); `None` where it has none.
+    /// [piece](crate::graphics::tiles::Tile::pieces); `None` where it has none.
     fn encode(self, c: Changed) -> Option<Vec<u8>> {
         let _encode = tracing::trace_span!("tile.encode").entered();
         let cut =
@@ -511,23 +519,95 @@ impl Encoder<'_> {
     }
 }
 
-fn sentinel() -> Cell {
-    let mut cell = Cell::new(SENTINEL);
-    cell.set_diff_option(CellDiffOption::Skip);
-    cell
+/// Show image cell `at` of `scene` in `buf` as `image`, the cell the image
+/// puts there, before the frame's text is drawn.
+pub(crate) fn place_image_cell(buf: &mut Buffer, scene: Rect, at: Position, image: &Cell) {
+    if let Some(cell) = image_cell(buf, scene, at) {
+        cell.clone_from(image);
+    }
 }
 
-/// `tile`'s cells, from the image's top-left.
-fn cells(tile: Tile) -> impl Iterator<Item = (u16, u16)> {
-    (tile.row..tile.row + tile.rows)
-        .flat_map(move |row| (tile.col..tile.col + tile.cols).map(move |col| (col, row)))
+/// Whether the frame's text took image cell `at` since [`place_image_cell`]
+/// put `image` there: text replaced its symbol, and the cell is handed back
+/// to ratatui's diff. One whose symbol stayed is `image` again, whatever style
+/// was drawn over it: a drop shadow's dim would rename the image a kitty
+/// placeholder names in its foreground colour
+/// (<https://sw.kovidgoyal.net/kitty/graphics-protocol/>, "Unicode placeholders").
+pub(crate) fn carve_image_cell(buf: &mut Buffer, scene: Rect, at: Position, image: &Cell) -> bool {
+    let Some(cell) = image_cell(buf, scene, at) else {
+        return false;
+    };
+    if cell.symbol() == image.symbol() {
+        cell.clone_from(image);
+        return false;
+    }
+    cell.set_diff_option(CellDiffOption::None);
+    true
 }
 
-/// The cell of `buf` showing image cell `(col, row)`, inside `scene`.
-fn image_cell(buf: &mut Buffer, scene: Rect, col: u16, row: u16) -> Option<&mut Cell> {
+/// Which cells of a frame's scene show the image once the frame's text is
+/// drawn over it, and how dim its backdrop leaves the image: what
+/// [`place_image_cell`] and [`carve_image_cell`] leave of every scene cell.
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct ImageCells {
+    scene: Rect,
+    /// Row by row from `scene`'s top-left, whether each cell shows the image.
+    image: Vec<bool>,
+    dim: pixtuoid_scene::look::Dim,
+}
+
+impl ImageCells {
+    /// Every cell of `scene` in `buf` [placed](place_image_cell) as the
+    /// [`SENTINEL`], before the frame's text is drawn.
+    pub(crate) fn place(buf: &mut Buffer, scene: Rect) {
+        for at in Self::cells(scene) {
+            place_image_cell(buf, scene, at, &SENTINEL);
+        }
+    }
+
+    /// What of [`Self::place`]'s cells stays image once the frame's text is
+    /// drawn, each [carved](carve_image_cell), under a backdrop of `dim`.
+    pub(crate) fn carve(buf: &mut Buffer, scene: Rect, dim: pixtuoid_scene::look::Dim) -> Self {
+        let image = Self::cells(scene)
+            .map(|at| !carve_image_cell(buf, scene, at, &SENTINEL))
+            .collect();
+        Self { scene, image, dim }
+    }
+
+    /// A frame with no image cell: one too small for the office.
+    pub(crate) fn none() -> Self {
+        Self {
+            scene: Rect::default(),
+            image: Vec::new(),
+            dim: pixtuoid_scene::look::Dim::NONE,
+        }
+    }
+
+    /// `scene`'s cells, row by row, from its top-left.
+    fn cells(scene: Rect) -> ratatui::layout::Positions {
+        Rect::new(0, 0, scene.width, scene.height).positions()
+    }
+
+    /// Whether frame cell `(col, row)` shows the image.
+    pub fn shows(&self, col: u16, row: u16) -> bool {
+        let at = Position { x: col, y: row };
+        self.scene.contains(at)
+            && self.image[usize::from(row - self.scene.y) * usize::from(self.scene.width)
+                + usize::from(col - self.scene.x)]
+    }
+
+    /// How dim the frame's backdrop leaves the image.
+    pub fn dim(&self) -> pixtuoid_scene::look::Dim {
+        self.dim
+    }
+}
+
+/// The cell of `buf` showing image cell `at`, inside `scene`.
+fn image_cell(buf: &mut Buffer, scene: Rect, at: Position) -> Option<&mut Cell> {
     let at = Position {
-        x: scene.x.saturating_add(col),
-        y: scene.y.saturating_add(row),
+        x: scene.x.saturating_add(at.x),
+        y: scene.y.saturating_add(at.y),
     };
     scene.contains(at).then(|| buf.cell_mut(at)).flatten()
 }
