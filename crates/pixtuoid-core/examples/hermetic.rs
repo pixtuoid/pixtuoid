@@ -478,7 +478,7 @@ mod run {
     /// `p`'s [`Live`] run, when `args` selects it and this leg runs it: its CLI
     /// installed as a scenario's is, then its tier driven against this build. It
     /// records no capture, so no pin moves on it
-    /// (`a_recorded_capture_anchors_its_sources_verified_version`).
+    /// (`every_capture_is_recorded_at_its_sources_pin`).
     fn run_live(
         ctx: &Ctx,
         args: &Args,

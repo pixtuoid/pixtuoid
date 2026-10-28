@@ -1071,9 +1071,8 @@ fixture-pii-selftest:
     # The RESIDUAL, pinned so it is visible rather than assumed closed: a secret
     # that lands INSIDE the wire-id allowlist's own length window (`.gitleaks.toml`) still rides the
     # allowlist. Any shape-based waiver admits a secret wearing that shape; what
-    # stops this class is `no_identity_key_holds_a_value_outside_a_pinned_exemption`,
-    # which reads the committed bytes — and an exempt capture, being outside it, is
-    # the one place a human read is still the only check.
+    # stops this class is `no_identity_key_holds_a_value`, which reads the
+    # committed bytes.
     printf '{"api_key":"msg_%s"}\n' "Kd8sQm2zXv6bTn4wRj9c" > "$d/quiet/cred-residual.txt"
     printf '/Users/dev/x\n/home/runner/work\n/home/ubuntu\n/home/linuxbrew\n/Users/Shared\nmcp__exampleThing\nC:\\Users\\Me\n/Users/dev.\n' \
         > "$d/quiet/identity.txt"

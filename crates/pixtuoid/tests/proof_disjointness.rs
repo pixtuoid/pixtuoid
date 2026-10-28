@@ -3,8 +3,7 @@
 //! task phrase would read as the same event narrated twice.
 //!
 //! Runtime read of `site/...`, NOT `include_str!`: a published `.crate` tarball
-//! has no sibling `site/` tree, so this file is workspace-only and lives in
-//! pixtuoid-core's `exclude` list.
+//! has no sibling `site/` tree.
 
 use std::path::{Path, PathBuf};
 
@@ -15,9 +14,8 @@ const STATUSLINE_PATH: &str = concat!(
 
 /// The session the proof clip types, beside its renderer.
 fn proof_session() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../pixtuoid/examples/snapshot/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl",
-    )
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/snapshot/proof-session/01000000-0000-7000-8000-0000000000f4.jsonl")
 }
 
 /// The same content a viewer reads off the proof panel; JSON syntax and ids

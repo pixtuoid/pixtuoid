@@ -159,13 +159,8 @@ pub struct SourceDescriptor {
     pub label_prefix: &'static str,
     /// The CLI version this build's decoder + fixtures were last verified
     /// against: the release, prerelease included (`0.2.0-rc.2`), never a
-    /// build id.
-    /// `"unknown"`, NOT `""`, where we have no fixed anchor — `pixtuoid doctor`
-    /// only flags SKEW when [`parse_version`] reads one, with this row's
-    /// [`Self::version_hyphen`].
-    /// Pinned to the highest recorded capture's `version` banner by
-    /// `a_recorded_capture_anchors_its_sources_verified_version`, so a
-    /// re-record bumps it.
+    /// build id. Every capture of the source is recorded at it
+    /// (`every_capture_is_recorded_at_its_sources_pin`).
     pub verified_version: &'static str,
     /// argv to probe the installed CLI version. `None` = no stable CLI binary;
     /// `doctor` runs it best-effort and degrades to "version: unknown".

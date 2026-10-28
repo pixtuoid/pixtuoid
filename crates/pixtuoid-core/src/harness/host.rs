@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::harness::hermetic::{PerOs, Step};
+#[cfg(feature = "native")]
 use crate::harness::tap::Endpoint;
 #[cfg(windows)]
 use crate::win32::nul_terminated;
@@ -195,6 +196,7 @@ pub fn built(name: &str) -> std::io::Result<PathBuf> {
 /// # Errors
 ///
 /// If `dir` cannot be made, or the shim placed or run.
+#[cfg(feature = "native")]
 pub fn warmed_shim_dir(dir: &Path, shim: &Path) -> std::io::Result<()> {
     match std::fs::remove_dir_all(dir) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -607,7 +609,7 @@ mod tests {
 
     /// The built shim itself, run once before any CLI: a fresh copy, or a
     /// first exec, is cold.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "native"))]
     #[test]
     fn a_shim_dir_links_the_built_shim_and_runs_it_once() {
         use std::os::unix::fs::PermissionsExt;

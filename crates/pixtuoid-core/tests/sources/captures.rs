@@ -340,8 +340,7 @@ fn no_identity_key_holds_a_value() {
             {
                 // A line that will not parse is the input `strip_unread` declines a
                 // whole file for, so skipping it here would leave those bytes both
-                // unstripped and unchecked. Loud instead: fix the line, or declare
-                // the capture exempt and say why.
+                // unstripped and unchecked. Loud instead: fix the line.
                 let v: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|e| {
                     panic!(
                         "{}:{}: not JSON ({e}), so the strip skipped this whole file",

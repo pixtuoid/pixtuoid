@@ -109,15 +109,12 @@ fn sentinel_for(leaf: &Value) -> Option<Value> {
     }
 }
 
-/// Each blank leaf under `at` in `v`, by pointer, the stamps the strip never
-/// probes aside.
+/// Each blank leaf under `at` in `v`, by pointer, a [`kept_key`] aside.
 fn blank_leaves(source: &str, stamped: bool, v: &Value, at: &str, out: &mut Vec<String>) {
     match v {
         Value::Object(m) => m
             .iter()
-            .filter(|(k, _)| {
-                !(stamped && is_shim_stamp(at, k)) && !is_write_stamp(source, !stamped, at, k)
-            })
+            .filter(|(k, _)| !kept_key(source, stamped, at, k))
             .for_each(|(k, x)| blank_leaves(source, stamped, x, &child_pointer(at, k), out)),
         Value::Array(a) => a
             .iter()
@@ -381,6 +378,12 @@ pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str
             .any(|&(s, k, _)| s == source && k == key)
 }
 
+/// Whether `key` under `at` is one the strip keeps whatever the decoders read:
+/// a hook envelope's shim stamp, or a transcript's write stamp.
+fn kept_key(source: &str, stamped: bool, at: &str, key: &str) -> bool {
+    (stamped && is_shim_stamp(at, key)) || is_write_stamp(source, !stamped, at, key)
+}
+
 /// Each non-empty string leaf of `v` under `at`, as `(pointer, value)`, a
 /// string that holds JSON read on under its own pointer. A shim stamp counts:
 /// `_pixtuoid_event` is the only place a hook's name arrives for a CLI that
@@ -438,9 +441,7 @@ fn probe(
         Value::Array(a) => (0..a.len()).map(|k| format!("{at}/{k}")).collect(),
         Value::Object(m) => m
             .keys()
-            .filter(|k| {
-                !(stamped && is_shim_stamp(at, k)) && !is_write_stamp(source, !stamped, at, k)
-            })
+            .filter(|k| !kept_key(source, stamped, at, k))
             .map(|k| child_pointer(at, k))
             .collect(),
         _ => Vec::new(),

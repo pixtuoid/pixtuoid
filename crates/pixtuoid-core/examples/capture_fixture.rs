@@ -403,6 +403,14 @@ mod recorder {
         })
     }
 
+    /// [`foreign_hooks`] for a `sink` that commits: a raw capture is evidence
+    /// of whatever ran.
+    fn committed_foreign_hooks(sink: &Sink, source: &str, payloads: &[String]) -> Option<String> {
+        matches!(sink, Sink::Committed { .. })
+            .then(|| foreign_hooks(source, payloads))
+            .flatten()
+    }
+
     /// One capture, as `plan` spells it.
     fn run(plan: &CapturePlan) -> std::io::Result<()> {
         if let Some(why) = plan_refusal(plan) {
@@ -536,15 +544,14 @@ mod recorder {
             }
             kept => kept,
         };
-        let refused = foreign_hooks(&source, &payloads).map(std::io::Error::other);
-        if let (Sink::Committed { .. }, Some(e)) = (&plan.sink, refused) {
+        if let Some(why) = committed_foreign_hooks(&plan.sink, &source, &payloads) {
             keep_scratch(
                 sandbox,
                 run_copy.as_deref(),
                 operator_identity,
                 &mut std::io::stderr(),
             );
-            return Err(e);
+            return Err(std::io::Error::other(why));
         }
         std::fs::create_dir_all(&dest)?;
         let mut wrote: Vec<PathBuf> = Vec::new();
@@ -1786,6 +1793,28 @@ mod recorder {
                 promote(&p.run, &p.root, &needles(), &mut std::io::sink()).is_err(),
                 "the operator's name is refused"
             );
+        }
+
+        #[test]
+        fn a_promoted_run_holding_a_hook_not_its_sources_is_refused() {
+            let edits: [fn(&mut serde_json::Value); 2] = [
+                |line| line[SOURCE_STAMP] = "claude-code".into(),
+                |line| {
+                    line.as_object_mut().map(|o| o.remove(SOURCE_STAMP));
+                },
+            ];
+            for edit in edits {
+                let p = promotable(serde_json::json!({"origin": "recorded"}), |lines| {
+                    edit(&mut lines[0]);
+                });
+                let refused = promote(&p.run, &p.root, &needles(), &mut std::io::sink());
+                assert!(refused.is_err_and(|e| e.to_string().contains("tap heard")));
+                assert!(
+                    p.dest.join("old").join("old.jsonl").is_file()
+                        && !p.dest.join(HOOK_PAYLOADS).exists(),
+                    "the fixture is left whole"
+                );
+            }
         }
 
         const AIMOCK: &str = "1.45.1";
@@ -3477,13 +3506,31 @@ mod recorder {
             );
         }
 
+        #[test]
+        fn only_a_committed_run_refuses_a_hook_not_its_sources() {
+            let tagged = |source: &str| format!(r#"{{"{SOURCE_STAMP}":"{source}"}}"#);
+            let committed = operator_plan(&["cursor", "tool-run", "cursor-agent"]).sink;
+            let raw = operator_plan(&["--out", "x", "cursor", "tool-run", "cursor-agent"]).sink;
+            for foreign in [tagged("claude-code"), r#"{"x":1}"#.to_owned()] {
+                let payloads = [tagged("cursor"), foreign];
+                assert!(committed_foreign_hooks(&committed, "cursor", &payloads).is_some());
+                assert_eq!(
+                    committed_foreign_hooks(&raw, "cursor", &payloads),
+                    None,
+                    "a raw capture is evidence"
+                );
+            }
+            assert_eq!(
+                committed_foreign_hooks(&committed, "cursor", &[tagged("cursor")]),
+                None
+            );
+        }
+
         #[cfg(unix)]
         #[test]
         fn an_isolated_home_reaches_only_the_operators_keychains() {
             let operator = tempfile::tempdir().expect("operator");
-            let operator_home = operator.path().to_string_lossy().into_owned();
-            let keychains = Operator::new(BTreeSet::new(), Some(&operator_home)).keychains;
-            let keychains = keychains.expect("an absolute home");
+            let keychains = AbsPath::try_from(operator.path().join(KEYCHAINS)).expect("absolute");
             std::fs::create_dir_all(keychains.as_path()).expect("keychains");
             std::fs::create_dir_all(operator.path().join(".claude")).expect("hooks");
             let d = tempfile::tempdir().expect("tempdir");
@@ -3500,8 +3547,8 @@ mod recorder {
             );
             let missing = tempfile::tempdir().expect("tempdir");
             let env = SandboxEnv::new(missing.path(), [], &[]).expect("env");
-            let gone = Operator::new(BTreeSet::new(), Some("/nowhere/at-all")).keychains;
-            link_keychains(&env, gone.as_ref()).expect("a keychain-less operator still isolates");
+            let gone = AbsPath::try_from(operator.path().join("gone")).expect("absolute");
+            link_keychains(&env, Some(&gone)).expect("a keychain-less operator still isolates");
             let home = PathBuf::from(env.var_os("HOME").expect("HOME"));
             assert!(!home.join(KEYCHAINS).exists());
         }

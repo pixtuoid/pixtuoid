@@ -44,8 +44,7 @@ tests/
 │                        `watcher`'s process-wide `fast_watch()` polling can't reach them
 ├── transport/main.rs    #[cfg(unix)] socket / #[cfg(windows)] pipe
 ├── render/main.rs       blit + format (+ sprite fixtures)
-└── socket_path_parity.rs · supported_sources_manifest.rs ·
-    proof_disjointness.rs · pinned_by_claims.rs
+└── socket_path_parity.rs · supported_sources_manifest.rs · pinned_by_claims.rs
                          FLAT + publish-excluded (see Cargo.toml's `exclude`; `sources/` is excluded whole)
 ```
 

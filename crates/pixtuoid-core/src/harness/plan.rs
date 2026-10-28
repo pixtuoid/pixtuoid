@@ -32,9 +32,12 @@ pub(crate) const PROMPT_ENV: &str = "CAPTURE_PROMPT";
 /// A directory the operator's capture copies into its workspace first.
 pub(crate) const SEED_ENV: &str = "CAPTURE_SEED";
 /// Where macOS keeps a home's login keychain: the one part of the operator's
-/// home an isolated capture reaches, so a CLI that keeps its login there
-/// authenticates (cursor-agent 2026.10.22 runs `/usr/bin/security`, whose
-/// search list is the home's) while none of the home's hooks or settings run.
+/// home a billed capture's sandbox links, so a CLI that keeps its login there
+/// authenticates. cursor-agent 2026.10.22 runs `/usr/bin/security
+/// find-generic-password`, naming no keychain (its bundle's `index.js:414`,
+/// module `../keychain/dist/index.js`; security(1)). That the search list
+/// then follows `$HOME` is observed, not documented: `cursor-agent status`
+/// logs in through this link alone.
 pub const KEYCHAINS: &str = "Library/Keychains";
 
 /// A word a profile, script or config spells for the host to fill in. Each
@@ -328,11 +331,12 @@ pub struct Operator {
 
 impl Operator {
     /// The operator whose identity is `identity` and whose home, if any, is
-    /// `home`.
+    /// `home`: its [`KEYCHAINS`] only on macOS, the one OS that keeps them.
     pub fn new(identity: BTreeSet<String>, home: Option<&str>) -> Self {
         Self {
             identity,
             keychains: home
+                .filter(|_| cfg!(target_os = "macos"))
                 .and_then(|home| AbsPath::try_from(Path::new(home).join(KEYCHAINS)).ok()),
         }
     }
@@ -749,11 +753,14 @@ mod tests {
     }
 
     #[test]
-    fn an_operators_keychains_are_their_homes() {
-        let operator = Operator::new(BTreeSet::new(), Some("/Users/ada"));
+    fn an_operators_keychains_are_their_homes_on_macos_alone() {
+        let home = std::env::temp_dir().join("ada");
+        let operator = Operator::new(BTreeSet::new(), home.to_str());
         assert_eq!(
-            operator.keychains,
-            Some(abs("/Users/ada/Library/Keychains"))
+            operator.keychains.as_ref().map(AbsPath::as_path),
+            cfg!(target_os = "macos")
+                .then(|| home.join(KEYCHAINS))
+                .as_deref()
         );
         assert_eq!(Operator::new(BTreeSet::new(), None).keychains, None);
     }
@@ -761,7 +768,7 @@ mod tests {
     #[test]
     fn only_a_sandboxed_run_no_operator_reaches_is_scripted() {
         let sandboxed = CapturePlan {
-            within: Some(abs("/sandbox")),
+            within: Some(abs(&std::env::temp_dir().join("sandbox").to_string_lossy())),
             ..plan()
         };
         assert!(sandboxed.scripted());
