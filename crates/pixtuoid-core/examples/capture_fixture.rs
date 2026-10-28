@@ -1995,25 +1995,22 @@ mod recorder {
             .into_owned()
         }
 
-        /// A transcript's name carries the ids its run minted, and so does its
-        /// key in the record's `sentinel_reads`.
-        #[test]
-        fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
-            let d = tempfile::tempdir().expect("tempdir");
-            let root = d.path().join("sources");
+        /// codex's tool-run fixture, under `root` in `d`, and a way to make its
+        /// `n`th run in `d`, every id reminted `n` steps.
+        fn codex_reruns(d: &Path) -> (PathBuf, impl Fn(usize) -> PathBuf + '_) {
             let s = hermetic::profile("codex")
                 .and_then(|p| p.scenario("tool-run"))
                 .expect("codex's tool-run");
             let committed = sources_root().join(s.fixture);
             let record = Provenance::read(&committed.join(PROVENANCE)).expect("its record");
-            let record = record.recorded();
+            let record = record.recorded().clone();
             assert!(
                 record.sentinel_reads.keys().any(|k| k != HOOK_PAYLOADS),
                 "a read keyed by a transcript: {:?}",
                 record.sentinel_reads
             );
-            let run = |n: usize| -> PathBuf {
-                let dir = d.path().join(format!("run-{n}"));
+            let run = move |n: usize| -> PathBuf {
+                let dir = d.join(format!("run-{n}"));
                 for from in jsonl_files_under(&committed) {
                     let rel = slashed_under(&committed, &from).expect("under");
                     let to = dir.join(reminted(&rel, n));
@@ -2047,11 +2044,38 @@ mod recorder {
                 .expect("manifest");
                 dir
             };
+            (d.join("sources").join(s.fixture), run)
+        }
+
+        /// A transcript's name carries the ids its run minted, and so does its
+        /// key in the record's `sentinel_reads`.
+        #[test]
+        fn a_re_record_of_a_transcript_source_that_renamed_only_ids_keeps_the_fixture_whole() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (dest, run) = codex_reruns(d.path());
+            let root = d.path().join("sources");
             promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
-            let dest = root.join(s.fixture);
             let before = snapshot(&dest);
             promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
             assert_eq!(snapshot(&dest), before, "only ids differ");
+        }
+
+        #[test]
+        fn a_re_record_that_makes_a_read_its_record_lacks_is_rewritten() {
+            let d = tempfile::tempdir().expect("tempdir");
+            let (dest, run) = codex_reruns(d.path());
+            let root = d.path().join("sources");
+            promote(&run(1), &root, &needles(), &mut std::io::sink()).expect("recorded");
+            let mut record = Provenance::read(&dest.join(PROVENANCE)).expect("its record");
+            let Provenance::Recorded(r) = &mut record;
+            r.sentinel_reads.clear();
+            record.write_to(&dest.join(PROVENANCE)).expect("write");
+            promote(&run(2), &root, &needles(), &mut std::io::sink()).expect("recorded again");
+            let record = Provenance::read(&dest.join(PROVENANCE)).expect("its record");
+            assert!(
+                !record.recorded().sentinel_reads.is_empty(),
+                "rewritten with the run's reads"
+            );
         }
 
         #[test]
@@ -2089,6 +2113,17 @@ mod recorder {
         #[test]
         fn a_re_record_under_another_cli_version_is_rewritten() {
             let p = rerun("tool-run", ("0.2.0-rc.3", AIMOCK), |_| {}, unchanged);
+            assert!(!kept(&p));
+        }
+
+        #[test]
+        fn a_re_record_that_no_longer_makes_a_recorded_read_is_rewritten() {
+            let p = rerun(
+                "tool-run",
+                (dsh_version(), AIMOCK),
+                |r| r["sentinel_reads"] = serde_json::json!({"hook-payloads.jsonl": ["1:/cwd"]}),
+                unchanged,
+            );
             assert!(!kept(&p));
         }
 

@@ -24,8 +24,9 @@
 //!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`
 //!   (`cursor/fixtures/delegation`), so it registers on its first tool event.
 //!   A hook's `transcript_path` is the first of the child's transcripts that
-//!   exists when the hook runs, else null; once the child's parent is
-//!   registered, the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
+//!   exists when the hook runs, else null; once cursor-agent records the
+//!   child's parent (`3863.index.js:1` `setTranscriptParentConversationId`),
+//!   the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
 //!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
 //!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
 //!   child (`nested_parent`), and its parent's `Task` post then ends it; the
