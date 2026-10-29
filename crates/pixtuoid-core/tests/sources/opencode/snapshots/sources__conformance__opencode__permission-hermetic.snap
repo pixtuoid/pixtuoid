@@ -3,53 +3,53 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     source: opencode
-    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
+    session_id: ses_e77d0061fffe8IPs0cWl4Rgsjn
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     model: gpt-5.2
     effort: ~
 - TurnStart:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     turn:
       Seq: 2
 - Identity:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     source: opencode
-    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
+    session_id: ses_e77d0061fffe8IPs0cWl4Rgsjn
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 1252541633213959664
-    tool_use_id: call_OzYVcv2G3vbWhKsY
+    agent_id: 16458160870973957948
+    tool_use_id: call_m0OSp8SVllJ8HZqH
     detail:
       Generic:
         display: shell
 - Identity:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     source: opencode
-    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
+    session_id: ses_e77d0061fffe8IPs0cWl4Rgsjn
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     reason: shell
-    tool_use_id: call_OzYVcv2G3vbWhKsY
+    tool_use_id: call_m0OSp8SVllJ8HZqH
 - Identity:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     source: opencode
-    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
+    session_id: ses_e77d0061fffe8IPs0cWl4Rgsjn
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 1252541633213959664
-    tool_use_id: call_OzYVcv2G3vbWhKsY
+    agent_id: 16458160870973957948
+    tool_use_id: call_m0OSp8SVllJ8HZqH
 - Identity:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     source: opencode
-    session_id: ses_e80216c19ffe1VYHM6AEi6Pfuj
+    session_id: ses_e77d0061fffe8IPs0cWl4Rgsjn
     cwd: ~
 - TurnEnd:
-    agent_id: 1252541633213959664
+    agent_id: 16458160870973957948
     turn:
       Seq: 2

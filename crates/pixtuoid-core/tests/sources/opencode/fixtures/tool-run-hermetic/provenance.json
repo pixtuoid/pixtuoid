@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "opencode",
-  "version": "opencode v2.2.0",
-  "captured": "2026-10-28",
+  "version": "opencode v2.2.1",
+  "captured": "2026-10-29",
   "command": "just hermetic --record opencode",
   "deidentified": {
     "method": "decoder-allowlist",

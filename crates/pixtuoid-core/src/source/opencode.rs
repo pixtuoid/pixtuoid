@@ -44,7 +44,7 @@ pub const SOURCE_NAME: &str = "opencode";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "oc",
-    verified_version: "2.2.0",
+    verified_version: "2.2.1",
     version_probe: Some(&["opencode", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,

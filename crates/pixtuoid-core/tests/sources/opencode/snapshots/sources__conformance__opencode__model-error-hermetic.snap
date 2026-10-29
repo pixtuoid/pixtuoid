@@ -3,25 +3,25 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 17320589572141029872
+    agent_id: 797405434154644777
     source: opencode
-    session_id: ses_e80218ce7ffenEQuQlDgwpoABQ
+    session_id: ses_e77d02c96ffebtE93GteL8EG9n
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 17320589572141029872
+    agent_id: 797405434154644777
     model: gpt-5.2
     effort: ~
 - TurnStart:
-    agent_id: 17320589572141029872
+    agent_id: 797405434154644777
     turn:
       Seq: 2
 - Identity:
-    agent_id: 17320589572141029872
+    agent_id: 797405434154644777
     source: opencode
-    session_id: ses_e80218ce7ffenEQuQlDgwpoABQ
+    session_id: ses_e77d02c96ffebtE93GteL8EG9n
     cwd: ~
 - TurnEnd:
-    agent_id: 17320589572141029872
+    agent_id: 797405434154644777
     turn:
       Seq: 2
