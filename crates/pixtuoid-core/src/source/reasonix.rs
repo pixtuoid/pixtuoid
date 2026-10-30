@@ -40,7 +40,7 @@ pub const SOURCE_NAME: &str = "reasonix";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "rx",
-    verified_version: "2.54.0",
+    verified_version: "2.56.0",
     version_probe: Some(&["reasonix", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
