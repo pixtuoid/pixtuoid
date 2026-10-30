@@ -23,7 +23,7 @@ pub const SOURCE_NAME: &str = "antigravity";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "ag",
-    verified_version: "1.4.10",
+    verified_version: "1.4.11",
     version_probe: Some(&["agy", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
