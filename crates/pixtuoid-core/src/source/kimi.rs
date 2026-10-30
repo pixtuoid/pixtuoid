@@ -42,7 +42,7 @@ pub const SOURCE_NAME: &str = "kimi";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "km",
-    verified_version: "2.4.0",
+    verified_version: "2.4.1",
     version_probe: Some(&["kimi", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,

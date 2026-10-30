@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "kimi",
-  "version": "2.4.0",
-  "captured": "2026-10-28",
+  "version": "2.4.1",
+  "captured": "2026-10-30",
   "command": "just hermetic --record kimi",
   "deidentified": {
     "method": "decoder-allowlist",

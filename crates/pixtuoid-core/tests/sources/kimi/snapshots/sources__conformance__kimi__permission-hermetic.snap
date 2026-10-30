@@ -3,50 +3,50 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     source: kimi
-    session_id: session_81dfa655-b4f8-4a5c-837f-2a15fe93a144
+    session_id: session_260f36c7-d37c-42be-81b3-e9bfe7a6af8b
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     source: kimi
-    session_id: session_81dfa655-b4f8-4a5c-837f-2a15fe93a144
+    session_id: session_260f36c7-d37c-42be-81b3-e9bfe7a6af8b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 14349830843984804070
-    tool_use_id: call_K8glhzeS0g1EwzUq
+    agent_id: 12488992162298221710
+    tool_use_id: call_LvOidPnZEeci-GTO
     tool_name: Bash
 - ToolUseStart:
-    agent_id: 14349830843984804070
-    tool_use_id: call_K8glhzeS0g1EwzUq
+    agent_id: 12488992162298221710
+    tool_use_id: call_LvOidPnZEeci-GTO
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     source: kimi
-    session_id: session_81dfa655-b4f8-4a5c-837f-2a15fe93a144
+    session_id: session_260f36c7-d37c-42be-81b3-e9bfe7a6af8b
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     reason: permission
-    tool_use_id: call_K8glhzeS0g1EwzUq
+    tool_use_id: call_LvOidPnZEeci-GTO
     tool_name: Bash
 - Identity:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     source: kimi
-    session_id: session_81dfa655-b4f8-4a5c-837f-2a15fe93a144
+    session_id: session_260f36c7-d37c-42be-81b3-e9bfe7a6af8b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 14349830843984804070
-    tool_use_id: call_K8glhzeS0g1EwzUq
+    agent_id: 12488992162298221710
+    tool_use_id: call_LvOidPnZEeci-GTO
 - TurnEnd:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
 - SessionEnd:
-    agent_id: 14349830843984804070
+    agent_id: 12488992162298221710
     as_child: false
