@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.312 (Claude Code)",
-  "captured": "2026-10-28",
+  "version": "2.1.314 (Claude Code)",
+  "captured": "2026-10-30",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 561
+    "blanked": 522
   },
   "aimock": "1.47.0",
   "script": "tests/sources/claude_code/hermetic/subagent.json",
@@ -31,14 +31,14 @@
     }
   },
   "sentinel_reads": {
-    "5707c09e-f775-4afd-87bb-a5eff93ff416.jsonl": [
-      "20:/message/usage/cache_creation_input_tokens",
-      "28:/message/usage/cache_creation_input_tokens",
-      "38:/message/usage/cache_creation_input_tokens"
+    "45625464-ae8e-4f5c-b5ce-3a2f3efee692.jsonl": [
+      "19:/message/usage/cache_creation_input_tokens",
+      "25:/message/usage/cache_creation_input_tokens",
+      "35:/message/usage/cache_creation_input_tokens"
     ],
-    "agent-ab1dd6cce4c61053e.jsonl": [
+    "agent-a330c0c3fc74a2c71.jsonl": [
       "14:/message/usage/cache_creation_input_tokens",
-      "21:/message/usage/cache_creation_input_tokens"
+      "20:/message/usage/cache_creation_input_tokens"
     ],
     "hook-payloads.jsonl": [
       "7:/agent_transcript_path"
