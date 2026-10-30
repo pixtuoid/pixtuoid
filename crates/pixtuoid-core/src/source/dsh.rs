@@ -28,7 +28,7 @@ pub const SOURCE_NAME: &str = "dsh";
 pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     label_prefix: "ds",
-    verified_version: "0.2.1-rc.2",
+    verified_version: "0.2.1-rc.5",
     version_probe: Some(&["dsh", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     // `DSH_HOME` is honored INSTALLER-side (the plugin file + patch row live

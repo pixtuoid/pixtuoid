@@ -3,84 +3,84 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ModelInfo:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     model: deepseek-flash
     effort: high
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     fresh_tokens: 19
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 13320479465523503221
-    tool_use_id: toolu_SrAo7-GS9RMmXmNz
+    agent_id: 14443132989847494041
+    tool_use_id: toolu_5_c-p8-ylbWu-da4
     detail:
       Generic:
         display: bash
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     reason: "bash: escalate sandbox to danger-full-access: The note needs wider access."
-    tool_use_id: toolu_SrAo7-GS9RMmXmNz
+    tool_use_id: toolu_5_c-p8-ylbWu-da4
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 13320479465523503221
-    tool_use_id: toolu_SrAo7-GS9RMmXmNz
+    agent_id: 14443132989847494041
+    tool_use_id: toolu_5_c-p8-ylbWu-da4
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 13320479465523503221
-    tool_use_id: toolu_SrAo7-GS9RMmXmNz
+    agent_id: 14443132989847494041
+    tool_use_id: toolu_5_c-p8-ylbWu-da4
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - Usage:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     fresh_tokens: 19
 - Identity:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     source: dsh
-    session_id: session-35acac94-2fe7-48f5-bd0d-0cb252bd15eb
+    session_id: session-726952a0-3e07-4c92-9f3e-11180096f0e2
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
 - SessionEnd:
-    agent_id: 13320479465523503221
+    agent_id: 14443132989847494041
     as_child: false
