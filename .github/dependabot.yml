@@ -102,6 +102,10 @@ updates:
       checkers:
         patterns: ["*"]
     open-pull-requests-limit: 5
+    ignore:
+      # A major ahead of mise.toml's `node` types APIs CI's Node doesn't have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     cooldown:
       default-days: 7
 
@@ -124,6 +128,9 @@ updates:
         patterns: ["*"]
     open-pull-requests-limit: 5
     ignore:
+      # A major ahead of mise.toml's `node` types APIs CI's Node doesn't have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
       # typescript major (→7) is peer-rejected by @astrojs/check and
       # typescript-eslint, so `npm ci` ERESOLVEs.
       - dependency-name: "typescript"

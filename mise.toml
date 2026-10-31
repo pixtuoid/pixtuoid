@@ -16,7 +16,7 @@ uv = "latest"
 ruff = "latest"
 # Pre-push's `lint` runs tsc and pyright on it, and CI's setup-node reads it as its
 # `node-version-file`. A major, not `latest`: setup-node's `latest` is
-# nodejs.org's newest entry, prereleases included (its `official_builds.ts`).
+# nodejs.org's newest entry, prereleases included.
 node = "26"
 cargo-binstall = "latest"
 cargo-deny = "latest"
