@@ -3,71 +3,71 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ToolUseStart:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-2
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseStart:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-3
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-2
 - ToolUseEnd:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-3
 - SessionStart:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-2
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - Identity:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-2
 - Identity:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-3
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - Identity:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     source: antigravity
-    session_id: b4b1ff14-721a-49c1-bc12-6512138cce36
+    session_id: a06a505b-0cc6-4587-b1c7-097982ad075f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
     tool_use_id: ag-3
 - TurnEnd:
-    agent_id: 8176868588896723820
+    agent_id: 6143491407394078033
