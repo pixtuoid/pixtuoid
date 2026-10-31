@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "omp",
-  "version": "omp/18.14.0",
-  "captured": "2026-10-30",
+  "version": "omp/18.14.1",
+  "captured": "2026-10-31",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",

@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "omp",
-  "version": "omp/18.14.0",
-  "captured": "2026-10-30",
+  "version": "omp/18.14.1",
+  "captured": "2026-10-31",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -32,7 +32,7 @@
     }
   },
   "sentinel_reads": {
-    "2026-10-30T14-51-34-094Z_01a18d4b-714d-7094-83ec-36a3cda0cee5.jsonl": [
+    "2026-10-31T14-11-29-190Z_01a1924d-1b26-747c-a9ad-e6c5c1cb2f95.jsonl": [
       "10:/message/usage/cacheWrite",
       "13:/message/usage/cacheWrite",
       "7:/message/usage/cacheWrite"
