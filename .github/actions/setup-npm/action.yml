@@ -7,7 +7,7 @@ inputs:
     required: true
   node-version-file:
     description: 'The file naming the project''s Node (the default is the repository''s); feeds setup-node and the output below'
-    default: '.nvmrc'
+    default: 'mise.toml'
 
 outputs:
   node-version:

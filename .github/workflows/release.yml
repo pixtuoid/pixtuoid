@@ -280,7 +280,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: .nvmrc
+          node-version-file: mise.toml
           # npm Trusted Publishing (#216) authenticates by OIDC only (no
           # NODE_AUTH_TOKEN), which this triggers.
           registry-url: https://registry.npmjs.org
