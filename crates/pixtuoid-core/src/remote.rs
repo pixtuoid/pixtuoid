@@ -17,9 +17,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::AgentId;
-use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, cwd_basename_label, display_safe, ellipsize, label_prefix_for,
-};
+use crate::source::decoder::{cwd_basename_label, display_safe, label_prefix_for};
 use crate::state::{
     ActivityState, AgentSlot, DaemonInstanceId, DaemonLiveness, DaemonPresence, DaemonRoster,
     DaemonState, EffortObservation, GlobalDeskIndex, MAX_FLOORS, SceneState, SlotLabel, ToolKind,
@@ -192,12 +190,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         id: *agent_id,
         parent: *parent_id,
         source: source.to_string(),
-        // Capped here, unlike the decoders' bounded fields: the label's cap is on
-        // its own derivation, and a crafted cwd can be one long component.
-        cwd_basename: (!unknown_cwd)
-            .then(|| cwd.file_name())
-            .flatten()
-            .map(|name| ellipsize(&name.to_string_lossy(), MAX_DECODED_FIELD_CHARS)),
+        cwd_basename: (!unknown_cwd).then(|| cwd_basename(cwd)).flatten(),
         activity: match state {
             ActivityState::Idle => Activity::Idle,
             ActivityState::Running { item } => Activity::Running {
@@ -231,6 +224,15 @@ fn model_name(model: &str) -> &str {
         .then(|| path.file_name()?.to_str())
         .flatten()
         .unwrap_or(model)
+}
+
+/// The one name of `cwd` that crosses the wire, a single display-safe path
+/// component, so a server and a device key an agent on the same string: a crafted
+/// cwd can be one long component, and no decoder bounds it. `None` when nothing
+/// survives.
+pub fn cwd_basename(cwd: &Path) -> Option<String> {
+    let name = display_safe(&cwd.file_name()?.to_string_lossy());
+    Some(Path::new(&name).file_name()?.to_str()?.to_owned())
 }
 
 /// Through [`DaemonPresence::display_state`], the one ranking of its axes; a
@@ -549,9 +551,8 @@ fn inflate_agent(
 ) -> AgentSlot {
     let source = display_safe(&agent.source);
     let prefix = label_prefix_for(&source);
-    let basename = agent.cwd_basename.as_deref().map(display_safe);
-    let cwd = (basename.as_deref())
-        .and_then(|name| Path::new(name).file_name())
+    let cwd = (agent.cwd_basename.as_deref())
+        .and_then(|name| cwd_basename(Path::new(name)))
         .map(PathBuf::from);
     let unknown_cwd = cwd.is_none();
     let cwd = cwd.unwrap_or_default();
@@ -625,6 +626,7 @@ fn inflate_daemon(daemon: &Daemon, local: &impl Fn(u64) -> SystemTime) -> Daemon
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::MAX_DECODED_FIELD_CHARS;
     use serde_json::Value;
 
     const GOLDEN: &str = include_str!("remote.v1.golden.json");
@@ -855,6 +857,25 @@ mod tests {
             clean(source);
             clean(instance.as_str());
         }
+    }
+
+    #[test]
+    fn a_server_sends_the_clean_basename() {
+        let dirty = format!("x\u{1b}\u{202e}{}", "y".repeat(MAX_DECODED_FIELD_CHARS * 2));
+        let cwd = Path::new("/work").join(dirty);
+        let id = AgentId::from_parts("claude-code", "a");
+        let mut scene = crowd(&["a"]);
+        scene.agents.get_mut(&id).unwrap().cwd = Arc::from(cwd.as_path());
+
+        let line: Value = serde_json::from_str(&sent(&scene)).unwrap();
+        let name = line["agents"][0]["cwd_basename"].as_str().unwrap();
+
+        assert_eq!(Some(name), cwd_basename(&cwd).as_deref());
+        assert!(!name.contains(['\u{1b}', '\u{202e}']), "{name}");
+        assert!(
+            name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+            "{name}"
+        );
     }
 
     #[test]

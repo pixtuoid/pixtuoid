@@ -7,9 +7,8 @@ use pixtuoid_core::sprite::{Pixel, Rgb};
 use crate::composite::blend_rgb;
 use crate::sim::outfit_seed_for;
 
-/// A complete shirt + pants combo, keyed by the agent's normalized working
-/// directory (same cwd → same outfit, so the office reads as a color-coded
-/// org-chart). Whole outfits rather than independent shirt and pants colors, so
+/// A complete shirt + pants combo, keyed by the agent's cwd basename (same
+/// basename → same outfit, so the office reads as a color-coded org-chart). Whole outfits rather than independent shirt and pants colors, so
 /// the pairing is always harmonious instead of a random clash.
 #[derive(Clone, Copy)]
 struct Outfit {
@@ -503,23 +502,23 @@ mod tests {
     }
 
     #[test]
-    fn agent_overrides_outfit_is_keyed_by_cwd_not_id() {
+    fn agent_overrides_outfit_is_keyed_by_cwd_basename_not_id() {
         let a = make_slot_cwd("/demo/api/aaaa.jsonl", "/demo/api", false);
-        let b = make_slot_cwd("/demo/api/bbbb.jsonl", "/demo/api", false);
+        let b = make_slot_cwd("/other/api/bbbb.jsonl", "/other/api", false);
         assert_eq!(
             color_of(&a, SHIRT_KEY),
             color_of(&b, SHIRT_KEY),
-            "same cwd should share shirt"
+            "same basename should share shirt"
         );
         assert_eq!(
             color_of(&a, PANTS_KEY),
             color_of(&b, PANTS_KEY),
-            "same cwd should share pants"
+            "same basename should share pants"
         );
         assert_ne!(
             (color_of(&a, HAIR_KEY), color_of(&a, SKIN_KEY)),
             (color_of(&b, HAIR_KEY), color_of(&b, SKIN_KEY)),
-            "different agents in the same repo must differ in hair/skin"
+            "different agents with the same cwd basename must differ in hair/skin"
         );
     }
 
@@ -538,13 +537,13 @@ mod tests {
     }
 
     #[test]
-    fn agent_overrides_same_id_different_cwd_changes_outfit() {
+    fn agent_overrides_same_id_different_cwd_basename_changes_outfit() {
         let a = make_slot_cwd("/p/aaaa.jsonl", "/demo/api", false);
         let b = make_slot_cwd("/p/aaaa.jsonl", "/demo/infra", false);
         assert_ne!(
             color_of(&a, SHIRT_KEY),
             color_of(&b, SHIRT_KEY),
-            "different cwds should pick different outfits"
+            "different cwd basenames should pick different outfits"
         );
         assert_eq!(color_of(&a, HAIR_KEY), color_of(&b, HAIR_KEY));
         assert_eq!(color_of(&a, SKIN_KEY), color_of(&b, SKIN_KEY));
