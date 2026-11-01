@@ -1,38 +1,28 @@
 ---
 name: add-source
-version: 1.2.0
-description: "Wire a new agent-CLI Source adapter into pixtuoid (a new coding CLI whose sessions become office sprites). Use when the user says 'add support for <CLI>', 'add a source for <tool>', or 'integrate <agent CLI>'. Orchestrates the cross-crate checklist whose steps have TEST TEETH — the ones a diff-scoped edit silently misses (site manifest bridge, per-source badge hue, home-dir fn, plus the two `pixtuoid/tests/*` integration goldens that `-p <crate> --lib` never builds)."
-metadata:
-  scope: "pixtuoid repo only"
+description: "Wires a new agent CLI into pixtuoid so its sessions become office sprites, from the upstream facts through a reviewed PR. Use when adding support for a CLI, adding a source for a tool, or integrating a coding agent, in a maintainer's session or a contributor's fork. Covers the cross-crate checklist, including what a diff-scoped edit silently misses: the site manifest, the per-source badge hue, the home-dir fn and the integration goldens a `--lib` run never builds."
 ---
 
 # add-source
 
-Adding an agent CLI spans `pixtuoid-core` (decoder + registry + tests), the
-`pixtuoid` binary (runtime wiring + install target + badge hue), and the site
-manifest.
+Copy this list into your plan and work it in order, fixing and rerunning each
+check until it passes.
 
-## When to use
-
-- "Add support for <CLI>" / "integrate <agent tool>" / "add a source for X".
-- A new transcript-bearing OR hook-only coding CLI should show up as sprites.
-
-## The checklist
-
-Follow **[`docs/CONTRIBUTING.md`](../../../docs/CONTRIBUTING.md#adding-a-new-agent-cli)**
-"Adding a new agent CLI" step by step; its test steps are in
-[`crates/pixtuoid-core/tests/AGENTS.md`](../../../crates/pixtuoid-core/tests/AGENTS.md).
-
-## The trap: `--lib` is not the suite
-
-The `sources --json` golden (`cli_json`) and the `wire_to_pixels` matrix live in
-`pixtuoid/tests/*.rs` INTEGRATION BINARIES that `-p <crate> --lib` never builds —
-the #692 (kimi) miss: a green `--lib` run AND a multi-lens review both passed
-while these two were red, caught only by the full suite. Run
-`just test` (NOT just `--lib`) before declaring green.
-
-## Finish
-
-- `just gen-contract` only if you touched the `--json`/`SourceStatus`/`OutcomeRow`
-  SHAPE (adding a row doesn't).
-- **local-review** when [arc step 7](../../../docs/CONTRIBUTING.md#the-arc-loop) calls for it; CI runs the tests.
+- [ ] **Upstream facts.** Answer [the checklist](../../../docs/CONTRIBUTING.md#adding-a-new-agent-cli)'s
+      step 1 before any code, from the latest release's source. Its questions have
+      no test, so a wrong answer ships green.
+- [ ] **The rest of that checklist**, with the test steps in
+      [`tests/AGENTS.md`](../../../crates/pixtuoid-core/tests/AGENTS.md).
+- [ ] **`just test`, never `--lib` alone.** The `sources --json` golden (`cli_json`)
+      and the `wire_to_pixels` matrix are integration binaries a `--lib` run skips:
+      kimi's PR (#692) passed `--lib` and a multi-lens review with both red.
+- [ ] **`just gen-contract`**, only if the `--json`/`SourceStatus`/`OutcomeRow` shape
+      changed; adding a row doesn't change it.
+- [ ] **[The must-run](../../../REVIEW.md#must-run)**: `just hermetic <source>`, or a
+      live run for a `NOT_HERMETIC` source. Either way the real CLI, never a capture
+      rig's flags.
+- [ ] **[`local-review`](../local-review/SKILL.md)**, always: a fork's PR gets no CI
+      review, so this is its only one. Fold what it finds into one commit.
+- [ ] **The PR body** holds step 1's answers and what
+      [the merge gate](../../../docs/CONTRIBUTING.md#the-merge-gate) asks of it. CI runs
+      the tests.
