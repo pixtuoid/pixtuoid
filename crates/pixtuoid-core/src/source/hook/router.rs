@@ -1,6 +1,7 @@
-//! `HookRouter` — the single owner of the ONE shared hook socket that EVERY
+//! `HookRouter` — an instance's end of the ONE shared hook socket that EVERY
 //! source's hooks ride (Codex, Reasonix, CodeWhale, opencode, Cursor, and the
-//! OpenClaw daemon).
+//! OpenClaw daemon): it owns the socket, or subscribes to the instance that does
+//! and takes the socket over when that instance exits.
 //!
 //! It implements [`Source`] DELIBERATELY, to inherit `spawn_with_health`'s
 //! `SourceDeath` path for free instead of rebuilding it. It is still
@@ -9,16 +10,21 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::source::jsonl::ChildEndUnclaims;
 use crate::source::{AgentEvent, Source, TaggedReceiver, TaggedSender, Transport};
 
-use super::{HookPidWatch, HookSocketListener, PresenceSender, SocketBusy};
+use super::{HookPidWatch, HookSocketListener, PresenceSender, SocketBusy, handle_conn, relay};
 
 /// Infrastructure name — NOT a registered source (no descriptor/badge). Names
-/// the footer attribution `spawn_with_health` publishes for a fatal bind error.
+/// the footer attribution `spawn_with_health` publishes when the plane dies.
 pub(crate) const SOURCE_NAME: &str = "hook-router";
+
+/// How many subscriptions in a row may fail before the plane is reported dead.
+/// More than one: the loser of a takeover finds the winner not yet listening.
+const SUBSCRIBE_ATTEMPTS: u32 = 3;
+const SUBSCRIBE_RETRY: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Producer half of the #246 child-end un-claim side-channel (see
 /// `ChildEndUnclaims` for the WHY): the ONE seam every decoded `SubagentStop`
@@ -47,9 +53,9 @@ pub(crate) async fn tee_child_end_unclaims(
     }
 }
 
-/// The shared hook-socket owner: binds the ONE socket, runs the per-connection
-/// decode loop, interposes the #246 tee, and feeds the daemon-presence side
-/// channel.
+/// An instance's end of the shared hook socket: binds the ONE socket or
+/// subscribes to its owner, runs the decode loop, interposes the #246 tee, and
+/// feeds the daemon-presence side channel.
 #[derive(Debug)]
 pub struct HookRouter {
     socket_path: PathBuf,
@@ -87,29 +93,45 @@ impl HookRouter {
     }
 }
 
+/// An instance's place on the hook endpoint.
+enum Plane {
+    Owner(HookSocketListener),
+    Subscriber(relay::Payloads),
+}
+
+impl HookRouter {
+    /// Take the endpoint, or subscribe to whoever holds it.
+    async fn join(&self) -> Result<Plane> {
+        let mut attempt = 0;
+        loop {
+            match HookSocketListener::bind(self.socket_path.clone()).await {
+                Ok(socket) => return Ok(Plane::Owner(socket)),
+                Err(e) if e.downcast_ref::<SocketBusy>().is_none() => return Err(e),
+                Err(_) => {}
+            }
+            attempt += 1;
+            match relay::subscribe(&self.socket_path).await {
+                Ok(payloads) => return Ok(Plane::Subscriber(payloads)),
+                Err(e) if attempt == SUBSCRIBE_ATTEMPTS => {
+                    return Err(e).with_context(|| {
+                        format!(
+                            "subscribing to the hook endpoint at {}",
+                            self.socket_path.display()
+                        )
+                    });
+                }
+                Err(_) => tokio::time::sleep(SUBSCRIBE_RETRY).await,
+            }
+        }
+    }
+}
+
 impl Source for HookRouter {
     fn name(&self) -> &str {
         SOURCE_NAME
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        // SocketBusy (another live instance owns the endpoint) takes ONLY the
-        // hook plane down: the hooks belong to the owning instance, so return
-        // Ok(()) with no `SourceDeath`. Every other bind error is fatal.
-        let socket = match HookSocketListener::bind(self.socket_path.clone()).await {
-            Ok(s) => s,
-            Err(e) if e.downcast_ref::<SocketBusy>().is_some() => {
-                let chain = format!("{e:#}");
-                tracing::warn!(
-                    error = ?chain,
-                    "hook plane disabled — hook-borne signals (permission requests, instant \
-                     lifecycle, daemon presence) belong to the owning instance; transcript \
-                     sources keep running"
-                );
-                return Ok(());
-            }
-            Err(e) => return Err(e),
-        };
         let tx_hook = match &self.child_end_unclaims {
             Some(unclaims) => {
                 let (tee_tx, tee_rx) =
@@ -121,10 +143,30 @@ impl Source for HookRouter {
         };
         // The pid-watch's synthesized SessionEnd goes on the main `tx`, not
         // `tx_hook`: it is `as_child: false`, which the #246 tee ignores anyway.
-        let socket = socket
-            .with_pid_watch(HookPidWatch::spawn(tx.clone()))
-            .with_presence(self.presence_tx.clone());
-        socket.run(tx_hook).await
+        let pid_watch = HookPidWatch::spawn(tx);
+        loop {
+            match self.join().await? {
+                Plane::Owner(socket) => {
+                    return socket
+                        .with_pid_watch(pid_watch)
+                        .with_presence(self.presence_tx.clone())
+                        .run(tx_hook)
+                        .await;
+                }
+                // No byte cap: the owner held each line to the listener's.
+                Plane::Subscriber(payloads) => {
+                    let presence_tx = self.presence_tx.clone();
+                    handle_conn(
+                        payloads,
+                        tx_hook.clone(),
+                        pid_watch.clone(),
+                        presence_tx,
+                        None,
+                    )
+                    .await;
+                }
+            }
+        }
     }
 }
 
